@@ -1,39 +1,28 @@
 <!--
   File:   docs/research/sig_halfhour_clock_drift_h900_v1_validation_protocol.md
   Status: PRE-REGISTERED — FROZEN (Task 8-F-H12, Lei, 2026-07-17).
-          Amendments-only thereafter. No outcome statistic; no
-          implementation code; no data peeking at freeze. N = 12.
+          STEP 1 PARK — power (pooled viable-region in-window
+          episodes = 59 < 100); F2-arm F2-INSUFFICIENT (out-window
+          viable-region n = 89 < 100) reported per JC-9. N = 12
+          (census N-neutral; no outcome contact).
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
-          (candidate); prompt-pack Task 8 / Task 8-F-H12 (H12).
+          (candidate); prompt-pack Task 8 / Task 8-C-H12 (H12).
 
-  Provenance (FQ-3 template — freeze commit):
-    git_sha: recorded at freeze commit (this file is the freeze
-      deliverable; formal_spec.md may remain an untracked Task-7
-      sibling under freeze-provenance allowance)
-    worktree_clean: "tracked protocol frozen this commit"
-    pythonhashseed: "n/a — no scripted analysis run in this task
-      (design only; every number below is quoted from committed
-      artifacts or derived by hand arithmetic recorded inline)"
-    normative_inputs (Amendment A):
-      sig_halfhour_clock_drift_h900_v1_formal_spec.md (Task 7; entry
-        predicate, F2 dual-form, κ freeze, park arithmetic, Phase-A map),
-      sig_inventory_fade_v1_validation_protocol.md (H2 frozen; structural
-        base + all rulings),
-      sig_dislocation_lambda_drift_v1_validation_protocol.md (H8 frozen;
-        JC-1 estimand split; all rulings),
-      sig_sweep_kyle_drift_h900_v1_validation_protocol.md (H10 frozen;
-        H=900 CPCV/annualization/27-vertex pattern; JC-5; D-C1),
-      prompt_pack_11_hypothesis_slate_d.md (H12 card + DISPOSITIONS 1–5;
-        trigger-(b)/(c); H9 firewall; N = 12),
-      prompt_pack_11a_slate_d_review.md (geometry 12/25 / 13/25;
-        design-central 147.7 / 160.1),
-      prompt_pack_03_data_contract.md + 03c (through AMENDMENT 2),
-      prompt_pack_00c_eval_canon.md (pinned realism profile),
-      prompt_pack_12p_router_fill_timing_parity.md (AXIS-1 VERIFIED —
-        hard gate cited, not re-run),
-      research/cpcv.py, research/dsr.py, research/forward_ic.py,
-      scripts/sensor_feature_ic.py, scripts/regime_diagnostics.py
-        (shipped machinery anchors).
+  Provenance (FQ-3 — Task 8-C-H12 census execution):
+    git_sha: "8708c3c39155cc203982412d0ffb7539a5c76cbc"
+      (HEAD at census start; Phase-A commit-4 pin)
+    worktree_clean: "yes for tracked tree; formal_spec.md remains
+      untracked sibling (freeze-provenance allowance)"
+    pythonhashseed: "0"
+    host: "CHENGLEI-L-3 / Windows-11-10.0.26200-SP0 /
+      Python 3.14.2 (MSC v.1944 64 bit AMD64)"
+    artifact_sha256:
+      "51913fe947745f9ea99c165d7b44232f4ac9d36678f451e0f1a772b7eb349ec1"
+      (docs/research/artifacts/halfhour_clock_drift_census_2026-07-17.json;
+       bit-identical re-run matched)
+    normative_inputs: frozen protocol §1 (this file) + Phase-A
+      instruments (2f3d930 / aea0578 / ec78718 / 3cf4413 / 8708c3c)
+      + 03c grid.
 -->
 
 # `sig_halfhour_clock_drift_h900_v1` — pre-registered validation protocol (Task 8)
@@ -1273,5 +1262,200 @@ first outcome contact still reserved for step-2 IC on the H12 primary
 
 *(Record appended 2026-07-17. Justification: Task 9-A-H12 Phase-A
 close-out; instruments built and pinned; no freeze-body edit.)*
+
+---
+
+# CENSUS RESULTS — STEP 1 EXECUTED (Task 8-C-H12, 2026-07-17)
+
+Execution record of the frozen §1 census. **Not an amendment** — no
+test definition, threshold, or parameter above the freeze line
+changed; the only header edit is the Status / FQ-3 provenance block
+recording this execution. **No forward return, IC, or signal
+evaluation was computed** — the only return-like quantity touched is
+the unconditional session σ₉₀₀, per the frozen §1 authorization. The
+out-window (`W_hh = 0`) arm was **COUNTED, never scored**. **N = 12**
+(census N-neutral).
+
+## C.0 Preconditions at execution (§0 re-verified, in order)
+
+| # | check | result |
+|---|---|---|
+| (i) window-authoring determinism | `PYTHONHASHSEED=0 uv run pytest tests/sensors/test_algo_clock_calendars.py` → **8/8**; committed calendar YAML / `EventCalendar.hash` bit-identical on re-author — **PASS**; mismatch would be infrastructure FAIL |
+| (ii) both-arm synthetic golden | `PYTHONHASHSEED=0 uv run pytest tests/scripts/test_halfhour_clock_drift_census.py` → **7/7** at census time (in-window + out-window arms pinned) — **PASS** |
+| (iii) `calendar_missing_rate` (JC-10) | armed; measured **0.0 on all 40** {APP, RMBS} cells — **PASS** (any > 0 = infrastructure FAIL / P0-1 defect) |
+| P0-1 | Phase-A deliverables | green: calendars `2f3d930`, percentile factory `aea0578`, instrument `ec78718`, harness IC row `3cf4413` / pin `8708c3c` |
+| P0-4 | determinism | `PYTHONHASHSEED=0`; direct `DiskEventCache` (`~/.feelies/cache`); real `SensorRegistry → HorizonScheduler → HorizonAggregator` stack; full-grid re-run **bit-identical** (SHA-256 match below) |
+| P0-5 | protocol frozen before census | freeze + A-1 Phase-A record precede execution |
+
+**FQ-3 provenance:** host `CHENGLEI-L-3` / `Windows-11-10.0.26200-SP0` /
+Python 3.14.2; git SHA `8708c3c`; worktree clean for tracked files
+(`formal_spec.md` untracked sibling, freeze-allowed); artifact
+`docs/research/artifacts/halfhour_clock_drift_census_2026-07-17.json`
+SHA-256 `51913fe947745f9ea99c165d7b44232f4ac9d36678f451e0f1a772b7eb349ec1`
+(primary run = re-run).
+
+## C.1 Method
+
+`scripts/research/halfhour_clock_drift_census.py` — frozen §1.1
+predicate exact (arms 1–7) on **both** arms; JC-10 calendar-warm =
+share of in-window h=900 boundaries with `scheduled_flow_window`
+warm; warm-drop < 0.5 on > 2 sessions; primary count = §1.1
+predicate count (contamination-excluded multiplier 1.0; no
+post-hoc intensity exclusion); σ₉₀₀ = Bessel-corrected std of
+non-overlapping 900 s mid log-returns on the 09:30-anchored grid
+(bps); floors APP 4.68 / **32.05** and RMBS 5.51 / **37.74**
+(κ = **0.146**); short rider APP 5.82 / 39.86, RMBS 6.60 / 45.21
+(σ min = floor/κ). OLN × 10 preamble evidence-only.
+
+## C.2 Calendar-warm (JC-10) — ASSERTED 0.90×0.95 vs measured
+
+Design priors (gate × warm): **0.90 × 0.95** → design-central
+in-window **147.7** / out-window **160.1**. Measured warm **replaces**
+the ASSERTED 0.95 for power scoring; both recorded.
+
+| symbol | ASSERTED warm prior | measured mean [min–max] | sessions with warm < 0.5 | warm-drop fired? |
+|---|---|---|---|---|
+| APP | 0.95 (in 0.90×0.95 product) | **1.000** [1.000–1.000] | 0 / 20 | no |
+| RMBS | 0.95 (in 0.90×0.95 product) | **1.000** [1.000–1.000] | 0 / 20 | no |
+
+`calendar_missing_rate = 0` on every grid cell. Coverage drop rule
+did not fire. Measured warm does **not** rescue power — occupancy
+after the frozen quintile × clock × gate × vol-z × sign arms is
+below the park floor (C.5).
+
+## C.3 JC-1 REPORTS — leakage vs co-travel
+
+| estimand | result | > 1 % trigger? |
+|---|---|---|
+| **leakage** (share of primary in-window eligible boundaries whose trailing-900 s OFI path includes quotes `ofi_raw` would drop as degenerate/crossed) | mean ≈ **9.7×10⁻⁵**; max cell mean ≈ **0.0013**; `any_leakage_bug_flag = false` (0 / 40 cells) | **NO** |
+| **co-travel** (`off_clock_cotravel_rate` among quintile-OFI eligible-class boundaries ignoring clock) | mean ≈ **0.615** (design ≈ 0.52) | **N/A** — REPORT only; never a park |
+
+Leakage trigger did not fire. Co-travel is geometry diagnostic only.
+
+## C.4 Per-symbol roll-up (κ = 0.146; primary = §1.1)
+
+| symbol | σ₉₀₀ min L/S (bps) | viable_long cells | viable_short cells | in-window eps (all) | viable-region in-window | out-window eps (all) | viable-region out-window | elev-A / elev-B / calm (in-window all) | ≥ 100 viable in? |
+|---|---|---|---|---|---|---|---|---|---|
+| APP | 32.05 / 39.86 | **18 / 20** | 17 / 20 | 43 (31 L / 12 S) | **40** | 38 (25 L / 13 S) | **36** | 7 / 13 / 23 | no alone |
+| RMBS | 37.74 / 45.21 | **16 / 20** | 12 / 20 | 25 (24 L / 1 S) | **19** | 67 (61 L / 6 S) | **53** | 2 / 9 / 14 | no alone |
+| OLN | — | — | — | 0 (evidence-only) | — | 0 | — | — | never in D |
+
+Pooled viable-region **in-window** episodes across D: **59 < 100**.
+Pooled viable-region **out-window** (F2 arm, counts only): **89 < 100**.
+Pooled all-cell (σ-unrestricted) in / out: **68 / 105** vs
+design-central **147.7 / 160.1**.
+
+**HOLIDAY-THIN (2025-12-26, 2025-12-30; never excluded):** APP HT
+in-window = 3 (both HT cells non-viable-σ: σ = 21.50 / 26.42);
+RMBS HT in-window = 2 (2025-12-26 non-viable; 2025-12-30 viable with
+2 in / 2 out). HT contribution to pooled all-cell in / out = 5 / 8.
+Tags reported; counts include them.
+
+**Gate-arm occupancy (predicate arms 4–7 on, clock either side):**
+in-window boundaries = 25 × 20 = 500 per symbol. APP gate_on = 81
+(occupancy 0.162), gate_off = 419; RMBS gate_on = 92 (0.184),
+gate_off = 408. Elevated strata denser than calm on a per-cell basis
+for APP in-window; RMBS in-window sparse in elev-A (2). A and B
+reported separately (L4), never pooled for conclusions.
+
+**SELL-leg / long-only:** RMBS clears short σ min on 12/20 sessions
+but has only **1** SHORT in-window episode on the full grid — σ
+arithmetic alone does **not** force §1.6 long-only restatement at
+census (measured short edge awaits step 2; park on power halts
+before that).
+
+## C.5 Park-condition scoring (§1.5 / §1.6 / §9.1; no discretion)
+
+1. **Edge-region emptiness: FALSE.** Both APP and RMBS have
+   non-empty viable-region primary in-window episodes (40 / 19).
+2. **Power floor (pooled ≥ 100 contamination-excluded in-window):
+   FAIL.** Pooled = **59**. Axis-split not required for the park
+   itself (neither symbol failed deployability; re-check would still
+   be 59 on D = {APP, RMBS}).
+3. **Warm-drop: FALSE** for both symbols.
+4. **Infrastructure (`calendar_missing_rate` / authoring): PASS.**
+5. **Deployable-set arithmetic before power park:** D would be
+   **{APP, RMBS}** (edge non-empty; warm-drop clear; calendars
+   present). OLN never in D. Power park governs — card does not
+   PROCEED.
+
+**F2-arm adjudicability (reported now; JC-9):** out-window
+viable-region n = **89 < 100** ⇒ **F2-INSUFFICIENT**. Per JC-9 an
+out-window shortfall parks the binding arm at step 2 (no
+primary-only PROCEED). Reported here even though step-1's park floor
+is the **in-window** population — the in-window power FAIL already
+halts the sequence.
+
+**VERDICT: PARK — power (pooled viable-region in-window episodes =
+59 < 100).**
+
+**F2-arm adjudicability: F2-INSUFFICIENT (out-window viable-region n =
+89 < 100).**
+
+(Census instrument string `PARKED_POWER`; mapped to the frozen §9
+verdict line above. H13 trigger **(a)** adjacency on census/design
+death — activation requires Lei review under pack-11 DISPOSITIONS 2;
+this task does not authorize H13 instruments.)
+
+## C.6 Per-cell table (grid symbols; full JSON in artifact)
+
+Columns: σ₉₀₀ (bps); viaL/viaS; in-eps / L / S; out-eps / L / S;
+calendar warm; leakage mean; co-travel; gate ON/OFF; in-window
+boundaries always 25.
+
+| sym | date | stratum | σ₉₀₀ | viaL | viaS | in | L | S | out | oL | oS | warm | leak | cot | gON | gOFF |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 2025-11-25 | elev-A | 41.30 | Y | Y | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 21 |
+| APP | 2025-12-04 | elev-A | 63.10 | Y | Y | 2 | 2 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 2 | 23 |
+| APP | 2025-12-01 | elev-A | 58.87 | Y | Y | 3 | 3 | 0 | 4 | 3 | 1 | 1.00 | 0.0000 | 0.571 | 7 | 18 |
+| APP | 2025-12-02 | elev-A | 58.33 | Y | Y | 1 | 0 | 1 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 22 |
+| APP | 2025-12-22 | calm | 32.87 | Y | n | 2 | 2 | 0 | 1 | 0 | 1 | 1.00 | 0.0000 | 0.333 | 3 | 22 |
+| APP | 2026-01-05 | calm | 40.70 | Y | Y | 2 | 2 | 0 | 4 | 4 | 0 | 1.00 | 0.0000 | 0.667 | 6 | 19 |
+| APP | 2026-01-15 | calm | 46.45 | Y | Y | 0 | 0 | 0 | 2 | 0 | 2 | 1.00 | 0.0000 | 1.000 | 2 | 23 |
+| APP | 2026-01-26 | calm | 50.57 | Y | Y | 2 | 0 | 2 | 1 | 0 | 1 | 1.00 | 0.0000 | 0.333 | 3 | 22 |
+| APP | 2026-01-27 | calm | 59.03 | Y | Y | 3 | 1 | 2 | 3 | 1 | 2 | 1.00 | 0.0013 | 0.500 | 6 | 19 |
+| APP | 2025-12-26 | calm HT | 21.50 | n | n | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 1 | 24 |
+| APP | 2025-12-30 | calm HT | 26.42 | n | n | 2 | 1 | 1 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.500 | 4 | 21 |
+| APP | 2026-01-12 | calm | 69.76 | Y | Y | 3 | 2 | 1 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 3 | 22 |
+| APP | 2026-01-20 | calm | 73.04 | Y | Y | 6 | 5 | 1 | 2 | 2 | 0 | 1.00 | 0.0002 | 0.250 | 8 | 17 |
+| APP | 2026-01-22 | calm | 45.61 | Y | Y | 2 | 2 | 0 | 1 | 1 | 0 | 1.00 | 0.0002 | 0.333 | 3 | 22 |
+| APP | 2026-04-01 | elev-B | 40.72 | Y | Y | 1 | 1 | 0 | 2 | 0 | 2 | 1.00 | 0.0000 | 0.667 | 3 | 22 |
+| APP | 2026-04-10 | elev-B | 43.67 | Y | Y | 3 | 3 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.250 | 4 | 21 |
+| APP | 2026-04-22 | elev-B | 41.01 | Y | Y | 6 | 4 | 2 | 2 | 2 | 0 | 1.00 | 0.0002 | 0.250 | 8 | 17 |
+| APP | 2026-04-02 | elev-B | 77.53 | Y | Y | 1 | 0 | 1 | 3 | 1 | 2 | 1.00 | 0.0000 | 0.750 | 4 | 21 |
+| APP | 2026-04-07 | elev-B | 55.54 | Y | Y | 2 | 1 | 1 | 2 | 2 | 0 | 1.00 | 0.0003 | 0.500 | 4 | 21 |
+| APP | 2026-04-16 | elev-B | 49.00 | Y | Y | 0 | 0 | 0 | 3 | 1 | 2 | 1.00 | 0.0000 | 1.000 | 3 | 22 |
+| RMBS | 2025-11-25 | elev-A | 51.11 | Y | Y | 1 | 0 | 1 | 3 | 1 | 2 | 1.00 | 0.0000 | 0.750 | 4 | 21 |
+| RMBS | 2025-12-04 | elev-A | 49.71 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 1.000 | 2 | 23 |
+| RMBS | 2025-12-01 | elev-A | 41.01 | Y | n | 0 | 0 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 1.000 | 3 | 22 |
+| RMBS | 2025-12-02 | elev-A | 43.76 | Y | n | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 21 |
+| RMBS | 2025-12-22 | calm | 31.05 | n | n | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 1.000 | 1 | 24 |
+| RMBS | 2026-01-05 | calm | 53.36 | Y | Y | 2 | 2 | 0 | 3 | 2 | 1 | 1.00 | 0.0000 | 0.600 | 5 | 20 |
+| RMBS | 2026-01-15 | calm | 67.33 | Y | Y | 1 | 1 | 0 | 2 | 1 | 1 | 1.00 | 0.0000 | 0.667 | 3 | 22 |
+| RMBS | 2026-01-26 | calm | 43.96 | Y | n | 1 | 1 | 0 | 4 | 3 | 1 | 1.00 | 0.0000 | 0.800 | 5 | 20 |
+| RMBS | 2026-01-27 | calm | 43.74 | Y | n | 2 | 2 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.600 | 5 | 20 |
+| RMBS | 2025-12-26 | calm HT | 19.58 | n | n | 0 | 0 | 0 | 4 | 4 | 0 | 1.00 | 0.0000 | 1.000 | 4 | 21 |
+| RMBS | 2025-12-30 | calm HT | 46.13 | Y | Y | 2 | 2 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.500 | 4 | 21 |
+| RMBS | 2026-01-12 | calm | 32.87 | n | n | 3 | 3 | 0 | 5 | 5 | 0 | 1.00 | 0.0000 | 0.625 | 8 | 17 |
+| RMBS | 2026-01-20 | calm | 75.90 | Y | Y | 3 | 3 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.500 | 6 | 19 |
+| RMBS | 2026-01-22 | calm | 49.45 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 1.000 | 2 | 23 |
+| RMBS | 2026-04-01 | elev-B | 46.93 | Y | Y | 1 | 1 | 0 | 5 | 5 | 0 | 1.00 | 0.0000 | 0.833 | 6 | 19 |
+| RMBS | 2026-04-10 | elev-B | 47.65 | Y | Y | 2 | 2 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.600 | 5 | 20 |
+| RMBS | 2026-04-22 | elev-B | 61.29 | Y | Y | 0 | 0 | 0 | 7 | 7 | 0 | 1.00 | 0.0000 | 1.000 | 7 | 18 |
+| RMBS | 2026-04-02 | elev-B | 81.94 | Y | Y | 2 | 2 | 0 | 4 | 4 | 0 | 1.00 | 0.0000 | 0.667 | 6 | 19 |
+| RMBS | 2026-04-07 | elev-B | 56.04 | Y | Y | 1 | 1 | 0 | 4 | 3 | 1 | 1.00 | 0.0000 | 0.800 | 5 | 20 |
+| RMBS | 2026-04-16 | elev-B | 33.82 | n | n | 3 | 3 | 0 | 4 | 4 | 0 | 1.00 | 0.0008 | 0.571 | 7 | 18 |
+
+Every grid cell emitted 26 RTH h=900 boundaries, **25** in the
+09:35–15:50 window. OLN × 10 preamble: episodes = 0 by construction.
+
+## C.7 Stop
+
+§0 order lock: **stop for Lei review** before step 2 or any IC /
+forward-return contact. No Phase-B YAML, sign-golden `evaluate`, or
+outcome statistic in this task. **N = 12** unchanged.
+
+*(Record appended 2026-07-17. Justification: Task 8-C-H12 step-1
+execution; frozen bars scored without discretion.)*
 
 ---
