@@ -1,15 +1,15 @@
 <!--
   File:   docs/research/sig_hour_checkpoint_drift_h1800_v1_formal_spec.md
-  Status: hypothesis → candidate pending validation
+  Status: hypothesis — parked (power; final card)
           (Task 7 formal spec 2026-07-17; H13 ACTIVATED per pack-11
           DISPOSITIONS 7 — trigger (a) FIRED on H12 census park
           (power, n=59); Amendments A–H applied; κ frozen 0.172
-          minimum-rule vs factor product 0.189; N = 12; zero outcome
-          contact).
-          POOL CONFIGURATION appendix appended 2026-07-17; Appendix P
-          RULING (Lei, 2026-07-17) FROZEN pre-census: config (B),
-          P.3 A-2.1 evidence-pool floor, honest expectation ≈96 /
-          expected PARK; (C) REJECTED; zero ingestion. Task 8 next.
+          minimum-rule vs factor product 0.189; Appendix P RULING
+          config (B); park close-out 2026-07-18 — Lei ratifies census
+          PARK on power per frozen pool-collapse / protocol C.8;
+          N = 12; closure:
+          sig_hour_checkpoint_drift_h1800_v1_result.md; program
+          CLOSED).
   Owner:  microstructure-alpha (spec) / research-workflow (ledger);
           prompt-pack Task 7, Phase B (H13 — final card).
 

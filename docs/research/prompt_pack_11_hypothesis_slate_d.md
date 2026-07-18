@@ -12,6 +12,9 @@
           (n=59); H13 is the final card — death at any gate closes
           the program. N = 12 (zero outcome contact). Cards above
           unedited (append-only).
+          + H13 PARKED (power) / contingency chain EXHAUSTED
+          (2026-07-18; Lei; DISPOSITIONS 9–10): pooled in-hour 66 <
+          100; program CLOSED per pack-10 stop-rule. N = 12.
   Owner:  microstructure-alpha (cards) / research-workflow (trial
           ledger); prompt-pack Task 6-D, Phase B.
 
@@ -812,3 +815,42 @@ below.**
    (census N-neutral; no outcome statistic for any slate-D
    candidate). Any future DSR uses the then-current living N
    (≥ 12).
+
+---
+
+## DISPOSITIONS (continued — H13 park close-out + contingency exhaustion, 2026-07-18, Lei; append-only, entries 1–8 unedited)
+
+9. **H13 PARKED (power)** — park close-out, 2026-07-18. Lei ratifies
+   the census verdict per frozen §1.5 / §4.5 pool-collapse row /
+   protocol C.8
+   (`sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md`).
+   Pooled viable-region in-hour episodes across eight-symbol
+   evidence pool **66 < 100** (D-only **60**; ENSG/MLI **+6**);
+   edge axis non-empty on all six D symbols; F2 :30 arm
+   **adjudicable** at viable-region **175 ≥ 100** (frozen prior
+   ≈96 / expected F2-INSUFFICIENT **not realized** — both-directions
+   prior miss; counts only; never scored); infrastructure perfect
+   (warm 1.000, missing-rate 0, determinism green). Projection-vs-
+   measured: uniform **120.9** / rider ≈**96** / measured viable
+   **66** (in-hour); :30 arm rider ≈**96** / measured **175**.
+   Occupancy asymmetry (:30 / :00) ≈ **2.6×** — census-legal
+   characterization. **PARK ≠ refutation:** F1–F5 never ran; zero
+   outcome contact. Closure record:
+   `sig_hour_checkpoint_drift_h1800_v1_result.md`. Occupancy lesson
+   registered as backlog **20** (arm-specific occupancy on target
+   geometry; cross-card `f_resid` transfer unvalidated — H8 0.55× /
+   H12 0.46× / H13 0.69× post-rebuild; :30 arm 1.8×; extends
+   backlog 19). Artifact SHA-256
+   `2033cbd8b4268b1f1aefbdb8de95f3a57f843898b8bd22971c4028050c73834b`.
+
+10. **Contingency chain EXHAUSTED; program CLOSED on this
+    universe/grid.** H12 parked (DISPOSITIONS 6); H13 parked
+    (DISPOSITIONS 9) — no remaining cycle-3 card, no remaining
+    activation trigger. Pack-10 DISPOSITION 2 stop-rule **executed**
+    (cycle 3 complete without a step-2b PASS). Kill-gate class does
+    not matter: this census power park counts toward closure. The
+    residual fork (universe **tranche 2** vs stop) is a **fresh
+    capital decision** requiring its own Lei authorization; nothing
+    in this closure pre-commits it. **N = 12 confirmed** (census
+    N-neutral; no outcome statistic for any slate-D candidate). Any
+    future DSR uses the then-current living N (≥ 12).

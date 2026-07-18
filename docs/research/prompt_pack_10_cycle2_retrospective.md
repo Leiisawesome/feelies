@@ -6,6 +6,10 @@
           PROGRAM STOP-RULE pre-registered (see DISPOSITION below).
           N = 12 unchanged (authorization / stop-rule only; no outcome
           contact). Body §§1–6 unedited (append-only).
+          + STOP-RULE EXECUTED (2026-07-18, Lei): cycle 3 complete
+          without a step-2b PASS (H12 park + H13 park); PROGRAM
+          CLOSED on this universe/grid. Residual fork (tranche 2 vs
+          stop) not pre-committed. N = 12.
   Owner:  research-workflow (program bookkeeping); prompt-pack Task 7-R2,
           Phase B.
 
@@ -513,3 +517,34 @@ appended below (Lei, 2026-07-16).*
    **N = 12** (§6). Any cycle-3 card's first outcome contact is
    **+1 → N ≥ 13** under its own frozen protocol from step 1.
    Any future DSR uses the then-current living N (≥ 12).
+
+---
+
+## DISPOSITION (STOP-RULE EXECUTED — program closure, Lei, 2026-07-18; append-only, entries 1–5 unedited)
+
+6. **STOP-RULE EXECUTED — cycle 3 complete without a step-2b
+   PASS; PROGRAM CLOSED on this universe/grid.** Binding
+   pre-registration was DISPOSITION 2 (2026-07-16). Cycle-3
+   path as realized:
+
+   | card | gate reached | verdict | citation |
+   |---|---|---|---|
+   | H12 `sig_halfhour_clock_drift_h900_v1` | protocol step 1 (census) | **PARK (power)** — pooled viable in-window **59 < 100** | pack-11 DISPOSITIONS 6; H12 result / protocol C.8 |
+   | H13 `sig_hour_checkpoint_drift_h1800_v1` | protocol step 1 (census) | **PARK (power)** — pooled viable in-hour evidence-pool **66 < 100** (D-only 60; ENSG/MLI +6); F2 arm adjudicable at 175 (prior miss) | pack-11 DISPOSITIONS 9–10; H13 result / protocol C.8 |
+
+   Contingency chain exhausted (H13 activated on H12 census death;
+   H13 then parked). Kill-gate class does not matter for closure —
+   both deaths are census power parks and **count**. No step-2b
+   PASS occurred. **N = 12 unchanged** across the entire cycle-3
+   path (both censuses N-neutral; zero outcome contact on any
+   slate-D candidate).
+
+7. **Residual fork not pre-committed.** The fork named in §4.2 /
+   pack-07 / DISPOSITION 2 (universe **tranche 2** vs stop) remains
+   a **fresh capital decision** requiring its own Lei
+   authorization. Nothing in this closure authorizes tranche 2,
+   re-opens KYLE continuation, or restarts cycle 3 on the same
+   grid. Closure record pointers:
+   `sig_hour_checkpoint_drift_h1800_v1_result.md`,
+   `prompt_pack_11_hypothesis_slate_d.md` DISPOSITIONS 9–10,
+   backlog **20**.

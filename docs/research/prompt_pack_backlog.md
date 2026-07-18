@@ -6,6 +6,9 @@
           Created 2026-07-08 (Task 3 prefix, addition (b)).
           + entry 19 (2026-07-17): occupancy pre-reads MANDATORY for
           every non-percentile conditioning arm (H12 census lesson).
+          + entry 20 (2026-07-18): arm-specific occupancy must be
+          MEASURED on the target window geometry; cross-card f_resid
+          transfer is an unvalidated prior (H13 / 8-C-H13; extends 19).
   Owner:  cross-cutting; prompt-pack Phase A bookkeeping.
 -->
 
@@ -304,3 +307,24 @@ arm-scoped exemption language). Incident: H12 census
 `3ed79a6` / protocol C.4–C.5 / C.8 —
 `sig_halfhour_clock_drift_h900_v1_validation_protocol.md`;
 closure `sig_halfhour_clock_drift_h900_v1_result.md` §7.
+
+## 20. Arm-specific occupancy must be MEASURED on the target window geometry; cross-card `f_resid` transfer is itself an unvalidated prior — CANDIDATE
+
+Backlog 19 closed the arm-scoped percentile-exemption gap; H13 showed
+the next gap: **transferring a sibling card's measured residual
+occupancy (`f_resid`) onto a different window geometry is itself an
+unvalidated prior.** H13 rebuilt density under backlog 19 using H12's
+`f_resid = 0.3935` as characterization input and still missed
+bidirectionally: in-hour κ-viable rider ≈96 → measured viable **66**
+(≈ **0.69×**); :30 arm rider ≈96 → measured viable **175** (≈
+**1.8×**); :00-vs-:30 occupancy asymmetry ≈ **2.6×**. Uniform all-cell
+projection **120.9** also failed to predict either arm. Arm-specific
+occupancy on the **target** window geometry (hour-only × H=1800 here)
+must be measured before power projections are treated as
+load-bearing — cross-card residual transfer does not substitute.
+Candidate skill edit for `.cursor/skills/microstructure-alpha/research-protocol.md`
+(Census-legal occupancy pre-read — extend backlog 19 with
+geometry-scoped / no-cross-card-`f_resid`-transfer language).
+Incident: H13 census / protocol C.4–C.5 / C.8 (Task 8-C-H13) —
+`sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md`;
+closure `sig_hour_checkpoint_drift_h1800_v1_result.md` §7.

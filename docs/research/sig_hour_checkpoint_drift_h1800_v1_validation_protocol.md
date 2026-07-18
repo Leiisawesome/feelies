@@ -1,32 +1,31 @@
 <!--
   File:   docs/research/sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md
   Status: PRE-REGISTERED — FROZEN (Task 8-F-H13, Lei, 2026-07-17).
-          Amendments-only below the freeze line. Double expectation
-          frozen: in-window ≈96 / F2 arm ≈96 — expected PARK (power)
-          and expected F2-INSUFFICIENT; census runs as measurement.
-          CPCV session-count defect fixed at freeze (D-C2).
-          N = 12; zero outcome contact. H13 = final card (stop-rule).
+          STEP 1 PARK — power (pooled viable-region in-hour episodes
+          = 66 < 100 across eight-symbol evidence pool); F2 :30 arm
+          viable-region n = 175 ≥ 100 (adjudicable; prior ≈96 miss).
+          Double expectation: in-hour park confirmed; F2-INSUFFICIENT
+          prior NOT realized. N = 12; zero outcome contact.
+          + ADJUDICATION (Lei, 2026-07-18, park close-out): PARK
+          (power) ratified per frozen pool-collapse row; H13 = final
+          card; program CLOSED (pack-10 stop-rule executed).
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
-          (candidate); prompt-pack Task 8 / Task 8-F-H13 (H13).
+          (candidate); prompt-pack Task 8 / Task 8-C-H13 (H13) /
+          park close-out.
 
-  Provenance (FQ-3 — freeze commit; no instruments run):
-    git_sha: "Task 8-F-H13 freeze commit (this file)"
-    worktree_clean: "yes for tracked tree at freeze"
-    pythonhashseed: "0 — arithmetic from committed artifacts /
-      frozen specs; no cache contact; no IC"
-    normative_inputs:
-      sig_hour_checkpoint_drift_h1800_v1_formal_spec.md
-        (Amendments A–H + Appendix P RULING Lei 2026-07-17),
-      four frozen protocols (inventory_fade, dislocation_lambda,
-        sweep_kyle_h900, halfhour_clock_h900) — structural template,
-      prompt_pack_03_data_contract.md,
-      prompt_pack_03c_universe_and_cache.md (through A2 / Tranche-1B),
-      prompt_pack_00c_eval_canon.md (realism profile pin),
-      prompt_pack_12p_router_fill_timing_parity.md (AXIS-1 VERIFIED),
-      research/cpcv.py, research/dsr.py, promotion_evidence.GateThresholds,
-      gas_01_integrated_ofi.md (ENG-3 sign-golden + RankIC precedent),
-      Task 8-F-H13 rulings (Lei, 2026-07-17) — all twelve JCs + CPCV
-        session-count freeze correction (D-C2).
+  Provenance (FQ-3 — Task 8-C-H13 census execution):
+    git_sha: "2455810c80e8b2cd86a7ad5c2fb1367b9b1c1dca"
+      (HEAD at census start; Phase-A commit-4 pin)
+    worktree_clean: "yes for tracked tree at census"
+    pythonhashseed: "0"
+    host: "CHENGLEI-L-3 / Windows-11-10.0.26200-SP0 /
+      Python 3.14.2 (MSC v.1944 64 bit AMD64)"
+    artifact_sha256:
+      "2033cbd8b4268b1f1aefbdb8de95f3a57f843898b8bd22971c4028050c73834b"
+      (docs/research/artifacts/hour_checkpoint_drift_census_2026-07-18.json;
+       LF-canonical; bit-identical re-run matched)
+    normative_inputs: frozen protocol §1 (this file) + Phase-A
+      instruments (989ab39 / 4aff50f / 6bef718 / 2455810) + 03c grid.
 -->
 
 # `sig_hour_checkpoint_drift_h1800_v1` — pre-registered validation protocol (Task 8)
@@ -1411,3 +1410,378 @@ first outcome contact still reserved for step-2 IC on the H13 primary
 
 *(Record appended 2026-07-18. Justification: Task 9-A-H13 Phase-A
 close-out; instruments built and pinned; no freeze-body edit.)*
+
+
+---
+
+# CENSUS RESULTS — STEP 1 EXECUTED (Task 8-C-H13, 2026-07-18)
+
+Execution record of the frozen §1 census. **Not an amendment** — no
+test definition, threshold, or parameter above the freeze line
+changed; the only header edit is the Status / FQ-3 provenance block
+recording this execution. **No forward return, IC, or signal
+evaluation was computed** — the only return-like quantity touched is
+the unconditional session σ₁₈₀₀, per the frozen §1 authorization. The
+F2 `:30` arm (`W_hr = 0`) was **COUNTED, never scored**. **N = 12**
+(census N-neutral).
+
+## C.0 Preconditions at execution (§0 re-verified, in order)
+
+| # | check | result |
+|---|---|---|
+| (i) hour-subset derivation determinism (JC-10) | `PYTHONHASHSEED=0 uv run pytest tests/sensors/test_hour_only_algo_clock_derivation.py` → **PASS**; `:00` subset / `:30` excluded; bit-identical derived views — **PASS**; mismatch would be infrastructure FAIL |
+| (ii) both-arm synthetic golden | `PYTHONHASHSEED=0 uv run pytest tests/scripts/test_hour_checkpoint_drift_census.py` → **PASS** at census time (in-hour + `:30` arms pinned; ENSG/MLI evidence-only cells) — **PASS** |
+| (iii) `calendar_missing_rate` (JC-10) | armed; measured **0.0 on all 140** evidence-pool cells — **PASS** (any > 0 = infrastructure FAIL / P0-1 defect) |
+| P0-1 | Phase-A deliverables | green: hour-only derivation `989ab39`, percentile h=1800 `4aff50f`, instrument `6bef718`, harness IC row `2455810` |
+| P0-4 | determinism | `PYTHONHASHSEED=0`; direct `DiskEventCache` (`~/.feelies/cache`); real `SensorRegistry → HorizonScheduler → HorizonAggregator` stack; full-grid re-run **bit-identical** (SHA-256 match below) |
+| P0-5 | protocol frozen before census | freeze + A-1 Phase-A record precede execution |
+
+**FQ-3 provenance:** host `CHENGLEI-L-3` / `Windows-11-10.0.26200-SP0` /
+Python 3.14.2; git SHA `2455810`; worktree clean for tracked files;
+artifact
+`docs/research/artifacts/hour_checkpoint_drift_census_2026-07-18.json`
+SHA-256 `2033cbd8b4268b1f1aefbdb8de95f3a57f843898b8bd22971c4028050c73834b`
+(LF-canonical; primary run = re-run).
+
+## C.1 Method
+
+`scripts/research/hour_checkpoint_drift_census.py` — frozen §1.1
+predicate exact (arms 1–7) on **both** arms; hour-only derived calendar
+injection (`:00` subset; `:30` excluded); JC-10 calendar-warm = share
+of in-window h=1800 boundaries with `scheduled_flow_window` warm;
+warm-drop < 0.5 on > 2 sessions; primary count = §1.1 predicate count
+(contamination-excluded multiplier 1.0; no post-hoc intensity
+exclusion); σ₁₈₀₀ = Bessel-corrected std of non-overlapping 1800 s mid
+log-returns on the 09:30-anchored grid (bps); κ = **0.172**; floors /
+σ mins per §1.2 (APP 4.68 / **27.21**, RMBS 5.51 / **32.03**, OLN 8.69 /
+**50.52**, DIOD 6.23 / **36.22**, PCTY 5.19 / **30.17**, CROX 5.66 /
+**32.91**, ENSG 5.04 / **29.30**, MLI 5.32 / **30.93**); short
+rider-inclusive where stated. Evidence pool: D × 20 + {ENSG, MLI} × 10
+preamble = **140 cells**.
+
+## C.2 Calendar-warm (JC-10) — ASSERTED priors vs measured
+
+Frozen double-expectation priors (κ-viable central): in-hour ≈ **96** /
+F2 ≈ **96**. Measured warm **replaces** ASSERTED warm for power scoring;
+both recorded. Measured warm does **not** rescue power — occupancy after
+the frozen quintile × hour × gate × vol-z × sign arms is below the park
+floor (C.5).
+
+| symbol | role | measured mean [min–max] | sessions with warm < 0.5 | warm-drop fired? |
+|---|---|---|---|---|
+| APP | D | **1.000** [1.000–1.000] | 0 / 20 | no |
+| RMBS | D | **1.000** [1.000–1.000] | 0 / 20 | no |
+| OLN | D | **1.000** [1.000–1.000] | 0 / 20 | no |
+| DIOD | D | **1.000** [1.000–1.000] | 0 / 20 | no |
+| PCTY | D | **1.000** [1.000–1.000] | 0 / 20 | no |
+| CROX | D | **1.000** [1.000–1.000] | 0 / 20 | no |
+| ENSG | evidence-only | **1.000** [1.000–1.000] | 0 / 10 | n/a (never enter D) |
+| MLI | evidence-only | **1.000** [1.000–1.000] | 0 / 10 | n/a (never enter D) |
+
+`calendar_missing_rate = 0` on every grid cell. Coverage drop rule did
+not fire.
+
+## C.3 JC-1 REPORTS — leakage / co-travel / tranche1b_kappa_drift
+
+| estimand | result | > 1 % / drop trigger? |
+|---|---|---|
+| **leakage** (share of primary in-hour eligible boundaries whose trailing-1800 s OFI path includes quotes `ofi_raw` would drop as degenerate/crossed) | mean ≈ **4.5×10⁻⁵**; max cell mean ≈ **0.0018**; `any_leakage_bug_flag = false` (0 / 140 cells) | **NO** |
+| **co-travel** (`halfhour_not_hour_cotravel_rate` among quintile-OFI eligible-class boundaries) | mean ≈ **0.743** (design ≈ 0.50) | **N/A** — REPORT only; never a park |
+| **tranche1b_kappa_drift** (median κ_req − κ_frozen on {OLN, DIOD, PCTY, CROX}) | **−0.0355** (medians: OLN 0.148 / DIOD 0.124 / PCTY 0.133 / CROX 0.137 — all ≤ 0.172) | **NO drop** |
+
+Leakage trigger did not fire. Co-travel is geometry diagnostic only.
+No Tranche-1B symbol drops from D on κ_req.
+
+## C.4 Per-symbol roll-up (κ = 0.172; primary = §1.1)
+
+| symbol | role | σ₁₈₀₀ min L/S (bps) | viable_long cells | viable_short cells | in-hour eps (all) | viable-region in-hour | :30 eps (all) | viable-region :30 | elev-A / elev-B / calm (in-hour all) | ≥ 100 viable in? |
+|---|---|---|---|---|---|---|---|---|---|---|
+| APP | D | 27.21 / 33.84 | **19 / 20** | 17 / 20 | 23 (13 L / 10 S) | **22** | 22 (16 L / 6 S) | **21** | 6 / 6 / 11 | no alone |
+| RMBS | D | 32.03 / 38.43 | **19 / 20** | 16 / 20 | 12 (11 L / 1 S) | **12** | 38 (38 L / 0 S) | **36** | 2 / 4 / 6 | no alone |
+| OLN | D | 50.52 / 57.15 | **15 / 20** | 11 / 20 | 15 (15 L / 0 S) | **10** | 37 (34 L / 3 S) | **28** | 3 / 1 / 11 | no alone |
+| DIOD | D | 36.22 / — | **14 / 20** | — | 2 (2 L / 0 S) | **2** | 30 (29 L / 1 S) | **23** | 2 / 0 / 0 | no alone |
+| PCTY | D | 30.17 / 36.80 | **14 / 20** | 11 / 20 | 10 (8 L / 2 S) | **8** | 35 (34 L / 1 S) | **27** | 2 / 5 / 3 | no alone |
+| CROX | D | 32.91 / — | **16 / 20** | — | 8 (7 L / 1 S) | **6** | 32 (30 L / 2 S) | **30** | 1 / 2 / 5 | no alone |
+| ENSG | evidence-only | 29.30 / — | 5 / 10 | — | 6 (6 L / 0 S) | **3** | 10 (10 L / 0 S) | **4** | 1 / 3 / 2 | never in D |
+| MLI | evidence-only | 30.93 / — | 3 / 10 | — | 6 (6 L / 0 S) | **3** | 16 (15 L / 1 S) | **6** | 1 / 2 / 3 | never in D |
+
+Pooled viable-region **in-hour** episodes across evidence pool
+D ∪ {ENSG, MLI}: **66 < 100**.
+Pooled viable-region **:30** (F2 arm, counts only): **175 ≥ 100**.
+D-only viable-region in-hour (extractable sub-answer): **60**.
+Pooled all-cell (σ-unrestricted) in-hour / :30: **82 / 220** vs
+κ-viable central priors ≈ **96 / 96**.
+
+**HOLIDAY-THIN (2025-12-26, 2025-12-30; never excluded):** HT
+contribution to pooled all-cell in-hour / :30 = **7 / 14**. Tags
+reported; counts include them.
+
+**Gate-arm occupancy (predicate arms 4–7 on, clock either side):**
+in-window boundaries = 12 × sessions. APP gate_on occupancy **0.188**,
+RMBS **0.208**, OLN **0.217**, DIOD **0.133**, PCTY **0.188**, CROX
+**0.167**, ENSG **0.133**, MLI **0.183**. A and B reported separately
+(L4), never pooled for conclusions.
+
+**SELL-leg / long-only:** RMBS has only **1** SHORT in-hour episode on
+the full grid; OLN / DIOD / ENSG / MLI have **0** SHORT in-hour. σ
+arithmetic alone does **not** force §1.6 long-only restatement at
+census (measured short edge awaits step 2; park on power halts before
+that). DIOD / CROX have no short-rider floor column (protocol §1.2).
+
+## C.5 Park-condition scoring (§1.5 / §1.6 / §9.1; no discretion)
+
+1. **Edge-region emptiness: FALSE.** All six D symbols have non-empty
+   viable-region primary in-hour episodes (22 / 12 / 10 / 2 / 8 / 6).
+2. **Power floor (pooled ≥ 100 contamination-excluded in-hour across
+   evidence pool): FAIL.** Pooled = **66**. Axis-split not required for
+   the park itself (no deployability drops; D remains six symbols;
+   ENSG/MLI contribute +6 viable in-hour and still leave the pool at 66).
+3. **Warm-drop: FALSE** for every D symbol.
+4. **Infrastructure (`calendar_missing_rate` / derivation): PASS.**
+5. **Deployable-set arithmetic before power park:** D would be
+   **{APP, RMBS, OLN, DIOD, PCTY, CROX}** (edge non-empty; warm-drop
+   clear; calendars present; Tranche-1B κ_req ≤ κ_frozen). ENSG/MLI
+   remain evidence-only (never-promotable). Power park governs — card
+   does not PROCEED.
+
+**F2-arm adjudicability (reported now):** `:30` viable-region n =
+**175 ≥ 100** ⇒ F2 arm is **adjudicable** (frozen prior ≈96 /
+expected F2-INSUFFICIENT **not realized**). Reported here even though
+step-1's park floor is the **in-hour** population — the in-hour power
+FAIL already halts the sequence under the stop-rule.
+
+**VERDICT: PARK — power (pooled viable-region in-hour episodes =
+66 < 100).**
+
+**F2-arm adjudicability: adjudicable (n = 175 ≥ 100); not scored
+(counts only; sequence halted by in-hour power).**
+
+(Census instrument string `PARKED_POWER`; mapped to the frozen §9
+verdict line above. H13 is the final card — park closes the program
+pending Lei close-out adjudication.)
+
+## C.6 Per-cell table (full JSON in artifact)
+
+Columns: σ₁₈₀₀ (bps); viaL/viaS; in-hour eps / L / S; :30 eps / L / S;
+calendar warm; leakage mean; co-travel; gate ON/OFF; in-window
+boundaries always **12**.
+
+| sym | date | stratum | σ₁₈₀₀ | viaL | viaS | in | L | S | :30 | oL | oS | warm | leak | cot | gON | gOFF |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 2025-11-25 | elev-A | 64.05 | Y | Y | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| APP | 2025-12-04 | elev-A | 98.37 | Y | Y | 2 | 2 | 0 | 1 | 1 | 0 | 1.00 | 0.0004 | 0.333 | 3 | 9 |
+| APP | 2025-12-22 | calm | 40.18 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| APP | 2026-01-05 | calm | 59.71 | Y | Y | 2 | 2 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 2 | 10 |
+| APP | 2026-01-15 | calm | 68.17 | Y | Y | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| APP | 2026-01-26 | calm | 61.51 | Y | Y | 1 | 0 | 1 | 1 | 0 | 1 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| APP | 2026-01-27 | calm | 32.50 | Y | n | 2 | 0 | 2 | 2 | 1 | 1 | 1.00 | 0.0000 | 0.500 | 4 | 8 |
+| APP | 2026-04-01 | elev-B | 44.03 | Y | Y | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| APP | 2026-04-10 | elev-B | 75.29 | Y | Y | 2 | 2 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.333 | 3 | 9 |
+| APP | 2026-04-22 | elev-B | 57.89 | Y | Y | 1 | 0 | 1 | 3 | 2 | 1 | 1.00 | 0.0008 | 0.750 | 4 | 8 |
+| APP | 2025-12-01 | elev-A | 67.81 | Y | Y | 2 | 2 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.333 | 3 | 9 |
+| APP | 2025-12-02 | elev-A | 65.00 | Y | Y | 1 | 0 | 1 | 2 | 1 | 1 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| APP | 2025-12-26 | calm HT | 28.79 | Y | n | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| APP | 2025-12-30 | calm HT | 26.98 | n | n | 1 | 0 | 1 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| APP | 2026-01-12 | calm | 88.33 | Y | Y | 2 | 1 | 1 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.333 | 3 | 9 |
+| APP | 2026-01-20 | calm | 85.10 | Y | Y | 2 | 1 | 1 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.333 | 3 | 9 |
+| APP | 2026-01-22 | calm | 38.90 | Y | Y | 1 | 0 | 1 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| APP | 2026-04-02 | elev-B | 100.05 | Y | Y | 1 | 1 | 0 | 2 | 0 | 2 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| APP | 2026-04-07 | elev-B | 72.10 | Y | Y | 1 | 0 | 1 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| APP | 2026-04-16 | elev-B | 60.82 | Y | Y | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 1 | 11 |
+| RMBS | 2025-11-25 | elev-A | 69.36 | Y | Y | 1 | 0 | 1 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| RMBS | 2025-12-04 | elev-A | 72.69 | Y | Y | 0 | 0 | 0 | 4 | 4 | 0 | 1.00 | — | 1.000 | 4 | 8 |
+| RMBS | 2025-12-22 | calm | 35.81 | Y | n | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| RMBS | 2026-01-05 | calm | 57.74 | Y | Y | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| RMBS | 2026-01-15 | calm | 128.05 | Y | Y | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 1 | 11 |
+| RMBS | 2026-01-26 | calm | 66.92 | Y | Y | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| RMBS | 2026-01-27 | calm | 69.72 | Y | Y | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| RMBS | 2026-04-01 | elev-B | 56.62 | Y | Y | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 8 |
+| RMBS | 2026-04-10 | elev-B | 60.68 | Y | Y | 0 | 0 | 0 | 3 | 3 | 0 | 1.00 | — | 1.000 | 3 | 9 |
+| RMBS | 2026-04-22 | elev-B | 110.08 | Y | Y | 0 | 0 | 0 | 3 | 3 | 0 | 1.00 | — | 1.000 | 3 | 9 |
+| RMBS | 2025-12-01 | elev-A | 48.32 | Y | Y | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| RMBS | 2025-12-02 | elev-A | 51.81 | Y | Y | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| RMBS | 2025-12-26 | calm HT | 26.56 | n | n | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| RMBS | 2025-12-30 | calm HT | 34.31 | Y | n | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| RMBS | 2026-01-12 | calm | 37.16 | Y | n | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 8 |
+| RMBS | 2026-01-20 | calm | 80.28 | Y | Y | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| RMBS | 2026-01-22 | calm | 77.86 | Y | Y | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| RMBS | 2026-04-02 | elev-B | 100.18 | Y | Y | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| RMBS | 2026-04-07 | elev-B | 84.86 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| RMBS | 2026-04-16 | elev-B | 57.60 | Y | Y | 2 | 2 | 0 | 4 | 4 | 0 | 1.00 | 0.0000 | 0.667 | 6 | 6 |
+| OLN | 2025-11-25 | elev-A | 44.36 | n | n | 0 | 0 | 0 | 3 | 3 | 0 | 1.00 | — | 1.000 | 3 | 9 |
+| OLN | 2025-12-04 | elev-A | 52.32 | Y | n | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| OLN | 2025-12-22 | calm | 65.36 | Y | Y | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| OLN | 2026-01-05 | calm | 94.86 | Y | Y | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| OLN | 2026-01-15 | calm | 51.84 | Y | n | 2 | 2 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.500 | 4 | 8 |
+| OLN | 2026-01-26 | calm | 56.02 | Y | n | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 8 |
+| OLN | 2026-01-27 | calm | 52.79 | Y | n | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| OLN | 2026-04-01 | elev-B | 90.35 | Y | Y | 0 | 0 | 0 | 2 | 1 | 1 | 1.00 | — | 1.000 | 2 | 10 |
+| OLN | 2026-04-10 | elev-B | 57.61 | Y | Y | 1 | 1 | 0 | 4 | 3 | 1 | 1.00 | 0.0000 | 0.800 | 5 | 7 |
+| OLN | 2026-04-22 | elev-B | 68.79 | Y | Y | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| OLN | 2025-12-01 | elev-A | 59.94 | Y | Y | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| OLN | 2025-12-02 | elev-A | 66.56 | Y | Y | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| OLN | 2025-12-26 | calm HT | 31.48 | n | n | 2 | 2 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.500 | 4 | 8 |
+| OLN | 2025-12-30 | calm HT | 33.28 | n | n | 2 | 2 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.500 | 4 | 8 |
+| OLN | 2026-01-12 | calm | 48.86 | n | n | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| OLN | 2026-01-20 | calm | 43.77 | n | n | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| OLN | 2026-01-22 | calm | 62.10 | Y | Y | 0 | 0 | 0 | 3 | 2 | 1 | 1.00 | — | 1.000 | 3 | 9 |
+| OLN | 2026-04-02 | elev-B | 77.60 | Y | Y | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| OLN | 2026-04-07 | elev-B | 62.70 | Y | Y | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| OLN | 2026-04-16 | elev-B | 65.50 | Y | Y | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| DIOD | 2025-11-25 | elev-A | 60.58 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2025-12-04 | elev-A | 65.14 | Y | — | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| DIOD | 2025-12-22 | calm | 17.70 | n | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| DIOD | 2026-01-05 | calm | 82.24 | Y | — | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| DIOD | 2026-01-15 | calm | 47.15 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| DIOD | 2026-01-26 | calm | 22.72 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2026-01-27 | calm | 39.80 | Y | — | 0 | 0 | 0 | 3 | 2 | 1 | 1.00 | — | 1.000 | 3 | 9 |
+| DIOD | 2026-04-01 | elev-B | 53.53 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2026-04-10 | elev-B | 47.68 | Y | — | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| DIOD | 2026-04-22 | elev-B | 25.78 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2025-12-01 | elev-A | 59.37 | Y | — | 0 | 0 | 0 | 3 | 3 | 0 | 1.00 | — | 1.000 | 3 | 9 |
+| DIOD | 2025-12-02 | elev-A | 67.01 | Y | — | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| DIOD | 2025-12-26 | calm HT | 25.33 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2025-12-30 | calm HT | 28.25 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2026-01-12 | calm | 41.21 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2026-01-20 | calm | 57.79 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2026-01-22 | calm | 36.07 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| DIOD | 2026-04-02 | elev-B | 67.29 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| DIOD | 2026-04-07 | elev-B | 57.87 | Y | — | 0 | 0 | 0 | 5 | 5 | 0 | 1.00 | — | 1.000 | 5 | 7 |
+| DIOD | 2026-04-16 | elev-B | 55.70 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| PCTY | 2025-11-25 | elev-A | 28.87 | n | n | 1 | 0 | 1 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| PCTY | 2025-12-04 | elev-A | 19.44 | n | n | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| PCTY | 2025-12-22 | calm | 17.17 | n | n | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| PCTY | 2026-01-05 | calm | 53.99 | Y | Y | 0 | 0 | 0 | 4 | 4 | 0 | 1.00 | — | 1.000 | 4 | 8 |
+| PCTY | 2026-01-15 | calm | 35.40 | Y | n | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| PCTY | 2026-01-26 | calm | 38.93 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| PCTY | 2026-01-27 | calm | 24.41 | n | n | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| PCTY | 2026-04-01 | elev-B | 75.99 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| PCTY | 2026-04-10 | elev-B | 41.77 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| PCTY | 2026-04-22 | elev-B | 41.25 | Y | Y | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 8 |
+| PCTY | 2025-12-01 | elev-A | 36.75 | Y | n | 1 | 1 | 0 | 4 | 4 | 0 | 1.00 | 0.0000 | 0.800 | 5 | 7 |
+| PCTY | 2025-12-02 | elev-A | 43.86 | Y | Y | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| PCTY | 2025-12-26 | calm HT | 20.62 | n | n | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| PCTY | 2025-12-30 | calm HT | 10.43 | n | n | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| PCTY | 2026-01-12 | calm | 33.13 | Y | n | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| PCTY | 2026-01-20 | calm | 45.75 | Y | Y | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| PCTY | 2026-01-22 | calm | 38.94 | Y | Y | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| PCTY | 2026-04-02 | elev-B | 52.05 | Y | Y | 1 | 0 | 1 | 2 | 1 | 1 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| PCTY | 2026-04-07 | elev-B | 49.12 | Y | Y | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 1 | 11 |
+| PCTY | 2026-04-16 | elev-B | 45.13 | Y | Y | 2 | 2 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.500 | 4 | 8 |
+| CROX | 2025-11-25 | elev-A | 55.17 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| CROX | 2025-12-04 | elev-A | 38.98 | Y | — | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| CROX | 2025-12-22 | calm | 38.52 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| CROX | 2026-01-05 | calm | 43.93 | Y | — | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| CROX | 2026-01-15 | calm | 47.74 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| CROX | 2026-01-26 | calm | 36.48 | Y | — | 1 | 1 | 0 | 4 | 4 | 0 | 1.00 | 0.0000 | 0.800 | 5 | 7 |
+| CROX | 2026-01-27 | calm | 41.06 | Y | — | 0 | 0 | 0 | 3 | 2 | 1 | 1.00 | — | 1.000 | 3 | 9 |
+| CROX | 2026-04-01 | elev-B | 41.87 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| CROX | 2026-04-10 | elev-B | 33.90 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| CROX | 2026-04-22 | elev-B | 42.23 | Y | — | 1 | 1 | 0 | 4 | 4 | 0 | 1.00 | 0.0000 | 0.800 | 5 | 7 |
+| CROX | 2025-12-01 | elev-A | 58.17 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| CROX | 2025-12-02 | elev-A | 31.45 | n | — | 0 | 0 | 0 | 1 | 0 | 1 | 1.00 | — | 1.000 | 1 | 11 |
+| CROX | 2025-12-26 | calm HT | 30.64 | n | — | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| CROX | 2025-12-30 | calm HT | 26.26 | n | — | 2 | 1 | 1 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 2 | 10 |
+| CROX | 2026-01-12 | calm | 31.97 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| CROX | 2026-01-20 | calm | 57.90 | Y | — | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 8 |
+| CROX | 2026-01-22 | calm | 45.36 | Y | — | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 1 | 11 |
+| CROX | 2026-04-02 | elev-B | 51.00 | Y | — | 0 | 0 | 0 | 3 | 3 | 0 | 1.00 | — | 1.000 | 3 | 9 |
+| CROX | 2026-04-07 | elev-B | 62.80 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| CROX | 2026-04-16 | elev-B | 35.85 | Y | — | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0018 | 0.000 | 1 | 11 |
+| ENSG | 2025-11-25 | elev-A | 32.80 | Y | — | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 1 | 11 |
+| ENSG | 2025-12-04 | elev-A | 14.47 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| ENSG | 2025-12-22 | calm | 27.96 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| ENSG | 2026-01-05 | calm | 28.65 | n | — | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| ENSG | 2026-01-15 | calm | 30.84 | Y | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| ENSG | 2026-01-26 | calm | 25.40 | n | — | 1 | 1 | 0 | 0 | 0 | 0 | 1.00 | 0.0000 | 0.000 | 1 | 11 |
+| ENSG | 2026-01-27 | calm | 31.24 | Y | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| ENSG | 2026-04-01 | elev-B | 39.39 | Y | — | 2 | 2 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.333 | 3 | 9 |
+| ENSG | 2026-04-10 | elev-B | 28.75 | n | — | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| ENSG | 2026-04-22 | elev-B | 35.00 | Y | — | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| MLI | 2025-11-25 | elev-A | 27.81 | n | — | 1 | 1 | 0 | 1 | 0 | 1 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+| MLI | 2025-12-04 | elev-A | 29.36 | n | — | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| MLI | 2025-12-22 | calm | 24.04 | n | — | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 | — | — | 0 | 12 |
+| MLI | 2026-01-05 | calm | 39.79 | Y | — | 1 | 1 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.750 | 4 | 8 |
+| MLI | 2026-01-15 | calm | 29.06 | n | — | 0 | 0 | 0 | 1 | 1 | 0 | 1.00 | — | 1.000 | 1 | 11 |
+| MLI | 2026-01-26 | calm | 21.86 | n | — | 2 | 2 | 0 | 3 | 3 | 0 | 1.00 | 0.0000 | 0.600 | 5 | 7 |
+| MLI | 2026-01-27 | calm | 25.21 | n | — | 0 | 0 | 0 | 2 | 2 | 0 | 1.00 | — | 1.000 | 2 | 10 |
+| MLI | 2026-04-01 | elev-B | 31.12 | Y | — | 1 | 1 | 0 | 2 | 2 | 0 | 1.00 | 0.0000 | 0.667 | 3 | 9 |
+| MLI | 2026-04-10 | elev-B | 19.82 | n | — | 0 | 0 | 0 | 3 | 3 | 0 | 1.00 | — | 1.000 | 3 | 9 |
+| MLI | 2026-04-22 | elev-B | 54.10 | Y | — | 1 | 1 | 0 | 1 | 1 | 0 | 1.00 | 0.0000 | 0.500 | 2 | 10 |
+
+Every grid cell emitted 13 RTH h=1800 boundaries, **12** in the
+09:35–15:50 window. ENSG/MLI × 10 preamble only (expansion
+DRAWN-NOT-INGESTED).
+
+## C.7 Stop
+
+§0 order lock: **stop for Lei review** before step 2 or any IC /
+forward-return contact. No Phase-B YAML, sign-golden `evaluate`, or
+outcome statistic in this task. **N = 12** unchanged. Under pack-11
+DISPOSITIONS 8 / protocol stop-rule, a confirmed park on the final card
+**closes the program** — close-out adjudication is Lei's.
+
+*(Record appended 2026-07-18. Justification: Task 8-C-H13 step-1
+execution; frozen bars scored without discretion.)*
+
+---
+
+## C.8 ADJUDICATION (Lei, 2026-07-18) — PARK (power) ratified per frozen pool-collapse row
+
+**Ruling: PARK (power)** under frozen §1.5 / §4.5 / §9.1 census row
+(pool-collapse mapping: measured pooled viable-region in-hour
+evidence-pool episodes **< 100 → PARK (power) — program closes**).
+The Task 8-C-H13 C.5 first-FAIL stop stands; this adjudication
+ratifies it. Steps 2–8 remain **not authorized**. No post-census
+threshold, prior, or pool change is permitted within this trial.
+
+### Park decomposition (binding for all downstream citations)
+
+| axis | frozen bar | observed | class | verdict |
+|---|---|---|---|---|
+| **Edge-region emptiness** | viable-region primary in-hour episodes = 0 on every D symbol → PARK | APP **22** / RMBS **12** / OLN **10** / DIOD **2** / PCTY **8** / CROX **6** (non-empty on all six) | n-variant | **FALSE** (does not park) |
+| **Power floor (in-hour)** | pooled viable-region contamination-excluded in-hour episodes ≥ **100** across evidence pool D ∪ {ENSG, MLI} | pooled **66** (D-only **60**; ENSG/MLI **+6**) | n-variant | **FAIL → PARK** |
+| **F2-arm adjudicability** | :30 viable-region n ≥ **100** (else F2-INSUFFICIENT / JC-9) | pooled **175** | n-variant | **adjudicable** (frozen prior ≈96 / expected F2-INSUFFICIENT **not realized** — both-directions prior miss; counts only; sequence already halted by in-hour power) |
+| **Infrastructure** | `calendar_missing_rate = 0`; hour-subset derivation green; determinism bit-identical | warm **1.000** all eight symbols; missing-rate **0**; SHA match | infra | **PASS** |
+
+**PARK ≠ refutation.** F1–F5 never ran; no forward return, IC,
+RankIC, CPCV, DSR, or execution number exists for this candidate.
+Zero outcome contact; **N = 12**. The power precondition failed on
+the frozen eight-symbol evidence pool under the frozen quintile ×
+hour × gate arms. No claim that the scheduled-flow hour-checkpoint
+mechanism does not exist may cite this record — only that the
+pre-registered pooled in-hour episode count is below the census
+floor as realized.
+
+**Projection-vs-measured (C.4 / C.5; binding citation table):**
+
+| arm | uniform (B) all-cell | κ-viable honesty rider | measured all-cell | measured viable-region |
+|---|---|---|---|---|
+| in-hour (primary) | **120.9** | **≈96** | **82** | **66** |
+| :30 (F2 counts) | **120.9** | **≈96** | **220** | **175** |
+
+Realized/rider in-hour viable: 66/96 ≈ **0.69×**. Realized/rider
+:30 viable: 175/96 ≈ **1.8×**. Occupancy asymmetry
+(:30 / :00 viable-region): 175/66 ≈ **2.6×** — census-legal
+characterization of this grid/geometry; not an outcome statistic;
+not a κ or RankIC prior.
+
+**Consequences.** Doc Status: **hypothesis — parked (power)**
+(close-out record: `sig_hour_checkpoint_drift_h1800_v1_result.md`;
+slate-D DISPOSITIONS + pack-10 stop-rule disposition appended).
+Trial ledger **N = 12 unchanged** (census N-neutral; zero outcome
+contact). Contingency chain exhausted (H12 parked; H13 parked).
+**Program CLOSED** on this universe/grid per pack-10 DISPOSITION 2
+(stop-rule executed — cycle 3 complete without a step-2b PASS).
+The residual fork (universe tranche 2 vs stop) remains a fresh
+capital decision requiring its own authorization; nothing in this
+closure pre-commits it. Occupancy lesson registered as backlog
+**20** (arm-specific occupancy must be measured on the target
+window geometry; cross-card `f_resid` transfer is itself an
+unvalidated prior — extends backlog 19).
+
+*(Record appended 2026-07-18. Justification: Lei park close-out;
+frozen pool-collapse / §1.5 bars ratified without discretion; no
+freeze-body edit.)*
+
+---
