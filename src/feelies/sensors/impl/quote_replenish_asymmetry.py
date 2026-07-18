@@ -212,9 +212,19 @@ class QuoteReplenishAsymmetrySensor:
         else:
             value = (bid_total - ask_total) / denom
 
-        warm = state["count"] >= self._min_observations and bool(bid_adds) and bool(ask_adds)
-        if warm and quote_ts is not None and self._min_span_ns is not None:
-            warm = (quote_ts[-1] - quote_ts[0]) >= self._min_span_ns
+        if self._min_span_ns is not None and quote_ts is not None:
+            # Count the in-window quotes (not the lifetime counter) so the
+            # min_observations floor and the elapsed-span floor are backed by
+            # the same trailing window, mirroring the other quote-window
+            # sensors and this module's documented contract.
+            warm = (
+                len(quote_ts) >= self._min_observations
+                and bool(bid_adds)
+                and bool(ask_adds)
+                and (quote_ts[-1] - quote_ts[0]) >= self._min_span_ns
+            )
+        else:
+            warm = state["count"] >= self._min_observations and bool(bid_adds) and bool(ask_adds)
 
         return SensorReading(
             timestamp_ns=ts,
