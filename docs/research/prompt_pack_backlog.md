@@ -9,6 +9,9 @@
           + entry 20 (2026-07-18): arm-specific occupancy must be
           MEASURED on the target window geometry; cross-card f_resid
           transfer is an unvalidated prior (H13 / 8-C-H13; extends 19).
+          + PROGRAM-CLOSED stamp (2026-07-18, Task 7-R3): alpha
+          program on this universe/grid closed; entries 1–20 remain
+          the handoff inventory (see prompt_pack_12_final_retrospective.md).
   Owner:  cross-cutting; prompt-pack Phase A bookkeeping.
 -->
 
@@ -328,3 +331,19 @@ geometry-scoped / no-cross-card-`f_resid`-transfer language).
 Incident: H13 census / protocol C.4–C.5 / C.8 (Task 8-C-H13) —
 `sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md`;
 closure `sig_hour_checkpoint_drift_h1800_v1_result.md` §7.
+
+---
+
+## PROGRAM-CLOSED stamp (2026-07-18 — Task 7-R3; append-only)
+
+The alpha research program on this universe/grid is **CLOSED** under
+the pack-10 stop-rule (cycle 3 complete without a step-2b PASS; H12
+park + H13 park). Permanent record:
+`docs/research/prompt_pack_12_final_retrospective.md` (Status:
+AWAITING-LEI-REVIEW). Entries **1–20 above are unedited** by this
+stamp; they remain the external-dependency / skill-edit handoff
+inventory with owners as written. Residual capital decision (tranche 2
+vs STOP vs PAUSE-AND-HARVEST) is **not** pre-committed and requires
+its own Lei authorization. Living trial ledger **N = 12** (no
+increment in Task 7-R3 — synthesis only). No new backlog entry number
+is opened by program closure.
