@@ -1541,6 +1541,57 @@ def _required_warm_feature_ids_for_signal_alpha(
     return frozenset(req)
 
 
+def _warn_unread_sensor_dependencies(
+    *,
+    alpha_id: str,
+    depends_on_sensors: Sequence[str],
+    horizon_seconds: int,
+    horizon_features: Sequence[HorizonFeature],
+    warm_ids: frozenset[str],
+) -> None:
+    """Warn when a declared sensor dependency is never actually read.
+
+    sensor_audit_2026-07-02 P1: G16 rule 10 (``layer_validator.py``) only
+    checks that ``l1_signature_sensors`` is a subset of
+    ``depends_on_sensors`` — a purely structural, YAML-level check. It cannot
+    detect a "cosmetic fingerprint": a declared sensor whose features are
+    never referenced in ``evaluate()`` or the regime gate (the exact defect
+    a prior audit pass fixed once for ``kyle_lambda_60s`` in
+    ``sig_benign_midcap_v1`` — see that alpha's history — before recurring
+    there again through ``micro_price``). ``warm_ids`` (audit 2P-1) already
+    holds the union of every feature the body's statically-resolved
+    ``snapshot.values`` accesses and the regime gate's bound identifiers
+    require, so a declared sensor whose *entire* horizon feature set is
+    disjoint from it contributes nothing to this alpha's actual behaviour.
+
+    A sensor producing zero features at this horizon is not flagged — there
+    is nothing to compare against, and that gap is already covered by the
+    H3/M2 "uncovered dependency" check above. When the signal body's
+    ``.values`` access could not be resolved statically, 2P-1's conservative
+    fallback already seeds ``warm_ids`` with every feature of every declared
+    sensor, so this check cannot produce a false positive in that case — it
+    just loses sensitivity, matching 2P-1's own conservative philosophy.
+    """
+    for sid in depends_on_sensors:
+        produced = _feature_ids_for_sensor_at_horizon(sid, horizon_seconds, horizon_features)
+        if produced and produced.isdisjoint(warm_ids):
+            logger.warning(
+                "sensor_audit_2026-07-02 P1: alpha %r declares "
+                "depends_on_sensors entry %r, but none of the feature(s) it "
+                "produces at horizon %ds (%s) are read by evaluate() or the "
+                "regime gate — this looks like a cosmetic/unused dependency. "
+                "Either wire evaluate()/the gate to read one of these "
+                "features, or drop %r from depends_on_sensors (and from "
+                "trend_mechanism.l1_signature_sensors if declared there as a "
+                "G16 fingerprint).",
+                alpha_id,
+                sid,
+                horizon_seconds,
+                sorted(produced),
+                sid,
+            )
+
+
 def _consumed_features_for_signal_registration(
     *,
     declared_consumed_features: Sequence[str],
@@ -1860,6 +1911,13 @@ def _create_signal_layer(
             horizon_features=horizon_features or [],
             gate=module.gate,
             signal_source=module.signal_source,
+        )
+        _warn_unread_sensor_dependencies(
+            alpha_id=module.manifest.alpha_id,
+            depends_on_sensors=module.depends_on_sensors,
+            horizon_seconds=module.horizon_seconds,
+            horizon_features=horizon_features or [],
+            warm_ids=warm_ids,
         )
         consumed_feature_ids = _consumed_features_for_signal_registration(
             declared_consumed_features=module.consumed_features,

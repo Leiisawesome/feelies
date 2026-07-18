@@ -2110,22 +2110,44 @@ output.
 Estimates the conditional buy/sell trade arrival intensity above a
 baseline using an exponentially-weighted self-exciting kernel.
 
+> **Correction (sensor_audit_2026-07-02 P1):** this section previously
+> described the output as events-per-second and the fourth component as a
+> fitted Hawkes branching ratio ("∈ [0, 1); near 1 = unstable cascade"). The
+> shipped sensor (`sensors/impl/hawkes_intensity.py`) is an **additive-impulse
+> EWMA tracker, not a fitted self-exciting process** — the impulse never
+> feeds back into arrival generation, so no branching-ratio stability
+> condition applies. The per-trade update formula below was also corrected to
+> match the shipped code (decay is multiplicative via `exp(-β·Δt)` toward the
+> baseline, not `β·λ + α`). See the sensor's own module docstring for the
+> full, currently-accurate description; this section is kept in sync with it.
+
 **Output (vector):**
 ```python
 SensorReading.value = (
-    intensity_buy,        # λ_buy(t) per second
-    intensity_sell,       # λ_sell(t) per second
-    intensity_ratio,      # max(buy, sell) / (buy + sell + ε); ∈ [0.5, 1.0]
-    branching_ratio_est,  # α/β estimate; ∈ [0, 1); near 1 = unstable cascade
+    intensity_buy,          # λ_buy(t) — impulse-EWMA level in ARBITRARY units
+                            # (impulse α decayed at rate β); NOT events/second
+    intensity_sell,         # λ_sell(t) — same units as λ_buy
+    intensity_ratio,        # max(buy, sell) / (buy + sell); ∈ [0.5, 1.0];
+                            # defaults to 0.5 when both sides are below ε
+                            # (no-information state)
+    impulse_decay_ratio,    # configured α / β — NOT a runtime estimate and
+                            # NOT a Hawkes branching-ratio stability metric;
+                            # can exceed 1 (default α=0.4, β=0.05 ⇒ ratio=8).
+                            # β alone is meaningful: decay half-life = ln(2)/β.
 )
 ```
 
 **Algorithm (incremental, per side):**
-- On every trade `t_i` of matching side: `λ(t_i) = β·λ(t_i⁻) + α`
-- Between trades: `λ(t) = λ(t_last) · exp(-β·(t - t_last))`
-- `α` and `β` are sensor parameters (defaults: `α=0.4`, `β=0.05`).
-- `branching_ratio_est = α / β` (constant under fixed params; reported
-  for downstream regime classification).
+- Between trades: `λ(t) = μ + (λ(t_last) - μ)·exp(-β·(t - t_last))` — decay
+  toward baseline `μ` (default `μ=0`), applied to *both* sides on every event
+  regardless of which side traded.
+- On a same-side trade at `t_i` (after the decay above has been applied for
+  the elapsed gap): `λ(t_i) = λ(t_i⁻) + α` — a pure additive impulse.
+- `α`, `β`, and `μ` are sensor parameters (defaults: `α=0.4`, `β=0.05`,
+  `μ=0`). Fit `α`, `β` from data with `scripts/calibrate_hawkes.py`
+  (exponential-kernel MLE) rather than relying on the hand-set defaults.
+- `impulse_decay_ratio = α / β` (constant under fixed params; a diagnostic,
+  not a stability estimate — see the correction note above).
 
 **Computational cost:** O(1) per trade; no buffer beyond last-tick
 state. Latency budget < 5 μs per event (well under the §13.6 100 μs

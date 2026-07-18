@@ -96,6 +96,21 @@ _logger = logging.getLogger(__name__)
 _NS_PER_SECOND = 1_000_000_000
 
 
+class MultiVersionFeatureDispatchError(RuntimeError):
+    """Raised when two live ``sensor_version``s of one ``sensor_id`` both
+    deliver readings to a feature that consumes it.
+
+    Feature ``observe()`` dispatch is version-blind by design — state is
+    keyed by ``(feature_id, horizon_seconds, symbol)``, never
+    ``sensor_version`` (audit #2 / sensor_audit_2026-07-02 P0) — so folding
+    two concurrent estimators into one state would silently corrupt it. A
+    ``sensor_id`` with no consuming feature is unaffected (the sensor-reading
+    buffers alone are version-keyed for forensic isolation, S8); an A/B
+    sensor-version deployment must give each version its own feature
+    registration rather than relying on dispatch to separate them.
+    """
+
+
 class HorizonAggregator:
     """Bridges Layer-1 ``SensorReading``s to Layer-2 snapshots.
 
@@ -376,12 +391,30 @@ class HorizonAggregator:
         while buf and buf[0][0] < cutoff:
             buf.popleft()
 
-        # Audit #2: track which versions of this sensor have delivered
-        # readings; warn (once per pair) when a second version appears,
-        # since feature state is shared across versions by design.
+        # Audit #2 / sensor_audit_2026-07-02 P0: track which versions of this
+        # sensor have delivered readings.  When a second version appears for
+        # a sensor_id that a feature actually consumes, dispatch cannot
+        # safely fold both estimators into one state (version-blind by
+        # design) — raise rather than warn.  A sensor_id with no consuming
+        # feature is harmless (buffers alone are version-keyed, S8), so it
+        # only warns, matching the prior behaviour.
         version_seen = self._observed_versions[(symbol, reading.sensor_id)]
         if reading.sensor_version not in version_seen:
             version_seen.add(reading.sensor_version)
+            if len(version_seen) > 1 and reading.sensor_id in self._features_by_sensor:
+                consumers = sorted(
+                    f.feature_id for f in self._features_by_sensor[reading.sensor_id]
+                )
+                raise MultiVersionFeatureDispatchError(
+                    f"sensor {reading.sensor_id!r} on symbol {symbol!r} has "
+                    f"delivered readings from multiple versions "
+                    f"{sorted(version_seen)}, consumed by feature(s) "
+                    f"{consumers}; feature observe() dispatch is "
+                    f"version-blind and cannot safely fold concurrent "
+                    f"estimators into one state.  Give each sensor_version "
+                    f"its own feature_id instead of relying on dispatch to "
+                    f"separate them."
+                )
             if (
                 len(version_seen) > 1
                 and (symbol, reading.sensor_id) not in self._multi_version_warned
@@ -389,11 +422,10 @@ class HorizonAggregator:
                 self._multi_version_warned.add((symbol, reading.sensor_id))
                 _logger.warning(
                     "HorizonAggregator: sensor %r on symbol %r has "
-                    "delivered readings from multiple versions %s; "
-                    "feature observe() dispatch is version-blind and "
-                    "will fold both streams into the same per-feature "
-                    "state.  Use a distinct feature_id (or feature) for "
-                    "each version when running A/B sensor variants.",
+                    "delivered readings from multiple versions %s; no "
+                    "feature currently consumes it so this is harmless, but "
+                    "wiring one later will raise "
+                    "MultiVersionFeatureDispatchError immediately.",
                     reading.sensor_id,
                     symbol,
                     sorted(version_seen),
@@ -663,4 +695,4 @@ class HorizonAggregator:
         return not self._features_sorted
 
 
-__all__ = ["HorizonAggregator"]
+__all__ = ["HorizonAggregator", "MultiVersionFeatureDispatchError"]

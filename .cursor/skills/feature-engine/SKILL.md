@@ -115,14 +115,14 @@ Layer gate **G6** enforces sensor-DAG validity at alpha-load time — a
 SIGNAL alpha cannot declare a `depends_on_sensors` edge that would
 create a cycle or reference an unregistered sensor.
 
-### Implemented Sensors (v0.3, 16 total)
+### Implemented Sensors (v0.3, 18 total)
 
-Implementations live under `feelies.sensors.impl`. 16 modules ship
+Implementations live under `feelies.sensors.impl`. 18 modules ship
 today (one per `sensor_id`); keep this list in sync with
 `feelies/sensors/impl/*.py`. Anchored to the trend-mechanism taxonomy
 (see microstructure-alpha):
 
-**Registered in the reference `platform.yaml` (13):**
+**Registered in the reference `platform.yaml` (15):**
 
 1. `kyle_lambda_60s` — KYLE_INFO fingerprint
 2. `inventory_pressure` — INVENTORY fingerprint (trade-side MM-inventory proxy)
@@ -137,12 +137,17 @@ today (one per `sensor_id`); keep this list in sync with
 11. `ofi_ewma` — composite
 12. `micro_price` — composite
 13. `realized_vol_30s` — composite
+14. `book_imbalance` — KYLE_INFO fingerprint (level-invariant top-of-book size
+    imbalance; algebraically the micro-price-deviation transform — added to
+    `_FAMILY_FINGERPRINT_SENSORS["KYLE_INFO"]` by sensor_audit_2026-07-02 P1)
+15. `ofi_raw` — KYLE_INFO composite (per-event, unsmoothed OFI; feeds the
+    `ofi_integrated` windowed-sum feature — no shipped alpha reads it yet)
 
 **Implemented and tested but dormant in the reference `platform.yaml` (3):**
 
-14. `vpin_50bucket` (flow toxicity)
-15. `snr_drift_diffusion`
-16. `structural_break_score`
+16. `vpin_50bucket` (flow toxicity)
+17. `snr_drift_diffusion`
+18. `structural_break_score`
 
 > `inventory_pressure`, `liquidity_stress_score`, and
 > `quote_flicker_rate` were specified-but-missing in earlier drafts and

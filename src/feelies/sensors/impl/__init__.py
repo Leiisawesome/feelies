@@ -49,6 +49,17 @@ LIQUIDITY_STRESS coverage gap):
 - :mod:`feelies.sensors.impl.quote_flicker_rate` — best-price reversal
   fraction (LIQUIDITY_STRESS family).
 
+P1-B/P1-C / 2P-2 KYLE_INFO catalog (2 sensors; this pair was previously
+missing from this module docstring — see sensor_audit_2026-07-02):
+
+- :mod:`feelies.sensors.impl.book_imbalance` — signed top-of-book size
+  imbalance (KYLE_INFO family); the level-invariant transform of the
+  Stoikov micro-price deviation from mid. A recognised
+  ``_FAMILY_FINGERPRINT_SENSORS["KYLE_INFO"]`` member (G16 rule 5).
+- :mod:`feelies.sensors.impl.ofi_raw` — per-event, unsmoothed Order-Flow
+  Imbalance (KYLE_INFO family); the windowed-sum input for the
+  ``ofi_integrated`` feature (no shipped alpha depends on it yet).
+
 H10 Phase-A research catalog (1 sensor; dormant in reference
 ``platform.yaml`` until Phase-B alpha wiring):
 

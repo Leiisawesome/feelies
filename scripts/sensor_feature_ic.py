@@ -331,7 +331,12 @@ def _collect_pairs(
         v = s.values.get(feature_id)  # present only when warm
         if v is None:
             continue
-        r = _forward_return(mids, s.timestamp_ns, horizon)
+        # sensor_audit_2026-07-02 P1: pair from boundary_ts_ns (the nominal
+        # grid anchor `core/events.py` documents "for IC labels / forensics"),
+        # not timestamp_ns (the trigger time of the event that crossed the
+        # boundary). On a sparse tape these diverge, silently shifting every
+        # RankIC this script reports.
+        r = _forward_return(mids, s.boundary_ts_ns, horizon)
         if r is None:
             continue
         values.append(float(v))
