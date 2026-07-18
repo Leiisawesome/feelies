@@ -593,6 +593,50 @@ def test_sensor_cache_accepts_reading_at_snapshot_boundary() -> None:
     assert len(captured) == 1
 
 
+def test_sensor_cache_serves_pre_boundary_value_after_post_boundary_overwrite() -> None:
+    """Regime_audit_2026-07-02 §4.2/§9 (Inv-6): a valid pre-boundary reading
+    overwritten by a boundary-crossing quote's post-boundary reading must
+    still be served as-of the boundary — the slot retains the prior reading
+    so the gate does not fail-safe OFF on causally valid data."""
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    # Valid pre-boundary reading (at or before the 2_000 boundary).
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
+    # Boundary-crossing quote's reading, stamped after the boundary; this
+    # overwrites the slot but must not shadow the pre-boundary value.
+    bus.publish(
+        SensorReading(
+            timestamp_ns=2_050,
+            correlation_id="corr",
+            sequence=4,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=0.1,
+        )
+    )
+    bus.publish(_snapshot(boundary_ts_ns=2_000))
+
+    assert len(captured) == 1
+
+
 def test_sensor_cache_skips_non_warm_readings() -> None:
     engine, bus, captured = _engine()
     gate = _gate(
