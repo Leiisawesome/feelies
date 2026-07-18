@@ -322,7 +322,8 @@ def test_tuple_sensor_expansion_populates_gate_bindings(
         )
     )
     cache = engine._sensor_cache  # type: ignore[attr-defined]
-    assert cache[("AAPL", "scheduled_flow_window_active")] == 1.0
-    assert cache[("AAPL", "seconds_to_window_close")] == 180.0
-    assert cache[("AAPL", "scheduled_flow_window_id_hash")] == 42.0
-    assert cache[("AAPL", "scheduled_flow_window_direction_prior")] == 1.0
+    # Each entry is (timestamp_ns, value) — regime_audit_2026-07-02 §4.2/§9.
+    assert cache[("AAPL", "scheduled_flow_window_active")][1] == 1.0
+    assert cache[("AAPL", "seconds_to_window_close")][1] == 180.0
+    assert cache[("AAPL", "scheduled_flow_window_id_hash")][1] == 42.0
+    assert cache[("AAPL", "scheduled_flow_window_direction_prior")][1] == 1.0

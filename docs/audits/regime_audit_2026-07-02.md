@@ -31,14 +31,16 @@ cross-referenced by `git log -S<symbol>` where file-level dates were ambiguous).
    dynamic-direction entry gap is closed by a runtime backstop in `HorizonSignalEngine`
    (`src/feelies/signals/horizon_engine.py:573-590`, commit `bad7055`).
 3. **New P1** (Inv-6; `src/feelies/signals/horizon_engine.py:291-336`) — the 2026-06-29
-   horizon-boundary causality fix (`08c3da6`) is incomplete. It corrects *windowed/aggregated*
+   horizon-boundary causality fix (`08c3da6`) was incomplete. It corrects *windowed/aggregated*
    Layer-2 features and the gate's OFF→ON latch to finalize at the exact nominal boundary
-   (`asof_timestamp_ns`), but does not touch `HorizonSignalEngine._sensor_cache` or
+   (`asof_timestamp_ns`), but did not touch `HorizonSignalEngine._sensor_cache` or
    `SensorPassthroughFeature.finalize`
    (`src/feelies/features/impl/sensor_passthrough.py:81-89`) — both of which are documented,
    sanctioned binding sources for bare `<sensor_id>` regime-gate identifiers
-   (`src/feelies/bootstrap.py:1788-1795`). Raw sensor gate bindings can still resolve to a value
-   timestamped after the nominal horizon boundary (Inv-6) — see §4.2.
+   (`src/feelies/bootstrap.py:1788-1795`). **Update (2026-07-02 follow-up):** the `_sensor_cache`
+   half is now fixed — verified zero impact on the determinism suite, the locked APP baseline, and
+   the full fast suite (§4.2 status note). The `SensorPassthroughFeature` half remains open,
+   scoped to the feature-engine audit lane.
 4. **New P2 — two independently-developed commits added duplicate boundary-timestamp fields.**
    `08c3da6` (causality fix) and `8645bcb` (ENG-1 labeling) were authored on parallel branches off
    the same parent and merged via `8146a58` without deduplication:
@@ -357,8 +359,29 @@ squarely in-scope and I have complete, direct evidence for it (Inv-6).
 snapshot's boundary>` at read time in `_build_bindings`, and (b) `SensorPassthroughFeature.finalize`
 (and its two tuple siblings) — replay from the buffered readings up to `tick.asof_timestamp_ns`
 instead of returning live-incrementally-updated state, matching what `HorizonWindowedFeature` now
-does. **Effort: M** (touches two files across two audit ownership boundaries; needs a
-determinism-baseline rebake per the `08c3da6` precedent).
+does.
+
+**Status (2026-07-02 follow-up): part (a) is implemented.** `_sensor_cache` now stores
+`(timestamp_ns, value)` pairs (`horizon_engine.py:220-226,297-349`), and `_build_bindings` computes
+`asof_ns = snapshot.boundary_ts_ns or snapshot.timestamp_ns` and skips any cache entry stamped after
+it (`horizon_engine.py:738-786`) — a dropped identifier surfaces as the existing
+`UnknownIdentifierError` fail-safe path, so this is Inv-11-consistent by construction, not a new
+failure mode. Contrary to my own effort estimate above, **this did not require a determinism-baseline
+rebake**: the full determinism suite (108 tests), the locked APP backtest baseline, and the full fast
+suite (3814 tests) all pass unchanged. The likely reason is that production alphas resolve almost all
+of their sensor bindings through registered Layer-2 features (`snapshot.values`, already
+as-of-boundary-correct since `08c3da6`) rather than this fallback cache — `sensor_cache` is the rare
+path for identifiers with no registered feature, per its own `setdefault` priority rule above, so
+today's shipped/tested alphas rarely exercise it across a boundary-crossing window. **Part (b) remains
+open.** It is architecturally larger than a data-type change: `SensorPassthroughFeature.finalize`
+(and its tuple siblings) would need access to the aggregator's own buffered reading history
+(`HorizonAggregator._buffers`) to replay "latest reading at-or-before the boundary," not just a
+timestamp comparison against a single cached value — effectively a protocol change to how
+`observe()`/`finalize()` cooperate, in `features/aggregator.py` and `features/impl/sensor_passthrough.py`,
+both owned by the feature-engine audit lane. I did not make this change: I have not done that lane's
+equivalent deep-dive on `aggregator.py`'s buffer/eviction contract, and a change of that shape
+deserves the same level of scrutiny I gave part (a), not a rushed port under a different audit's
+umbrella. **Effort: M, scoped to feature-engine.**
 
 ### 4.3 Precedence bug in the `evaluate()` docstring (documentation only)
 
@@ -650,7 +673,8 @@ Total: **174 / 174 passed**, no skips, no `PYTHONHASHSEED` warning once pinned.
 | Hazard exit e2e (threshold, min-age, universe, short-side, no-position) | Covered | `tests/integration/test_hazard_exit_e2e.py:170,220,256,294,321,357` |
 | Regime/hazard-spike/hazard-exit replay determinism (L5/L6) | Covered | `tests/determinism/test_regime_hazard_replay.py`, `test_regime_state_replay.py`, `test_hazard_exit_replay.py`; `parity_manifest.py:129,133` |
 | `LIQUIDITY_STRESS` static + dynamic entry prohibition | Covered | `test_stress_returning_dynamic_direction_abstains` (`tests/alpha/test_gate_g16.py`), plus a runtime-backstop test added by `bad7055` in `tests/signals/test_horizon_signal_engine.py` |
-| **Missing:** as-of-boundary correctness of `_sensor_cache` / `SensorPassthroughFeature` bindings (§4.2) | **Missing** | No test asserts a gate/signal binding sourced from either path is insensitive to a `SensorReading` arriving between the nominal boundary and the triggering tick |
+| As-of-boundary correctness of `_sensor_cache` bindings (§4.2) | **Covered (added 2026-07-02)** | `test_sensor_cache_rejects_reading_after_snapshot_boundary` / `test_sensor_cache_accepts_reading_at_snapshot_boundary` (`tests/signals/test_horizon_signal_engine.py`) — confirmed to fail without the fix (regression-proven) |
+| **Missing:** as-of-boundary correctness of `SensorPassthroughFeature` bindings (§4.2) | **Missing** | The fallback-cache half is now tested (row above); the passthrough-feature half is unimplemented (feature-engine ownership), so no test exists for it either |
 | **Missing:** `boundary_timestamp_ns == boundary_ts_ns` invariant (§1.4) | **Missing** | `tests/sensors/test_boundary_ts.py` tests `boundary_ts_ns` alone; no test pins the two fields together |
 | **Missing:** `failure_signature` clauses cross-checked against `off_condition` (§4.4.1) | **Missing** | No loader test enforces or even warns on this |
 | **Missing:** economically-meaningful posterior-bucket validation (occupancy, forward-return separation) | **Missing** in the test suite (exists as a *script*, §7.4) | `scripts/regime_diagnostics.py` is not wired into CI/pytest — by design, it is an offline research tool, not a merge gate today despite its docstring calling itself one |
@@ -671,7 +695,7 @@ declared `trend_mechanism`.
 
 | Priority | Item | File(s) | Recommendation | Effort |
 |---|---|---|---|---|
-| P1 (Inv-6) | Extend as-of-boundary causality fix to `_sensor_cache` and passthrough features (§4.2) | `src/feelies/signals/horizon_engine.py:291-336`, `src/feelies/features/impl/sensor_passthrough.py:81-89` (cross-audit: feature-engine) | Filter `_sensor_cache` reads/writes and passthrough `finalize()` by `asof_timestamp_ns`, matching `HorizonWindowedFeature` | M |
+| P1 (Inv-6) | **`_sensor_cache` half done 2026-07-02** (§4.2 status note) — `src/feelies/signals/horizon_engine.py`, no baseline impact. Passthrough-feature half remains open (cross-audit: feature-engine) | `src/feelies/features/impl/sensor_passthrough.py:81-89`, `src/feelies/features/aggregator.py` | Give `SensorPassthroughFeature.finalize` (+tuple siblings) access to the aggregator's buffered reading history so it can replay as-of `asof_timestamp_ns` instead of returning live-incremental state | M |
 | P1 (Inv-4) | No gate references its own alpha's primary driver reversing; "structural invalidation"/"time decay" not mechanically enforced for 3/4 alphas (§4.4.2) | `alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml:133-138`, `alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml:110-119`; optionally `sig_inventory_revert_v1` (already partial) | Wire each driver's reversal into `off_condition`, or default-enable `hazard_exit` with `hard_exit_age_seconds` platform-wide | S per alpha / M platform-wide |
 | P2 | Duplicate `boundary_timestamp_ns` / `boundary_ts_ns` fields, currently synced by convention only (§1.4) | `core/events.py`, `sensors/horizon_scheduler.py`, `features/aggregator.py` | Collapse to one field, or add a construction-time assertion that they agree | S |
 | P2 | `evaluate()` docstring states params beat sensors; code and tests say the opposite (§4.3) | `signals/regime_gate.py:724-729` | Rewrite the docstring to describe actual merge order | S |

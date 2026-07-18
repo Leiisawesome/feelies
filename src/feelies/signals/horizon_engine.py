@@ -211,13 +211,19 @@ class HorizonSignalEngine:
         self._signals: list[RegisteredSignal] = []
         self._regime_cache: dict[tuple[str, str], RegimeState] = {}
         # ``_sensor_cache`` holds the latest scalar reading per
-        # ``(symbol, sensor_id)``.  Populated incrementally as
-        # ``SensorReading`` events flow over the bus.  The cache is
-        # the *boundary view* consulted by gate / signal evaluation —
-        # in v0.2 the :class:`HorizonAggregator` runs in passive mode
-        # (empty ``HorizonFeatureSnapshot.values``), so sensor bindings
-        # come from this cache rather than from the snapshot itself.
-        self._sensor_cache: dict[tuple[str, str], float] = {}
+        # ``(symbol, sensor_id)``, paired with the reading's own
+        # ``timestamp_ns``.  Populated incrementally as ``SensorReading``
+        # events flow over the bus.  The cache is the *boundary view*
+        # consulted by gate / signal evaluation — in v0.2 the
+        # :class:`HorizonAggregator` runs in passive mode (empty
+        # ``HorizonFeatureSnapshot.values``), so sensor bindings come from
+        # this cache rather than from the snapshot itself.  The timestamp is
+        # carried so :meth:`_build_bindings` can refuse to serve a reading
+        # stamped after the dispatching snapshot's nominal horizon boundary
+        # (audit regime_audit_2026-07-02 §4.2/§9 — Inv-6; the ``08c3da6``
+        # as-of-boundary fix covered aggregator-owned windowed features
+        # only, not this fallback cache).
+        self._sensor_cache: dict[tuple[str, str], tuple[int, float]] = {}
         self._attached: bool = False
 
     # ── Registration ─────────────────────────────────────────────────
@@ -310,6 +316,10 @@ class HorizonSignalEngine:
         forces ``UnknownIdentifierError`` on the next gate evaluation
         which routes through the H8 / M6 fail-safe (gate latch reset
         to OFF) — Inv-11 (fail-safe default).
+
+        Each entry is stored as ``(event.timestamp_ns, value)`` — see the
+        ``_sensor_cache`` field docstring for why (Inv-6 as-of-boundary
+        correctness in :meth:`_build_bindings`).
         """
         value = event.value
         if isinstance(value, tuple):
@@ -328,12 +338,15 @@ class HorizonSignalEngine:
                     self._sensor_cache.pop((event.symbol, name), None)
                 return
             for name, component_value in zip(components, value):
-                self._sensor_cache[(event.symbol, name)] = float(component_value)
+                self._sensor_cache[(event.symbol, name)] = (
+                    event.timestamp_ns,
+                    float(component_value),
+                )
             return
         if not event.warm:
             self._sensor_cache.pop((event.symbol, event.sensor_id), None)
             return
-        self._sensor_cache[(event.symbol, event.sensor_id)] = float(value)
+        self._sensor_cache[(event.symbol, event.sensor_id)] = (event.timestamp_ns, float(value))
 
     def _on_snapshot(self, snapshot: HorizonFeatureSnapshot) -> None:
         """Evaluate every registered signal whose horizon matches."""
@@ -726,7 +739,7 @@ class HorizonSignalEngine:
     def _build_bindings(
         snapshot: HorizonFeatureSnapshot,
         regime: RegimeState | None,
-        sensor_cache: Mapping[tuple[str, str], float],
+        sensor_cache: Mapping[tuple[str, str], tuple[int, float]],
         min_discriminability: float = 0.0,
     ) -> Bindings:
         """Promote the snapshot's ``values`` mapping into a gate binding.
@@ -750,10 +763,31 @@ class HorizonSignalEngine:
         The aggregator runs in passive mode for v0.2 (snapshot.values
         is empty), so in that mode all bindings come from
         ``sensor_cache`` and the priority distinction is moot.
+
+        **As-of-boundary correctness (audit regime_audit_2026-07-02 §4.2/§9,
+        Inv-6)**: each ``sensor_cache`` entry carries the timestamp of the
+        ``SensorReading`` that produced it.  A reading stamped strictly
+        after the snapshot's nominal horizon boundary (``boundary_ts_ns``,
+        falling back to ``timestamp_ns`` when unset — mirroring
+        ``HorizonTick.asof_timestamp_ns``) is dropped rather than served.
+        The dispatching event's own sensor updates land in the cache
+        *before* the snapshot handler runs (M-SENSOR_UPDATE precedes
+        M-SIGNAL_GATE on the synchronous bus), so without this filter a
+        gate/signal binding sourced from the cache could see data from
+        after the boundary it is nominally evaluated at — the same class of
+        leak ``08c3da6`` closed for aggregator-owned windowed features, but
+        left open for this fallback binding source.  A dropped identifier
+        is simply absent from ``sensor_values`` here, which surfaces as
+        :class:`~feelies.signals.regime_gate.UnknownIdentifierError` on
+        first reference — the existing fail-safe path (force gate OFF /
+        suppress entry), identical to any other missing binding.
         """
+        asof_ns = snapshot.boundary_ts_ns or snapshot.timestamp_ns
         sensor_values = dict(snapshot.values)
-        for (sym, sensor_id), value in sensor_cache.items():
+        for (sym, sensor_id), (reading_ts_ns, value) in sensor_cache.items():
             if sym != snapshot.symbol:
+                continue
+            if reading_ts_ns > asof_ns:
                 continue
             sensor_values.setdefault(sensor_id, value)
 
