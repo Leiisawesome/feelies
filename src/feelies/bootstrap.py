@@ -1173,10 +1173,10 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="ofi_integrated",
             min_samples=1,
         ),
-        # H12 Phase A: Hazen percentile of the latest ofi_raw sample within
-        # the trailing-h event-time window (kyle_lambda_60s wiring precedent).
-        # Named ofi_integrated_percentile per formal-spec §1.2 — quintile
-        # tails at h=900 are the H12 entry conditioner.
+        # H12/H13 Phase A: Hazen percentile of the latest ofi_raw sample
+        # within the trailing-h event-time window (kyle_lambda_60s wiring
+        # precedent). Named ofi_integrated_percentile per formal-spec §1.2
+        # — H12 consumes h=900; H13 consumes h=1800 (same factory line).
         HorizonWindowedFeature(
             "ofi_raw",
             h,
