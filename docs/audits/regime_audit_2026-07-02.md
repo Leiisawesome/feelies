@@ -456,11 +456,14 @@ is the one alpha that both declares **and references** hysteresis constants
 (`posterior_margin`/`percentile_margin` appear in its `off_condition`, `sig_inventory_revert_v1.alpha.yaml:181-186`)
 — confirmed a real, non-dead band. Declared alpha parameters are now also injectable as named gate
 constants (`RegimeGate._params`, `regime_gate.py:611-617,722-736`), closing the 06-20 report's §5.5/§10.1
-"gate parameter binding" backlog item — though `sig_inventory_revert_v1`'s own comment
-(`sig_inventory_revert_v1.alpha.yaml:172-175`) notes it has *not* migrated its literals to param
-references yet, to keep the locked replay baseline byte-identical. **P2, residual — the mechanism
-exists, the one alpha that most needed it (documented literal/param duplication risk) hasn't adopted
-it.** `binding_identifier_names()` correctly excludes injected params from the "must be warm" set
+"gate parameter binding" backlog item, **and `sig_inventory_revert_v1` has already migrated to it**:
+`on_condition`/`off_condition` reference `asymmetry_z_threshold`, `hazard_floor`, and
+`vol_taper_z_scale` by name rather than duplicating their literals
+(`sig_inventory_revert_v1.alpha.yaml:180-183`). *Correction to an earlier draft of this report*: I
+initially read this as unmigrated, based on the `858c9f6` (2026-06-20) commit message's "migration to
+param names is a future revision" framing without re-checking the file as it stands today — commit
+`8f320a3` (2026-06-30, predates this audit) already performed the migration, superseding that framing.
+`binding_identifier_names()` correctly excludes injected params from the "must be warm" set
 (`regime_gate.py:650-651`, tested by `test_param_names_excluded_from_binding_identifiers`).
 
 ### 4.6 Gate vs. risk semantics — unchanged since 06-20
@@ -674,8 +677,7 @@ declared `trend_mechanism`.
 | P2 | `evaluate()` docstring states params beat sensors; code and tests say the opposite (§4.3) | `signals/regime_gate.py:724-729` | Rewrite the docstring to describe actual merge order | S |
 | P2 | `failure_signature` free text not cross-checked against `off_condition` (§4.4.1) | `alpha/loader.py`, `.cursor/skills/microstructure-alpha/SKILL.md` | Add a loader warn-if-parseable-and-unreferenced check, or explicitly re-scope the field as narrative-only | S–M |
 | P2 | `sig_moc_imbalance_v1` gates on exact float equality; own `evaluate()` already hedges the same value (§4.4 table) | `alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml:131,133` | Use `>= 0.5` / `< 0.5`-style tolerance in the gate, matching `evaluate()` | S |
-| P2 | `sig_inventory_revert_v1` hasn't migrated to param-referenced gate literals despite the mechanism now existing (§4.5) | `alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml:172-175` | Migrate once a baseline rebake is acceptable | S |
-| P2 | `enforce_regime_state_scale_alignment` defense-in-depth is opt-in (§6, item 5) | `core/platform_config.py:407` | Consider defaulting `True` in production profiles once operators confirm no custom engines rely on unmapped state names | S |
+| P2 | `enforce_regime_state_scale_alignment` defense-in-depth is opt-in (§6, item 5) | `core/platform_config.py:407` | **Attempted 2026-07-02, reverted**: flipping it in the root `platform.yaml` verified clean in isolation (`bootstrap._validate_regime_engine_risk_scale_alignment` passes for the shipped engine), but `platform.yaml` flows through `configs/bt_sig_benign_midcap.yaml`'s `extends:` chain into `configs/bt_app.yaml`, and changing any inherited default there breaks the **locked** `tests/acceptance/test_backtest_app_baseline.py::test_app_baseline_config_contract_hash` regression baseline. That baseline is deliberately a tripwire against config-contract drift, so rebaking it needs explicit operator sign-off, not a P2 config-default flip bundled with unrelated fixes. Re-propose as its own change alongside a baseline rebake. | S (flag) + baseline rebake sign-off |
 | P2 | `_MIN_CALIBRATION_SAMPLES = 30` remains a thin floor (§3.2, carried over) | `services/regime_engine.py:188` | Raise the floor or document the effective floor imposed by `regime_calibration_max_quotes` in production profiles | S |
 | P1 (Inv-11, open, deliberately deferred) | `regime_min_discriminability: 0.0` no-op default (carried over, unchanged) | `platform.yaml:172` | Set a validated floor per cohort after running `scripts/regime_diagnostics.py` | S once validated |
 | P1 (Inv-5, open, deliberately deferred) | `transition_time_scaling_enabled` off by default; tick-time, not wall-clock, dwell (carried over, unchanged, now with documented rationale) | `platform.yaml:47-62` | Enable per-deployment once `transition_dt_reference_seconds` is cohort-validated | M |
@@ -683,10 +685,11 @@ declared `trend_mechanism`.
 | P2 | `scripts/regime_diagnostics.py` not run/archived against shipped gates (§7.4) | n/a (process) | Run it against APP 2026-03-26 / 2026-06-01 cached NBBO and archive the report before the next `regime_engine_options` change | S (run) |
 
 **Resolved since 2026-06-20 (confirmed, not carried forward):** `hazard_exit.applies_to_regimes`
-(§5); dead hysteresis constants (§4.5); gate/param literal duplication mechanism (§4.5, adoption
-still partial — see P2 above); `LIQUIDITY_STRESS` dynamic-direction entry gap (§4.4 table, §7.2);
-checkpoint/restore flag-fingerprint verification (§3.6, predates 06-20 but untested by that report's
-negative-path check).
+(§5); dead hysteresis constants (§4.5); gate/param literal duplication mechanism, including
+`sig_inventory_revert_v1`'s own migration to it (§4.5, corrected from an earlier draft of this
+report — see §4.5's inline correction note); `LIQUIDITY_STRESS` dynamic-direction entry gap (§4.4
+table, §7.2); checkpoint/restore flag-fingerprint verification (§3.6, predates 06-20 but untested by
+that report's negative-path check).
 
 ## 10. Appendix — Open Questions Needing Data Runs
 
@@ -694,7 +697,16 @@ negative-path check).
    one AAPL session to establish current discriminability (`d`), posterior-entropy distribution, and
    `P(vol_breakout)`-decile forward-return separation for the default engine **before** any change to
    `regime_engine_options` or `regime_min_discriminability` — this is the tool's own stated
-   prerequisite (§7.4) and appears never to have been archived.
+   prerequisite (§7.4) and appears never to have been archived. **Status (2026-07-02 follow-up):**
+   this sandboxed environment has no `~/.feelies/cache` disk cache and no `MASSIVE_API_KEY`, so the
+   real APP/AAPL cached-NBBO run could not be performed here. As a smoke test, the tool was run
+   against the synthetic fixture `tests/fixtures/event_logs/synth_5min_aapl.jsonl` (JSONL mode) and
+   executed correctly end-to-end — calibrated, computed `d=0.024` (correctly flagged `DEGENERATE`),
+   and produced gate-pruning and forward-return-by-decile tables — confirming the tool itself is
+   functional. The synthetic fixture's near-zero emission separation is expected for 5 minutes of
+   generated data and carries no economic information, so this does **not** substitute for the real
+   run against production-representative sessions; that remains open and requires an environment with
+   cache/API access.
 2. For `sig_benign_midcap_v1` and `sig_kyle_drift_v1`: what fraction of realized entries would have
    been followed, within the position's holding period, by a driver reversal (OFI/book-imbalance
    sign flip; Kyle-λ z-score dropping below `-1.5`) that the current gate does **not** act on? This

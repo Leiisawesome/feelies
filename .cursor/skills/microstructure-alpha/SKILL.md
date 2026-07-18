@@ -157,6 +157,14 @@ signal: |
       ...
 ```
 
+`trend_mechanism.failure_signature` is **narrative, not executable**: G16 rule 6 only requires a
+non-empty list of strings (`alpha/layer_validator.py`); nothing loads or cross-checks a clause
+against the compiled `regime_gate` AST. Treat it as the audit-facing record of what would falsify
+the mechanism (consumed by humans and forensics narrative), not as a guarantee that the runtime
+gate acts on it — an alpha author who declares `"P(vol_breakout) > 0.5"` here must still put the
+equivalent check in `regime_gate.off_condition` (or an entry-suppression check in `evaluate()`) if
+they want it enforced (regime_audit_2026-07-02 §4.4.1).
+
 ### `HorizonSignal` Protocol
 
 Implementations live in the loaded module body and conform to
