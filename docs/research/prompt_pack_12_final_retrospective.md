@@ -1,13 +1,12 @@
 <!--
   File:   docs/research/prompt_pack_12_final_retrospective.md
-  Status: AWAITING-LEI-REVIEW — final program retrospective for alpha
-          program cycles 1–3 (H1–H13 + S-1). Task 7-R3, 2026-07-18.
-          Synthesis of committed record ONLY: no code, no data contact,
-          no outcome statistic computed or quoted beyond what the cited
-          closure records already carry. Every claim cites its
-          document/commit; where the record is silent the entry says
-          UNKNOWN. Permanent program record under the pack-10 stop-rule
-          (STOP-RULE EXECUTED 2026-07-18).
+  Status: DECIDED (2026-07-18, Lei) — final program retrospective
+          accepted; capital-decision DISPOSITION appended (§§1–7
+          unedited). Standing state PAUSE-AND-HARVEST; one bounded
+          tranche-2 frontier-characterization expenditure authorized
+          (go/no-go gated); hard STOP declined; shelf firewall
+          confirmed for all future programs. N = 12 unchanged
+          (disposition / authorization only; no outcome contact).
   Owner:  research-workflow (program bookkeeping); prompt-pack Task 7-R3,
           Phase B.
 
@@ -454,4 +453,59 @@ The capital decision turns on these (still no recommendation):
 
 ---
 
-*Task 7-R3 stops here. Status: AWAITING-LEI-REVIEW.*
+*Task 7-R3 body (§§1–7) stopped at AWAITING-LEI-REVIEW. Disposition
+appended below (Lei, 2026-07-18).*
+
+---
+
+## DISPOSITION (Capital decision — Lei, 2026-07-18; append-only; §§1–7 unedited)
+
+1. **Q1 DECIDED — PAUSE-AND-HARVEST.** Standing state is
+   **PAUSE-AND-HARVEST** (§5.3): assets in §5.2 redeployed without a
+   new full research program; backlog / vendor burn-down remains in
+   scope; no new hypothesis card on the closed universe/grid.
+   **Hard STOP declined.** One **bounded expenditure** is authorized
+   inside that standing state: the **tranche-2 frontier
+   characterization** scoped in §5.1 (candidate screen + cache build
+   + fresh feasibility map on a higher-σ midcap universe; never pooled
+   with the frozen grid; census-legal; no card, no outcome statistic,
+   no N increment by the characterization itself). That expenditure is
+   **go/no-go gated** on its own result. **Full tranche-2 program
+   authorization is deferred** pending that go/no-go — nothing here
+   authorizes a slate, protocol freeze, or outcome-contact trial on
+   tranche 2.
+
+2. **Q2 RULED — vendor dependency posture.** **T5-OQ-3 is not
+   required** for research-stage spend inside the existing admissible
+   date span. **T5-OQ-3 is required** before any span extension past
+   **2026-04-24**, and — together with **AXIS-2 residuals** — before
+   any **RESEARCH→PAPER** move (00 architecture §(e) promotion-blocker
+   posture stands). Both vendor tickets (**T5-OQ-3 / V-1**; **AXIS-2 /
+   V-2**) are **escalated**. Persistent vendor silence is recorded as
+   an **operational risk factor** for any future live decision; it does
+   not reopen the closed program on this grid and does not by itself
+   authorize span extension.
+
+3. **Q3 CONFIRMED — shelf firewall (binds all future programs).**
+
+   | shelf | posture |
+   |---|---|
+   | **Characterization shelf** (§4.3: :00/:30 occupancy asymmetry; H=300→H=900 magnitude series 0.0186→0.089) | **Design input only**, cited as such wherever used. Never evidence; never a magnitude-bar substitute; never a KYLE / SCHEDULED_FLOW proof claim (pack-10 DISPOSITION 3 class). |
+   | **Contaminated shelf** (§4.3: H8 baseline-λ reversion −5.43 bps; H10 RMBS RankIC +0.226) | **Never evidence.** Design-prior use only under the registered disclosure / fresh-sessions / honest-N rules (H8 result POST-HOC; pack-09 SEED; H10 result POST-HOC 1). First outcome contact on any card built from a contaminated seed is **+1 N** on the living ledger under its own protocol from step 1. |
+
+   This firewall **binds all future programs**, including any
+   go-authorized tranche-2 path and any PAUSE-AND-HARVEST engineering
+   work that touches shelf numbers.
+
+4. **N = 12 confirmed.** This disposition is capital-decision /
+   authorization text only — **no data contact, no outcome statistic,
+   no N increment.** Living ledger remains **N = 12** (§6.3). Any
+   future DSR uses the then-current living N (≥ 12). Any future
+   evaluation of any drafted or new row is **+1 N** under its own
+   protocol from step 1.
+
+5. **pack-12 Status → DECIDED.** Body §§1–7 stand as the permanent
+   program record. Residual work under this disposition is (i)
+   PAUSE-AND-HARVEST backlog/vendor burn-down and (ii) the bounded
+   tranche-2 frontier-characterization go/no-go — each under its own
+   task authorization, not as a silent continuation of cycles 1–3.
