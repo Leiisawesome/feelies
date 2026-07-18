@@ -125,10 +125,6 @@ select = [
 # from deterministic replay.
 "tests/ingestion/test_massive_functional.py" = ["DTZ005", "DTZ006", "DTZ011"]
 "tests/ingestion/test_parallel_ingest_integration.py" = ["DTZ005", "DTZ006", "DTZ011"]
-# Structured logger emits ISO-8601 timestamps via the injected clock
-# in production; module-level helpers retain a wall-clock fallback for
-# bootstrap-time error messages emitted before the clock is wired.
-"src/feelies/monitoring/structured_logging.py" = ["DTZ005", "DTZ006", "DTZ011"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

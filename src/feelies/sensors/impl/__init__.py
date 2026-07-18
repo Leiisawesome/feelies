@@ -59,4 +59,10 @@ missing from this module docstring — see sensor_audit_2026-07-02):
 - :mod:`feelies.sensors.impl.ofi_raw` — per-event, unsmoothed Order-Flow
   Imbalance (KYLE_INFO family); the windowed-sum input for the
   ``ofi_integrated`` feature (no shipped alpha depends on it yet).
+
+H10 Phase-A research catalog (1 sensor; dormant in reference
+``platform.yaml`` until Phase-B alpha wiring):
+
+- :mod:`feelies.sensors.impl.sweep_flow_imbalance` — Class-A ∩ id-14
+  ISO sweep-flow imbalance (KYLE_INFO entry conditioner; v1.0.0).
 """

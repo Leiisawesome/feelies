@@ -36,7 +36,8 @@ from feelies.core.inv12_stress import (
 )
 from feelies.core.platform_config import PlatformConfig
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
+from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig, ZeroCostModel
+from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 
 
 def test_inv12_locked_factors() -> None:
@@ -160,6 +161,185 @@ def test_router_deferred_fill_uses_doubled_latency() -> None:
             symbol="AAPL",
             bid=Decimal("100"),
             ask=Decimal("101"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=final_ex_ts,
+        ),
+    )
+    acks = router.poll_acks()
+    assert any(a.status == OrderAckStatus.FILLED for a in acks)
+
+
+def test_passive_router_aggressive_fallback_uses_doubled_latency() -> None:
+    """``PassiveLimitOrderRouter``'s MARKET/aggressive path must also honour
+    2× ``backtest_fill_latency_ns`` under Inv-12 stress.
+
+    ``platform.yaml`` runs ``execution_mode: passive_limit`` (not
+    ``market``), so ``test_router_deferred_fill_uses_doubled_latency`` above
+    — which only exercises ``BacktestOrderRouter`` — does not prove the
+    latency-doubling contract for the router the reference profile actually
+    uses (audit execution_fills_audit_2026-07-02, finding #7 / P1). Same
+    discriminative construction: the intermediate quote sits at the
+    *baseline* deadline and must not fill; only the final quote, at the
+    stressed deadline, clears it.
+    """
+    cfg = PlatformConfig.from_yaml(Path("platform.yaml"))
+    baseline_latency_ns = cfg.backtest_fill_latency_ns
+    if baseline_latency_ns <= 0:
+        pytest.skip("baseline backtest_fill_latency_ns is 0; latency leg inert")
+
+    latency_ns = stressed_fill_latency_ns(baseline_latency_ns)
+    assert latency_ns == baseline_latency_ns * INV12_LATENCY_STRESS_MULTIPLIER
+
+    quote_ex_ts = 1_000
+    intermediate_ex_ts = quote_ex_ts + baseline_latency_ns
+    final_ex_ts = quote_ex_ts + latency_ns
+
+    clock = SimulatedClock(start_ns=0)
+    router = PassiveLimitOrderRouter(clock, latency_ns=latency_ns, cost_model=ZeroCostModel())
+    router.on_quote(
+        NBBOQuote(
+            timestamp_ns=quote_ex_ts,
+            correlation_id="q",
+            sequence=1,
+            symbol="AAPL",
+            bid=Decimal("100"),
+            ask=Decimal("101"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=quote_ex_ts,
+        ),
+    )
+    router.submit(
+        OrderRequest(
+            timestamp_ns=quote_ex_ts + 1,
+            correlation_id="o",
+            sequence=2,
+            order_id="ord1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+        ),
+    )
+    acks = router.poll_acks()
+    assert [a.status for a in acks] == [OrderAckStatus.ACKNOWLEDGED]
+    router.on_quote(
+        NBBOQuote(
+            timestamp_ns=intermediate_ex_ts + 100,
+            correlation_id="q2",
+            sequence=2,
+            symbol="AAPL",
+            bid=Decimal("100"),
+            ask=Decimal("101"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=intermediate_ex_ts,
+        ),
+    )
+    assert router.poll_acks() == []
+    router.on_quote(
+        NBBOQuote(
+            timestamp_ns=final_ex_ts + 100,
+            correlation_id="q3",
+            sequence=3,
+            symbol="AAPL",
+            bid=Decimal("100"),
+            ask=Decimal("101"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=final_ex_ts,
+        ),
+    )
+    acks = router.poll_acks()
+    assert any(a.status == OrderAckStatus.FILLED for a in acks)
+
+
+def test_passive_router_resting_post_uses_doubled_latency() -> None:
+    """A resting passive LIMIT order must not become fill-eligible until 2×
+    ``backtest_fill_latency_ns`` has elapsed under Inv-12 stress.
+
+    This is the order-entry latency gate added by the 2026-07-01 P0 fix
+    (``passive_limit_router.py:540,589-593``) — distinct from the aggressive-
+    fallback path covered above. Discriminative construction: the
+    intermediate quote already satisfies the guaranteed "through fill"
+    price condition (ask at/below the resting limit) at exactly the
+    *baseline* deadline; under correct 2× stress it must still not fill,
+    because the order is not yet live at the exchange. Only the final quote,
+    at the stressed deadline, clears the gate and fills.
+    """
+    cfg = PlatformConfig.from_yaml(Path("platform.yaml"))
+    baseline_latency_ns = cfg.backtest_fill_latency_ns
+    if baseline_latency_ns <= 0:
+        pytest.skip("baseline backtest_fill_latency_ns is 0; latency leg inert")
+
+    latency_ns = stressed_fill_latency_ns(baseline_latency_ns)
+    assert latency_ns == baseline_latency_ns * INV12_LATENCY_STRESS_MULTIPLIER
+
+    quote_ex_ts = 1_000
+    post_eligible_ns = quote_ex_ts + latency_ns  # pending.ack_timestamp_ns
+    intermediate_ex_ts = quote_ex_ts + baseline_latency_ns
+    final_ex_ts = post_eligible_ns
+
+    clock = SimulatedClock(start_ns=0)
+    router = PassiveLimitOrderRouter(clock, latency_ns=latency_ns, cost_model=ZeroCostModel())
+    router.on_quote(
+        NBBOQuote(
+            timestamp_ns=quote_ex_ts,
+            correlation_id="q",
+            sequence=1,
+            symbol="AAPL",
+            bid=Decimal("100.00"),
+            ask=Decimal("100.10"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=quote_ex_ts,
+        ),
+    )
+    router.submit(
+        OrderRequest(
+            timestamp_ns=quote_ex_ts + 1,
+            correlation_id="o",
+            sequence=2,
+            order_id="ord1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=10,
+            limit_price=Decimal("100.00"),
+        ),
+    )
+    acks = router.poll_acks()
+    assert [a.status for a in acks] == [OrderAckStatus.ACKNOWLEDGED]
+
+    # Intermediate quote: ask has dropped through our limit (a guaranteed
+    # "through fill" if the order were live) but sim-time is only at the
+    # *baseline* deadline — 2× stress must keep this un-filled.
+    router.on_quote(
+        NBBOQuote(
+            timestamp_ns=intermediate_ex_ts + 100,
+            correlation_id="q2",
+            sequence=2,
+            symbol="AAPL",
+            bid=Decimal("98.90"),
+            ask=Decimal("99.00"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=intermediate_ex_ts,
+        ),
+    )
+    assert router.poll_acks() == []
+
+    # Final quote at the stressed deadline: same through-fill condition,
+    # now honoured.
+    router.on_quote(
+        NBBOQuote(
+            timestamp_ns=final_ex_ts + 100,
+            correlation_id="q3",
+            sequence=3,
+            symbol="AAPL",
+            bid=Decimal("98.90"),
+            ask=Decimal("99.00"),
             bid_size=100,
             ask_size=100,
             exchange_timestamp_ns=final_ex_ts,

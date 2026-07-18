@@ -187,3 +187,42 @@ class TestDiskEventCacheManifest:
         assert manifest["trades_count"] == 1
         assert manifest["checksum"].startswith("sha256:")
         assert manifest["event_schema_hash"].startswith("sha256:")
+
+    def test_normalizer_version_mismatch_warns_but_still_loads(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """DI-06: a normalizer_version mismatch is now visible (warned) but
+        does not invalidate the cache — that stays event_schema_hash's job,
+        since a version bump does not always mean cached values are wrong.
+        """
+        cache = DiskEventCache(tmp_path)
+        cache.save("AAPL", "2026-03-13", [_make_quote()])
+
+        manifest_path = tmp_path / "AAPL" / "2026-03-13.manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        assert manifest["normalizer_version"] == "1"
+        manifest["normalizer_version"] = "999"
+        manifest_path.write_text(json.dumps(manifest))
+
+        caplog.set_level("WARNING", logger="feelies.storage.disk_event_cache")
+        result = cache.load("AAPL", "2026-03-13")
+
+        assert result is not None
+        assert len(result) == 1
+        assert "normalizer_version mismatch" in caplog.text
+
+    def test_matching_normalizer_version_does_not_warn(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        cache = DiskEventCache(tmp_path)
+        cache.save("AAPL", "2026-03-13", [_make_quote()])
+
+        caplog.set_level("WARNING", logger="feelies.storage.disk_event_cache")
+        result = cache.load("AAPL", "2026-03-13")
+
+        assert result is not None
+        assert "normalizer_version mismatch" not in caplog.text

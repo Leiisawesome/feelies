@@ -203,3 +203,208 @@ def test_kyle_alignment_ab_registers_both_versions_and_runs() -> None:
     )
     assert {r.variant for r in rows} == {"kyle_legacy_win", "kyle_causal_win"}
     assert all(r.feature == "kyle_alignment" for r in rows)
+
+
+# ── H10 row smoke (protocol §2.2; Task 9-A Phase A) — synthetic only ─────
+
+
+def _h10_smoke_tape(sym: str = "APP"):
+    """~2,100 s quote+ISO-trade tape so h=900 boundaries can form with forward
+    windows.  ISO condition-14 prints drive SFI; no Class-B on the extreme
+    path.  Zero cached-data contact — instrument smoke only."""
+    from decimal import Decimal
+
+    from feelies.core.events import Trade
+
+    NS = ic._NS_PER_SECOND
+    events: list = []
+    mid = 100.0
+    for t in range(0, 2100):
+        mid += 0.00005
+        events.append(
+            _quote(t * NS, f"{mid:.4f}", f"{mid + 0.02:.4f}", 100, 100)
+        )
+        # Rising ISO prints ⇒ buy-side SFI pressure.
+        events.append(
+            Trade(
+                timestamp_ns=t * NS + 400_000_000,
+                correlation_id=f"t-{t}",
+                sequence=t * NS + 400_000_000,
+                symbol=sym,
+                price=Decimal(f"{mid + 0.001:.4f}"),
+                size=50,
+                exchange_timestamp_ns=t * NS + 400_000_000,
+                conditions=(14,),
+            )
+        )
+    # Patch quote symbol to match.
+    out = []
+    for e in events:
+        if hasattr(e, "bid"):
+            out.append(
+                type(e)(
+                    timestamp_ns=e.timestamp_ns,
+                    correlation_id=e.correlation_id,
+                    sequence=e.sequence,
+                    symbol=sym,
+                    bid=e.bid,
+                    ask=e.ask,
+                    bid_size=e.bid_size,
+                    ask_size=e.ask_size,
+                    exchange_timestamp_ns=e.exchange_timestamp_ns,
+                )
+            )
+        else:
+            out.append(e)
+    return out
+
+
+def test_harness_h10_row_reports_extreme_interior_and_contrast() -> None:
+    tape = _h10_smoke_tape("APP")
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h10_sweep_kyle(tape, mids, "APP", "2026-01-01", 0)
+    by = {r.variant: r for r in rows}
+    assert set(by) == {"extreme", "interior", "sfi_contrast"}
+    assert all(r.feature == "h10_sweep_kyle" and r.horizon == 900 for r in rows)
+
+
+def test_harness_h10_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
+    tape = _h10_smoke_tape("OLN")
+    mids = ic._MidSeries.from_events(tape)
+    assert ic._h10_sweep_kyle(tape, mids, "OLN", "2026-01-01", 0) == []
+
+
+# ── H12 row smoke (protocol §2.2; Task 9-A Phase A) — synthetic only ─────
+
+
+def _h12_smoke_tape_and_calendar(sym: str = "APP"):
+    """Flat-mid buy-pressure tape + synthetic ALGO_CLOCK at t=1800 s.
+
+    session_open_ns=0 ⇒ boundaries at 0, 900, 1800, 2700, …  Tape to 3600 s
+    so the 2700 s boundary has a realised forward window.  Calendar admits
+    only [1800 s, 1801 s) ⇒ in-window extreme at 1800; out-window at 900/2700.
+    """
+    from datetime import date
+
+    from feelies.storage.reference.event_calendar import (
+        CalendarWindow,
+        EventCalendar,
+        WindowKind,
+    )
+
+    NS = ic._NS_PER_SECOND
+    events = []
+    for t in range(0, 3600):
+        events.append(
+            type(_quote(0, "100", "100.02", 100, 100))(
+                timestamp_ns=t * NS,
+                correlation_id=f"q-{t}",
+                sequence=t,
+                symbol=sym,
+                bid=Decimal("100.00"),
+                ask=Decimal("100.02"),
+                bid_size=100 + t,
+                ask_size=100,
+                exchange_timestamp_ns=t * NS,
+            )
+        )
+    cal = EventCalendar(
+        session_date=date(2026, 1, 15),
+        windows=(
+            CalendarWindow(
+                window_id="algo_clock_smoke_1800",
+                kind=WindowKind.ALGO_CLOCK,
+                symbol=None,
+                start_ns=1800 * NS,
+                end_ns=1800 * NS + NS,
+                flow_direction_prior=0.0,
+                meta={"mark_class": "half_hour"},
+            ),
+        ),
+    )
+    return events, cal
+
+
+def test_harness_h12_row_reports_both_arms_and_clock_contrast() -> None:
+    tape, cal = _h12_smoke_tape_and_calendar("APP")
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h12_halfhour_clock(tape, mids, "APP", "2026-01-15", 0, calendar=cal)
+    by = {r.variant: r for r in rows}
+    assert set(by) == {"in_window_extreme", "out_window_extreme", "clock_contrast"}
+    assert all(r.feature == "h12_halfhour_clock" and r.horizon == 900 for r in rows)
+
+
+def test_harness_h12_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
+    tape, cal = _h12_smoke_tape_and_calendar("OLN")
+    mids = ic._MidSeries.from_events(tape)
+    assert ic._h12_halfhour_clock(tape, mids, "OLN", "2026-01-15", 0, calendar=cal) == []
+
+
+# ── H13 row smoke (protocol §2.2; Task 9-A-H13 Phase A) — synthetic only ─
+
+
+def _h13_smoke_tape_and_calendar(sym: str = "APP"):
+    """Flat-mid buy-pressure tape + synthetic hour ALGO_CLOCK at t=3600 s.
+
+    session_open_ns=0 ⇒ h=1800 boundaries at 0, 1800, 3600, 5400, …
+    Tape to 7200 s so the 5400 s boundary has a realised forward window.
+    Calendar admits only [3600 s, 3601 s) ⇒ in-hour extreme at 3600;
+    halfhour extreme at 1800/5400 under hour-only injection semantics.
+    """
+    from datetime import date
+
+    from feelies.storage.reference.event_calendar import (
+        CalendarWindow,
+        EventCalendar,
+        WindowKind,
+    )
+
+    NS = ic._NS_PER_SECOND
+    events = []
+    for t in range(0, 7200):
+        events.append(
+            type(_quote(0, "100", "100.02", 100, 100))(
+                timestamp_ns=t * NS,
+                correlation_id=f"q-{t}",
+                sequence=t,
+                symbol=sym,
+                bid=Decimal("100.00"),
+                ask=Decimal("100.02"),
+                bid_size=100 + t,
+                ask_size=100,
+                exchange_timestamp_ns=t * NS,
+            )
+        )
+    cal = EventCalendar(
+        session_date=date(2026, 1, 15),
+        windows=(
+            CalendarWindow(
+                window_id="algo_clock_smoke_3600",
+                kind=WindowKind.ALGO_CLOCK,
+                symbol=None,
+                start_ns=3600 * NS,
+                end_ns=3600 * NS + NS,
+                flow_direction_prior=0.0,
+                meta={"mark_class": "hour"},
+            ),
+        ),
+    )
+    return events, cal
+
+
+def test_harness_h13_row_reports_both_arms_and_hour_contrast() -> None:
+    tape, cal = _h13_smoke_tape_and_calendar("APP")
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h13_hour_checkpoint(tape, mids, "APP", "2026-01-15", 0, calendar=cal)
+    by = {r.variant: r for r in rows}
+    assert set(by) == {"in_hour_extreme", "halfhour_extreme", "hour_contrast"}
+    assert all(r.feature == "h13_hour_checkpoint" and r.horizon == 1800 for r in rows)
+
+
+def test_harness_h13_ensg_evidence_only_still_emits_ic_rows() -> None:
+    """JC-12: evidence-pool primary — ENSG/MLI are not excluded from IC rows."""
+    tape, cal = _h13_smoke_tape_and_calendar("ENSG")
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h13_hour_checkpoint(tape, mids, "ENSG", "2026-01-15", 0, calendar=cal)
+    assert len(rows) == 3
+    assert all(r.feature == "h13_hour_checkpoint" for r in rows)

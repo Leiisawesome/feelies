@@ -275,6 +275,11 @@ When a limit order price crosses the opposite side of NBBO at submission:
 - The entire order routes to `_submit_aggressive_market()`
   (`passive_limit_router.py`) and fills with market-order economics —
   there is no split where remaining size rests as a passive limit
+- Caveat (D6): this no-split rule covers **submission-time**
+  marketability only. A *resting* order's later through-fill CAN
+  partial-split when `through_fill_size_cap_enabled: true` (the
+  reference `platform.yaml` setting) — see
+  [fill-model.md](fill-model.md), "Through-Fill Size Cap"
 
 ---
 
@@ -503,6 +508,30 @@ like:
   "realism_metrics": { fill_rate, slippage_dist, pnl_compression }
 }
 ```
+
+---
+
+## Honest Result Reporting
+
+A single-run Sharpe — or any per-session performance number offered as
+evidence — is not a result, and a request for "a quick Sharpe" is
+answered with this checklist, not a number. Anything presented as a
+result must carry:
+
+- the CPCV path distribution (`research/cpcv.py`) — never a bare
+  point estimate;
+- DSR computed with the living trial-count ledger N (`research/dsr.py`;
+  the ledger discipline is owned by the research-workflow skill), with
+  the noise ceiling `E[max Sharpe | null, N]` stated alongside every
+  quoted Sharpe;
+- a research-stage status label from the closed vocabulary
+  (research-workflow skill: {hypothesis, candidate, trap-quadrant,
+  accepted, rejected}) — pre-`alpha_id` numbers are at best
+  `hypothesis` / `candidate` evidence;
+- ≥ Tier-2 fill realism with non-zero fill latency — Tier-1
+  naive-fill numbers are never presented as results
+  ([fill-model.md](fill-model.md)). Pre-cost / pre-latency output is
+  exploration and must be labeled as such.
 
 ---
 

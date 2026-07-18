@@ -624,6 +624,7 @@ def build_platform(
         bus=bus,
         registry=registry,
         position_store=position_store,
+        clock=clock,
     )
 
     # Audit P0 H-1: hazard wiring scans ALL active alphas so SIGNAL-layer
@@ -1172,6 +1173,16 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="ofi_integrated",
             min_samples=1,
         ),
+        # H12/H13 Phase A: Hazen percentile of the latest ofi_raw sample
+        # within the trailing-h event-time window (kyle_lambda_60s wiring
+        # precedent). Named ofi_integrated_percentile per formal-spec §1.2
+        # — H12 consumes h=900; H13 consumes h=1800 (same factory line).
+        HorizonWindowedFeature(
+            "ofi_raw",
+            h,
+            reducer="percentile",
+            feature_id="ofi_integrated_percentile",
+        ),
     ],
     # Audit P1-B / P1-C: signed top-of-book size imbalance, the level-invariant
     # L1 fingerprint that ``micro_price_zscore`` (a z of the ~$100 price level)
@@ -1239,12 +1250,16 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     ],
     # Audit P1-F: INVENTORY is a fast, mean-reverting mechanism (half-life
     # 5–60 s).  A z over a long horizon window (300–1800 s) smears that
-    # reversion, and the G16 horizon/half-life binding only admits the 30 s
-    # horizon for this family.  So we expose ONLY the last-of-horizon signed
-    # pressure, and ONLY at h=30 — the already-normalised [-1,1] value is the
-    # right aggregation; longer horizons would dilute the signal.
+    # reversion, so we expose ONLY the last-of-horizon signed pressure — the
+    # already-normalised [-1,1] value is the right aggregation.  Task 7
+    # (sig_inventory_fade_v1 formal spec §1.2/§14.3) corrected the earlier
+    # claim that G16 admits only h=30 for this family: the horizon/half-life
+    # ratio envelope [0.5, 4.0] also admits h=120 across the G16 half-life
+    # envelope 5–60 s (e.g. hl=40 s → ratio 3.0), so the passthrough is wired
+    # at h ∈ {30, 120}.  Longer horizons (300–1800 s) stay unwired — they
+    # would dilute the signal.
     "inventory_pressure": lambda h: (
-        [SensorPassthroughFeature("inventory_pressure", h)] if h == 30 else []
+        [SensorPassthroughFeature("inventory_pressure", h)] if h in (30, 120) else []
     ),
     # P2-3 LIQUIDITY_STRESS fingerprints.  Both are already normalised
     # ([0,1] alarm / [0,1] fraction), so passthrough (last-of-horizon) is the
@@ -1964,6 +1979,7 @@ def _create_composition_layer(
     bus: EventBus,
     registry: AlphaRegistry,
     position_store: MemoryPositionStore,
+    clock: Clock,
 ) -> tuple[
     CompositionEngine | None,
     CrossSectionalTracker | None,
@@ -2033,7 +2049,7 @@ def _create_composition_layer(
             f"alpha universe(s) or raise the cap explicitly."
         )
 
-    _enforce_factor_loadings_freshness(config, sorted(universe))
+    _enforce_factor_loadings_freshness(config, sorted(universe), clock=clock)
 
     intent_seq = SequenceGenerator()
     ctx_seq = SequenceGenerator()
@@ -2299,6 +2315,8 @@ def _enforce_ex_date_replay_guard(
 def _enforce_factor_loadings_freshness(
     config: PlatformConfig,
     universe_sorted: list[str],
+    *,
+    clock: Clock,
 ) -> None:
     """Fail-stop on missing or stale loadings rows.
 
@@ -2317,14 +2335,21 @@ def _enforce_factor_loadings_freshness(
     was checked out.  Only when that block is absent do we fall back to
     the filesystem mtime, whose drift forced downstream suites to pin a
     ~century-long ``factor_loadings_max_age_seconds``.  The comparison
-    clock is ``session_open_ns`` when available (deterministic);
-    wall-clock ``time.time()`` is a last resort that breaks bit-identical
-    replay and is logged as such.
+    reference is ``session_open_ns`` when available (deterministic); when
+    absent, PAPER/LIVE fall back to the injected ``clock`` (``WallClock``
+    there, so this is genuinely "now" for a live deployment — routed
+    through Inv-10's sanctioned abstraction rather than a raw
+    ``time.time()`` call).  BACKTEST has no sensible wall-clock reference
+    for historical data, and ``SimulatedClock`` reads 0 at this
+    (pre-replay) point in boot, so silently comparing against either
+    would produce a meaningless verdict (audit kernel-P1: the previous
+    ``time.time()`` fallback either false-failed fresh backtest data or,
+    swapped naively for the boot-time clock, would have false-passed
+    stale data) — BACKTEST therefore refuses to boot rather than guess.
     """
     if config.factor_loadings_dir is None:
         return
     import json
-    import time
 
     path = config.factor_loadings_dir / "loadings.json"
     if not path.is_file():
@@ -2352,13 +2377,21 @@ def _enforce_factor_loadings_freshness(
 
     if config.session_open_ns is not None:
         reference_time = config.session_open_ns / 1_000_000_000
-    else:
-        reference_time = time.time()
+    elif config.mode is not OperatingMode.BACKTEST:
+        reference_time = clock.now_ns() / 1_000_000_000
         logger.warning(
-            "factor loadings freshness: no session_open_ns configured; using wall-clock "
-            "time.time() as the reference, which breaks bit-identical replay (Inv-5) — "
-            "configure session_open_ns or embed _meta.as_of_ns in %s",
+            "factor loadings freshness: no session_open_ns configured; using the "
+            "injected wall clock as the reference — configure session_open_ns or "
+            "embed _meta.as_of_ns in %s for a reproducible verdict",
             path,
+        )
+    else:
+        raise StaleFactorLoadingsError(
+            f"factor_loadings_dir is configured ({config.factor_loadings_dir}) but "
+            "session_open_ns is unset in BACKTEST mode, so there is no causal "
+            "reference time to evaluate freshness against (Inv-5/Inv-11: refuse "
+            "rather than guess). Set session_open_ns, or embed _meta.as_of_ns in "
+            f"{path} and compare it via session_open_ns once set."
         )
     age_seconds = reference_time - file_as_of_seconds
     if age_seconds > config.factor_loadings_max_age_seconds:

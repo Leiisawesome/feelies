@@ -51,6 +51,22 @@ The ingestion layer produces two canonical event types from `core/events.py`:
 Both inherit from `Event`, carrying `timestamp_ns` (from injectable clock),
 `correlation_id`, and `sequence` for provenance.
 
+**Trade-condition eligibility (audit DI-09, data ingestion audit 2026-07-02):
+intentional, by design.** `conditions` is parsed and preserved verbatim from
+both REST and WS (`MassiveNormalizer._ws_trade` / `_rest_trade`) — every
+trade print, including odd-lot, average-price, and other irregular-print
+condition codes, crosses the ingestion boundary unfiltered. The normalizer's
+job is typed normalization, not semantic trade classification; deciding
+which prints are "regular sale" eligible for a given consumer (a sensor's
+volume/intensity calculation, a passive-fill queue-volume model) is that
+consumer's responsibility, made with that consumer's own `conditions`
+tuple. The one exception is BT-5/BT-6: halt and SSR condition codes are
+interpreted at the boundary (`classify_halt_status`,
+`ingestion/data_integrity.py`) because they gate `DataHealth` itself, not
+consumer-level trade eligibility. There is no shared regular-sale/eligibility
+classifier today — if one becomes necessary, it belongs to the consuming
+layer (e.g. feature-engine's sensors), not this one.
+
 ## Normalizer Protocol
 
 This skill owns the `MarketDataNormalizer` protocol (`ingestion/normalizer.py`) —
@@ -266,12 +282,15 @@ The live-execution skill produces `TradeRecord` entries from fill events.
 
 ### EventSerializer (`src/feelies/core/serialization.py`)
 
-Round-trip serialization protocol for event persistence. The
-`EventSerializer` Protocol exists (round-trip correctness,
-bit-determinism, type preservation, Decimal fidelity), but the disk
-cache currently uses ad-hoc `_event_to_dict` / `_dict_to_event`
-helpers; a concrete bit-deterministic serializer unifying the disk
-cache behind the protocol is still TODO.
+Round-trip serialization protocol for event persistence. **Implemented**
+(corrected here per audit DI-10, data ingestion audit 2026-07-02 — this
+section previously and incorrectly called it "still TODO" for at least two
+prior audit cycles): `JsonLineEventSerializer` is the concrete
+`EventSerializer` — bit-deterministic (`__dataclass_fields__` iteration
+order + `json.dumps` dict-order preservation + total Decimal/tuple
+coercion), and it is the single source of truth `DiskEventCache` routes
+through for both `save()` and `load()`. Round-trip correctness and
+bit-equality are locked by `tests/core/test_serialization.py`.
 
 ## Storage Design
 
@@ -322,6 +341,37 @@ symbol (backtesting primary access pattern).
 - All backfills tagged with provenance metadata: the `DiskEventCache` manifest
   carries `source`-equivalent `ingestion_health`, `created_at`,
   `event_schema_hash`, and `normalizer_version` (Inv-13).
+
+---
+
+## Grid-Amendment Constant Governance (backlog 16)
+
+When a research or census grid is amended (new symbols, new sessions,
+expanded date span), every **frozen census-derived constant** must be
+pre-registered **before** the amended census executes — not by
+mid-flight ruling. Constants include spread-tercile cutpoints,
+per-symbol conditioning thresholds, viability floors, and any
+predicate parameter derived from a prior census pass.
+
+Each constant declares one disposition in the amendment pre-registration:
+
+| Disposition | Meaning |
+|-------------|---------|
+| **carry** | Unchanged — valid on the amended grid without recomputation |
+| **recompute** | Re-derived from the amended grid's census-legal inputs before any verdict |
+| **refreeze** | Explicit new values pinned in the amendment; old values retired |
+
+If the amended census would surface two candidate constant sets, the
+census **stops return-free** and awaits operator ruling — it does not
+pick a set post-outcome. Cross-link: microstructure-alpha
+`research-protocol.md` (Validation Protocol & Slate Design Discipline).
+
+Incident: H8 A-1 expansion was silent on §4.1/JC-4 spread-tercile
+cutpoints; the expanded census disclosed both candidate sets and
+stopped for the A-2.2 ruling (original terciles refrozen). Spec:
+`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`
+E.5, AMENDMENT A-2.2;
+`docs/research/prompt_pack_03c_universe_and_cache.md` AMENDMENT 1.
 
 ---
 

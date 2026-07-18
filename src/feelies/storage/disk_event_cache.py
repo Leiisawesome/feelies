@@ -135,6 +135,26 @@ class DiskEventCache:
             logger.warning("disk_cache: schema mismatch for %s/%s, invalidating", symbol, date)
             return None
 
+        # Audit DI-06: normalizer_version is intentionally NOT part of the
+        # schema-hash invalidation path (a version bump does not always mean
+        # already-cached values are wrong), but a mismatch was previously
+        # invisible — nothing compared it.  Warn so operators can judge
+        # whether to re-ingest, without forcing every version bump into an
+        # unconditional cache wipe.
+        manifest_normalizer_version = manifest.get("normalizer_version")
+        if (
+            manifest_normalizer_version is not None
+            and manifest_normalizer_version != _NORMALIZER_VERSION
+        ):
+            logger.warning(
+                "disk_cache: normalizer_version mismatch for %s/%s (cache=%r, current=%r) — "
+                "cached data may reflect different parse/normalize semantics",
+                symbol,
+                date,
+                manifest_normalizer_version,
+                _NORMALIZER_VERSION,
+            )
+
         expected_checksum = manifest.get("checksum", "")
 
         try:

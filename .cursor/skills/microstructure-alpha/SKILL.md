@@ -56,7 +56,14 @@ Given rational liquidity-provider behavior under inventory constraints
 → what L1 signature must appear? Derive testable predictions. Price is
 an emergent phenomenon of liquidity competition, not a chart line.
 
-For detailed methodology see [`research-protocol.md`](research-protocol.md).
+For detailed methodology see [`research-protocol.md`](research-protocol.md)
+— including the Reformalization Gate (Phase 0), the archetype &
+structural-counterparty rider, mirage-risk ranking, the
+zero-integrated-edge conservation check, validation-protocol freeze
+discipline (magnitude-vs-power labeling, consequence-precedence,
+occupancy pre-read, grid-amendment constants), and the tick-grid
+artifact test. Proposals instantiate
+[`proposal-template.md`](proposal-template.md).
 
 ---
 
@@ -111,6 +118,12 @@ at runtime via the `CrossSectionalRanker` parameter
 `mechanism_max_share_of_gross` (`composition/cross_sectional.py`; see
 the composition-layer skill).
 
+The families encode **mechanisms, not archetypes**: every candidate
+must additionally state its archetype (liquidity provision /
+informed-flow-following / argued third case) and its structural
+counterparty — see the archetype rider in
+[`research-protocol.md`](research-protocol.md) Phase 1.
+
 The mechanism is propagated end-to-end on `Signal.trend_mechanism` and
 `Signal.expected_half_life_seconds`, surfaced in
 `SizedPositionIntent.mechanism_breakdown`, and consumed by
@@ -154,7 +167,7 @@ cost_arithmetic:                        # G12 — Inv-12 enforcement
   half_spread_bps: 2.5
   impact_bps: 3.0
   fee_bps: 1.0
-  margin_ratio: 1.8                    # must be ≥ 1.5 and reconcile with components ±5%
+  margin_ratio: 1.8                    # ≥ 1.5; reconciles ±0.05 absolute (alpha/cost_arithmetic.py)
 
 signal: |
   def evaluate(snapshot, regime, params):
@@ -246,12 +259,64 @@ The `cost_arithmetic:` block discloses `edge_estimate_bps`,
 
 - `margin_ratio ≥ 1.5` enforces Inv-12 (transaction cost realism)
 - The disclosed `margin_ratio` must reconcile with the components
-  within ±5%; otherwise the alpha author has lied about costs and the
-  load is rejected
+  within ±0.05 **absolute on the ratio** — not ±5% relative
+  (`alpha/cost_arithmetic.py`); otherwise the alpha author has lied
+  about costs and the load is rejected
 
 The block is structural metadata — it does not alter runtime sizing —
 but it is recorded in the alpha manifest for promotion gating,
 post-trade reconciliation, and decay detection.
+
+**Units-convention rider (FQ-1, NORMATIVE —
+`docs/research/prompt_pack_00b_edge_units_convention.md`):**
+
+- `edge_estimate_bps` and all three cost components
+  (`half_spread_bps`, `impact_bps`, `fee_bps`) are **one-way
+  (per-fill) quantities in bps of fill notional**. Declaring
+  round-trip figures is a disclosure error that systematically
+  loosens the B4 runtime gate, which doubles the disclosed edge onto
+  the round-trip basis (`signal_edge_cost_basis: "round_trip"`
+  default) before comparing against `min_ratio ×` the modeled
+  entry+taker-exit round-trip cost at `signal_min_edge_cost_ratio`
+  default 1.0 (`execution/position_manager.py`,
+  `entry_edge_clears_cost`).
+- The optional `cost_basis` YAML field (default `one_way`,
+  `alpha/cost_arithmetic.py`) records the basis; `round_trip` is
+  accepted but reserved — no shipped alpha uses it and new
+  candidates must not.
+- `margin_ratio ≥ 1.5` is a **one-way** figure (≈ 0.75× on the
+  round-trip basis); the reconciliation tolerance is ±0.05 absolute
+  on the ratio, per above.
+- Realized-edge comparisons (forensics TCA, the SURVIVES verdict,
+  the calibration haircut — `forensics/decay_detector.py`,
+  `forensics/cost_survival.py`, `forensics/edge_calibration.py`) are
+  per-fill quantities directly commensurate with the one-way
+  disclosure under balanced entry/exit fill counts.
+
+#### Units convention (FQ-1, NORMATIVE — `docs/research/prompt_pack_00b_edge_units_convention.md`)
+
+- `edge_estimate_bps` and all three cost components
+  (`half_spread_bps`, `impact_bps`, `fee_bps`) are **one-way
+  (per-fill) quantities in bps of fill notional**. Declaring
+  round-trip figures is a disclosure error that systematically
+  loosens the B4 runtime gate, which doubles the disclosed edge onto
+  the round-trip basis (`signal_edge_cost_basis: "round_trip"`
+  default) before comparing against `min_ratio ×` the modeled
+  entry+taker-exit round-trip cost at `signal_min_edge_cost_ratio`
+  default 1.0 (`execution/position_manager.py`,
+  `core/platform_config.py`).
+- The optional `cost_basis` YAML field (default `one_way`,
+  `alpha/cost_arithmetic.py`) records the basis; `round_trip` is
+  accepted but **reserved** — no shipped alpha uses it and new
+  candidates must not.
+- `margin_ratio ≥ 1.5` is a **one-way** figure (≈ 0.75× on the
+  round-trip basis); the reconciliation tolerance is ±0.05 absolute
+  on the ratio, not ±5% relative (`alpha/cost_arithmetic.py`).
+- Realized-edge comparisons (forensics TCA, the SURVIVES verdict,
+  the calibration haircut — `forensics/decay_detector.py`,
+  `forensics/cost_survival.py`, `forensics/edge_calibration.py`) are
+  per-fill quantities directly commensurate with the one-way
+  disclosure under balanced entry/exit fill counts.
 
 ---
 
@@ -325,6 +390,40 @@ to flat.  This is distinct from the **detector** suppression key
 `RegimeHazardDetector`.  Bit-identical replay is locked by the
 Level-5 hazard-replay parity test
 (`tests/determinism/test_regime_hazard_replay.py`).
+
+---
+
+## Pre-Trade Capacity & Crowding Envelope
+
+Declare the envelope at **proposal time**, before any backtest — it
+belongs in the proposal's CAPACITY & CROWDING section
+([proposal-template.md](proposal-template.md)) and in the PORTFOLIO
+VIEW of any recommendation:
+
+- **ADV-based ceiling** — state the maximum position as a fraction of
+  the midcap universe's ADV at which the disclosed `impact_bps` still
+  holds. This is a research-stage claim, distinct from the risk
+  engine's runtime ADV participation limit (policy-only today — see
+  risk-engine skill, "Policy only — not yet implemented").
+- **Sharpe-max vs profit-max size** — the Sharpe-maximizing size is
+  smaller than the profit-maximizing size once impact is concave in
+  participation; state which one the candidate targets and why.
+- **Correlated-unwind reasoning** — who else exits when this
+  mechanism's trigger fires (same-family alphas, same-archetype
+  competitors), and what that does to realized exit cost relative to
+  the disclosed `impact_bps`.
+
+Caveat (OQ-3, accepted risk): G16 PORTFOLIO rule-8 mechanism-share
+caps are validated at load time only — runtime enforcement is not
+active (bootstrap wires `CrossSectionalRanker` with
+`mechanism_max_share_of_gross=1.0`; see composition-layer skill). No
+capacity or deployment claim may rely on runtime mechanism-share
+enforcement.
+
+Post-trade crowding **symptoms** (alpha decay with stable signal
+quality, adverse-selection increase, quote anticipation) are owned by
+the post-trade-forensics skill — the envelope here is the pre-trade
+counterpart, not a duplicate of that table.
 
 ---
 
@@ -413,11 +512,14 @@ parity hash bit-identical and the alpha's economic claims auditable.
 - State model limitations before presenting results
 - Distinguish structural insight (edge) from curve fit (alpha)
 - Refuse strategies relying on unrealistic fill assumptions
-- Label working theories as such; specify falsification criteria
+- Label unvalidated theories as hypotheses; specify falsification criteria
 
 ### You Must Not
 
-- Use vague technical-analysis language
+- Use vague technical-analysis language — folk claims are inadmissible
+  until they pass the Reformalization Gate
+  ([research-protocol.md](research-protocol.md) Phase 0: state variable
+  with units + conditional-distribution claim + falsifier)
 - Conflate correlation with causation
 - Propose alphas that vanish after realistic transaction costs
 - Rely on patterns without causal mechanisms
@@ -442,6 +544,7 @@ PORTFOLIO VIEW
 -> Tail exposure assessment
 -> Cross-sectional construction objectives
 -> Mechanism-cap implications
+-> Capacity & crowding envelope (pre-trade section above)
 
 CTO VIEW
 -> Execution feasibility

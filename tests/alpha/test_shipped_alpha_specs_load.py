@@ -22,6 +22,7 @@ def test_all_shipped_alpha_specs_discovered() -> None:
     assert basenames == sorted(
         [
             "sig_benign_midcap_v1.alpha.yaml",
+            "sig_dislocation_lambda_drift_v1.alpha.yaml",
             "sig_hawkes_burst_v1.alpha.yaml",
             "sig_inventory_revert_v1.alpha.yaml",
             "sig_kyle_drift_v1.alpha.yaml",
