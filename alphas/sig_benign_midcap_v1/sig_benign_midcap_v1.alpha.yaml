@@ -116,7 +116,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 5.0
-    min: 0.0
+    min: 5.0
     max: 30.0
     description: |
       One-way cost floor (bps). Audit P1-2: self-suppress entries whose

@@ -980,9 +980,21 @@ def test_engine_stamps_g12_disclosure_fields() -> None:
     assert sig.disclosed_margin_ratio == pytest.approx(1.8)
 
 
-def test_alpha_supplied_mechanism_overrides_registered_default() -> None:
+def test_alpha_supplied_trend_mechanism_overrides_but_half_life_is_registry_authoritative() -> (
+    None
+):
     """If the alpha returns a ``Signal`` that already carries its own
     ``trend_mechanism``, the engine does NOT overwrite it — alpha wins.
+
+    ``expected_half_life_seconds`` is the opposite (audit P1 2026-07-02):
+    the engine always stamps the G16-validated ``registered`` value,
+    regardless of what the alpha returned.  ``trend_mechanism`` override is
+    structurally unreachable from a compiled YAML ``signal:`` body (the
+    loader's sandbox namespace never binds ``TrendMechanism``), so it is
+    left as alpha-wins defense-in-depth for hand-rolled ``HorizonSignal``
+    implementations; ``expected_half_life_seconds`` is a bare ``int`` any
+    inline body could set with no special import and feeds composition-layer
+    decay weighting, so the engine is made authoritative for it instead.
     """
 
     class _MechanismAwareSignal:
@@ -1023,7 +1035,7 @@ def test_alpha_supplied_mechanism_overrides_registered_default() -> None:
 
     assert len(captured) == 1
     assert captured[0].trend_mechanism is TrendMechanism.HAWKES_SELF_EXCITE
-    assert captured[0].expected_half_life_seconds == 30
+    assert captured[0].expected_half_life_seconds == 600
 
 
 # ── Audit P1 G-1: arithmetic / type errors in gate evaluation ───────
