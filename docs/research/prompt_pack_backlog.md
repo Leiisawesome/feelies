@@ -213,6 +213,11 @@ DISPOSITIONS 3; concentration analysis in
 `docs/research/prompt_pack_06a_slate_b_review.md` §1 (structural
 consequence note) and §6 Q2.
 
+**T2-C (2026-07-18):** bounded frontier characterization executed —
+`prompt_pack_13_tranche2_characterization.md` **NO-GO** (1/5 names at
+H≤120 passive κ_req ≤ 0.12). Standing state remains PAUSE-AND-HARVEST;
+full tranche-2 program still requires Lei authorization. N unchanged.
+
 ## 12. Magnitude-vs-power labeling in gate design — LANDED
 
 **Landed** Task 3-M (2026-07-15) in
