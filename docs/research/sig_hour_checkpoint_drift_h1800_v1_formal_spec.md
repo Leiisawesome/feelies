@@ -6,9 +6,10 @@
           (power, n=59); Amendments A–H applied; κ frozen 0.172
           minimum-rule vs factor product 0.189; N = 12; zero outcome
           contact).
-          POOL CONFIGURATION appendix appended 2026-07-17 (pre-Task-8
-          ruling input; census-legal only — no forward returns / IC;
-          Lei rules pool structure, then Task 8 freezes).
+          POOL CONFIGURATION appendix appended 2026-07-17; Appendix P
+          RULING (Lei, 2026-07-17) FROZEN pre-census: config (B),
+          P.3 A-2.1 evidence-pool floor, honest expectation ≈96 /
+          expected PARK; (C) REJECTED; zero ingestion. Task 8 next.
   Owner:  microstructure-alpha (spec) / research-workflow (ledger);
           prompt-pack Task 7, Phase B (H13 — final card).
 
@@ -1230,35 +1231,35 @@ outcome contact. H13 is the **final card** — death at any gate closes
 the program (pack-11 DISPOSITIONS 8). H9 remains dead under the
 bidirectional firewall. **N = 12**.
 
-**Lei ruling surface (do not guess):** whether to spend the H13 census
-given §4.4 rebuilt viable-region projection ≈ **88.5 < 100** (all-cell
-102 clears the census floor by a hair and fails design ≥ 130), **and**
-which pool-structure counts toward that ≥ 100 floor — A-2.1
-evidence-pool counting vs H10 deployable-only D (Appendix P §P.3).
-ENSG/MLI ingestion / evidence-only inclusion arithmetic is in
-Appendix P; not authorized here.
+**Appendix P RULING (Lei, 2026-07-17) — FROZEN pre-census.** See
+§P.4. Configuration **(B)** + P.3 A-2.1 evidence-pool census floor;
+**(C) REJECTED**; zero ingestion; honest κ-viable central ≈ **96 <
+100** → **expected PARK**; census runs as measurement. D unchanged
+(six symbols). N = 12 unchanged (ruling / freeze only — no outcome
+contact).
 
 ---
 
 ## NEXT ACTION (Amendment H — Task 8 scoping contract)
 
-**Stop — Lei rules Appendix P (pool configuration), then Task 8
-freezes the chosen configuration.**
+**Appendix P RULED (§P.4).** Task 8 freezes the ruled configuration
+into the validation protocol.
 
-After that ruling: draft
+Draft
 `docs/research/sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md`
 (Task 8) freezing the park-rule census, consequence-precedence,
 magnitude-vs-power labels, both F2-arm adjudicability floors, the
-§4.5 pool-collapse verdict map, **and the Appendix-P pool-structure
-choice** — then execute **Phase A** under Ordering B: (1) land the
-hour-only calendar derivation from committed `ALGO_CLOCK` files
-(§1.5.2), (2) build the census instrument that measures in-hour / :30
-episode counts against the frozen-config projections and the ≥ 100
-census floor (hour-window membership and gate/sign residual measured
-on this grid — H12's 0.3935 is characterization only), and (3) land
-the harness IC row (sign-golden before 2b; both F2 arms in the
-freeze). **Phase B (YAML / config / deployable evaluate) gates on
-step-2 PASS only.**
+§4.5 pool-collapse verdict map, **and the Appendix-P RULING
+(config (B); P.3 A-2.1 evidence-pool ≥ 100 floor; honest expectation
+≈ 96 / expected PARK)** — then execute **Phase A** under Ordering B:
+(1) land the hour-only calendar derivation from committed
+`ALGO_CLOCK` files (§1.5.2), (2) build the census instrument that
+measures in-hour / :30 episode counts against the frozen-config
+projections and the ≥ 100 census floor over the step-2 evidence pool
+(hour-window membership and gate/sign residual measured on this grid
+— H12's 0.3935 is characterization only), and (3) land the harness
+IC row (sign-golden before 2b; both F2 arms in the freeze). **Phase B
+(YAML / config / deployable evaluate) gates on step-2 PASS only.**
 
 ---
 
@@ -1407,6 +1408,64 @@ binding bar: viable ≈ **88.5 < 100** regardless of ENSG/MLI cache or
 ingestion — §4.6's "evidence-only cells do not repair the deployable
 pool's power bar" stands, and the pool-collapse table in §4.5 remains
 D-only. Ingestion of the +20 cells is then pure density for a future
-card, not an H13 power repair. **This appendix does not choose**; Lei
-rules which counting convention Task 8 freezes, then the census
-spends against that freeze.
+card, not an H13 power repair. **Open question closed in §P.4
+(Lei, 2026-07-17) — A-2.1 evidence-pool counting RULED.**
+
+### P.4 RULING — POOL CONFIGURATION (Lei, 2026-07-17; pre-census)
+
+Where this section conflicts with §4.3 / §4.6 / §P.3 open text, **this
+section governs**. Zero outcome contact; **N = 12** unchanged.
+Census-legal only — no forward returns / IC. Zero ingestion.
+
+**(1) Configuration (B) FROZEN; (C) REJECTED.**
+
+| config | ruling | binding content |
+|---|---|---|
+| **(B)** | **FROZEN** | Eight-symbol step-2 evidence pool on the existing **160-cell** drawn inventory (140 ingested admissible + 20 ENSG/MLI expansion DRAWN-NOT-INGESTED): APP/RMBS ×20; OLN/DIOD/PCTY/CROX ×20; ENSG/MLI ×10 cached originals — as defined in §P.2 (B). ENSG/MLI remain **evidence-only**. |
+| **(C)** | **REJECTED** | Second expansion for power-chasing. ENSG/MLI expansion cells stay **DRAWN-NOT-INGESTED**. **Zero ingestion.** |
+| **(A)** | superseded as spend default — see amendment below | Six-symbol D-only arithmetic retained as nested subset / audit baseline |
+
+**(2) P.3 RULED — A-2.1 evidence-pool census floor.**
+
+Census park floor ≥ **100** counts over the **step-2 evidence pool**
+(A-2.1 lineage): contamination-excluded viable-region episodes pooled
+across D ∪ {ENSG, MLI evidence-only}, not H10 deployable-only D.
+Floor = step-2 adjudicability guarantee (same numeric bar as
+consequence-precedence / F2 arm floors). **D unchanged** (six
+symbols: {APP, RMBS, OLN, DIOD, PCTY, CROX}). Deployable economics /
+CPCV / DSR / steps 3–8 remain strictly D-scoped (A-2.1 orthogonality).
+
+**ENSG marginality (disclosure, not promotion).** At frozen κ = 0.172,
+ENSG κ_req med = 0.169 ⇒ **≈ 1.8% headroom** ((0.172 − 0.169) /
+0.172). Recorded as **inside estimation noise** — evidence-only;
+**never promotable post-hoc** into D. MLI remains median-closed
+(κ_req med 0.187 > 0.172). Lei's 0.16-class D-membership screen
+(DECISION RECORD 1) is untouched.
+
+**(3) HONEST EXPECTATION FROZEN — expected PARK.**
+
+Backlog-19-compliant κ-viable central under (B) (§P.2 honesty rider,
+grid-median floor basis): viable ≈ **96 < 100**. **Expected PARK
+(power).** The census still **runs as measurement** per the pack-10-era
+precedent (measurement over projection; final characterization data
+this grid produces — H12-class: measured counts govern the park
+verdict; the ≈96 figure is the pre-registered expectation, not a
+skip-authorization). Design ≥ 130 remains failed under every honest
+row; that failure does not authorize expansion.
+
+**(4) (A)-fallback amendment (disclosed reasoning).**
+
+Lei's pre-stated fallback — spend / freeze on configuration **(A)**
+(six-symbol D) if evidence-pool expansion were refused — is
+**amended**: freeze **(B)** instead. Reasoning disclosed pre-census:
+**(B) is a free strict superset of (A)** (same D cells + ENSG/MLI ×10
+cached originals already on disk; zero ingestion; no new draw). No
+census floor, design bar, κ, honest expectation (≈96), or park-rule
+threshold is changed by the amendment — only which already-cached
+boundaries may count toward the ≥ 100 floor (P.3 A-2.1). Choosing
+(B) is not a power repair and does not authorize (C).
+
+**Task 8 contract.** Protocol freeze copies: config (B); P.3 A-2.1
+evidence-pool ≥ 100; D six-symbol; ENSG/MLI evidence-only never
+promotable post-hoc; honest expectation ≈96 / expected PARK;
+(C) rejected / expansion DRAWN-NOT-INGESTED; zero ingestion.
