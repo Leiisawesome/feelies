@@ -12,6 +12,8 @@
           + PROGRAM-CLOSED stamp (2026-07-18, Task 7-R3): alpha
           program on this universe/grid closed; entries 1–20 remain
           the handoff inventory (see prompt_pack_12_final_retrospective.md).
+          + CAPITAL-FORK-CLOSED stamp (2026-07-18): pack-13 NO-GO;
+          standing state PAUSE-AND-HARVEST; harvest inventory owned.
   Owner:  cross-cutting; prompt-pack Phase A bookkeeping.
 -->
 
@@ -215,8 +217,11 @@ consequence note) and §6 Q2.
 
 **T2-C (2026-07-18):** bounded frontier characterization executed —
 `prompt_pack_13_tranche2_characterization.md` **NO-GO** (1/5 names at
-H≤120 passive κ_req ≤ 0.12). Standing state remains PAUSE-AND-HARVEST;
-full tranche-2 program still requires Lei authorization. N unchanged.
+H≤120 passive κ_req ≤ 0.12). **NO-GO DISPOSITION ratified** (Lei,
+2026-07-18): tranche-2 thesis closed by measurement; standing state
+**PAUSE-AND-HARVEST**; reopening conditions in pack-12 DISPOSITION
+amendment entries 6–7. AXTI is a single-name characterization fact,
+not a program seed. N unchanged.
 
 ## 12. Magnitude-vs-power labeling in gate design — LANDED
 
@@ -352,3 +357,21 @@ vs STOP vs PAUSE-AND-HARVEST) is **not** pre-committed and requires
 its own Lei authorization. Living trial ledger **N = 12** (no
 increment in Task 7-R3 — synthesis only). No new backlog entry number
 is opened by program closure.
+
+---
+
+## CAPITAL-FORK-CLOSED stamp (2026-07-18 — pack-13 NO-GO; append-only)
+
+Capital fork **resolved**: tranche-2 frontier characterization
+returned **NO-GO** (`prompt_pack_13_tranche2_characterization.md`
+DISPOSITION); standing state **PAUSE-AND-HARVEST** with reopening
+conditions frozen (pack-12 DISPOSITION amendment entries 6–7).
+**HARVEST INVENTORY** confirmed committed and owned (pack-12
+DISPOSITION amendment entry 8): platform + skill ecosystem + four
+frozen protocol templates + parity guards (12-P) + calibration
+record + characterization corpus + backlog **1–20 with owners** +
+escalated vendor tickets **T5-OQ-3 / V-1** and **AXIS-2 / V-2** as
+handed-off external dependencies. Entries **1–20 above are
+unedited** by this stamp except entry 11's append-only T2-C
+ratification note. Living trial ledger **N = 12** (no increment —
+disposition only). No new backlog entry number is opened.

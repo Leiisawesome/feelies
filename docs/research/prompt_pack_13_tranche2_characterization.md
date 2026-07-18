@@ -1,11 +1,9 @@
 <!--
   File:   docs/research/prompt_pack_13_tranche2_characterization.md
-  Status: NORMATIVE — measured tranche-2 frontier characterization
-          (Task T2-C, 2026-07-18). Census-legal only. Deterministic
-          rematerialization verified (bit-identical artifact). Verdict
-          NO-GO under the §1.6 bar frozen before measurement. Standing
-          state remains PAUSE-AND-HARVEST (pack-12 DISPOSITION 1).
-          Full tranche-2 program authorization is NOT granted.
+  Status: DECIDED (2026-07-18, Lei) — NO-GO DISPOSITION ratified.
+          Measured map stands (§§1–7 unedited). Tranche-2 thesis
+          CLOSED by measurement. Standing state PAUSE-AND-HARVEST.
+          AXTI is a single-name characterization fact, not a seed.
   Owner:  research-workflow (tranche-2 go/no-go) / data-engineering
           (Massive census-legal samples); prompt-pack Task T2-C.
 
@@ -316,5 +314,31 @@ multiple_testing_ledger: "N = 12, unchanged — characterization; no hypothesis"
 verdict: "NO-GO"
 ```
 
-*Task T2-C stops here. Status: NORMATIVE. Lei decides on the measured
-map; standing state PAUSE-AND-HARVEST.*
+*Task T2-C body (§§1–7) measured and committed. Disposition appended
+below (Lei, 2026-07-18).*
+
+---
+
+## DISPOSITION (NO-GO ratification — Lei, 2026-07-18; append-only; §§1–7 unedited)
+
+1. **NO-GO RATIFIED** under the §1.6 bar frozen before measurement:
+   **1 / 5** names clear (need ≥ 5). Sole clear: **AXTI** κP₁₂₀ =
+   **0.119**. **YSS** κP₁₂₀ = **0.124** fails the 0.12 margin.
+   **H = 30** closed for all 15 candidates (best AXTI κP₃₀ = 0.238).
+   Standing capital state: **PAUSE-AND-HARVEST**. No tranche-2 slate,
+   cache build, protocol freeze, card, or N increment.
+
+2. **Mechanism finding (map's permanent contribution).** Daily **rv20
+   does not transfer** to usable intraday **σ_H**: overnight-gap
+   variance is excluded from horizon returns while spreads price the
+   same risk into **C_ow** (CAR #1 on rv20 closed at κP₁₂₀ = 0.344 —
+   §4.1). The higher-σ tranche-2 thesis is **closed by measurement**,
+   not deferred.
+
+3. **AXTI is not a program seed.** Logged solely as a single-name
+   characterization fact on the sampled map. One name cannot carry a
+   universe program: **no card, no grid, no authorization** attaches
+   to AXTI.
+
+4. **N = 12 confirmed.** Characterization only — living ledger
+   unchanged.

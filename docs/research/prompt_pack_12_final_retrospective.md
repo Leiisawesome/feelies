@@ -1,12 +1,11 @@
 <!--
   File:   docs/research/prompt_pack_12_final_retrospective.md
-  Status: DECIDED (2026-07-18, Lei) — final program retrospective
-          accepted; capital-decision DISPOSITION appended (§§1–7
-          unedited). Standing state PAUSE-AND-HARVEST; one bounded
-          tranche-2 frontier-characterization expenditure authorized
-          (go/no-go gated); hard STOP declined; shelf firewall
-          confirmed for all future programs. N = 12 unchanged
-          (disposition / authorization only; no outcome contact).
+  Status: PROGRAM RECORD CLOSED (2026-07-18, Lei) — capital fork
+          resolved by pack-13 NO-GO. Standing state PAUSE-AND-HARVEST.
+          Tranche-2 thesis closed by measurement. Reopening conditions
+          frozen (DISPOSITION amendment below). HARVEST INVENTORY
+          confirmed. N = 12 unchanged. §§1–7 + prior DISPOSITION 1–5
+          unedited (append-only).
   Owner:  research-workflow (program bookkeeping); prompt-pack Task 7-R3,
           Phase B.
 
@@ -509,3 +508,45 @@ appended below (Lei, 2026-07-18).*
    PAUSE-AND-HARVEST backlog/vendor burn-down and (ii) the bounded
    tranche-2 frontier-characterization go/no-go — each under its own
    task authorization, not as a silent continuation of cycles 1–3.
+
+---
+
+## DISPOSITION (amended — capital fork resolved; Lei, 2026-07-18; append-only; §§1–7 and DISPOSITION 1–5 unedited)
+
+6. **Capital fork RESOLVED.** The bounded tranche-2 frontier
+   characterization authorized in DISPOSITION 1 has returned
+   **NO-GO** (`prompt_pack_13_tranche2_characterization.md`
+   DISPOSITION). Tranche 2 is **closed**. Standing state remains
+   **PAUSE-AND-HARVEST** (§5.3) — stable, not ambiguous.
+
+7. **Reopening conditions** (any one required before new research
+   spend; absent all three, **no new research spend**):
+
+   | # | condition |
+   |---|---|
+   | R1 | A **structural change in the cost frontier** — tick-regime or fee-structure change that measurably lowers **C_ow** |
+   | R2 | A **vendor-answer change** enabling admissible-span extension past 2026-04-24 (T5-OQ-3 / V-1 class) |
+   | R3 | A **new thesis** whose pack-13-class characterization gate is **frozen before measurement** |
+
+8. **HARVEST INVENTORY — confirmed committed and owned.** Assets
+   redeployed under PAUSE-AND-HARVEST (no new hypothesis card; no N
+   increment):
+
+   | asset | ownership / pointer |
+   |---|---|
+   | Platform (deterministic L1 pipeline; Inv-1…13) | `src/feelies/`; CLAUDE.md / AGENTS.md |
+   | Skill ecosystem | `.cursor/skills/` |
+   | Four frozen protocol templates | `inventory_fade`, `dislocation_lambda`, `sweep_kyle_h900`, `halfhour_clock_h900` |
+   | Parity guards (12-P) | locked `tests/determinism/parity_manifest.py`; `prompt_pack_12p_router_fill_timing_parity.md` |
+   | Calibration record | pack-12 §2 (projection-vs-measured occupancy series) |
+   | Characterization corpus | pack-05 / pack-08 maps; census JSON; pack-13 T2-C map + artifact; §4.3 shelves |
+   | Backlog 1–20 with owners | `prompt_pack_backlog.md` (append-only register) |
+   | Escalated vendor tickets (handed-off external deps) | **T5-OQ-3 / V-1**; **AXIS-2 / V-2** (pack-12 DISPOSITION 2; §5.4) |
+
+9. **N = 12 confirmed.** This amendment is disposition text only —
+   no data contact, no outcome statistic, no N increment. Living
+   ledger remains **N = 12**.
+
+10. **pack-12 Status → PROGRAM RECORD CLOSED.** Cycles 1–3 closed
+    (stop-rule); capital fork closed (pack-13 NO-GO); standing state
+    **PAUSE-AND-HARVEST** with reopening conditions in entry 7.
