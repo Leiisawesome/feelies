@@ -125,12 +125,18 @@ risk_budget:
 # ``regime_engine:`` is retained as the engine the alpha would attach
 # to if regime conditions were added; ``hysteresis:`` removed to keep
 # load-time output clean.
+# Audit regime_audit_2026-07-02 §4.4/§9: ``scheduled_flow_window_active``
+# is thresholded at 0.5 (not compared with ``==``) so the gate matches the
+# tolerance already used by this alpha's own ``evaluate()`` (``active <
+# 0.5``) and anticipates the "future interpolation / fractional-active
+# variant" that comment calls out — today the sensor only ever emits
+# exactly 0.0 / 1.0, so this is behavior-neutral for every current input.
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
-    scheduled_flow_window_active == 1.0 and seconds_to_window_close > 60
+    scheduled_flow_window_active >= 0.5 and seconds_to_window_close > 60
   off_condition: |
-    scheduled_flow_window_active == 0.0 or seconds_to_window_close < 30 or realized_vol_30s_zscore > 3.5
+    scheduled_flow_window_active < 0.5 or seconds_to_window_close < 30 or realized_vol_30s_zscore > 3.5
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:

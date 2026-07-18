@@ -175,17 +175,20 @@ def _snapshot(
     horizon_seconds: int = 120,
     boundary_index: int = 1,
     sequence: int = 10,
+    timestamp_ns: int = 2_000,
+    boundary_ts_ns: int = 0,
     values: dict[str, float] | None = None,
     warm: dict[str, bool] | None = None,
     stale: dict[str, bool] | None = None,
 ) -> HorizonFeatureSnapshot:
     return HorizonFeatureSnapshot(
-        timestamp_ns=2_000,
+        timestamp_ns=timestamp_ns,
         correlation_id="corr",
         sequence=sequence,
         symbol=symbol,
         horizon_seconds=horizon_seconds,
         boundary_index=boundary_index,
+        boundary_ts_ns=boundary_ts_ns,
         values=values or {},
         warm=warm or {},
         stale=stale or {},
@@ -526,6 +529,110 @@ def test_sensor_cache_overlay_makes_value_available_to_gate() -> None:
         )
     )
     bus.publish(_snapshot())
+
+    assert len(captured) == 1
+
+
+def test_sensor_cache_rejects_reading_after_snapshot_boundary() -> None:
+    """Regime_audit_2026-07-02 §4.2/§9 (Inv-6): a cached reading stamped
+    strictly after the dispatching snapshot's nominal boundary must not be
+    served to the gate — it is dropped, surfacing as the existing
+    ``UnknownIdentifierError`` fail-safe (gate suppressed), not used as if
+    it were valid as-of the boundary."""
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(
+        SensorReading(
+            timestamp_ns=2_001,  # one ns after the snapshot's boundary below
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
+    bus.publish(_snapshot(boundary_ts_ns=2_000))
+
+    assert captured == []
+
+
+def test_sensor_cache_accepts_reading_at_snapshot_boundary() -> None:
+    """Companion to the rejection test above: a reading stamped exactly at
+    (not just before) the nominal boundary is still valid as-of it —
+    the filter is ``reading_ts_ns > asof_ns``, an exclusive upper bound."""
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(
+        SensorReading(
+            timestamp_ns=2_000,  # exactly at the snapshot's boundary below
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
+    bus.publish(_snapshot(boundary_ts_ns=2_000))
+
+    assert len(captured) == 1
+
+
+def test_sensor_cache_serves_pre_boundary_value_after_post_boundary_overwrite() -> None:
+    """Regime_audit_2026-07-02 §4.2/§9 (Inv-6): a valid pre-boundary reading
+    overwritten by a boundary-crossing quote's post-boundary reading must
+    still be served as-of the boundary — the slot retains the prior reading
+    so the gate does not fail-safe OFF on causally valid data."""
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    # Valid pre-boundary reading (at or before the 2_000 boundary).
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
+    # Boundary-crossing quote's reading, stamped after the boundary; this
+    # overwrites the slot but must not shadow the pre-boundary value.
+    bus.publish(
+        SensorReading(
+            timestamp_ns=2_050,
+            correlation_id="corr",
+            sequence=4,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=0.1,
+        )
+    )
+    bus.publish(_snapshot(boundary_ts_ns=2_000))
 
     assert len(captured) == 1
 
