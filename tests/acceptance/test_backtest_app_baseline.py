@@ -104,8 +104,21 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # Re-baked on 2026-06-29 against the current APP/2026-03-26 disk-cache output
 # after the L1->L2 boundary-time/latch regression audit.  The current trade
 # path pins 21 journal records and $430.85 net P&L.
+#
+# Re-baked 2026-07-02 (sensor_audit_2026-07-02 P1): platform.yaml's
+# quote_replenish_asymmetry / quote_hazard_rate / quote_flicker_rate sensor
+# specs gained an opt-in min_window_span_seconds param (set to 5s in
+# production), shifting the resolved config hash. Config-contract change
+# only — sig_benign_midcap_v1 (the alpha this baseline backtests) does not
+# depend on any of those three sensors, so the trade path / P&L pins above
+# are unaffected.
+#
+# Re-baked again 2026-07-02 (sensor_audit_2026-07-02 P2): platform.yaml's
+# scheduled_flow_window sensor spec gained throttled_ms=1000 (verified safe:
+# its update() reads no state at all). Config-contract change only —
+# sig_benign_midcap_v1 does not depend on this sensor either.
 _BASELINE_CONFIG_HASH = (
-    "be86c871d910b25c095c51dfe867bd62e5569056f2c98ceda5cacf77bc6211c2"
+    "c4a74f6a98b021d055ea84f237d978fd8fe28bef81522b31c90a7f05537b3da1"
 )
 _BASELINE_NET_PNL = Decimal("430.85")
 _BASELINE_FILL_COUNT = 21

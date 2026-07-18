@@ -42,10 +42,14 @@ falsification_criteria:
     inactive.
 
 # ── Layer-1 sensor dependencies ───────────────────────────
+# sensor_audit_2026-07-02 P1: ``micro_price`` dropped — evaluate() never
+# reads a micro_price-derived value (only kyle_lambda_60s_percentile,
+# kyle_lambda_60s_zscore, and ofi_ewma), so it was a cosmetic dependency; the
+# same defect found and fixed in sig_benign_midcap_v1. kyle_lambda_60s is a
+# genuine, actually-read KYLE_INFO fingerprint (G16 rule 5) on its own.
 depends_on_sensors:
   - kyle_lambda_60s
   - ofi_ewma
-  - micro_price
   - spread_z_30d
   - realized_vol_30s
 
@@ -137,7 +141,6 @@ trend_mechanism:
   l1_signature_sensors:
     - kyle_lambda_60s
     - ofi_ewma
-    - micro_price
     - spread_z_30d
   failure_signature:
     - "spread_z_30d > 2.0"

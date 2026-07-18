@@ -5,21 +5,23 @@ alpha_id: paper_smoke_v1
 version: "1.0.0"
 description: |
   Minimal smoke alpha for paper-RTH E2E validation.  Fires on
-  realized-vol z-score excursions with micro-price direction tie-break.
+  realized-vol z-score excursions with a permissive threshold.
 
 # ── Hypothesis (causal mechanism) ─────────────────────────
 hypothesis: |
-  Short-horizon realized-vol z-score excursions on SPY during RTH
-  correlate with micro-price displacement; a permissive threshold
-  guarantees occasional entries for pipeline smoke testing.
+  Short-horizon realized-vol z-score excursions on SPY during RTH occur
+  often enough that a permissive threshold guarantees occasional entries
+  for pipeline smoke testing; this alpha makes no economic mechanism claim.
 
 falsification_criteria:
   - Signal rate falls to zero for 5 consecutive RTH sessions.
   - Realized vol sensor fails to warm within 120s during RTH.
 
 # ── Layer-1 sensor dependencies ───────────────────────────
+# sensor_audit_2026-07-02 P1: ``micro_price`` dropped — evaluate() only ever
+# read realized_vol_30s_zscore; the "micro-price direction tie-break" the
+# description used to claim was never implemented.
 depends_on_sensors:
-  - micro_price
   - realized_vol_30s
 
 # ── Parameters ────────────────────────────────────────────

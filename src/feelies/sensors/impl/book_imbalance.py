@@ -28,7 +28,9 @@ Edge case: a degenerate book with zero total displayed depth (or a non-positive
 side, a halt / pre-open marker) carries no imbalance information — we emit
 ``value=0.0`` with ``warm=False`` so the absence of liquidity is not conflated
 with a balanced book (the FeatureComputation ``float``-only sentinel problem the
-legacy ``BidAskImbalanceComputation`` could not avoid, audit #13).
+legacy ``BidAskImbalanceComputation`` could not avoid, audit #13). A crossed
+book (``bid > ask``) is dropped entirely (3P-2), matching every sibling
+price-consuming sensor.
 
 Determinism: a single float division per event; no RNG, no clock reads, no
 time-of-day dependency.  Replay-stable to the bit.
@@ -112,7 +114,12 @@ class BookImbalanceSensor:
         ask = float(event.ask)
         # A1: uniform bid/ask positivity validation across price-consuming
         # sensors.  A zero/negative side is a halt / pre-open marker.
-        if bid <= 0.0 or ask <= 0.0:
+        # 3P-2: reject crossed book — sensor_audit_2026-07-02 P1: this sensor
+        # previously omitted the crossed-book guard every sibling
+        # price-consuming sensor applies (ofi_ewma, ofi_raw, micro_price,
+        # spread_z_30d, ...), so a locked/crossed NBBO tick would update
+        # book_imbalance while siblings silently skipped the same tick.
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
             return None
 
         bid_sz = event.bid_size

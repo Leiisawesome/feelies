@@ -2,7 +2,121 @@
 
 Read-only, evidence-based audit of the feelies Layer-1 sensor framework and its
 path into `HorizonFeatureSnapshot` features, per `docs/prompts/audit_sensor.md`.
-No production code, baselines, configs, or ledgers were modified.
+No production code, baselines, configs, or ledgers were modified **during the
+audit pass itself** — see the remediation addendum below for the follow-up
+implementation pass, done same-day at explicit user request.
+
+---
+
+## Remediation status (same-day follow-up, 2026-07-02)
+
+Following this audit, the user asked to proceed through the prioritized
+backlog. The items below were implemented, each verified against the full
+test suite (`uv run pytest`), `uv run mypy src/feelies` (strict, clean), and
+`uv run ruff check` (clean) with zero regressions beyond two pre-existing,
+unrelated failures confirmed present before any of this session's changes
+(`tests/kernel/test_orchestrator.py::TestForcedExit*` /
+`TestTradeJournalProvenance` — STOP_EXIT journal-reason classification; and
+`tests/acceptance/test_no_walltime_outside_clock.py::test_wall_clock_allowlist_has_no_stale_entries`
+— a stale allowlist entry in `core/platform_config.py`; both are outside the
+sensor/feature layer this audit scopes).
+
+**P0 — fixed:**
+
+- Version-blind feature dispatch now raises `MultiVersionFeatureDispatchError`
+  (`features/aggregator.py`) when a second live `sensor_version` would feed a
+  feature that actually consumes it (harmless/unconsumed cases still only
+  warn, as before). New tests lock both branches
+  (`tests/features/test_aggregator.py`).
+
+**P1 — fixed:**
+
+- `BookImbalanceSensor` now rejects a crossed book (`bid > ask`), matching
+  every sibling price-consuming sensor (`sensors/impl/book_imbalance.py`).
+- Added `tests/sensors/test_book_imbalance.py` — the sensor's first dedicated
+  test module, covering the crossed-book fix, zero-depth handling, warm-up
+  threshold, and the S3 sliding-window gap-reversion its docstring claims.
+- `sig_benign_midcap_v1` no longer declares the unread `micro_price`
+  dependency; `book_imbalance` was added to
+  `layer_validator._FAMILY_FINGERPRINT_SENSORS["KYLE_INFO"]` (it is
+  algebraically the micro-price-deviation transform) so the alpha still
+  satisfies G16 rule 5 honestly. The same cosmetic-dependency defect was
+  independently found (via the new check below) and fixed in
+  `sig_kyle_drift_v1` and `paper_smoke_v1` as well.
+- Added `bootstrap._warn_unread_sensor_dependencies` — logs a warning when a
+  declared `depends_on_sensors` entry contributes no feature that
+  `evaluate()` or the regime gate actually reads (reusing the existing
+  2P-1 consume-driven `warm_ids` derivation, so it inherits that mechanism's
+  already-tested semantics rather than a new heuristic). Verified zero false
+  positives across all 6 shipped SIGNAL alphas.
+- `scripts/sensor_feature_ic.py` now pairs forward returns from
+  `HorizonFeatureSnapshot.boundary_ts_ns` (the documented "regular-grid
+  anchor for IC labels") instead of `.timestamp_ns` (trigger time). New
+  regression test constructs a case where the two anchors give opposite
+  realised/unrealised verdicts, confirmed to fail without the fix.
+- Added opt-in `min_window_span_seconds` to `quote_hazard_rate`,
+  `quote_flicker_rate`, and `quote_replenish_asymmetry` (default `None`,
+  preserving locked golden vectors exactly) requiring the retained readings
+  to span real elapsed time, not just satisfy a count via a burst. Wired on
+  in `platform.yaml` (5s, matching each sensor's `window_seconds`) since none
+  of these three sensors are consumed by the one alpha the reference config
+  loads, so this has no PnL/behavioral effect there — verified via the full
+  regression suite and the config-contract hash re-bake.
+- `.cursor/skills/feature-engine/SKILL.md` and `sensors/impl/__init__.py` now
+  list `book_imbalance` and `ofi_raw` (18 implemented / 15 registered,
+  up from the stale "16 total" / 13 registered).
+- `.cursor/skills/microstructure-alpha/SKILL.md`'s mechanism table updated to
+  match the widened KYLE_INFO fingerprint set.
+- `quote_replenish_asymmetry.py`'s docstring no longer states its sign
+  convention as settled fact; it now cites the `sig_inventory_revert_v1`
+  quarantine evidence directly (pooled IC ≈ −0.007; short leg positive in
+  5/6 sessions) and marks the sign unconfirmed-to-contradicted pending
+  re-study.
+
+**P1 — deliberately deferred (flagged for a product/research decision, not
+silently skipped or fabricated):**
+
+- Orphaned sensors (`inventory_pressure`, `liquidity_stress_score`,
+  `quote_flicker_rate` — zero alpha consumers). The backlog offered "wire an
+  alpha to them, or stop computing them"; wiring requires a genuine,
+  evidenced hypothesis (Inv-1/Inv-2/Inv-3 forbid fabricating one), and
+  removing live production sensor registrations is a bigger behavioral
+  change than this pass's scope. Left as-is, documented.
+- No LIQUIDITY_STRESS-family exit-generating alpha was authored — same
+  reasoning: inventing strategy logic without real backtested evidence would
+  violate the platform's own core invariants.
+
+**P2 — fixed (quick wins):**
+
+- `docs/three_layer_architecture.md` §20.4.1 corrected to match the shipped
+  `hawkes_intensity` implementation: fixed both the unit/semantics claim
+  (arbitrary impulse units, not events/second; `impulse_decay_ratio` is not a
+  Hawkes branching-ratio stability metric) and the per-trade update formula,
+  which did not match the code (`β·λ+α` vs. the actual
+  decay-then-additive-impulse recursion).
+- Added a soft (log-only, never blocking) G16 rule-3 warning when a
+  horizon/half-life ratio sits within 0.05 of the `[0.5, 4.0]` bound.
+  Verified it fires for exactly the two alphas identified at that razor's
+  edge (`sig_kyle_drift_v1`, `sig_moc_imbalance_v1`, both at ratio 0.500) and
+  no others.
+- `scheduled_flow_window` is now throttled (`throttled_ms: 1000`) in
+  `platform.yaml` — verified safe (its `update()` reads no state at all, so
+  skipping calls inside the throttle window has zero estimator-bias risk,
+  unlike an accumulator).
+
+**P2 — deliberately deferred (need a real data run, not fabricable from code
+reading alone):**
+
+- Feeding `scripts/calibrate_hawkes.py`'s fitted (α, β) into a new
+  `hawkes_intensity` sensor_version — requires running it against real
+  cached AAPL/APP trade data, unavailable in this environment.
+- Reconciling `vpin_50bucket`'s tick-rule classification against the
+  Easley–López de Prado–O'Hara (2012) BVC methodology — a literature/data
+  research task.
+- Evaluating cross-sectional normalization at the horizon boundary — an
+  open research question, not a code change, per the original report.
+
+---
 
 **Prior audits in this series:** [`sensor_audit_2026-06-11.md`](sensor_audit_2026-06-11.md) →
 [`sensor_audit_2026-06-19.md`](sensor_audit_2026-06-19.md) (last full pass) →

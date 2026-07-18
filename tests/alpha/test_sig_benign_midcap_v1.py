@@ -56,7 +56,6 @@ def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.horizon_seconds == 120
     assert loaded.depends_on_sensors == (
         "ofi_ewma",
-        "micro_price",
         "book_imbalance",
         "spread_z_30d",
         "realized_vol_30s",

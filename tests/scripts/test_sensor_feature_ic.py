@@ -115,6 +115,58 @@ def test_replay_produces_snapshots_and_pairs() -> None:
     assert len(pairs.values) >= 1
 
 
+def test_collect_pairs_anchors_on_boundary_ts_ns_not_timestamp_ns() -> None:
+    """sensor_audit_2026-07-02 P1: on a sparse tape the event that *triggers*
+    a HorizonTick can arrive well after the nominal grid boundary.
+    ``HorizonFeatureSnapshot.boundary_ts_ns`` is documented as "the regular-
+    grid anchor for IC labels / forensics" (core/events.py) specifically so
+    forward-return pairing is not skewed by that trigger-time lag; this locks
+    ``_collect_pairs`` to that field.
+
+    Constructed so the two anchors give an unambiguous, opposite-verdict
+    contrast: from the nominal boundary (30s) the 30s-forward window is
+    *realised* (data exists through 60s); from the late trigger time (90s,
+    simulating a long gap before the triggering event) the same 30s horizon
+    would require data through 120s, which does not exist yet — the wrong
+    anchor would silently drop this pair as unrealised instead of just
+    computing a different value, making the bug unambiguous rather than a
+    matter of degree.
+    """
+    from feelies.core.events import HorizonFeatureSnapshot
+
+    NS = ic._NS_PER_SECOND
+    snap = HorizonFeatureSnapshot(
+        timestamp_ns=90 * NS,  # late trigger — the bug's anchor
+        correlation_id="snap-1",
+        sequence=1,
+        symbol="AAPL",
+        horizon_seconds=30,
+        boundary_index=1,
+        boundary_ts_ns=30 * NS,  # nominal grid boundary — the correct anchor
+        values={"demo": 1.0},
+        warm={"demo": True},
+        stale={"demo": False},
+    )
+    evs = [
+        _quote(0, "99.99", "100.01", 100, 100),
+        _quote(60 * NS, "199.99", "200.01", 100, 100),
+        _quote(65 * NS, "199.99", "200.01", 100, 100),  # last quote at t=65s
+    ]
+    mids = ic._MidSeries.from_events(evs)
+
+    from_boundary = ic._forward_return(mids, 30 * NS, 30)  # window end 60s <= last_ts 65s
+    assert from_boundary is not None
+
+    from_trigger = ic._forward_return(mids, 90 * NS, 30)  # window end 120s > last_ts 65s
+    assert from_trigger is None
+
+    pairs = ic._collect_pairs([snap], mids, "demo", 30)
+    # Using timestamp_ns would drop this pair entirely (unrealised); using
+    # boundary_ts_ns realises it with the expected value.
+    assert pairs.values == [1.0]
+    assert pairs.fwd == [from_boundary]
+
+
 def test_kyle_alignment_ab_registers_both_versions_and_runs() -> None:
     """P1-5 A/B must register legacy 1.2.0 and causal 2.0.0 kyle (version-match
     via params) and produce both variant rows."""

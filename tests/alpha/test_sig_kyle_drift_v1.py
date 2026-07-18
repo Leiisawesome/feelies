@@ -50,7 +50,6 @@ def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.depends_on_sensors == (
         "kyle_lambda_60s",
         "ofi_ewma",
-        "micro_price",
         "spread_z_30d",
         "realized_vol_30s",
     )

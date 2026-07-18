@@ -79,7 +79,7 @@ Sensors below are the **implemented** `sensor_id`s only
 
 | Family | Half-life envelope | G16 primary fingerprint (rule 5) | Other family-related sensors | Cost-arithmetic guidance |
 |--------|-------------------|-----------------------|-----------------------|------------------------|
-| `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `micro_price` | `ofi_ewma` | Edge ~ permanent impact; survive 1.5× spread |
+| `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `micro_price`, `book_imbalance` | `ofi_ewma`, `ofi_raw` | Edge ~ permanent impact; survive 1.5× spread |
 | `INVENTORY` | 5 – 60 s | `quote_replenish_asymmetry` | `inventory_pressure` | Mean-reverting; tight horizon, low cost margin |
 | `HAWKES_SELF_EXCITE` | 5 – 60 s | `hawkes_intensity` | `trade_through_rate` | Short half-life; latency-sensitive |
 | `LIQUIDITY_STRESS` | 30 – 600 s | `vpin_50bucket`, `realized_vol_30s` | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` | **Exit-only** — entries forbidden by G16 |
@@ -92,7 +92,11 @@ Sensors below are the **implemented** `sensor_id`s only
 > alarm), and `quote_flicker_rate` (best-price reversal fraction) shipped
 > in the audit P2-3 pass. `vpin_50bucket` (flow toxicity) and
 > `snr_drift_diffusion` ship but remain dormant (not in the reference
-> `platform.yaml`).
+> `platform.yaml`). `book_imbalance` (level-invariant top-of-book size
+> imbalance) joined the KYLE_INFO primary fingerprint set in
+> sensor_audit_2026-07-02 P1 — it is algebraically the micro-price-deviation
+> transform, so alphas reading it satisfy rule 5 without also having to
+> declare an unread `micro_price`/`kyle_lambda_60s` dependency.
 
 The alpha's `horizon_seconds / expected_half_life_seconds` ratio must
 lie in `[0.5, 4.0]` (G16 mechanism-horizon binding) — neither too
