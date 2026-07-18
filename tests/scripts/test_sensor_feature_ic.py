@@ -286,3 +286,73 @@ def test_harness_h12_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
     tape, cal = _h12_smoke_tape_and_calendar("OLN")
     mids = ic._MidSeries.from_events(tape)
     assert ic._h12_halfhour_clock(tape, mids, "OLN", "2026-01-15", 0, calendar=cal) == []
+
+
+# ── H13 row smoke (protocol §2.2; Task 9-A-H13 Phase A) — synthetic only ─
+
+
+def _h13_smoke_tape_and_calendar(sym: str = "APP"):
+    """Flat-mid buy-pressure tape + synthetic hour ALGO_CLOCK at t=3600 s.
+
+    session_open_ns=0 ⇒ h=1800 boundaries at 0, 1800, 3600, 5400, …
+    Tape to 7200 s so the 5400 s boundary has a realised forward window.
+    Calendar admits only [3600 s, 3601 s) ⇒ in-hour extreme at 3600;
+    halfhour extreme at 1800/5400 under hour-only injection semantics.
+    """
+    from datetime import date
+
+    from feelies.storage.reference.event_calendar import (
+        CalendarWindow,
+        EventCalendar,
+        WindowKind,
+    )
+
+    NS = ic._NS_PER_SECOND
+    events = []
+    for t in range(0, 7200):
+        events.append(
+            type(_quote(0, "100", "100.02", 100, 100))(
+                timestamp_ns=t * NS,
+                correlation_id=f"q-{t}",
+                sequence=t,
+                symbol=sym,
+                bid=Decimal("100.00"),
+                ask=Decimal("100.02"),
+                bid_size=100 + t,
+                ask_size=100,
+                exchange_timestamp_ns=t * NS,
+            )
+        )
+    cal = EventCalendar(
+        session_date=date(2026, 1, 15),
+        windows=(
+            CalendarWindow(
+                window_id="algo_clock_smoke_3600",
+                kind=WindowKind.ALGO_CLOCK,
+                symbol=None,
+                start_ns=3600 * NS,
+                end_ns=3600 * NS + NS,
+                flow_direction_prior=0.0,
+                meta={"mark_class": "hour"},
+            ),
+        ),
+    )
+    return events, cal
+
+
+def test_harness_h13_row_reports_both_arms_and_hour_contrast() -> None:
+    tape, cal = _h13_smoke_tape_and_calendar("APP")
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h13_hour_checkpoint(tape, mids, "APP", "2026-01-15", 0, calendar=cal)
+    by = {r.variant: r for r in rows}
+    assert set(by) == {"in_hour_extreme", "halfhour_extreme", "hour_contrast"}
+    assert all(r.feature == "h13_hour_checkpoint" and r.horizon == 1800 for r in rows)
+
+
+def test_harness_h13_ensg_evidence_only_still_emits_ic_rows() -> None:
+    """JC-12: evidence-pool primary — ENSG/MLI are not excluded from IC rows."""
+    tape, cal = _h13_smoke_tape_and_calendar("ENSG")
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h13_hour_checkpoint(tape, mids, "ENSG", "2026-01-15", 0, calendar=cal)
+    assert len(rows) == 3
+    assert all(r.feature == "h13_hour_checkpoint" for r in rows)

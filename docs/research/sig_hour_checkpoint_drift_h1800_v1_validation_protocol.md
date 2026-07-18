@@ -1349,4 +1349,65 @@ P0-1.*
 
 # AMENDMENTS
 
-*(empty at freeze — append-only from this line)*
+## A-1 — Phase-A IMPLEMENTATION RECORD (Task 9-A-H13, 2026-07-18)
+
+**Scope.** Phase A only (Ordering B): hour-only calendar derivation +
+`ofi_integrated_percentile` h=1800 pin + census instrument + harness IC
+row. **No census execution, no IC numbers, no outcome contact.** Phase B
+explicitly out of scope. **N = 12 survives unchanged** (living ledger;
+first outcome contact still reserved for step-2 IC on the H13 primary
+→ N ≥ 13).
+
+### Commit ledger
+
+| # | sha | delivered |
+|---|---|---|
+| 1 | `989ab39` | Hour-only derived calendar view — deterministic `:00` SUBSET of committed `ALGO_CLOCK` YAMLs (`scripts/research/derive_hour_only_algo_clock_calendars.py`); `:30` excluded from injection; bit-identity census precondition in `tests/sensors/test_hour_only_algo_clock_derivation.py`. Committed calendars untouched. Coverage map: derive script → `research_validation`. |
+| 2 | `4aff50f` | `ofi_integrated_percentile` at h=1800 pinned (factory already multi-h; H13 consumption lock + bootstrap comment). Determinism suite green — **no locked parity baseline moved**. |
+| 3 | `6bef718` | Census instrument `scripts/research/hour_checkpoint_drift_census.py` (frozen §1.1 predicate **both arms**; eight-symbol evidence pool; JC-10 calendar-warm under hour-only view; JC-1 leakage / co-travel / tranche1b_kappa_drift REPORTS; σ₁₈₀₀ vs floors) + synthetic-fixture golden pinning both arms at build time incl. ENSG/MLI evidence-only cells (`tests/scripts/test_hour_checkpoint_drift_census.py`). Coverage map: census → `research_validation`. |
+| 4 | (this commit) | Harness IC row in `scripts/sensor_feature_ic.py` — H13 hour-stratified `in_hour_extreme` / `halfhour_extreme` / `hour_contrast` at h=1800 under hour-only injection; ENSG/MLI included (JC-12 evidence-pool primary); additive only; synthetic smoke tests in `tests/scripts/test_sensor_feature_ic.py`. This IMPLEMENTATION RECORD. |
+
+### Gate battery (each commit independently green; PYTHONHASHSEED=0)
+
+| gate | commit 1 | commit 2 | commit 3 | commit 4 |
+|---|---|---|---|---|
+| `pytest -m "not functional and not slow"` | 4127 passed, 9 skipped | 4128 passed, 9 skipped | 4138 passed, 9 skipped | 4140 passed, 9 skipped |
+| `mypy src/feelies` (strict) | clean (194 files) | clean | clean | clean |
+| `ruff check src/ tests/` (+ scripts touched) | clean | clean | clean | clean |
+| `tests/docs/test_prompt_coverage_map.py` | green (scripts row) | green | green (scripts row) | green |
+| determinism / locked baselines | n/a (no src factory change) | **no baseline moved** | n/a | n/a |
+
+### Coverage-map ownership rows
+
+| artifact | owner |
+|---|---|
+| `scripts/research/derive_hour_only_algo_clock_calendars.py` | `research_validation` (`docs/prompts/README.md` scripts row) |
+| `src/feelies/bootstrap.py` (`ofi_integrated_percentile` comment only) | `audit_kernel` (pre-existing root-module owner; unchanged) |
+| `scripts/research/hour_checkpoint_drift_census.py` | `research_validation` |
+| `scripts/sensor_feature_ic.py` (H13 row additive) | `sensor` (pre-existing scripts-row owner; unchanged) |
+
+### Explicit non-actions (binding)
+
+- Census **not executed** against the 140-cell evidence-pool grid
+  (instrument + golden pin only).
+- No forward return / RankIC / CPCV / DSR / outcome statistic computed
+  on cached L1.
+- No Phase-B alpha YAML, `configs/bt_sig_hour_checkpoint_drift_h1800_v1.yaml`,
+  or sign-golden evaluate module.
+- Locked parity baselines / promotion ledger / core event schemas
+  untouched.
+- **N = 12** at close of Phase A (unchanged).
+
+### P0-1 status after this amendment
+
+| deliverable | status |
+|---|---|
+| (i) hour-only calendar derivation (`:00` subset; `:30` excluded) | **landed** (`989ab39`) |
+| (ii) `ofi_integrated_percentile` at h=1800 | **landed** (`4aff50f`) |
+| (iii) census instrument (both arms; eight-symbol pool) | **committed** (`6bef718`) — not run on cache |
+| (iv) harness IC row (both F2 arms) | **landed** (this commit) — not run on cache |
+
+**Stop for Lei review before any census execution (step 1).**
+
+*(Record appended 2026-07-18. Justification: Task 9-A-H13 Phase-A
+close-out; instruments built and pinned; no freeze-body edit.)*

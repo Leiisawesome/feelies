@@ -471,6 +471,12 @@ def _run_one(
     # additive only; no outcome contact in Phase A (instrument land only).
     if _H12_HORIZON in horizons:
         rows.extend(_h12_halfhour_clock(events, mids, symbol, date, session_open_ns))
+    # Protocol §2.2 H13 row (sig_hour_checkpoint_drift_h1800_v1) — pinned to
+    # h=1800; hour-stratified in-hour / :30 extreme-OFI contrast under
+    # hour-only calendar injection; additive only; no outcome contact in
+    # Phase A (instrument land only). N = 12 unchanged.
+    if _H13_HORIZON in horizons:
+        rows.extend(_h13_hour_checkpoint(events, mids, symbol, date, session_open_ns))
     return rows
 
 
@@ -1213,6 +1219,174 @@ def _h12_halfhour_clock(
             feature="h12_halfhour_clock",
             horizon=_H12_HORIZON,
             variant="clock_contrast",
+            n=min(e.n, b.n),
+            rank_ic=contrast,
+            ic=None,
+        )
+    )
+    return rows
+
+
+# ── H13 row — sig_hour_checkpoint_drift_h1800_v1 (protocol §2.2; Task 9-A)
+#
+# Measurement plumbing for the pre-registered H13 primary trial, not a new
+# trial: x = ofi_integrated (signed) vs y = signed forward 1800 s mid
+# log-return, stratified by the census-pinned extreme-OFI quintile
+# (percentile ≥ 0.80 OR ≤ 0.20 with sign agreement) into:
+#   * in_hour_extreme     (W_hr = 1 — hour-only ALGO_CLOCK membership)
+#   * halfhour_extreme    (W_hr = 0 — matched OFI at :30, F2 arm)
+#   * hour_contrast       (in RankIC − halfhour RankIC)
+# Eight-symbol evidence pool (incl. ENSG/MLI) produces IC rows — JC-12.
+# Calendar injection = hour-only derived view (:30 excluded).
+# Phase A lands the instrument only — no cached-data IC run (N = 12).
+
+_H13_HORIZON = 1800
+_H13_OFI_PCTL_HI = 0.80
+_H13_OFI_PCTL_LO = 0.20
+_H13_CONSUMED_IDS = (
+    "scheduled_flow_window_active",
+    "ofi_integrated",
+    "ofi_integrated_percentile",
+    "realized_vol_30s_zscore",
+)
+
+
+def _h13_load_hour_only_calendar(date_str: str) -> EventCalendar | None:
+    from scripts.research.derive_hour_only_algo_clock_calendars import (
+        load_hour_only_calendar,
+    )
+
+    return load_hour_only_calendar(date_str)
+
+
+def _h13_sensor_specs(calendar: EventCalendar) -> tuple[SensorSpec, ...]:
+    return (
+        SensorSpec(
+            sensor_id="scheduled_flow_window",
+            sensor_version="1.2.0",
+            cls=ScheduledFlowWindowSensor,
+            params={"calendar": calendar},
+            subscribes_to=(NBBOQuote, Trade),
+        ),
+        SensorSpec(
+            sensor_id="ofi_raw",
+            sensor_version="1.0.0",
+            cls=OFIRawSensor,
+            params={"warm_after": 50, "warm_window_seconds": 300},
+            subscribes_to=(NBBOQuote,),
+        ),
+        SensorSpec(
+            sensor_id="realized_vol_30s",
+            sensor_version="1.3.0",
+            cls=RealizedVol30sSensor,
+            params={"window_seconds": 30, "warm_after": 16},
+            subscribes_to=(NBBOQuote,),
+        ),
+    )
+
+
+def _h13_features() -> list[HorizonFeature]:
+    h = _H13_HORIZON
+    feats: list[HorizonFeature] = []
+    for sid in ("scheduled_flow_window", "ofi_raw", "realized_vol_30s"):
+        feats.extend(_horizon_features_for(sid, h))
+    return feats
+
+
+def _h13_rank_row(symbol: str, date: str, variant: str, p: _Pairs, *, with_edge: bool) -> _Row:
+    n = len(p.values)
+    rank_ic = ic = p_value = None
+    if n >= 3:
+        res = spearman_ic(p.values, p.fwd)
+        rank_ic, p_value = res.rho, res.p_value
+        ic = _pearson(p.values, p.fwd)
+    edge = long_short_edge_bps(p.values, p.fwd) if with_edge and n >= 5 else None
+    return _Row(
+        symbol=symbol,
+        date=date,
+        feature="h13_hour_checkpoint",
+        horizon=_H13_HORIZON,
+        variant=variant,
+        n=n,
+        rank_ic=rank_ic,
+        ic=ic,
+        edge_bps=edge,
+        pairs=p if edge is not None else None,
+        p_value=p_value,
+    )
+
+
+def _h13_hour_checkpoint(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    session_open_ns: int,
+    *,
+    calendar: EventCalendar | None = None,
+) -> list[_Row]:
+    """Protocol §2.2 H13 rows — hour-stratified extreme-OFI contrast (both arms)."""
+    cal = calendar if calendar is not None else _h13_load_hour_only_calendar(date)
+    if cal is None:
+        print(
+            f"  # H13 skip {symbol}/{date}: no hour-only calendar view",
+            file=sys.stderr,
+        )
+        return []
+
+    snaps = _replay_snapshots(
+        events,
+        symbol=symbol,
+        horizon_features=_h13_features(),
+        horizons=frozenset({_H13_HORIZON}),
+        session_open_ns=session_open_ns,
+        sensor_specs=_h13_sensor_specs(cal),
+    )
+    strata = ("in_hour_extreme", "halfhour_extreme")
+    pairs = {s: _Pairs(values=[], fwd=[]) for s in strata}
+    for s in snaps:
+        if s.horizon_seconds != _H13_HORIZON:
+            continue
+        if not all(
+            s.warm.get(fid, False) and not s.stale.get(fid, True) for fid in _H13_CONSUMED_IDS
+        ):
+            continue
+        ofi = s.values.get("ofi_integrated")
+        pctl = s.values.get("ofi_integrated_percentile")
+        w_hr = s.values.get("scheduled_flow_window_active")
+        if ofi is None or pctl is None or w_hr is None:
+            continue
+        asof_ns = s.boundary_ts_ns
+        y = _forward_return(mids, asof_ns, _H13_HORIZON)
+        if y is None:
+            continue
+        # Extreme stratum + sign agreement (census §1.1 arms 4/7).
+        if pctl >= _H13_OFI_PCTL_HI and ofi > 0.0:
+            pass
+        elif pctl <= _H13_OFI_PCTL_LO and ofi < 0.0:
+            pass
+        else:
+            continue
+        stratum = "in_hour_extreme" if w_hr >= 0.5 else "halfhour_extreme"
+        pairs[stratum].values.append(ofi)
+        pairs[stratum].fwd.append(y)
+
+    rows: list[_Row] = [
+        _h13_rank_row(symbol, date, "in_hour_extreme", pairs["in_hour_extreme"], with_edge=True),
+        _h13_rank_row(
+            symbol, date, "halfhour_extreme", pairs["halfhour_extreme"], with_edge=True
+        ),
+    ]
+    e = rows[0]
+    b = rows[1]
+    contrast = e.rank_ic - b.rank_ic if e.rank_ic is not None and b.rank_ic is not None else None
+    rows.append(
+        _Row(
+            symbol=symbol,
+            date=date,
+            feature="h13_hour_checkpoint",
+            horizon=_H13_HORIZON,
+            variant="hour_contrast",
             n=min(e.n, b.n),
             rank_ic=contrast,
             ic=None,
