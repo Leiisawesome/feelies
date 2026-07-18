@@ -146,6 +146,7 @@ Alphas can be placed in either layout:
 | `trend_mechanism` | dict | No (Phase 1.1 parsed, Phase 3.1 enforced) | v0.3 mechanism descriptor, see below. |
 | `hazard_exit` | dict | No (Phase 1.1 parsed, Phase 4.1 enforced) | v0.3 hazard-rate exit policy, see below. |
 | `promotion` | dict | No (Workstream F-5) | Per-alpha override of the platform `GateThresholds` used by `validate_gate(...)` at promotion time, see below. |
+| `lifecycle_state` | string | No (BT-13) | Only `"RESEARCH"` is accepted. Caps the alpha at RESEARCH — blocks PAPER/LIVE promotion — while it still loads for backtest/integration use, see below. |
 
 ### `trend_mechanism:` block (v0.3, §20.5)
 
@@ -538,6 +539,34 @@ it records a `LIVE -> LIVE` self-loop entry on the F-1 promotion
 ledger with `trigger == "promote_capital_tier"` so the operator CLI
 (`feelies promote inspect <alpha_id>`) can render the escalation
 without the lifecycle state name changing.
+
+### `lifecycle_state:` field (BT-13)
+
+Top-level, optional, `string`. The only accepted value is `"RESEARCH"`
+(`AlphaLoader._parse_lifecycle_state`,
+[`src/feelies/alpha/loader.py`](../src/feelies/alpha/loader.py)); anything
+else raises `AlphaLoadError` at load time. When present, the loader carries
+it onto `AlphaManifest.lifecycle_cap`, and `AlphaRegistry.register()` wires
+it into the alpha's constructed `AlphaLifecycle`
+(`lifecycle_cap=manifest.lifecycle_cap`). `AlphaLifecycle._lifecycle_promotion_errors`
+then unconditionally blocks `promote_to_paper()` / `promote_to_live()` while
+still allowing the spec to load for backtest and integration use — see
+`alpha-lifecycle` skill and
+[`tests/alpha/test_sig_inventory_revert_v1.py`](../tests/alpha/test_sig_inventory_revert_v1.py)
+(`test_research_lifecycle_cap_blocks_paper_promotion`) for the enforced,
+tested example.
+
+**PR-review checklist item (audit `signal_alpha_audit_2026-07-02.md` §8):**
+the cap is a pure function of this one YAML line — it carries no link back
+to *why* the alpha was capped. Removing or changing `lifecycle_state:
+RESEARCH` on an alpha that was capped because of a specific negative
+forward-IC / decay-evidence finding (e.g. `sig_inventory_revert_v1`'s
+recorded quarantine, see that spec's `notes:` block) lifts the promotion
+block immediately, with **no automatic check that new evidence justifies
+it**. Reviewers must treat a diff that removes or weakens
+`lifecycle_state: RESEARCH` on a previously-capped alpha as requiring the
+same evidence bar as a fresh RESEARCH→PAPER promotion request — never
+approve it as a routine YAML edit.
 
 ### Backward compatibility
 

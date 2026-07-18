@@ -770,12 +770,44 @@ class LayerValidator:
                 f"{type(block).__name__}"
             )
         try:
-            CostArithmetic.from_spec(
+            cost = CostArithmetic.from_spec(
                 alpha_id=str(spec.get("alpha_id", "<unknown>")),
                 spec=block,
             )
         except CostArithmeticError as exc:
             raise LayerValidationError(f"{source}: G12 — {exc}") from exc
+
+        # Audit P1 2026-07-02: when the spec declares a numeric
+        # ``parameters.cost_floor_bps`` entry — the platform-wide convention
+        # every production SIGNAL alpha uses to self-suppress an entry whose
+        # computed edge doesn't clear the disclosed one-way cost inside its
+        # own ``evaluate()`` — its ``min`` bound must not sit below the
+        # disclosed ``cost_total_bps``.  Without this, a config
+        # ``parameter_overrides`` value inside the declared ``[min, max]``
+        # range could silently drop the floor below the alpha's own
+        # disclosed cost with no gate noticing; the runtime B4 gate would
+        # become the sole backstop instead of a second, independent one.
+        # Purely structural (only fires on the ``cost_floor_bps`` naming
+        # convention) so alphas with no such parameter are unaffected.
+        params_block = spec.get("parameters")
+        if not isinstance(params_block, dict):
+            return
+        floor_def = params_block.get("cost_floor_bps")
+        if not isinstance(floor_def, dict):
+            return
+        floor_min_raw = floor_def.get("min")
+        if isinstance(floor_min_raw, bool) or not isinstance(floor_min_raw, (int, float)):
+            return
+        floor_min = float(floor_min_raw)
+        if floor_min < cost.cost_total_bps:
+            raise LayerValidationError(
+                f"{source}: G12 — parameters.cost_floor_bps.min={floor_min!r} "
+                f"is below cost_arithmetic.cost_total_bps={cost.cost_total_bps!r}; "
+                f"a config override inside the declared bound could weaken "
+                f"the alpha's self-suppression below its own disclosed cost. "
+                f"Raise cost_floor_bps.min to at least "
+                f"{cost.cost_total_bps!r}."
+            )
 
     def _check_g13_warm_up_documentation(self, spec: dict[str, Any], source: str) -> None:
         """G13 — every feature must declare ``warm_up:`` (events or duration).

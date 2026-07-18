@@ -88,7 +88,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 6.5
-    min: 0.0
+    min: 6.5
     max: 30.0
     description: |
       One-way cost floor (bps). Audit P1-2: the engine does not gate
@@ -98,7 +98,9 @@ parameters:
       the alpha can emit directional entries with edge as low as 0.0
       (small/negative ``lam_z``). The authoritative round-trip Inv-12
       bar is the runtime B4 gate (~1.5x round-trip). Keep aligned with
-      cost_arithmetic.
+      cost_arithmetic. Audit P1 2026-07-02 (G12): ``min`` is pinned to
+      the disclosed ``cost_total_bps`` so no config override can weaken
+      this self-suppression below the alpha's own disclosed cost.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 300

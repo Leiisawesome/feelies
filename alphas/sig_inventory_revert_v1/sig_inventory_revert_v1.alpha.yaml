@@ -149,7 +149,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 5.5
-    min: 0.0
+    min: 5.5
     max: 30.0
     description: |
       One-way cost floor (bps): edge_bps must strictly exceed this to
@@ -157,6 +157,9 @@ parameters:
       (one-way convention): half_spread_bps + impact_bps + fee_bps =
       2.5 + 2.0 + 1.0 = 5.5. Authors changing this away from the
       disclosure should also update cost_arithmetic to keep G12 coherent.
+      Audit P1 2026-07-02 (G12): ``min`` is pinned to the disclosed
+      ``cost_total_bps`` so no config override can weaken this
+      self-suppression below the alpha's own disclosed cost.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30

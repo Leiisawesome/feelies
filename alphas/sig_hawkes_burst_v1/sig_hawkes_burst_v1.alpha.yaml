@@ -82,7 +82,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 5.0
-    min: 0.0
+    min: 5.0
     max: 30.0
     description: |
       One-way cost floor (bps). Audit P1-2: self-suppress entries whose
@@ -90,7 +90,9 @@ parameters:
       (half_spread + impact + fee = 2.0 + 2.0 + 1.0 = 5.0). The
       authoritative round-trip Inv-12 bar (~1.5x round-trip ≈ 7.5 bps)
       is enforced at runtime by the B4 gate. Keep aligned with
-      cost_arithmetic.
+      cost_arithmetic. Audit P1 2026-07-02 (G12): ``min`` is pinned to
+      the disclosed ``cost_total_bps`` so no config override can weaken
+      this self-suppression below the alpha's own disclosed cost.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30
