@@ -479,6 +479,63 @@ def test_pending_exit_guard_clears_after_reconciled_flat():
     assert out[1].quantity == 50
 
 
+def test_pending_exit_guard_releases_after_partial_fill_reconciles():
+    """A partial fill reconciling within the same episode must not stay guarded.
+
+    The HZ-1 per-symbol guard exists only to stop a *second full-size close*
+    computed from the stale pre-fill quantity.  Once a partial fill reconciles
+    into the position store, the quantity is fresh (reduced) and the residual
+    shares must still be flattenable by a different hazard reason — otherwise
+    residual exposure is left without hazard protection until the episode ends.
+    """
+    _, store, bus, out = _build_controller(
+        seed_positions={"AAPL": (100, 1_000_000_000)},
+    )
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_000_000_000,
+            sequence=1,
+            correlation_id="cid:partial-spike",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
+    assert len(out) == 1
+    assert out[0].reason == "HAZARD_SPIKE"
+    assert out[0].quantity == 100
+
+    # The HAZARD_SPIKE exit partially fills (60 of 100), reconciling into the
+    # store *within the same open episode* (opened_at_ns unchanged).
+    store.update("AAPL", -60, Decimal("100"), timestamp_ns=2_400_000_000)
+    assert store.get("AAPL").quantity == 40
+    assert store.opened_at_ns("AAPL") == 1_000_000_000
+
+    # A Trade past the hard-exit-age cap (600s) must now be able to flatten the
+    # residual 40 shares — the pending marker was sized to the stale 100 and
+    # must release once the reconciled quantity differs.
+    bus.publish(
+        Trade(
+            timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
+            sequence=2,
+            correlation_id="cid:partial-trade",
+            source_layer="DATA",
+            symbol="AAPL",
+            price=Decimal("101"),
+            size=10,
+            exchange_timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
+        )
+    )
+    assert len(out) == 2, "residual shares after a partial fill must remain hazard-protected"
+    assert out[1].reason == "HARD_EXIT_AGE"
+    assert out[1].quantity == 40
+
+
 def test_pending_exit_guard_clears_on_reopen_without_flat_observation():
     """The per-symbol pending guard is scoped to its open episode.
 
