@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from feelies.composition.cross_sectional import CrossSectionalRanker
+from feelies.composition.cross_sectional import CrossSectionalRanker, cap_family_vectors
 from feelies.core.events import (
     CrossSectionalContext,
     Signal,
@@ -206,6 +206,77 @@ def test_mechanism_cap_scales_overrepresented_family():
     breakdown = result.mechanism_breakdown
     if TrendMechanism.KYLE_INFO in breakdown:
         assert breakdown[TrendMechanism.KYLE_INFO] <= 0.5 + 1e-9
+
+
+# ── Composition audit 2026-07-02, finding P0-1 ──────────────────────────
+#
+# _apply_mechanism_cap / cap_family_vectors rescale one over-cap family at
+# a time, holding the others fixed -- exactly correct in one pass only
+# when at most one family is ever over cap simultaneously.  With 2+
+# families simultaneously over cap, the shared iteration budget used to be
+# 5, which left a confirmed ~9% relative cap overshoot for adversarial-but-
+# legitimate (G16 rule 8 requires sum(caps) >= 1.0, nothing more) 4-family
+# configurations.  These two tests hand-construct exactly such a case and
+# assert every family's realised share now satisfies its cap.
+
+
+def test_cap_family_vectors_converges_for_simultaneous_multi_family_breach():
+    """4 families, caps at the G16 rule-8 minimum (sum == 1.0 exactly).
+
+    Raw per-family gross (0.35/0.30/0.30/0.05) puts three families
+    simultaneously over a shared 0.25 cap -- the regime the old 5-iteration
+    budget could not resolve.
+    """
+    fams = (
+        TrendMechanism.KYLE_INFO,
+        TrendMechanism.INVENTORY,
+        TrendMechanism.HAWKES_SELF_EXCITE,
+        TrendMechanism.SCHEDULED_FLOW,
+    )
+    vectors = {
+        fams[0]: {"A": 0.35},
+        fams[1]: {"B": 0.30},
+        fams[2]: {"C": 0.30},
+        fams[3]: {"D": 0.05},
+    }
+    caps = {f: 0.25 for f in fams}
+
+    _scaled, breakdown = cap_family_vectors(vectors, (caps, 1.0))
+
+    assert breakdown, "expected a non-empty realised breakdown"
+    for mech, share in breakdown.items():
+        assert share <= caps[mech] + 1e-9, (
+            f"{mech.name} share {share} exceeds its cap {caps[mech]} — "
+            "multi-family cap convergence regressed"
+        )
+    assert math.isclose(sum(breakdown.values()), 1.0, abs_tol=1e-9)
+
+
+def test_apply_mechanism_cap_converges_for_simultaneous_multi_family_breach():
+    """Same scenario through the legacy single-signal-per-symbol cap path
+    (``CrossSectionalRanker._apply_mechanism_cap``, reached via ``rank()``
+    for any future alpha that calls the ranker directly)."""
+    ranker = CrossSectionalRanker()
+    fams = (
+        TrendMechanism.KYLE_INFO,
+        TrendMechanism.INVENTORY,
+        TrendMechanism.HAWKES_SELF_EXCITE,
+        TrendMechanism.SCHEDULED_FLOW,
+    )
+    weights = {"A": 0.35, "B": 0.30, "C": 0.30, "D": 0.05}
+    mechanism_by_symbol = {"A": fams[0], "B": fams[1], "C": fams[2], "D": fams[3]}
+    caps = {f: 0.25 for f in fams}
+
+    _scaled, breakdown = ranker._apply_mechanism_cap(  # noqa: SLF001 -- exercising the fix directly
+        weights, mechanism_by_symbol, (caps, 1.0)
+    )
+
+    assert breakdown, "expected a non-empty realised breakdown"
+    for mech, share in breakdown.items():
+        assert share <= caps[mech] + 1e-9, (
+            f"{mech.name} share {share} exceeds its cap {caps[mech]} — "
+            "multi-family cap convergence regressed"
+        )
 
 
 def test_deterministic_replay():
