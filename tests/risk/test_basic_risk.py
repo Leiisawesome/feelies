@@ -736,3 +736,47 @@ class TestSizedIntentScaleDownDecimal:
             ).orders
         assert len(orders) == 1
         assert orders[0].quantity == 5
+
+    def test_scale_down_to_zero_drops_the_leg(
+        self,
+        config: RiskConfig,
+        store: MemoryPositionStore,
+    ) -> None:
+        """Audit FS-3 (risk_engine_audit_2026-07-02.md).
+
+        2 x 0.1 = 0.2 rounds to 0 shares (``ROUND_HALF_UP``).  Before the
+        FS-3 fix this was floored to a minimum 1-share order regardless of
+        how aggressively the risk engine intended to scale down; the leg
+        must instead drop, mirroring the SIGNAL path's
+        ``_compose_scaled_quantity`` + ``scaled_qty <= 0`` -> ``NO_ORDER``
+        behavior in the orchestrator.
+        """
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        def fake_check_order(
+            self: BasicRiskEngine,
+            order: OrderRequest,
+            positions: MemoryPositionStore,
+            *,
+            additional_exposure: Decimal = Decimal("0"),
+        ) -> RiskVerdict:
+            if order.symbol == "AAPL" and order.quantity == 2:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.SCALE_DOWN,
+                    reason="test_scale_down_to_zero",
+                    scaling_factor=0.1,
+                )
+            return BasicRiskEngine.check_order(self, order, positions)
+
+        with patch.object(BasicRiskEngine, "check_order", fake_check_order):
+            result = engine.check_sized_intent(
+                _make_sized_intent(targets={"AAPL": 200.0}),
+                store,
+            )
+        assert result.orders == ()
