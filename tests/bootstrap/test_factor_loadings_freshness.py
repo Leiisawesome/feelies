@@ -82,3 +82,28 @@ def test_missing_symbol_still_raises_with_meta(tmp_path: Path) -> None:
             _config(loadings_dir, max_age_seconds=300),
             ["AAPL", "MSFT", "GOOG"],
         )
+
+
+def test_missing_session_open_ns_fails_closed_instead_of_reading_wall_clock(
+    tmp_path: Path,
+) -> None:
+    """Composition audit 2026-07-02, P1 finding.
+
+    Previously fell back to ``time.time()`` (self-documented as breaking
+    Inv-5 bit-identical replay) when ``session_open_ns`` was unset; now
+    raises rather than silently reading the wall clock, so the same
+    historical config cannot pass or fail this gate depending on when it
+    happens to be re-run.
+    """
+    loadings_dir = tmp_path / "loadings"
+    _write_loadings(loadings_dir, as_of_ns=_SESSION_OPEN_NS)
+    config = PlatformConfig(
+        symbols=frozenset(_UNIVERSE),
+        mode=OperatingMode.BACKTEST,
+        account_equity=100_000.0,
+        factor_loadings_dir=loadings_dir,
+        factor_loadings_max_age_seconds=300,
+        session_open_ns=None,
+    )
+    with pytest.raises(StaleFactorLoadingsError, match="session_open_ns"):
+        _enforce_factor_loadings_freshness(config, _UNIVERSE)

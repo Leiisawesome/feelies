@@ -624,6 +624,7 @@ def build_platform(
         bus=bus,
         registry=registry,
         position_store=position_store,
+        strategy_positions=strategy_positions,
     )
 
     # Audit P0 H-1: hazard wiring scans ALL active alphas so SIGNAL-layer
@@ -1906,6 +1907,7 @@ def _create_composition_layer(
     bus: EventBus,
     registry: AlphaRegistry,
     position_store: MemoryPositionStore,
+    strategy_positions: StrategyPositionStore,
 ) -> tuple[
     CompositionEngine | None,
     CrossSectionalTracker | None,
@@ -2013,6 +2015,14 @@ def _create_composition_layer(
     capital_usd = float(config.account_equity)
     optimizer = TurnoverOptimizer(
         capital_usd=capital_usd,
+        # Composition-shaping caps (audit 2026-07-02 P2): operator-tunable,
+        # defaults match the platform's historical hardcoded values (200%
+        # gross, 5% per-name).  For small universes the per-name cap can
+        # bind for every name simultaneously and collapse the ranker's
+        # cross-sectional weights into an equal-notional book — see
+        # PlatformConfig.composition_per_name_cap_pct.
+        gross_cap_pct=config.composition_gross_cap_pct,
+        per_name_cap_pct=config.composition_per_name_cap_pct,
         lambda_tc=config.composition_lambda_tc,
         lambda_risk=config.composition_lambda_risk,
         # Audit P1-1: the optimizer path is selected explicitly by config, not
@@ -2028,8 +2038,18 @@ def _create_composition_layer(
         decay_weighting_enabled=decay_enabled,
     )
 
-    def _position_lookup(symbol: str) -> float:
-        pos = position_store.get(symbol)
+    def _position_lookup(strategy_id: str, symbol: str) -> float:
+        # Scoped per (strategy_id, symbol) via the per-alpha position book
+        # (composition audit 2026-07-02, P1 finding) rather than the
+        # account-level aggregate ``position_store`` — two PORTFOLIO alphas
+        # trading the same symbol must each compute their own turnover
+        # penalty against their own prior target, not against a "current
+        # position" contaminated by the other alpha's fills.  The mark
+        # price itself is still read from the shared, symbol-level
+        # ``position_store`` (marks are market data, not per-strategy
+        # state, and are fed there on every quote regardless of which
+        # strategy holds the position).
+        pos = strategy_positions.get(strategy_id, symbol)
         mark = position_store.latest_mark(symbol)
         if mark is None:
             mark = pos.avg_entry_price
@@ -2259,14 +2279,18 @@ def _enforce_factor_loadings_freshness(
     was checked out.  Only when that block is absent do we fall back to
     the filesystem mtime, whose drift forced downstream suites to pin a
     ~century-long ``factor_loadings_max_age_seconds``.  The comparison
-    clock is ``session_open_ns`` when available (deterministic);
-    wall-clock ``time.time()`` is a last resort that breaks bit-identical
-    replay and is logged as such.
+    clock is ``session_open_ns`` (deterministic) — composition audit
+    2026-07-02, P1 finding: this function previously fell back to
+    wall-clock ``time.time()`` when ``session_open_ns`` was unset, which
+    meant the identical historical config could pass or fail this gate
+    depending purely on when it happened to be re-run.  Fail closed
+    instead: an operator who configures ``factor_loadings_dir`` without
+    ``session_open_ns`` has no deterministic reference time, so the check
+    cannot be performed at all (Inv-5).
     """
     if config.factor_loadings_dir is None:
         return
     import json
-    import time
 
     path = config.factor_loadings_dir / "loadings.json"
     if not path.is_file():
@@ -2292,16 +2316,15 @@ def _enforce_factor_loadings_freshness(
         embedded_as_of_seconds if embedded_as_of_seconds is not None else path.stat().st_mtime
     )
 
-    if config.session_open_ns is not None:
-        reference_time = config.session_open_ns / 1_000_000_000
-    else:
-        reference_time = time.time()
-        logger.warning(
-            "factor loadings freshness: no session_open_ns configured; using wall-clock "
-            "time.time() as the reference, which breaks bit-identical replay (Inv-5) — "
-            "configure session_open_ns or embed _meta.as_of_ns in %s",
-            path,
+    if config.session_open_ns is None:
+        raise StaleFactorLoadingsError(
+            f"factor loadings freshness check for {path} requires "
+            "PlatformConfig.session_open_ns to be set as the deterministic "
+            "comparison reference; wall-clock time.time() is not an "
+            "acceptable fallback (Inv-5).  Set session_open_ns, or unset "
+            "factor_loadings_dir if factor neutralization is not needed."
         )
+    reference_time = config.session_open_ns / 1_000_000_000
     age_seconds = reference_time - file_as_of_seconds
     if age_seconds > config.factor_loadings_max_age_seconds:
         raise StaleFactorLoadingsError(

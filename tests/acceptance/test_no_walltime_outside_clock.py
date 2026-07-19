@@ -56,10 +56,11 @@ _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
         "perf_counter_ns latency telemetry into _tick_timings (MetricEvent "
         "side-channel); all event timestamps use the injected clock, not this"
     ),
-    "bootstrap.py": (
-        "session-gated factor-loadings freshness escape, logged at WARNING as "
-        "breaking bit-identical replay when session_open_ns is unset"
-    ),
+    # "bootstrap.py" entry removed (composition audit 2026-07-02, P1 finding):
+    # the session-gated factor-loadings freshness escape it justified now
+    # fails closed (raises StaleFactorLoadingsError) instead of reading the
+    # wall clock when session_open_ns is unset, so bootstrap.py no longer
+    # makes a raw wall-clock call at all.
     "harness/backtest_runner.py": "backtest run wall-time / progress reporting (not in the event stream)",
     "harness/backtest_prep.py": "backtest-prep progress timing (not in the event stream)",
     "broker/ib/connection.py": "live IB Gateway connection-ready timeout (live-only path)",
