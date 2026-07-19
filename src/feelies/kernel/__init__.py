@@ -1,5 +1,11 @@
-"""Kernel — system-wide state machines and orchestration.
+"""Kernel — system-wide state machines and orchestration."""
 
-Import from submodules (e.g. ``feelies.kernel.orchestrator``,
-``feelies.kernel.macro``).
-"""
+from feelies.kernel.macro import MacroState, create_macro_state_machine
+from feelies.kernel.micro import MicroState, create_micro_state_machine
+
+__all__ = [
+    "MacroState",
+    "MicroState",
+    "create_macro_state_machine",
+    "create_micro_state_machine",
+]

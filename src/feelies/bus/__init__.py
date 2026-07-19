@@ -1,4 +1,5 @@
-"""Event bus — deterministic event routing.
+"""Event bus — deterministic event routing."""
 
-Import ``EventBus`` from ``feelies.bus.event_bus``.
-"""
+from feelies.bus.event_bus import EventBus
+
+__all__ = ["EventBus"]
