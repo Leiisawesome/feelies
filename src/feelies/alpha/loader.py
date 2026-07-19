@@ -72,19 +72,6 @@ logger = logging.getLogger(__name__)
 # do not count against this cap (audit P1-8).
 _MAX_FREE_OPTIMIZATION_PARAMS: int = 3
 
-# Historical schema-1.0 required keys — retained so early-validation
-# messages can name which field a copy-pasted 1.0 fixture is missing.
-# The keys themselves are not accepted (D.1/D.2 hard-reject).
-_REQUIRED_TOP_KEYS = {
-    "alpha_id",
-    "version",
-    "description",
-    "hypothesis",
-    "falsification_criteria",
-    "features",
-    "signal",
-}
-
 _REQUIRED_SIGNAL_LAYER_KEYS = {
     "alpha_id",
     "version",

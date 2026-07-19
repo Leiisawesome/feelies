@@ -1967,12 +1967,9 @@ class Orchestrator:
                 self._bus.publish(tick)
 
         if ticks:
-            # HORIZON_CHECK → HORIZON_AGGREGATE.  In P2-α the
-            # aggregator does not yet exist; the transition is purely
-            # bookkeeping.  P2-β wires a real aggregator on the bus
-            # (subscribed to HorizonTick + SensorReading), so this
-            # transition window is where ``HorizonFeatureSnapshot``
-            # events will materialise.
+            # HORIZON_CHECK → HORIZON_AGGREGATE.  The bus aggregator
+            # (HorizonTick + SensorReading → HorizonFeatureSnapshot)
+            # has already run by the time this SM transition fires.
             self._micro.transition(
                 MicroState.HORIZON_AGGREGATE,
                 trigger="horizon_tick_emitted",

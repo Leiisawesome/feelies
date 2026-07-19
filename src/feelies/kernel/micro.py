@@ -27,66 +27,36 @@ class MicroState(Enum):
       registered sensor; each emits at most one ``SensorReading``.
     - ``HORIZON_CHECK`` — scheduler inspects the event time and
       emits any ``HorizonTick`` events for crossed boundaries.
-    - ``HORIZON_AGGREGATE`` — Phase-2-β aggregator drains the
-      sensor buffer for each emitted tick and publishes a
-      ``HorizonFeatureSnapshot`` (passive in P2-α).
+    - ``HORIZON_AGGREGATE`` — aggregator drains the sensor buffer for
+      each emitted tick and publishes a ``HorizonFeatureSnapshot``.
 
     These three states are **only entered when at least one sensor
     is registered** (``sensor_specs`` non-empty in
     :class:`feelies.core.platform_config.PlatformConfig`).  Without
     sensors the orchestrator transitions
-    ``STATE_UPDATE → FEATURE_COMPUTE`` directly, preserving the
-    legacy bit-identical execution path (Inv-A in the plan).
+    ``STATE_UPDATE → FEATURE_COMPUTE`` directly (Inv-A).
 
-    Phase 3 addition (signal layer): one new state slots in between
-    ``HORIZON_AGGREGATE`` and ``FEATURE_COMPUTE``:
+    - ``SIGNAL_GATE`` — :class:`HorizonSignalEngine` evaluates SIGNAL
+      alphas against the boundary snapshot + latest ``RegimeState``.
+      Entered only when ``AlphaRegistry.has_signal_alphas()`` is true.
 
-    - ``SIGNAL_GATE`` — :class:`HorizonSignalEngine` evaluates each
-      registered SIGNAL alpha against the boundary's
-      ``HorizonFeatureSnapshot`` and the latest ``RegimeState``,
-      publishing zero or more ``Signal(layer='SIGNAL')`` events on the
-      bus.
+    - ``CROSS_SECTIONAL`` — composition evaluates PORTFOLIO alphas
+      against a barrier-synced ``CrossSectionalContext``.  Entered only
+      when ``AlphaRegistry.has_portfolio_alphas()`` is true.
 
-    ``SIGNAL_GATE`` is entered **only when at least one SIGNAL alpha
-    is registered** (``AlphaRegistry.has_signal_alphas()`` is true);
-    otherwise the orchestrator transitions
-    ``HORIZON_AGGREGATE → FEATURE_COMPUTE`` directly so deployments
-    without SIGNAL alphas remain bit-identical to the
-    Phase-2 execution path (Inv-A).
-
-    Phase 4 addition (composition layer): one new state slots in after
-    ``SIGNAL_GATE`` (or ``HORIZON_AGGREGATE`` when no SIGNAL alphas
-    are present) and before ``FEATURE_COMPUTE``:
-
-    - ``CROSS_SECTIONAL`` — :class:`UniverseSynchronizer` and
-      :class:`CompositionEngine` evaluate every registered PORTFOLIO
-      alpha against the barrier-synced
-      :class:`feelies.core.events.CrossSectionalContext`, publishing
-      one :class:`feelies.core.events.SizedPositionIntent` per alpha
-      per barrier.
-
-    ``CROSS_SECTIONAL`` is entered **only when at least one PORTFOLIO
-    alpha is registered** (``AlphaRegistry.has_portfolio_alphas()`` is
-    true) **and** the orchestrator has reached ``HORIZON_AGGREGATE``
-    or ``SIGNAL_GATE`` on the quote tick (the bus-driven composition
-    chain has run for any crossed boundary).  Otherwise the
-    orchestrator preserves the prior transition edges so SIGNAL-only
-    runs remain bit-identical to the Phase-3 execution path (Inv-A).
-
-    ``FEATURE_COMPUTE`` (M3) is a **bookkeeping** transition only: the
-    historical per-tick feature engine was removed in Workstream D.2;
-    the micro SM still visits M3 so ``FEATURE_COMPUTE → SIGNAL_EVALUATE
-    → …`` remains a legal spine for observability and parity tests.
+    ``FEATURE_COMPUTE`` (M3) is bookkeeping only (per-tick feature
+    engine removed in D.2); the SM still visits M3 so
+    ``FEATURE_COMPUTE → SIGNAL_EVALUATE → …`` remains a legal spine.
     """
 
     WAITING_FOR_MARKET_EVENT = auto()
     MARKET_EVENT_RECEIVED = auto()
     STATE_UPDATE = auto()
-    SENSOR_UPDATE = auto()  # NEW (P2-α): Layer-1 sensor fan-out
-    HORIZON_CHECK = auto()  # NEW (P2-α): scheduler boundary check
-    HORIZON_AGGREGATE = auto()  # NEW (P2-α): aggregator snapshot emit
-    SIGNAL_GATE = auto()  # NEW (P3-α): HorizonSignalEngine emit
-    CROSS_SECTIONAL = auto()  # NEW (P4):   CompositionEngine emit
+    SENSOR_UPDATE = auto()  # Layer-1 sensor fan-out
+    HORIZON_CHECK = auto()  # scheduler boundary check
+    HORIZON_AGGREGATE = auto()  # aggregator snapshot emit
+    SIGNAL_GATE = auto()  # HorizonSignalEngine emit
+    CROSS_SECTIONAL = auto()  # CompositionEngine emit
     FEATURE_COMPUTE = auto()
     SIGNAL_EVALUATE = auto()
     RISK_CHECK = auto()

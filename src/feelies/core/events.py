@@ -138,13 +138,7 @@ class SymbolHalted(Event):
 
 
 # ── Feature Events ──────────────────────────────────────────────────────
-#
-# Workstream D.2 PR-2b-iv deleted the per-tick ``FeatureVector`` event
-# along with the legacy feature-engine plumbing.  The current canonical
-# feature event is :class:`HorizonFeatureSnapshot` (Phase-2 horizon-bucketed
-# snapshot emitted by :class:`HorizonAggregator` when a HorizonTick boundary
-# is crossed); see ``§5.6`` of the migration guide and the ``feature``
-# glossary entry in ``platform-invariants.mdc`` for the full timeline.
+# Canonical feature event: :class:`HorizonFeatureSnapshot` (below).
 
 
 # ── Regime Events ───────────────────────────────────────────────────────
@@ -214,17 +208,10 @@ class SignalDirection(Enum):
 class Signal(Event):
     """Signal evaluation output — pure function of features (no side effects).
 
-    Phase-1.1 / v0.3 fields (§5.5, §20.3.2).  Workstream D.2 PR-2b-ii
-    narrowed ``layer`` to ``Literal["SIGNAL", "PORTFOLIO"]`` and made
-    ``"SIGNAL"`` the default — the historical ``"LEGACY_SIGNAL"`` value
-    was retired together with the per-tick composite engines.  Defaults
-    preserve horizon-anchored Phase-3 producers exactly:
+    Layer fields (``layer`` ∈ {SIGNAL, PORTFOLIO}):
 
-      ``layer`` — ``"SIGNAL"`` for horizon-gated Layer-2 outputs
-                 (default; emitted by :class:`HorizonSignalEngine`);
-                 ``"PORTFOLIO"`` for cross-sectional Layer-3 outputs
-                 (Phase-4 PORTFOLIO alphas via
-                 :class:`CrossSectionalEngine`).
+      ``layer`` — ``"SIGNAL"`` (default; :class:`HorizonSignalEngine`)
+                 or ``"PORTFOLIO"`` (composition).
       ``horizon_seconds`` — 0 if unspecified, positive for
                             horizon-anchored producers.
       ``regime_gate_state`` — ``"N/A"`` when no gate applies;
@@ -654,8 +641,7 @@ class HorizonFeatureSnapshot(Event):
     aggregator's state so downstream signal evaluation can suppress on
     either condition without re-reading sensor state.
 
-    Workstream D.2 PR-2b-iv deleted the legacy per-tick ``FeatureVector``
-    event; ``HorizonFeatureSnapshot`` is now the sole feature-event type.
+    Sole Layer-2 feature-event type (horizon-bucketed snapshot).
 
     ``values`` contains only *warm* features; cold features are absent
     (not 0.0) so consumers that key on presence correctly distinguish
@@ -748,8 +734,8 @@ class SizedPositionIntent(Event):
     # ``OrderRequest.g12_disclosed_cost_total_bps`` so the post-fill G12
     # cost-vs-disclosure stress alert (orchestrator §M9) fires for the
     # PORTFOLIO path the same way it does for SIGNAL-driven orders.
-    # Empty default keeps v0.2 portfolio alphas bit-identical until the
-    # composition engine starts populating it (Inv-A).
+    # Empty when the composition engine emits no per-symbol disclosure
+    # (Inv-A / v0.2-compatible default).
     disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
         default_factory=dict,
     )

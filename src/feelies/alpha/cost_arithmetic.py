@@ -291,7 +291,5 @@ __all__ = [
     "CostArithmeticError",
     "MIN_MARGIN_RATIO",
     "MARGIN_RATIO_TOLERANCE",
-    "DEFAULT_COST_BASIS",
-    "ROUND_TRIP_FACTOR",
     "compute_margin_ratio",
 ]

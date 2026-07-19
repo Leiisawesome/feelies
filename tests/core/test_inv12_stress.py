@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
 from feelies.core.inv12_stress import (
     INV12_COST_STRESS_MULTIPLIER,
     apply_inv12_stress,
-    disclosure_margin_after_cost_stress,
-    disclosure_survives_inv12_cost_stress,
     stressed_cost_multiplier,
     stressed_fill_latency_ns,
 )
@@ -48,34 +45,3 @@ class TestInv12StressTransforms:
         stressed = apply_inv12_stress(base)
         assert stressed.symbols == frozenset({"AAPL"})
         assert stressed.signal_min_edge_cost_ratio == 1.5
-
-
-class TestDisclosureSurvival:
-    def test_margin_after_stress_formula(self) -> None:
-        assert disclosure_margin_after_cost_stress(3.0) == 2.0
-
-    def test_survival_at_floor(self) -> None:
-        # 2.25 / 1.5 = 1.5 exactly
-        from feelies.alpha.cost_arithmetic import CostArithmetic
-
-        cost = CostArithmetic(
-            edge_estimate_bps=15.0,
-            half_spread_bps=2.0,
-            impact_bps=2.0,
-            fee_bps=2.0,
-            margin_ratio=2.25,
-        )
-        assert disclosure_survives_inv12_cost_stress(cost)
-
-    def test_survival_below_floor(self) -> None:
-        from feelies.alpha.cost_arithmetic import CostArithmetic
-
-        cost = CostArithmetic(
-            edge_estimate_bps=8.0,
-            half_spread_bps=2.0,
-            impact_bps=2.0,
-            fee_bps=1.0,
-            margin_ratio=1.6,
-        )
-        assert not disclosure_survives_inv12_cost_stress(cost)
-        assert disclosure_margin_after_cost_stress(1.6) < MIN_MARGIN_RATIO

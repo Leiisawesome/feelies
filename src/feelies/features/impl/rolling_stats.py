@@ -54,9 +54,8 @@ from feelies.core.events import HorizonTick, SensorReading
 
 _logger = logging.getLogger(__name__)
 
-# Audit #5: same clamp as ``feelies.features.library.ZScoreComputation``
-# — keep the two paths symmetric so a signal wired through either
-# computes the same bounded z-score envelope.
+# Bounded z-score envelope (±10) so near-zero early-session variance
+# cannot poison downstream signals.
 _MAX_ZSCORE = 10.0
 
 
@@ -198,12 +197,10 @@ class RollingZscoreFeature:
             # Constant sensor — z-score is undefined; return warm, value 0.
             return 0.0, True, False
         latest = vals[-1]
-        # Audit #5: bound the z-score envelope.  Matches the clamp in
-        # ``feelies.features.library.ZScoreComputation``.  Without this,
-        # a sensor with std just above 1e-10 and a small numerator can
-        # produce values in the 1e7 range that poison downstream signals;
-        # the absolute std floor cannot scale with sensor magnitude, so
-        # the clamp is the second line of defence.
+        # Bound the z-score envelope (±_MAX_ZSCORE).  Without this, a
+        # sensor with std just above 1e-10 can produce values that poison
+        # downstream signals; the absolute std floor cannot scale with
+        # sensor magnitude, so the clamp is the second line of defence.
         z = (latest - mean) / std
         if z > _MAX_ZSCORE:
             return _MAX_ZSCORE, True, False

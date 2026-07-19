@@ -2,7 +2,7 @@
 
 Defines the interface for analyzing trade outcomes, detecting edge
 decay, and generating execution quality reports.  Concrete
-implementations are future work.
+implementation: :class:`~feelies.forensics.decay_detector.DecayDetector`.
 """
 
 from __future__ import annotations
@@ -11,18 +11,6 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from feelies.storage.trade_journal import TradeRecord
-
-
-@dataclass(frozen=True, kw_only=True)
-class SlippageReport:
-    """Summary of execution quality for a time window."""
-
-    symbol: str | None
-    strategy_id: str | None
-    trade_count: int
-    mean_cost_bps: float
-    p95_cost_bps: float
-    total_fees: float
 
 
 @dataclass(frozen=True, kw_only=True)

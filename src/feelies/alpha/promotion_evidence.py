@@ -7,15 +7,12 @@ holding the platform's default acceptance thresholds, and the pure
 validator functions that produce a ``list[str]`` of human-readable
 errors when an evidence package falls short of its threshold.
 
-Scope (Workstream F-2):
+Scope (Workstream F-2 / F-4):
 
-- **Definitions only.**  This PR does *not* mutate the
-  :class:`feelies.alpha.lifecycle.AlphaLifecycle` state machine or its
-  existing ``check_paper_gate`` / ``check_live_gate`` /
-  ``check_revalidation_gate`` callers.  Workstream **F-4** will swap
-  those legacy gate-checks for the structured validators introduced
-  here once Workstream **C** (CPCV + DSR computation) and the
-  post-trade-forensics quarantine pipeline are wired.
+- **Structured evidence + gate matrix.**  Typed evidence dataclasses,
+  ``GATE_EVIDENCE_REQUIREMENTS``, and ``validate_gate`` — consumed by
+  :class:`~feelies.alpha.lifecycle.AlphaLifecycle` structured-evidence
+  promotion paths.  CPCV/DSR computation lives in ``feelies.research``.
 
 - **Forensic-only writer contract preserved.**  The
   :func:`evidence_to_metadata` helper produces a JSON-safe ``dict``
@@ -26,8 +23,8 @@ Scope (Workstream F-2):
   feedback loop with the durable ledger), so replay determinism
   (audit A-DET-02) is not perturbed.
 
-- **No state-machine changes.**  Capital-stage tiers (SMALL_CAPITAL vs.
-  SCALED) are modelled as *evidence* attached to a ``LIVE`` lifecycle
+- **Capital-stage tiers.**  SMALL_CAPITAL vs. SCALED are modelled as
+  *evidence* attached to a ``LIVE`` lifecycle
   rather than as separate states, so the existing five-state machine
   (``RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED``) is
   unchanged.  The capital tier is captured on

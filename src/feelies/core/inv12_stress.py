@@ -16,8 +16,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO, CostArithmetic
-
 if TYPE_CHECKING:
     from feelies.core.platform_config import PlatformConfig
 
@@ -53,18 +51,3 @@ def apply_inv12_stress(config: PlatformConfig) -> PlatformConfig:
             config.market_data_latency_ns,
         ),
     )
-
-
-def disclosure_margin_after_cost_stress(margin_ratio: float) -> float:
-    """Effective disclosed margin if one-way costs scale by 1.5×."""
-    return margin_ratio / INV12_COST_STRESS_MULTIPLIER
-
-
-def disclosure_survives_inv12_cost_stress(cost: CostArithmetic) -> bool:
-    """Whether the alpha's disclosed edge still clears G12 after 1.5× cost.
-
-    Linear scaling of ``cost_total_bps`` divides ``margin_ratio`` by 1.5.
-    BT-12 re-validates each alpha under full backtest; this is the cheap
-    load-time survival check wired by BT-9 acceptance.
-    """
-    return disclosure_margin_after_cost_stress(cost.margin_ratio) >= MIN_MARGIN_RATIO

@@ -21,14 +21,12 @@ in this canonical order:
    triggered them, before any sensor sees the same quote.
 2. ``SensorRegistry`` — single subscriber per ``NBBOQuote`` /
    ``Trade``; fans out to every registered sensor in spec order.
-3. ``HorizonAggregator`` — Phase-2-β subscriber; consumes
-   ``HorizonTick`` + ``SensorReading`` and emits
-   ``HorizonFeatureSnapshot`` (passive in P2-α).
-4. ``HorizonSignalEngine`` — Phase-3-α subscriber; consumes
-   ``HorizonFeatureSnapshot`` + ``RegimeState`` + ``SensorReading``
-   and emits ``Signal(layer='SIGNAL')`` events.  Subscribed *after*
-   the aggregator so the snapshot it receives is the canonical
-   per-boundary view.
+3. ``HorizonAggregator`` — consumes ``HorizonTick`` + ``SensorReading``
+   and emits ``HorizonFeatureSnapshot``.
+4. ``HorizonSignalEngine`` — consumes ``HorizonFeatureSnapshot`` +
+   ``RegimeState`` + ``SensorReading`` and emits
+   ``Signal(layer='SIGNAL')``.  Subscribed *after* the aggregator so
+   the snapshot it receives is the canonical per-boundary view.
 5. ``MetricEvent`` consumers — wired by the orchestrator
    constructor (the ``MetricCollector``) so metrics drained later in
    the tick are recorded after every functional handler ran.
@@ -338,17 +336,6 @@ def build_platform(
 
     _load_alphas(config, registry, loader)
     config = _maybe_prune_unused_sensors(config, registry)
-
-    # Workstream D.2 PR-2b-ii deleted the legacy per-tick alpha pipeline
-    # (CompositeFeatureEngine → CompositeSignalEngine →
-    # MultiAlphaEvaluator) and the FeatureEngine / SignalEngine
-    # Protocols; D.2 PR-2b-iv then deleted the surviving test
-    # scaffolding (FeatureVector, AlphaModule.evaluate, the
-    # orchestrator's feature_engine / signal_engine ctor params, and
-    # the gated single-alpha branch).  All surviving alphas are SIGNAL
-    # or PORTFOLIO layer and produce outputs via the bus-driven
-    # Phase-3 / Phase-4 pipeline (HorizonAggregator →
-    # HorizonSignalEngine → CompositionEngine) composed below.
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
@@ -691,12 +678,6 @@ def build_platform(
         risk_wrapper if config.enforce_per_alpha_risk_budget else risk_engine
     )
     fill_ledger = FillAttributionLedger()
-    # Workstream D.2 PR-2b-ii: ``MultiAlphaEvaluator`` was deleted along
-    # with the per-tick composite engines and the
-    # ``FeatureEngine`` / ``SignalEngine`` Protocols.  The orchestrator
-    # no longer accepts a ``multi_alpha_evaluator`` ctor parameter; the
-    # bus-driven Phase-3 / Phase-4 composition pipeline owns multi-alpha
-    # arbitration end-to-end.
 
     # Close-the-loop (gate): explicit ``edge_calibration_factors`` win;
     # otherwise load from the versioned EdgeCalibrationStore when an
