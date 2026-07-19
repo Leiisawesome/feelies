@@ -27,7 +27,8 @@ import math
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class SpreadZScoreSensor:
@@ -96,7 +97,7 @@ class SpreadZScoreSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
@@ -169,17 +170,11 @@ class SpreadZScoreSensor:
             else:
                 value = (spread - state["mean"]) / std
 
-        return SensorReading(
-            timestamp_ns=event.timestamp_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
+        # Deque has maxlen=window with FIFO eviction; once the window
+        # fills, ``len`` stays at ``window`` for the lifetime of the
+        # state.  (Unlike the event-time-windowed sensors, this one
+        # cannot un-warm — there is no S3 reversion path.)
+        return SensorEmission(
             value=value,
-            # Deque has maxlen=window with FIFO eviction; once the window
-            # fills, ``len`` stays at ``window`` for the lifetime of the
-            # state.  (Unlike the event-time-windowed sensors, this one
-            # cannot un-warm — there is no S3 reversion path.)
             warm=len(spreads) >= self._warm_after,
         )

@@ -71,11 +71,16 @@ Implemented via `Orchestrator.unlock_from_lockdown()`:
 
 ## Circuit Breaker
 
-> **Not shipped:** design spec — not implemented. No `circuit_breaker_active`
-> flag, `CIRCUIT_BREAKER_TRIPPED` event, or cooldown/resume/backoff
-> logic exists in `src/feelies/`. What ships today is the monotonic
-> `RiskLevel` escalation (`FORCE_FLATTEN` → `_escalate_risk()` →
-> LOCKED + kill switch), which is one-way, not halt-with-resume.
+> **Not shipped (trading-halt circuit breaker):** design spec — the
+> halt-with-resume path below (`circuit_breaker_active`,
+> `CIRCUIT_BREAKER_TRIPPED`, cooldown/resume/backoff) is not implemented.
+> What ships today for trading safety is the monotonic `RiskLevel`
+> escalation (`FORCE_FLATTEN` → `_escalate_risk()` → LOCKED + kill
+> switch), which is one-way, not halt-with-resume.
+>
+> **Related but different (shipped):** `forensics/cost_circuit_breaker.py`
+> is a cost/slippage forensic control — not this trading-halt CB. Do not
+> treat its presence as evidence that the design below is live.
 
 ### Trigger Conditions
 

@@ -6,7 +6,6 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 
 from feelies.core.events import NBBOQuote
 from feelies.storage.memory_event_log import InMemoryEventLog

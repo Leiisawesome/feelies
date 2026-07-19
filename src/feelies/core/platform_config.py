@@ -25,7 +25,6 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
-import yaml  # pyright: ignore[reportMissingModuleSource]
 
 from feelies.core.clock import WallClock
 from feelies.core.config import ConfigSnapshot
@@ -495,6 +494,11 @@ class PlatformConfig:
         default_factory=lambda: frozenset({30, 120, 300, 900, 1800})
     )
     sensor_specs: tuple[SensorSpec, ...] = ()
+    # When True, bootstrap registers only sensors listed in loaded SIGNAL
+    # alphas' ``depends_on_sensors`` (intersected with ``sensor_specs``).
+    # Default False preserves locked Inv-5 baselines that use the full
+    # reference sensor stack; research backtest configs opt in explicitly.
+    prune_unused_sensors: bool = False
     event_calendar_path: Path | None = None
     # BT-18: split/dividend ex-date calendar for replay integrity (see
     # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
@@ -1192,6 +1196,7 @@ class PlatformConfig:
                 }
                 for s in self.sensor_specs
             ],
+            "prune_unused_sensors": self.prune_unused_sensors,
             "event_calendar_path": (
                 self.event_calendar_path.name if self.event_calendar_path else None
             ),
@@ -1663,6 +1668,7 @@ class PlatformConfig:
             session_open_ns=session_open_ns,
             horizons_seconds=horizons_seconds,
             sensor_specs=sensor_specs,
+            prune_unused_sensors=bool(data.get("prune_unused_sensors", False)),
             event_calendar_path=event_calendar_path,
             ex_date_calendar_path=(
                 Path(str(data["ex_date_calendar_path"]))
@@ -1914,10 +1920,7 @@ class PlatformConfig:
         stateful_key_present = "stateful" in entry
         stateful = bool(entry.get("stateful", False))
         stateless_throttle_ok = (
-            throttled_ms is not None
-            and throttled_ms > 0
-            and stateful_key_present
-            and not stateful
+            throttled_ms is not None and throttled_ms > 0 and stateful_key_present and not stateful
         )
 
         return SensorSpec(

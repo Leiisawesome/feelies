@@ -37,7 +37,6 @@ from feelies.alpha.promotion_evidence import (
     CapitalStageTier,
     CPCVEvidence,
     DSREvidence,
-    GateThresholds,
     PaperWindowEvidence,
     ResearchAcceptanceEvidence,
     evidence_to_metadata,

@@ -27,7 +27,7 @@ from typing import Any, Literal
 # ── Base ────────────────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class Event:
     """Base event.  Every event carries provenance metadata.
 
@@ -57,7 +57,7 @@ class Event:
 # ── Market Data Events ──────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class NBBOQuote(Event):
     """L1 NBBO quote update from Massive (formerly Polygon.io).
 
@@ -90,7 +90,7 @@ class NBBOQuote(Event):
     received_ns: int | None = None
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class Trade(Event):
     """Trade print from exchange.
 
@@ -116,7 +116,7 @@ class Trade(Event):
     received_ns: int | None = None
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class SymbolHalted(Event):
     """Forensic marker for a per-symbol trading halt / resume (BT-5).
 
@@ -150,7 +150,7 @@ class SymbolHalted(Event):
 # ── Regime Events ───────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class RegimeState(Event):
     """Regime detection output published once per tick at M2.
 
@@ -210,7 +210,7 @@ class SignalDirection(Enum):
     FLAT = auto()
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class Signal(Event):
     """Signal evaluation output — pure function of features (no side effects).
 
@@ -272,7 +272,7 @@ class RiskAction(Enum):
     FORCE_FLATTEN = auto()
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class RiskVerdict(Event):
     """Risk engine decision on a proposed action."""
 
@@ -313,7 +313,7 @@ class OrderAckStatus(Enum):
     EXPIRED = auto()
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class OrderRequest(Event):
     """Request to place an order — output of ORDER_DECISION micro-state.
 
@@ -344,7 +344,7 @@ class OrderRequest(Event):
     reason: str = ""
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class OrderAck(Event):
     """Acknowledgement of order state change from execution backend.
 
@@ -371,7 +371,7 @@ class OrderAck(Event):
 # ── Position Events ─────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class PositionUpdate(Event):
     """Position change after fill reconciliation.
 
@@ -394,7 +394,7 @@ class PositionUpdate(Event):
 # ── System Events ───────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class StateTransition(Event):
     """Logged whenever any state machine transitions.  No silent transitions."""
 
@@ -414,7 +414,7 @@ class MetricType(Enum):
     HISTOGRAM = auto()
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class MetricEvent(Event):
     """Telemetry emitted by any layer — collected by the monitoring layer."""
 
@@ -443,7 +443,7 @@ class AlertSeverity(Enum):
     EMERGENCY = auto()
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class Alert(Event):
     """Typed alert emitted by any layer, routed by the central alert manager.
 
@@ -461,7 +461,7 @@ class Alert(Event):
 # ── Safety Events ───────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class KillSwitchActivation(Event):
     """Emitted when the kill switch is activated.
 
@@ -528,7 +528,7 @@ EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = frozenset(
 # ── v0.3 RegimeHazardSpike (§20.3.1) ────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class RegimeHazardSpike(Event):
     """Hazard-rate spike emitted when the dominant regime is about to flip.
 
@@ -550,7 +550,7 @@ class RegimeHazardSpike(Event):
 # ── Supporting types for new events ─────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class SensorProvenance:
     """Inputs a sensor consumed to produce a ``SensorReading`` (§5.2).
 
@@ -564,7 +564,7 @@ class SensorProvenance:
     input_event_kinds: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class TargetPosition:
     """Per-symbol target produced by a Layer-3 portfolio alpha (§5.7).
 
@@ -581,7 +581,7 @@ class TargetPosition:
 # ── v0.2 New Events ─────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class HorizonTick(Event):
     """Deterministic event-time scheduler tick (§5.1).
 
@@ -620,7 +620,7 @@ class HorizonTick(Event):
         return self.boundary_timestamp_ns or self.timestamp_ns
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class SensorReading(Event):
     """Layer-1 sensor output emitted on every tick (§5.2).
 
@@ -645,7 +645,7 @@ class SensorReading(Event):
     parent_correlation_id: str = ""
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class HorizonFeatureSnapshot(Event):
     """Layer-2 horizon-bucketed feature aggregate (§5.3).
 
@@ -692,7 +692,7 @@ class HorizonFeatureSnapshot(Event):
     parent_correlation_id: str = ""
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class CrossSectionalContext(Event):
     """Universe-wide barrier-synced snapshot for portfolio alphas (§5.6).
 
@@ -719,7 +719,7 @@ class CrossSectionalContext(Event):
     completeness: float = 0.0
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, slots=True)
 class SizedPositionIntent(Event):
     """Layer-3 portfolio-alpha output (§5.7), consumed by the risk engine.
 

@@ -96,10 +96,7 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
         [
             f"{i.sequence}|{i.correlation_id}|{i.timestamp_ns}|"
             f"{getattr(i, 'decision_basis_hash', '')}|"
-            + ",".join(
-                f"{sym}:{tgt}"
-                for sym, tgt in sorted(i.target_positions.items())
-            )
+            + ",".join(f"{sym}:{tgt}" for sym, tgt in sorted(i.target_positions.items()))
             for i in intents
         ]
     )

@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 from decimal import Decimal
 
-import pytest
 
 from feelies.core.events import NBBOQuote, RegimeState
 from feelies.services.regime_engine import (

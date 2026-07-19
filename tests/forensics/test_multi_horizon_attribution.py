@@ -60,9 +60,7 @@ def _rec(
     )
 
 
-def _snap(
-    strategy_id: str, breakdown: dict[TrendMechanism, float]
-) -> CrossSectionalSnapshot:
+def _snap(strategy_id: str, breakdown: dict[TrendMechanism, float]) -> CrossSectionalSnapshot:
     return CrossSectionalSnapshot(
         strategy_id=strategy_id,
         horizon_seconds=300,

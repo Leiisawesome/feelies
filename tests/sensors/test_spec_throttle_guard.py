@@ -87,9 +87,7 @@ def test_unthrottled_spec_does_not_warn(caplog) -> None:
     assert not any("throttled_ms" in r.message for r in caplog.records)
 
 
-def test_yaml_explicit_stateful_false_with_throttle_is_quiet(
-    tmp_path: Path, caplog
-) -> None:
+def test_yaml_explicit_stateful_false_with_throttle_is_quiet(tmp_path: Path, caplog) -> None:
     """platform.yaml's scheduled_flow_window pattern must not warn."""
     yaml_text = dedent(
         """

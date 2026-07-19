@@ -104,10 +104,7 @@ def test_stage0_integrity_shape_and_pooled_expectation() -> None:
     assert "episodes" in STAGE0_FIELDS
 
     def _cell(sym: str, date: str, n_eps: int, *, viable: bool = True) -> dict:
-        bnds = [
-            _bnd(eligible=True, side="LONG" if i % 2 == 0 else "SHORT")
-            for i in range(n_eps)
-        ]
+        bnds = [_bnd(eligible=True, side="LONG" if i % 2 == 0 else "SHORT") for i in range(n_eps)]
         n_in = sum(1 for b in bnds if b["in_window"])
         n_warm = sum(1 for b in bnds if b["in_window"] and b["all_warm"])
         return {
@@ -118,9 +115,7 @@ def test_stage0_integrity_shape_and_pooled_expectation() -> None:
             "n_warm_eligible": n_warm,
             "episodes": n_eps,
             "episodes_long": sum(1 for b in bnds if b["eligible"] and b["side"] == "LONG"),
-            "episodes_short": sum(
-                1 for b in bnds if b["eligible"] and b["side"] == "SHORT"
-            ),
+            "episodes_short": sum(1 for b in bnds if b["eligible"] and b["side"] == "SHORT"),
             "sigma900_bps": 40.0,
             "viable_long": viable,
             "viable_short": viable,
@@ -135,8 +130,7 @@ def test_stage0_integrity_shape_and_pooled_expectation() -> None:
     census = {
         "cells": [
             {k: app[k] for k in STAGE0_FIELDS} | {"symbol": "APP", "date": "2025-11-25"},
-            {k: rmbs[k] for k in STAGE0_FIELDS}
-            | {"symbol": "RMBS", "date": "2025-11-25"},
+            {k: rmbs[k] for k in STAGE0_FIELDS} | {"symbol": "RMBS", "date": "2025-11-25"},
         ]
     }
     s0 = stage0_integrity(extract, census)

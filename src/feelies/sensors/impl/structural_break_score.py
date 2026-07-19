@@ -73,7 +73,8 @@ import math
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 _NS_PER_SECOND: int = 1_000_000_000
 
@@ -151,7 +152,7 @@ class StructuralBreakScoreSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
@@ -168,16 +169,7 @@ class StructuralBreakScoreSensor:
         last_mid = state["last_mid"]
         state["last_mid"] = mid
         if last_mid is None or last_mid <= 0.0:
-            return SensorReading(
-                timestamp_ns=event.timestamp_ns,
-                correlation_id="placeholder",
-                sequence=-1,
-                symbol=event.symbol,
-                sensor_id=self.sensor_id,
-                sensor_version=self.sensor_version,
-                value=0.0,
-                warm=False,
-            )
+            return SensorEmission(value=0.0, warm=False)
 
         observable = abs(math.log(mid) - math.log(last_mid))
 
@@ -202,13 +194,4 @@ class StructuralBreakScoreSensor:
         n = len(samples)
         warm = n >= self._warm_samples and (samples[-1][0] - samples[0][0]) >= self._window_ns
 
-        return SensorReading(
-            timestamp_ns=ts_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=score,
-            warm=warm,
-        )
+        return SensorEmission(value=score, warm=warm)

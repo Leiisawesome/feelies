@@ -137,8 +137,7 @@ class TestRunPaperGuards:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake")
         cfg = tmp_path / "platform.yaml"
         cfg.write_text(
-            "symbols: [AAPL]\nmode: PAPER\nalpha_specs: [alpha.yaml]\n"
-            "cost_stress_multipler: 2.0\n"
+            "symbols: [AAPL]\nmode: PAPER\nalpha_specs: [alpha.yaml]\ncost_stress_multipler: 2.0\n"
         )
         mod = _load_module()
         rc = mod.main(["--config", str(cfg), "--strict-config"])  # type: ignore[attr-defined]

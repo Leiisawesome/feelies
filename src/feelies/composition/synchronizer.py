@@ -247,7 +247,9 @@ class UniverseSynchronizer:
     def _max_age_ns(self, portfolio_h: int) -> int:
         """Stale-feeder window in nanos for a context at horizon *portfolio_h*."""
         window_s = (
-            self._signal_max_age_seconds if self._signal_max_age_seconds is not None else portfolio_h
+            self._signal_max_age_seconds
+            if self._signal_max_age_seconds is not None
+            else portfolio_h
         )
         return window_s * 1_000_000_000
 

@@ -68,7 +68,7 @@ from feelies.sensors.errors import (
     DuplicateSensorRegistrationError,
     UnresolvedSensorDependencyError,
 )
-from feelies.sensors.protocol import Sensor
+from feelies.sensors.protocol import Sensor, SensorEmission
 from feelies.sensors.spec import SensorSpec
 
 _logger = logging.getLogger(__name__)
@@ -349,32 +349,32 @@ class SensorRegistry:
 
     def _stamp(
         self,
-        reading: SensorReading,
+        emission: SensorEmission | SensorReading,
         *,
         spec: SensorSpec,
         event: Event,
         symbol: str,
     ) -> SensorReading:
-        """Re-emit ``reading`` with registry-controlled provenance fields.
+        """Build a registry-stamped ``SensorReading`` from a sensor emission.
 
-        The sensor produces a ``SensorReading`` with the *value* and
-        *warmth* it computed.  The registry overrides the audit
-        fields — ``sequence``, ``correlation_id``, ``source_layer``,
-        ``provenance`` — so producers cannot accidentally diverge from
-        the platform's determinism contract.
+        Sensors preferably return :class:`SensorEmission` (value/warm/
+        confidence only).  Returning a full ``SensorReading`` remains
+        supported; the registry overrides audit fields — ``sequence``,
+        ``correlation_id``, ``source_layer``, ``provenance`` — so
+        producers cannot diverge from the determinism contract.
 
         ``parent_correlation_id`` is set to the originating market-data
         event's ``correlation_id`` to restore the audit-spine chain
         required by A-DATA-04 (S4).
         """
-        if reading.correlation_id != "placeholder":
+        if isinstance(emission, SensorReading) and emission.correlation_id != "placeholder":
             # S15: sensors should leave correlation_id as "placeholder";
             # the registry is the sole authority that sets real IDs.
             _logger.debug(
                 "sensor %s returned SensorReading with non-placeholder "
                 "correlation_id %r; registry will override",
                 spec.sensor_id,
-                reading.correlation_id,
+                emission.correlation_id,
             )
         seq = self._sequence_generator.next()
         correlation_id = make_correlation_id(
@@ -391,9 +391,9 @@ class SensorRegistry:
             symbol=symbol,
             sensor_id=spec.sensor_id,
             sensor_version=spec.sensor_version,
-            value=reading.value,
-            confidence=reading.confidence,
-            warm=reading.warm,
+            value=emission.value,
+            confidence=emission.confidence,
+            warm=emission.warm,
             provenance=provenance,
             parent_correlation_id=event.correlation_id,  # S4: audit-spine chain
         )

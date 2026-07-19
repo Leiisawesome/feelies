@@ -117,9 +117,11 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # scheduled_flow_window sensor spec gained throttled_ms=1000 (verified safe:
 # its update() reads no state at all). Config-contract change only —
 # sig_benign_midcap_v1 does not depend on this sensor either.
-_BASELINE_CONFIG_HASH = (
-    "c4a74f6a98b021d055ea84f237d978fd8fe28bef81522b31c90a7f05537b3da1"
-)
+#
+# Re-baked 2026-07-19 (backtest hot-path perf): configs inherit
+# ``prune_unused_sensors: true`` from bt_sig_benign_midcap.yaml (snapshot
+# field). Trade path / P&L pins unchanged for this alpha's sensor closure.
+_BASELINE_CONFIG_HASH = "be6047f70e25ec49b693fd085d1064bda3aaa410d75c5ec239ba389a250fde15"
 _BASELINE_NET_PNL = Decimal("430.85")
 _BASELINE_FILL_COUNT = 21
 

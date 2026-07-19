@@ -730,7 +730,6 @@ class TestBorrowAvailabilityConfig:
 
 class TestProtocolCompliance:
     def test_satisfies_configuration_protocol(self) -> None:
-        from feelies.core.config import Configuration
 
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert hasattr(cfg, "version")

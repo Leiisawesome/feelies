@@ -7,7 +7,6 @@ from dataclasses import replace
 from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
 from feelies.core.inv12_stress import (
     INV12_COST_STRESS_MULTIPLIER,
-    INV12_LATENCY_STRESS_MULTIPLIER,
     apply_inv12_stress,
     disclosure_margin_after_cost_stress,
     disclosure_survives_inv12_cost_stress,

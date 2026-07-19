@@ -62,7 +62,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 _EPS = 1e-12
@@ -134,7 +135,7 @@ class QuoteReplenishAsymmetrySensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
@@ -226,13 +227,4 @@ class QuoteReplenishAsymmetrySensor:
         else:
             warm = state["count"] >= self._min_observations and bool(bid_adds) and bool(ask_adds)
 
-        return SensorReading(
-            timestamp_ns=ts,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)

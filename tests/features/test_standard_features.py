@@ -13,7 +13,7 @@ Covers:
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Mapping
+from typing import Any
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (

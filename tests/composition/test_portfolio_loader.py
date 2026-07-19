@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from feelies.alpha.loader import AlphaLoader, AlphaLoadError
+from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.portfolio_layer_module import LoadedPortfolioLayerModule
 
 

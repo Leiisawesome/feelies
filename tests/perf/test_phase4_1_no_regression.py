@@ -62,7 +62,6 @@ from __future__ import annotations
 import os
 import statistics
 import time
-from typing import Callable
 
 import pytest
 

@@ -91,7 +91,6 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/arbitration.py": "audit_signal_alpha",
     "alpha/aggregation.py": "audit_signal_alpha",
     "alpha/portfolio_layer_module.py": "audit_composition",
-    "alpha/intent_set.py": "audit_composition",
     "alpha/fill_attribution.py": "audit_forensics",
     "alpha/risk_wrapper.py": "audit_risk_engine",
     # ── portfolio/ ──────────────────────────────────────────────────

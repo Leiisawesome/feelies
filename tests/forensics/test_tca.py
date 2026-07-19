@@ -7,7 +7,6 @@ from decimal import Decimal
 import pytest
 
 from feelies.core.events import Side
-from feelies.forensics.analyzer import TCAReport
 from feelies.forensics.decay_detector import DecayDetector
 from feelies.storage.trade_journal import TradeRecord
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
 from feelies.alpha.registry import AlphaRegistry
@@ -13,7 +12,6 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     RiskAction,
-    RiskVerdict,
     Side,
     Signal,
     SignalDirection,
@@ -22,7 +20,7 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 
-from tests.alpha.conftest import MockAlpha, _make_spread_feature
+from tests.alpha.conftest import MockAlpha
 
 
 def _make_alpha(

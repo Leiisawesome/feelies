@@ -51,15 +51,21 @@ def test_is_entry_eligible_both_clock_arms() -> None:
     assert is_entry_eligible(
         ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hh=1.0, require_clock=True
     ) == (True, "LONG")
-    assert is_entry_eligible(
-        ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hh=0.0, require_clock=True
-    )[0] is False
+    assert (
+        is_entry_eligible(
+            ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hh=0.0, require_clock=True
+        )[0]
+        is False
+    )
     assert is_entry_eligible(
         ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hh=0.0, require_clock=False
     ) == (True, "LONG")
-    assert is_entry_eligible(
-        ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hh=1.0, require_clock=False
-    )[0] is False
+    assert (
+        is_entry_eligible(
+            ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hh=1.0, require_clock=False
+        )[0]
+        is False
+    )
 
 
 def test_quote_dropped_by_ofi_matches_sensor_gate() -> None:

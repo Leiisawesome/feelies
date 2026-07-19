@@ -87,7 +87,9 @@ def _replay(mids: list[float]) -> tuple[list[HorizonFeatureSnapshot], list[int],
         bus=bus, sequence_generator=SequenceGenerator(), symbols=frozenset({"AAPL"})
     )
     registry.register(
-        SensorSpec(sensor_id="ramp", sensor_version="1.0.0", cls=_RampSensor, subscribes_to=(NBBOQuote,))
+        SensorSpec(
+            sensor_id="ramp", sensor_version="1.0.0", cls=_RampSensor, subscribes_to=(NBBOQuote,)
+        )
     )
     scheduler = HorizonScheduler(
         horizons=frozenset({_H}),

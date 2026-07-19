@@ -6,7 +6,6 @@ Requires US RTH, IB Gateway paper @ 4002, and MASSIVE_API_KEY.
 from __future__ import annotations
 
 import os
-import threading
 import time
 
 import pytest
@@ -98,7 +97,7 @@ def test_signal_path(paper_session) -> None:
 def test_shutdown_in_flight(paper_session) -> None:
     from decimal import Decimal
 
-    from feelies.core.events import OrderAck, OrderAckStatus, OrderRequest, OrderType, Side
+    from feelies.core.events import OrderAck, OrderRequest, OrderType, Side
     from feelies.core.clock import WallClock
 
     orchestrator, bus, _run_dir, thread = paper_session

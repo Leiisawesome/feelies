@@ -12,7 +12,7 @@ because some windows are symbol-scoped (e.g. ``EARNINGS_DRIFT`` for
 
 Outputs (length-4 tuple):
 
-    SensorReading.value = (
+.value = (
         active,                  # 1.0 if inside any matching window, else 0.0
         seconds_to_window_close, # remaining time in the active window; -1.0 if inactive
         window_id_hash,          # int32-hashed window identifier; 0 if inactive
@@ -43,7 +43,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 from feelies.storage.reference.event_calendar import (
     CalendarWindow,
     EventCalendar,
@@ -154,7 +155,7 @@ class ScheduledFlowWindowSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         ts_ns = event.timestamp_ns
         symbol = event.symbol
         window = self._select_active_window(ts_ns, symbol)
@@ -174,13 +175,4 @@ class ScheduledFlowWindowSensor:
         # which would otherwise present as a normal "outside any window"
         # reading and silently disable a downstream alpha.
         warm = self._has_windows and self._symbol_has_eligible_window(symbol)
-        return SensorReading(
-            timestamp_ns=ts_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)

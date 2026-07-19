@@ -15,7 +15,7 @@ above.
 
 Outputs (length-4 tuple):
 
-    SensorReading.value = (
+.value = (
         intensity_buy,         # λ_buy(t)  — impulse-EWMA intensity in ARBITRARY
                                # units (impulse α decayed at rate β); NOT
                                # normalised to events/second (audit P2-1)
@@ -50,7 +50,8 @@ import math
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 _NS_PER_SECOND: float = 1_000_000_000.0
 _EPS: float = 1e-12
@@ -160,7 +161,7 @@ class HawkesIntensitySensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, Trade):
             return None
         if event.size <= 0:
@@ -212,13 +213,4 @@ class HawkesIntensitySensor:
             and len(state["sell_ts"]) >= self._warm_per_side
         )
 
-        return SensorReading(
-            timestamp_ns=ts_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=(lam_buy, lam_sell, intensity_ratio, self._impulse_decay_ratio),
-            warm=warm,
-        )
+        return SensorEmission(value=(lam_buy, lam_sell, intensity_ratio, self._impulse_decay_ratio), warm=warm)

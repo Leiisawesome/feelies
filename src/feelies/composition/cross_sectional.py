@@ -88,18 +88,6 @@ _CAP_CONVERGENCE_TOLERANCE: float = 1e-9
 
 
 @dataclass(frozen=True)
-class RankedAlpha:
-    """Standardized cross-sectional weight + provenance per symbol."""
-
-    symbol: str
-    raw_score: float
-    weight: float
-    decay_factor: float
-    mechanism: TrendMechanism | None
-    signal: Signal
-
-
-@dataclass(frozen=True)
 class RankResult:
     """Output of :meth:`CrossSectionalRanker.rank`."""
 
@@ -278,7 +266,9 @@ class CrossSectionalRanker:
         is enforced structurally on the combined book and at emit time.
         """
         decay_enabled = (
-            self._decay_enabled if decay_weighting_enabled is None else bool(decay_weighting_enabled)
+            self._decay_enabled
+            if decay_weighting_enabled is None
+            else bool(decay_weighting_enabled)
         )
         whitelist = frozenset(consumes_mechanisms) if consumes_mechanisms else None
         raw_by_mech, raw_scores, decay_factors, mechanism_by_symbol = self._gather_raw_by_mech(
@@ -731,32 +721,6 @@ class CrossSectionalRanker:
         return scaled, breakdown
 
 
-def compute_mechanism_breakdown(
-    gross_by_symbol: Mapping[str, float],
-    mechanism_by_symbol: Mapping[str, TrendMechanism],
-) -> dict[TrendMechanism, float]:
-    """Realised gross-exposure share per mechanism family (audit P0-5).
-
-    Computed from the *final* per-symbol signed exposures
-    (``gross_by_symbol`` — typically ``intent.target_positions`` dollar
-    targets) so the reported breakdown reflects the emitted book after
-    neutralization / sector matching / optimization, not the ranker's
-    pre-construction weights.  The denominator is total gross over *all*
-    positions; the numerator for a family is the gross of the positions
-    whose consumed signal carried that mechanism.
-    """
-    gross_total = sum(abs(v) for v in gross_by_symbol.values())
-    if gross_total <= 0.0:
-        return {}
-    by_mech: dict[TrendMechanism, float] = {}
-    for symbol, v in gross_by_symbol.items():
-        mech = mechanism_by_symbol.get(symbol)
-        if mech is None:
-            continue
-        by_mech[mech] = by_mech.get(mech, 0.0) + abs(v)
-    return {m: g / gross_total for m, g in by_mech.items()}
-
-
 def cap_family_vectors(
     vectors_by_mech: Mapping["TrendMechanism | None", Mapping[str, float]],
     caps: tuple[Mapping[TrendMechanism, float], float],
@@ -871,9 +835,7 @@ def compute_sleeve_breakdown(
 __all__ = [
     "CrossSectionalRanker",
     "RankResult",
-    "RankedAlpha",
     "SleeveRankResult",
     "cap_family_vectors",
-    "compute_mechanism_breakdown",
     "compute_sleeve_breakdown",
 ]

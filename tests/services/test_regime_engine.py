@@ -414,7 +414,7 @@ class TestMultiSymbolIsolation:
         q_msft = _make_quote(symbol="MSFT", bid="299.90", ask="300.10", sequence=1)
 
         post_aapl = engine.posterior(q_aapl)
-        post_msft = engine.posterior(q_msft)
+        engine.posterior(q_msft)
 
         # AAPL posteriors should not have changed after MSFT update
         assert engine.current_state("AAPL") == post_aapl

@@ -13,7 +13,6 @@ from feelies.composition.engine import (
 from feelies.composition.factor_neutralizer import FactorNeutralizer
 from feelies.composition.protocol import (
     CompositionContextError,
-    PortfolioAlpha,
 )
 from feelies.composition.sector_matcher import SectorMatcher
 from feelies.composition.turnover_optimizer import TurnoverOptimizer

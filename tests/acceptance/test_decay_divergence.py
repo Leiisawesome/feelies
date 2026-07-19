@@ -17,7 +17,6 @@ test exists alongside the existing Level-3 determinism baselines.
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 from feelies.bus.event_bus import EventBus
 from feelies.composition.cross_sectional import CrossSectionalRanker

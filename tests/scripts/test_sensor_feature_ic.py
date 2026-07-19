@@ -221,9 +221,7 @@ def _h10_smoke_tape(sym: str = "APP"):
     mid = 100.0
     for t in range(0, 2100):
         mid += 0.00005
-        events.append(
-            _quote(t * NS, f"{mid:.4f}", f"{mid + 0.02:.4f}", 100, 100)
-        )
+        events.append(_quote(t * NS, f"{mid:.4f}", f"{mid + 0.02:.4f}", 100, 100))
         # Rising ISO prints ⇒ buy-side SFI pressure.
         events.append(
             Trade(

@@ -171,4 +171,4 @@ def test_missing_session_open_ns_fails_closed_instead_of_reading_wall_clock(
         session_open_ns=None,
     )
     with pytest.raises(StaleFactorLoadingsError, match="session_open_ns"):
-        _enforce_factor_loadings_freshness(config, _UNIVERSE)
+        _enforce_factor_loadings_freshness(config, _UNIVERSE, clock=SimulatedClock())

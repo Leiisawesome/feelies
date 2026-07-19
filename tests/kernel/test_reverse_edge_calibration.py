@@ -17,7 +17,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from feelies.core.clock import SimulatedClock
-from feelies.core.events import NBBOQuote, RiskAction, RiskVerdict, Side, Signal, SignalDirection
+from feelies.core.events import NBBOQuote, RiskAction, RiskVerdict, Signal, SignalDirection
 from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore

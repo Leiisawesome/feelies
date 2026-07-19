@@ -32,7 +32,6 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
     AlertSeverity,
-    NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
@@ -43,7 +42,6 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backend import ExecutionBackend
-from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore

@@ -32,7 +32,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class QuoteHazardRateSensor:
@@ -91,7 +92,7 @@ class QuoteHazardRateSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
@@ -108,13 +109,4 @@ class QuoteHazardRateSensor:
         if warm and self._min_span_ns is not None:
             warm = (timestamps[-1] - timestamps[0]) >= self._min_span_ns
 
-        return SensorReading(
-            timestamp_ns=ts,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)

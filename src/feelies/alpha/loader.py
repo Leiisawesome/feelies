@@ -11,12 +11,8 @@ deliverables and the platform's typed protocol system.  It:
   6. Produces a :class:`LoadedSignalLayerModule` (``layer: SIGNAL``)
      or :class:`LoadedPortfolioLayerModule` (``layer: PORTFOLIO``)
 
-Workstream D.2 retired the per-tick ``LoadedAlphaModule`` produced by
-the historical ``layer: LEGACY_SIGNAL`` path; PR-2 of D.2 then deleted
-the class itself.  Every accepted layer now resolves to a dedicated
-loaded-module type with a deterministic dispatch branch in
-:meth:`AlphaLoader.load_from_dict` — there is no longer a generic
-fall-through path.
+Accepted layers are SIGNAL and PORTFOLIO only. ``LEGACY_SIGNAL`` is
+hard-rejected with a pointer to ``docs/migration/schema_1_0_to_1_1.md``.
 
 Security: inline code is compiled via ``compile()`` + ``exec()`` in a
 restricted namespace.  No ``import``, ``open``, ``eval``, ``exec``,
@@ -76,15 +72,9 @@ logger = logging.getLogger(__name__)
 # do not count against this cap (audit P1-8).
 _MAX_FREE_OPTIMIZATION_PARAMS: int = 3
 
-# Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
-# accepted set; the once-per-process sunset banner and the per-tick
-# :class:`LoadedAlphaModule` class were both deleted by D.2 PR-2.  Any
-# LEGACY_SIGNAL manifest is now hard-rejected at parse time with a
-# migration pointer (see :meth:`AlphaLoader._validate_schema`).
-# ``_REQUIRED_TOP_KEYS`` is retained as a frozen historical record of
-# the legacy schema-1.0 contract so the early-validation messages can
-# point at exactly which field a copy-pasted-from-1.0 fixture is
-# missing — the keys themselves are no longer accepted.
+# Historical schema-1.0 required keys — retained so early-validation
+# messages can name which field a copy-pasted 1.0 fixture is missing.
+# The keys themselves are not accepted (D.1/D.2 hard-reject).
 _REQUIRED_TOP_KEYS = {
     "alpha_id",
     "version",
@@ -126,20 +116,11 @@ _REQUIRED_PORTFOLIO_LAYER_KEYS = {
 
 _SUPPORTED_SCHEMA_VERSIONS = {"1.1"}
 
-# Schema 1.1 layer values per §6.6.  Workstream D.2 retired
-# ``LEGACY_SIGNAL`` from both the "valid" and "accepted" sets; it is
-# now handled as a dedicated *retired* category with its own migration
-# message.  ``SIGNAL`` and ``PORTFOLIO`` are accepted; ``SENSOR``
-# remains reserved (sensor specs live under platform.yaml, not alpha
-# YAML).  See docs/three_layer_architecture.md §10.
+# Schema 1.1 layers (§6.6). SIGNAL/PORTFOLIO accepted; SENSOR reserved
+# (platform.yaml). LEGACY_SIGNAL is retired with a dedicated migration
+# error (not the generic "unknown layer" path).
 _VALID_1_1_LAYERS = {"SIGNAL", "PORTFOLIO", "SENSOR"}
 _ACCEPTED_LAYERS = {"SIGNAL", "PORTFOLIO"}
-
-# Layers that were once accepted but have been removed from the
-# loader's dispatch table.  Membership in this set triggers a dedicated
-# rejection path with a migration pointer (rather than the generic
-# "unknown layer" message), so authors who copy old fixtures get a
-# stable, actionable error instead of a typo-shaped one.
 _RETIRED_LAYERS = {"LEGACY_SIGNAL"}
 _LAYER_PHASE_MAP = {
     "SENSOR": "Phase 2 (sensor framework — declared in platform.yaml, not alpha YAML)",
@@ -248,16 +229,13 @@ class AlphaLoader:
     loader must instantiate a standalone regime engine (no shared
     ``regime_engine`` instance was supplied at construction).
 
-    Each accepted ``layer:`` value resolves to a dedicated loaded-module
-    class via a deterministic dispatch branch in :meth:`load_from_dict`:
+    Dispatch in :meth:`load_from_dict`:
 
     * ``layer: SIGNAL``     → :class:`LoadedSignalLayerModule`
     * ``layer: PORTFOLIO``  → :class:`LoadedPortfolioLayerModule`
 
-    ``layer: LEGACY_SIGNAL`` was retired by workstream D.2; the per-tick
-    ``LoadedAlphaModule`` class that historically backed it was deleted
-    in D.2 PR-2.  Any LEGACY_SIGNAL manifest is hard-rejected by
-    :meth:`_validate_schema` with a migration-cookbook pointer.
+    Other layers (including retired ``LEGACY_SIGNAL``) are rejected by
+    :meth:`_validate_schema`.
     """
 
     def __init__(
@@ -281,10 +259,8 @@ class AlphaLoader:
         """Load an alpha specification from a YAML file.
 
         Raises ``AlphaLoadError`` on any validation or compilation failure.
-        Returns one of the two layer-specialised module types depending
-        on the parsed ``layer:`` field (SIGNAL → ``LoadedSignalLayerModule``,
-        PORTFOLIO → ``LoadedPortfolioLayerModule``).  ``layer: LEGACY_SIGNAL``
-        was retired by workstream D.2 and is hard-rejected at parse time.
+        Returns ``LoadedSignalLayerModule`` or ``LoadedPortfolioLayerModule``
+        based on ``layer:``.
         """
         path = Path(path)
         try:
@@ -305,15 +281,8 @@ class AlphaLoader:
 
         Dispatches on ``layer:`` (schema 1.1):
 
-        - ``SIGNAL``                       → :class:`LoadedSignalLayerModule`
-          (Phase-3 horizon-anchored, regime-gated contract).
-        - ``PORTFOLIO``                    → :class:`LoadedPortfolioLayerModule`
-          (Phase-4 cross-sectional construction).
-
-        ``LEGACY_SIGNAL`` was retired by workstream D.2 and is rejected
-        in :meth:`_validate_schema`; the per-tick ``LoadedAlphaModule``
-        class that historically backed it was deleted in D.2 PR-2 and
-        no longer exists in the codebase.
+        - ``SIGNAL``    → :class:`LoadedSignalLayerModule`
+        - ``PORTFOLIO`` → :class:`LoadedPortfolioLayerModule`
         """
         self._validate_schema(spec, source)
 
@@ -354,22 +323,10 @@ class AlphaLoader:
     ) -> LoadedSignalLayerModule:
         """Load a schema-1.1 ``layer: SIGNAL`` alpha.
 
-        Defining characteristics of the SIGNAL layer (vs. the retired
-        per-tick path that workstream D.2 removed):
-
-        1. **No inline features.**  ``depends_on_sensors`` declares the
-           Layer-1 sensors the alpha consumes; the platform provides
-           those via :class:`feelies.sensors.registry.SensorRegistry`.
-        2. **3-arg evaluate.**  The compiled inline ``signal:`` code
-           must define ``evaluate(snapshot, regime, params)``.  The
-           snapshot type is :class:`HorizonFeatureSnapshot`; ``regime``
-           is the latest :class:`RegimeState` (or ``None`` at cold
-           start); ``params`` is the resolved parameter mapping.
-        3. **Mandatory ``cost_arithmetic`` and ``regime_gate`` blocks**,
-           parsed up-front into :class:`CostArithmetic` and
-           :class:`RegimeGate` instances respectively.  Failure of
-           either parser surfaces as :class:`AlphaLoadError` so the
-           operator sees a single error class.
+        1. **No inline features** — ``depends_on_sensors`` + SensorRegistry.
+        2. **3-arg evaluate** — ``evaluate(snapshot, regime, params)`` on
+           :class:`HorizonFeatureSnapshot`.
+        3. **Mandatory** ``cost_arithmetic`` and ``regime_gate`` blocks.
         """
         alpha_id = spec["alpha_id"]
         param_defs = self._parse_parameters(spec.get("parameters", {}), source)
@@ -533,7 +490,8 @@ class AlphaLoader:
         depends_on_signals = self._parse_depends_on_signals(spec, source)
 
         try:
-            cost_arith = CostArithmetic.from_spec(
+            # G12 validation only — PORTFOLIO modules do not retain cost_arith.
+            CostArithmetic.from_spec(
                 alpha_id=alpha_id,
                 spec=spec.get("cost_arithmetic"),
             )
@@ -884,12 +842,7 @@ class AlphaLoader:
             )
         layer_str = str(layer)
 
-        # Workstream D.2: ``layer: LEGACY_SIGNAL`` was retired in PR-1
-        # and the per-tick ``LoadedAlphaModule`` class itself was
-        # deleted in PR-2.  The only survivors are SIGNAL/PORTFOLIO.
-        # Surface a dedicated rejection (rather than a generic
-        # "unknown layer" typo message) so authors copying old
-        # fixtures get a stable migration pointer.
+        # Dedicated migration pointer for retired layers (not "unknown").
         if layer_str in _RETIRED_LAYERS:
             raise AlphaLoadError(
                 f"{source}: layer '{layer_str}' was retired by "

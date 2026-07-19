@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-import pytest
 
 from feelies.core.clock import SimulatedClock
 from feelies.core.identifiers import SequenceGenerator

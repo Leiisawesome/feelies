@@ -50,15 +50,21 @@ def test_is_entry_eligible_both_clock_arms() -> None:
     assert is_entry_eligible(
         ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hr=1.0, require_hour=True
     ) == (True, "LONG")
-    assert is_entry_eligible(
-        ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hr=0.0, require_hour=True
-    )[0] is False
+    assert (
+        is_entry_eligible(
+            ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hr=0.0, require_hour=True
+        )[0]
+        is False
+    )
     assert is_entry_eligible(
         ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hr=0.0, require_hour=False
     ) == (True, "LONG")
-    assert is_entry_eligible(
-        ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hr=1.0, require_hour=False
-    )[0] is False
+    assert (
+        is_entry_eligible(
+            ofi=1.0, pctl=0.85, rvz=1.0, p_breakout=0.2, w_hr=1.0, require_hour=False
+        )[0]
+        is False
+    )
 
 
 def test_quote_dropped_by_ofi_matches_sensor_gate() -> None:
@@ -142,9 +148,7 @@ def test_section_1_1_synthetic_golden_both_arms_long() -> None:
     assert cal is not None
     assert len(cal.windows) == 6
 
-    cell = run_cell_from_events(
-        _synth_tape("APP", buy_pressure=True), "APP", _DATE, calendar=cal
-    )
+    cell = run_cell_from_events(_synth_tape("APP", buy_pressure=True), "APP", _DATE, calendar=cal)
     assert cell is not None
     assert cell.role == "deployable"
     assert cell.n_in_window == 3  # 10:00, 10:30, 11:00
@@ -184,9 +188,7 @@ def test_section_1_1_synthetic_golden_mli_evidence_only_cell() -> None:
     """MLI evidence-only mirror of the ENSG case (both arms)."""
     cal = load_hour_only_calendar(_DATE)
     assert cal is not None
-    cell = run_cell_from_events(
-        _synth_tape("MLI", buy_pressure=True), "MLI", _DATE, calendar=cal
-    )
+    cell = run_cell_from_events(_synth_tape("MLI", buy_pressure=True), "MLI", _DATE, calendar=cal)
     assert cell is not None
     assert cell.role == "evidence_only"
     assert cell.episodes_in_hour == 2

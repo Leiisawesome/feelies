@@ -52,7 +52,7 @@ from collections.abc import Callable
 
 import hashlib
 from dataclasses import dataclass, replace
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from enum import Enum
 
 from feelies.core.clock import Clock

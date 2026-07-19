@@ -13,7 +13,7 @@ floor before opening positions, where ``h`` matches the alpha's
 
 Output (length ``len(horizons_seconds)`` tuple, *sorted ascending*):
 
-    SensorReading.value = tuple(snr_at_horizon[h] for h in sorted(...))
+.value = tuple(snr_at_horizon[h] for h in sorted(...))
 
 Algorithm (per horizon ``h``):
 
@@ -63,7 +63,8 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 _NS_PER_SECOND: int = 1_000_000_000
 _EPS: float = 1e-12
@@ -184,7 +185,7 @@ class SNRDriftDiffusionSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
         bid = float(event.bid)
@@ -213,13 +214,4 @@ class SNRDriftDiffusionSensor:
             if slot["samples"] < self._warm_samples:
                 warm = False
 
-        return SensorReading(
-            timestamp_ns=ts_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=tuple(snrs),
-            warm=warm,
-        )
+        return SensorEmission(value=tuple(snrs), warm=warm)

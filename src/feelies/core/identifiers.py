@@ -26,25 +26,35 @@ def derive_order_id(seed: str) -> str:
 
 
 class SequenceGenerator:
-    """Thread-safe monotonically increasing sequence counter.
+    """Monotonically increasing sequence counter.
 
-    The lock guarantees every ``next()`` returns a **unique** value. It does
-    NOT make the *assignment order* deterministic across concurrent callers:
-    if two threads race on ``next()``, which one gets the lower value depends
-    on OS scheduling.  Deterministic replay (Inv-5) therefore requires
-    single-threaded sequence allocation — which is exactly the
-    backtest/replay path.  Live/paper runs may allocate from multiple
-    threads, where uniqueness holds but cross-thread ordering is not
-    reproducible (acceptable: live is not replay-hashed)."""
+    When ``thread_safe=True`` (default), a lock guarantees every ``next()``
+    returns a **unique** value. The lock does NOT make the *assignment order*
+    deterministic across concurrent callers: if two threads race on
+    ``next()``, which one gets the lower value depends on OS scheduling.
+    Deterministic replay (Inv-5) therefore requires single-threaded sequence
+    allocation — which is exactly the backtest/replay path.  Live/paper runs
+    may allocate from multiple threads, where uniqueness holds but
+    cross-thread ordering is not reproducible (acceptable: live is not
+    replay-hashed).
+
+    Pass ``thread_safe=False`` on the single-threaded BACKTEST path to skip
+    the lock (measured hot-path overhead; emission order is unchanged).
+    """
 
     __slots__ = ("_counter", "_lock")
 
-    def __init__(self, start: int = 0) -> None:
+    def __init__(self, start: int = 0, *, thread_safe: bool = True) -> None:
         self._counter = start
-        self._lock = threading.Lock()
+        self._lock: threading.Lock | None = threading.Lock() if thread_safe else None
 
     def next(self) -> int:
-        with self._lock:
+        lock = self._lock
+        if lock is None:
+            seq = self._counter
+            self._counter += 1
+            return seq
+        with lock:
             seq = self._counter
             self._counter += 1
             return seq

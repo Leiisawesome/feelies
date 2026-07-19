@@ -6,7 +6,6 @@ import pytest
 
 from feelies.core.events import Signal, SignalDirection
 from feelies.execution.intent import (
-    OrderIntent,
     SignalPositionTranslator,
     TradingIntent,
 )

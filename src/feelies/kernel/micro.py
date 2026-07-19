@@ -217,6 +217,12 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
 }
 
 
+# Ring-buffer depth for micro-SM history.  ~8 transitions per quote × a
+# few recent ticks is enough for forensics; the bus still emits every
+# StateTransition (Inv-13).  Alpha-lifecycle SM keeps unbounded history.
+_MICRO_HISTORY_LIMIT = 256
+
+
 def create_micro_state_machine(clock: Clock) -> StateMachine[MicroState]:
     """Create the tick-processing pipeline, starting in WAITING."""
     return StateMachine(
@@ -224,4 +230,6 @@ def create_micro_state_machine(clock: Clock) -> StateMachine[MicroState]:
         initial_state=MicroState.WAITING_FOR_MARKET_EVENT,
         transitions=_MICRO_TRANSITIONS,
         clock=clock,
+        history_limit=_MICRO_HISTORY_LIMIT,
+        timing_key="sm_transition_ns",
     )

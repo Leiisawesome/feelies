@@ -356,13 +356,9 @@ class HorizonSignalEngine:
         if not event.warm:
             self._sensor_cache.pop((event.symbol, event.sensor_id), None)
             return
-        self._cache_reading(
-            (event.symbol, event.sensor_id), (event.timestamp_ns, float(value))
-        )
+        self._cache_reading((event.symbol, event.sensor_id), (event.timestamp_ns, float(value)))
 
-    def _cache_reading(
-        self, key: tuple[str, str], reading: tuple[int, float]
-    ) -> None:
+    def _cache_reading(self, key: tuple[str, str], reading: tuple[int, float]) -> None:
         """Append ``reading`` to *key*'s cache slot, retaining the prior one.
 
         Only the two most recent readings are kept (oldest first).  The

@@ -1,49 +1,22 @@
 """Phase-3 ``layer: SIGNAL`` alpha module.
 
-A :class:`LoadedSignalLayerModule` is the loader-side artifact for a
-schema-1.1 ``layer: SIGNAL`` alpha.  Workstream D.2 PR-1 retired
-``layer: LEGACY_SIGNAL`` and PR-2a deleted the per-tick
-``LoadedAlphaModule`` class itself; PR-2b-i unwired the per-tick
-engines from bootstrap, PR-2b-ii deleted the engine classes
-themselves (``CompositeFeatureEngine``, ``CompositeSignalEngine``,
-``MultiAlphaEvaluator``), and PR-2b-iv removed the surviving
-``AlphaModule.evaluate``/``FeatureVector`` protocol surface entirely.
-This is therefore one of only two surviving loaded-module types
-(the other being
-:class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
+Loader-side artifact for schema-1.1 ``layer: SIGNAL`` alphas (peer:
+:class:`~feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
 
-PR-2b-iii wired the **first production-reachable Signal → Order
-pipeline** by adding a bus-driven ``Signal`` subscriber on the
-``Orchestrator`` (``_on_bus_signal``) that buffers
-``Signal(layer="SIGNAL")`` events emitted by
-:class:`feelies.signals.horizon_engine.HorizonSignalEngine` and feeds
-the M4 ``SIGNAL_EVALUATE`` drain — turning every
-``LoadedSignalLayerModule`` that fires a Signal at a horizon boundary
-into an actual ``OrderRequest`` (subject to risk / intent
-translation), unless the alpha is referenced by some PORTFOLIO's
-``depends_on_signals`` (in which case ``CompositionEngine`` aggregates
-it into a ``SizedPositionIntent`` and PR-2b-iv's
-``_on_bus_sized_intent`` translates that intent into per-leg orders
-through ``RiskEngine.check_sized_intent``).
+Horizon signals reach orders via orchestrator ``_on_bus_signal``, unless a
+PORTFOLIO alpha lists the signal in ``depends_on_signals`` (then
+``_on_bus_sized_intent`` + ``check_sized_intent``).
 
 This module:
 
-* Declares **no inline features** — Layer-2 alphas consume Layer-1
-  ``SensorReading`` events via ``depends_on_sensors:``.
-  ``feature_definitions()`` therefore returns an empty sequence.
-* Exposes the SIGNAL-specific surface (the compiled
-  :class:`feelies.signals.horizon_protocol.HorizonSignal` callable, the
-  :class:`feelies.signals.regime_gate.RegimeGate` instance, the
-  validated :class:`feelies.alpha.cost_arithmetic.CostArithmetic`
-  block, ``horizon_seconds``, and the declared ``depends_on_sensors``)
-  via dedicated attributes so the bootstrap layer can construct
-  :class:`feelies.signals.horizon_engine.RegisteredSignal` records
-  without touching the loader internals.
+* Declares **no inline features** — consumes Layer-1 ``SensorReading``
+  via ``depends_on_sensors:``; ``feature_definitions()`` is empty.
+* Exposes the SIGNAL surface (compiled ``HorizonSignal``, ``RegimeGate``,
+  ``CostArithmetic``, ``horizon_seconds``, ``depends_on_sensors``) for
+  bootstrap ``RegisteredSignal`` construction.
 
-By satisfying the :class:`feelies.alpha.module.AlphaModule` protocol
-*and* the SIGNAL-layer surface, the module remains register-able
-through :class:`feelies.alpha.registry.AlphaRegistry` without forking
-the registry.
+Satisfies :class:`~feelies.alpha.module.AlphaModule` so it registers
+through :class:`~feelies.alpha.registry.AlphaRegistry` without a fork.
 """
 
 from __future__ import annotations

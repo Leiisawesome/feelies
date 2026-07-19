@@ -56,7 +56,6 @@ if TYPE_CHECKING:
     from feelies.risk.hazard_exit import HazardExitController
 
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
-from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
@@ -116,7 +115,6 @@ from feelies.execution.portfolio_netter import (
 from feelies.execution.position_manager import (
     DesiredPosition,
     ExecStyle,
-    LegacyPositionManager,
     MarketContext,
     PlanDivergence,
     PlanLeg,
@@ -532,6 +530,7 @@ class Orchestrator:
         net_shadow_portfolio_max_abs_qty: int | None = None,
         size_shadow_sizer: "EdgeWeightedSizer | None" = None,
         size_shadow_sink: "list[SizeDivergence] | None" = None,
+        thread_safe_sequences: bool = True,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -628,7 +627,10 @@ class Orchestrator:
         self._fill_ledger = fill_ledger
         self._strategy_positions = strategy_positions
         self._cost_model: "CostModel | None" = cost_model
-        self._seq = SequenceGenerator()
+        # BACKTEST bootstrap passes thread_safe_sequences=False (single-
+        # threaded replay); paper/live keep the lock.
+        _seq_kw = {"thread_safe": thread_safe_sequences}
+        self._seq = SequenceGenerator(**_seq_kw)
 
         # ── Phase-2 (three-layer architecture) ─────────────────────────
         # Sensor / scheduler / aggregator are optional; when None the
@@ -656,10 +658,10 @@ class Orchestrator:
         # parity) can introspect a single canonical reference.  When
         # sensors / SIGNAL alphas are disabled these counters simply
         # never advance.
-        self._sensor_seq = sensor_sequence_generator or SequenceGenerator()
-        self._horizon_seq = horizon_sequence_generator or SequenceGenerator()
-        self._snapshot_seq = snapshot_sequence_generator or SequenceGenerator()
-        self._signal_seq = signal_sequence_generator or SequenceGenerator()
+        self._sensor_seq = sensor_sequence_generator or SequenceGenerator(**_seq_kw)
+        self._horizon_seq = horizon_sequence_generator or SequenceGenerator(**_seq_kw)
+        self._snapshot_seq = snapshot_sequence_generator or SequenceGenerator(**_seq_kw)
+        self._signal_seq = signal_sequence_generator or SequenceGenerator(**_seq_kw)
         # P3.1: optional hazard detector + dedicated _hazard_seq
         # generator (Inv-A / C1 isolation: enabling hazard exits must
         # not perturb pre-existing event sequence numbers).  Caller
@@ -667,7 +669,7 @@ class Orchestrator:
         # which case the orchestrator never publishes
         # RegimeHazardSpike events and the counter stays at zero.
         self._regime_hazard_detector = regime_hazard_detector
-        self._hazard_seq = hazard_sequence_generator or SequenceGenerator()
+        self._hazard_seq = hazard_sequence_generator or SequenceGenerator(**_seq_kw)
         # ── Phase-4 PORTFOLIO / composition layer (optional) ─────────
         # All four are ``None`` for default deployments — Inv-A:
         # SIGNAL-only deployments without a PORTFOLIO alpha take the
@@ -778,9 +780,7 @@ class Orchestrator:
         # reconciliation can stamp the causal mechanism onto each
         # ``TradeRecord`` (Inv-1 per-trade forensic attribution).  Pure side
         # table — never read on the per-tick decision path.
-        self._last_signal_mechanism: dict[
-            tuple[str, str], tuple[TrendMechanism | None, int]
-        ] = {}
+        self._last_signal_mechanism: dict[tuple[str, str], tuple[TrendMechanism | None, int]] = {}
         # P4b: passive working-reduction orders awaiting a MARKET fallback.
         # order_id -> (symbol, side, original_qty).  When such an order
         # terminates unfilled (the router's resting timeout → CANCELLED /
@@ -1878,9 +1878,7 @@ class Orchestrator:
         # BT-6: detect an intraday SSR trigger from the same tape.
         self._update_ssr_state(trade)
 
-        trade_block_reason = self._data_health_blocks_trading(
-            trade.symbol, trade.correlation_id
-        )
+        trade_block_reason = self._data_health_blocks_trading(trade.symbol, trade.correlation_id)
         if trade_block_reason is not None:
             # CORRUPTED / GAP_DETECTED drop the trade entirely (bad data
             # must not pollute sensors or the EventLog).  HALTED is a
@@ -2213,6 +2211,7 @@ class Orchestrator:
             self._handle_tick_failure(cid, exc)
         finally:
             self._quote_tick_in_flight = False
+            self._micro.bind_timing_sink(None)
 
     def _handle_tick_failure(self, cid: str, original: Exception) -> None:
         """Recover micro SM and degrade macro after a tick-processing failure.
@@ -2277,6 +2276,7 @@ class Orchestrator:
         cid = quote.correlation_id
         t_wall_start = time.perf_counter_ns()
         self._tick_timings: dict[str, int] = {}
+        self._micro.bind_timing_sink(self._tick_timings)
 
         # PR-2b-iii (H1 fix): partition the inter-tick Signal buffer into
         # *fresh* and *stale* before ``bus.publish(quote)`` triggers
@@ -2378,7 +2378,11 @@ class Orchestrator:
         if self._signal_order_trace_sink is not None:
             self._tick_quote_for_trace = quote
             self._last_quote_context_for_signal_trace = quote
+        # Sensor fan-out (+ router on_quote) runs synchronously inside
+        # publish; time the call for hot-path attribution.
+        t_pub = time.perf_counter_ns()
         self._bus.publish(quote)
+        self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
 
         # ── Mark-to-market feed ─────────────────────────────────
         # Push the latest mid to both the aggregate and per-strategy
@@ -3173,8 +3177,26 @@ class Orchestrator:
             )
         )
 
+        # Always-on attribution timers must NOT publish via ``_seq`` —
+        # that would advance kernel sequence numbers every quote and
+        # break Inv-5 parity hashes.  Record them directly on the
+        # collector (summaries only; sequence is unused there).
+        _attribution_timing_keys = frozenset({"sensor_fanout_ns", "sm_transition_ns"})
         timings = getattr(self, "_tick_timings", {})
         for name, value in timings.items():
+            if name in _attribution_timing_keys:
+                self._metrics.record(
+                    MetricEvent(
+                        timestamp_ns=now_ns,
+                        correlation_id=correlation_id,
+                        sequence=0,
+                        layer="kernel",
+                        name=name,
+                        value=float(value),
+                        metric_type=MetricType.HISTOGRAM,
+                    )
+                )
+                continue
             self._bus.publish(
                 MetricEvent(
                     timestamp_ns=now_ns,
@@ -6771,8 +6793,8 @@ class Orchestrator:
                     if self._macro.can_transition(MacroState.DEGRADED):
                         self._macro.transition(
                             MacroState.DEGRADED,
-                        trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
-                        correlation_id=correlation_id,
+                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
+                            correlation_id=correlation_id,
                         )
                     return "SYMBOL_UNTRACKED"
         if health == DataHealth.CORRUPTED:

@@ -123,8 +123,7 @@ def test_golden_all_buy_iso_sweeps_sfi_plus_one() -> None:
     """Strictly rising ISO prints ⇒ all +1 aggressor ⇒ SFI = +1."""
     s = SweepFlowImbalanceSensor(window_seconds=900, min_eligible_prints=3)
     evs = [
-        _trade((i + 1) * _NS, f"{100.00 + i * 0.01:.2f}", 100, conditions=(14,))
-        for i in range(5)
+        _trade((i + 1) * _NS, f"{100.00 + i * 0.01:.2f}", 100, conditions=(14,)) for i in range(5)
     ]
     last, state, _ = _drive(s, evs)
     assert last is not None and last.warm is True
@@ -137,8 +136,7 @@ def test_golden_all_sell_iso_sweeps_sfi_minus_one() -> None:
     s = SweepFlowImbalanceSensor(window_seconds=900, min_eligible_prints=3)
     # First print defaults +1; subsequent falling ⇒ sells.
     evs = [
-        _trade((i + 1) * _NS, f"{100.00 - i * 0.01:.2f}", 100, conditions=(14,))
-        for i in range(5)
+        _trade((i + 1) * _NS, f"{100.00 - i * 0.01:.2f}", 100, conditions=(14,)) for i in range(5)
     ]
     last, state, _ = _drive(s, evs)
     assert last is not None
@@ -178,9 +176,7 @@ def test_golden_mixed_sizes_hand_computed() -> None:
         ((14, 999), "iso_plus_unknown"),
     ],
 )
-def test_filter_exclusion_golden_excluded_classes(
-    conditions: tuple[int, ...], label: str
-) -> None:
+def test_filter_exclusion_golden_excluded_classes(conditions: tuple[int, ...], label: str) -> None:
     del label
     s = SweepFlowImbalanceSensor(min_eligible_prints=1)
     st = s.initial_state()
@@ -267,9 +263,7 @@ def test_window_eviction_unwarms() -> None:
 
 
 def test_gap_flush_clears_window_and_rewarm() -> None:
-    s = SweepFlowImbalanceSensor(
-        window_seconds=900, min_eligible_prints=2, max_gap_seconds=60
-    )
+    s = SweepFlowImbalanceSensor(window_seconds=900, min_eligible_prints=2, max_gap_seconds=60)
     st = s.initial_state()
     s.update(_trade(1 * _NS, "100.00", conditions=(14,)), st, {})
     r = s.update(_trade(2 * _NS, "100.01", conditions=(14,)), st, {})
@@ -367,8 +361,8 @@ def test_hypothesis_truncation_causality(
         out: dict[int, float] = {}
         for ev in events:
             r = s.update(ev, st, {})
-            if r is not None and r.timestamp_ns <= t_cut:
-                out[r.timestamp_ns] = r.value
+            if r is not None and ev.timestamp_ns <= t_cut:
+                out[ev.timestamp_ns] = r.value
         return out
 
     assert _emit(truncated) == _emit(full)

@@ -361,12 +361,15 @@ parity tests — full registry in [testing-validation skill](../testing-validati
 
 ### Snapshot Persistence
 
-**Not shipped:** design target — not yet implemented; no checkpoint
-protocol exists in `src/feelies/` today (sensors always cold-start
-from the event stream). The planned design: an optional checkpoint
-store for warm-start, keyed by `(symbol, sensor_id, sensor_version)`,
-where version mismatch on restore falls back to cold start — never
-silently degrade to a different version's state.
+**Shipped (partial):** `FeatureSnapshotStore` /
+`InMemoryFeatureSnapshotStore` persist feature/regime snapshots used by
+the orchestrator (e.g. regime checkpoint restore). This is **not** a
+per-sensor warm-start protocol.
+
+**Not shipped:** sensor-keyed warm-start checkpoint store keyed by
+`(symbol, sensor_id, sensor_version)`. Sensors still cold-start from the
+event stream; the planned design falls back to cold start on version
+mismatch — never silently degrade to a different version's state.
 
 ## Cross-Sectional Aggregation
 

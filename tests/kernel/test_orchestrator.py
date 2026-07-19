@@ -1779,6 +1779,8 @@ class TestResetRiskEscalation:
         assert orch._positions.total_exposure() == Decimal("0")
         orch.reset_risk_escalation(audit_token="tok")
         assert orch.risk_level == RiskLevel.NORMAL
+
+
 class TestRealizedCostEscalation:
     """Backtest-level coverage for the realized-cost-overrun kill-switch
     escalation (P2.10). Previously only exercised by a ``paper_rth``-gated
@@ -2030,7 +2032,7 @@ class _EmptyPlanManager:
 
 
 class TestPositionManagerShadow:
-    """The legacy planner runs alongside the legacy path with zero
+    """The shadow planner runs alongside the translator path with zero
     divergence, drives nothing, and the harness genuinely detects a
     mismatch when one exists."""
 
@@ -2102,7 +2104,7 @@ class TestPositionManagerShadow:
             orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
             orch._process_tick(q)
 
-        # Legacy path drove the book through entry → reverse → exit …
+        # Translator path drove the book through entry → reverse → exit …
         assert pos_store.get("AAPL").quantity == 0
         # … and the shadow planner never disagreed.
         assert sink == [], f"unexpected divergence: {sink}"
@@ -2214,7 +2216,8 @@ class TestPositionManagerDrive:
 
 class TestPositionManagerTrim:
     """P3: a cost-aware TRIM partially reduces a same-direction position
-    that legacy would hold — default-off (byte-identical when disabled)."""
+    that the translator path would hold — default-off (byte-identical when
+    disabled)."""
 
     @staticmethod
     def _run(*, enable_trim: bool) -> tuple[int, list[tuple[str, int]]]:
@@ -2264,7 +2267,7 @@ class TestPositionManagerTrim:
 
     def test_trim_disabled_holds_position(self) -> None:
         qty, orders = self._run(enable_trim=False)
-        assert qty == 150  # legacy hold — no trim
+        assert qty == 150  # translator hold — no trim
         assert orders == []
 
     @staticmethod
@@ -2770,7 +2773,7 @@ class TestNetShadow:
         q = _make_quote()
         orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
         orch._process_tick(q)  # must not raise; nothing recorded
-        assert orch._positions.get("AAPL").quantity != 0  # legacy path drove
+        assert orch._positions.get("AAPL").quantity != 0  # translator path drove
 
 
 class TestSizeShadow:

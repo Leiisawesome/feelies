@@ -12,7 +12,6 @@ import pytest
 
 from feelies.core.events import Side
 from feelies.execution.cost_model import (
-    CostBreakdown,
     DefaultCostModel,
     DefaultCostModelConfig,
     ZeroCostModel,

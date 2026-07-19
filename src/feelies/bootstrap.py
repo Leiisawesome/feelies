@@ -103,10 +103,6 @@ from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
 from feelies.execution.intent import SignalPositionTranslator
 from feelies.execution.position_manager import TargetPositionManager
-from feelies.execution.min_cost_policy import (
-    MinCostPolicyConfig,
-    MinimumCostExecutionPolicy,
-)
 from feelies.execution.moc_session import (
     MocSessionBounds,
     build_moc_bounds_from_platform,
@@ -341,6 +337,7 @@ def build_platform(
     )
 
     _load_alphas(config, registry, loader)
+    config = _maybe_prune_unused_sensors(config, registry)
 
     # Workstream D.2 PR-2b-ii deleted the legacy per-tick alpha pipeline
     # (CompositeFeatureEngine → CompositeSignalEngine →
@@ -390,7 +387,8 @@ def build_platform(
     # diagnostics (e.g. the per-leg PORTFOLIO veto Alert) on a
     # separate sequence stream from the orchestrator's own ``_seq`` so
     # neither can disturb the other's bit-identical replay (Inv-5).
-    risk_alert_seq = SequenceGenerator()
+    _seq_thread_safe = config.mode != OperatingMode.BACKTEST
+    risk_alert_seq = SequenceGenerator(thread_safe=_seq_thread_safe)
     # BT-4: PDT round-trip tracking + $25k minimum-equity entry gate.
     # Only the locked ``margin_25k`` (PDT-exempt) path is implemented; the
     # enum's other members are accepted by config but refused here so an
@@ -591,7 +589,12 @@ def build_platform(
         sensor_registry,
         horizon_scheduler,
         _,  # horizon_aggregator — already bus-attached inside _create_sensor_layer
-    ) = _create_sensor_layer(config, bus, metric_collector=metric_collector)
+    ) = _create_sensor_layer(
+        config,
+        bus,
+        metric_collector=metric_collector,
+        thread_safe_sequences=_seq_thread_safe,
+    )
     # Keep a reference to the built feature list for the M2 coverage
     # check in _create_signal_layer; the aggregator itself is already
     # attached to the bus and does not need further orchestrator wiring.
@@ -615,6 +618,7 @@ def build_platform(
         horizon_features=_built_horizon_features,
         regime_min_discriminability=config.regime_min_discriminability,
         metric_collector=metric_collector,
+        thread_safe_sequences=_seq_thread_safe,
     )
 
     # ── Phase-4 PORTFOLIO / composition layer (additive, optional) ──
@@ -643,6 +647,7 @@ def build_platform(
         position_store=position_store,
         strategy_positions=strategy_positions,
         clock=clock,
+        thread_safe_sequences=_seq_thread_safe,
     )
 
     # Audit P0 H-1: hazard wiring scans ALL active alphas so SIGNAL-layer
@@ -656,6 +661,7 @@ def build_platform(
         registry=registry,
         position_store=position_store,
         fallback_universe=config.symbols,
+        thread_safe_sequences=_seq_thread_safe,
     )
 
     # Phase-3.1: hazard detector + dedicated _hazard_seq generator.
@@ -665,7 +671,10 @@ def build_platform(
     # regime engine is wired, the orchestrator silently skips
     # publishing spikes — the detector still exists but never
     # observes a RegimeState pair.
-    hazard_seq, regime_hazard_detector = _create_hazard_detector(registry)
+    hazard_seq, regime_hazard_detector = _create_hazard_detector(
+        registry,
+        thread_safe_sequences=_seq_thread_safe,
+    )
 
     # ── Multi-alpha execution components ──
     # Audit R2: default-on wraps the risk engine so each alpha's
@@ -744,6 +753,7 @@ def build_platform(
         size_shadow_sink=size_shadow_sink,
         normalizer=normalizer,
         regime_calibration_quotes=regime_calibration_quotes,
+        thread_safe_sequences=_seq_thread_safe,
         position_manager=position_manager,
         position_manager_drive=config.position_manager_drive,
         position_manager_enable_trim=config.position_manager_enable_trim,
@@ -1629,11 +1639,57 @@ def _consumed_features_for_signal_registration(
     return tuple(declared_consumed_features)
 
 
+def _maybe_prune_unused_sensors(
+    config: PlatformConfig,
+    registry: AlphaRegistry | object,
+) -> PlatformConfig:
+    """Drop sensor specs not required by loaded SIGNAL alphas.
+
+    When ``prune_unused_sensors`` is True (or ``None`` in BACKTEST mode),
+    intersect ``config.sensor_specs`` with the union of every SIGNAL
+    alpha's ``depends_on_sensors``.  Missing required sensors fail closed.
+    Spec order is preserved (topological registration order).
+    """
+    # Opt-in only.  Research configs (e.g. bt_sig_benign_midcap) set
+    # ``prune_unused_sensors: true``; leaving the default ``None``/False
+    # preserves locked Inv-5 baselines that register the full reference
+    # sensor stack under BACKTEST.
+    prune = bool(config.prune_unused_sensors)
+    if not prune or not config.sensor_specs:
+        return config
+
+    required: set[str] = set()
+    for alpha in registry.signal_alphas():
+        required.update(getattr(alpha, "depends_on_sensors", ()))
+    if not required:
+        # No SIGNAL alphas declare sensor deps — leave the stack intact
+        # (PORTFOLIO-only / observational configs still need sensors).
+        return config
+
+    available = {spec.sensor_id for spec in config.sensor_specs}
+    missing = sorted(required - available)
+    if missing:
+        raise ConfigurationError(
+            "prune_unused_sensors: loaded SIGNAL alphas require sensors "
+            f"{missing} that are not present in platform sensor_specs"
+        )
+
+    pruned = tuple(spec for spec in config.sensor_specs if spec.sensor_id in required)
+    logger.info(
+        "prune_unused_sensors: %d → %d specs (kept %s)",
+        len(config.sensor_specs),
+        len(pruned),
+        sorted(required),
+    )
+    return replace(config, sensor_specs=pruned)
+
+
 def _create_sensor_layer(
     config: PlatformConfig,
     bus: EventBus,
     *,
     metric_collector: InMemoryMetricCollector | None = None,
+    thread_safe_sequences: bool = True,
 ) -> tuple[
     SequenceGenerator,
     SequenceGenerator,
@@ -1658,9 +1714,9 @@ def _create_sensor_layer(
     Subscription order is governed by the module-level docstring and
     is the *single* place this is documented authoritatively.
     """
-    sensor_seq = SequenceGenerator()
-    horizon_seq = SequenceGenerator()
-    snapshot_seq = SequenceGenerator()
+    sensor_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    horizon_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    snapshot_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     sensor_registry: SensorRegistry | None = None
     if config.sensor_specs:
@@ -1806,6 +1862,8 @@ def _create_sensor_layer(
 
 def _create_hazard_detector(
     registry: AlphaRegistry,
+    *,
+    thread_safe_sequences: bool = True,
 ) -> tuple[SequenceGenerator, RegimeHazardDetector | None]:
     """Construct a :class:`RegimeHazardDetector` iff any alpha opts in.
 
@@ -1821,7 +1879,7 @@ def _create_hazard_detector(
     deployment free of any hazard-related cost and ensures Level-5
     parity hash baselines are not generated by accident.
     """
-    hazard_seq = SequenceGenerator()
+    hazard_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     def _opts_in(manifest_block: dict[str, object] | None) -> bool:
         if not isinstance(manifest_block, dict):
@@ -1853,6 +1911,7 @@ def _create_signal_layer(
     horizon_features: list[HorizonFeature] | None = None,
     regime_min_discriminability: float = 0.0,
     metric_collector: InMemoryMetricCollector | None = None,
+    thread_safe_sequences: bool = True,
 ) -> tuple[SequenceGenerator, HorizonSignalEngine | None]:
     """Compose the Phase-3 :class:`HorizonSignalEngine` if SIGNAL alphas exist.
 
@@ -1878,7 +1937,7 @@ def _create_signal_layer(
     surfaces the gap at boot rather than via silent ``None`` at
     runtime.
     """
-    signal_seq = SequenceGenerator()
+    signal_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     signal_alphas = registry.signal_alphas()
     if not signal_alphas:
@@ -1999,6 +2058,7 @@ def _create_composition_layer(
     position_store: MemoryPositionStore,
     strategy_positions: StrategyPositionStore,
     clock: Clock,
+    thread_safe_sequences: bool = True,
 ) -> tuple[
     CompositionEngine | None,
     CrossSectionalTracker | None,
@@ -2070,9 +2130,9 @@ def _create_composition_layer(
 
     _enforce_factor_loadings_freshness(config, sorted(universe), clock=clock)
 
-    intent_seq = SequenceGenerator()
-    ctx_seq = SequenceGenerator()
-    metric_seq = SequenceGenerator()
+    intent_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    ctx_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    metric_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     upstream_ids = _union_portfolio_upstream_strategy_ids(portfolio_modules)
     signal_horizons = _composition_signal_horizons(
@@ -2214,6 +2274,7 @@ def _create_hazard_exit_controller(
     registry: AlphaRegistry,
     position_store: MemoryPositionStore,
     fallback_universe: Iterable[str],
+    thread_safe_sequences: bool = True,
 ) -> HazardExitController | None:
     """Build a :class:`HazardExitController` from any active alpha's opt-in.
 
@@ -2248,7 +2309,7 @@ def _create_hazard_exit_controller(
     if not candidates:
         return None
 
-    seq = SequenceGenerator()
+    seq = SequenceGenerator(thread_safe=thread_safe_sequences)
     controller = HazardExitController(
         bus=bus,
         sequence_generator=seq,

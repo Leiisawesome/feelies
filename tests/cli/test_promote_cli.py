@@ -24,7 +24,6 @@ from feelies.alpha.promotion_evidence import (
     CapitalStageEvidence,
     CPCVEvidence,
     DSREvidence,
-    GateThresholds,
     PaperWindowEvidence,
     QuarantineTriggerEvidence,
     ResearchAcceptanceEvidence,

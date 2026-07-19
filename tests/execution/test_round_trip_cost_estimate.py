@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 
 from feelies.core.events import Side
 from feelies.execution.cost_model import (

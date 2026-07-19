@@ -15,12 +15,8 @@ Gate matrix (post-D.2 — only SIGNAL/PORTFOLIO are loadable):
 * G13 — warm-up documentation  (no-op for SIGNAL — sensor warm-up is
         platform-owned via the SensorRegistry)
 
-Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
-accepted set, so the LEGACY_SIGNAL-specific validator branches (G6
-inline-feature DAG, G8 inline-feature lookahead, G13 inline-feature
-warm-up) are unreachable from the production load path; their dedicated
-tests have been removed.  PR-2 will delete the dead branches in
-:mod:`feelies.alpha.layer_validator` themselves.
+LEGACY_SIGNAL-specific validator branches were removed with D.2; only
+SIGNAL/PORTFOLIO load paths remain.
 """
 
 from __future__ import annotations

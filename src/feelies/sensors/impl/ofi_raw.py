@@ -37,7 +37,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class OFIRawSensor:
@@ -87,7 +88,7 @@ class OFIRawSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
@@ -111,16 +112,7 @@ class OFIRawSensor:
             state["last_ask"] = ask
             state["last_bid_size"] = bid_sz
             state["last_ask_size"] = ask_sz
-            return SensorReading(
-                timestamp_ns=event.timestamp_ns,
-                correlation_id="placeholder",
-                sequence=-1,
-                symbol=event.symbol,
-                sensor_id=self.sensor_id,
-                sensor_version=self.sensor_version,
-                value=0.0,
-                warm=False,
-            )
+            return SensorEmission(value=0.0, warm=False)
 
         if bid > last_bid:
             bid_contrib = float(bid_sz)
@@ -149,13 +141,4 @@ class OFIRawSensor:
         while warm_ts and warm_ts[0] < cutoff:
             warm_ts.popleft()
 
-        return SensorReading(
-            timestamp_ns=event.timestamp_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=ofi,
-            warm=len(warm_ts) >= self._warm_after,
-        )
+        return SensorEmission(value=ofi, warm=len(warm_ts) >= self._warm_after)

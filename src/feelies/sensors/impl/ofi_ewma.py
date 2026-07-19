@@ -39,7 +39,8 @@ import math
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class OFIEwmaSensor:
@@ -130,7 +131,7 @@ class OFIEwmaSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
@@ -216,16 +217,7 @@ class OFIEwmaSensor:
         while warm_ts and warm_ts[0] < cutoff:
             warm_ts.popleft()
 
-        return SensorReading(
-            timestamp_ns=event.timestamp_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=new_ewma,
-            warm=len(warm_ts) >= self._warm_after,
-        )
+        return SensorEmission(value=new_ewma, warm=len(warm_ts) >= self._warm_after)
 
     def _effective_alpha(self, *, ts_ns: int, last_ts_ns: int | None) -> float:
         if self._decay_tau_ns is None:

@@ -35,7 +35,6 @@ from feelies.bootstrap import (
     build_platform,
 )
 from feelies.composition.engine import CompositionEngine
-from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker

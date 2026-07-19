@@ -9,14 +9,24 @@
 
 # Engineering Specification — Three-Layer Architecture Refactor
 
-**Version:** 0.3.0
-**Status:** v0.2 contracts frozen; v0.3 trend-physics amendment (§20) APPROVED by repo author 2026-04-20; Phase 1.1 implementation may begin
+**Version:** 0.3.1
+**Status:** v0.2/v0.3 contracts shipped; Workstream D.2 complete — `LEGACY_SIGNAL`, per-tick `FeatureVector`, and `features/legacy_shim.py` are **retired** (hard-rejected by the loader). Canonical live authoring surface: `alphas/SCHEMA.md` + `.cursor/skills/`. Sections below retain historical Phase planning text; where they conflict with D.2, the amendment notes and live code win.
 **Invariants preserved:** 1–13 (see `.cursor/rules/platform-invariants.mdc`)
-**Breaking changes:** None at schema level; additive only (see §10, §20.10)
-**Estimated effort:** 7–9 engineer-weeks (v0.2) + ~2 engineer-weeks (v0.3 amendment) — see §20.10
+**Breaking changes:** D.2 removed the per-tick LEGACY_SIGNAL path (see changelog). Schema 1.1 SIGNAL/PORTFOLIO are the only accepted alpha layers.
+**Estimated effort:** historical (phases complete) — see §20.10 for original estimates
+
+> **D.2 amendment (normative).** `layer: LEGACY_SIGNAL` is hard-rejected.
+> `FeatureVector` and `features/legacy_shim.py` do not exist. Layer-2 input
+> is `HorizonFeatureSnapshot` only. Migration cookbook:
+> [`docs/migration/schema_1_0_to_1_1.md`](migration/schema_1_0_to_1_1.md).
 
 ### Change log
 
+- **0.3.1 (D.2 complete)** — Retired `LEGACY_SIGNAL` / per-tick `FeatureVector` /
+  `legacy_shim.py`. Loader accepts only `schema_version: "1.1"` with
+  `layer: SIGNAL` or `layer: PORTFOLIO`. Earlier sections that describe
+  coexistence or deprecation timelines are historical design text superseded
+  by this amendment.
 - **0.3.0 (APPROVED 2026-04-20)** — Added §20 (Trend-Physics Enforcement Layer) as a strict
   additive amendment to v0.2. Introduces a first-class `TrendMechanism`
   taxonomy (5 families), three new sensors (`hawkes_intensity`,
@@ -127,11 +137,11 @@ the signal-generation path**, not a rewrite.
 
 ### 1.5 What breaks
 
-Nothing, if done correctly. Existing LEGACY_SIGNAL alphas
-continue to work via a compatibility shim (§11). New alphas opt into the
-three-layer model via a `layer:` field in their YAML. The single-horizon
-path is preserved as `layer: LEGACY_SIGNAL` and emits a deprecation warning
-but does not fail.
+> **D.2 amendment:** the compatibility shim was removed. `layer: LEGACY_SIGNAL`
+> is hard-rejected by `AlphaLoader`. Existing private forks that still declare
+> LEGACY_SIGNAL must migrate to `layer: SIGNAL` or `layer: PORTFOLIO` (see
+> `docs/migration/schema_1_0_to_1_1.md`). New alphas declare `layer:` explicitly;
+> there is no implicit upgrade path.
 
 ---
 
@@ -372,7 +382,7 @@ src/feelies/
 │   ├── __init__.py
 │   ├── protocol.py            Feature ABC; horizon-boundary compute contract
 │   ├── aggregator.py          Snapshot sensor state at HorizonTick; produce HorizonFeatureSnapshot
-│   ├── legacy_shim.py         Compatibility for LEGACY_SIGNAL alphas (see §11)
+│   ├── (legacy_shim.py)       RETIRED by D.2 — do not recreate
 │   └── impl/
 │       └── (per-alpha feature modules, author-supplied)
 │
@@ -487,13 +497,11 @@ The base `Event` provides `timestamp_ns`, `correlation_id`, `sequence`,
 and `source_layer` — these are **not redeclared** here, matching the
 existing convention in `core/events.py`.
 
-**Coexistence with existing `FeatureVector`.** The current
-`FeatureVector` event (`core/events.py:85`) is **not removed or
-renamed**. It continues to serve LEGACY_SIGNAL alphas at per-tick
-cadence via `features/legacy_shim.py`. `HorizonFeatureSnapshot` is a
-peer event consumed only by horizon-gated signals. The platform
-glossary entry for "feature" (in `.cursor/rules/platform-invariants.mdc`)
-must be updated in Phase 5 to acknowledge both shapes — see §18.2.
+> **D.2 amendment — `FeatureVector` retired.** The per-tick `FeatureVector`
+> event and `features/legacy_shim.py` were deleted. Layer-2 input is
+> `HorizonFeatureSnapshot` only. The glossary entry for "feature" in
+> `.cursor/rules/platform-invariants.mdc` reflects the horizon snapshot
+> shape exclusively.
 
 ### 5.4 `RegimeState` (EXTEND existing)
 
@@ -1020,15 +1028,9 @@ but the event emission itself does not.
 
 ### 7.6 Legacy path coexistence
 
-LEGACY_SIGNAL alphas continue to use the existing
-`WAITING → ... → FEATURE → SIGNAL → RISK → ORDER → ACK → POSITION → LOG`
-path verbatim. This is not re-implemented; it is the original Micro SM
-code, guarded by a predicate that selects it when only legacy alphas are
-loaded for that symbol OR as a parallel branch alongside v2 alphas.
-
-In mixed mode (some v2, some legacy alphas on same symbol), both paths
-run; their signals reach the risk engine independently; the risk engine
-aggregates as it already does (per strategy).
+> **D.2 amendment:** the LEGACY_SIGNAL Micro SM branch and mixed-mode
+> parallel path were removed. Only the horizon SIGNAL / PORTFOLIO pipeline
+> remains. Historical coexistence text is retained only as design archaeology.
 
 ---
 
@@ -1038,10 +1040,10 @@ aggregates as it already does (per strategy).
 
 `schema_version: "1.0"` → `schema_version: "1.1"`.
 
-Schema 1.0 files continue to load as `layer: LEGACY_SIGNAL` with a
-deprecation warning logged at bootstrap.
-
-Schema 1.1 files MUST declare `layer: SENSOR | SIGNAL | PORTFOLIO`.
+> **D.1/D.2 amendment:** schema 1.0 is hard-rejected (no deprecation
+> warning path). Schema 1.1 files MUST declare `layer: SIGNAL` or
+> `layer: PORTFOLIO` (`SENSOR` remains registry-driven, not alpha YAML).
+> See `docs/migration/schema_1_0_to_1_1.md`.
 
 ### 8.2 Additive fields (all mandatory for 1.1)
 
@@ -1100,35 +1102,25 @@ preventing configuration.
 
 ### 8.6 Migration of LEGACY_SIGNAL alphas
 
-No LEGACY_SIGNAL alphas exist in `alphas/` as of the current implementation—all
-shipped alphas are schema 1.1 with `trend_mechanism:` blocks. The migration
-path is preserved for any future operator-authored alphas starting from a
-LEGACY_SIGNAL baseline:
-
-Immediate: tag with `layer: LEGACY_SIGNAL` via a one-line PR, add
-deprecation comment. Continues to work.
-
-Later: rewrite as a native SIGNAL-layer alpha using canonical sensors. This
-is not blocking; legacy support is permanent (though maintenance-only).
+> **D.2 amendment:** LEGACY_SIGNAL is hard-rejected. No shipped alpha in
+> `alphas/` uses it. Operators with private LEGACY_SIGNAL YAML must rewrite
+> as native SIGNAL (or PORTFOLIO) using the cookbook at
+> `docs/migration/schema_1_0_to_1_1.md`. There is no "tag and continue"
+> path.
 
 ### 8.7 Schema 1.0 → 1.1 field-level compatibility (NORMATIVE)
 
-To prevent any ambiguity at the loader level, the following fields from
-schema 1.0 are **preserved verbatim** under `layer: LEGACY_SIGNAL`:
+> **D.1/D.2 amendment:** schema 1.0 fields are **not** preserved under a
+> LEGACY_SIGNAL shim. The loader rejects 1.0 / LEGACY_SIGNAL outright.
+> Historical bullets below described the pre-D.2 plan and are no longer
+> operative.
 
-- `features:` block — the existing per-tick feature definitions and
-  `update(quote, state, params)` Python signature are unchanged. Loader
-  routes them through `LegacyFeature` and the `legacy_shim.py` adapter.
-- `signal:` block — the existing per-tick signal Python signature
-  `evaluate(features, params)` is unchanged. Loader instantiates them
-  under `LegacySignalEngine`.
-- `parameters:`, `risk_budget:`, `symbols:`, `falsification_criteria:`
-  (1.0 form) — all preserved verbatim.
-- Any field present in 1.0 but absent from 1.1's mandatory set is
-  **kept**, not stripped, so older alphas round-trip through
-  load → serialize → load with bit-identical YAML.
+~~Historical (pre-D.2) plan — not live:~~
 
-Schema 1.1 alphas (`layer: SIGNAL | PORTFOLIO | SENSOR`) get the
+- ~~`features:` / `legacy_shim.py` / `LegacySignalEngine` coexistence~~
+- ~~verbatim 1.0 field round-trip under `layer: LEGACY_SIGNAL`~~
+
+Schema 1.1 alphas (`layer: SIGNAL | PORTFOLIO`) get the
 mandatory new fields enumerated in §8.2. Mixed-shape YAML (1.0 fields
 plus a `layer: SIGNAL` declaration) is **rejected** by the loader with a
 clear error pointing the author at the migration guide
@@ -1317,8 +1309,8 @@ repo docs and Cursor skills. Legacy alphas flagged for migration.
 - Authoring guidance in `.cursor/skills/feature-engine/SKILL.md`,
   `.cursor/skills/research-workflow/SKILL.md`, and `.cursor/skills/microstructure-alpha/SKILL.md`
   cross-linked from `README.md` / `alphas/SCHEMA.md`.
-- Migration guide for legacy alphas (`docs/migration/schema_1_0_to_1_1.md`).
-- Deprecation timer for LEGACY_SIGNAL (e.g., supported through Q4 2026).
+- Migration guide for legacy alphas (`docs/migration/schema_1_0_to_1_1.md`) — **shipped**.
+- Deprecation timer for LEGACY_SIGNAL — **superseded by D.2 hard-removal** (no Q4 2026 support window).
 
 **Estimated duration:** 1 week.
 
@@ -1385,9 +1377,9 @@ before; `ExecutionBackend` receives `OrderIntent` as before.
 
 ### 11.5 Deprecation policy
 
-- Schema 1.0 is supported through **Q4 2026** at minimum.
-- Deprecation warning logged once per boot per legacy alpha.
-- Removal requires a separate proposal with explicit migration plan.
+> **D.1/D.2 amendment:** schema 1.0 and LEGACY_SIGNAL are already removed
+> (hard-reject). Soft deprecation through Q4 2026 did not ship. Migration
+> cookbook: `docs/migration/schema_1_0_to_1_1.md`.
 
 ---
 
@@ -1822,11 +1814,9 @@ from the repository. Equivalent authoring contracts live in
 experience with 1.1. The cost of maintaining the legacy shim is small
 and isolates risk.
 
-**RESOLVED → (a) initially.** Permanent support for `LEGACY_SIGNAL`
-through Q4 2026 minimum. Decision to deprecate revisited 6 months
-after Phase 5 ships, in a separate proposal that must include the
-count of remaining 1.0-schema alphas and a per-alpha migration
-estimate.
+**RESOLVED → (a) initially; superseded by Workstream D.2.** LEGACY_SIGNAL
+was hard-removed (not soft-deprecated through Q4 2026). Remaining private
+forks must migrate via `docs/migration/schema_1_0_to_1_1.md`.
 
 ### Q10 — Parity hash extension: is adding Levels 2–4 acceptable, or does CI budget not tolerate 4× hashing cost?
 
@@ -2801,8 +2791,8 @@ Event  (existing base)
 │   └── Trade              (existing)
 ├── SensorReading          NEW (Layer 1)
 ├── HorizonTick            NEW (cross-cutting; emitted by scheduler)
-├── HorizonFeatureSnapshot NEW    (Layer 2 input)
-├── FeatureVector          (existing; preserved for LEGACY_SIGNAL path)
+├── HorizonFeatureSnapshot NEW    (Layer 2 input; sole Layer-2 feature shape post-D.2)
+├── FeatureVector          RETIRED by D.2 (deleted; do not recreate)
 ├── RegimeState            EXTEND (per-symbol; +horizon_seconds, +stability, +regime_engine_id)
 ├── RegimeHazardSpike      NEW v0.3 (Layer 1.5 services; emitted on regime posterior collapse)
 ├── Signal                 EXTEND (+layer, +horizon_seconds, +regime_gate_state, +consumed_features
@@ -2857,7 +2847,7 @@ src/feelies/sensors/impl/quote_hazard_rate.py     | CREATE  | +150
 src/feelies/sensors/impl/trade_through_rate.py    | CREATE  | +110
 src/feelies/sensors/impl/quote_replenish_asymmetry.py | CREATE | +140
 src/feelies/features/aggregator.py                | CREATE  | +200
-src/feelies/features/legacy_shim.py               | CREATE  | +120
+src/feelies/features/legacy_shim.py               | RETIRED (D.2) | n/a
 src/feelies/kernel/micro_sm.py                    | EXTEND  | +150
 src/feelies/bootstrap.py                          | EXTEND  | +80
 tests/sensors/test_*.py                           | CREATE  | +800

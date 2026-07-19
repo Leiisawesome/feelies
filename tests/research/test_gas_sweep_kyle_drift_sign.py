@@ -194,9 +194,7 @@ def test_2a_3_interior_null_golden() -> None:
     assert cell.episodes == 0
     snap = _in_window_boundary(_replay_snapshots(_synth_tape(mix_interior=True)))
     assert snap is not None
-    if snap.warm.get("sweep_flow_imbalance") and snap.warm.get(
-        "sweep_flow_imbalance_percentile"
-    ):
+    if snap.warm.get("sweep_flow_imbalance") and snap.warm.get("sweep_flow_imbalance_percentile"):
         pctl = snap.values["sweep_flow_imbalance_percentile"]
         sfi = snap.values["sweep_flow_imbalance"]
         assert 0.10 < pctl < 0.90

@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
+from feelies.alpha.module import AlphaManifest
 from feelies.alpha.registry import AlphaRegistry
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote

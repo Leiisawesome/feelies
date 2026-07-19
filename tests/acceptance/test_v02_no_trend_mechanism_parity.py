@@ -62,12 +62,6 @@ def _baseline_alpha_path() -> Path:
     return Path("alphas") / alpha_id / f"{alpha_id}.alpha.yaml"
 
 
-# Workstream D.2 retired the loader's once-per-process LEGACY_SIGNAL
-# sunset banner along with the per-tick legacy code-path.  The
-# previous autouse fixture cleared that dedup set; with the set gone
-# there is nothing to reset between tests.
-
-
 def test_baseline_alpha_yaml_declares_trend_mechanism_block() -> None:
     """Lock that the chosen baseline carries G16 ``trend_mechanism:``."""
     path = _baseline_alpha_path()

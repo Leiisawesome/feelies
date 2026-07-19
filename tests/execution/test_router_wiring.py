@@ -7,7 +7,6 @@ fallback so existing callers that instantiate routers without an explicit
 
 from __future__ import annotations
 
-from decimal import Decimal
 
 import pytest
 

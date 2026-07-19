@@ -11,9 +11,7 @@ from pathlib import Path
 
 _PROMPTS_DIR = Path("docs/prompts")
 _AGENT_CONTEXT_HEADING = "## Agent context (mandatory)"
-_NOT_SHIPPED_BULLET = (
-    "Cross-check findings against the owning skill's **Not shipped** sections"
-)
+_NOT_SHIPPED_BULLET = "Cross-check findings against the owning skill's **Not shipped** sections"
 
 
 def _audit_prompt_paths() -> list[Path]:
@@ -39,9 +37,7 @@ def test_every_audit_prompt_references_platform_invariants_in_agent_context() ->
         for p in _audit_prompt_paths()
         if ".cursor/rules/platform-invariants.mdc" not in p.read_text(encoding="utf-8")
     ]
-    assert not missing, (
-        "audit prompts must cite platform-invariants in Agent context: " f"{missing}"
-    )
+    assert not missing, f"audit prompts must cite platform-invariants in Agent context: {missing}"
 
 
 def test_every_audit_prompt_references_karpathy_guidelines() -> None:
@@ -50,9 +46,7 @@ def test_every_audit_prompt_references_karpathy_guidelines() -> None:
         for p in _audit_prompt_paths()
         if ".cursor/rules/karpathy-guidelines.mdc" not in p.read_text(encoding="utf-8")
     ]
-    assert not missing, (
-        "audit prompts must cite karpathy-guidelines in Agent context: " f"{missing}"
-    )
+    assert not missing, f"audit prompts must cite karpathy-guidelines in Agent context: {missing}"
 
 
 def test_every_audit_prompt_working_method_cross_checks_not_shipped() -> None:
@@ -62,8 +56,7 @@ def test_every_audit_prompt_working_method_cross_checks_not_shipped() -> None:
         if _NOT_SHIPPED_BULLET not in p.read_text(encoding="utf-8")
     ]
     assert not missing, (
-        "audit prompts must include Not shipped cross-check in Working method: "
-        f"{missing}"
+        f"audit prompts must include Not shipped cross-check in Working method: {missing}"
     )
 
 

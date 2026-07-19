@@ -168,6 +168,16 @@ def add_common_backtest_arguments(parser: argparse.ArgumentParser) -> None:
             "aborts the run instead of silently keeping the default)."
         ),
     )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "cProfile the orchestrator pipeline (run_backtest) and write "
+            "cumulative stats to PATH (hot-path performance diagnosis)."
+        ),
+    )
 
 
 def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:

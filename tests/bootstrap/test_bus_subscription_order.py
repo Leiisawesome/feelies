@@ -25,7 +25,6 @@ elsewhere, not a pure subscription-order one.
 
 from __future__ import annotations
 
-from typing import Callable
 
 from feelies.bootstrap import build_platform
 from feelies.bus.event_bus import EventBus
@@ -72,8 +71,7 @@ def _assert_before(names: list[str], first: str, second: str) -> None:
     assert first in names, f"{first} not subscribed (got {names})"
     assert second in names, f"{second} not subscribed (got {names})"
     assert names.index(first) < names.index(second), (
-        f"canonical bus order violated: expected {first!r} before {second!r}, "
-        f"got {names}"
+        f"canonical bus order violated: expected {first!r} before {second!r}, got {names}"
     )
 
 

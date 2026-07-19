@@ -8,7 +8,6 @@ import json
 import os
 import subprocess
 from collections.abc import Mapping
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, TypeVar
@@ -342,13 +341,17 @@ def generate_report(
         tick_summary = mc.get_summary("kernel", "tick_to_decision_latency_ns")
         feat_summary = mc.get_summary("kernel", "feature_compute_ns")
         sig_summary = mc.get_summary("kernel", "signal_evaluate_ns")
+        sensor_summary = mc.get_summary("kernel", "sensor_fanout_ns")
+        sm_summary = mc.get_summary("kernel", "sm_transition_ns")
     else:
-        tick_summary = feat_summary = sig_summary = None
+        tick_summary = feat_summary = sig_summary = sensor_summary = sm_summary = None
 
     avg_tick_ns = tick_summary.mean if tick_summary else 0.0
     max_tick_ns = tick_summary.max_value if tick_summary else 0.0
     avg_feat_ns = feat_summary.mean if feat_summary else 0.0
     avg_sig_ns = sig_summary.mean if sig_summary else 0.0
+    avg_sensor_ns = sensor_summary.mean if sensor_summary else 0.0
+    avg_sm_ns = sm_summary.mean if sm_summary else 0.0
 
     # Locate the originating quote for the max tick-to-decision spike.
     # Why this matters: a single 1.3-second outlier in a 974K-quote run is
@@ -545,6 +548,8 @@ def generate_report(
         )
     lines.append(_kv("Avg feature compute", _ns_to_ms(avg_feat_ns)))
     lines.append(_kv("Avg signal evaluate", _ns_to_ms(avg_sig_ns)))
+    lines.append(_kv("Avg sensor fan-out", _ns_to_ms(avg_sensor_ns)))
+    lines.append(_kv("Avg SM transition", _ns_to_ms(avg_sm_ns)))
 
     # TCA (transaction cost analysis)
     if records:

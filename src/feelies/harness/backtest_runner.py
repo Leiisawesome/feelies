@@ -21,8 +21,6 @@ Offline replay from gzipped JSONL disk cache (no Massive API key)::
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import logging
 import os
 import sys
@@ -30,11 +28,9 @@ import time
 import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 _TZ_ET = ZoneInfo("America/New_York")
-from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence, TypeVar
 
@@ -66,9 +62,6 @@ from feelies.harness.backtest_prep import (
 )
 from feelies.harness.backtest_report import (
     cache_data_version,
-    compute_combined_parity_hash,
-    compute_config_hash,
-    compute_parity_hash,
     format_section,
     generate_report,
     live_data_version,
@@ -81,21 +74,14 @@ from feelies.kernel.signal_order_trace import (
 )
 from feelies.core.clock import SimulatedClock, WallClock
 from feelies.core.events import (
-    CrossSectionalContext,
     Event,
-    HorizonFeatureSnapshot,
-    HorizonTick,
     MetricEvent,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
-    PositionUpdate,
-    RegimeHazardSpike,
     SensorReading,
     Signal,
-    SignalDirection,
-    SizedPositionIntent,
     Trade,
 )
 from feelies.core.errors import ConfigurationError
@@ -264,9 +250,7 @@ DaySource = IngestDayMeta
 def _load_backtest_config(args: argparse.Namespace) -> PlatformConfig | None:
     """Load platform YAML and apply CLI stress / symbol overrides."""
     try:
-        config = load_platform_config(
-            args.config, strict=getattr(args, "strict_config", False)
-        )
+        config = load_platform_config(args.config, strict=getattr(args, "strict_config", False))
     except ConfigNotFoundError as exc:
         print(f"ERROR: Config file not found: {exc.path}", file=sys.stderr)
         return None
@@ -814,7 +798,26 @@ def _run_backtest_phases_2_7(
     except Exception:
         pass
     try:
-        orchestrator.run_backtest()
+        _profile_path = getattr(args, "profile", None)
+        if _profile_path:
+            import cProfile
+            import pstats
+            from pathlib import Path as _ProfilePath
+
+            _profiler = cProfile.Profile()
+            _profiler.enable()
+            try:
+                orchestrator.run_backtest()
+            finally:
+                _profiler.disable()
+                _out = _ProfilePath(_profile_path)
+                _out.parent.mkdir(parents=True, exist_ok=True)
+                _profiler.dump_stats(str(_out))
+                _stats = pstats.Stats(_profiler).sort_stats("cumulative")
+                print(f"\n  cProfile written to {_out} (top 30 by cumulative):", flush=True)
+                _stats.print_stats(30)
+        else:
+            orchestrator.run_backtest()
     except Exception as exc:
         # A pipeline integrity failure transitions the orchestrator to
         # DEGRADED and re-raises (see the backtest-engine skill's Backtest
@@ -851,7 +854,9 @@ def _run_backtest_phases_2_7(
             f"  ERROR: Backtest ended in macro state {macro.name}, expected READY",
             file=sys.stderr,
         )
-        _print_degraded_diagnostics(recorder=recorder, orchestrator=orchestrator, n_quotes=n_quotes)
+        _print_degraded_diagnostics(
+            recorder=recorder, orchestrator=orchestrator, n_quotes=n_quotes
+        )
         return BacktestRunOutcome(
             exit_code=1, orchestrator=orchestrator, config=config_out, recorder=recorder
         )

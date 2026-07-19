@@ -261,13 +261,19 @@ def test_sleeve_attribution_splits_mixed_mechanism_symbol() -> None:
     by_strategy: dict[str, dict[str, Signal | None]] = {}
     for i, sym in enumerate(universe):
         kyle = _sig(
-            sym, SignalDirection.LONG, 1.0 + 0.3 * i, 10.0, TrendMechanism.KYLE_INFO,
+            sym,
+            SignalDirection.LONG,
+            1.0 + 0.3 * i,
+            10.0,
+            TrendMechanism.KYLE_INFO,
             strategy_id="s_kyle",
         )
         inv = _sig(
             sym,
             SignalDirection.SHORT if i % 2 else SignalDirection.LONG,
-            0.5 + 0.2 * i, 8.0, TrendMechanism.INVENTORY,
+            0.5 + 0.2 * i,
+            8.0,
+            TrendMechanism.INVENTORY,
             strategy_id="s_inv",
         )
         sigs[sym] = kyle

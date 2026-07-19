@@ -113,7 +113,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `alpha/cost_arithmetic.py`, `arbitration.py`, `aggregation.py` | signal_alpha |
 | `alpha/lifecycle.py`, `promotion_ledger.py`, `registry.py`, `loader.py`, `validation.py`, `discovery.py`, `layer_validator.py`, `module.py`, `signal_layer_module.py` | alpha_lifecycle |
 | `alpha/promotion_evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
-| `alpha/portfolio_layer_module.py`, `intent_set.py` | composition |
+| `alpha/portfolio_layer_module.py` | composition |
 | `alpha/fill_attribution.py` | forensics |
 | `alpha/risk_wrapper.py` | risk_engine |
 | `composition/`, `portfolio/cross_sectional_tracker.py` | composition |

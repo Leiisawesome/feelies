@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from feelies.core.clock import SimulatedClock
 from feelies.ingestion.data_integrity import (

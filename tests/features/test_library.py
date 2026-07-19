@@ -329,7 +329,6 @@ class TestZScoreComputation:
     def test_zscore_formula_on_second_tick(self) -> None:
         """Verify: diff / sqrt(var) on the second tick."""
         span = 10
-        alpha = 2.0 / (span + 1)
         comp = ZScoreComputation(span=span)
         state = comp.initial_state()
 

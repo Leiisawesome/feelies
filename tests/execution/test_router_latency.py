@@ -237,9 +237,7 @@ class TestPassiveLimitRouterLatencyQueue:
         # before eligibility) must NOT fill the resting order.
         clock.set_time(5500)
         router.on_quote(_quote("AAPL", "99.00", "99.10", ts=5500))
-        assert not any(
-            a.status == OrderAckStatus.FILLED for a in router.poll_acks()
-        )
+        assert not any(a.status == OrderAckStatus.FILLED for a in router.poll_acks())
 
         # Quote at ts=6500 (after eligibility) — through-fill fires now.
         clock.set_time(6500)

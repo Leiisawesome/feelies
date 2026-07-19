@@ -25,7 +25,6 @@ import pytest
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
-    Alert,
     HorizonTick,
     RiskAction,
     NBBOQuote,
@@ -43,10 +42,8 @@ from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.features.aggregator import HorizonAggregator
-from feelies.features.protocol import HorizonFeature
 from feelies.ingestion.replay_feed import ReplayFeed
 from feelies.kernel.orchestrator import Orchestrator
-from feelies.kernel.macro import MacroState
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.core.errors import CausalityViolation

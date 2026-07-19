@@ -15,7 +15,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.cost_model import DefaultCostModel, ZeroCostModel
+from feelies.execution.cost_model import ZeroCostModel
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.storage.trade_journal import TradeRecord
 

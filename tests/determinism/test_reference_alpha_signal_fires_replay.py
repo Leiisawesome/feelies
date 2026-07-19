@@ -136,7 +136,7 @@ def _replay() -> tuple[str, int]:
 # intentional change to sig_benign_midcap_v1's evaluate()/regime_gate or the
 # engine's emission semantics, justified in the commit.
 EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH = (
-    "e74f274141f8963c43237baa05f4b5bcb7b081c7b52cd0cebe92551be3c3d221"
+    "be37d6a4d95b839780712a57ae5df1bc36137a59b0444e78f070e1a17dbd5f4c"
 )
 EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT = 2
 

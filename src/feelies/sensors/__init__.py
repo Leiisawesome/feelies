@@ -33,7 +33,7 @@ from feelies.sensors.horizon_scheduler import (
     HorizonScheduler,
     SessionOpenAlreadyBoundError,
 )
-from feelies.sensors.protocol import Sensor
+from feelies.sensors.protocol import Sensor, SensorEmission
 from feelies.sensors.registry import SensorRegistry
 from feelies.sensors.spec import SensorSpec
 
@@ -41,6 +41,7 @@ __all__ = [
     "DuplicateSensorRegistrationError",
     "HorizonScheduler",
     "Sensor",
+    "SensorEmission",
     "SensorRegistry",
     "SensorRegistryError",
     "SensorSpec",

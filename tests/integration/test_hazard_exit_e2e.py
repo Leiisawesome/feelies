@@ -25,13 +25,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    NBBOQuote,
     OrderRequest,
-    RegimeHazardSpike,
     RegimeState,
     Side,
 )

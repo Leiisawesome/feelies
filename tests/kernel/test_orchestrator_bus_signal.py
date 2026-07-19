@@ -44,8 +44,6 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     NBBOQuote,
-    OrderAck,
-    OrderAckStatus,
     OrderRequest,
     RiskAction,
     RiskVerdict,

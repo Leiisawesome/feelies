@@ -117,6 +117,11 @@ TRADING_MODES: frozenset[MacroState] = frozenset(
 )
 
 
+# Macro transitions are rare (session lifecycle); keep a small ring for
+# diagnostics without unbounded growth across long-lived processes.
+_MACRO_HISTORY_LIMIT = 64
+
+
 def create_macro_state_machine(clock: Clock) -> StateMachine[MacroState]:
     """Create the global stack state machine, starting in INIT."""
     return StateMachine(
@@ -124,4 +129,5 @@ def create_macro_state_machine(clock: Clock) -> StateMachine[MacroState]:
         initial_state=MacroState.INIT,
         transitions=_MACRO_TRANSITIONS,
         clock=clock,
+        history_limit=_MACRO_HISTORY_LIMIT,
     )

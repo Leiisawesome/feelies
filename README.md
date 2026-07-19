@@ -384,7 +384,7 @@ held in a private fork that retains the per-tick code-path.
 
 | Layer | Required blocks | Loader entry | Engine | Parity hash |
 |---|---|---|---|---|
-| `LEGACY_SIGNAL` | (rejected by the loader; row preserved for matrix continuity) | rejected by `AlphaLoader._validate_schema` post-D.2 with a migration pointer | n/a (per-tick `CompositeSignalEngine` deletion scheduled for D.2 PR-2) | n/a |
+| `LEGACY_SIGNAL` | (rejected by the loader; row preserved for matrix continuity) | rejected by `AlphaLoader._validate_schema` post-D.2 with a migration pointer | n/a (per-tick `CompositeSignalEngine` deleted in D.2) | n/a |
 | `SIGNAL` | `depends_on_sensors`, `horizon_seconds`, `regime_gate`, `cost_arithmetic`, `signal` (snapshot) | `AlphaLoader._load_signal_layer` → `LoadedSignalLayerModule` | `HorizonSignalEngine` | `tests/determinism/test_signal_replay.py` |
 | `PORTFOLIO` | `universe`, `depends_on_signals`, `factor_neutralization`, `cost_arithmetic`, `horizon_seconds` | `AlphaLoader._load_portfolio_layer` → `LoadedPortfolioLayerModule` | `CompositionEngine` | `tests/determinism/test_sized_intent_replay.py`, `test_portfolio_order_replay.py` |
 | `SENSOR` (reserved) | declared in `platform.yaml` (registry-driven, not alpha YAML) | n/a | `SensorRegistry` | per-sensor unit tests |

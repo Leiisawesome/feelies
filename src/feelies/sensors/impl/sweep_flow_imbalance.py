@@ -35,7 +35,8 @@ from collections import deque
 from collections.abc import Iterable, Sequence
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 _EPS = 1e-12
 
@@ -71,9 +72,7 @@ INTERPRETED_TRADE_CONDITION_IDS: frozenset[int] = frozenset(
         53,
     }
 )
-INTERPRETED_CORRECTION_VALUES: frozenset[int | None] = frozenset(
-    {None, 0, 1, 7, 8, 10, 11, 12}
-)
+INTERPRETED_CORRECTION_VALUES: frozenset[int | None] = frozenset({None, 0, 1, 7, 8, 10, 11, 12})
 
 
 def _freeze_ints(values: Iterable[int] | None, default: frozenset[int]) -> frozenset[int]:
@@ -136,9 +135,7 @@ class SweepFlowImbalanceSensor:
         if window_seconds <= 0:
             raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_eligible_prints < 0:
-            raise ValueError(
-                f"min_eligible_prints must be >= 0, got {min_eligible_prints}"
-            )
+            raise ValueError(f"min_eligible_prints must be >= 0, got {min_eligible_prints}")
         if max_gap_seconds <= 0:
             raise ValueError(f"max_gap_seconds must be > 0, got {max_gap_seconds}")
         if epsilon <= 0.0:
@@ -195,10 +192,7 @@ class SweepFlowImbalanceSensor:
 
     def is_eligible(self, event: Trade) -> bool:
         """Class-A ∩ id-14 after correction drop; unknown ids never include."""
-        if (
-            event.correction is not None
-            and event.correction in self._drop_correction_records
-        ):
+        if event.correction is not None and event.correction in self._drop_correction_records:
             return False
         return is_class_a_intersect_id14(
             event.conditions,
@@ -222,7 +216,7 @@ class SweepFlowImbalanceSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         del params  # filter/warm knobs are constructor-versioned
         if not isinstance(event, Trade):
             return None
@@ -233,10 +227,7 @@ class SweepFlowImbalanceSensor:
             return None
 
         # 1. Correction drop (causal follow-ons only — never {1,7,8}).
-        if (
-            event.correction is not None
-            and event.correction in self._drop_correction_records
-        ):
+        if event.correction is not None and event.correction in self._drop_correction_records:
             return None
 
         # 2. Class-A ∩ id-14 (unknown ids fail the intersection — no silent include).
@@ -292,16 +283,7 @@ class SweepFlowImbalanceSensor:
 
         warm = len(window) >= self._min_eligible_prints
 
-        return SensorReading(
-            timestamp_ns=ts,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)
 
 
 def recompute_sfi_from_window(

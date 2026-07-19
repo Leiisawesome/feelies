@@ -11,22 +11,37 @@ determinism guarantees (Inv 5).
 Design notes (plan §3.1):
 
 - **No** ``is_warm`` method.  Sensors set ``warm`` directly on the
-  ``SensorReading`` they return; this avoids two-call redundancy and
+  emission they return; this avoids two-call redundancy and
   keeps warmness an emission-time concern.
 - ``update()`` may return ``None`` to skip an emission (used by
   trade-only sensors when they receive a quote, and vice versa).  The
   registry never publishes ``None``.
+- Prefer :class:`SensorEmission` (value/warm/confidence only).  The
+  registry stamps provenance once into a ``SensorReading``.  Returning
+  a full ``SensorReading`` remains supported for legacy tests but
+  allocates a throwaway instance that ``_stamp`` discards.
 - ``provenance`` on the emitted ``SensorReading`` is **pre-baked** by
-  the registry from the sensor's ``SensorSpec``; sensors must attach
-  the provided ``provenance`` instance verbatim and not allocate a
-  fresh one per call (plan §3.1 / S4).
+  the registry from the sensor's ``SensorSpec``; sensors must not
+  allocate a fresh provenance per call (plan §3.1 / S4).
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Mapping, NamedTuple, Protocol, runtime_checkable
 
 from feelies.core.events import NBBOQuote, SensorReading, Trade
+
+
+class SensorEmission(NamedTuple):
+    """Lightweight sensor output — registry stamps into ``SensorReading``.
+
+    Prefer this over constructing a placeholder ``SensorReading`` so the
+    hot path allocates the event exactly once.
+    """
+
+    value: float | tuple[float, ...]
+    warm: bool
+    confidence: float = 1.0
 
 
 @runtime_checkable
@@ -55,7 +70,7 @@ class Sensor(Protocol):
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | SensorReading | None:
         """Advance state by one event and optionally emit a reading.
 
         Implementations must:
@@ -66,7 +81,7 @@ class Sensor(Protocol):
         - Return ``None`` to skip emission (e.g. a quote-only sensor
           receiving a ``Trade``).  The registry does not publish
           ``None`` to the bus.
-        - Set ``warm`` on the returned ``SensorReading`` based on the
-          sensor's own warmth criteria; the registry trusts this flag.
+        - Prefer :class:`SensorEmission`; set ``warm`` based on the
+          sensor's own warmth criteria.  The registry trusts this flag.
         """
         ...
