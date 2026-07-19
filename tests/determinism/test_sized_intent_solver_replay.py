@@ -33,7 +33,11 @@ from feelies.composition.engine import CompositionEngine, RegisteredPortfolioAlp
 from feelies.composition.factor_neutralizer import FactorNeutralizer
 from feelies.composition.protocol import PortfolioAlpha
 from feelies.composition.sector_matcher import SectorMatcher
-from feelies.composition.turnover_optimizer import TurnoverOptimizer, _HAS_CVXPY
+from feelies.composition.turnover_optimizer import (
+    _HAS_CVXPY,
+    TurnoverOptimizer,
+    _current_platform_tag,
+)
 from feelies.core.events import SizedPositionIntent
 from feelies.core.identifiers import SequenceGenerator
 from tests.determinism.test_sized_intent_replay import (
@@ -49,6 +53,22 @@ pytestmark = pytest.mark.skipif(
     not _HAS_CVXPY,
     reason="cvxpy/ECOS not installed (the [portfolio] extra); solver-path parity is skipped",
 )
+
+
+@pytest.fixture(autouse=True)
+def _validate_current_platform_for_ecos(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This module's tests are themselves the platform-validation act.
+
+    ``TurnoverOptimizer(require_solver=True)`` refuses to construct unless the
+    current host is declared in ``FEELIES_ECOS_VALIDATED_PLATFORMS`` (composition
+    audit 2026-07-02, P1 guard in ``composition/turnover_optimizer.py``).  Running
+    this module to green on a given host *is* the validation that env var gates
+    on, so every test here declares the current host validated for its own
+    duration only -- this does not persist beyond the test process and does not
+    substitute for actually running this module on every platform intended for
+    ``composition_optimizer_mode: ecos`` production use.
+    """
+    monkeypatch.setenv("FEELIES_ECOS_VALIDATED_PLATFORMS", _current_platform_tag())
 
 
 def _build_solver_engine() -> tuple[EventBus, CompositionEngine, list[SizedPositionIntent]]:

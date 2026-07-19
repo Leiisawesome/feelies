@@ -569,6 +569,19 @@ class PlatformConfig:
     # universe-scaling to a separate workstream (v0.4); exceeding this
     # cap raises ``UniverseScaleError`` at bootstrap.
     #
+    # ``composition_gross_cap_pct`` / ``composition_per_name_cap_pct`` —
+    # composition-shaping caps on the *desired* book the
+    # ``TurnoverOptimizer`` constructs, as a fraction of ``account_equity``
+    # (audit 2026-06-20 P2-3 / 2026-07-02 P2): intentionally separate from
+    # an alpha's own ``risk_budget`` (shares-domain, enforced downstream by
+    # the risk engine) — see ``turnover_optimizer.py`` docstring. Defaults
+    # (200% gross, 5% per-name) match the platform's historical hardcoded
+    # values. For small universes the per-name cap can bind for every name
+    # simultaneously, collapsing the ranker's cross-sectional weights into
+    # an equal-notional, sign-only book (composition audit 2026-07-02) —
+    # raise ``composition_per_name_cap_pct`` if a small-universe alpha's
+    # relative conviction should carry through to sizing.
+    #
     # ``enforce_layer_gates`` — when True (default, production setting)
     # alphas failing G1/G3/G9/G10/G11 are refused.  When False, G1/G3
     # downgrade to WARN (research escape hatch).  G9/G10/G11 are
@@ -582,6 +595,8 @@ class PlatformConfig:
     composition_lambda_tc: float = 1.0
     composition_lambda_risk: float = 0.1
     composition_max_universe_size: int = 50
+    composition_gross_cap_pct: float = 2.0
+    composition_per_name_cap_pct: float = 0.05
     # ``composition_signal_max_age_seconds`` — stale-feeder gate (audit
     # P0-5).  A feeder ``Signal`` whose event-time age at the PORTFOLIO
     # barrier exceeds this window is dropped before completeness is
@@ -952,6 +967,10 @@ class PlatformConfig:
             raise ConfigurationError("composition_lambda_risk must be non-negative")
         if self.composition_max_universe_size <= 0:
             raise ConfigurationError("composition_max_universe_size must be positive")
+        if self.composition_gross_cap_pct <= 0.0:
+            raise ConfigurationError("composition_gross_cap_pct must be positive")
+        if not 0.0 < self.composition_per_name_cap_pct <= 1.0:
+            raise ConfigurationError("composition_per_name_cap_pct must be in (0, 1]")
         if (
             self.composition_signal_max_age_seconds is not None
             and self.composition_signal_max_age_seconds <= 0
@@ -1208,6 +1227,18 @@ class PlatformConfig:
             **(
                 {"composition_optimizer_mode": self.composition_optimizer_mode}
                 if self.composition_optimizer_mode != "closed_form"
+                else {}
+            ),
+            # Only serialized when non-default (composition audit 2026-07-02
+            # P2), matching the ``composition_optimizer_mode`` precedent above.
+            **(
+                {"composition_gross_cap_pct": self.composition_gross_cap_pct}
+                if self.composition_gross_cap_pct != 2.0
+                else {}
+            ),
+            **(
+                {"composition_per_name_cap_pct": self.composition_per_name_cap_pct}
+                if self.composition_per_name_cap_pct != 0.05
                 else {}
             ),
             "enforce_layer_gates": self.enforce_layer_gates,
@@ -1665,6 +1696,8 @@ class PlatformConfig:
             composition_lambda_tc=float(data.get("composition_lambda_tc", 1.0)),
             composition_lambda_risk=float(data.get("composition_lambda_risk", 0.1)),
             composition_max_universe_size=int(data.get("composition_max_universe_size", 50)),
+            composition_gross_cap_pct=float(data.get("composition_gross_cap_pct", 2.0)),
+            composition_per_name_cap_pct=float(data.get("composition_per_name_cap_pct", 0.05)),
             enforce_layer_gates=bool(data.get("enforce_layer_gates", True)),
             enforce_per_alpha_risk_budget=bool(data.get("enforce_per_alpha_risk_budget", True)),
             promotion_ledger_path=(

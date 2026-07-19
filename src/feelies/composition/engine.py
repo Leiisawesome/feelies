@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, replace
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from feelies.bus.event_bus import EventBus
 from feelies.composition.cross_sectional import (
@@ -143,7 +143,7 @@ class CompositionEngine:
         sector_matcher: SectorMatcher,
         optimizer: TurnoverOptimizer,
         completeness_threshold: float = 0.80,
-        position_lookup: Any | None = None,
+        position_lookup: Callable[[str, str], float] | None = None,
     ) -> None:
         if not 0.0 <= completeness_threshold <= 1.0:
             raise ValueError(
@@ -158,10 +158,13 @@ class CompositionEngine:
         self._alphas: list[RegisteredPortfolioAlpha] = []
         self._completeness_threshold = float(completeness_threshold)
         self._attached = False
-        # Optional callable ``symbol -> current_position_usd`` injected
-        # at bootstrap so the optimizer's turnover penalty is computed
-        # against actuals rather than a stale shadow ledger.  When None
-        # the engine treats current positions as zero (cold start).
+        # Optional callable ``(strategy_id, symbol) -> current_position_usd``
+        # injected at bootstrap so the optimizer's turnover penalty is
+        # computed against this alpha's own actual position rather than a
+        # stale shadow ledger or (composition audit 2026-07-02, P1 finding)
+        # the account-level aggregate across every strategy sharing the
+        # symbol.  When None the engine treats current positions as zero
+        # (cold start).
         self._position_lookup = position_lookup
 
     # ── Registration ─────────────────────────────────────────────────
@@ -421,12 +424,17 @@ class CompositionEngine:
         # one-sided sleeve being flattened in isolation).
         combined = self._sector_matcher.neutralize(combined, ctx.universe)
 
-        # Look up current positions if a lookup is wired.
+        # Look up current positions if a lookup is wired.  Scoped per
+        # (strategy_id, symbol) — audit 2026-07-02 P1: this used to be a
+        # symbol-only lookup reading the account-level aggregate position
+        # store, so two PORTFOLIO alphas trading the same symbol would each
+        # compute their turnover penalty against a "current position" that
+        # included the *other* alpha's contribution.
         current_positions: dict[str, float] = {}
         if self._position_lookup is not None:
             for s in ctx.universe:
                 try:
-                    current_positions[s] = float(self._position_lookup(s))
+                    current_positions[s] = float(self._position_lookup(strategy_id, s))
                 except Exception:  # pragma: no cover - defensive
                     current_positions[s] = 0.0
 
