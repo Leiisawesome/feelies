@@ -91,3 +91,39 @@ def test_closed_form_is_deterministic() -> None:
     weights = {"AAPL": 0.3, "MSFT": -0.2, "TSLA": 0.1}
     universe = ("AAPL", "MSFT", "TSLA")
     assert opt.optimize(weights, universe).target_usd == opt.optimize(weights, universe).target_usd
+
+
+def test_small_universe_default_caps_collapse_conviction_to_equal_notional() -> None:
+    """Documents an implicit behavior (composition audit 2026-07-02 P2), not a bug.
+
+    With the platform's default caps (200% gross, 5% per-name) and a small
+    universe -- e.g. the shipped N=3 research alphas -- the per-name cap can
+    bind for every name simultaneously, so distinct cross-sectionally
+    standardized weights collapse to identical position magnitudes: the
+    ranker's relative conviction does not survive to sizing. This is the
+    likely practical reason the shipped alphas' own YAML notes say
+    "IR = IC x sqrt(N) with N=3 does not justify composition-layer
+    complexity". Operators who want conviction to carry through for small
+    universes can now raise ``composition_per_name_cap_pct`` via
+    ``PlatformConfig`` (previously only a TurnoverOptimizer constructor arg).
+    """
+    capital = 150_000.0
+    weights = {"AAPL": 0.371, "MSFT": -1.367, "NVDA": 0.997}
+    universe = ("AAPL", "MSFT", "NVDA")
+
+    default_caps = TurnoverOptimizer(capital_usd=capital)
+    result = default_caps.optimize(weights, universe)
+    magnitudes = {abs(v) for v in result.target_usd.values()}
+    assert magnitudes == {0.05 * capital}, (
+        f"expected every name to collapse to the 5% per-name cap under "
+        f"default caps, got {result.target_usd}"
+    )
+
+    # Raising the per-name cap lets relative conviction carry through to sizing.
+    loose_caps = TurnoverOptimizer(capital_usd=capital, per_name_cap_pct=1.0)
+    loose_result = loose_caps.optimize(weights, universe)
+    loose_magnitudes = {abs(v) for v in loose_result.target_usd.values()}
+    assert len(loose_magnitudes) == 3, (
+        "raising per_name_cap_pct should preserve each name's distinct "
+        f"conviction, got {loose_result.target_usd}"
+    )

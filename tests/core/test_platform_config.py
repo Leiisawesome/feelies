@@ -37,6 +37,15 @@ class TestDefaults:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.account_equity == 50_000.0
 
+    def test_default_composition_cap_pcts_match_turnover_optimizer_defaults(self) -> None:
+        # Composition audit 2026-07-02 P2: these were previously hardcoded
+        # constructor defaults in TurnoverOptimizer only; defaults here must
+        # match so existing deployments are unaffected until an operator
+        # opts in to a different value.
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+        assert cfg.composition_gross_cap_pct == 2.0
+        assert cfg.composition_per_name_cap_pct == 0.05
+
 
 # ── Validation ──────────────────────────────────────────────────────
 
@@ -107,6 +116,24 @@ class TestValidation:
             composition_optimizer_mode="lp",
         )
         with pytest.raises(ConfigurationError, match="composition_optimizer_mode"):
+            cfg.validate()
+
+    def test_zero_composition_gross_cap_pct_raises(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            composition_gross_cap_pct=0.0,
+        )
+        with pytest.raises(ConfigurationError, match="composition_gross_cap_pct"):
+            cfg.validate()
+
+    def test_composition_per_name_cap_pct_out_of_range_raises(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            composition_per_name_cap_pct=1.5,
+        )
+        with pytest.raises(ConfigurationError, match="composition_per_name_cap_pct"):
             cfg.validate()
 
 
