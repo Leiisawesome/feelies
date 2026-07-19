@@ -551,6 +551,23 @@ def build_platform(
         inventory_provider=lambda symbol: position_store.get(symbol).quantity,
     )
     position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
+    # Audit backlog item (risk_engine_audit_2026-07-02.md §9, P2 item 11):
+    # sizer_tilt_drive is the one platform-level switch that can size a
+    # SIGNAL-path order *above* the single-factor baseline (up to
+    # sizer_tilt_cap).  It is off by default and its promotion is meant to
+    # be a conscious, per-deployment choice (see SizerTiltConfig's
+    # docstring) — surface a one-shot WARNING when it reaches PAPER/LIVE so
+    # an accidental carry-over from a research config is visible rather
+    # than silent, mirroring warn_on_inert_entry_gates below.
+    if config.sizer_tilt_drive and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE):
+        logger.warning(
+            "bootstrap: sizer_tilt_drive=true in %s mode — the position "
+            "sizer can size SIGNAL-path orders above the single-factor "
+            "baseline (up to %.2fx combined). Verify this is an intended, "
+            "reviewed deployment choice for this run.",
+            config.mode.name,
+            config.sizer_tilt_cap,
+        )
     intent_translator = SignalPositionTranslator()
     # G-1: the position-management decision layer.  ``drive`` routes the
     # live decision through the planner; ``enable_trim`` turns on the
