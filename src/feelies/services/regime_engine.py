@@ -185,6 +185,17 @@ class HMM3StateFractional:
         (-2.5, 0.7),  # vol_breakout: wide spreads
     )
 
+    # Audit regime_audit_2026-07-02 §3.2/§9 (P2): this is a hard floor, not a
+    # target — at 30 samples each of the 3 quantile buckets gets only ~10
+    # points, a thin base for a Gaussian sigma estimate.  In practice this
+    # floor is rarely binding: the orchestrator calibrates from a prefix
+    # capped at ``regime_calibration_max_quotes`` (100_000 in the shipped
+    # ``platform.yaml``), so production calibration runs see orders of
+    # magnitude more samples than this minimum.  Raising the floor itself
+    # would change calibration behavior (and likely locked determinism
+    # baselines) for any deployment currently calibrating near it, so this
+    # is documentation, not a behavior change — see the audit for the data
+    # run that would justify picking a higher validated floor.
     _MIN_CALIBRATION_SAMPLES = 30
     _MIN_SIGMA = 0.01
     _CHECKPOINT_SCHEMA_VERSION = 2

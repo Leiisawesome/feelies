@@ -146,6 +146,7 @@ Alphas can be placed in either layout:
 | `trend_mechanism` | dict | No (Phase 1.1 parsed, Phase 3.1 enforced) | v0.3 mechanism descriptor, see below. |
 | `hazard_exit` | dict | No (Phase 1.1 parsed, Phase 4.1 enforced) | v0.3 hazard-rate exit policy, see below. |
 | `promotion` | dict | No (Workstream F-5) | Per-alpha override of the platform `GateThresholds` used by `validate_gate(...)` at promotion time, see below. |
+| `lifecycle_state` | string | No (BT-13) | Only `"RESEARCH"` is accepted. Caps the alpha at RESEARCH — blocks PAPER/LIVE promotion — while it still loads for backtest/integration use, see below. |
 
 ### `trend_mechanism:` block (v0.3, §20.5)
 
@@ -194,7 +195,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.7`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
 | G10 | **Active** (Phase 4) | PORTFOLIO `universe:` presence + scale cap — every PORTFOLIO alpha must declare a non-empty `universe:` list and the universe size must be ≤ `composition_max_universe_size` (v0.2 cap = 50 symbols). Always blocks. |
 | G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `src/feelies/storage/reference/factor_loadings/` (or the path set in `PlatformConfig.factor_loadings_dir`) must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
-| G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±5%. |
+| G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±0.05 absolute on the ratio (`src/feelies/alpha/cost_arithmetic.py`). |
 | G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
 | G15 | **Active** (Phase 1) | Declared `fill_model.router` must name a platform-supported router (`PassiveLimitOrderRouter` or `BacktestOrderRouter`). |
@@ -538,6 +539,34 @@ it records a `LIVE -> LIVE` self-loop entry on the F-1 promotion
 ledger with `trigger == "promote_capital_tier"` so the operator CLI
 (`feelies promote inspect <alpha_id>`) can render the escalation
 without the lifecycle state name changing.
+
+### `lifecycle_state:` field (BT-13)
+
+Top-level, optional, `string`. The only accepted value is `"RESEARCH"`
+(`AlphaLoader._parse_lifecycle_state`,
+[`src/feelies/alpha/loader.py`](../src/feelies/alpha/loader.py)); anything
+else raises `AlphaLoadError` at load time. When present, the loader carries
+it onto `AlphaManifest.lifecycle_cap`, and `AlphaRegistry.register()` wires
+it into the alpha's constructed `AlphaLifecycle`
+(`lifecycle_cap=manifest.lifecycle_cap`). `AlphaLifecycle._lifecycle_promotion_errors`
+then unconditionally blocks `promote_to_paper()` / `promote_to_live()` while
+still allowing the spec to load for backtest and integration use — see
+`alpha-lifecycle` skill and
+[`tests/alpha/test_sig_inventory_revert_v1.py`](../tests/alpha/test_sig_inventory_revert_v1.py)
+(`test_research_lifecycle_cap_blocks_paper_promotion`) for the enforced,
+tested example.
+
+**PR-review checklist item (audit `signal_alpha_audit_2026-07-02.md` §8):**
+the cap is a pure function of this one YAML line — it carries no link back
+to *why* the alpha was capped. Removing or changing `lifecycle_state:
+RESEARCH` on an alpha that was capped because of a specific negative
+forward-IC / decay-evidence finding (e.g. `sig_inventory_revert_v1`'s
+recorded quarantine, see that spec's `notes:` block) lifts the promotion
+block immediately, with **no automatic check that new evidence justifies
+it**. Reviewers must treat a diff that removes or weakens
+`lifecycle_state: RESEARCH` on a previously-capped alpha as requiring the
+same evidence bar as a fresh RESEARCH→PAPER promotion request — never
+approve it as a routine YAML edit.
 
 ### Backward compatibility
 

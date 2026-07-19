@@ -60,6 +60,34 @@ No phase may be skipped. Exploration without a prior hypothesis is
 undirected data mining — flag it as such and apply stricter multiple-testing
 corrections.
 
+### Step-2 ordering — harness-level IC gate option (backlog 14)
+
+**Not mandated** — operator decision deferred (Lei). Documented
+tradeoff from cycle-1 retrospective
+(`docs/research/prompt_pack_07_program_retrospective.md` §3).
+
+After census PROCEED, an implementation-independent step 2b
+(census-pinned predicate + forward-return extraction via standalone
+instruments, before YAML/test investment) is technically possible.
+The binding H8 step-2b statistic never executed the alpha YAML
+(`scripts/research/dislocation_lambda_validation_extract.py` /
+`_stats.py` pattern).
+
+| Ordering | Integrity properties | Cost |
+|----------|---------------------|------|
+| **A (current):** implement, then step 2 | 2a sign-goldens precede 2b (attribution cleanliness); census-consistency smoke proves tested object = deployable object; implementation scrutiny catches spec defects pre-outcome (H8 D-1 NaN leak at commit 1) | ~8 sunk commits per step-2 death (H8 Tasks 9–10) |
+| **B (proposed):** harness-level IC gate before YAML | Same statistic; dies earlier on magnitude/power failures | Attribution cleanliness deferred: harness sign-golden + post-implementation census-consistency smoke become proof obligations; defects like D-1 found post-IC; two-object drift risk until equivalence proved |
+
+Under either ordering, the census-consistency smoke / stage-0
+predicate reproduction is the required equivalence proof. Mitigation
+under B: freeze the predicate as a shared artifact (census script
+already pinned); require harness sign-golden before 2b; require
+census-consistency smoke post-implementation with a pre-registered
+mismatch consequence (implementation-correction re-run, N unchanged).
+
+Incident: H8 consumed Tasks 9–10 (8 implementation commits) before
+dying at step 2b.
+
 ---
 
 ## Experiment Tracking
@@ -98,6 +126,30 @@ ExperimentRecord (target spec):
   outcome: "supported" | "falsified" | "inconclusive" | null
   promoted_to: str | null (strategy artifact ID if promoted)
 ```
+
+### Research-Stage Status Vocabulary (pre-`alpha_id` documents)
+
+Before an `alpha_id` exists in the lifecycle SM, every research doc
+(proposal, analysis note, plausibility card) carries exactly one
+`Status:` value from this closed set:
+
+| Status | Meaning |
+|--------|---------|
+| `hypothesis` | Reformalized claim (microstructure-alpha `research-protocol.md` Phase 0/1); no evidence yet |
+| `candidate` | Some supporting evidence; validation incomplete |
+| `trap-quadrant` | **Statistically valid but execution-invalid** — the edge exists pre-cost/pre-latency and dies under the realistic execution model. Kept, not deleted: it documents a real phenomenon that cannot be harvested |
+| `accepted` | Ready to seek RESEARCH→PAPER via `validate_gate(GateId.RESEARCH_TO_PAPER, ...)` with `ResearchAcceptanceEvidence` (alpha-lifecycle skill) |
+| `rejected` | Falsified, or noise-ceiling / cost-floor failure; kept for the trial ledger |
+
+Rules:
+
+- **"working" is banned as a status value** — it conflates the two
+  validity axes (statistical vs execution) that `trap-quadrant`
+  exists to separate.
+- This vocabulary is disjoint from `ExperimentRecord.status`
+  (per-experiment granularity, target spec above) and from the
+  `AlphaLifecycle` states (post-`alpha_id`; alpha-lifecycle skill).
+  Do not mix the three.
 
 ### Hypothesis Registry
 
@@ -184,7 +236,11 @@ managed explicitly.
 ### What Gets Formalized
 
 When exploration produces a promising signal or feature, it must be
-re-implemented as a proper module before backtesting:
+re-implemented as a proper module before backtesting. The proposal
+document that accompanies the handoff instantiates the deliverable
+template
+([microstructure-alpha/proposal-template.md](../microstructure-alpha/proposal-template.md)),
+whose sections map onto the YAML fields below:
 
 | Notebook Artifact | Formalized As | Destination |
 |------------------|--------------|-------------|
@@ -192,7 +248,7 @@ re-implemented as a proper module before backtesting:
 | Signal logic (threshold + condition) | `HorizonSignal.evaluate(snapshot, regime, params) -> Signal | None` declared inline in a schema-1.1 SIGNAL alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
 | Entry/exit rules | `Signal.direction`, `Signal.strength`, `Signal.edge_estimate_bps`, `Signal.trend_mechanism`, `Signal.expected_half_life_seconds` | Schema-1.1 SIGNAL alpha (G16) |
 | Cross-sectional weights | `PortfolioAlpha.construct(ctx, params) -> SizedPositionIntent` declared inline in a `layer: PORTFOLIO` alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
-| Cost arithmetic | `cost_arithmetic:` block (G12 — `margin_ratio ≥ 1.5`, reconciles ±5%) | Alpha YAML |
+| Cost arithmetic | `cost_arithmetic:` block (G12 — `margin_ratio ≥ 1.5`, reconciles ±0.05 absolute; `alpha/cost_arithmetic.py`) | Alpha YAML |
 | Trend mechanism declaration (G16) | `trend_mechanism:` block with family + `expected_half_life_seconds` + `l1_signature_sensors` + `failure_signature` | Alpha YAML (default-required since Workstream E) |
 | Regime gate | `regime_gate:` AST-DSL block | Alpha YAML |
 | Parameter values | `parameters:` block with valid ranges; per-alpha `promotion: { gate_thresholds: ... }` overrides via F-5 | Alpha YAML |
@@ -266,9 +322,35 @@ Research environments are overfitting factories. Guard against it.
 | Out-of-sample holdout | Minimum 30% of data reserved; never touched during exploration |
 | Walk-forward validation | No single in-sample/out-of-sample split; rolling windows |
 | Bonferroni / BH correction | Applied when testing multiple features or signals from the same dataset |
-| Stability requirement | Signal must work across ≥ 2 volatility regimes and ≥ 2 spread regimes |
+| Living trial-count ledger | See "Living Trial-Count Ledger" below — every variant tried anywhere increments N |
+| Stability requirement | Signal must work across ≥ 2 volatility regimes and ≥ 2 spread regimes (manual stratification procedure: microstructure-alpha `research-protocol.md`, Phase 3 test 3) |
 | Transaction cost stress | Must survive at 1.5x realistic transaction costs |
 | Lottery ticket detection | If signal works only for a narrow parameter range, classify as fragile |
+
+### Living Trial-Count Ledger
+
+The DSR machinery ships (`research/dsr.py`: `expected_max_sharpe`,
+`deflated_sharpe`, `build_dsr_evidence`); what it cannot do is count
+your trials for you. Discipline (**Not shipped** as tooling — a
+per-workflow markdown/JSONL ledger maintained by hand):
+
+- **Every construction, parameter, or filter variant evaluated
+  anywhere in the workflow is one trial** and increments the
+  workflow's ledger N — including variants that were discarded,
+  looked at once, or "didn't count". Features tested (control above)
+  are a subset of N, not all of it.
+- N is carried into `build_dsr_evidence(trials_count=N)` — the same
+  N, not a per-report subset. `validate_dsr` refuses
+  `trials_count == 0` (alpha-lifecycle skill), but only the ledger
+  makes the count honest.
+- Any Sharpe quoted anywhere is stated **alongside its noise
+  ceiling** `E[max Sharpe | null, N]`
+  (`expected_max_sharpe(n_trials=N, ...)`; asymptotically
+  σ·√(2 ln N)). A Sharpe below the ceiling is indistinguishable from
+  selection noise regardless of its p-value.
+- The ledger is append-only per workflow; resetting N for a "fresh
+  look" at the same data is the exact failure mode this exists to
+  prevent.
 
 ### Red Flags
 

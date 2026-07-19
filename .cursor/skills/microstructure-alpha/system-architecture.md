@@ -60,7 +60,7 @@ class HorizonSignal(Protocol):
 
 - Pure function — no sizing, routing, or risk (Inv-5 parity hash scope)
 - Single `horizon_seconds` per alpha (G3/G16)
-- `cost_arithmetic:` margin_ratio ≥ 1.5, reconciles ±5% (G12)
+- `cost_arithmetic:` margin_ratio ≥ 1.5, reconciles ±0.05 absolute (G12; `alpha/cost_arithmetic.py`)
 - `trend_mechanism:` required under default strict mode (G16)
 - `hazard_exit.enabled: true` → `HazardExitController` (see [regime-detection](../regime-detection/SKILL.md) + [risk-engine](../risk-engine/SKILL.md))
 

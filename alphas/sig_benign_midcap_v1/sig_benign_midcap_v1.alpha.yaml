@@ -45,12 +45,19 @@ falsification_criteria:
     on-condition becomes unreachable and the strategy is inactive.
 
 # ── Layer-1 sensor dependencies (Phase 3) ─────────────────
-# All three sensors ship with the platform and are wired via the
+# All sensors ship with the platform and are wired via the
 # platform.yaml ``sensors:`` block.  G6 (feature/sensor dependency
 # DAG) verifies every entry resolves at boot.
+#
+# sensor_audit_2026-07-02 P1: ``micro_price`` dropped.  It was declared here
+# (and as an l1_signature_sensors fingerprint below) but evaluate() never
+# reads a micro_price-derived value — the exact "cosmetic fingerprint"
+# pattern the P1-5 fix below already removed for kyle_lambda_60s. The
+# mechanism this alpha actually reads is book_imbalance (the level-invariant
+# transform of the micro-price deviation; see its docstring), which is now
+# itself a recognised KYLE_INFO fingerprint (G16 rule 5).
 depends_on_sensors:
   - ofi_ewma
-  - micro_price
   - book_imbalance
   - spread_z_30d
   - realized_vol_30s
@@ -109,7 +116,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 5.0
-    min: 0.0
+    min: 5.0
     max: 30.0
     description: |
       One-way cost floor (bps). Audit P1-2: self-suppress entries whose
@@ -153,16 +160,22 @@ cost_arithmetic:
 # a cosmetic fingerprint. The mechanism it actually exploits is the
 # order-flow imbalance footprint: standardised ``ofi_ewma`` confirmed by
 # ``book_imbalance`` (the level-invariant L1 transform of micro-price vs
-# mid, platform.yaml: (micro - mid)/spread = book_imbalance / 2). The
-# fingerprint is therefore ``micro_price`` (a genuine dependency, read via
-# its ``book_imbalance`` transform), which satisfies G16 rule 5 for
-# KYLE_INFO. All l1_signature_sensors are now a subset of
-# depends_on_sensors (no cosmetic entries; see audit P1-4).
+# mid, platform.yaml: (micro - mid)/spread = book_imbalance / 2).
+#
+# sensor_audit_2026-07-02 P1: the fingerprint had been declared as
+# ``micro_price`` on the theory that reading ``book_imbalance`` counted as
+# reading it "via its transform" — but evaluate() never touches a
+# micro_price-derived value, so this was the same cosmetic-fingerprint
+# pattern the P1-5 note above already fixed once in this file, recurring
+# through a different sensor. ``book_imbalance`` is now itself a recognised
+# KYLE_INFO fingerprint (G16 rule 5, layer_validator._FAMILY_FINGERPRINT_SENSORS)
+# since it is an independently-computed L1 signature, not merely derived from
+# micro_price. All l1_signature_sensors are a subset of depends_on_sensors and
+# are each read in evaluate() or the regime gate (no cosmetic entries).
 trend_mechanism:
   family: KYLE_INFO
   expected_half_life_seconds: 120
   l1_signature_sensors:
-    - micro_price
     - book_imbalance
     - ofi_ewma
     - spread_z_30d

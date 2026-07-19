@@ -271,6 +271,44 @@ def test_g12_rejects_low_margin_ratio() -> None:
         _validator().validate(spec, source="<test>")
 
 
+# ── G12 addendum — cost_floor_bps.min pinned to cost_total_bps ──────────
+# Audit P1 2026-07-02: a declared parameters.cost_floor_bps convention must
+# not be config-overridable below the disclosed cost_arithmetic total.
+
+
+def test_g12_rejects_cost_floor_min_below_cost_total() -> None:
+    spec = _signal_spec()  # cost_arithmetic totals 2.0+2.0+1.0 = 5.0
+    spec["parameters"] = {
+        "cost_floor_bps": {"type": "float", "default": 5.0, "min": 0.0, "max": 30.0},
+    }
+    with pytest.raises(LayerValidationError, match="G12"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g12_accepts_cost_floor_min_at_cost_total() -> None:
+    spec = _signal_spec()  # cost_arithmetic totals 2.0+2.0+1.0 = 5.0
+    spec["parameters"] = {
+        "cost_floor_bps": {"type": "float", "default": 5.0, "min": 5.0, "max": 30.0},
+    }
+    _validator().validate(spec, source="<test>")  # no raise
+
+
+def test_g12_accepts_cost_floor_min_above_cost_total() -> None:
+    spec = _signal_spec()
+    spec["parameters"] = {
+        "cost_floor_bps": {"type": "float", "default": 6.0, "min": 6.0, "max": 30.0},
+    }
+    _validator().validate(spec, source="<test>")  # no raise
+
+
+def test_g12_ignores_alphas_without_a_cost_floor_bps_parameter() -> None:
+    spec = _signal_spec()
+    spec["parameters"] = {
+        "entry_threshold_z": {"type": "float", "default": 0.8, "min": 0.5, "max": 3.0},
+    }
+    _validator().validate(spec, source="<test>")  # no raise — no cost_floor_bps declared
+
+
 # ── G13 — warm-up documentation (no-op for SIGNAL post-D.2) ─────────────
 
 

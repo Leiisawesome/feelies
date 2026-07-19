@@ -319,12 +319,23 @@ class HorizonScheduler:
             boundary_index=boundary_index,
             # ENG-1: the exact nominal boundary (already computed for the
             # correlation id) — the regular-grid anchor distinct from the
-            # trigger time ``ts_ns``.
+            # trigger time ``ts_ns``.  ``boundary_ts_ns`` (ENG-1 labeling) and
+            # ``boundary_timestamp_ns`` (causal as-of math, ``asof_timestamp_ns``)
+            # are two independently-added fields for the same nominal boundary
+            # concept (audit regime_audit_2026-07-02 §4.2/§9) — both are set
+            # from the same ``boundary_ts`` local here so they cannot diverge
+            # at this, the sole production construction site; the assertion
+            # below turns a future accidental desync into a loud failure
+            # instead of a silent causality regression.
             boundary_ts_ns=boundary_ts,
             session_id=self._session_id,
             scope=scope,
             boundary_timestamp_ns=boundary_ts,
             symbol=symbol,
+        )
+        assert tick.boundary_ts_ns == tick.boundary_timestamp_ns, (
+            "HorizonTick.boundary_ts_ns and boundary_timestamp_ns must agree — "
+            f"got {tick.boundary_ts_ns} vs {tick.boundary_timestamp_ns}"
         )
         if self._metric_collector is not None:
             self._emit_tick_metric(tick=tick)

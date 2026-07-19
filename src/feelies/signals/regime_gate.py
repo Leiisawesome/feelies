@@ -722,9 +722,15 @@ class RegimeGate:
         # Overlay declared alpha-param constants then hysteresis margin
         # constants so expression identifiers like ``asymmetry_z_threshold``,
         # ``posterior_margin``, ``percentile_margin`` resolve to their declared
-        # values.  Precedence: hysteresis > params > dynamic sensors.  When both
-        # are empty this creates no extra objects (fast path for the common
-        # case).
+        # values.  Merge order (later wins): params, then sensor_values, then
+        # hysteresis — i.e. a live sensor reading of the same name overrides a
+        # declared param default (params are a fallback for names that are not
+        # live sensors, not a shadow over them), and hysteresis margins win over
+        # both (audit regime_audit_2026-07-02 §4.3: precedence is
+        # hysteresis > sensor_values > params; see
+        # test_real_sensor_overrides_param_constant /
+        # test_hysteresis_overrides_param_on_collision). When both dicts are
+        # empty this creates no extra objects (fast path for the common case).
         if self._hysteresis or self._params:
             merged = {**self._params, **bindings.sensor_values, **self._hysteresis}
             bindings = Bindings(

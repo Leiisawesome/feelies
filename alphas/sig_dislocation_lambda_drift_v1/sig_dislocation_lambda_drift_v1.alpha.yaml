@@ -1,0 +1,287 @@
+# ── Identity & Provenance ─────────────────────────────────
+# Frozen spec: docs/research/sig_dislocation_lambda_drift_v1_formal_spec.md
+# (Task 7, candidate H8).  Every numeric constant below is spec-frozen
+# (§§1.2, 5.2, 6, 11, 13); varying any is +1 N per the protocol freeze
+# rule.  Deployable set D = {APP} (protocol E.4 / A-2); RMBS is
+# evidence-only (step 2), OLN tick-artifact only — neither appears in
+# any run config's symbol list.
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: sig_dislocation_lambda_drift_v1
+version: "1.0.0"
+description: |
+  Dislocation × Kyle-λ continuation — five-minute horizon alpha that
+  trades WITH a large 300 s micro-price dislocation when, and only
+  when, the dislocation was produced by trading with elevated price
+  impact (kyle_lambda_60s above its trailing-window median).  Family
+  KYLE_INFO, expected half-life 150 s, horizon 300 s; archetype
+  informed-flow-following via the impact fingerprint.  The λ-elevated
+  stratum is expected to continue; the baseline-λ stratum is expected
+  to revert — that contrast IS the falsifier.
+
+# ── Hypothesis (causal mechanism; spec preamble, verbatim) ─
+hypothesis: |
+  When a 300-s price dislocation is produced by trading with elevated
+  price impact — flow moving price more per unit size than the recent
+  baseline — the dislocation is information being incorporated (Kyle:
+  the market maker's pricing rule steepens when informed trading
+  intensity rises) rather than a liquidity shock (which reverts).
+  Because the informed trader spreads execution over time to limit
+  impact, incorporation is incomplete at the boundary, which must leak
+  into L1 as continuation of the move over the next 300 s — but only
+  in the impact-elevated stratum; the same dislocation with baseline λ
+  is expected to revert (that contrast IS the falsifier).  Structural
+  counterparty: liquidity providers and mean-reversion traders who
+  fade information-driven moves as if they were liquidity shocks —
+  their fading losses fund the continuation.
+
+# ── Falsification criteria (spec §13 F1–F5, carried verbatim) ─
+falsification_criteria:
+  - |
+    F1 (forward test, honest-N): continuation-signed conditional 300 s
+    forward return <= 0 at the joint condition, or below the honest-N
+    noise ceiling expected_max_sharpe(n_trials=N, ...) with N from the
+    living ledger -> dead.  Clause: sign-matched |micro_price_drift|
+    >= 0.75 sigma boundaries with kyle_lambda_60s_percentile >= 0.5
+    show 300 s forward-return sign agreement <= 0.50 over any rolling
+    20-session window.
+  - |
+    F2 (mechanism tie — THE card-defining contrast): the KYLE story
+    requires the λ split to discriminate.  Clause: conditional forward
+    return at matched dislocation magnitude is indistinguishable
+    (|Δ| <= 1 SE) between kyle_lambda_60s_percentile >= 0.5 and < 0.5
+    strata — if impact elevation adds nothing, the mechanism
+    attribution is refuted regardless of pooled drift; and if the
+    baseline-λ stratum also continues, the card is an unregistered
+    momentum hypothesis (I-1 companion).
+  - |
+    F3 (regime/stratum): sign reversal across spread-in-ticks strata
+    -> definition kill; benign-stratum flip to reversion -> premise
+    dead.
+  - |
+    F4 (execution validity): pre-cost continuation exists but <= 1.5 ×
+    C_ow under the passive realism model -> trap-quadrant.  Evaluated
+    per-symbol against the §5.2 single-stress floors, across the
+    §12(b) sensitivity grid, only on Task-12-parity-cleared machinery.
+  - |
+    F5 (structural boundaries): the three pre-registered hard splits —
+    SEC Rule 612 half-penny regime (compliance Nov 2027); MDI
+    round-lot reassignments (semiannual, per symbol); the 2026-04-27
+    vendor admissibility split — never pool across.
+
+# ── Layer-1 sensor dependencies (spec §1.3) ────────────────
+# No ofi_ewma (§16 row 5 — offline diagnostic only); no spread_z_30d
+# (§1.1 ban — census warm 0.03–0.16 on thin names).
+depends_on_sensors:
+  - kyle_lambda_60s
+  - micro_price
+  - realized_vol_30s
+
+# ── Parameters (≤ 3 free-range, spec §6.1) ─────────────────
+# Fixed constants (disloc_min dict, floor_bps dict, session knobs,
+# gate thresholds) are literals in the signal body / gate, not
+# parameters; varying any is +1 N.
+parameters:
+  lambda_percentile_min:
+    type: float
+    default: 0.5
+    range: [0.5, 0.7]
+    description: |
+      p0: minimum kyle_lambda_60s_percentile at the boundary (the
+      median split).  The param can only tighten — the gate's fixed
+      0.5 arms evaluation.
+  edge_scale_bps:
+    type: float
+    default: 10.0
+    range: [6.0, 16.0]
+    description: |
+      Linear edge attribution per unit of combined normalised
+      exceedance, in bps.  Provisional pending Task-8 §3.2
+      calibration — the G12 disclosure uses the measured value.
+  edge_cap_bps:
+    type: float
+    default: 12.0
+    range: [8.0, 20.0]
+    description: Hard cap on the emitted ``edge_estimate_bps``.
+
+# ── Horizon (Layer-2 boundary; spec §1.2) ──────────────────
+horizon_seconds: 300
+
+# ── Risk Budget ────────────────────────────────────────────
+# Top-of-book scale per spec §6.5: APP p50 displayed depth is 80
+# shares and the card declares Sharpe-max — sizing beyond
+# displayed-depth scale forfeits the passive economics.  The
+# 80-share cap is the mechanism anchor and the intended binding
+# constraint (Lei ruling a, 2026-07-14).
+#
+# Binding arithmetic (recorded in impl plan §7.1): 80 sh × grid-max
+# APP session-median RTH bid $729.51 (2025-12-22, pack-05 artifact)
+# = $58,360.80.  Against the evidence-config capital base
+# account_equity = $100,000 (BT-15 bracket top; run-config override,
+# see configs/bt_sig_dislocation_lambda_drift_v1.yaml):
+#   allocation  100k × 80%        = $80,000 ≥ $58,360.80  (109 sh)
+#   gross       100k × 80% × 80%  = $64,000 ≥ $58,360.80  ( 87 sh)
+# (risk_wrapper compounds gross onto allocated capital) — neither
+# percentage limit binds at ≤ 80 shares; the share cap binds first.
+# platform_min_order_shares = 50 ≤ 80: the H1 min-order clamp keeps
+# orders in [50, 80] and never exceeds the anchor.  Drawdown follows
+# the conservative shipped convention (sig_hawkes_burst_v1).  Inert
+# to protocol steps 2–8 evidence statistics: steps 1–6 are
+# boundary/return statistics that never read risk_budget; steps 7–8
+# fills are sized at the 80-share reference scale, which
+# max_position_per_symbol merely caps.
+risk_budget:
+  max_position_per_symbol: 80
+  max_gross_exposure_pct: 80.0
+  max_drawdown_pct: 0.75
+  capital_allocation_pct: 80.0
+
+# ── Regime Gate (spec §6.3, verbatim) ──────────────────────
+# The dislocation arm uses the WEAKER (RMBS) per-symbol constant
+# 2.37165e-3 = 0.75 × pack-05 median σ₃₀₀(RMBS) — the gate arms
+# evaluation; evaluate() enforces the exact per-symbol constants (a
+# single YAML gate expression cannot vary by symbol).  Both
+# hysteresis margins are REFERENCED in off_condition (the strict
+# loader rejects declared-but-unused margins): the posterior latch
+# arms below 0.70 and releases above 0.85; the λ latch arms at
+# >= 0.50 and releases below 0.35 — a mechanism-lapse exit (λ
+# baseline-reverted ⇒ incorporation story no longer active).  The
+# vol-z clause is the sensor-level backstop for the HMM
+# tick-based-dwell weakness (spec §4).
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  # Folded scalars (>-): the DSL compiles one logical expression, so
+  # the multi-line spec form folds to a single line (content verbatim).
+  on_condition: >-
+    P(vol_breakout) < 0.7
+    and abs(micro_price_drift) >= 0.00237165 * micro_price
+    and kyle_lambda_60s_percentile >= 0.5
+    and realized_vol_30s_zscore <= 3.0
+  off_condition: >-
+    P(vol_breakout) > 0.7 + posterior_margin
+    or realized_vol_30s_zscore > 3.0
+    or kyle_lambda_60s_percentile < 0.5 - percentile_margin
+  hysteresis:
+    posterior_margin: 0.15
+    percentile_margin: 0.15
+
+# ── Cost Arithmetic Disclosure (G12; one-way per 00b) ──────
+# Pinned to the design edge at the APP median (κ 0.190 × σ₃₀₀,med
+# 33.8084 bps = 6.42, disclosed 6.4).  The Task-8 §2.3 measured
+# D-set-minimum conditional edge SUPERSEDES 6.4 on measurement
+# (one-way ratchet); re-disclosure then is its own reviewed edit.
+# Reconciliation: 6.4 / (0.0 + 2.0 + 0.08) = 3.0769; declared 3.08
+# is within ±0.05 absolute; >= 1.5 (G12).  Maker entry: no crossing
+# (half_spread 0.0); impact_bps is the passive adverse-selection
+# charge (00c pin); fee at the 80-share reference scale, APP anchor.
+cost_arithmetic:
+  edge_estimate_bps: 6.4
+  half_spread_bps: 0.0
+  impact_bps: 2.0
+  fee_bps: 0.08
+  margin_ratio: 3.08
+  cost_basis: one_way
+
+# ── Trend Mechanism (gate G16; spec §11 clauses verbatim) ──
+# horizon/hl = 300/150 = 2.0 ∈ [0.5, 4.0]; hl 150 ∈ KYLE_INFO
+# envelope [60, 1800].  Both G16 rule-5 KYLE_INFO fingerprints are
+# present and load-bearing (λ is the conditioning discriminator).
+trend_mechanism:
+  family: KYLE_INFO
+  expected_half_life_seconds: 150
+  l1_signature_sensors:
+    - kyle_lambda_60s
+    - micro_price
+  failure_signature:
+    - "sign of conditional forward return reverses across spread-in-ticks strata within the benign stratum"
+    - "sign-matched |micro_price_drift| >= 0.75 sigma boundaries with kyle_lambda_60s_percentile >= 0.5 show 300 s forward-return sign agreement <= 0.50 over any rolling 20-session window"
+    - "conditional forward return at matched dislocation magnitude indistinguishable between kyle_lambda_60s_percentile >= 0.5 and < 0.5 strata"
+    - "conditional edge on the >=4-tick spread stratum inconsistent in sign with the pooled estimate"
+    - "conditional edge in session-interior boundaries indistinguishable from zero while event-adjacent boundaries carry it"
+
+# ── Hazard-rate exit (spec §6.4) ───────────────────────────
+# hard_exit_age_seconds: null -> bootstrap derives
+# 2 × expected_half_life_seconds = 300 s (HM-1), bounding θ₃ tail
+# exposure.  Exits also fire on regime-gate OFF (conservative FLAT
+# path, including the λ mechanism-lapse release) and are never
+# blocked by B4.
+hazard_exit:
+  enabled: true
+  hazard_score_threshold: 0.85
+  min_age_seconds: 30
+  hard_exit_age_seconds: null
+
+# ── Signal (Layer-2 evaluate; spec §6.2 normative draft) ───
+# Deviation D-1 (Task 9, disclosed — not a frozen-number change): the
+# §6.2 draft as literally written leaks NaN through the EV gate
+# (nan < floor_bps is False), emitting edge_estimate_bps = NaN, which
+# violates the spec's own pre-registered 00e rider test (ii)
+# ("evaluate returns None or in-range strength with non-negative
+# FINITE edge_estimate_bps").  A minimal fail-safe finiteness guard on
+# the three consumed inputs is added below (Inv-11: garbage inputs
+# suppress the entry, never create exposure).  Behavior on every
+# finite input is bit-identical to the draft.
+signal: |
+  def evaluate(snapshot, regime, params):
+      drift = snapshot.values.get("micro_price_drift")
+      level = snapshot.values.get("micro_price")
+      pctl = snapshot.values.get("kyle_lambda_60s_percentile")
+      if drift is None or level is None or pctl is None or level <= 0.0:
+          return None
+      # D-1 fail-safe finiteness guard (00e Track-A rider; Inv-11).
+      if not (math.isfinite(drift) and math.isfinite(level) and math.isfinite(pctl)):
+          return None
+
+      p0 = params["lambda_percentile_min"]
+      if pctl < p0:
+          return None
+
+      # Frozen per-symbol constants (spec sections 1.2 / 5.2):
+      # 0.75 x pack-05 median sigma_300 as a fraction of price, and the
+      # single-stress acceptance floor in bps. Literal constants keep
+      # evaluate() pure; symbols outside the deployable set emit nothing.
+      disloc_min = {"APP": 2.53563e-3, "RMBS": 2.37165e-3}.get(snapshot.symbol)
+      floor_bps = {"APP": 4.6809, "RMBS": 5.4645}.get(snapshot.symbol)
+      if disloc_min is None:
+          return None
+
+      mag = drift if drift >= 0.0 else -drift   # no abs(); stays pure
+      disloc = mag / level
+      if disloc < disloc_min:
+          return None
+
+      # Combined normalised exceedance in [0, 1]: equal-weight mean of
+      # (a) dislocation exceedance, saturating at 2x threshold, and
+      # (b) lambda-percentile exceedance above p0.
+      d_x = (disloc - disloc_min) / disloc_min
+      d_x = d_x if d_x < 1.0 else 1.0
+      l_x = (pctl - p0) / (1.0 - p0)
+      excess = 0.5 * (d_x + l_x)
+
+      # Posterior expected unincorporated remainder, linear proxy of
+      # the section-5 derivation; Task 8 calibrates the scale.
+      edge_bps = min(params["edge_scale_bps"] * excess, params["edge_cap_bps"])
+
+      # Entry only when posterior EV clears the per-symbol single-stress
+      # cost anchor (2.25 x (2.0 + fee), spec section 5.2) -- never a
+      # bare threshold. B4 re-checks against the modeled round trip.
+      if edge_bps < floor_bps:
+          return None
+
+      # Continuation: trade WITH the dislocation (sign-matched).
+      direction = LONG if drift > 0.0 else SHORT
+
+      # Strength rider (00e Track A): bounded by construction; explicit
+      # clamps as belt-and-suspenders.
+      strength = min(max(0.0, excess), 1.0)
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="sig_dislocation_lambda_drift_v1",
+          direction=direction,
+          strength=strength,
+          edge_estimate_bps=edge_bps,
+      )

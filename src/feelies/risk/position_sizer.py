@@ -14,6 +14,7 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 from typing import Protocol
 
@@ -127,6 +128,14 @@ class BudgetBasedSizer:
             posteriors[i] * self._regime_factors.get(state_names[i], default)
             for i in range(len(posteriors))
         )
+        # Audit FS (risk_engine_audit_2026-07-02.md, §3.2): mirror
+        # BasicRiskEngine._regime_scaling's non-finite guard — ``min(1.0,
+        # nan)`` evaluates to ``1.0`` under Python's comparison semantics,
+        # so a poisoned custom engine would silently fail to the unscaled
+        # baseline rather than the fail-safe minimum.  Treat non-finite EV
+        # as missing data.
+        if not math.isfinite(ev):
+            return default
         # Audit P1 R-1: enforce Inv-11 ("regime state never amplifies
         # exposure beyond the 1.0 baseline") at the value level rather
         # than relying on operator config discipline.  An operator-

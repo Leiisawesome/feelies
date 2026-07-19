@@ -40,6 +40,8 @@ def test_constructor_validates_arguments() -> None:
         QuoteReplenishAsymmetrySensor(window_seconds=0)
     with pytest.raises(ValueError, match="min_observations"):
         QuoteReplenishAsymmetrySensor(min_observations=-1)
+    with pytest.raises(ValueError, match="min_window_span_seconds"):
+        QuoteReplenishAsymmetrySensor(min_window_span_seconds=0)
 
 
 def test_trade_events_return_none() -> None:
@@ -148,6 +150,57 @@ def test_warm_requires_both_sides_with_adds() -> None:
         params={},
     )
     assert r is not None and r.warm is True  # 2 obs, both sides have adds
+
+
+# ── min_window_span_seconds (sensor_audit_2026-07-02 P1) ────────────────
+
+
+def test_burst_satisfies_count_but_not_elapsed_span() -> None:
+    """3 quotes with adds on both sides, all within 20ms, hit
+    min_observations instantly — with a span floor, that burst must not
+    read as warm."""
+    sensor = QuoteReplenishAsymmetrySensor(
+        window_seconds=10, min_observations=3, min_window_span_seconds=8
+    )
+    state = sensor.initial_state()
+    sensor.update(_quote(ts_ns=0, bid_size=100, ask_size=100), state, params={})
+    sensor.update(
+        _quote(ts_ns=10_000_000, bid_size=200, ask_size=150, sequence=1), state, params={}
+    )
+    r3 = sensor.update(
+        _quote(ts_ns=20_000_000, bid_size=200, ask_size=150, sequence=2), state, params={}
+    )
+    assert r3 is not None
+    assert r3.warm is False  # count=3, adds on both sides, span=20ms << 8s floor
+
+
+def test_genuine_elapsed_history_satisfies_span_floor() -> None:
+    sensor = QuoteReplenishAsymmetrySensor(
+        window_seconds=10, min_observations=3, min_window_span_seconds=8
+    )
+    state = sensor.initial_state()
+    sensor.update(_quote(ts_ns=0, bid_size=100, ask_size=100), state, params={})
+    sensor.update(
+        _quote(ts_ns=1_000_000_000, bid_size=200, ask_size=150, sequence=1), state, params={}
+    )
+    r3 = sensor.update(
+        _quote(ts_ns=9_000_000_000, bid_size=200, ask_size=150, sequence=2), state, params={}
+    )
+    assert r3 is not None
+    assert r3.warm is True  # count=3, adds on both sides, span=9s >= 8s floor
+
+
+def test_span_floor_defaults_off_preserving_legacy_behaviour() -> None:
+    sensor = QuoteReplenishAsymmetrySensor(window_seconds=10, min_observations=3)
+    state = sensor.initial_state()
+    sensor.update(_quote(ts_ns=0, bid_size=100, ask_size=100), state, params={})
+    sensor.update(
+        _quote(ts_ns=10_000_000, bid_size=200, ask_size=150, sequence=1), state, params={}
+    )
+    r3 = sensor.update(
+        _quote(ts_ns=20_000_000, bid_size=200, ask_size=150, sequence=2), state, params={}
+    )
+    assert r3 is not None and r3.warm is True
 
 
 def test_locked_vector_replay() -> None:

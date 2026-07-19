@@ -28,7 +28,8 @@ Determinism contract (Inv-5, Inv-13):
 
 This module is intentionally small in v0.3:
 
-- ``WindowKind`` enum captures the five canonical window types.
+- ``WindowKind`` enum captures the six canonical window types
+  (incl. ``ALGO_CLOCK`` — H12 half-hour institutional slice marks).
 - ``CalendarWindow`` is the immutable per-window record.
 - ``EventCalendar`` aggregates the per-session window list, exposes
   the active-windows-at-ns lookup, and computes the canonical hash.
@@ -59,13 +60,14 @@ _NS_PER_SECOND = 1_000_000_000
 
 
 class WindowKind(str, Enum):
-    """Canonical scheduled-flow window taxonomy (v0.3 §20.4.2)."""
+    """Canonical scheduled-flow window taxonomy (v0.3 §20.4.2 + H12)."""
 
     MOC_IMBALANCE = "MOC_IMBALANCE"
     OPENING_AUCTION = "OPENING_AUCTION"
     INDEX_REBALANCE = "INDEX_REBALANCE"
     EARNINGS_DRIFT = "EARNINGS_DRIFT"
     FOMC_BLACKOUT = "FOMC_BLACKOUT"
+    ALGO_CLOCK = "ALGO_CLOCK"
 
 
 @dataclass(frozen=True, kw_only=True)

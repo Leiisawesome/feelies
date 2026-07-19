@@ -19,6 +19,8 @@ logic, not coupling to the global sensor registry.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from feelies.alpha.layer_validator import (
@@ -49,6 +51,7 @@ _SENSORS = frozenset(
         "spread_z_30d",
         "kyle_lambda_60s",
         "micro_price",
+        "book_imbalance",
         "quote_replenish_asymmetry",
         "quote_hazard_rate",
         "hawkes_intensity",
@@ -303,6 +306,28 @@ class TestRule3HorizonRatio:
         with pytest.raises(LayerValidationError):
             _validator().validate(spec, source="<test>")
 
+    def test_ratio_at_floor_accepted_but_warns_no_advance_notice(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """sensor_audit_2026-07-02 P2: a ratio sitting exactly at the floor
+        (matching sig_kyle_drift_v1 and sig_moc_imbalance_v1 in production,
+        both at 300/600 and 120/240 = 0.500) is accepted — rule 3 never
+        blocks on the warning band — but must warn, not pass silently: a
+        small half-life recalibration could flip it to a G16 rejection with
+        zero advance notice today."""
+        spec = _signal_spec_with_mechanism(half_life=600, horizon=300)
+        with caplog.at_level(logging.WARNING, logger="feelies.alpha.layer_validator"):
+            _validator().validate(spec, source="<test>")
+        assert any("rule 3" in r.message and "0.05" in r.message for r in caplog.records)
+
+    def test_ratio_comfortably_mid_range_accepted_without_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        spec = _signal_spec_with_mechanism(half_life=300, horizon=300)  # ratio = 1.0
+        with caplog.at_level(logging.WARNING, logger="feelies.alpha.layer_validator"):
+            _validator().validate(spec, source="<test>")
+        assert not any("rule 3" in r.message for r in caplog.records)
+
 
 # ── Rule 4 — l1_signature_sensors registered ────────────────────────────
 
@@ -370,6 +395,20 @@ class TestRule5FingerprintSensor:
             half_life=600,
             horizon=300,
             sensors=["micro_price", "ofi_ewma"],
+        )
+        _validator().validate(spec, source="<test>")
+
+    def test_kyle_with_book_imbalance_only_accepted(self) -> None:
+        """sensor_audit_2026-07-02 P1: book_imbalance is algebraically the
+        level-invariant micro-price-deviation transform (docstring-verified),
+        so it is a genuine KYLE_INFO fingerprint in its own right — an alpha
+        should not have to declare an unread micro_price/kyle_lambda_60s
+        dependency just to satisfy rule 5."""
+        spec = _signal_spec_with_mechanism(
+            family="KYLE_INFO",
+            half_life=600,
+            horizon=300,
+            sensors=["book_imbalance", "ofi_ewma"],
         )
         _validator().validate(spec, source="<test>")
 

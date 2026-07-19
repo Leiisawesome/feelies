@@ -99,6 +99,32 @@ def _override_module_names(entry: dict[str, Any]) -> list[str]:
     return []
 
 
+# Every boolean flag ``--strict`` turns on for mypy 1.20 (confirmed via
+# ``python -m mypy --help``): flipping any to ``false`` on a ``feelies.*``
+# override re-admits the corresponding class of un-checked code without
+# tripping ``ignore_errors`` or a blanket ``strict=false``.  Audit-2026-07-02
+# P2 #8: the prior list covered 5 of these 12 booleans (plus the blanket
+# ``strict=false`` escape hatch); this closes the rest, plus one flag whose
+# weakening direction is the *opposite* boolean (``no_implicit_reexport`` —
+# mypy's config key for it is ``implicit_reexport``, so the weakening value
+# is ``True``, not ``False``; handled separately below).
+_STRICT_BOOL_FALSE_FLAGS: tuple[str, ...] = (
+    "disallow_any_generics",
+    "disallow_subclassing_any",
+    "disallow_untyped_calls",
+    "disallow_untyped_defs",
+    "disallow_incomplete_defs",
+    "check_untyped_defs",
+    "disallow_untyped_decorators",
+    "warn_redundant_casts",
+    "warn_unused_ignores",
+    "warn_return_any",
+    "strict_equality",
+    "strict_bytes",
+    "extra_checks",
+)
+
+
 # Per-module knobs that re-weaken what ``strict = true`` turns on.  A
 # ``feelies.*`` override that trips any of these silences a strict-mode
 # failure without ``ignore_errors`` — closing the audit P0 gap where the
@@ -113,15 +139,14 @@ def _strict_weakening_reasons(entry: dict[str, Any]) -> list[str]:
         reasons.append("strict=false")
     # Booleans that strict mode sets to ``true``; flipping any to ``false``
     # re-admits the corresponding class of un-checked code.
-    for flag in (
-        "disallow_untyped_defs",
-        "disallow_incomplete_defs",
-        "disallow_untyped_calls",
-        "check_untyped_defs",
-        "warn_return_any",
-    ):
+    for flag in _STRICT_BOOL_FALSE_FLAGS:
         if entry.get(flag) is False:
             reasons.append(f"{flag}=false")
+    # ``implicit_reexport`` is mypy's config key for ``--no-implicit-reexport``
+    # (a --strict flag); its *weakening* direction is True, the inverse of
+    # the pattern above.
+    if entry.get("implicit_reexport") is True:
+        reasons.append("implicit_reexport=true")
     if entry.get("disable_error_code"):
         reasons.append(f"disable_error_code={entry['disable_error_code']!r}")
     if entry.get("follow_imports") in {"skip", "silent"}:
