@@ -1704,6 +1704,81 @@ class TestOrchestratorMacroLifecycleRemediation:
         assert orch.macro_state == MacroState.DEGRADED
 
 
+class TestResetRiskEscalation:
+    """Audit ESC-1 (risk_engine_audit_2026-07-02.md): prior to this pass,
+    ``reset_risk_escalation`` had zero test coverage anywhere in the suite.
+    """
+
+    def _orch_at(self, level: RiskLevel, *, position_store: Any = None) -> Orchestrator:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock, position_store=position_store)
+        _boot_to_ready(orch)
+        re = orch._risk_escalation
+        for target in (
+            RiskLevel.WARNING,
+            RiskLevel.BREACH_DETECTED,
+            RiskLevel.FORCED_FLATTEN,
+        ):
+            re.transition(target, trigger="t")
+            if target == level:
+                break
+        return orch
+
+    def test_noop_when_already_normal(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_raises_when_locked(self) -> None:
+        orch = self._orch_at(RiskLevel.FORCED_FLATTEN)
+        orch._risk_escalation.transition(RiskLevel.LOCKED, trigger="t")
+        with pytest.raises(RuntimeError, match="LOCKED"):
+            orch.reset_risk_escalation(audit_token="tok")
+
+    def test_raises_during_active_trading(self) -> None:
+        orch = self._orch_at(RiskLevel.WARNING)
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        with pytest.raises(RuntimeError, match="active trading"):
+            orch.reset_risk_escalation(audit_token="tok")
+
+    def test_warning_resets_with_open_exposure(self) -> None:
+        """No flatten was ever attempted at WARNING, so non-zero exposure
+        there is normal and must not block a human-authorized reset."""
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("50"))
+        orch = self._orch_at(RiskLevel.WARNING, position_store=store)
+        assert store.total_exposure() != Decimal("0")
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_breach_detected_resets_with_open_exposure(self) -> None:
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("50"))
+        orch = self._orch_at(RiskLevel.BREACH_DETECTED, position_store=store)
+        assert store.total_exposure() != Decimal("0")
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_forced_flatten_with_open_exposure_raises(self) -> None:
+        """A stranding at FORCED_FLATTEN implies the emergency flatten may
+        not have completed — resetting with positions still open must be
+        refused, mirroring unlock_from_lockdown's guard on LOCKED."""
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("50"))
+        orch = self._orch_at(RiskLevel.FORCED_FLATTEN, position_store=store)
+        with pytest.raises(RuntimeError, match="FORCED_FLATTEN"):
+            orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.FORCED_FLATTEN
+
+    def test_forced_flatten_with_flat_book_resets(self) -> None:
+        """The intended use case: the flatten completed (or nothing was
+        ever opened) and only the SM pointer is stranded."""
+        orch = self._orch_at(RiskLevel.FORCED_FLATTEN)
+        assert orch._positions.total_exposure() == Decimal("0")
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
 class TestRealizedCostEscalation:
     """Backtest-level coverage for the realized-cost-overrun kill-switch
     escalation (P2.10). Previously only exercised by a ``paper_rth``-gated

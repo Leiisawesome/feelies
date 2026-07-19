@@ -165,14 +165,19 @@ def build_sized_intent_orders(
             dropped.append((symbol, verdict.reason))
             continue
         if verdict.action == RiskAction.SCALE_DOWN:
-            scaled_qty = max(
-                1,
-                int(
-                    (Decimal(quantity) * Decimal(str(verdict.scaling_factor))).to_integral_value(
-                        rounding=ROUND_HALF_UP
-                    ),
+            # Audit FS-3 (risk_engine_audit_2026-07-02.md): no floor here —
+            # a scale-down that rounds to zero shares must drop the leg
+            # (like the SIGNAL path's ``_compose_scaled_quantity`` +
+            # ``scaled_qty <= 0`` handling in the orchestrator), not force
+            # a minimum 1-share order the scaling factor did not intend.
+            scaled_qty = int(
+                (Decimal(quantity) * Decimal(str(verdict.scaling_factor))).to_integral_value(
+                    rounding=ROUND_HALF_UP
                 ),
             )
+            if scaled_qty <= 0:
+                dropped.append((symbol, f"scaled down to zero quantity: {verdict.reason}"))
+                continue
             if scaled_qty != quantity:
                 quantity = scaled_qty
                 order = OrderRequest(

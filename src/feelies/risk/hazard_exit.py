@@ -163,6 +163,7 @@ class HazardExitController:
         "_policies",
         "_attached",
         "_emitted_for_episode",
+        "_pending_exit_symbols",
     )
 
     def __init__(
@@ -182,6 +183,28 @@ class HazardExitController:
         # ``(strategy_id, symbol, reason)``.  Cleared when the position
         # returns to flat (see ``_clear_episode_if_flat``).
         self._emitted_for_episode: set[tuple[str, str, str]] = set()
+        # Audit HZ-1 (risk_engine_audit_2026-07-02.md): a symbol with an
+        # exit order already submitted but not yet reflected in
+        # ``position_store`` (PAPER/LIVE acks land asynchronously — see
+        # ``Orchestrator._filter_portfolio_orders_for_pending_conflicts``).
+        # ``_emitted_for_episode`` is keyed per ``reason`` (and per
+        # ``strategy_id``), so a *different* reason — or a different
+        # strategy's policy on the same symbol — is not suppressed by it and
+        # would otherwise re-emit a second full-size close against the same
+        # stale (pre-fill) quantity, netting to a position reversal once both
+        # fill.  This is the single per-*symbol* gate, mapping the symbol to
+        # the ``(opened_at_ns, quantity)`` snapshot the in-flight exit was
+        # sized against.  Scoping it to the episode means a *new* open (a
+        # different ``opened_at_ns``) is never blocked by a marker left over
+        # from a prior episode that flattened without a hazard evaluation
+        # observing the flat (e.g. a manual/emergency flatten).  Scoping it to
+        # the recorded quantity means the guard releases as soon as the fill
+        # reconciles into ``position_store`` — a partial fill that reduces the
+        # quantity (but stays in the same episode) leaves residual shares that
+        # a fresh, correctly-sized hazard exit must still be able to flatten;
+        # the double-close hazard only exists while ``quantity`` is still the
+        # stale pre-fill snapshot.
+        self._pending_exit_symbols: dict[str, tuple[int | None, int]] = {}
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -279,6 +302,24 @@ class HazardExitController:
             return
 
         opened = self._position_store.opened_at_ns(symbol)
+
+        # Audit HZ-1: a *different* reason (or a different strategy's
+        # policy) already has an exit in flight for this symbol whose fill
+        # has not yet reconciled into ``position_store`` — ``quantity``
+        # below would be computed from the same stale, pre-fill snapshot,
+        # so emitting here would double the closing quantity rather than
+        # exit once.  This only applies while the position is still in the
+        # *same* open episode (same ``opened_at_ns``) *and* still shows the
+        # same stale quantity the in-flight exit was sized against.  Once
+        # the fill reconciles — the symbol reopens (a different
+        # ``opened_at_ns``) or the quantity changes, e.g. a partial fill
+        # leaving residual shares — the marker is dropped so a new,
+        # correctly-sized hazard exit is not silently suppressed.
+        if symbol in self._pending_exit_symbols:
+            if self._pending_exit_symbols[symbol] == (opened, position.quantity):
+                return
+            del self._pending_exit_symbols[symbol]
+
         # Min-age safeguard only applies to hazard-spike triggers; the
         # hard-exit-age trigger has already reasoned about age.
         if reason == HAZARD_EXIT_REASON_SPIKE and opened is not None:
@@ -305,6 +346,7 @@ class HazardExitController:
             reason=reason,
         )
         self._emitted_for_episode.add(key)
+        self._pending_exit_symbols[symbol] = (opened, position.quantity)
         self._bus.publish(order)
         _logger.info(
             "HazardExitController emitted %s exit for %s (strategy=%s, qty=%d, side=%s)",
@@ -329,6 +371,7 @@ class HazardExitController:
         position = self._position_store.get(symbol)
         if position.quantity == 0:
             self._emitted_for_episode.discard((strategy_id, symbol, reason))
+            self._pending_exit_symbols.pop(symbol, None)
 
 
 __all__ = [

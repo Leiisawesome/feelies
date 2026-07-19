@@ -20,6 +20,7 @@ from feelies.core.events import (
 )
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.services.regime_engine import HMM3StateFractional
 
 
@@ -624,6 +625,42 @@ class TestNonPositiveEquityForceFlattens:
         assert verdict.action == RiskAction.FORCE_FLATTEN
         assert "non-positive equity" in verdict.reason
 
+    def test_negative_equity_force_flattens_entry_with_buying_power_wired(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """Audit FS-2 (risk_engine_audit_2026-07-02.md).
+
+        Reproduces the bootstrap-realistic configuration (``bootstrap.py``
+        wires ``BuyingPowerConfig`` unconditionally for every mode): before
+        the FS-2 fix, ``_check_buying_power`` ran ahead of
+        ``_check_exposure_and_drawdown`` inside ``check_order`` and
+        ``buying_power_limit`` returns ``Decimal("0")`` for non-positive
+        equity, so an ENTRY order was rejected with
+        ``INSUFFICIENT_BUYING_POWER`` instead of reaching the intended
+        unconditional ``FORCE_FLATTEN``.  The prior test in this class
+        (``test_negative_equity_force_flattens_even_with_loose_drawdown``)
+        does not catch this because it constructs the engine with no
+        ``buying_power_config`` at all.
+        """
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=1000.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(
+            cfg,
+            buying_power_config=BuyingPowerConfig(account_type="margin_25k"),
+        )
+        # Unrealized loss of $120k drives live equity to -$20k.
+        store.update("AAPL", 2000, Decimal("100"))
+        store.update_mark("AAPL", Decimal("40"))
+
+        order = _make_order(symbol="MSFT", side=Side.BUY, quantity=10)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.FORCE_FLATTEN
+        assert "non-positive equity" in verdict.reason
+
 
 class TestRegimeMissingDataFailsSafe:
     """Audit R-3: a configured engine with no committed posterior for the
@@ -659,6 +696,23 @@ class TestRegimeMissingDataFailsSafe:
         # at 1.0 so the limit never exceeds the unscaled baseline.
         engine._regime_scale_map["normal"] = 2.0
         assert engine._regime_scaling("AAPL") <= 1.0
+
+    def test_nan_posterior_fails_safe_to_min_scale_not_baseline(self) -> None:
+        """Audit FS (risk_engine_audit_2026-07-02.md, §3.2).
+
+        A third-party ``RegimeEngine`` that fails to sanitize its own
+        posterior (the shipped ``HMM3StateFractional`` always does) could
+        produce a NaN EV.  ``min(1.0, float("nan"))`` evaluates to ``1.0``
+        under Python's comparison semantics — the *unscaled baseline*, not
+        the intended fail-safe minimum.  Directly seeding ``_posteriors``
+        bypasses ``posterior()``'s own sanitization to simulate exactly
+        that unsanitized-engine scenario.
+        """
+        regime = HMM3StateFractional()
+        regime._posteriors["AAPL"] = [float("nan"), 0.0, 0.0]
+        cfg = RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
+        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        assert engine._regime_scaling("AAPL") == engine._regime_scale_default
 
 
 class TestSizedIntentScaleDownDecimal:
@@ -699,3 +753,47 @@ class TestSizedIntentScaleDownDecimal:
             ).orders
         assert len(orders) == 1
         assert orders[0].quantity == 5
+
+    def test_scale_down_to_zero_drops_the_leg(
+        self,
+        config: RiskConfig,
+        store: MemoryPositionStore,
+    ) -> None:
+        """Audit FS-3 (risk_engine_audit_2026-07-02.md).
+
+        2 x 0.1 = 0.2 rounds to 0 shares (``ROUND_HALF_UP``).  Before the
+        FS-3 fix this was floored to a minimum 1-share order regardless of
+        how aggressively the risk engine intended to scale down; the leg
+        must instead drop, mirroring the SIGNAL path's
+        ``_compose_scaled_quantity`` + ``scaled_qty <= 0`` -> ``NO_ORDER``
+        behavior in the orchestrator.
+        """
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        def fake_check_order(
+            self: BasicRiskEngine,
+            order: OrderRequest,
+            positions: MemoryPositionStore,
+            *,
+            additional_exposure: Decimal = Decimal("0"),
+        ) -> RiskVerdict:
+            if order.symbol == "AAPL" and order.quantity == 2:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.SCALE_DOWN,
+                    reason="test_scale_down_to_zero",
+                    scaling_factor=0.1,
+                )
+            return BasicRiskEngine.check_order(self, order, positions)
+
+        with patch.object(BasicRiskEngine, "check_order", fake_check_order):
+            result = engine.check_sized_intent(
+                _make_sized_intent(targets={"AAPL": 200.0}),
+                store,
+            )
+        assert result.orders == ()
