@@ -280,10 +280,11 @@ Model the half-life of the signal:
 ## Validation Protocol & Slate Design Discipline
 
 Per-candidate validation protocols (e.g.
-`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`)
+`docs/research/sig_inventory_fade_v1_validation_protocol.md`)
 freeze before implementation and before outcome contact. Three
 freeze-blocking items below; incident citations from cycle-1
-retrospective Task 7-R (H8 census arc).
+retrospective Task 7-R (H8 census arc — see
+`docs/research/sig_dislocation_lambda_drift_v1_result.md`).
 
 ### Magnitude-vs-power labeling (backlog 12)
 
@@ -301,7 +302,7 @@ consequence, is a **freeze-blocking defect**.
 Incident: H8 step-2b |RankIC| ≥ 0.03 (`n-invariant` at pooled
 +0.0186); the A-2.1 safeguard PARK and the post-outcome S.8 ruling
 were needed only because the label was absent at freeze
-(`sig_dislocation_lambda_drift_v1_validation_protocol.md` S.5/S.8;
+(`docs/research/sig_dislocation_lambda_drift_v1_result.md`;
 `sig_dislocation_lambda_drift_v1_result.md`). Acceptance bars in the
 testing-validation skill inherit the same label/consequence pairing.
 

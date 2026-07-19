@@ -23,9 +23,9 @@ co-travel share in the trailing 900 s at eligible boundaries; share
 > 1 % ⇒ ``sensor_bug_investigation_trigger`` flag. Class-B intensity
 (2.0× count-basis) reported alongside for Lei adjudication.
 
-Integrity pin: on cells overlapping a prior census artifact (H8
-expanded), cross-checkable quantities ``n_events`` / ``n_quotes`` /
-``n_trades`` must reproduce (same RTH filter + cache load).
+Integrity pin: optional path to a prior census JSON; on cells
+overlapping that artifact, cross-checkable quantities ``n_events`` /
+``n_quotes`` / ``n_trades`` must reproduce (same RTH filter + cache load).
 
 Determinism: PYTHONHASHSEED=0; no RNG; no wall-clock reads; events
 sorted by (timestamp_ns, sequence); fresh sensor/regime state per cell.
@@ -36,7 +36,7 @@ Usage
 -----
     PYTHONHASHSEED=0 uv run python scripts/research/sweep_kyle_drift_census.py \\
         [--cache-dir ~/.feelies/cache] [--json out.json] \\
-        [--integrity-pin docs/research/artifacts/dislocation_lambda_census_expanded_2026-07-13.json]
+        [--integrity-pin path/to/prior_census.json]
 """
 
 from __future__ import annotations

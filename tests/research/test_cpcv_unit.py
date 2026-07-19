@@ -846,13 +846,13 @@ class TestLabelHorizonPurge:
 
 
 # ─────────────────────────────────────────────────────────────────────
-#   H8 protocol configuration (sig_dislocation_lambda_drift_v1 A-2.3)
+#   H8 formal-spec configuration (sig_dislocation_lambda_drift_v1 A-2.3)
 # ─────────────────────────────────────────────────────────────────────
 
 
 class TestH8ProtocolConfiguration:
     """Targeted fixture for the exact A-2.3 ruled configuration
-    (`sig_dislocation_lambda_drift_v1` validation protocol, step 3):
+    (`sig_dislocation_lambda_drift_v1` formal spec A-2.3):
     n_groups=20 (one per session), k=2, label_horizon_bars=1,
     embargo_bars=3, n_bars=1560 (78 h=300 boundaries/session x 20).
     Existing tests cover the purge/embargo mechanics at other

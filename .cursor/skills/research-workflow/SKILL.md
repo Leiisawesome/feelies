@@ -70,8 +70,8 @@ After census PROCEED, an implementation-independent step 2b
 (census-pinned predicate + forward-return extraction via standalone
 instruments, before YAML/test investment) is technically possible.
 The binding H8 step-2b statistic never executed the alpha YAML
-(`scripts/research/dislocation_lambda_validation_extract.py` /
-`_stats.py` pattern).
+(historical extract/stats instrument pattern; removed with the H8
+validation protocol artifacts).
 
 | Ordering | Integrity properties | Cost |
 |----------|---------------------|------|
