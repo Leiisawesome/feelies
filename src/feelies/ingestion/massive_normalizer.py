@@ -234,6 +234,7 @@ class MassiveNormalizer:
         "_duplicates_filtered",
         "_unparseable_elements",
         "_oversized_frames",
+        "_anonymous_malformed_frames",
         "_enable_rest_sequence_gap_detection",
         "_halt_on_codes",
         "_halt_off_codes",
@@ -287,6 +288,7 @@ class MassiveNormalizer:
         self._duplicates_filtered: int = 0
         self._unparseable_elements: int = 0
         self._oversized_frames: int = 0
+        self._anonymous_malformed_frames: int = 0
         # Historical REST rows are usually *thinned* (non-contiguous vendor
         # sequence_number).  Default False keeps ingest usable; set True only when
         # the REST stream is full-tick contiguous (or for experiments).
@@ -322,6 +324,7 @@ class MassiveNormalizer:
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+            self._anonymous_malformed_frames += 1
             logger.warning("massive_normalizer: unparseable message from %s", source)
             return []
 
@@ -829,6 +832,21 @@ class MassiveNormalizer:
         """
         return self._oversized_frames
 
+    @property
+    def anonymous_malformed_frames(self) -> int:
+        """Malformed frames with no usable symbol (audit DI-05).
+
+        Counts JSON-decode failures and parse errors where no ticker/``sym``
+        could be recovered, so no per-symbol :class:`DataHealth` machine
+        exists to absorb the failure — these would otherwise be invisible
+        even though :meth:`health` and :meth:`all_health` look unaffected.
+        A non-zero (or rising) value indicates a feed bug independent of
+        any single symbol; deciding a threshold/escalation policy on top of
+        this counter is an operator/monitoring-layer concern, not this
+        normalizer's.
+        """
+        return self._anonymous_malformed_frames
+
     def _reject_sequence_reuse(
         self,
         symbol: str,
@@ -944,6 +962,10 @@ class MassiveNormalizer:
 
     def _mark_corrupted(self, symbol: str, trigger: str = "parse_error") -> None:
         if not symbol or symbol == "UNKNOWN":
+            # Audit DI-05: no per-symbol DataHealth machine can absorb this —
+            # count it globally so an operator can distinguish a clean feed
+            # from one emitting a burst of anonymous garbage frames.
+            self._anonymous_malformed_frames += 1
             logger.warning(
                 "massive_normalizer: parse error for indeterminate symbol — "
                 "skipping DataHealth CORRUPTED (no usable ticker/sym)",

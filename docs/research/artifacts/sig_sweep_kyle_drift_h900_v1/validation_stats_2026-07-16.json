@@ -1,0 +1,187 @@
+{
+  "first_fail_stage": "2b",
+  "inputs": {
+    "census": {
+      "path": "docs\\research\\artifacts\\sweep_kyle_drift_census_2026-07-16.json",
+      "sha256": "a2f49e6bb7e32e68c5b776a106b4b27d9aa1218a9e1ed5af5f8a3dffe5eb7829"
+    },
+    "extract": {
+      "path": "docs\\research\\artifacts\\sig_sweep_kyle_drift_h900_v1\\boundaries_extract_2026-07-16.json",
+      "sha256": "522e0ff14c1986a6099ba7a9523f9a4b488b9730ab3d1ba09d4458da6d8f0c25"
+    }
+  },
+  "n_ledger_at_outcome": 12,
+  "n_ledger_note": "First step-2 outcome contact: N advances 11 \u2192 12 (protocol \u00a710 / header)",
+  "protocol": "sig_sweep_kyle_drift_h900_v1_validation_protocol.md step 2 statistics",
+  "stages": {
+    "0_integrity": {
+      "cells_checked": 50,
+      "evidence_counts": {
+        "APP": 94,
+        "RMBS": 58,
+        "pooled": 152
+      },
+      "mismatches": [],
+      "ok": true
+    },
+    "2b": {
+      "bucket_monotonicity": {
+        "bucket_means_bps": [
+          -6.2639,
+          5.8733,
+          10.5059,
+          1.1042,
+          4.2527
+        ],
+        "bucket_ns": [
+          28,
+          29,
+          29,
+          29,
+          29
+        ],
+        "edge_bps": 10.516648999642797
+      },
+      "conditional_tail": {
+        "mean_bps": 2.856223579880221,
+        "n": 144,
+        "se_bps": 3.50428731826093,
+        "t": 0.8150654670912307
+      },
+      "criteria": [
+        {
+          "criterion": "extreme-SFI pooled RankIC sign",
+          "n_class": "n-invariant",
+          "pass": true,
+          "threshold": "> 0 (continuation-correct)",
+          "value": 0.0892894461859979
+        },
+        {
+          "criterion": "extreme-SFI pooled |RankIC|",
+          "n_class": "n-invariant",
+          "pass": true,
+          "threshold": ">= 0.03",
+          "value": 0.0892894461859979
+        },
+        {
+          "criterion": "extreme-SFI pooled Fisher-z p",
+          "n_class": "n-variant",
+          "pass": false,
+          "threshold": "<= 0.01",
+          "value": 0.2877435671040882
+        },
+        {
+          "criterion": "pooled sample minimum (viable-region extreme)",
+          "n_class": "n-variant",
+          "pass": true,
+          "threshold": ">= 100",
+          "value": 152
+        },
+        {
+          "criterion": "interior contrast (extreme RankIC - interior RankIC > 0 AND interior continuation-signed mean <= 0 within 2 SE)",
+          "n_class": "n-invariant",
+          "pass": true,
+          "threshold": "contrast > 0 AND interior not significantly positive",
+          "value": {
+            "contrast": 0.058649859633496955,
+            "interior_mean_bps": 0.5252281894799866,
+            "interior_n": 517,
+            "interior_se_bps": 2.43306464307728
+          }
+        },
+        {
+          "criterion": "F2 lambda/volume co-travel",
+          "n_class": "mechanism",
+          "pass": false,
+          "threshold": "at least one contrast > 0 with material separation (> 1 SE)",
+          "value": {
+            "kyle_contrast": -0.013977178433515702,
+            "kyle_material": false,
+            "volume_contrast": -19407.42984056857,
+            "volume_material": false
+          }
+        },
+        {
+          "criterion": "per-symbol diagnostics (reported, non-governing)",
+          "n_class": "diagnostic",
+          "pass": true,
+          "threshold": "reported (sign feeds JC-5 on 2b PASS only)",
+          "value": {
+            "APP": {
+              "n": 89,
+              "p": 0.43820149117624047,
+              "rank_ic": 0.08340143003064351
+            },
+            "RMBS": {
+              "n": 55,
+              "p": 0.096737071979966,
+              "rank_ic": 0.22633477633477633
+            }
+          }
+        },
+        {
+          "criterion": "bucket monotonicity (top-minus-bottom forward-return spread)",
+          "n_class": "n-invariant",
+          "pass": true,
+          "threshold": "> 0 (continuation direction)",
+          "value": 10.516648999642797
+        },
+        {
+          "criterion": "conditional tail (mean continuation-signed 900s fwd, t >= 2)",
+          "n_class": "n-invariant (sign); t n-variant",
+          "pass": false,
+          "threshold": "mean > 0 with t >= 2",
+          "value": {
+            "mean_bps": 2.856223579880221,
+            "n": 144,
+            "t": 0.8150654670912307
+          }
+        }
+      ],
+      "dropped_none_pairs": {
+        "extreme": 8,
+        "interior": 22
+      },
+      "extreme_ic": {
+        "n": 144,
+        "p": 0.2877435671040882,
+        "rank_ic": 0.0892894461859979
+      },
+      "f2": {
+        "kyle_contrast": -0.013977178433515702,
+        "kyle_material": false,
+        "pass": false,
+        "volume_contrast": -19407.42984056857,
+        "volume_material": false
+      },
+      "interior_continuation": {
+        "mean_bps": 0.5252281894799866,
+        "n": 517,
+        "not_significantly_positive": true,
+        "se_bps": 2.43306464307728,
+        "t": 0.21587103777715125
+      },
+      "interior_contrast": 0.058649859633496955,
+      "interior_ic": {
+        "n": 517,
+        "p": 0.4871399272862886,
+        "rank_ic": 0.03063958655250095
+      },
+      "n_extreme": 152,
+      "per_symbol": {
+        "APP": {
+          "n": 89,
+          "p": 0.43820149117624047,
+          "rank_ic": 0.08340143003064351
+        },
+        "RMBS": {
+          "n": 55,
+          "p": 0.096737071979966,
+          "rank_ic": 0.22633477633477633
+        }
+      }
+    }
+  },
+  "status_consequence": "REJECTED (F1/F2 dead \u2014 no conditional continuation edge, or F2 attribution fail)",
+  "verdict": "REJECTED"
+}

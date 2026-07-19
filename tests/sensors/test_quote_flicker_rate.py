@@ -53,6 +53,8 @@ def test_constructor_validates() -> None:
         QuoteFlickerRateSensor(window_seconds=0)
     with pytest.raises(ValueError, match="min_quotes"):
         QuoteFlickerRateSensor(min_quotes=-1)
+    with pytest.raises(ValueError, match="min_window_span_seconds"):
+        QuoteFlickerRateSensor(min_window_span_seconds=0)
 
 
 def test_trade_returns_none() -> None:
@@ -121,3 +123,35 @@ def test_deterministic() -> None:
     b, _ = _drive(QuoteFlickerRateSensor(min_quotes=5), evs)
     assert a is not None and b is not None
     assert a.value == b.value and a.warm == b.warm
+
+
+# ── min_window_span_seconds (sensor_audit_2026-07-02 P1) ────────────────
+
+
+def test_burst_satisfies_count_but_not_elapsed_span() -> None:
+    s = QuoteFlickerRateSensor(window_seconds=10, min_quotes=3, min_window_span_seconds=8)
+    st = s.initial_state()
+    s.update(_quote(0, "100.00", "100.02"), st, params={})
+    s.update(_quote(10_000_000, "100.00", "100.02"), st, params={})
+    r3 = s.update(_quote(20_000_000, "100.00", "100.02"), st, params={})
+    assert r3 is not None
+    assert r3.warm is False  # count=3 satisfied, span=20ms << 8s floor
+
+
+def test_genuine_elapsed_history_satisfies_span_floor() -> None:
+    s = QuoteFlickerRateSensor(window_seconds=10, min_quotes=3, min_window_span_seconds=8)
+    st = s.initial_state()
+    s.update(_quote(0, "100.00", "100.02"), st, params={})
+    s.update(_quote(1 * _NS, "100.00", "100.02"), st, params={})
+    r3 = s.update(_quote(9 * _NS, "100.00", "100.02"), st, params={})
+    assert r3 is not None
+    assert r3.warm is True  # count=3, span=9s >= 8s floor
+
+
+def test_span_floor_defaults_off_preserving_legacy_behaviour() -> None:
+    s = QuoteFlickerRateSensor(window_seconds=10, min_quotes=3)
+    st = s.initial_state()
+    s.update(_quote(0, "100.00", "100.02"), st, params={})
+    s.update(_quote(10_000_000, "100.00", "100.02"), st, params={})
+    r3 = s.update(_quote(20_000_000, "100.00", "100.02"), st, params={})
+    assert r3 is not None and r3.warm is True

@@ -1,0 +1,177 @@
+{
+ "protocol": "sig_dislocation_lambda_drift_v1_validation_protocol.md steps 2-6 statistics",
+ "inputs": {
+  "extract": {
+   "path": "docs\\research\\artifacts\\sig_dislocation_lambda_drift_v1\\boundaries_extract_2026-07-14.json",
+   "sha256": "80fdc56c2a3f88bc603195e9142e0c8c6fd460dc1cc8e07e6e97eef15885bf25"
+  },
+  "census": {
+   "path": "docs\\research\\artifacts\\dislocation_lambda_census_expanded_2026-07-13.json",
+   "sha256": "4fc18351118be36b0dbad95cac8c35f2e1fc7ab2042116da09f4ae5bfe1e5d4e"
+  }
+ },
+ "stages": {
+  "0_integrity": {
+   "cells_checked": 50,
+   "mismatches": [],
+   "evidence_counts": {
+    "APP": 657,
+    "RMBS": 574,
+    "pooled": 1231
+   },
+   "ok": true
+  },
+  "2b": {
+   "bases": {
+    "incl": {
+     "elevated": {
+      "n": 1231,
+      "rank_ic": 0.01635499122297035,
+      "p": 0.5665253285785111
+     },
+     "baseline": {
+      "n": 1173,
+      "rank_ic": -0.06447619551790618,
+      "p": 0.02721020579703386
+     },
+     "lambda_contrast": 0.08083118674087653,
+     "dropped_none_pairs": 0
+    },
+    "primary": {
+     "elevated": {
+      "n": 1042,
+      "rank_ic": 0.01864164445353806,
+      "p": 0.5478696304631978
+     },
+     "baseline": {
+      "n": 975,
+      "rank_ic": -0.08707706051792452,
+      "p": 0.006494962182224956
+     },
+     "lambda_contrast": 0.10571870497146257,
+     "dropped_none_pairs": 0
+    },
+    "binary": {
+     "elevated": {
+      "n": 193,
+      "rank_ic": -0.033962204312481335,
+      "p": 0.6395580615154213
+     },
+     "baseline": {
+      "n": 171,
+      "rank_ic": -0.11435743990125147,
+      "p": 0.13655205183067923
+     },
+     "lambda_contrast": 0.08039523558877013,
+     "dropped_none_pairs": 0
+    }
+   },
+   "app": {
+    "incl": {
+     "n": 657,
+     "rank_ic": 0.04643577330556168,
+     "p": 0.23468516759214517
+    },
+    "primary": {
+     "n": 579,
+     "rank_ic": 0.03266486680642682,
+     "p": 0.432901757853591
+    }
+   },
+   "baseline_matched_dislocation": {
+    "n": 373,
+    "mean_bps": -5.431298871314824,
+    "se_bps": 2.1695484714181204,
+    "t": -2.5034236122711135
+   },
+   "bucket_monotonicity": {
+    "edge_bps": 6.885728868390421,
+    "bucket_means_bps": [
+     -2.4041,
+     -0.5942,
+     1.771,
+     -0.8004,
+     4.4817
+    ],
+    "bucket_ns": [
+     208,
+     208,
+     209,
+     208,
+     209
+    ]
+   },
+   "conditional_tail": {
+    "n": 135,
+    "mean_bps": 5.375568425258919,
+    "se_bps": 3.8023557026560053,
+    "t": 1.4137468573768626
+   },
+   "criteria": [
+    {
+     "criterion": "lambda-elevated pooled RankIC sign (primary)",
+     "value": 0.01864164445353806,
+     "threshold": "> 0",
+     "pass": true
+    },
+    {
+     "criterion": "lambda-elevated pooled |RankIC| (primary)",
+     "value": 0.01864164445353806,
+     "threshold": ">= 0.03",
+     "pass": false
+    },
+    {
+     "criterion": "lambda-elevated pooled Fisher-z p (primary)",
+     "value": 0.5478696304631978,
+     "threshold": "<= 0.01",
+     "pass": false
+    },
+    {
+     "criterion": "pooled sample minimum (A-2.1 evidence set)",
+     "value": 1231,
+     "threshold": ">= 1000",
+     "pass": true
+    },
+    {
+     "criterion": "lambda-contrast (elevated - baseline RankIC, primary)",
+     "value": 0.10571870497146257,
+     "threshold": "> 0 AND baseline matched-disloc not significantly positive",
+     "pass": true
+    },
+    {
+     "criterion": "per-symbol APP: RankIC > 0 with n >= 100 (viable region)",
+     "value": 0.03266486680642682,
+     "threshold": "> 0, n >= 100",
+     "pass": true
+    },
+    {
+     "criterion": "A-2.1 APP safeguard: RankIC >= 0.03, p <= 0.05 at APP n",
+     "value": {
+      "rank_ic": 0.03266486680642682,
+      "p": 0.432901757853591,
+      "n_evidence": 657
+     },
+     "threshold": "sign-consistent RankIC >= 0.03 AND p <= 0.05",
+     "pass": false
+    },
+    {
+     "criterion": "bucket monotonicity (top-minus-bottom edge, elevated/primary)",
+     "value": 6.885728868390421,
+     "threshold": "> 0 (continuation direction)",
+     "pass": true
+    },
+    {
+     "criterion": "conditional tail (primary eligible episodes, D)",
+     "value": {
+      "mean_bps": 5.375568425258919,
+      "t": 1.4137468573768626
+     },
+     "threshold": "mean > 0 with t >= 2",
+     "pass": false
+    }
+   ]
+  }
+ },
+ "first_fail_stage": "2b",
+ "status_consequence": "REJECTED (F1/F2 dead \u2014 no conditional continuation edge, or the lambda arm does no work)"
+}

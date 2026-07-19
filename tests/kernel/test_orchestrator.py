@@ -1779,6 +1779,86 @@ class TestResetRiskEscalation:
         assert orch._positions.total_exposure() == Decimal("0")
         orch.reset_risk_escalation(audit_token="tok")
         assert orch.risk_level == RiskLevel.NORMAL
+class TestRealizedCostEscalation:
+    """Backtest-level coverage for the realized-cost-overrun kill-switch
+    escalation (P2.10). Previously only exercised by a ``paper_rth``-gated
+    integration test requiring a live IB Gateway connection (audit
+    execution_fills_audit_2026-07-02 finding #11 / backlog)."""
+
+    def _order(self, order_id: str, *, strategy_id: str = "alpha_1") -> OrderRequest:
+        return OrderRequest(
+            timestamp_ns=1000,
+            correlation_id=f"c-{order_id}",
+            sequence=1,
+            order_id=order_id,
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id=strategy_id,
+            g12_disclosed_cost_total_bps=1.0,
+        )
+
+    def _ack(self, order: OrderRequest, *, ts: int, cost_bps: str) -> OrderAck:
+        return OrderAck(
+            timestamp_ns=ts,
+            correlation_id=order.correlation_id,
+            sequence=2,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150.00"),
+            fees=Decimal("1.00"),
+            cost_bps=Decimal(cost_bps),
+        )
+
+    def _fill(self, orch: Orchestrator, order: OrderRequest, *, ts: int, cost_bps: str) -> None:
+        orch._track_order(order.order_id, order.side, order)
+        orch._reconcile_fills(
+            [self._ack(order, ts=ts, cost_bps=cost_bps)],
+            correlation_id=order.correlation_id,
+        )
+
+    def test_escalation_disabled_by_default_never_activates_kill_switch(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        assert orch._realized_cost_escalation_enabled is False  # code default
+
+        # disclosed=1.0, default alert_ratio=1.5 -> 1.5 bps threshold;
+        # 10.0 bps breaches it on every one of these fills.
+        for i in range(10):
+            self._fill(orch, self._order(f"ord-{i}"), ts=1000 + i, cost_bps="10.0")
+
+        assert not kill.is_active
+
+    def test_escalation_enabled_activates_kill_switch_after_streak(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        orch._realized_cost_escalation_enabled = True
+        orch._realized_cost_escalation_streak = 2
+
+        self._fill(orch, self._order("ord-1"), ts=1000, cost_bps="10.0")
+        assert not kill.is_active  # streak=1, below the configured threshold
+
+        self._fill(orch, self._order("ord-2"), ts=1001, cost_bps="10.0")
+        assert kill.is_active  # streak=2 meets the threshold -> fail-safe halt
+
+    def test_non_breaching_fill_resets_the_streak(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        orch._realized_cost_escalation_enabled = True
+        orch._realized_cost_escalation_streak = 2
+
+        self._fill(orch, self._order("ord-1"), ts=1000, cost_bps="10.0")
+        # Within the disclosed band (0.5 <= 1.5 bps threshold) -> streak resets.
+        self._fill(orch, self._order("ord-2"), ts=1001, cost_bps="0.5")
+        self._fill(orch, self._order("ord-3"), ts=1002, cost_bps="10.0")
+
+        assert not kill.is_active  # streak restarted at 1, still below 2
 
 
 # ── Tests: Multiple ticks ────────────────────────────────────────────
@@ -3814,6 +3894,114 @@ class TestHaltModeling:
         bt_router.on_quote(q_exit)
         orch._process_tick(q_exit)
         assert position_store.get("AAPL").quantity == 0
+
+    def test_halt_suppresses_passive_router_fill_paths(self) -> None:
+        """Task 12-P (AXIS-1): halt suppression covers BOTH passive-router
+        fill paths.  At halt-on the resting passive order is cancelled
+        (Inv-11) and, while halted, quotes never reach the router — so
+        neither a through-fill of the resting order nor a deferred-
+        aggressive fill can occur, even though the in-halt quote is past
+        both orders' latency-eligibility deadlines.  After resume, the
+        surviving deferred MARKET order fills off the post-resume quote
+        at that quote's own price (no lookahead into the halt window)."""
+        from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
+
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        router = PassiveLimitOrderRouter(
+            clock=clock,
+            cost_model=ZeroCostModel(),
+            latency_ns=100,
+            fill_hazard_max=Decimal("0"),
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._halt_on_codes = frozenset({5})
+        orch._halt_off_codes = frozenset({6})
+        orch._halt_blackout_ns = 100
+        # Production wiring (bootstrap.py): the router sees quotes ONLY via
+        # the bus subscription behind the orchestrator's M1 publish — i.e.
+        # behind the halt gate.
+        bus.subscribe(NBBOQuote, router.on_quote)  # type: ignore[arg-type]
+
+        acks_on_bus: list[OrderAck] = []
+        bus.subscribe(OrderAck, acks_on_bus.append)  # type: ignore[arg-type]
+
+        q0 = _make_quote(ts=1000, seq=1)  # bid 149.50 / ask 150.50, exch 900
+        orch._process_tick(q0)
+
+        # Path 1: resting passive BUY below the bid (eligible_at = 1100).
+        resting = OrderRequest(
+            timestamp_ns=1000,
+            correlation_id="halt-passive",
+            sequence=101,
+            order_id="halt-rest-1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("149.00"),
+        )
+        # Path 2: deferred aggressive MARKET (latency 100 → deadline 1100).
+        deferred = OrderRequest(
+            timestamp_ns=1000,
+            correlation_id="halt-market",
+            sequence=102,
+            order_id="halt-mkt-1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=40,
+        )
+        for req in (resting, deferred):
+            router.submit(req)
+            orch._track_order(req.order_id, req.side, req)
+            orch._transition_order(req.order_id, OrderState.SUBMITTED, "submitted")
+            orch._transition_order(req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+        router.poll_acks()  # drain the two ACKNOWLEDGED acks
+        assert router.resting_order_count == 1
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        assert "AAPL" in orch._halted_symbols
+        # Inv-11: the resting passive order was cancelled at halt-on.
+        assert router.resting_order_count == 0
+
+        # In-halt crossing quote (exch 1600 ≥ both deadlines): would through-
+        # fill the resting order AND fill the deferred MARKET were it
+        # delivered — the halt gate must keep it from the router entirely.
+        clock.set_time(1700)
+        q_halt = _make_quote(ts=1700, bid="148.00", ask="148.90", seq=3)
+        orch._process_tick(q_halt)
+        assert router.poll_acks() == []
+        assert position_store.get("AAPL").quantity == 0
+
+        # Resume, then a post-blackout quote reaches the router: the
+        # surviving deferred MARKET fills at THIS quote's cross (150.90),
+        # not at any price from inside the halt window.
+        orch._process_trade(self._trade(ts=2000, seq=4, conditions=self._HALT_OFF))
+        clock.set_time(2500)
+        q_after = _make_quote(ts=2500, bid="150.00", ask="150.90", seq=5)
+        orch._process_tick(q_after)
+        clock.set_time(2600)
+        orch._process_tick(_make_quote(ts=2600, bid="150.00", ask="150.90", seq=6))
+
+        fills = [a for a in acks_on_bus if a.status == OrderAckStatus.FILLED]
+        assert [a.order_id for a in fills] == ["halt-mkt-1"]
+        assert fills[0].fill_price == Decimal("150.90")
+        assert position_store.get("AAPL").quantity == 40
 
 
 def _ssr_intent(

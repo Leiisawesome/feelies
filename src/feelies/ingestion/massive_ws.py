@@ -55,9 +55,14 @@ class MassiveLiveFeed:
     full subscription failure that the reconnect loop should handle).
     Receiving fewer than the expected count is logged at WARNING and
     the feed runs in degraded mode — a temporarily-unavailable channel
-    must not block the whole feed.  Operators monitoring the WARN line
-    are responsible for deciding whether to restart or accept the
-    partial coverage (audit r4-NEW-02).
+    must not block the whole feed (audit r4-NEW-02).  Since individual
+    success frames are not attributable to a specific channel (audit
+    DI-02), a partial result also transitions every requested symbol to
+    ``DataHealth.GAP_DETECTED`` via ``notify_feed_interrupted`` — coarser
+    than per-channel, but no longer silently HEALTHY-by-registration for
+    a symbol whose subscription may not have gone through.  Operators
+    monitoring the WARN line are still responsible for deciding whether
+    to restart or accept the partial coverage.
     """
 
     __slots__ = (
@@ -339,6 +344,12 @@ class MassiveLiveFeed:
                 successes,
                 n_expected,
             )
+            # Audit DI-02: register_symbols() already marked every requested
+            # symbol HEALTHY-by-presence at bootstrap, before any channel was
+            # confirmed.  A partial subscribe result means at least one
+            # channel may never have gone through, so surface it as a data
+            # gap rather than leave the symbol silently HEALTHY.
+            self._normalizer.notify_feed_interrupted(self._symbols)
 
     @staticmethod
     def _validate_status_response(
@@ -392,5 +403,10 @@ class MassiveLiveFeed:
                     self._events_dropped += 1
                     logger.warning(
                         "massive_ws: queue full, dropping event for %s",
-                        getattr(event, "symbol", "?"),
+                        event.symbol,
                     )
+                    # Audit DI-01: a dropped event is a real data gap for this
+                    # symbol — surface it through the same DataHealth path used
+                    # for connection loss so downstream consumers (Inv-11) see
+                    # degraded coverage instead of silent loss.
+                    self._normalizer.notify_feed_interrupted((event.symbol,))

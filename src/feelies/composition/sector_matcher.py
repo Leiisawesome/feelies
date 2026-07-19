@@ -135,7 +135,10 @@ class SectorMatcher:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError(f"SectorMatcher: {path} must contain a JSON object")
-        return {str(k): str(v) for k, v in data.items()}
+        # ``_meta`` is an optional provenance block (e.g. ``as_of_ns``,
+        # composition audit 2026-07-02 P2) — it is metadata, not a symbol
+        # row, so skip it (mirrors FactorNeutralizer._load_loadings).
+        return {str(k): str(v) for k, v in data.items() if k != "_meta"}
 
 
 __all__ = ["SectorMatcher"]

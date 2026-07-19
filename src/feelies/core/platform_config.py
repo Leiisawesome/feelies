@@ -15,6 +15,7 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import logging
@@ -56,7 +57,7 @@ class OperatingMode(Enum):
     LIVE = auto()
 
 
-@dataclass(kw_only=True)
+@dataclass(frozen=True, kw_only=True)
 class PlatformConfig:
     """Concrete configuration for the trading platform.
 
@@ -568,6 +569,19 @@ class PlatformConfig:
     # universe-scaling to a separate workstream (v0.4); exceeding this
     # cap raises ``UniverseScaleError`` at bootstrap.
     #
+    # ``composition_gross_cap_pct`` / ``composition_per_name_cap_pct`` —
+    # composition-shaping caps on the *desired* book the
+    # ``TurnoverOptimizer`` constructs, as a fraction of ``account_equity``
+    # (audit 2026-06-20 P2-3 / 2026-07-02 P2): intentionally separate from
+    # an alpha's own ``risk_budget`` (shares-domain, enforced downstream by
+    # the risk engine) — see ``turnover_optimizer.py`` docstring. Defaults
+    # (200% gross, 5% per-name) match the platform's historical hardcoded
+    # values. For small universes the per-name cap can bind for every name
+    # simultaneously, collapsing the ranker's cross-sectional weights into
+    # an equal-notional, sign-only book (composition audit 2026-07-02) —
+    # raise ``composition_per_name_cap_pct`` if a small-universe alpha's
+    # relative conviction should carry through to sizing.
+    #
     # ``enforce_layer_gates`` — when True (default, production setting)
     # alphas failing G1/G3/G9/G10/G11 are refused.  When False, G1/G3
     # downgrade to WARN (research escape hatch).  G9/G10/G11 are
@@ -581,6 +595,8 @@ class PlatformConfig:
     composition_lambda_tc: float = 1.0
     composition_lambda_risk: float = 0.1
     composition_max_universe_size: int = 50
+    composition_gross_cap_pct: float = 2.0
+    composition_per_name_cap_pct: float = 0.05
     # ``composition_signal_max_age_seconds`` — stale-feeder gate (audit
     # P0-5).  A feeder ``Signal`` whose event-time age at the PORTFOLIO
     # barrier exceeds this window is dropped before completeness is
@@ -951,6 +967,10 @@ class PlatformConfig:
             raise ConfigurationError("composition_lambda_risk must be non-negative")
         if self.composition_max_universe_size <= 0:
             raise ConfigurationError("composition_max_universe_size must be positive")
+        if self.composition_gross_cap_pct <= 0.0:
+            raise ConfigurationError("composition_gross_cap_pct must be positive")
+        if not 0.0 < self.composition_per_name_cap_pct <= 1.0:
+            raise ConfigurationError("composition_per_name_cap_pct must be in (0, 1]")
         if (
             self.composition_signal_max_age_seconds is not None
             and self.composition_signal_max_age_seconds <= 0
@@ -1007,8 +1027,12 @@ class PlatformConfig:
             "symbols": sorted(self.symbols),
             "mode": self.mode.name,
             "alpha_spec_dir": self.alpha_spec_dir.name if self.alpha_spec_dir else None,
+            # Basename-only, like every other Path field above: two distinct
+            # alpha_specs entries that share a basename across directories
+            # collide in the checksum. Accepted tradeoff, not a bug — see the
+            # Path-normalisation rationale above.
             "alpha_specs": sorted(p.name for p in self.alpha_specs),
-            "parameter_overrides": self.parameter_overrides,
+            "parameter_overrides": copy.deepcopy(self.parameter_overrides),
             "regime_engine": self.regime_engine,
             "regime_engine_options": dict(self.regime_engine_options),
             "data_dir": self.data_dir.name if self.data_dir else None,
@@ -1205,6 +1229,18 @@ class PlatformConfig:
                 if self.composition_optimizer_mode != "closed_form"
                 else {}
             ),
+            # Only serialized when non-default (composition audit 2026-07-02
+            # P2), matching the ``composition_optimizer_mode`` precedent above.
+            **(
+                {"composition_gross_cap_pct": self.composition_gross_cap_pct}
+                if self.composition_gross_cap_pct != 2.0
+                else {}
+            ),
+            **(
+                {"composition_per_name_cap_pct": self.composition_per_name_cap_pct}
+                if self.composition_per_name_cap_pct != 0.05
+                else {}
+            ),
             "enforce_layer_gates": self.enforce_layer_gates,
             "enforce_per_alpha_risk_budget": (self.enforce_per_alpha_risk_budget),
             # Workstream F-1: ledger path is folded as a basename only
@@ -1345,6 +1381,19 @@ class PlatformConfig:
             taker_exch_raw = legacy_exch
         if maker_exch_raw is None and legacy_exch is not None:
             maker_exch_raw = legacy_exch
+
+        # cost_passive_adverse_selection_bps / cost_adverse_selection_drain_bps
+        # and cost_through_fill_adverse_selection_bps / cost_adverse_selection_through_bps
+        # are current-name/legacy-name pairs that must resolve to the same
+        # value regardless of which name the operator used. Resolve each pair
+        # to a single raw value with an `is None` check (not `or`) so an
+        # explicit 0.0 override is preserved instead of being treated as unset.
+        passive_adverse_raw = data.get("cost_passive_adverse_selection_bps")
+        if passive_adverse_raw is None:
+            passive_adverse_raw = data.get("cost_adverse_selection_drain_bps")
+        through_adverse_raw = data.get("cost_through_fill_adverse_selection_bps")
+        if through_adverse_raw is None:
+            through_adverse_raw = data.get("cost_adverse_selection_through_bps")
 
         regime_cal_raw = data.get("regime_calibration_max_quotes")
         if regime_cal_raw is None:
@@ -1504,24 +1553,16 @@ class PlatformConfig:
                 maker_exch_raw if maker_exch_raw is not None else 0.0
             ),
             cost_passive_adverse_selection_bps=float(
-                data.get("cost_passive_adverse_selection_bps")
-                or data.get("cost_adverse_selection_drain_bps")
-                or 2.0
+                passive_adverse_raw if passive_adverse_raw is not None else 2.0
             ),
             cost_through_fill_adverse_selection_bps=float(
-                data.get("cost_through_fill_adverse_selection_bps")
-                or data.get("cost_adverse_selection_through_bps")
-                or 5.0
+                through_adverse_raw if through_adverse_raw is not None else 5.0
             ),
             cost_adverse_selection_through_bps=float(
-                data.get("cost_adverse_selection_through_bps")
-                or data.get("cost_through_fill_adverse_selection_bps")
-                or 5.0
+                through_adverse_raw if through_adverse_raw is not None else 5.0
             ),
             cost_adverse_selection_drain_bps=float(
-                data.get("cost_adverse_selection_drain_bps")
-                or data.get("cost_passive_adverse_selection_bps")
-                or 2.0
+                passive_adverse_raw if passive_adverse_raw is not None else 2.0
             ),
             cost_sell_regulatory_bps=float(data.get("cost_sell_regulatory_bps", 0.5)),
             cost_stress_multiplier=float(data.get("cost_stress_multiplier", 1.0)),
@@ -1655,6 +1696,8 @@ class PlatformConfig:
             composition_lambda_tc=float(data.get("composition_lambda_tc", 1.0)),
             composition_lambda_risk=float(data.get("composition_lambda_risk", 0.1)),
             composition_max_universe_size=int(data.get("composition_max_universe_size", 50)),
+            composition_gross_cap_pct=float(data.get("composition_gross_cap_pct", 2.0)),
+            composition_per_name_cap_pct=float(data.get("composition_per_name_cap_pct", 0.05)),
             enforce_layer_gates=bool(data.get("enforce_layer_gates", True)),
             enforce_per_alpha_risk_budget=bool(data.get("enforce_per_alpha_risk_budget", True)),
             promotion_ledger_path=(

@@ -71,6 +71,21 @@ _logger = logging.getLogger(__name__)
 # layer runtime guardrail).  Re-exported under the historical private name.
 _EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = EXIT_ONLY_MECHANISMS
 
+# Cap-scaling convergence budget (composition audit 2026-07-02, finding P0-1).
+# Each pass rescales one over-cap family at a time, holding the others fixed —
+# correct in one pass when at most one family is ever over cap simultaneously,
+# but only an approximation when 2+ families are over cap at once (scaling one
+# changes the shared denominator the others' shares are measured against).  5
+# iterations left a confirmed ~9% relative cap overshoot for 3-4 simultaneously
+# over-cap families even under trend_mechanism.consumes caps that legitimately
+# pass G16 rule 8 at load time.  200 iterations is still sub-millisecond
+# (bounded by num_families * num_symbols per pass) and empirically converges
+# every case audited, including adversarial 4-family skews, within ~120 passes.
+_MAX_CAP_SCALE_ITERS: int = 200
+# Tolerance for the post-loop convergence check below, matching the emit-time
+# backstop's existing epsilon in composition/engine.py.
+_CAP_CONVERGENCE_TOLERANCE: float = 1e-9
+
 
 @dataclass(frozen=True)
 class RankedAlpha:
@@ -652,10 +667,11 @@ class CrossSectionalRanker:
 
         # Recursive scaling: each over-cap mechanism is scaled to exactly
         # its cap (using current gross_total).  Because scaling reduces
-        # gross_total, we iterate until stable (max 5 iterations — every
-        # family's share is monotonically decreasing).
+        # gross_total, we iterate until stable (see _MAX_CAP_SCALE_ITERS —
+        # every family's share is monotonically decreasing, but convergence
+        # is slow, not one-shot, once 2+ families are over cap at once).
         scaled = dict(weights)
-        for _ in range(5):
+        for _ in range(_MAX_CAP_SCALE_ITERS):
             cur_gross = sum(abs(w) for w in scaled.values())
             if cur_gross <= 0:
                 break
@@ -699,6 +715,19 @@ class CrossSectionalRanker:
                     continue
                 new_by_mech[mech] = new_by_mech.get(mech, 0.0) + abs(w)
             breakdown = {m: g / new_gross for m, g in new_by_mech.items()}
+            for mech, share in breakdown.items():
+                if share > cap_for(mech) + _CAP_CONVERGENCE_TOLERANCE:
+                    _logger.warning(
+                        "CrossSectionalRanker: mechanism %s share %.6f still "
+                        "exceeds cap %.6f after %d scaling passes — "
+                        "simultaneous multi-family cap pressure did not fully "
+                        "converge; consider loosening caps or reducing the "
+                        "number of concurrently active mechanism families",
+                        mech.name,
+                        share,
+                        cap_for(mech),
+                        _MAX_CAP_SCALE_ITERS,
+                    )
         return scaled, breakdown
 
 
@@ -762,7 +791,7 @@ def cap_family_vectors(
         return sum(abs(x) for x in scaled[mech].values())
 
     real_mechs = sorted((m for m in scaled if m is not None), key=lambda m: m.name)
-    for _ in range(5):
+    for _ in range(_MAX_CAP_SCALE_ITERS):
         cur_total = sum(gross_of(m) for m in scaled)
         if cur_total <= 0.0:
             break
@@ -793,6 +822,19 @@ def cap_family_vectors(
             g = gross_of(mech_key)
             if g > 0.0:
                 breakdown[mech_key] = g / new_total
+        for mech_key, share in breakdown.items():
+            if share > cap_for(mech_key) + _CAP_CONVERGENCE_TOLERANCE:
+                _logger.warning(
+                    "cap_family_vectors: mechanism %s share %.6f still exceeds "
+                    "cap %.6f after %d scaling passes — simultaneous "
+                    "multi-family cap pressure did not fully converge; "
+                    "consider loosening caps or reducing the number of "
+                    "concurrently active mechanism families",
+                    mech_key.name,
+                    share,
+                    cap_for(mech_key),
+                    _MAX_CAP_SCALE_ITERS,
+                )
     return scaled, breakdown
 
 

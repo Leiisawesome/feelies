@@ -28,7 +28,9 @@ Determinism: integer/equality comparisons + one float division; deque
 event-time eviction; no RNG, no clock reads.
 
 Warm-up: ``warm = True`` once at least ``min_quotes`` quotes sit in the
-trailing window.
+trailing window.  Optional ``min_window_span_seconds`` (sensor_audit_2026-07-02
+P1) additionally requires those quotes to span a genuine window of time, not
+just a burst; ``None`` (default) preserves the legacy count-only behaviour.
 """
 
 from __future__ import annotations
@@ -56,6 +58,11 @@ class QuoteFlickerRateSensor:
       Short windows track instantaneous flicker bursts.
     - ``min_quotes`` (int, default 20): minimum quotes in the window
       before ``warm=True``.
+    - ``min_window_span_seconds`` (int | None, default None): when set,
+      ``warm`` additionally requires the retained quotes to span at least
+      this many seconds (sensor_audit_2026-07-02 P1), so a quote burst
+      cannot satisfy ``min_quotes`` before a genuine window of history has
+      accumulated.  ``None`` preserves the legacy count-only behaviour.
     """
 
     sensor_id: str = "quote_flicker_rate"
@@ -68,17 +75,25 @@ class QuoteFlickerRateSensor:
         sensor_version: str | None = None,
         window_seconds: int = 5,
         min_quotes: int = 20,
+        min_window_span_seconds: int | None = None,
     ) -> None:
         if window_seconds <= 0:
             raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_quotes < 0:
             raise ValueError(f"min_quotes must be >= 0, got {min_quotes}")
+        if min_window_span_seconds is not None and min_window_span_seconds <= 0:
+            raise ValueError(
+                f"min_window_span_seconds must be > 0 or None, got {min_window_span_seconds}"
+            )
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._window_ns = window_seconds * 1_000_000_000
         self._min_quotes = min_quotes
+        self._min_span_ns = (
+            None if min_window_span_seconds is None else min_window_span_seconds * 1_000_000_000
+        )
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -141,6 +156,8 @@ class QuoteFlickerRateSensor:
         n = len(events)
         value = state["flicker_count"] / float(n) if n > 0 else 0.0
         warm = n >= self._min_quotes
+        if warm and self._min_span_ns is not None:
+            warm = (events[-1][0] - events[0][0]) >= self._min_span_ns
 
         return SensorReading(
             timestamp_ns=ts,

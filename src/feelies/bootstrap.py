@@ -641,6 +641,11 @@ def build_platform(
         bus=bus,
         registry=registry,
         position_store=position_store,
+<<<<<<< HEAD
+        strategy_positions=strategy_positions,
+=======
+        clock=clock,
+>>>>>>> origin/main
     )
 
     # Audit P0 H-1: hazard wiring scans ALL active alphas so SIGNAL-layer
@@ -1189,6 +1194,16 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="ofi_integrated",
             min_samples=1,
         ),
+        # H12/H13 Phase A: Hazen percentile of the latest ofi_raw sample
+        # within the trailing-h event-time window (kyle_lambda_60s wiring
+        # precedent). Named ofi_integrated_percentile per formal-spec §1.2
+        # — H12 consumes h=900; H13 consumes h=1800 (same factory line).
+        HorizonWindowedFeature(
+            "ofi_raw",
+            h,
+            reducer="percentile",
+            feature_id="ofi_integrated_percentile",
+        ),
     ],
     # Audit P1-B / P1-C: signed top-of-book size imbalance, the level-invariant
     # L1 fingerprint that ``micro_price_zscore`` (a z of the ~$100 price level)
@@ -1256,12 +1271,16 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     ],
     # Audit P1-F: INVENTORY is a fast, mean-reverting mechanism (half-life
     # 5–60 s).  A z over a long horizon window (300–1800 s) smears that
-    # reversion, and the G16 horizon/half-life binding only admits the 30 s
-    # horizon for this family.  So we expose ONLY the last-of-horizon signed
-    # pressure, and ONLY at h=30 — the already-normalised [-1,1] value is the
-    # right aggregation; longer horizons would dilute the signal.
+    # reversion, so we expose ONLY the last-of-horizon signed pressure — the
+    # already-normalised [-1,1] value is the right aggregation.  Task 7
+    # (sig_inventory_fade_v1 formal spec §1.2/§14.3) corrected the earlier
+    # claim that G16 admits only h=30 for this family: the horizon/half-life
+    # ratio envelope [0.5, 4.0] also admits h=120 across the G16 half-life
+    # envelope 5–60 s (e.g. hl=40 s → ratio 3.0), so the passthrough is wired
+    # at h ∈ {30, 120}.  Longer horizons (300–1800 s) stay unwired — they
+    # would dilute the signal.
     "inventory_pressure": lambda h: (
-        [SensorPassthroughFeature("inventory_pressure", h)] if h == 30 else []
+        [SensorPassthroughFeature("inventory_pressure", h)] if h in (30, 120) else []
     ),
     # P2-3 LIQUIDITY_STRESS fingerprints.  Both are already normalised
     # ([0,1] alarm / [0,1] fraction), so passthrough (last-of-horizon) is the
@@ -1541,6 +1560,57 @@ def _required_warm_feature_ids_for_signal_alpha(
             _feature_ids_for_sensor_at_horizon(name, horizon_seconds, horizon_features),
         )
     return frozenset(req)
+
+
+def _warn_unread_sensor_dependencies(
+    *,
+    alpha_id: str,
+    depends_on_sensors: Sequence[str],
+    horizon_seconds: int,
+    horizon_features: Sequence[HorizonFeature],
+    warm_ids: frozenset[str],
+) -> None:
+    """Warn when a declared sensor dependency is never actually read.
+
+    sensor_audit_2026-07-02 P1: G16 rule 10 (``layer_validator.py``) only
+    checks that ``l1_signature_sensors`` is a subset of
+    ``depends_on_sensors`` — a purely structural, YAML-level check. It cannot
+    detect a "cosmetic fingerprint": a declared sensor whose features are
+    never referenced in ``evaluate()`` or the regime gate (the exact defect
+    a prior audit pass fixed once for ``kyle_lambda_60s`` in
+    ``sig_benign_midcap_v1`` — see that alpha's history — before recurring
+    there again through ``micro_price``). ``warm_ids`` (audit 2P-1) already
+    holds the union of every feature the body's statically-resolved
+    ``snapshot.values`` accesses and the regime gate's bound identifiers
+    require, so a declared sensor whose *entire* horizon feature set is
+    disjoint from it contributes nothing to this alpha's actual behaviour.
+
+    A sensor producing zero features at this horizon is not flagged — there
+    is nothing to compare against, and that gap is already covered by the
+    H3/M2 "uncovered dependency" check above. When the signal body's
+    ``.values`` access could not be resolved statically, 2P-1's conservative
+    fallback already seeds ``warm_ids`` with every feature of every declared
+    sensor, so this check cannot produce a false positive in that case — it
+    just loses sensitivity, matching 2P-1's own conservative philosophy.
+    """
+    for sid in depends_on_sensors:
+        produced = _feature_ids_for_sensor_at_horizon(sid, horizon_seconds, horizon_features)
+        if produced and produced.isdisjoint(warm_ids):
+            logger.warning(
+                "sensor_audit_2026-07-02 P1: alpha %r declares "
+                "depends_on_sensors entry %r, but none of the feature(s) it "
+                "produces at horizon %ds (%s) are read by evaluate() or the "
+                "regime gate — this looks like a cosmetic/unused dependency. "
+                "Either wire evaluate()/the gate to read one of these "
+                "features, or drop %r from depends_on_sensors (and from "
+                "trend_mechanism.l1_signature_sensors if declared there as a "
+                "G16 fingerprint).",
+                alpha_id,
+                sid,
+                horizon_seconds,
+                sorted(produced),
+                sid,
+            )
 
 
 def _consumed_features_for_signal_registration(
@@ -1863,6 +1933,13 @@ def _create_signal_layer(
             gate=module.gate,
             signal_source=module.signal_source,
         )
+        _warn_unread_sensor_dependencies(
+            alpha_id=module.manifest.alpha_id,
+            depends_on_sensors=module.depends_on_sensors,
+            horizon_seconds=module.horizon_seconds,
+            horizon_features=horizon_features or [],
+            warm_ids=warm_ids,
+        )
         consumed_feature_ids = _consumed_features_for_signal_registration(
             declared_consumed_features=module.consumed_features,
             required_warm_feature_ids=warm_ids,
@@ -1923,6 +2000,11 @@ def _create_composition_layer(
     bus: EventBus,
     registry: AlphaRegistry,
     position_store: MemoryPositionStore,
+<<<<<<< HEAD
+    strategy_positions: StrategyPositionStore,
+=======
+    clock: Clock,
+>>>>>>> origin/main
 ) -> tuple[
     CompositionEngine | None,
     CrossSectionalTracker | None,
@@ -1992,7 +2074,7 @@ def _create_composition_layer(
             f"alpha universe(s) or raise the cap explicitly."
         )
 
-    _enforce_factor_loadings_freshness(config, sorted(universe))
+    _enforce_factor_loadings_freshness(config, sorted(universe), clock=clock)
 
     intent_seq = SequenceGenerator()
     ctx_seq = SequenceGenerator()
@@ -2030,6 +2112,14 @@ def _create_composition_layer(
     capital_usd = float(config.account_equity)
     optimizer = TurnoverOptimizer(
         capital_usd=capital_usd,
+        # Composition-shaping caps (audit 2026-07-02 P2): operator-tunable,
+        # defaults match the platform's historical hardcoded values (200%
+        # gross, 5% per-name).  For small universes the per-name cap can
+        # bind for every name simultaneously and collapse the ranker's
+        # cross-sectional weights into an equal-notional book — see
+        # PlatformConfig.composition_per_name_cap_pct.
+        gross_cap_pct=config.composition_gross_cap_pct,
+        per_name_cap_pct=config.composition_per_name_cap_pct,
         lambda_tc=config.composition_lambda_tc,
         lambda_risk=config.composition_lambda_risk,
         # Audit P1-1: the optimizer path is selected explicitly by config, not
@@ -2045,8 +2135,18 @@ def _create_composition_layer(
         decay_weighting_enabled=decay_enabled,
     )
 
-    def _position_lookup(symbol: str) -> float:
-        pos = position_store.get(symbol)
+    def _position_lookup(strategy_id: str, symbol: str) -> float:
+        # Scoped per (strategy_id, symbol) via the per-alpha position book
+        # (composition audit 2026-07-02, P1 finding) rather than the
+        # account-level aggregate ``position_store`` — two PORTFOLIO alphas
+        # trading the same symbol must each compute their own turnover
+        # penalty against their own prior target, not against a "current
+        # position" contaminated by the other alpha's fills.  The mark
+        # price itself is still read from the shared, symbol-level
+        # ``position_store`` (marks are market data, not per-strategy
+        # state, and are fed there on every quote regardless of which
+        # strategy holds the position).
+        pos = strategy_positions.get(strategy_id, symbol)
         mark = position_store.latest_mark(symbol)
         if mark is None:
             mark = pos.avg_entry_price
@@ -2258,6 +2358,8 @@ def _enforce_ex_date_replay_guard(
 def _enforce_factor_loadings_freshness(
     config: PlatformConfig,
     universe_sorted: list[str],
+    *,
+    clock: Clock,
 ) -> None:
     """Fail-stop on missing or stale loadings rows.
 
@@ -2276,14 +2378,32 @@ def _enforce_factor_loadings_freshness(
     was checked out.  Only when that block is absent do we fall back to
     the filesystem mtime, whose drift forced downstream suites to pin a
     ~century-long ``factor_loadings_max_age_seconds``.  The comparison
-    clock is ``session_open_ns`` when available (deterministic);
-    wall-clock ``time.time()`` is a last resort that breaks bit-identical
-    replay and is logged as such.
+<<<<<<< HEAD
+    clock is ``session_open_ns`` (deterministic) — composition audit
+    2026-07-02, P1 finding: this function previously fell back to
+    wall-clock ``time.time()`` when ``session_open_ns`` was unset, which
+    meant the identical historical config could pass or fail this gate
+    depending purely on when it happened to be re-run.  Fail closed
+    instead: an operator who configures ``factor_loadings_dir`` without
+    ``session_open_ns`` has no deterministic reference time, so the check
+    cannot be performed at all (Inv-5).
+=======
+    reference is ``session_open_ns`` when available (deterministic); when
+    absent, PAPER/LIVE fall back to the injected ``clock`` (``WallClock``
+    there, so this is genuinely "now" for a live deployment — routed
+    through Inv-10's sanctioned abstraction rather than a raw
+    ``time.time()`` call).  BACKTEST has no sensible wall-clock reference
+    for historical data, and ``SimulatedClock`` reads 0 at this
+    (pre-replay) point in boot, so silently comparing against either
+    would produce a meaningless verdict (audit kernel-P1: the previous
+    ``time.time()`` fallback either false-failed fresh backtest data or,
+    swapped naively for the boot-time clock, would have false-passed
+    stale data) — BACKTEST therefore refuses to boot rather than guess.
+>>>>>>> origin/main
     """
     if config.factor_loadings_dir is None:
         return
     import json
-    import time
 
     path = config.factor_loadings_dir / "loadings.json"
     if not path.is_file():
@@ -2309,16 +2429,36 @@ def _enforce_factor_loadings_freshness(
         embedded_as_of_seconds if embedded_as_of_seconds is not None else path.stat().st_mtime
     )
 
+<<<<<<< HEAD
+    if config.session_open_ns is None:
+        raise StaleFactorLoadingsError(
+            f"factor loadings freshness check for {path} requires "
+            "PlatformConfig.session_open_ns to be set as the deterministic "
+            "comparison reference; wall-clock time.time() is not an "
+            "acceptable fallback (Inv-5).  Set session_open_ns, or unset "
+            "factor_loadings_dir if factor neutralization is not needed."
+        )
+    reference_time = config.session_open_ns / 1_000_000_000
+=======
     if config.session_open_ns is not None:
         reference_time = config.session_open_ns / 1_000_000_000
-    else:
-        reference_time = time.time()
+    elif config.mode is not OperatingMode.BACKTEST:
+        reference_time = clock.now_ns() / 1_000_000_000
         logger.warning(
-            "factor loadings freshness: no session_open_ns configured; using wall-clock "
-            "time.time() as the reference, which breaks bit-identical replay (Inv-5) — "
-            "configure session_open_ns or embed _meta.as_of_ns in %s",
+            "factor loadings freshness: no session_open_ns configured; using the "
+            "injected wall clock as the reference — configure session_open_ns or "
+            "embed _meta.as_of_ns in %s for a reproducible verdict",
             path,
         )
+    else:
+        raise StaleFactorLoadingsError(
+            f"factor_loadings_dir is configured ({config.factor_loadings_dir}) but "
+            "session_open_ns is unset in BACKTEST mode, so there is no causal "
+            "reference time to evaluate freshness against (Inv-5/Inv-11: refuse "
+            "rather than guess). Set session_open_ns, or embed _meta.as_of_ns in "
+            f"{path} and compare it via session_open_ns once set."
+        )
+>>>>>>> origin/main
     age_seconds = reference_time - file_as_of_seconds
     if age_seconds > config.factor_loadings_max_age_seconds:
         raise StaleFactorLoadingsError(

@@ -86,7 +86,12 @@ the venv manually.
 - Python 3.12+, line length 99, ruff + mypy strict
 - DTZ rule: never use datetime.now() / datetime.utcnow() / time.time() in production
   code. All timestamps go through MonotonicClock or accept ts_ns as an explicit
-  parameter. Only src/feelies/core/clock.py is exempted (enforced by ruff CI).
+  parameter. In production source, only src/feelies/core/clock.py is exempted
+  (enforced by ruff CI via `[tool.ruff.lint.per-file-ignores]`); two
+  network-timed functional test files carry the same exemption for test-only
+  reasons. Any new per-file-ignore needs a written justification anchored to
+  actual code in that file — do not pre-authorize one for code that doesn't
+  exist yet.
 - Layer separation is hard: every piece of code belongs to exactly one layer; no
   cross-layer imports
 - All inter-layer data flows through typed events on the synchronous bus

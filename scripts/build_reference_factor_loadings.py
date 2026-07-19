@@ -205,8 +205,14 @@ def main(argv: list[str] | None = None) -> int:
     sector_map = build_sector_map()
 
     loadings_payload: dict[str, object] = dict(loadings)
+    sector_map_payload: dict[str, object] = dict(sector_map)
     if args.as_of_ns:  # 0 (or None) omits the block
         loadings_payload["_meta"] = {"as_of_ns": int(args.as_of_ns)}
+        # Composition audit 2026-07-02 P2: mirror the loadings fixture's
+        # provenance anchor onto the sector map so both reference fixtures
+        # carry the same auditability guarantee (SectorMatcher._load_map
+        # skips this key the same way FactorNeutralizer._load_loadings does).
+        sector_map_payload["_meta"] = {"as_of_ns": int(args.as_of_ns)}
 
     write_json(
         args.output_root / "factor_loadings" / "loadings.json",
@@ -214,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_json(
         args.output_root / "sector_map" / "sector_map.json",
-        sector_map,
+        sector_map_payload,
     )
     if not args.no_parquet:
         write_parquet_if_available(

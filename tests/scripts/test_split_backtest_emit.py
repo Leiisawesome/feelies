@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -66,3 +67,30 @@ def test_split_emit_tolerates_legacy_colon_form(tmp_path: Path) -> None:
     lines = ['SIGNAL_JSONL: {"timestamp_ns": 100, "sequence": 1, "symbol": "SPY"}']
     counts = mod.split_emit_stream(lines, tmp_path)
     assert counts == {"signals.jsonl": 1}
+
+
+def test_prefix_map_covers_every_backtest_jsonl_prefix() -> None:
+    """Audit P2-3: ``_PREFIX_MAP`` must stay in sync with what
+    ``backtest_jsonl._emit_jsonl_line`` actually emits — neither missing a
+    prefix (silently falling through to an uncurated ``{prefix.lower()}.jsonl``
+    filename) nor carrying a stale entry nothing emits any more."""
+    backtest_jsonl_src = (
+        Path(__file__).resolve().parents[2] / "src" / "feelies" / "harness" / "backtest_jsonl.py"
+    ).read_text(encoding="utf-8")
+    emitted_prefixes = set(
+        re.findall(r'_emit_jsonl_line\(\s*"([A-Z_]+_JSONL)"', backtest_jsonl_src)
+    )
+    assert emitted_prefixes, "regex found no _emit_jsonl_line(...) call sites — check the pattern"
+
+    mod = _load_splitter()
+    mapped_prefixes = set(mod._PREFIX_MAP)
+
+    missing_from_map = emitted_prefixes - mapped_prefixes
+    assert not missing_from_map, (
+        f"backtest_jsonl emits {sorted(missing_from_map)} but _PREFIX_MAP has no "
+        "entry for them (falls through to an uncurated filename)"
+    )
+    stale_in_map = mapped_prefixes - emitted_prefixes
+    assert not stale_in_map, (
+        f"_PREFIX_MAP still lists {sorted(stale_in_map)}, which backtest_jsonl no longer emits"
+    )

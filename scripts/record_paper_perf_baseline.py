@@ -40,8 +40,14 @@ def _parse_timing(run_dir: Path) -> dict[str, float]:
             tick_ns.append(dur)
         elif kind == "drain_async_fills":
             drain_ns.append(dur)
+    # Audit P2-4: a run-dir whose timing.jsonl exists but carries zero
+    # tick_process samples (an aborted/near-instant session) must not
+    # silently record a 0.0 p99 baseline — treat it the same as a missing
+    # timing.jsonl rather than merging garbage into the shared baseline file.
+    if not tick_ns:
+        return {}
     return {
-        "tick_processing_p99_s": _p99(tick_ns) / 1e9 if tick_ns else 0.0,
+        "tick_processing_p99_s": _p99(tick_ns) / 1e9,
         "drain_p99_s": _p99(drain_ns) / 1e9 if drain_ns else 0.0,
         "fill_to_position_p99_s": 0.0,
     }
@@ -55,7 +61,12 @@ def main(argv: list[str] | None = None) -> int:
 
     metrics = _parse_timing(args.run_dir)
     if not metrics:
-        print("No timing.jsonl found in run-dir", file=sys.stderr)
+        print(
+            "No tick_process timing samples found in run-dir (missing "
+            "timing.jsonl, or the run ended before producing any) — refusing "
+            "to record a baseline from an incomplete/aborted run",
+            file=sys.stderr,
+        )
         return 1
 
     if _BASELINE.is_file():

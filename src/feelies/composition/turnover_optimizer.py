@@ -26,6 +26,8 @@ treat the empty dict as "hold existing positions" per
 from __future__ import annotations
 
 import logging
+import os
+import platform as _platform
 from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Mapping
@@ -76,6 +78,46 @@ def round_cents(x: float) -> float:
 
 class MissingOptionalDependencyError(RuntimeError):
     """Raised when a feature requires the [portfolio] extras."""
+
+
+class UnvalidatedSolverPlatformError(RuntimeError):
+    """Raised when ``require_solver=True`` is selected on an unvalidated platform.
+
+    Composition audit 2026-06-20/2026-07-02: the ECOS/cvxpy solve is
+    deterministic *on a fixed (OS, arch, ECOS/BLAS build)*, but that
+    cross-build parity has never been asserted beyond a single host in this
+    repository — there is no CI configuration here that runs
+    ``tests/determinism/test_sized_intent_solver_replay.py`` on more than one
+    platform.  Enabling ``composition_optimizer_mode: ecos`` on an
+    unvalidated platform risks a silent, undetected Inv-5 replay divergence
+    (``target_positions`` — and every downstream order — could differ in the
+    8th significant digit between hosts).  This turns that previously
+    comment-only precondition into an enforced one: the operator must set
+    ``FEELIES_ECOS_VALIDATED_PLATFORMS`` to an explicit allowlist after
+    actually confirming the solver parity test passes on the platform(s)
+    listed, rather than the flag silently trusting an unverified host.
+    """
+
+
+_ECOS_VALIDATED_PLATFORMS_ENV = "FEELIES_ECOS_VALIDATED_PLATFORMS"
+
+
+def _current_platform_tag() -> str:
+    """``{system}-{machine}`` tag for the running host, e.g. ``Linux-x86_64``."""
+    return f"{_platform.system()}-{_platform.machine()}"
+
+
+def _ecos_platform_validated() -> bool:
+    """Whether the current host is in the operator-declared ECOS allowlist.
+
+    Reads ``FEELIES_ECOS_VALIDATED_PLATFORMS`` as a comma-separated list of
+    ``{system}-{machine}`` tags (e.g. ``"Linux-x86_64,Darwin-arm64"``).  Unset
+    or empty means "not validated" — fail closed, matching Inv-11 (unknown
+    states resolve to reduced capability, not increased).
+    """
+    raw = os.environ.get(_ECOS_VALIDATED_PLATFORMS_ENV, "")
+    allowlist = {tag.strip() for tag in raw.split(",") if tag.strip()}
+    return _current_platform_tag() in allowlist
 
 
 @dataclass(frozen=True)
@@ -164,6 +206,21 @@ class TurnoverOptimizer:
             raise MissingOptionalDependencyError(
                 "TurnoverOptimizer: require_solver=True but cvxpy is not "
                 "installed.  pip install 'feelies[portfolio]'"
+            )
+        if require_solver and not _ecos_platform_validated():
+            raise UnvalidatedSolverPlatformError(
+                "TurnoverOptimizer: require_solver=True (composition_optimizer_mode: "
+                "ecos) but this platform "
+                f"({_current_platform_tag()}) is not in "
+                f"{_ECOS_VALIDATED_PLATFORMS_ENV}.  ECOS/cvxpy determinism is only "
+                "guaranteed on a fixed (OS, arch, ECOS/BLAS build) and this "
+                "repository has no CI validating it across hosts (composition "
+                "audit 2026-07-02).  Run "
+                "tests/determinism/test_sized_intent_solver_replay.py on every "
+                "platform you intend to deploy to, then set "
+                f"{_ECOS_VALIDATED_PLATFORMS_ENV}="
+                f"'{_current_platform_tag()}' (comma-separate multiple platforms) "
+                "to confirm you have done so."
             )
         self._capital = float(capital_usd)
         self._gross_cap = float(gross_cap_pct)
@@ -380,5 +437,6 @@ __all__ = [
     "MissingOptionalDependencyError",
     "OptimizerResult",
     "TurnoverOptimizer",
+    "UnvalidatedSolverPlatformError",
     "round_cents",
 ]

@@ -1,0 +1,130 @@
+# Reference scheduled-flow window calendar for 2026-01-27 (regular RTH).
+#
+# Consumed by feelies.sensors.impl.scheduled_flow_window via
+# feelies.storage.reference.event_calendar.load_event_calendar().
+# Content-addressed: any edit changes EventCalendar.hash().
+#
+# ALGO_CLOCK rows authored by scripts/research/author_algo_clock_calendars.py
+# (H12 formal-spec §1.5.2 — exchange schedule only; [M, M+1s) half-open).
+#
+session_date: 2026-01-27
+windows:
+  - window_id: algo_clock_hh_1000_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "10:00"
+    end_et: "10:00:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1030_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "10:30"
+    end_et: "10:30:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1100_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "11:00"
+    end_et: "11:00:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1130_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "11:30"
+    end_et: "11:30:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1200_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "12:00"
+    end_et: "12:00:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1230_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "12:30"
+    end_et: "12:30:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1300_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "13:00"
+    end_et: "13:00:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1330_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "13:30"
+    end_et: "13:30:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1400_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "14:00"
+    end_et: "14:00:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1430_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "14:30"
+    end_et: "14:30:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1500_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "15:00"
+    end_et: "15:00:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour
+
+  - window_id: algo_clock_hh_1530_2026_01_27
+    kind: ALGO_CLOCK
+    symbol: null
+    start_et: "15:30"
+    end_et: "15:30:01"
+    flow_direction_prior: 0.0
+    meta:
+      card: sig_halfhour_clock_drift_h900_v1
+      mark_class: half_hour

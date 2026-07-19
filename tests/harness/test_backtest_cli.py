@@ -52,15 +52,17 @@ def test_apply_backtest_cli_overrides_inv12_and_symbols() -> None:
 
 
 def test_apply_backtest_session_dates_single_day() -> None:
+    """When no per-date calendar YAML exists, keep the config hint path."""
     hint = Path("src/feelies/storage/reference/event_calendar/2026-03-26.yaml")
     base = PlatformConfig(event_calendar_path=hint)
+    # Date outside the authored reference set (H12 20-session grid + fixtures).
     out = apply_backtest_session_dates_from_cli(
         base,
-        start_date="2026-04-02",
-        end_date="2026-04-02",
+        start_date="2026-05-01",
+        end_date="2026-05-01",
     )
-    assert out.rth_session_date == "2026-04-02"
-    assert out.moc_session_date == "2026-04-02"
+    assert out.rth_session_date == "2026-05-01"
+    assert out.moc_session_date == "2026-05-01"
     assert out.event_calendar_path == hint
 
 
