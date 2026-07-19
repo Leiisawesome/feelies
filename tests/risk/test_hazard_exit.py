@@ -355,6 +355,130 @@ def test_episode_suppression_prevents_double_fire():
     assert len(out) == 1
 
 
+def test_cross_reason_race_suppresses_second_full_size_exit():
+    """Audit HZ-1 (risk_engine_audit_2026-07-02.md).
+
+    A HAZARD_SPIKE exit and a HARD_EXIT_AGE exit are independent
+    ``_emitted_for_episode`` keys, so before the HZ-1 fix a second trigger
+    reason firing on the same symbol while the first exit's fill has not
+    yet reconciled into the position store (PAPER/LIVE acks are
+    asynchronous) would emit a *second* full-size close order — netting to
+    a position reversal once both fill.  ``_build_controller``'s bus has no
+    order-router/reconciliation wiring, so the position stays at its
+    pre-exit quantity after the first order is published, reproducing that
+    unreconciled window deterministically.
+    """
+    _, store, bus, out = _build_controller(
+        seed_positions={"AAPL": (100, 1_000_000_000)},
+    )
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_000_000_000,
+            sequence=1,
+            correlation_id="cid:race-spike",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
+    assert len(out) == 1
+    assert out[0].reason == "HAZARD_SPIKE"
+
+    # Position store still shows the pre-fill quantity (100) — the fill has
+    # not reconciled.  A Trade 700s after open qualifies for HARD_EXIT_AGE
+    # (cap is 600s); without the per-symbol pending guard this would emit a
+    # second 100-share SELL, which — if both orders later fill — reverses
+    # the original long into a short instead of flattening it.
+    assert store.get("AAPL").quantity == 100
+    bus.publish(
+        Trade(
+            timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
+            sequence=2,
+            correlation_id="cid:race-trade",
+            source_layer="DATA",
+            symbol="AAPL",
+            price=Decimal("101"),
+            size=10,
+            exchange_timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
+        )
+    )
+    assert len(out) == 1, (
+        f"expected the HARD_EXIT_AGE trigger to be suppressed while the "
+        f"HAZARD_SPIKE exit is still unreconciled; got {len(out)} orders: {out!r}"
+    )
+
+
+def test_pending_exit_guard_clears_after_reconciled_flat():
+    """The per-symbol pending guard must not permanently block future episodes."""
+    _, store, bus, out = _build_controller(
+        seed_positions={"AAPL": (100, 1_000_000_000)},
+    )
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_000_000_000,
+            sequence=1,
+            correlation_id="cid:ep1-spike",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
+    assert len(out) == 1
+
+    # Simulate the exit fill reconciling (flat).  The pending/episode
+    # markers are cleared lazily — on the next trigger evaluation that
+    # observes the flat position (mirroring how ``_emitted_for_episode``
+    # already behaves) — so publish a below-threshold spike while flat to
+    # let the controller observe it before the position reopens.
+    store.update("AAPL", -100, Decimal("100"), timestamp_ns=2_500_000_000)
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_600_000_000,
+            sequence=3,
+            correlation_id="cid:flat-observe",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
+    assert len(out) == 1, "flat position must not emit, but should clear pending state"
+
+    store.update("AAPL", 50, Decimal("102"), timestamp_ns=3_000_000_000)
+
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=3_100_000_000,
+            sequence=2,
+            correlation_id="cid:ep2-spike",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
+    assert len(out) == 2
+    assert out[1].quantity == 50
+
+
 @settings(max_examples=20, deadline=None)
 @given(
     events=st.lists(
