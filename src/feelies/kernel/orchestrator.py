@@ -1696,6 +1696,19 @@ class Orchestrator:
 
         Invariant 11: loosening safety controls requires human
         re-authorization — enforced via mandatory audit_token.
+
+        Audit ESC-1 (risk_engine_audit_2026-07-02.md): stranding at
+        WARNING or BREACH_DETECTED means ``_escalate_risk`` never reached
+        ``_emergency_flatten_all`` at all, so non-zero exposure there is
+        the ordinary, expected state — no precondition beyond the audit
+        token is required.  Stranding at FORCED_FLATTEN is different: that
+        level's own contract is that the emergency flatten was attempted,
+        so a reset from FORCED_FLATTEN additionally requires the book to
+        actually be flat — mirroring the guard ``unlock_from_lockdown``
+        already applies to LOCKED.  Without this, an operator could
+        unknowingly resume NORMAL risk limits (full position/exposure caps
+        re-armed, no pending escalation) while the very exposure that
+        triggered the original breach is still open.
         """
         if self._risk_escalation.state == RiskLevel.NORMAL:
             return
@@ -1703,6 +1716,15 @@ class Orchestrator:
             raise RuntimeError("Risk is LOCKED — use unlock_from_lockdown() instead")
         if self._macro.state in TRADING_MODES:
             raise RuntimeError("Cannot reset risk during active trading — halt first")
+        if self._risk_escalation.state == RiskLevel.FORCED_FLATTEN:
+            exposure = self._positions.total_exposure()
+            if exposure != Decimal("0"):
+                raise RuntimeError(
+                    f"Cannot reset risk from FORCED_FLATTEN: total exposure is "
+                    f"{exposure}, must be 0 — the emergency flatten this level "
+                    f"implies may not have completed. Close positions first, or "
+                    f"drive the SM to LOCKED and use unlock_from_lockdown() instead."
+                )
         self._risk_escalation.reset(
             trigger=f"human_risk_reset:{audit_token}",
         )

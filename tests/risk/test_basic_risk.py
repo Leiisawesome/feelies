@@ -20,6 +20,7 @@ from feelies.core.events import (
 )
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.services.regime_engine import HMM3StateFractional
 
 
@@ -616,6 +617,42 @@ class TestNonPositiveEquityForceFlattens:
         )
         engine = BasicRiskEngine(cfg)
         # Unrealized loss of $120k drives live equity to −$20k.
+        store.update("AAPL", 2000, Decimal("100"))
+        store.update_mark("AAPL", Decimal("40"))
+
+        order = _make_order(symbol="MSFT", side=Side.BUY, quantity=10)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.FORCE_FLATTEN
+        assert "non-positive equity" in verdict.reason
+
+    def test_negative_equity_force_flattens_entry_with_buying_power_wired(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """Audit FS-2 (risk_engine_audit_2026-07-02.md).
+
+        Reproduces the bootstrap-realistic configuration (``bootstrap.py``
+        wires ``BuyingPowerConfig`` unconditionally for every mode): before
+        the FS-2 fix, ``_check_buying_power`` ran ahead of
+        ``_check_exposure_and_drawdown`` inside ``check_order`` and
+        ``buying_power_limit`` returns ``Decimal("0")`` for non-positive
+        equity, so an ENTRY order was rejected with
+        ``INSUFFICIENT_BUYING_POWER`` instead of reaching the intended
+        unconditional ``FORCE_FLATTEN``.  The prior test in this class
+        (``test_negative_equity_force_flattens_even_with_loose_drawdown``)
+        does not catch this because it constructs the engine with no
+        ``buying_power_config`` at all.
+        """
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=1000.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(
+            cfg,
+            buying_power_config=BuyingPowerConfig(account_type="margin_25k"),
+        )
+        # Unrealized loss of $120k drives live equity to -$20k.
         store.update("AAPL", 2000, Decimal("100"))
         store.update_mark("AAPL", Decimal("40"))
 

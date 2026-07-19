@@ -253,7 +253,34 @@ class BasicRiskEngine:
         into the buying-power and gross-exposure caps, so a multi-leg
         intent cannot collectively breach a cap that each leg clears in
         isolation.  Default ``0`` reproduces the standalone-SIGNAL behavior.
+
+        Audit FS-2 (risk_engine_audit_2026-07-02.md): non-positive live
+        equity force-flattens unconditionally, checked first, before the
+        PDT/buying-power/RTH ENTRY gates below.  Those gates return a
+        scoped ``REJECT`` for an entry order — without this check ahead of
+        them, an entry order on a wiped-out account would be rejected
+        one-at-a-time by the buying-power gate (``buying_power_limit``
+        returns ``0`` for non-positive equity) and never reach the
+        emergency-flatten escalation this account state is supposed to
+        trigger.  ``check_signal`` has no ENTRY gate ahead of its own
+        ``_check_exposure_and_drawdown`` call, so it already catches this
+        case at M5 for the standalone SIGNAL walk; this duplicates that
+        catch here so ``check_order`` is unconditionally safe on its own —
+        in particular for the PORTFOLIO per-leg path
+        (``check_sized_intent`` -> ``build_sized_intent_orders``), which
+        calls ``check_order`` directly with no preceding ``check_signal``.
         """
+        current_equity = self._compute_current_equity(positions)
+        if current_equity <= 0:
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.FORCE_FLATTEN,
+                reason=f"non-positive equity: {current_equity} <= 0",
+            )
+
         regime_scale = self._regime_scaling(order.symbol)
         adjusted_max = int(self._config.max_position_per_symbol * regime_scale)
 
