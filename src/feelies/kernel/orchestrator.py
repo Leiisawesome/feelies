@@ -2608,6 +2608,31 @@ class Orchestrator:
         self._tick_timings["risk_check_ns"] = time.perf_counter_ns() - t0
         self._bus.publish(verdict)
 
+        # Inv-11 (position-mgmt audit 2026-07-02, P0): the shared exposure/
+        # drawdown sub-check inside check_signal is not exit-aware — unlike
+        # the position-limit/PDT/RTH/buying-power gates, which already exempt
+        # reduces via signal_reduces / _opens_or_increases.  A reducing
+        # intent (stop-loss, session-flatten, alpha FLAT exit, TRIM) must
+        # never be blocked or shrunk by it — normalize to ALLOW before the
+        # branches below can act on it, mirroring the hazard handler's
+        # reduce-always-submits carve-out (_on_bus_hazard_order).  The true
+        # verdict is still published above for forensics.
+        #
+        # Exception: a genuine FORCE_FLATTEN with a reachable RISK_LOCKDOWN
+        # transition (PAPER/LIVE) is left alone — that path already
+        # escalates into _emergency_flatten_all(), which closes this
+        # position (and every other one) directly, so the reduce is better
+        # served by that uniform, properly-tagged flatten than by also
+        # submitting itself here.  Only BACKTEST_MODE (no reachable
+        # lockdown, so no compensating flatten) and REJECT/SCALE_DOWN (no
+        # escalation semantics at all) are normalized.
+        is_reducing_intent = intent.intent == TradingIntent.EXIT
+        preserves_escalation = verdict.action == RiskAction.FORCE_FLATTEN and (
+            self._macro.can_transition(MacroState.RISK_LOCKDOWN)
+        )
+        if is_reducing_intent and verdict.action != RiskAction.ALLOW and not preserves_escalation:
+            verdict = replace(verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
+
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
         # Macro RISK_LOCKDOWN exists only from PAPER/LIVE (`macro.py`).
         # BACKTEST_MODE cannot transition there — `can_transition` is false
@@ -2805,6 +2830,19 @@ class Orchestrator:
         # ── M6: Pre-submission risk check on concrete order ─────
         order_verdict = self._risk_engine.check_order(order, self._positions)
         self._bus.publish(order_verdict)
+
+        # Inv-11 (position-mgmt audit 2026-07-02, P0): mirror the M5
+        # carve-out above for check_order's shared exposure/drawdown
+        # sub-check, including the escalation exception (see M5's comment).
+        order_preserves_escalation = order_verdict.action == RiskAction.FORCE_FLATTEN and (
+            self._macro.can_transition(MacroState.RISK_LOCKDOWN)
+        )
+        if (
+            intent.intent == TradingIntent.EXIT
+            and order_verdict.action != RiskAction.ALLOW
+            and not order_preserves_escalation
+        ):
+            order_verdict = replace(order_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
 
         if order_verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
@@ -4326,7 +4364,12 @@ class Orchestrator:
             is_short=False,
         )
 
-        # Risk check exit (should always pass — reduces exposure).
+        # Risk check exit.  Inv-11 (position-mgmt audit 2026-07-02, P0):
+        # this leg always closes the existing position in full
+        # (exit_order.quantity == close_qty by construction above), so a
+        # REJECT or shrinking SCALE_DOWN from the shared exposure/drawdown
+        # sub-check may never block or resize it — mirrors the M5/M6
+        # carve-out and the hazard handler's reduce-always-submits rule.
         exit_verdict = self._risk_engine.check_order(
             exit_order,
             self._positions,
@@ -4334,8 +4377,10 @@ class Orchestrator:
         self._bus.publish(exit_verdict)
         if exit_verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                # Same global halt as standalone SIGNAL/order gates — drawdown
-                # breach must not strand the book without emergency flatten.
+                # Same global halt as standalone SIGNAL/order gates —
+                # _emergency_flatten_all() closes this leg (and every other
+                # open position) directly with a properly-tagged flatten,
+                # so defer to it here rather than also submitting this leg.
                 self._escalate_risk(cid)
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
@@ -4344,31 +4389,12 @@ class Orchestrator:
                 )
                 self._finalize_tick(t_wall_start, cid)
                 return
-            # BACKTEST_MODE: simulate without global lockdown (replay parity).
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="reverse_exit_force_flatten_simulated",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        if exit_verdict.action == RiskAction.REJECT:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="reverse_exit_rejected",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        # SCALE_DOWN on the exit verdict is intentionally a no-op here:
-        # the exit OrderRequest was built above with the full
-        # ``close_qty`` and that's what submits.  The scaling factor only
-        # governs the entry leg (computed from the outer signal-level
-        # ``verdict`` below).  Exits must always close the entire
-        # existing position; a partial close would leave the wrong-
-        # direction residual on the book during a reverse.
+            # BACKTEST_MODE has no reachable lockdown transition, so there
+            # is no compensating flatten to rely on — normalize to ALLOW so
+            # this reduce still submits instead of stranding the position.
+            exit_verdict = replace(exit_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
+        elif exit_verdict.action != RiskAction.ALLOW:
+            exit_verdict = replace(exit_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
 
         # ── ENTRY leg: passive LIMIT (or MARKET if passive disabled) ─
         #
@@ -4403,14 +4429,27 @@ class Orchestrator:
             # crystallises the existing opposite position (exit leg); the
             # round-trip cost of *both* legs is paid immediately and is
             # independent of the new signal's edge.  Suppress the entry
-            # (flatten-only) unless the raw edge clears the combined cost.
+            # (flatten-only) unless the edge clears the combined cost.
             # Inv-11: the exit leg below still always submits.
+            #
+            # Position-mgmt audit (2026-07-02) P2: use the same realization-
+            # calibrated edge as B4 (`_signal_passes_edge_cost_gate`) rather
+            # than the raw disclosed estimate, so a reversal is judged on
+            # the same "real" edge its entry leg will be judged on.
+            # `_edge_calibration_factors` defaults to empty -> factor 1.0
+            # for every alpha, so this is byte-identical unless an operator
+            # has explicitly configured per-alpha calibration (parity-
+            # preserving default, mirrors B4's own calibration comment).
+            edge_calibration_factor = self._edge_calibration_factors.get(
+                intent.signal.strategy_id, 1.0
+            )
+            effective_edge_bps = intent.signal.edge_estimate_bps * edge_calibration_factor
             (
                 reversal_cost_bps,
                 reversal_required_bps,
                 reversal_edge_passes,
             ) = self._reversal_passes_combined_edge_gate(
-                edge_estimate_bps=intent.signal.edge_estimate_bps,
+                edge_estimate_bps=effective_edge_bps,
                 symbol=intent.symbol,
                 exit_side=exit_side,
                 exit_qty=close_qty,
@@ -4427,8 +4466,14 @@ class Orchestrator:
             )
 
             if not reversal_edge_passes:
-                edge_bps = intent.signal.edge_estimate_bps
-                deficit_bps = reversal_required_bps - edge_bps
+                deficit_bps = reversal_required_bps - effective_edge_bps
+                calibration_note = (
+                    ""
+                    if edge_calibration_factor >= 1.0
+                    else f"; realization factor={edge_calibration_factor:.3f} "
+                    f"(disclosed {intent.signal.edge_estimate_bps:.2f} -> "
+                    f"{effective_edge_bps:.2f} bps)"
+                )
                 self._bus.publish(
                     Alert(
                         timestamp_ns=self._clock.now_ns(),
@@ -4439,16 +4484,17 @@ class Orchestrator:
                         alert_name="reversal_edge_insufficient",
                         message=(
                             f"Reversal entry suppressed (flatten-only): "
-                            f"edge_bps={edge_bps:.4f} below required "
+                            f"edge_bps={effective_edge_bps:.4f} below required "
                             f"{reversal_required_bps:.4f} "
                             f"({self._reversal_min_edge_cost_multiplier}× combined "
                             f"round-trip cost {reversal_cost_bps:.4f}); "
                             f"deficit={deficit_bps:.4f} bps "
                             f"(symbol={intent.symbol!r}, "
-                            f"strategy_id={intent.strategy_id!r})."
+                            f"strategy_id={intent.strategy_id!r})"
+                            f"{calibration_note}."
                         ),
                         context={
-                            "edge_bps": edge_bps,
+                            "edge_bps": effective_edge_bps,
                             "required_bps": reversal_required_bps,
                             "deficit_bps": deficit_bps,
                             "symbol": intent.symbol,
@@ -4695,15 +4741,27 @@ class Orchestrator:
         seq = self._seq.next()
         order_id = derive_order_id(f"{correlation_id}:{seq}")
 
-        quantity = round(intent.target_quantity * verdict.scaling_factor)
-        if quantity <= 0:
-            return None, "rounded_quantity_after_risk_scaling_le_zero"
-
         # F2: Exits and stop-losses bypass min_order_shares — you must be
         # able to close any position regardless of size (Inv-11 fail-safe).
+        # Inv-11 (position-mgmt audit 2026-07-02, P0): the same carve-out
+        # applies to risk-scaling — a reducing intent's quantity is never
+        # shrunk by ``verdict.scaling_factor`` (e.g. a SCALE_DOWN verdict
+        # from the shared exposure/drawdown check), only capped/derived
+        # ones are.  Defense in depth: callers are already expected to
+        # normalize the verdict to ALLOW/1.0 for reduces (see M5/M6 in
+        # ``_process_tick_inner``), but this function is independently
+        # unit-tested and must hold the invariant even when handed a raw,
+        # un-normalized verdict directly.
         is_exit_or_stop = (
             intent.intent == TradingIntent.EXIT or intent.signal.strategy_id == "__stop_exit__"
         )
+        quantity = (
+            intent.target_quantity
+            if is_exit_or_stop
+            else round(intent.target_quantity * verdict.scaling_factor)
+        )
+        if quantity <= 0:
+            return None, "rounded_quantity_after_risk_scaling_le_zero"
         if not is_exit_or_stop and quantity < self._min_order_shares:
             return None, "quantity_below_platform_min_order_shares"
 
@@ -4799,6 +4857,11 @@ class Orchestrator:
                 # ``__stop_exit__`` → ``STOP_EXIT``) so the fill model prices
                 # the stop with slippage / depleted depth; "" for ordinary
                 # entries and discretionary exits leaves the fill unchanged.
+                # Restored 2026-07-02 (position-mgmt audit P1): this line
+                # was dropped by a merge-conflict cleanup on 2026-06-24
+                # (commit 4a90cd8) that resolved a duplicate `reason=` kwarg
+                # SyntaxError by deleting the wrong duplicate.
+                reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,

@@ -87,9 +87,14 @@ class DesiredPosition:
     is redundant with ``sign(target_qty)``.  The forward-looking planner
     keys on ``target_qty``; only the legacy adapter consults ``direction``
     to reproduce the legacy clamp faithfully.
-    ``mandatory`` marks a risk-driven desired (stop / hazard / flatten /
-    session-flat) that the planner must satisfy with the cost gate forced
-    open (Inv-11).
+
+    A risk-driven desired (stop / hazard / flatten / session-flat) is
+    always FLAT (``direction == 0``), which structurally never reaches the
+    P3b trim cost gate below — :meth:`TargetPositionManager.plan` only
+    overrides the legacy hold on a same-direction shrink, so a FLAT desired
+    always takes the unconditional legacy-EXIT path (Inv-11).  There is no
+    separate ``mandatory`` marker: the cost gate is forced open by
+    construction, not by an explicit flag.
     """
 
     symbol: str
@@ -99,7 +104,6 @@ class DesiredPosition:
     urgency: float = 0.5
     source: str = ""
     reason: str = ""
-    mandatory: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
