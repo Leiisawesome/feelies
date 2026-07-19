@@ -479,6 +479,65 @@ def test_pending_exit_guard_clears_after_reconciled_flat():
     assert out[1].quantity == 50
 
 
+def test_pending_exit_guard_clears_on_reopen_without_flat_observation():
+    """The per-symbol pending guard is scoped to its open episode.
+
+    Regression for the HZ-1 gate: when a symbol flattens and reopens
+    through a path that never runs a hazard evaluation while flat (manual
+    or emergency flatten, or a fill that never triggers spike/trade
+    evaluation), the pending marker from the *previous* episode must not
+    silently block hazard exits on the *new* episode.  ``_pending_exit_symbols``
+    is symbol-wide (unlike the per-reason ``_emitted_for_episode``), so the
+    stale marker would otherwise block *every* reason — here a
+    ``HARD_EXIT_AGE`` trigger on the fresh episode, which pre-HZ-1 would
+    still have fired.
+    """
+    _, store, bus, out = _build_controller(
+        seed_positions={"AAPL": (100, 1_000_000_000)},
+    )
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_000_000_000,
+            sequence=1,
+            correlation_id="cid:ep1-spike",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
+    assert len(out) == 1
+    assert out[0].reason == "HAZARD_SPIKE"
+
+    # Flatten and reopen without any hazard evaluation observing the flat
+    # position (the guard was never cleared lazily).
+    store.update("AAPL", -100, Decimal("100"), timestamp_ns=2_500_000_000)
+    store.update("AAPL", 50, Decimal("102"), timestamp_ns=3_000_000_000)
+
+    # A Trade well past the hard-exit-age cap (600s) on the new episode must
+    # emit a HARD_EXIT_AGE exit — the stale HAZARD_SPIKE pending marker from
+    # the previous episode must not suppress it.
+    bus.publish(
+        Trade(
+            timestamp_ns=3_000_000_000 + 700 * 1_000_000_000,
+            sequence=2,
+            correlation_id="cid:ep2-trade",
+            source_layer="DATA",
+            symbol="AAPL",
+            price=Decimal("102"),
+            size=10,
+            exchange_timestamp_ns=3_000_000_000 + 700 * 1_000_000_000,
+        )
+    )
+    assert len(out) == 2, "new open episode must not be blocked by a stale pending marker"
+    assert out[1].reason == "HARD_EXIT_AGE"
+    assert out[1].quantity == 50
+
+
 @settings(max_examples=20, deadline=None)
 @given(
     events=st.lists(

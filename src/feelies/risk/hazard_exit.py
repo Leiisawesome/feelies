@@ -192,13 +192,15 @@ class HazardExitController:
         # strategy's policy on the same symbol — is not suppressed by it and
         # would otherwise re-emit a second full-size close against the same
         # stale (pre-fill) quantity, netting to a position reversal once both
-        # fill.  This set is the single per-*symbol* gate: cleared exactly
-        # where ``_emitted_for_episode`` entries are (see
-        # ``_clear_episode_if_flat``), so it shares that mechanism's known
-        # residual risk (a rejected/never-filled exit leaves the symbol
-        # without further hazard protection until it flattens by some other
-        # means) rather than introducing a new one.
-        self._pending_exit_symbols: set[str] = set()
+        # fill.  This is the single per-*symbol* gate, mapping the symbol to
+        # the ``opened_at_ns`` of the open episode the in-flight exit belongs
+        # to.  Scoping it to the episode means a *new* open (a different
+        # ``opened_at_ns``) is never blocked by a marker left over from a
+        # prior episode that flattened without a hazard evaluation observing
+        # the flat (e.g. a manual/emergency flatten) — the stale pre-fill
+        # snapshot the guard protects against only exists within the episode
+        # that emitted the exit.
+        self._pending_exit_symbols: dict[str, int | None] = {}
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -295,20 +297,22 @@ class HazardExitController:
         if position.quantity == 0:
             return
 
+        opened = self._position_store.opened_at_ns(symbol)
+
         # Audit HZ-1: a *different* reason (or a different strategy's
         # policy) already has an exit in flight for this symbol whose fill
         # has not yet reconciled into ``position_store`` — ``quantity``
         # below would be computed from the same stale, pre-fill snapshot,
         # so emitting here would double the closing quantity rather than
-        # exit once.  Wait for that order to resolve (position store either
-        # reflects the fill, clearing this via ``_clear_episode_if_flat``,
-        # or the position never flattens and no further hazard exit fires
-        # for this symbol — the same residual risk ``_emitted_for_episode``
-        # already accepts for a same-reason retry).
+        # exit once.  This only applies while the position is still in the
+        # *same* open episode as the in-flight exit; once the symbol
+        # reopens (a different ``opened_at_ns``) the stale marker is dropped
+        # so a new episode is not silently left without hazard protection.
         if symbol in self._pending_exit_symbols:
-            return
+            if self._pending_exit_symbols[symbol] == opened:
+                return
+            del self._pending_exit_symbols[symbol]
 
-        opened = self._position_store.opened_at_ns(symbol)
         # Min-age safeguard only applies to hazard-spike triggers; the
         # hard-exit-age trigger has already reasoned about age.
         if reason == HAZARD_EXIT_REASON_SPIKE and opened is not None:
@@ -335,7 +339,7 @@ class HazardExitController:
             reason=reason,
         )
         self._emitted_for_episode.add(key)
-        self._pending_exit_symbols.add(symbol)
+        self._pending_exit_symbols[symbol] = opened
         self._bus.publish(order)
         _logger.info(
             "HazardExitController emitted %s exit for %s (strategy=%s, qty=%d, side=%s)",
@@ -360,7 +364,7 @@ class HazardExitController:
         position = self._position_store.get(symbol)
         if position.quantity == 0:
             self._emitted_for_episode.discard((strategy_id, symbol, reason))
-            self._pending_exit_symbols.discard(symbol)
+            self._pending_exit_symbols.pop(symbol, None)
 
 
 __all__ = [
