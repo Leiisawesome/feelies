@@ -697,6 +697,23 @@ class TestRegimeMissingDataFailsSafe:
         engine._regime_scale_map["normal"] = 2.0
         assert engine._regime_scaling("AAPL") <= 1.0
 
+    def test_nan_posterior_fails_safe_to_min_scale_not_baseline(self) -> None:
+        """Audit FS (risk_engine_audit_2026-07-02.md, §3.2).
+
+        A third-party ``RegimeEngine`` that fails to sanitize its own
+        posterior (the shipped ``HMM3StateFractional`` always does) could
+        produce a NaN EV.  ``min(1.0, float("nan"))`` evaluates to ``1.0``
+        under Python's comparison semantics — the *unscaled baseline*, not
+        the intended fail-safe minimum.  Directly seeding ``_posteriors``
+        bypasses ``posterior()``'s own sanitization to simulate exactly
+        that unsanitized-engine scenario.
+        """
+        regime = HMM3StateFractional()
+        regime._posteriors["AAPL"] = [float("nan"), 0.0, 0.0]
+        cfg = RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
+        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        assert engine._regime_scaling("AAPL") == engine._regime_scale_default
+
 
 class TestSizedIntentScaleDownDecimal:
     def test_scale_down_quantity_uses_half_up_not_float_truncation(

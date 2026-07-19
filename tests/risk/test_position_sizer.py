@@ -110,6 +110,29 @@ class TestRegimeFactor:
         # 100000 * 10% (capital_allocation_pct) = 10000; 10000 * 1.0 / 100 = 100.
         assert qty == 100
 
+    def test_nan_posterior_fails_safe_to_min_factor_not_baseline(
+        self, budget: AlphaRiskBudget
+    ) -> None:
+        """Audit FS (risk_engine_audit_2026-07-02.md, §3.2).
+
+        Mirrors ``test_basic_risk.py``'s
+        ``test_nan_posterior_fails_safe_to_min_scale_not_baseline``: a
+        NaN EV must fail to the minimum configured factor, not to ``1.0``
+        (which is what ``min(1.0, float("nan"))`` evaluates to).
+        """
+        regime = HMM3StateFractional()
+        regime._posteriors["AAPL"] = [float("nan"), 0.0, 0.0]
+        sizer = BudgetBasedSizer(regime_engine=regime)
+        qty = sizer.compute_target_quantity(
+            _make_signal(strength=1.0),
+            budget,
+            symbol_price=Decimal("100"),
+            account_equity=Decimal("100000"),
+        )
+        # min(vol_breakout=0.5, compression_clustering=0.75, normal=1.0) = 0.5
+        # 100000 * 10% = 10000; 10000 * 0.5 / 100 = 50.
+        assert qty == 50
+
 
 class TestEdgeCases:
     def test_zero_price_returns_zero(self, budget: AlphaRiskBudget) -> None:

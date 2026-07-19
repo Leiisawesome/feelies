@@ -17,6 +17,7 @@ Invariants preserved:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -857,6 +858,14 @@ class BasicRiskEngine:
             posteriors[i] * self._regime_scale_map.get(state_names[i], default)
             for i in range(len(posteriors))
         )
+        # Audit FS (risk_engine_audit_2026-07-02.md, §3.2): a non-finite EV
+        # (NaN/inf) can only originate from a third-party ``RegimeEngine``
+        # that fails to sanitize its own posterior — ``min(1.0, nan)``
+        # evaluates to ``1.0`` under Python's comparison semantics, which
+        # would silently fail to the *unscaled baseline* rather than the
+        # intended fail-safe minimum.  Treat non-finite EV as missing data.
+        if not math.isfinite(ev):
+            return default
         # Audit P1 R-1: enforce Inv-11 at the value level — never amplify
         # position limits above the 1.0 baseline regardless of operator-
         # supplied scale map.  EV may still drop arbitrarily low under
