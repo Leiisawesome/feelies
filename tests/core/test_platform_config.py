@@ -37,7 +37,6 @@ class TestDefaults:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.account_equity == 50_000.0
 
-<<<<<<< HEAD
     def test_default_composition_cap_pcts_match_turnover_optimizer_defaults(self) -> None:
         # Composition audit 2026-07-02 P2: these were previously hardcoded
         # constructor defaults in TurnoverOptimizer only; defaults here must
@@ -46,7 +45,7 @@ class TestDefaults:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.composition_gross_cap_pct == 2.0
         assert cfg.composition_per_name_cap_pct == 0.05
-=======
+
     def test_ingest_health_gates_default_fail_open_by_design(self) -> None:
         """DI-04 (data ingestion audit 2026-07-02): these two dataclass
         defaults must stay False.  ``backtest_enforce_ingest_terminal_health``
@@ -63,7 +62,6 @@ class TestDefaults:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.backtest_enforce_ingest_terminal_health is False
         assert cfg.require_healthy_disk_cache_manifests is False
->>>>>>> origin/main
 
 
 # ── Validation ──────────────────────────────────────────────────────

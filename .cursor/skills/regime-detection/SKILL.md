@@ -47,10 +47,12 @@ Additionally:
    `regime_posteriors` (bound to `current_state`) and
    `regime_state_names` — never the engine itself.
 
-4. **Fail-safe default** — when no regime data is available (engine
-   absent, symbol never updated, or empty posteriors), all consumers
-   default to neutral scaling (`1.0×`). Regime state never amplifies
-   exposure beyond baseline (Inv-11).
+4. **Fail-safe default** — two cases (audit R-3; see risk-engine skill):
+   - **`regime_engine is None`** — operator opted out; consumers stay at
+     `1.0×` (no regime scaling).
+   - **Engine configured but no committed posterior** (warm-up, symbol never
+     filtered, empty posteriors) — tighten to **min(configured scales)**, not
+     `1.0×`. Regime state never amplifies exposure above baseline (Inv-11).
 
 5. **Determinism** — same quote sequence produces identical posterior
    sequences. No randomness, no external I/O in `posterior()`.
@@ -320,7 +322,8 @@ Reads `current_state(symbol)` in `_regime_scaling()`.  Computes an
 hard argmax-name lookup (an earlier draft of this doc described
 argmax; the implementation has always smoothed via EV to avoid
 limit thrash on diffuse posteriors).  Unknown state names default to
-the smallest configured scale (fail-safe).  Missing data → `1.0×`.
+the smallest configured scale (fail-safe).  No engine → `1.0×`; engine
+configured but missing posterior → min scale (fail-safe).
 
 Audit P1 R-1 also enforces Inv-11 at the value level: the returned
 factor is clamped to ``min(EV, 1.0)`` so a mis-configured scale map
@@ -330,7 +333,8 @@ can only reduce exposure, never amplify above the baseline.
 
 `BudgetBasedSizer._get_regime_factor()` uses the same EV-over-
 posteriors smoothing as the risk engine (`Σ pᵢ · scaleᵢ`) and the
-same `min(EV, 1.0)` Inv-11 clamp.  Missing data defaults to `1.0×`.
+same `min(EV, 1.0)` Inv-11 clamp.  Same missing-data policy as above
+(no engine → `1.0×`; configured engine without posterior → min scale).
 The two consumers operate **in series** — the sizer proposes a
 quantity scaled by EV, the risk engine then caps the *limit* by EV
 — so the scaling never compounds.

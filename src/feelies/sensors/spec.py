@@ -98,6 +98,15 @@ class SensorSpec:
     ``throttled_ms`` on a stateful sensor without this flag is
     undefined behaviour (H4 / M4 audit).
     """
+    stateless_throttle_ok: bool = False
+    """Operator acknowledgment that a ``throttled_ms`` + ``stateful=False``
+    pair is intentional for a *truly* non-accumulator sensor.
+
+    Load-time / warning only — the registry ignores this flag.  YAML
+    loaders set it when ``stateful: false`` is written explicitly next
+    to a non-null throttle (affirmative "I checked: no accumulator").
+    Omitting ``stateful`` while setting ``throttled_ms`` still warns.
+    """
 
     def __post_init__(self) -> None:
         if not self.sensor_id:
@@ -136,13 +145,26 @@ class SensorSpec:
         # throttle window.  The registry skips ``update()`` entirely for
         # ``stateful=False`` sensors inside the window, so confirm the sensor
         # truly carries no state across events before relying on this.
-        if self.throttled_ms is not None and self.throttled_ms > 0 and not self.stateful:
+        #
+        # Silence path: ``stateless_throttle_ok=True`` (YAML: explicit
+        # ``stateful: false`` beside ``throttled_ms``) means the operator
+        # affirmed non-accumulator semantics — keep the footgun loud for
+        # the default/omitted case.
+        if (
+            self.throttled_ms is not None
+            and self.throttled_ms > 0
+            and not self.stateful
+            and not self.stateless_throttle_ok
+        ):
             _logger.warning(
                 "SensorSpec(%r): throttled_ms=%d is set but stateful=False; "
                 "update() will be SKIPPED inside the throttle window.  This is "
                 "only safe for a truly stateless sensor — any accumulator "
                 "(EWMA/Hawkes/Kyle/rolling-window) MUST set stateful=True or "
-                "skipped events will bias the estimator (H4/M4 audit).",
+                "skipped events will bias the estimator (H4/M4 audit).  "
+                "To silence for a verified-stateless sensor, set "
+                "stateful: false explicitly in YAML (or "
+                "stateless_throttle_ok=True in code).",
                 self.sensor_id,
                 self.throttled_ms,
             )

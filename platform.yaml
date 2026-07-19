@@ -423,12 +423,13 @@ sensor_specs:
     min_history: 0
     # Audit sensor_audit_2026-07-02 P2: update() is a pure function of
     # (timestamp, symbol, injected calendar) with no state to bias — the
-    # stateful=False default (skip update() entirely inside the window) is
+    # stateful=False path (skip update() entirely inside the window) is
     # therefore safe here, unlike an accumulator. Cuts tick-path overhead on
     # a sensor whose output is otherwise constant between calendar-window
     # boundaries; the platform only reads it at horizon boundaries
     # (30-1800s), so up to 1s of added latency on a boundary crossing is
-    # negligible.
+    # negligible. Explicit ``stateful: false`` (not omission) acknowledges
+    # the SensorSpec P1-D throttle guard so boot stays quiet.
     throttled_ms: 1000
     stateful: false
 

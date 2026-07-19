@@ -13,6 +13,10 @@ SIGNAL → PORTFOLIO and cross-cutting concerns.
 | Layer topology & state machines | [system-architect](system-architect/SKILL.md) | `src/feelies/kernel/` |
 
 Always-applied platform rules live in `.cursor/rules/platform-invariants.mdc`.
+Coding behavior rules live in `.cursor/rules/karpathy-guidelines.mdc`.
+Operator commands, test/lint entry points, and shared gotchas live in
+[`AGENTS.md`](../../AGENTS.md) — do not duplicate those tables in skills or
+other agent config files.
 
 ---
 

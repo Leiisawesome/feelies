@@ -1905,21 +1905,20 @@ class PlatformConfig:
         # estimator only on emissions — biasing it — with no way for an
         # operator to opt into the documented unbiased path (audit P1-2 /
         # SensorSpec.stateful contract).  Plumb it through now.
+        #
+        # Explicit ``stateful: false`` next to a non-null throttle is the
+        # operator acknowledgment that the sensor is truly non-accumulator
+        # (e.g. scheduled_flow_window).  That silences SensorSpec's P1-D
+        # warning via ``stateless_throttle_ok``.  Omitting the key still
+        # warns — the footgun for "added throttle, forgot accumulator".
+        stateful_key_present = "stateful" in entry
         stateful = bool(entry.get("stateful", False))
-        if throttled_ms is not None and throttled_ms > 0 and not stateful:
-            # Surface the footgun loudly rather than silently biasing the
-            # estimator.  We keep this a warning (not a hard error) so
-            # genuinely stateless throttled sensors remain configurable.
-            logger.warning(
-                "%s: sensor %r sets throttled_ms=%d but stateful=False; "
-                "if this sensor is an accumulator (EWMA / Kyle-lambda / "
-                "Hawkes) its estimator will be biased because update() is "
-                "skipped inside the throttle window.  Set stateful: true "
-                "for accumulator sensors (SensorSpec.stateful contract).",
-                source,
-                sensor_id,
-                throttled_ms,
-            )
+        stateless_throttle_ok = (
+            throttled_ms is not None
+            and throttled_ms > 0
+            and stateful_key_present
+            and not stateful
+        )
 
         return SensorSpec(
             sensor_id=sensor_id,
@@ -1931,4 +1930,5 @@ class PlatformConfig:
             min_history=min_history,
             throttled_ms=throttled_ms,
             stateful=stateful,
+            stateless_throttle_ok=stateless_throttle_ok,
         )
