@@ -82,7 +82,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 5.0
-    min: 0.0
+    min: 5.0
     max: 30.0
     description: |
       One-way cost floor (bps). Audit P1-2: self-suppress entries whose
@@ -90,7 +90,9 @@ parameters:
       (half_spread + impact + fee = 2.0 + 2.0 + 1.0 = 5.0). The
       authoritative round-trip Inv-12 bar (~1.5x round-trip ≈ 7.5 bps)
       is enforced at runtime by the B4 gate. Keep aligned with
-      cost_arithmetic.
+      cost_arithmetic. Audit P1 2026-07-02 (G12): ``min`` is pinned to
+      the disclosed ``cost_total_bps`` so no config override can weaken
+      this self-suppression below the alpha's own disclosed cost.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30
@@ -143,6 +145,17 @@ trend_mechanism:
 # the 0.30 declared here was silently ignored and the controller used
 # its 0.85 default.  The loader still accepts the legacy name with a
 # WARN, but use the canonical spelling in new specs.
+# Audit regime_audit_2026-07-02 §7.3/§9: ``min_age_seconds`` is left at
+# the controller default (30s) — numerically equal to this alpha's own
+# horizon_seconds.  A hazard spike on a position younger than 30s is
+# therefore never actionable via this path; by the time a position clears
+# min_age_seconds it has already lived through one regular horizon-boundary
+# gate re-check, which (via the correlated spread_z_30d / P(normal) off
+# clauses) would typically have already caught the same deterioration.  The
+# hazard path is thus effectively a backstop for a position held past its
+# first boundary, not a replacement for the boundary-driven exit — this is
+# an accepted design tradeoff, not a bug; lower min_age_seconds explicitly
+# if sub-horizon hazard responsiveness is wanted instead.
 hazard_exit:
   enabled: true
   hazard_score_threshold: 0.30

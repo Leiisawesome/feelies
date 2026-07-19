@@ -147,6 +147,73 @@ def test_two_replays_produce_identical_pnl_hash() -> None:
     assert hash_a == hash_b
 
 
+def test_orchestrator_position_update_mapping_matches_this_baselines_assumption() -> None:
+    """Cross-check (audit-2026-07-02 P2 #11): this file's ``_replay()`` hand-
+    mirrors ``orchestrator.py``'s ``PositionUpdate`` field mapping
+    (``avg_price`` <- ``avg_entry_price``, ``cost_bps`` <- the fill's
+    disclosed cost, etc.) rather than calling it, so a future change to the
+    *real* mapping could silently diverge from what this baseline assumes.
+
+    Drives one real BUY fill through the actual ``Orchestrator`` and asserts
+    the ``PositionUpdate`` it emits equals the same mapping formula applied
+    directly to the (shared-reference) ``MemoryPositionStore`` the fill
+    mutated — i.e. this test calls production code and an independent
+    formula and compares them, instead of comparing two copies of the same
+    hand-written formula.
+    """
+    from feelies.bus.event_bus import EventBus
+    from feelies.core.clock import SimulatedClock
+    from feelies.core.events import RiskAction, SignalDirection
+    from feelies.execution.backend import ExecutionBackend
+    from feelies.execution.backtest_router import BacktestOrderRouter
+    from feelies.kernel.orchestrator import Orchestrator
+    from feelies.storage.memory_event_log import InMemoryEventLog
+
+    from tests.kernel.test_orchestrator import (
+        _NoOpMetricCollector,
+        _StubMarketData,
+        _StubRiskEngine,
+        _boot_to_backtest,
+        _make_quote,
+        _make_signal,
+        _publish_signal_on_quote,
+    )
+
+    clock = SimulatedClock(start_ns=1000)
+    bus = EventBus()
+    store = MemoryPositionStore()
+    bt_router = BacktestOrderRouter(clock=clock)
+    orch = Orchestrator(
+        clock=clock,
+        bus=bus,
+        backend=ExecutionBackend(
+            market_data=_StubMarketData(), order_router=bt_router, mode="BACKTEST"
+        ),
+        risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+        position_store=store,
+        event_log=InMemoryEventLog(),
+        metric_collector=_NoOpMetricCollector(),
+    )
+    _boot_to_backtest(orch)
+
+    updates: list[PositionUpdate] = []
+    bus.subscribe(PositionUpdate, updates.append)  # type: ignore[arg-type]
+
+    _publish_signal_on_quote(bus, _make_signal(_make_quote(), SignalDirection.LONG))
+    q = _make_quote(ts=1000, seq=1)
+    bt_router.on_quote(q)
+    orch._process_tick(q)
+
+    assert updates, "no PositionUpdate emitted — cannot cross-check the mapping"
+    pu = updates[-1]
+    pos = store.get(pu.symbol)
+    assert pu.quantity == pos.quantity
+    assert pu.avg_price == pos.avg_entry_price
+    assert pu.realized_pnl == pos.realized_pnl
+    assert pu.unrealized_pnl == pos.unrealized_pnl
+    assert pu.cumulative_fees == pos.cumulative_fees
+
+
 def test_realized_and_unrealized_pnl_are_nonzero_somewhere() -> None:
     """Guard against a vacuous baseline: the scenario must exercise PnL."""
     store = MemoryPositionStore()

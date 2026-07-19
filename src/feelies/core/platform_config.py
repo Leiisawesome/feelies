@@ -15,6 +15,7 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import logging
@@ -56,7 +57,7 @@ class OperatingMode(Enum):
     LIVE = auto()
 
 
-@dataclass(kw_only=True)
+@dataclass(frozen=True, kw_only=True)
 class PlatformConfig:
     """Concrete configuration for the trading platform.
 
@@ -1026,8 +1027,12 @@ class PlatformConfig:
             "symbols": sorted(self.symbols),
             "mode": self.mode.name,
             "alpha_spec_dir": self.alpha_spec_dir.name if self.alpha_spec_dir else None,
+            # Basename-only, like every other Path field above: two distinct
+            # alpha_specs entries that share a basename across directories
+            # collide in the checksum. Accepted tradeoff, not a bug — see the
+            # Path-normalisation rationale above.
             "alpha_specs": sorted(p.name for p in self.alpha_specs),
-            "parameter_overrides": self.parameter_overrides,
+            "parameter_overrides": copy.deepcopy(self.parameter_overrides),
             "regime_engine": self.regime_engine,
             "regime_engine_options": dict(self.regime_engine_options),
             "data_dir": self.data_dir.name if self.data_dir else None,
@@ -1377,6 +1382,19 @@ class PlatformConfig:
         if maker_exch_raw is None and legacy_exch is not None:
             maker_exch_raw = legacy_exch
 
+        # cost_passive_adverse_selection_bps / cost_adverse_selection_drain_bps
+        # and cost_through_fill_adverse_selection_bps / cost_adverse_selection_through_bps
+        # are current-name/legacy-name pairs that must resolve to the same
+        # value regardless of which name the operator used. Resolve each pair
+        # to a single raw value with an `is None` check (not `or`) so an
+        # explicit 0.0 override is preserved instead of being treated as unset.
+        passive_adverse_raw = data.get("cost_passive_adverse_selection_bps")
+        if passive_adverse_raw is None:
+            passive_adverse_raw = data.get("cost_adverse_selection_drain_bps")
+        through_adverse_raw = data.get("cost_through_fill_adverse_selection_bps")
+        if through_adverse_raw is None:
+            through_adverse_raw = data.get("cost_adverse_selection_through_bps")
+
         regime_cal_raw = data.get("regime_calibration_max_quotes")
         if regime_cal_raw is None:
             regime_calibration_max_quotes = None
@@ -1535,24 +1553,16 @@ class PlatformConfig:
                 maker_exch_raw if maker_exch_raw is not None else 0.0
             ),
             cost_passive_adverse_selection_bps=float(
-                data.get("cost_passive_adverse_selection_bps")
-                or data.get("cost_adverse_selection_drain_bps")
-                or 2.0
+                passive_adverse_raw if passive_adverse_raw is not None else 2.0
             ),
             cost_through_fill_adverse_selection_bps=float(
-                data.get("cost_through_fill_adverse_selection_bps")
-                or data.get("cost_adverse_selection_through_bps")
-                or 5.0
+                through_adverse_raw if through_adverse_raw is not None else 5.0
             ),
             cost_adverse_selection_through_bps=float(
-                data.get("cost_adverse_selection_through_bps")
-                or data.get("cost_through_fill_adverse_selection_bps")
-                or 5.0
+                through_adverse_raw if through_adverse_raw is not None else 5.0
             ),
             cost_adverse_selection_drain_bps=float(
-                data.get("cost_adverse_selection_drain_bps")
-                or data.get("cost_passive_adverse_selection_bps")
-                or 2.0
+                passive_adverse_raw if passive_adverse_raw is not None else 2.0
             ),
             cost_sell_regulatory_bps=float(data.get("cost_sell_regulatory_bps", 0.5)),
             cost_stress_multiplier=float(data.get("cost_stress_multiplier", 1.0)),

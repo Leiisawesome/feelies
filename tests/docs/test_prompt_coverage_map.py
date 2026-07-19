@@ -127,6 +127,7 @@ _FILE_OWNERS: dict[str, str] = {
     "execution/tick_size.py": "audit_execution_fills",
     "execution/regulatory/borrow_availability.py": "audit_execution_fills",
     "execution/regulatory/pdt_constraint.py": "audit_execution_fills",
+    "execution/realism_profile.py": "audit_execution_fills",
     # ── cli/ ────────────────────────────────────────────────────────
     "cli/backtest.py": "audit_harness_cli",
     "cli/env.py": "audit_harness_cli",

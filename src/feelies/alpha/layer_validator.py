@@ -162,7 +162,20 @@ _FAMILY_HALF_LIFE_RANGES_SECONDS: dict[str, tuple[int, int]] = {
 
 
 _FAMILY_FINGERPRINT_SENSORS: dict[str, tuple[str, ...]] = {
-    "KYLE_INFO": ("kyle_lambda_60s", "micro_price"),
+    # sensor_audit_2026-07-02 P1: ``book_imbalance`` added alongside
+    # ``kyle_lambda_60s`` / ``micro_price``.  It is algebraically the
+    # level-invariant transform of the micro-price deviation from mid
+    # (``(micro - mid)/spread = book_imbalance / 2`` —
+    # ``sensors/impl/book_imbalance.py:11-21``), so it is a genuine,
+    # independently-computed KYLE_INFO L1 signature in its own right, not a
+    # derivative of ``micro_price``.  Without this entry, an alpha that reads
+    # ``book_imbalance`` but not ``micro_price`` (e.g. ``sig_benign_midcap_v1``)
+    # had no way to satisfy rule 5 honestly — it either declared a
+    # ``micro_price``/``kyle_lambda_60s`` dependency it never read (a cosmetic
+    # fingerprint rule 10 cannot detect, since rule 10 only checks
+    # ``l1_signature_sensors`` against ``depends_on_sensors``, not against
+    # what ``evaluate()`` actually reads) or failed to load.
+    "KYLE_INFO": ("kyle_lambda_60s", "micro_price", "book_imbalance"),
     "INVENTORY": ("quote_replenish_asymmetry",),
     "HAWKES_SELF_EXCITE": ("hawkes_intensity",),
     "LIQUIDITY_STRESS": ("vpin_50bucket", "realized_vol_30s"),
@@ -172,6 +185,13 @@ _FAMILY_FINGERPRINT_SENSORS: dict[str, tuple[str, ...]] = {
 
 _HORIZON_RATIO_FLOOR: float = 0.5
 _HORIZON_RATIO_CEILING: float = 4.0
+# sensor_audit_2026-07-02 P2: soft warning band around the hard G16 rule-3
+# bounds above. Purely advisory (logs, never raises, never blocks a load) —
+# a horizon/half-life ratio landing this close to [floor, ceiling] means a
+# small future expected_half_life_seconds recalibration (e.g. from a decay
+# re-study) could silently flip a currently-passing alpha into a rule-3
+# rejection on its next load with no advance notice.
+_HORIZON_RATIO_WARN_MARGIN: float = 0.05
 
 
 _STRESS_FAMILY: str = "LIQUIDITY_STRESS"
@@ -750,12 +770,44 @@ class LayerValidator:
                 f"{type(block).__name__}"
             )
         try:
-            CostArithmetic.from_spec(
+            cost = CostArithmetic.from_spec(
                 alpha_id=str(spec.get("alpha_id", "<unknown>")),
                 spec=block,
             )
         except CostArithmeticError as exc:
             raise LayerValidationError(f"{source}: G12 — {exc}") from exc
+
+        # Audit P1 2026-07-02: when the spec declares a numeric
+        # ``parameters.cost_floor_bps`` entry — the platform-wide convention
+        # every production SIGNAL alpha uses to self-suppress an entry whose
+        # computed edge doesn't clear the disclosed one-way cost inside its
+        # own ``evaluate()`` — its ``min`` bound must not sit below the
+        # disclosed ``cost_total_bps``.  Without this, a config
+        # ``parameter_overrides`` value inside the declared ``[min, max]``
+        # range could silently drop the floor below the alpha's own
+        # disclosed cost with no gate noticing; the runtime B4 gate would
+        # become the sole backstop instead of a second, independent one.
+        # Purely structural (only fires on the ``cost_floor_bps`` naming
+        # convention) so alphas with no such parameter are unaffected.
+        params_block = spec.get("parameters")
+        if not isinstance(params_block, dict):
+            return
+        floor_def = params_block.get("cost_floor_bps")
+        if not isinstance(floor_def, dict):
+            return
+        floor_min_raw = floor_def.get("min")
+        if isinstance(floor_min_raw, bool) or not isinstance(floor_min_raw, (int, float)):
+            return
+        floor_min = float(floor_min_raw)
+        if floor_min < cost.cost_total_bps:
+            raise LayerValidationError(
+                f"{source}: G12 — parameters.cost_floor_bps.min={floor_min!r} "
+                f"is below cost_arithmetic.cost_total_bps={cost.cost_total_bps!r}; "
+                f"a config override inside the declared bound could weaken "
+                f"the alpha's self-suppression below its own disclosed cost. "
+                f"Raise cost_floor_bps.min to at least "
+                f"{cost.cost_total_bps!r}."
+            )
 
     def _check_g13_warm_up_documentation(self, spec: dict[str, Any], source: str) -> None:
         """G13 — every feature must declare ``warm_up:`` (events or duration).
@@ -947,6 +999,24 @@ class LayerValidator:
                 f"{source}: G16 rule 3 — horizon_seconds/expected_half_life_seconds "
                 f"= {horizon}/{half_life} = {ratio:.3f}; must be in "
                 f"[{_HORIZON_RATIO_FLOOR}, {_HORIZON_RATIO_CEILING}]"
+            )
+        if (
+            ratio <= _HORIZON_RATIO_FLOOR + _HORIZON_RATIO_WARN_MARGIN
+            or ratio >= _HORIZON_RATIO_CEILING - _HORIZON_RATIO_WARN_MARGIN
+        ):
+            _logger.warning(
+                "%s: G16 rule 3 (sensor_audit_2026-07-02 P2) — "
+                "horizon_seconds/expected_half_life_seconds = %d/%d = %.3f sits "
+                "within %.2f of the [%.1f, %.1f] bound; a small future "
+                "expected_half_life_seconds recalibration could flip this alpha "
+                "into a G16 rule-3 rejection with no advance notice.",
+                source,
+                horizon,
+                half_life,
+                ratio,
+                _HORIZON_RATIO_WARN_MARGIN,
+                _HORIZON_RATIO_FLOOR,
+                _HORIZON_RATIO_CEILING,
             )
 
         sensors_raw = block.get("l1_signature_sensors", []) or []

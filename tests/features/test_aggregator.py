@@ -580,3 +580,75 @@ def test_feature_params_plumbed_to_observe_and_finalize() -> None:
     assert len(seen_params) == 2  # one observe + one finalize
     for params in seen_params:
         assert params == {"threshold": 0.5, "mode": "test"}
+
+
+# ── Multi-version dispatch tests (sensor_audit_2026-07-02 P0) ───────
+
+
+def test_multi_version_reading_raises_when_feature_consumes_sensor() -> None:
+    """A second live sensor_version feeding a *consumed* sensor_id must be
+    rejected outright — dispatch is version-blind and would otherwise fold
+    two concurrent estimators into one feature state."""
+    import pytest
+
+    from feelies.features.aggregator import MultiVersionFeatureDispatchError
+
+    bus = EventBus()
+    agg = HorizonAggregator(
+        bus=bus,
+        horizon_features={"sum_feat": _SumFeature()},
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=60,
+        sequence_generator=SequenceGenerator(),
+    )
+    agg.attach()
+
+    bus.publish(_reading(ts_ns=1_000_000_000, value=1.0))  # version 1.0.0
+    with pytest.raises(MultiVersionFeatureDispatchError, match="ofi_ewma"):
+        bus.publish(
+            SensorReading(
+                timestamp_ns=2_000_000_000,
+                correlation_id="r-2",
+                sequence=2,
+                symbol="AAPL",
+                sensor_id="ofi_ewma",
+                sensor_version="2.0.0",
+                value=1.0,
+                warm=True,
+            )
+        )
+
+
+def test_multi_version_reading_only_warns_when_no_feature_consumes_sensor(
+    caplog: Any,
+) -> None:
+    """A sensor_id with zero consuming features is unaffected by a second
+    live version — buffers alone are version-keyed (S8) — so this remains a
+    warning, not a hard failure."""
+    import logging
+
+    bus = EventBus()
+    agg = HorizonAggregator(
+        bus=bus,
+        symbols=frozenset({"AAPL"}),  # passive mode: no features registered
+        sensor_buffer_seconds=60,
+        sequence_generator=SequenceGenerator(),
+    )
+    agg.attach()
+
+    with caplog.at_level(logging.WARNING, logger="feelies.features.aggregator"):
+        bus.publish(_reading(ts_ns=1_000_000_000, sensor_id="unwired_sensor", value=1.0))
+        bus.publish(
+            SensorReading(
+                timestamp_ns=2_000_000_000,
+                correlation_id="r-2",
+                sequence=2,
+                symbol="AAPL",
+                sensor_id="unwired_sensor",
+                sensor_version="2.0.0",
+                value=1.0,
+                warm=True,
+            )
+        )
+
+    assert any("multiple versions" in r.message for r in caplog.records)

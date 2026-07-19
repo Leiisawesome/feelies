@@ -15,6 +15,7 @@ from feelies.bootstrap import (
     _consumed_value_keys_from_signal_source,
     _horizon_features_for,
     _required_warm_feature_ids_for_signal_alpha,
+    _warn_unread_sensor_dependencies,
 )
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature
@@ -217,3 +218,97 @@ def test_inventory_revert_bootstrap_consumed_features_are_feature_ids() -> None:
         "realized_vol_30s_zscore",
         "spread_z_30d",
     )
+
+
+# ── Unread sensor dependency warning (sensor_audit_2026-07-02 P1) ───────────
+
+
+def test_warns_on_declared_sensor_whose_features_are_never_read(caplog) -> None:
+    """A sensor whose full horizon feature set is disjoint from warm_ids —
+    i.e. neither evaluate() nor the regime gate reads any feature it
+    produces — must be flagged.  This is the shape of the ``micro_price``
+    defect this audit pass found (and fixed) in ``sig_benign_midcap_v1``."""
+    import logging
+
+    h = 120
+    features = [
+        SensorPassthroughFeature("ofi_ewma", h),
+        HorizonWindowedFeature("ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore"),
+        SensorPassthroughFeature("micro_price", h),
+        HorizonWindowedFeature(
+            "micro_price", h, reducer="zscore", feature_id="micro_price_zscore"
+        ),
+    ]
+    warm_ids = _required_warm_feature_ids_for_signal_alpha(
+        depends_on_sensors=("ofi_ewma", "micro_price"),
+        horizon_seconds=h,
+        horizon_features=features,
+        gate=_gate(),
+        signal_source=(
+            "def evaluate(snapshot, regime, params):\n"
+            "    return snapshot.values.get('ofi_ewma_zscore')\n"
+        ),
+    )
+    assert "micro_price" not in warm_ids
+    assert "micro_price_zscore" not in warm_ids
+
+    with caplog.at_level(logging.WARNING, logger="feelies.bootstrap"):
+        _warn_unread_sensor_dependencies(
+            alpha_id="alpha_x",
+            depends_on_sensors=("ofi_ewma", "micro_price"),
+            horizon_seconds=h,
+            horizon_features=features,
+            warm_ids=warm_ids,
+        )
+
+    messages = [r.message for r in caplog.records]
+    assert any("micro_price" in m and "alpha_x" in m for m in messages)
+    assert not any("'ofi_ewma'" in m for m in messages)  # the read sensor stays silent
+
+
+def test_no_warning_when_sensor_produces_no_features_at_this_horizon(caplog) -> None:
+    """A sensor with zero features at this horizon (e.g. inventory_pressure
+    outside h=30) has nothing to compare against and must not be flagged —
+    that gap belongs to the H3/M2 'uncovered dependency' check, not this
+    one."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="feelies.bootstrap"):
+        _warn_unread_sensor_dependencies(
+            alpha_id="alpha_x",
+            depends_on_sensors=("inventory_pressure",),
+            horizon_seconds=120,
+            horizon_features=[],  # nothing registered for this sensor at h=120
+            warm_ids=frozenset(),
+        )
+    assert not caplog.records
+
+
+def test_sig_benign_midcap_v1_has_no_unread_sensor_dependency(caplog) -> None:
+    """Regression guard: the reference alpha's depends_on_sensors must stay
+    fully backed by evaluate()/gate usage after the P1 micro_price fix."""
+    import logging
+
+    module = AlphaLoader(enforce_trend_mechanism=True).load(
+        Path("alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml")
+    )
+    features = []
+    for sensor_id in module.depends_on_sensors:
+        features.extend(_horizon_features_for(sensor_id, module.horizon_seconds))
+    warm_ids = _required_warm_feature_ids_for_signal_alpha(
+        depends_on_sensors=module.depends_on_sensors,
+        horizon_seconds=module.horizon_seconds,
+        horizon_features=features,
+        gate=module.gate,
+        signal_source=module.signal_source,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="feelies.bootstrap"):
+        _warn_unread_sensor_dependencies(
+            alpha_id=module.manifest.alpha_id,
+            depends_on_sensors=module.depends_on_sensors,
+            horizon_seconds=module.horizon_seconds,
+            horizon_features=features,
+            warm_ids=warm_ids,
+        )
+    assert not caplog.records

@@ -200,8 +200,9 @@ not a bus event — it is consumed in-process by `CompositionEngine`.
 
 ## `FactorNeutralizer`
 
-`composition/factor_neutralizer.py` reads a loadings artifact from
-`loadings_dir/loadings.json` (schema `{symbol: {factor_name: float}}`;
+`composition/factor_neutralizer.py` reads a loadings artifact —
+`loadings.json` under the configured `loadings_dir` — (schema
+`{symbol: {factor_name: float}}`;
 `factor_loadings_max_age_seconds` guard at bootstrap) and projects
 the ranked weights onto the factor-neutral subspace. Factors
 typically include: market beta, size, value, momentum, sector
@@ -294,7 +295,14 @@ class SizedPositionIntent(Event):
 The `mechanism_breakdown` is the audit trail for G16 caps and the
 input axis to `MultiHorizonAttributor` for per-mechanism PnL
 decomposition. **Mechanism concentration** (the realised gross-share
-of any single family) drives the post-trade crowding diagnostic.
+of any single family) drives the post-trade crowding diagnostic. The
+pre-trade counterpart — the capacity & crowding envelope every
+candidate declares at proposal time (ADV ceiling, Sharpe-max vs
+profit-max target, correlated-unwind reasoning) — lives in the
+microstructure-alpha skill
+([SKILL.md](../microstructure-alpha/SKILL.md), "Pre-Trade Capacity &
+Crowding Envelope"); it carries the OQ-3 caveat that runtime
+mechanism-share enforcement is disabled (the ranker gap above).
 
 ---
 
@@ -304,7 +312,7 @@ of any single family) drives the post-trade crowding diagnostic.
 |------|-------|
 | G10 | `universe:` is a non-empty list of non-empty strings (the universe-size cap is bootstrap's `composition_max_universe_size`, not G10) |
 | G11 | `factor_neutralization:` declared as a boolean (`true` opts into the platform factor model; `false` is an explicit opt-out) |
-| G12 | `cost_arithmetic:` declared (margin_ratio ≥ 1.5; reconciles ±5%) |
+| G12 | `cost_arithmetic:` declared (margin_ratio ≥ 1.5; reconciles ±0.05 absolute — `alpha/cost_arithmetic.py`) |
 | G14 | `depends_on_signals:` references registered SIGNAL alpha IDs |
 | G16 (PORTFOLIO rule 8) | Every consumed mechanism family declares `max_share_of_gross` in `[0, 1]`; the caps must **sum to at least 1.0** (`layer_validator.py: MechanismShareUnreachableError`, tolerance `1e-9`) so full-book deployment is structurally reachable — this is a floor, not a ceiling; family whitelist matches upstream `Signal.trend_mechanism` values |
 

@@ -60,6 +60,17 @@ class StateMachine(Generic[S]):
     *before* the state pointer is updated — listeners see the old
     state as ``record.from_state`` and the new state as
     ``record.to_state``.
+
+    Not thread-safe: ``transition()``'s check-then-act sequence
+    (``can_transition`` → build record → run callbacks → commit) holds no
+    lock, unlike ``SequenceGenerator``. This is safe today because every
+    consumer drives it from a single thread — e.g. ``OrderState``
+    transitions only ever run on the orchestrator's tick thread; broker
+    callback threads (``broker/ib/connection.py``) communicate exclusively
+    through thread-safe ``queue.Queue``s and never touch a ``StateMachine``
+    instance directly. A future consumer that transitions the same
+    instance from more than one thread would need to add external
+    synchronization.
     """
 
     __slots__ = (

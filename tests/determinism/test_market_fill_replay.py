@@ -88,8 +88,11 @@ def _replay() -> tuple[str, int]:
 
 
 def _hash_acks(acks: list[OrderAck]) -> str:
+    # Audit-2026-07-02 P2 #10: ``.sequence`` is now included so a re-sequenced
+    # ack stream with identical economics/order_id flips the hash instead of
+    # passing unnoticed.
     lines = [
-        f"{a.order_id}|{a.status.name}|{a.filled_quantity}|{a.fill_price}|"
+        f"{a.sequence}|{a.order_id}|{a.status.name}|{a.filled_quantity}|{a.fill_price}|"
         f"{a.fees}|{a.cost_bps}|{a.timestamp_ns}"
         for a in acks
     ]
@@ -100,7 +103,9 @@ def _hash_acks(acks: list[OrderAck]) -> str:
 # Count includes the per-order ACKNOWLEDGED acks (Inv-9 parity): o1/o2/o4
 # emit ACK + FILLED (2 each); o3 walks the book → ACK + PARTIALLY_FILLED +
 # FILLED (3).  2 + 2 + 3 + 2 = 9.
-EXPECTED_MARKET_FILL_HASH = "d3a7658b581622f8bc6594e2f346c0c8bd2566d5c5dcd79cfba8cf0e16df174d"
+# Re-baselined audit-2026-07-02 P2 #10: added ``.sequence`` to ``_hash_acks``
+# (previously omitted, so ack sequence allocation was unpinned).
+EXPECTED_MARKET_FILL_HASH = "da66dd36e8bb68017d691162e87d3fddf4866cb2747ffcc7350263ccb88291a6"
 EXPECTED_MARKET_FILL_ACK_COUNT = 9
 
 

@@ -272,6 +272,9 @@ sensor_specs:
     params:
       window_seconds: 5
       min_observations: 20
+      # Audit sensor_audit_2026-07-02 P1: require the min_observations quotes
+      # to span the full window, not just satisfy the count via a burst.
+      min_window_span_seconds: 5
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 20
@@ -283,6 +286,9 @@ sensor_specs:
     params:
       window_seconds: 5
       min_samples: 20
+      # Audit sensor_audit_2026-07-02 P1: require the min_samples quotes to
+      # span the full window, not just satisfy the count via a burst.
+      min_window_span_seconds: 5
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 20
@@ -415,7 +421,16 @@ sensor_specs:
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 0
-    throttled_ms: null
+    # Audit sensor_audit_2026-07-02 P2: update() is a pure function of
+    # (timestamp, symbol, injected calendar) with no state to bias — the
+    # stateful=False default (skip update() entirely inside the window) is
+    # therefore safe here, unlike an accumulator. Cuts tick-path overhead on
+    # a sensor whose output is otherwise constant between calendar-window
+    # boundaries; the platform only reads it at horizon boundaries
+    # (30-1800s), so up to 1s of added latency on a boundary crossing is
+    # negligible.
+    throttled_ms: 1000
+    stateful: false
 
   - sensor_id: realized_vol_30s
     sensor_version: "1.3.0"
@@ -460,6 +475,9 @@ sensor_specs:
     params:
       window_seconds: 5
       min_quotes: 20
+      # Audit sensor_audit_2026-07-02 P1: require the min_quotes quotes to
+      # span the full window, not just satisfy the count via a burst.
+      min_window_span_seconds: 5
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 20

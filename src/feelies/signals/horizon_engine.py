@@ -181,6 +181,7 @@ class HorizonSignalEngine:
         "_regime_min_discriminability",
         "_metric_collector",
         "_metrics_seq",
+        "_last_boundary_index",
     )
 
     def __init__(
@@ -210,15 +211,29 @@ class HorizonSignalEngine:
         self._regime_min_discriminability = float(regime_min_discriminability)
         self._signals: list[RegisteredSignal] = []
         self._regime_cache: dict[tuple[str, str], RegimeState] = {}
-        # ``_sensor_cache`` holds the latest scalar reading per
-        # ``(symbol, sensor_id)``.  Populated incrementally as
-        # ``SensorReading`` events flow over the bus.  The cache is
-        # the *boundary view* consulted by gate / signal evaluation —
-        # in v0.2 the :class:`HorizonAggregator` runs in passive mode
-        # (empty ``HorizonFeatureSnapshot.values``), so sensor bindings
-        # come from this cache rather than from the snapshot itself.
-        self._sensor_cache: dict[tuple[str, str], float] = {}
+        # ``_sensor_cache`` holds the two most recent scalar readings per
+        # ``(symbol, sensor_id)`` (oldest first), each paired with the
+        # reading's own ``timestamp_ns``.  Populated incrementally as
+        # ``SensorReading`` events flow over the bus.  The cache is the
+        # *boundary view* consulted by gate / signal evaluation — in v0.2 the
+        # :class:`HorizonAggregator` runs in passive mode (empty
+        # ``HorizonFeatureSnapshot.values``), so sensor bindings come from
+        # this cache rather than from the snapshot itself.  The timestamp is
+        # carried so :meth:`_build_bindings` can refuse to serve a reading
+        # stamped after the dispatching snapshot's nominal horizon boundary
+        # (audit regime_audit_2026-07-02 §4.2/§9 — Inv-6; the ``08c3da6``
+        # as-of-boundary fix covered aggregator-owned windowed features
+        # only, not this fallback cache).  The *previous* reading is retained
+        # so that when a boundary-crossing quote overwrites the slot with a
+        # post-boundary reading, the last value at or before the boundary is
+        # still available as-of that boundary rather than dropped entirely.
+        self._sensor_cache: dict[tuple[str, str], list[tuple[int, float]]] = {}
         self._attached: bool = False
+        # Audit P2 2026-07-02: last-seen ``boundary_index`` per
+        # ``(symbol, alpha_id)``, used only to detect (never to block) a
+        # duplicate or out-of-order snapshot dispatch — see
+        # ``_check_duplicate_boundary``.
+        self._last_boundary_index: dict[tuple[str, str], int] = {}
 
     # ── Registration ─────────────────────────────────────────────────
 
@@ -310,6 +325,11 @@ class HorizonSignalEngine:
         forces ``UnknownIdentifierError`` on the next gate evaluation
         which routes through the H8 / M6 fail-safe (gate latch reset
         to OFF) — Inv-11 (fail-safe default).
+
+        Each reading is stored as ``(event.timestamp_ns, value)`` and the
+        immediately-preceding reading is retained — see the ``_sensor_cache``
+        field docstring for why (Inv-6 as-of-boundary correctness in
+        :meth:`_build_bindings`).
         """
         value = event.value
         if isinstance(value, tuple):
@@ -328,12 +348,37 @@ class HorizonSignalEngine:
                     self._sensor_cache.pop((event.symbol, name), None)
                 return
             for name, component_value in zip(components, value):
-                self._sensor_cache[(event.symbol, name)] = float(component_value)
+                self._cache_reading(
+                    (event.symbol, name),
+                    (event.timestamp_ns, float(component_value)),
+                )
             return
         if not event.warm:
             self._sensor_cache.pop((event.symbol, event.sensor_id), None)
             return
-        self._sensor_cache[(event.symbol, event.sensor_id)] = float(value)
+        self._cache_reading(
+            (event.symbol, event.sensor_id), (event.timestamp_ns, float(value))
+        )
+
+    def _cache_reading(
+        self, key: tuple[str, str], reading: tuple[int, float]
+    ) -> None:
+        """Append ``reading`` to *key*'s cache slot, retaining the prior one.
+
+        Only the two most recent readings are kept (oldest first).  The
+        immediately-preceding reading is retained so :meth:`_build_bindings`
+        can still serve the last value at or before a snapshot boundary when
+        the newest reading was stamped after it — the boundary-crossing quote
+        publishes its ``SensorReading`` before the ``HorizonFeatureSnapshot``,
+        so without the fallback that quote's post-boundary reading would
+        overwrite (then, under the Inv-6 filter, drop) a causally valid
+        pre-boundary value.
+        """
+        prior = self._sensor_cache.get(key)
+        if prior is None:
+            self._sensor_cache[key] = [reading]
+        else:
+            self._sensor_cache[key] = [prior[-1], reading]
 
     def _on_snapshot(self, snapshot: HorizonFeatureSnapshot) -> None:
         """Evaluate every registered signal whose horizon matches."""
@@ -352,6 +397,7 @@ class HorizonSignalEngine:
         snapshot: HorizonFeatureSnapshot,
     ) -> None:
         """Evaluate gate, then signal, and publish the resulting event."""
+        self._check_duplicate_boundary(registered, snapshot)
         # H2 / M1 / M8: refuse to evaluate when the snapshot carries
         # non-empty feature maps but any feature is not warm or is stale.
         # In passive / Phase-2 mode snapshot.warm is empty (no features
@@ -399,15 +445,18 @@ class HorizonSignalEngine:
             snapshot, regime, self._sensor_cache, self._regime_min_discriminability
         )
         was_on = registered.gate.is_on(snapshot.symbol)
+        # Entry-blocked snapshots may still need to evaluate an ON latch for
+        # expression errors, but they must not arm a new OFF->ON state.
+        # Existing ON latches evaluate mutably so the OFF path can still
+        # publish a conservative FLAT close.  Reused below (audit P1
+        # 2026-07-02) so the gate.transition{to=ON} metric only counts a
+        # transition that was actually committed, not merely evaluated.
+        gate_will_commit = not (entry_blocked and not was_on)
         try:
-            # Entry-blocked snapshots may still need to evaluate an ON
-            # latch for expression errors, but they must not arm a new
-            # OFF->ON state.  Existing ON latches evaluate mutably so the
-            # OFF path can still publish a conservative FLAT close.
             on = registered.gate.evaluate(
                 symbol=snapshot.symbol,
                 bindings=bindings,
-                mutate=not (entry_blocked and not was_on),
+                mutate=gate_will_commit,
             )
         except UnknownIdentifierError as exc:
             # H8 / M6: a missing binding during warm-up means the gate
@@ -516,8 +565,14 @@ class HorizonSignalEngine:
             return
         if not on:
             return
-        if not was_on:
-            # Normal OFF → ON gate transition (admission).
+        if not was_on and gate_will_commit:
+            # Normal OFF → ON gate transition (admission).  Audit P1
+            # 2026-07-02: gated on ``gate_will_commit`` (not just ``on``) —
+            # when the snapshot was entry-blocked, ``mutate=False`` left the
+            # latch uncommitted (still OFF), so this is not yet a real
+            # transition.  Without this guard, the eventual real admission on
+            # a later, clean snapshot double-counts the same logical
+            # transition.
             self._emit_metric(
                 "feelies.signal.gate.transition",
                 ts_ns=snapshot.timestamp_ns,
@@ -664,6 +719,49 @@ class HorizonSignalEngine:
             )
         )
 
+    def _check_duplicate_boundary(
+        self,
+        registered: RegisteredSignal,
+        snapshot: HorizonFeatureSnapshot,
+    ) -> None:
+        """Detect (never block) a duplicate or out-of-order snapshot dispatch.
+
+        Audit P2 2026-07-02: the engine has no defensive check that a given
+        ``(alpha_id, symbol, boundary_index)`` triple is dispatched at most
+        once — it relies entirely on the upstream ``HorizonAggregator``
+        never re-emitting a ``HorizonFeatureSnapshot`` for a boundary already
+        finalized.  A non-increasing ``boundary_index`` for the same
+        ``(symbol, alpha_id)`` pair would silently re-run gate + signal
+        evaluation and could double-emit a ``Signal``.
+
+        This is observability-only, matching the platform's existing Inv-11
+        preference for surfacing an anomaly over speculatively rejecting it
+        (:mod:`feelies.alpha.cost_arithmetic` module docstring): a real
+        duplicate is logged and metered, but still dispatched normally, so a
+        legitimate-but-unanticipated upstream replay pattern is never
+        silently dropped.
+        """
+        key = (snapshot.symbol, registered.alpha_id)
+        last_boundary = self._last_boundary_index.get(key)
+        if last_boundary is not None and snapshot.boundary_index <= last_boundary:
+            _logger.warning(
+                "HorizonSignalEngine: %s received a non-increasing "
+                "boundary_index for %s (got %d, last dispatched %d) — "
+                "possible duplicate or out-of-order HorizonFeatureSnapshot "
+                "upstream; dispatching anyway (audit P2 2026-07-02)",
+                registered.alpha_id,
+                snapshot.symbol,
+                snapshot.boundary_index,
+                last_boundary,
+            )
+            self._emit_metric(
+                "feelies.signal.snapshot.duplicate_boundary",
+                ts_ns=snapshot.timestamp_ns,
+                tags={"alpha_id": registered.alpha_id, "symbol": snapshot.symbol},
+            )
+            return
+        self._last_boundary_index[key] = snapshot.boundary_index
+
     # ── Symbol lifecycle ───────────────────────────────────────────
 
     def forget(self, symbol: str) -> None:
@@ -671,12 +769,15 @@ class HorizonSignalEngine:
 
         Called when a symbol is delisted or when a clean restart of
         per-symbol state is needed.  Drops the regime cache, sensor
-        cache, and gate latch state for *symbol* so a re-admission
-        starts clean without stale cached values contaminating the
-        new evaluation context.
+        cache, last-dispatched-boundary tracking, and gate latch state
+        for *symbol* so a re-admission starts clean without stale
+        cached values contaminating the new evaluation context.
         """
         self._regime_cache = {k: v for k, v in self._regime_cache.items() if k[0] != symbol}
         self._sensor_cache = {k: v for k, v in self._sensor_cache.items() if k[0] != symbol}
+        self._last_boundary_index = {
+            k: v for k, v in self._last_boundary_index.items() if k[0] != symbol
+        }
         for registered in self._signals:
             registered.gate.reset(symbol)
 
@@ -726,7 +827,7 @@ class HorizonSignalEngine:
     def _build_bindings(
         snapshot: HorizonFeatureSnapshot,
         regime: RegimeState | None,
-        sensor_cache: Mapping[tuple[str, str], float],
+        sensor_cache: Mapping[tuple[str, str], list[tuple[int, float]]],
         min_discriminability: float = 0.0,
     ) -> Bindings:
         """Promote the snapshot's ``values`` mapping into a gate binding.
@@ -750,12 +851,41 @@ class HorizonSignalEngine:
         The aggregator runs in passive mode for v0.2 (snapshot.values
         is empty), so in that mode all bindings come from
         ``sensor_cache`` and the priority distinction is moot.
+
+        **As-of-boundary correctness (audit regime_audit_2026-07-02 §4.2/§9,
+        Inv-6)**: each ``sensor_cache`` slot carries the two most recent
+        readings (oldest first), each with the timestamp of the
+        ``SensorReading`` that produced it.  The newest reading stamped at or
+        before the snapshot's nominal horizon boundary (``boundary_ts_ns``,
+        falling back to ``timestamp_ns`` when unset — mirroring
+        ``HorizonTick.asof_timestamp_ns``) is served; readings stamped
+        strictly after the boundary are skipped.  The dispatching event's own
+        sensor updates land in the cache *before* the snapshot handler runs
+        (M-SENSOR_UPDATE precedes M-SIGNAL_GATE on the synchronous bus), so a
+        boundary-crossing quote's post-boundary reading overwrites the slot;
+        retaining the immediately-preceding reading lets the last value at or
+        before the boundary still be served rather than dropped — the same
+        class of leak ``08c3da6`` closed for aggregator-owned windowed
+        features, but left open for this fallback binding source.  When no
+        retained reading is at or before the boundary the identifier is
+        simply absent from ``sensor_values`` here, which surfaces as
+        :class:`~feelies.signals.regime_gate.UnknownIdentifierError` on
+        first reference — the existing fail-safe path (force gate OFF /
+        suppress entry), identical to any other missing binding.
         """
+        asof_ns = snapshot.boundary_ts_ns or snapshot.timestamp_ns
         sensor_values = dict(snapshot.values)
-        for (sym, sensor_id), value in sensor_cache.items():
+        for (sym, sensor_id), readings in sensor_cache.items():
             if sym != snapshot.symbol:
                 continue
-            sensor_values.setdefault(sensor_id, value)
+            # Readings are ordered oldest-first; serve the newest one at or
+            # before the boundary so a post-boundary overwrite does not drop
+            # a causally valid pre-boundary value (Inv-6).
+            for reading_ts_ns, value in reversed(readings):
+                if reading_ts_ns > asof_ns:
+                    continue
+                sensor_values.setdefault(sensor_id, value)
+                break
 
         percentiles = {
             k[: -len("_percentile")]: v
@@ -809,11 +939,16 @@ class HorizonSignalEngine:
                 if raw.trend_mechanism is not None
                 else registered.trend_mechanism
             ),
-            expected_half_life_seconds=(
-                raw.expected_half_life_seconds
-                if raw.expected_half_life_seconds
-                else registered.expected_half_life_seconds
-            ),
+            # Audit P1 2026-07-02: always the G16-validated registered value,
+            # never the alpha's own return.  Unlike ``trend_mechanism``
+            # (structurally unreachable from a compiled YAML ``signal:`` body
+            # — ``TrendMechanism`` is not in the loader's sandbox namespace),
+            # ``expected_half_life_seconds`` is a bare ``int`` any inline
+            # body can set with no special import; the value feeds decay
+            # weighting in the composition layer, so it must trace to the
+            # same validated source as the declared mechanism (Inv-13), not
+            # to a value the alpha body can drift unchecked.
+            expected_half_life_seconds=registered.expected_half_life_seconds,
             disclosed_cost_total_bps=(registered.cost_arithmetic.cost_total_bps),
             disclosed_margin_ratio=(registered.cost_arithmetic.margin_ratio),
         )

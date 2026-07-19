@@ -12,7 +12,9 @@ from feelies.core.errors import (
     ExecutionError,
     FailureMode,
     FeeliesError,
+    OrchestratorPipelineAbortError,
     RiskBreachError,
+    SessionEntryBlockedError,
     StaleDataError,
 )
 
@@ -30,6 +32,8 @@ class TestErrorHierarchy:
             RiskBreachError,
             ExecutionError,
             StaleDataError,
+            OrchestratorPipelineAbortError,
+            SessionEntryBlockedError,
         ],
     )
     def test_all_inherit_from_feelies_error(self, error_cls: type[FeeliesError]) -> None:
@@ -51,6 +55,8 @@ class TestErrorHierarchy:
             (StaleDataError, FailureMode.DEGRADE),
             (ExecutionError, FailureMode.RETRY),
             (RiskBreachError, FailureMode.LOCKDOWN),
+            (OrchestratorPipelineAbortError, FailureMode.CRASH),
+            (SessionEntryBlockedError, FailureMode.CRASH),
         ],
     )
     def test_failure_mode_classification(

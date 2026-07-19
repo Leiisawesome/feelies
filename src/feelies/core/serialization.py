@@ -1,7 +1,9 @@
 """Event serialization protocol — durable, type-faithful event encoding.
 
-Foundational infrastructure for the storage layer.  Every event must
-be serializable to bytes and reconstructable with full type fidelity:
+Disk-cache codec for the *input* market-data tape (``NBBOQuote`` / ``Trade``)
+that ``DiskEventCache`` persists and ``ReplayFeed`` reloads for backtests.
+Every event the concrete :class:`JsonLineEventSerializer` accepts must be
+serializable to bytes and reconstructable with full type fidelity:
 
   - Decimal precision preserved (not float-converted)
   - Enum values round-trip correctly
@@ -11,6 +13,12 @@ be serializable to bytes and reconstructable with full type fidelity:
 Invariant 5 (deterministic replay) requires that serialization is
 bit-deterministic: ``serialize(event)`` always produces identical
 bytes for the same event.
+
+Scope: only ``NBBOQuote``/``Trade`` are supported (``serialize`` raises
+``ValueError`` for any other event). This is intentional, not a gap —
+downstream events (``Signal``, ``OrderRequest``, etc.) are recomputed
+deterministically from the input tape on every replay rather than persisted
+and reloaded, so they have no bit-identical round-trip requirement to meet.
 
 Tradeoff: type safety + correctness over serialization speed.
 The storage layer is off the critical tick-to-trade path, so
@@ -39,11 +47,16 @@ _SCHEMA_VERSION = 1
 class EventSerializer(Protocol):
     """Serialize and deserialize typed events with full fidelity.
 
-    Implementations must guarantee:
+    Implementations must guarantee, for the event types they support:
       1. Round-trip correctness: ``deserialize(serialize(e)) == e``
       2. Bit-determinism: ``serialize(e)`` is identical across calls
       3. Type preservation: Event subclass identity is maintained
       4. Decimal fidelity: no precision loss from float conversion
+
+    The concrete :class:`JsonLineEventSerializer` in this module supports
+    only ``NBBOQuote``/``Trade`` (the market-data disk-cache codec) — see
+    the module docstring for why the other ~19 event types in
+    ``core/events.py`` are out of scope by design.
     """
 
     def serialize(self, event: Event) -> bytes:

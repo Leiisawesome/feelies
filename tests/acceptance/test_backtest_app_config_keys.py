@@ -117,3 +117,25 @@ def test_sig_backtest_configs_load_with_single_alpha(
     assert cfg.signal_min_edge_cost_ratio == 1.5
     assert len(cfg.alpha_specs) == 1
     assert cfg.alpha_specs[0].as_posix().endswith(f"{alpha_id}/{alpha_id}.alpha.yaml")
+
+
+# DI-04 (data ingestion audit 2026-07-02): PlatformConfig's dataclass defaults
+# for backtest_enforce_ingest_terminal_health / backtest_reject_zero_ingest_events
+# stay fail-open, because flipping them would break every PAPER config and the
+# ~95 direct PlatformConfig(...) constructions across the test suite that never
+# populate ingest_terminal_symbol_health. The fail-closed default lives at the
+# shipped-config layer via platform.yaml + extends instead — pin it here so a
+# future edit cannot silently regress the ingest-health gate back to fail-open.
+_ALL_BACKTEST_CONFIGS: tuple[Path, ...] = (
+    _PLATFORM_YAML,
+    _BACKTEST_APP_YAML,
+    Path("configs/bt_multialpha.yaml"),
+    *(path for path, _alpha_id in _SIG_BACKTEST_CONFIGS),
+)
+
+
+@pytest.mark.parametrize("config_path", _ALL_BACKTEST_CONFIGS)
+def test_backtest_configs_are_fail_closed_on_ingest_health(config_path: Path) -> None:
+    cfg = PlatformConfig.from_yaml(config_path)
+    assert cfg.backtest_enforce_ingest_terminal_health is True
+    assert cfg.backtest_reject_zero_ingest_events is True

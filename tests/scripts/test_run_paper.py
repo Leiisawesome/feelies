@@ -9,7 +9,9 @@ the test environment.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,45 @@ def _load_module() -> object:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+class _FakeBus:
+    def subscribe(self, event_type: object, callback: object) -> None:
+        pass
+
+
+class _FakeOrchestratorForRecorder:
+    def __init__(self) -> None:
+        self._bus = _FakeBus()
+
+    def set_paper_session_recorder(self, recorder: object) -> None:
+        pass
+
+
+def test_session_start_and_end_ns_are_int(tmp_path: Path) -> None:
+    """Audit P2-5: session_start_ns/session_end_ns must be int nanoseconds —
+    a float loses precision at current epoch magnitudes (~1.8e18 ns exceeds
+    float64's ~2**53 exact-integer range)."""
+    from feelies.core.platform_config import OperatingMode, PlatformConfig
+
+    mod = _load_module()
+    config = PlatformConfig(mode=OperatingMode.PAPER, symbols=frozenset({"AAPL"}))
+    args = argparse.Namespace(
+        run_dir=tmp_path,
+        emit_signals_jsonl=False,
+        emit_order_acks_jsonl=False,
+        emit_timing_jsonl=False,
+        emit_fills_jsonl=False,
+        config="platform.yaml",
+    )
+    orchestrator = _FakeOrchestratorForRecorder()
+
+    recorder = mod._wire_session_recorder(orchestrator, args, config)  # type: ignore[attr-defined]
+    mod._flush_session_recorder(orchestrator, recorder, args)  # type: ignore[attr-defined]
+
+    metadata = json.loads((tmp_path / "metadata.json").read_text(encoding="utf-8"))
+    assert isinstance(metadata["session_start_ns"], int)
+    assert isinstance(metadata["session_end_ns"], int)
 
 
 class TestRunPaperGuards:
@@ -79,6 +120,46 @@ class TestRunPaperGuards:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake")
         cfg = tmp_path / "platform.yaml"
         cfg.write_text("symbols: [AAPL]\nmode: BACKTEST\nalpha_specs: [alpha.yaml]\n")
+        mod = _load_module()
+        rc = mod.main(["--config", str(cfg)])  # type: ignore[attr-defined]
+        assert rc == 1
+        assert "requires mode: PAPER" in capsys.readouterr().err
+
+    def test_unknown_config_key_strict_config_returns_one(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        # Audit R-2: --strict-config was wired into the backtest CLI but not
+        # into run_paper.py, leaving PAPER mode (real IB Gateway orders) with
+        # no way to fail closed on a misspelled config key.
+        monkeypatch.setenv("MASSIVE_API_KEY", "fake")
+        cfg = tmp_path / "platform.yaml"
+        cfg.write_text(
+            "symbols: [AAPL]\nmode: PAPER\nalpha_specs: [alpha.yaml]\n"
+            "cost_stress_multipler: 2.0\n"
+        )
+        mod = _load_module()
+        rc = mod.main(["--config", str(cfg), "--strict-config"])  # type: ignore[attr-defined]
+        assert rc == 1
+        assert "unrecognized config key" in capsys.readouterr().err
+
+    def test_unknown_config_key_without_strict_config_warns_and_proceeds(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        # Default (non-strict) behaviour is unchanged: a typo warns but the
+        # config still loads, so the run proceeds to the next guard (here,
+        # the BACKTEST-mode check) rather than failing on the config itself.
+        monkeypatch.setenv("MASSIVE_API_KEY", "fake")
+        cfg = tmp_path / "platform.yaml"
+        cfg.write_text(
+            "symbols: [AAPL]\nmode: BACKTEST\nalpha_specs: [alpha.yaml]\n"
+            "cost_stress_multipler: 2.0\n"
+        )
         mod = _load_module()
         rc = mod.main(["--config", str(cfg)])  # type: ignore[attr-defined]
         assert rc == 1

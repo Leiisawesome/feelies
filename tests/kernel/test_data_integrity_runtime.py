@@ -9,11 +9,13 @@ from typing import Any
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
+    Alert,
     NBBOQuote,
     OrderRequest,
     RiskAction,
     RiskVerdict,
     Signal,
+    Trade,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
@@ -102,6 +104,18 @@ def _make_quote(ts: int = 1000, seq: int = 1) -> NBBOQuote:
         ask=Decimal("150.50"),
         bid_size=100,
         ask_size=200,
+        exchange_timestamp_ns=ts - 100,
+    )
+
+
+def _make_trade(ts: int = 1000, seq: int = 1) -> Trade:
+    return Trade(
+        timestamp_ns=ts,
+        correlation_id=f"AAPL:{ts}:{seq}",
+        sequence=seq,
+        symbol="AAPL",
+        price=Decimal("150.00"),
+        size=100,
         exchange_timestamp_ns=ts - 100,
     )
 
@@ -221,3 +235,74 @@ class TestHaltedGate:
         # recoverable and must NOT escalate to DEGRADED (unlike CORRUPTED
         # / GAP).
         assert orch.macro_state == MacroState.BACKTEST_MODE
+
+
+class TestRejectedEventAlert:
+    """DI-03: a market event blocked by the data-health gate never reaches
+    ``EventLog.append``, so it must be reconstructable from an Alert instead.
+    """
+
+    def test_blocked_quote_publishes_rejection_alert(self) -> None:
+        clock = SimulatedClock(start_ns=10_000)
+        norm = _MutableHealthNormalizer({"AAPL": DataHealth.HEALTHY})
+        orch = _orch_with_normalizer(clock, norm)
+        orch.boot(_ConfigWithGapPolicy())
+        orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        orch._micro.reset(trigger="session_start:test")
+
+        norm.set_health("AAPL", DataHealth.GAP_DETECTED)
+        alerts: list[Alert] = []
+        orch._bus.subscribe(Alert, alerts.append)
+
+        quote = _make_quote(ts=20_000, seq=1)
+        orch._process_tick_inner(quote)
+
+        assert orch.macro_state == MacroState.DEGRADED
+        rejected = [a for a in alerts if a.alert_name == "market_event_rejected_by_data_health"]
+        assert len(rejected) == 1
+        assert rejected[0].context["event_type"] == "NBBOQuote"
+        assert rejected[0].context["symbol"] == "AAPL"
+        assert rejected[0].context["data_health_reason"] == "GAP_DETECTED"
+        assert rejected[0].context["bid"] == str(quote.bid)
+        assert rejected[0].context["exchange_timestamp_ns"] == quote.exchange_timestamp_ns
+
+    def test_blocked_trade_publishes_rejection_alert(self) -> None:
+        clock = SimulatedClock(start_ns=10_000)
+        norm = _MutableHealthNormalizer({"AAPL": DataHealth.HEALTHY})
+        orch = _orch_with_normalizer(clock, norm)
+        orch.boot(_ConfigWithGapPolicy())
+        orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        orch._micro.reset(trigger="session_start:test")
+
+        norm.set_health("AAPL", DataHealth.GAP_DETECTED)
+        alerts: list[Alert] = []
+        orch._bus.subscribe(Alert, alerts.append)
+
+        trade = _make_trade(ts=20_000, seq=1)
+        orch._process_trade_inner(trade)
+
+        rejected = [a for a in alerts if a.alert_name == "market_event_rejected_by_data_health"]
+        assert len(rejected) == 1
+        assert rejected[0].context["event_type"] == "Trade"
+        assert rejected[0].context["price"] == str(trade.price)
+        assert rejected[0].context["data_health_reason"] == "GAP_DETECTED"
+
+    def test_halted_trade_does_not_publish_rejection_alert(self) -> None:
+        """HALTED trades are already logged/published via the existing
+        forensic carve-out, so no rejection alert is needed for them.
+        """
+        clock = SimulatedClock(start_ns=10_000)
+        norm = _MutableHealthNormalizer({"AAPL": DataHealth.HEALTHY})
+        orch = _orch_with_normalizer(clock, norm)
+        orch.boot(_ConfigWithGapPolicy())
+        orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        orch._micro.reset(trigger="session_start:test")
+
+        norm.set_health("AAPL", DataHealth.HALTED)
+        alerts: list[Alert] = []
+        orch._bus.subscribe(Alert, alerts.append)
+
+        orch._process_trade_inner(_make_trade(ts=20_000, seq=1))
+
+        rejected = [a for a in alerts if a.alert_name == "market_event_rejected_by_data_health"]
+        assert rejected == []

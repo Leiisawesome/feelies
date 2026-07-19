@@ -285,6 +285,14 @@ wall-clock time) for a downstream model, compute it externally from
 the published `RegimeHazardSpike` stream — the detector intentionally
 does not emit one.
 
+Research caveat: when the minimum tick is a large fraction of the
+quoted spread, apparent regime persistence in spread-driven states can
+be a tick-grid artifact — apply the tick-constraint artifact test
+(microstructure-alpha
+[research-protocol.md](../microstructure-alpha/research-protocol.md),
+Phase 4; code anchor `execution/tick_size.py`) before attributing
+persistence to a liquidity regime.
+
 ### Wiring
 
 `HazardExitController` (risk-engine skill) consumes

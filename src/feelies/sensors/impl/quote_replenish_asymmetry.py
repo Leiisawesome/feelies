@@ -31,6 +31,28 @@ Returns the asymmetry score.  ``warm`` is true once
 ``min_observations`` quotes have been seen and at least one
 addition on each side has been recorded.
 
+Sign convention — UNCONFIRMED at the 30s horizon (sensor_audit_2026-07-02 P1):
+the "faster-replenishing side marks the recently-displaced side, which then
+mean-reverts" framing above is the mechanism *hypothesis*, not a validated
+fact. ``sig_inventory_revert_v1``, the one alpha built on
+``quote_replenish_asymmetry_zscore``, was QUARANTINED after a 6-session study
+(``docs/audits/signal_alpha_audit_2026-06-14.md``) found the pooled Spearman
+IC against forward 30s micro-price return indistinguishable from zero
+(≈ -0.007) and the short leg *positive* in 5 of 6 sessions — the opposite of
+what the fade hypothesis predicts. The estimator computed here is correct and
+deterministic; whether its sign carries genuine forward-return information at
+any horizon is, on the evidence gathered so far, unconfirmed-to-contradicted.
+Re-derive and re-test before relying on the sign of this sensor.
+
+sensor_audit_2026-07-02 P1: optional ``min_window_span_seconds`` additionally
+requires those ``min_observations`` quotes to span at least this many seconds
+of event time before ``warm=True`` — without it, a quote burst can satisfy
+``min_observations`` in a fraction of the window's duration, and once
+``count`` (a lifetime, never-reset counter) clears the threshold once, warm
+depends only on both sides' addition deques being non-empty, with no floor on
+how much history backs that. ``None`` (default) preserves the legacy
+behaviour and the locked golden vector.
+
 Determinism: deque-based event-time eviction; no floating-point
 state other than the additions.
 """
@@ -54,6 +76,10 @@ class QuoteReplenishAsymmetrySensor:
     - ``window_seconds`` (int, default 5): trailing event-time window.
     - ``min_observations`` (int, default 20): minimum quotes before
       ``warm=True``.
+    - ``min_window_span_seconds`` (int | None, default None): when set,
+      ``warm`` additionally requires the trailing ``min_observations``
+      quotes to span at least this many seconds (sensor_audit_2026-07-02
+      P1). ``None`` preserves the legacy behaviour.
     """
 
     sensor_id: str = "quote_replenish_asymmetry"
@@ -66,17 +92,25 @@ class QuoteReplenishAsymmetrySensor:
         sensor_version: str | None = None,
         window_seconds: int = 5,
         min_observations: int = 20,
+        min_window_span_seconds: int | None = None,
     ) -> None:
         if window_seconds <= 0:
             raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_observations < 0:
             raise ValueError(f"min_observations must be >= 0, got {min_observations}")
+        if min_window_span_seconds is not None and min_window_span_seconds <= 0:
+            raise ValueError(
+                f"min_window_span_seconds must be > 0 or None, got {min_window_span_seconds}"
+            )
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._window_ns = window_seconds * 1_000_000_000
         self._min_observations = min_observations
+        self._min_span_ns = (
+            None if min_window_span_seconds is None else min_window_span_seconds * 1_000_000_000
+        )
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -89,6 +123,10 @@ class QuoteReplenishAsymmetrySensor:
             "last_bid_price": None,
             "last_ask_price": None,
             "count": 0,
+            # sensor_audit_2026-07-02 P1: trailing window of ALL valid quote
+            # timestamps (not just additions), used only for the optional
+            # min_window_span_seconds elapsed check below.
+            "quote_ts": deque(),
         }
 
     def update(
@@ -146,6 +184,17 @@ class QuoteReplenishAsymmetrySensor:
         state["last_ask_price"] = ask_price
 
         cutoff = ts - self._window_ns
+
+        quote_ts: deque[int] | None = None
+        if self._min_span_ns is not None:
+            # Same trailing window as bid_adds/ask_adds — this only measures
+            # how much *time* the retained quotes span, not an independent
+            # count.
+            quote_ts = state["quote_ts"]
+            quote_ts.append(ts)
+            while quote_ts and quote_ts[0] < cutoff:
+                quote_ts.popleft()
+
         bid_adds = state["bid_adds"]
         while bid_adds and bid_adds[0][0] < cutoff:
             _t, v = bid_adds.popleft()
@@ -163,7 +212,19 @@ class QuoteReplenishAsymmetrySensor:
         else:
             value = (bid_total - ask_total) / denom
 
-        warm = state["count"] >= self._min_observations and bool(bid_adds) and bool(ask_adds)
+        if self._min_span_ns is not None and quote_ts is not None:
+            # Count the in-window quotes (not the lifetime counter) so the
+            # min_observations floor and the elapsed-span floor are backed by
+            # the same trailing window, mirroring the other quote-window
+            # sensors and this module's documented contract.
+            warm = (
+                len(quote_ts) >= self._min_observations
+                and bool(bid_adds)
+                and bool(ask_adds)
+                and (quote_ts[-1] - quote_ts[0]) >= self._min_span_ns
+            )
+        else:
+            warm = state["count"] >= self._min_observations and bool(bid_adds) and bool(ask_adds)
 
         return SensorReading(
             timestamp_ns=ts,

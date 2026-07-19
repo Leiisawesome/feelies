@@ -707,6 +707,91 @@ class TestMassiveLiveFeedValidation:
             MassiveLiveFeed._validate_status_response(raw, "auth_success", "authentication")
 
 
+class _FakeSubscribeWs:
+    """Minimal websocket double for ``MassiveLiveFeed._subscribe`` unit tests."""
+
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = iter(responses)
+        self.sent: list[str] = []
+
+    async def send(self, msg: str) -> None:
+        self.sent.append(msg)
+
+    async def recv(self) -> str:
+        try:
+            return next(self._responses)
+        except StopIteration:
+            raise asyncio.TimeoutError()
+
+
+class TestMassiveLiveFeedSubscriptionHealth:
+    """DI-02: a partial subscribe confirmation must surface as a data gap.
+
+    ``register_symbols`` marks every configured symbol HEALTHY-by-presence
+    before the WS ever confirms a channel, so a subscribe that only
+    partially succeeds must not leave those symbols silently HEALTHY.
+    """
+
+    def test_partial_subscribe_marks_symbols_gap_detected(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+    ) -> None:
+        feed = MassiveLiveFeed("key", ["AAPL", "MSFT"], normalizer, clock)
+        # 4 channels expected (Q/T x AAPL/MSFT); only 2 confirm before the
+        # fake server goes quiet (recv() raises TimeoutError on exhaustion).
+        ws = _FakeSubscribeWs(
+            [
+                json.dumps(
+                    {"ev": "status", "status": "success", "message": "subscribed to Q.AAPL"}
+                ),
+                json.dumps(
+                    {"ev": "status", "status": "success", "message": "subscribed to T.AAPL"}
+                ),
+            ]
+        )
+
+        asyncio.run(feed._subscribe(ws))  # degraded mode — must not raise
+
+        health = normalizer.all_health()
+        assert health["AAPL"] == DataHealth.GAP_DETECTED
+        assert health["MSFT"] == DataHealth.GAP_DETECTED
+
+    def test_full_subscribe_does_not_touch_health(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+    ) -> None:
+        feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
+        ws = _FakeSubscribeWs(
+            [
+                json.dumps(
+                    {"ev": "status", "status": "success", "message": "subscribed to Q.AAPL"}
+                ),
+                json.dumps(
+                    {"ev": "status", "status": "success", "message": "subscribed to T.AAPL"}
+                ),
+            ]
+        )
+
+        asyncio.run(feed._subscribe(ws))
+
+        # Full confirmation must not create any health machine at all —
+        # only a partial result should force a transition.
+        assert normalizer.all_health() == {}
+
+    def test_zero_subscribe_confirmations_still_raises(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+    ) -> None:
+        feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
+        ws = _FakeSubscribeWs([])
+
+        with pytest.raises(ConnectionError, match="subscription failed"):
+            asyncio.run(feed._subscribe(ws))
+
+
 class _AsyncMessages:
     def __init__(self, messages: list[str | bytes]) -> None:
         self._messages = iter(messages)
@@ -787,6 +872,31 @@ class TestMassiveLiveFeedBackpressure:
         assert full_queue.put_nowait_called
         assert not full_queue.put_called
         assert "queue full, dropping event for AAPL" in caplog.text
+
+    def test_consume_drop_marks_symbol_gap_detected(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+    ) -> None:
+        """DI-01: a queue-full drop must surface as a DataHealth gap, not just a counter."""
+        feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
+        feed._queue = _AlwaysFullQueue()  # type: ignore[assignment]
+        raw = json.dumps(
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            }
+        ).encode("utf-8")
+
+        asyncio.run(feed._consume(_AsyncMessages([raw])))
+
+        assert normalizer.health("AAPL") == DataHealth.GAP_DETECTED
 
     def test_stop_on_full_queue_logs_and_does_not_block(
         self,
@@ -1159,8 +1269,33 @@ class TestMassiveNormalizerDefensiveHardening:
         assert events == []
         # Health is HEALTHY because the parser caught it without marking
         # any symbol corrupted (we don't know which symbol the bad frame
-        # was for).
+        # was for) — DI-05: it is still visible via the global counter.
         assert normalizer.health("AAPL") == DataHealth.HEALTHY
+        assert normalizer.anonymous_malformed_frames == 1
+
+    def test_malformed_frame_with_no_symbol_increments_anonymous_counter(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+    ) -> None:
+        # A WS quote missing "sym" entirely: _ws_quote's KeyError falls
+        # through to _mark_corrupted(msg.get("sym", "UNKNOWN")) — no
+        # per-symbol DataHealth machine can absorb this (DI-05).
+        raw = json.dumps(
+            {
+                "ev": "Q",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1700000000,
+                "q": 1,
+            }
+        ).encode("utf-8")
+        events = normalizer.on_message(raw, clock.now_ns(), "massive_ws")
+        assert events == []
+        assert normalizer.anonymous_malformed_frames == 1
+        assert normalizer.all_health() == {}
 
     def test_non_dict_element_increments_counter(
         self,

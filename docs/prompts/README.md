@@ -7,6 +7,8 @@ code changes in the audit pass**.
 
 ## How to use
 
+For the full Claude Code workflow, see [`USAGE.md`](USAGE.md).
+
 1. Open a Claude Code session with full repo access.
 2. Paste the contents of one `audit_<area>.md` as the prompt.
 3. The agent writes its report to `docs/audits/<area>_audit_YYYY-MM-DD.md`.
@@ -20,7 +22,7 @@ execution.
 
 ## Automation
 
-Use `scripts/run_audit_pack.py` to make the manual Cursor workflow repeatable:
+Use `scripts/run_audit_pack.py` to make the manual Claude Code workflow repeatable:
 
 ```powershell
 $env:PYTHONHASHSEED='0'
@@ -28,8 +30,10 @@ uv run python scripts/run_audit_pack.py prepare --date YYYY-MM-DD --force
 ```
 
 This writes one self-contained bundle per audit prompt under
-`docs/audits/_runs/YYYY-MM-DD/`. Paste each `*.bundle.md` into a fresh Cursor agent
+`docs/audits/_runs/YYYY-MM-DD/`. Paste each `*.bundle.md` into a fresh Claude Code
 session and require the agent to write only the named report under `docs/audits/`.
+The bundles include `AGENTS.md`, `CLAUDE.md`, and the prompt-specific `.cursor/rules/`
+and `.cursor/skills/` files as plain repository context.
 
 After the reports are written:
 
@@ -128,7 +132,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) |
-| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`, `run_audit_pack.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) |
+| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`, `run_audit_pack.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) · research_validation (`scripts/research/inventory_fade_census.py`, `scripts/research/horizon_feasibility_map.py`, `scripts/research/h8_contamination_read.py`, `scripts/research/dislocation_lambda_census.py`, `scripts/research/dislocation_lambda_validation_extract.py`, `scripts/research/dislocation_lambda_validation_stats.py`, `scripts/research/sweep_kyle_drift_census.py`, `scripts/research/sweep_kyle_drift_validation_extract.py`, `scripts/research/sweep_kyle_drift_validation_stats.py`, `scripts/research/author_algo_clock_calendars.py`, `scripts/research/halfhour_clock_drift_census.py`, `scripts/research/derive_hour_only_algo_clock_calendars.py`, `scripts/research/hour_checkpoint_drift_census.py`, `scripts/research/tranche2_frontier_characterization.py`) |
 
 Cross-cutting concerns (not a single package): **determinism** spans `tests/determinism/`
 + every event producer (audit 14); **performance** spans the whole hot path (audit 16).

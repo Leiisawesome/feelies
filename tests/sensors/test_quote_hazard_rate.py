@@ -30,6 +30,8 @@ def test_constructor_validates_arguments() -> None:
         QuoteHazardRateSensor(window_seconds=0)
     with pytest.raises(ValueError, match="min_samples"):
         QuoteHazardRateSensor(min_samples=-1)
+    with pytest.raises(ValueError, match="min_window_span_seconds"):
+        QuoteHazardRateSensor(min_window_span_seconds=0)
 
 
 def test_trade_events_return_none() -> None:
@@ -93,6 +95,42 @@ def test_warm_transitions_at_min_samples() -> None:
     assert r1 is not None and not r1.warm
     assert r2 is not None and not r2.warm
     assert r3 is not None and r3.warm
+
+
+# ── min_window_span_seconds (sensor_audit_2026-07-02 P1) ────────────────
+
+
+def test_burst_satisfies_count_but_not_elapsed_span() -> None:
+    """3 quotes 10ms apart hit min_samples instantly but span only 20ms —
+    with a span floor, that burst must not read as warm."""
+    sensor = QuoteHazardRateSensor(window_seconds=10, min_samples=3, min_window_span_seconds=8)
+    state = sensor.initial_state()
+    r1 = sensor.update(_quote(ts_ns=0, sequence=0), state, params={})
+    r2 = sensor.update(_quote(ts_ns=10_000_000, sequence=1), state, params={})
+    r3 = sensor.update(_quote(ts_ns=20_000_000, sequence=2), state, params={})
+    assert r1 is not None and r2 is not None and r3 is not None
+    assert r3.warm is False  # count=3 satisfied, span=20ms << 8s floor
+
+
+def test_genuine_elapsed_history_satisfies_span_floor() -> None:
+    sensor = QuoteHazardRateSensor(window_seconds=10, min_samples=3, min_window_span_seconds=8)
+    state = sensor.initial_state()
+    sensor.update(_quote(ts_ns=0, sequence=0), state, params={})
+    sensor.update(_quote(ts_ns=1_000_000_000, sequence=1), state, params={})
+    r3 = sensor.update(_quote(ts_ns=9_000_000_000, sequence=2), state, params={})
+    assert r3 is not None
+    assert r3.warm is True  # count=3, span=9s >= 8s floor
+
+
+def test_span_floor_defaults_off_preserving_legacy_behaviour() -> None:
+    """Without min_window_span_seconds, the burst case from above is warm —
+    locking that the new floor is strictly opt-in."""
+    sensor = QuoteHazardRateSensor(window_seconds=10, min_samples=3)
+    state = sensor.initial_state()
+    sensor.update(_quote(ts_ns=0, sequence=0), state, params={})
+    sensor.update(_quote(ts_ns=10_000_000, sequence=1), state, params={})
+    r3 = sensor.update(_quote(ts_ns=20_000_000, sequence=2), state, params={})
+    assert r3 is not None and r3.warm is True
 
 
 def test_locked_vector_replay() -> None:

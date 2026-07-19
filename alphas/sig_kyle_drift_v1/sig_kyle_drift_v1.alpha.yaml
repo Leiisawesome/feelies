@@ -42,10 +42,14 @@ falsification_criteria:
     inactive.
 
 # ── Layer-1 sensor dependencies ───────────────────────────
+# sensor_audit_2026-07-02 P1: ``micro_price`` dropped — evaluate() never
+# reads a micro_price-derived value (only kyle_lambda_60s_percentile,
+# kyle_lambda_60s_zscore, and ofi_ewma), so it was a cosmetic dependency; the
+# same defect found and fixed in sig_benign_midcap_v1. kyle_lambda_60s is a
+# genuine, actually-read KYLE_INFO fingerprint (G16 rule 5) on its own.
 depends_on_sensors:
   - kyle_lambda_60s
   - ofi_ewma
-  - micro_price
   - spread_z_30d
   - realized_vol_30s
 
@@ -84,7 +88,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 6.5
-    min: 0.0
+    min: 6.5
     max: 30.0
     description: |
       One-way cost floor (bps). Audit P1-2: the engine does not gate
@@ -94,7 +98,9 @@ parameters:
       the alpha can emit directional entries with edge as low as 0.0
       (small/negative ``lam_z``). The authoritative round-trip Inv-12
       bar is the runtime B4 gate (~1.5x round-trip). Keep aligned with
-      cost_arithmetic.
+      cost_arithmetic. Audit P1 2026-07-02 (G12): ``min`` is pinned to
+      the disclosed ``cost_total_bps`` so no config override can weaken
+      this self-suppression below the alpha's own disclosed cost.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 300
@@ -137,7 +143,6 @@ trend_mechanism:
   l1_signature_sensors:
     - kyle_lambda_60s
     - ofi_ewma
-    - micro_price
     - spread_z_30d
   failure_signature:
     - "spread_z_30d > 2.0"

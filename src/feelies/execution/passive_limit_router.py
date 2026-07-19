@@ -921,7 +921,14 @@ class PassiveLimitOrderRouter:
         # resting order on through-fills and erase the documented
         # price improvement, so snap on the limit-price grid instead.
         fill_price = snap_limit_price(pending.side, fill_price)
-        fill_ts = self._clock.now_ns() + self._latency_ns
+        # The resting order is already live at the exchange (gated by
+        # ``pending.ack_timestamp_ns`` in ``_check_resting_orders``), so a
+        # through/drain fill here must not pay a second ``latency_ns``
+        # order-entry leg — mirror every other fill-timestamp site
+        # (``backtest_router.py``, ``_flush_deferred_aggressive``,
+        # ``_append_cancel_ack``), which all use ``max(now, ack_timestamp_ns)``
+        # with no addition (audit execution_fills_audit_2026-07-02 finding #3).
+        fill_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
 
         costs = self._cost_model.compute(
             symbol=pending.request.symbol,
