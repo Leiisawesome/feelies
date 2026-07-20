@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`feelies.research.dsr` (Workstream C-2).
+"""Unit tests for :mod:`feelies.research.dsr`.
 
 Covers:
 - ``standard_normal_cdf`` standard quantile values + symmetry.
@@ -558,7 +558,7 @@ class TestBuildDSREvidence:
         assert ev_high_variance.dsr_p_value > ev_default.dsr_p_value
 
     def test_iid_null_variance_default_warns(self) -> None:
-        # P1-1: deflating without an empirical trial variance falls back
+        # Without empirical trial variance, deflation falls back
         # to the weakest (iid-Gaussian null) deflation — that must warn.
         with pytest.warns(UserWarning, match="iid-Gaussian null floor"):
             build_dsr_evidence(observed_sharpe=0.5, n_obs=252, trials_count=100)

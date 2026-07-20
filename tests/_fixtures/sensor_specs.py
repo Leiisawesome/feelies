@@ -1,6 +1,6 @@
 """Shared :class:`SensorSpec` catalogs for cross-cutting test setup.
 
-Audit follow-up #6: bootstrap and integration tests that exercise
+Bootstrap and integration tests that exercise
 SIGNAL-layer alphas with declared ``trend_mechanism:`` blocks need
 catalogs that include the family fingerprint sensors enumerated in
 :data:`feelies.alpha.layer_validator._FAMILY_FINGERPRINT_SENSORS`,
@@ -44,8 +44,7 @@ from feelies.sensors.spec import SensorSpec
 
 KYLE_INFO_SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
-        # Audit P0-1: the class default is now causal / 2.0.0 (the legacy
-        # 1.2.0 estimator carries the wrong sign at KYLE horizons).
+        # Pin the causal, correct-sign alignment.
         sensor_id="kyle_lambda_60s",
         sensor_version="2.0.0",
         cls=KyleLambda60sSensor,

@@ -88,7 +88,7 @@ class TestRegimeFactor:
     def test_factor_clamped_at_one_when_config_supplies_amplifier(
         self, budget: AlphaRiskBudget
     ) -> None:
-        """Audit P1 R-1: Inv-11 (regime state never amplifies exposure
+        """Regime state must never amplify exposure
         beyond 1.0) is enforced at the value level — an operator-
         supplied factor > 1.0 must NOT increase quantity above the
         un-scaled baseline."""
@@ -113,7 +113,7 @@ class TestRegimeFactor:
     def test_nan_posterior_fails_safe_to_min_factor_not_baseline(
         self, budget: AlphaRiskBudget
     ) -> None:
-        """Audit FS (risk_engine_audit_2026-07-02.md, §3.2).
+        """Missing regime data tightens sizing fail-safe.
 
         Mirrors ``test_basic_risk.py``'s
         ``test_nan_posterior_fails_safe_to_min_scale_not_baseline``: a
@@ -184,7 +184,7 @@ class TestEdgeCases:
 
 
 class TestStrengthClamp:
-    """Audit R-8: conviction is clamped to [0, 1] so a stray strength > 1.0
+    """Conviction is clamped to [0, 1] so strength above 1.0
     cannot size above the alpha's allocated capital."""
 
     def test_strength_above_one_is_clamped(self, budget: AlphaRiskBudget) -> None:
@@ -206,7 +206,7 @@ class TestStrengthClamp:
 
 
 class TestRegimeMissingDataFailsSafe:
-    """Audit R-3: a configured engine with no posterior for the symbol
+    """A configured engine with no posterior for the symbol
     tightens quantity to min(factors), not the 1.0 baseline."""
 
     def test_missing_posterior_uses_min_factor(self, budget: AlphaRiskBudget) -> None:

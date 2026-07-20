@@ -1,4 +1,4 @@
-"""Stateful vs non-stateful throttle dispatch semantics (external-review follow-up).
+"""Stateful versus stateless throttle dispatch.
 
 The ``SensorSpec.stateful`` flag changes how the registry behaves *inside* a
 throttle window:
@@ -8,8 +8,7 @@ throttle window:
 - ``stateful=False`` — ``update()`` is **skipped** entirely inside the window
   (cheap; correct only for a truly stateless sensor).
 
-No active spec sets ``throttled_ms`` today, so this contract was previously
-exercised only indirectly.  These golden tests lock both branches.
+The tests lock both branches even when active specs do not use throttling.
 """
 
 from __future__ import annotations

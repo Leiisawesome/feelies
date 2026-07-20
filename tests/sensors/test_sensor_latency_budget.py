@@ -1,21 +1,6 @@
-"""Sensor per-event latency micro-benchmark — informational only.
+"""Opt-in informational benchmark for per-event sensor latency.
 
-Drives each Phase-2 sensor through ``EVENTS_PER_SENSOR`` synthetic
-events, measures per-event ``update()`` latency with
-``time.perf_counter_ns``, and prints a small p50/p99 table.
-
-Per Phase-2 plan §13.6, this test is *informational only* — there is
-no CI gate.  It exists so engineers running ``pytest -s`` locally have
-a quick eyeball signal for catastrophic regressions in any sensor's
-hot path.
-
-Skipped by default unless ``CI_BENCHMARK=1`` (mirrors the throughput
-no-regression test in ``tests/perf``) so day-to-day pytest runs stay
-fast.
-
-Run::
-
-    CI_BENCHMARK=1 PYTHONHASHSEED=0 pytest tests/sensors/test_sensor_latency_budget.py -s
+Set ``CI_BENCHMARK=1`` to print p50 and p99 timings; this is not a CI gate.
 """
 
 from __future__ import annotations

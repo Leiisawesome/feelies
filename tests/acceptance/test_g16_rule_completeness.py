@@ -1,31 +1,8 @@
-"""Closes G-D — §20.12.2 #3 G16 rule completeness.
+"""Ensure every G16 binding rule has positive and negative tests.
 
-§20.12.2 #3 of ``docs/three_layer_architecture.md`` requires
-that "G16 unit tests cover all binding rules with pass + fail
-cases".  The unit tests themselves live in
-``tests/alpha/test_gate_g16.py`` and are organised as one
-``TestRuleN…`` class per binding rule (Rule 1 through Rule 10;
-Rule 10 = l1_signature_sensors ⊆ depends_on_sensors, audit P1-4).
-
-This acceptance test introspects that module and asserts that every
-rule class has at least one test method whose name signals a *pass*
-case (``…accepted``, ``…passes``, ``…unaffected``, ``…abstains``,
-``…skipped``, ``…can_be_constructed``) and at least one method
-whose name signals a *fail* case (``…rejected``, ``…refused``).
-
-Why introspection rather than a static checklist?
-
-* The G16 test suite is the canonical artefact, not this file.  As
-  rule-N tests evolve (more parametrizations, additional edge
-  cases) the introspection automatically tracks the truth.
-* A static list would silently rot if a rule's test class were
-  deleted or renamed without anyone updating the matrix.
-  Introspection promotes that drift to a loud failure.
-* Adding a new binding rule is a design-doc change that should
-  *also* require updating this test (extending ``_EXPECTED_RULES``)
-  — the failure mode at that point is "you added a rule but
-  haven't told the matrix yet", which is exactly the discipline the
-  Acceptance Sweep is meant to enforce.
+The suite introspects ``tests.alpha.test_gate_g16`` so deleted or renamed rule
+classes fail visibly. Test names classify cases as accepted or rejected;
+unknown or ambiguous names do not count toward coverage.
 """
 
 from __future__ import annotations
@@ -36,10 +13,7 @@ import re
 import tests.alpha.test_gate_g16 as g16_tests
 
 
-# Binding rules enumerated in §20.6.1.  Each entry is the rule class
-# name in tests/alpha/test_gate_g16.py.  Adding a 10th rule?  Update
-# this tuple AND docs/acceptance/v02_v03_matrix.md row §20.12.2 #3 in
-# the same PR.
+# Binding-rule class names in tests/alpha/test_gate_g16.py.
 _EXPECTED_RULES: tuple[str, ...] = (
     "TestRule1Family",
     "TestRule2HalfLifeRange",
@@ -54,10 +28,7 @@ _EXPECTED_RULES: tuple[str, ...] = (
 )
 
 
-# Substrings (case-insensitive) that mark a method as an
-# acceptance/pass-case test.  ``can_be_constructed`` is included
-# because Rule 1's parametrized "each family can be constructed"
-# tests are the canonical positive cases for that rule.
+# Method-name tokens for accepted cases.
 _PASS_TOKENS: tuple[str, ...] = (
     "accepted",
     "passes",
@@ -68,8 +39,7 @@ _PASS_TOKENS: tuple[str, ...] = (
 )
 
 
-# Substrings (case-insensitive) that mark a method as a rejection /
-# fail-case test.
+# Method-name tokens for rejected cases.
 _FAIL_TOKENS: tuple[str, ...] = (
     "rejected",
     "refused",

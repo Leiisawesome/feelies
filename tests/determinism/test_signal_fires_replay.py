@@ -1,4 +1,4 @@
-"""Non-empty SIGNAL baseline — ``Signal`` emission parity (audit P1 #4).
+"""Non-empty SIGNAL emission parity baseline.
 
 The Level-2 ``Signal`` baseline (``test_signal_replay.py``) is the SHA-256 of
 the **empty string**: on the synthetic fixture every reference alpha stays

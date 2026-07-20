@@ -1,14 +1,14 @@
-"""BT-10 / Inv-6 anti-lookahead audit tests.
+"""Anti-lookahead tests for invariant 6.
 
 Each test perturbs a *future* event (later ``exchange_timestamp_ns`` or
 processing order) and asserts decisions at or before cutoff ``T`` are
 unchanged.  Paths covered:
 
 * **Ingestion** — ``InMemoryEventLog`` / ``ReplayFeed`` monotonic ordering
-* **Fill (BT-1/BT-3)** — deferred MARKET fills use first latency-eligible quote
-* **Fill (BT-2)** — passive drain hazard hashes the *current* quote only;
+* **Market fill** — deferred orders use the first latency-eligible quote
+* **Passive fill** — queue-drain hazard hashes the current quote only;
   prefix ack stream identical when a future quote is appended after cutoff
-* **Regulatory (BT-5/6)** — halt / SSR state at ``T`` ignores trades processed
+* **Regulatory** — halt and SSR state at ``T`` ignores trades processed
   only after ``T``
 * **Aggregation** — horizon snapshot at boundary ``T`` excludes any sensor
   reading with ``timestamp_ns > T`` even when that reading is fed to the
@@ -176,7 +176,7 @@ class TestDeferredMarketAntiLookahead:
         assert _ack_fingerprint(fills) == fp_at_t
 
 
-# ── Fill path (passive drain / BT-2) ────────────────────────────────
+# Passive queue-drain fill path.
 
 
 class TestPassiveDrainAntiLookahead:
@@ -244,16 +244,7 @@ class TestPassiveDrainAntiLookahead:
 
 
 class _CausalSumFeature:
-    """Test feature that respects event-time causality at finalize.
-
-    Records ``(ts_ns, value)`` tuples at ``observe`` time and, at
-    ``finalize`` time, sums only those whose ``ts_ns <= tick.timestamp_ns``.
-    This lets the BT-10 aggregation test verify the Inv-6 contract end-to-end
-    even when a future-time reading is fed to the aggregator before the
-    boundary tick at ``T`` arrives — exactly the perturbation that the
-    aggregator's pass-through ``observe()`` dispatch cannot defend against
-    on its own.
-    """
+    """Sum only observations available by the finalization timestamp."""
 
     feature_id: str = "causal_sum_feat"
     feature_version: str = "1.0.0"

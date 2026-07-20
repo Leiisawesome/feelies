@@ -1,39 +1,10 @@
-"""Task 12-P — router fill-timing parity battery (AXIS-1 regression guards).
+"""Pin causal fill timing for the passive-limit router.
 
-Pins the causal fill-timing contract of the passive-limit router: a resting
-passive order must never become fill-eligible off an event whose exchange
-timestamp predates the order's live+latency-eligible time
-(``ack_timestamp_ns = max(clock.now, submit-quote exchange ts) + latency_ns``).
-
-Coverage added here (uncovered asymmetries per the Task 12 precondition map,
-2026-07-12):
-
-* Through-fill inside the latency window: cross-then-revert must never fill;
-  the fill price must come from a post-eligibility crossing quote, never the
-  stale (better) in-window cross.
-* Level-fill hazard trials on stale quotes: pre-eligibility at-level quotes
-  must not consume seeded Bernoulli draws or advance ``ticks_at_level`` /
-  ``total_ticks`` (state non-contamination).
-* Arrival mid-queue-drain: a print inside the latency window must not satisfy
-  the P1.2 ``require_trade_for_level_fill`` volume gate (complements the
-  existing queue-shares test in ``test_passive_limit_router.py``).
-* Cancel/replenish at the resting level inside the window: BBO leaving and
-  returning to the level pre-eligibility leaves order state untouched; an
-  explicit ``cancel_order`` inside the window floors the CANCELLED timestamp
-  at ACKNOWLEDGED and permanently blocks later fills.
-* ``max_resting_ticks`` expiry × latency: pre-eligibility quotes do not count
-  toward passive expiry (the deferred-*aggressive* path counts them and times
-  out — pinned in ``test_passive_limit_router.py``
-  ``test_deferred_aggressive_rejects_after_max_ticks_without_eligible_exchange_time``;
-  the asymmetry is documented, both directions are causal).
-* FQ-2 through-fill size-cap split cases T12-SC1..T12-SC5
-  (``docs/research/prompt_pack_00c_eval_canon.md`` §2).
-* Zero-latency prohibition precondition (00c decision A): the canonical
-  reference profile must pin non-zero fill and market-data latencies.
-
-Halt suppression for both passive-router fill paths (resting passive +
-deferred aggressive) is orchestrator-level and lives in
-``tests/kernel/test_orchestrator.py::TestHaltModeling``.
+Events before ``max(clock.now, submit exchange time) + latency`` cannot fill,
+consume hazard draws, advance queue state, satisfy trade gates, or expire a
+resting order. Cancellation timestamps cannot precede acknowledgement.
+Post-eligibility through-fills enforce displayed-size caps. Halt handling is
+tested at the orchestrator boundary.
 """
 
 from __future__ import annotations
@@ -304,9 +275,7 @@ class TestStaleQuoteStateNonContamination:
 
 
 class TestArrivalMidQueueDrain:
-    """An order posted while a queue drain is in progress must not credit
-    prints that predate its live time.  The queue-shares mode is pinned in
-    ``test_passive_limit_router.py``; this pins the P1.2 volume gate."""
+    """Ignore queue-drain prints that predate the order's live time."""
 
     def test_pre_eligibility_print_does_not_satisfy_volume_gate(self) -> None:
         clock = SimulatedClock(start_ns=5000)

@@ -1,9 +1,9 @@
-"""Tests for the Phase-3-α active gates G2-G13 in :mod:`feelies.alpha.layer_validator`.
+"""Tests for active gates G2–G13 in :mod:`feelies.alpha.layer_validator`.
 
 Each test uses a minimal valid SIGNAL spec template and mutates exactly
 the field under test so failure messages cite the specific gate.
 
-Gate matrix (post-D.2 — only SIGNAL/PORTFOLIO are loadable):
+Only SIGNAL and PORTFOLIO specs are loadable:
 
 * G2  — typed event contract  (signal: must be a non-empty string)
 * G4  — regime-gate purity     (DSL parse must succeed, whitelist only)
@@ -15,8 +15,6 @@ Gate matrix (post-D.2 — only SIGNAL/PORTFOLIO are loadable):
 * G13 — warm-up documentation  (no-op for SIGNAL — sensor warm-up is
         platform-owned via the SensorRegistry)
 
-LEGACY_SIGNAL-specific validator branches were removed with D.2; only
-SIGNAL/PORTFOLIO load paths remain.
 """
 
 from __future__ import annotations
@@ -268,8 +266,7 @@ def test_g12_rejects_low_margin_ratio() -> None:
 
 
 # ── G12 addendum — cost_floor_bps.min pinned to cost_total_bps ──────────
-# Audit P1 2026-07-02: a declared parameters.cost_floor_bps convention must
-# not be config-overridable below the disclosed cost_arithmetic total.
+# Overrides cannot lower the floor below disclosed costs.
 
 
 def test_g12_rejects_cost_floor_min_below_cost_total() -> None:
@@ -305,15 +302,14 @@ def test_g12_ignores_alphas_without_a_cost_floor_bps_parameter() -> None:
     _validator().validate(spec, source="<test>")  # no raise — no cost_floor_bps declared
 
 
-# ── G13 — warm-up documentation (no-op for SIGNAL post-D.2) ─────────────
+# G13 warm-up documentation.
 
 
 def test_g13_signal_layer_no_op() -> None:
     """SIGNAL alphas don't have inline features — G13 is skipped.
 
     Sensor warm-up is owned by the platform's :class:`SensorRegistry`,
-    not the alpha YAML, so G13 has nothing to enforce on the only
-    loadable layer family post-D.2.
+    not the alpha YAML, so G13 has nothing to enforce for signal alphas.
     """
     _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
         _signal_spec(),

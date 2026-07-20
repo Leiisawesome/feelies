@@ -1,4 +1,4 @@
-"""BT-15 acceptance: Reg-T buying power on margin_25k accounts."""
+"""Test Reg-T buying power on ``margin_25k`` accounts."""
 
 from __future__ import annotations
 

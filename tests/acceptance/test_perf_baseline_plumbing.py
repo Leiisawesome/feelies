@@ -1,27 +1,7 @@
-"""Acceptance — perf-baseline plumbing exists and is well-formed (G-G).
+"""Acceptance checks for performance-baseline plumbing.
 
-This test runs on every standard ``pytest`` invocation (no
-``CI_BENCHMARK`` gate) so the plumbing introduced for acceptance gap
-**G-G** cannot rot silently between perf-job runs.  It does **not**
-execute the perf harness itself — that is what the existing
-``tests/perf/test_*_no_regression.py`` gates do under
-``CI_BENCHMARK=1``.
-
-What is asserted
-----------------
-
-* ``scripts/record_perf_baseline.py`` exists and is importable.
-* ``tests/perf/baselines/v02_baseline.json`` exists and is valid JSON
-  with the documented top-level shape (``{"hosts": {...}}``).
-* ``tests/perf/_pinned_baseline.py`` exposes the helper used by the
-  two perf gates and returns ``None`` when ``PERF_HOST_LABEL`` is
-  unset (the guaranteed-safe fallback path documented in matrix
-  rows §18.2 #4 and §20.12.3 #4).
-
-Together these guarantee that a perf job which sets
-``PERF_HOST_LABEL`` (and previously recorded a baseline for that
-label) gets a tightened gate, while every other host transparently
-keeps the v0.2 ratio-only behaviour.
+The recorder, baseline JSON, and host lookup must remain usable without running
+the opt-in benchmark suite. Unpinned hosts fall back to ratio-only gates.
 """
 
 from __future__ import annotations
@@ -68,12 +48,7 @@ def test_v02_baseline_json_is_well_formed() -> None:
             f"host_label keys must be non-empty strings, got {host_label!r}"
         )
         assert isinstance(payload, dict), f"host {host_label!r} payload must be an object"
-        # Workstream-D update — the prior ``phase3_signal_layer``
-        # section was anchored on ``test_signal_layer_no_regression``
-        # which was retired with the ``trade_cluster_drift`` LEGACY
-        # reference alpha (D.2).  Only ``phase4_1_decay_weighting`` is
-        # required of newly-recorded hosts; legacy entries on disk
-        # remain valid and are simply not enforced here.
+        # New baselines require the active decay-weighting section.
         required = "phase4_1_decay_weighting"
         assert required in payload, f"host {host_label!r} missing required section {required!r}"
 
@@ -115,15 +90,7 @@ def test_pinned_baseline_helper_returns_none_for_unknown_host(
 
 
 def test_record_perf_baseline_referenced_harness_is_collectable() -> None:
-    """The node id the recorder executes must resolve to a real test.
-
-    Regression guard for the audit P0 dead-guard: ``record_perf_baseline.py``
-    shells out to a fixed ``<file>::<func>`` node id; for years that file did
-    not exist, so the recorder errored, no baseline could be recorded, and the
-    decay budget went unmeasured (``docs/audits/performance_audit_2026-06-25.md``
-    §6). This asserts the referenced file *and* function exist — without
-    spawning pytest — so the dead reference cannot silently return.
-    """
+    """The recorder's fixed pytest node id must remain collectable."""
     mod_name = "_record_perf_baseline_node_id_under_test"
     spec = importlib.util.spec_from_file_location(mod_name, _SCRIPT)
     assert spec is not None and spec.loader is not None

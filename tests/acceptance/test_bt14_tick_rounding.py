@@ -1,4 +1,4 @@
-"""BT-14 acceptance: every simulated fill price lies on the Reg NMS tick grid."""
+"""Every simulated fill price must lie on the Reg NMS tick grid."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def _fill_prices(acks) -> list[Decimal]:
 
 
 def test_market_partial_fill_impact_leg_snaps_to_tick() -> None:
-    """Walk-the-book impact can land between ticks; BT-14 snaps against the taker."""
+    """Snap an off-tick impact price against the taker."""
     clock = SimulatedClock(start_ns=5_000)
     router = BacktestOrderRouter(
         clock,

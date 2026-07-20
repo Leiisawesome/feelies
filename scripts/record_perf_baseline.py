@@ -1,6 +1,4 @@
-"""Record the per-host perf baseline JSON consumed by the perf gates.
-
-Closes acceptance gap **G-G** (matrix rows §18.2 #4 and §20.12.3 #4).
+"""Record per-host performance baselines consumed by the perf tests.
 
 Usage
 -----
@@ -9,34 +7,10 @@ Usage
         --host-label dev_local \
         --out tests/perf/baselines/v02_baseline.json
 
-The script invokes the *existing* perf-test harness through pytest
-(``test_phase4_1_no_regression``) and parses its structured
-``PHASE4_1_PERF_SUMMARY`` line from stdout.  The harness is the
-canonical source of timings — this script *does not* re-implement
-timing logic; that would be a trust gap if the asserting test later
-disagreed.
-
-Workstream-D update — the prior ``phase3_signal_layer`` baseline
-section was anchored on the now-deleted
-``test_signal_layer_no_regression`` harness (LEGACY-vs-SIGNAL
-regression check, retired with the ``trade_cluster_drift``
-reference alpha).  Re-recording an existing baseline file with
-this version of the script preserves any historical
-``phase3_signal_layer`` entries on disk (``_merge_into_file``
-overwrites the host blob, not a key-by-key merge); operators who
-want a clean file should hand-edit or delete the stale section.
-
-The output JSON is then matched per-host inside the perf tests (see
-their ``_load_pinned_baseline`` helper).  The matching key is
-``host_label`` — operators record one baseline per
-performance-relevant host (e.g. ``ci_linux_x64``, ``dev_local``) so a
-laptop's number does not gate a CI runner and vice-versa.
-
-If the requested ``--host-label`` is missing from the JSON file when
-the perf test reads it, the test silently falls back to the
-ratio-only assertion (the v0.2 behaviour).  This means landing a new
-baseline is opt-in per host and never introduces flakiness for
-hosts that have not opted in.
+The script runs the existing pytest harness and parses its structured summary,
+keeping the asserting test as the sole timing implementation. Baselines match
+by ``host_label``; unrecognized hosts use ratio-only assertions. Existing JSON
+sections not owned by this harness are preserved.
 """
 
 from __future__ import annotations

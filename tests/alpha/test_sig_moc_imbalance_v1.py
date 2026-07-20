@@ -1,5 +1,4 @@
-"""Acceptance tests for the reference SIGNAL alpha
-``alphas/sig_moc_imbalance_v1`` (Phase 3.1, SCHEDULED_FLOW family).
+"""Acceptance tests for the SCHEDULED_FLOW reference signal alpha.
 
 Exercises the tuple-sensor expansion path
 (``scheduled_flow_window`` → ``scheduled_flow_window_active``,
@@ -152,8 +151,7 @@ def test_emits_long_when_window_active_and_ofi_positive(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
-    # Audit P1-2: use a ≥4-minute window so edge (1.5 bps/min) clears the
-    # 6.0 bps one-way cost_floor_bps. 360 s → 6 min → edge 9.0 bps.
+    # Six minutes produces 9 bps of edge, above the 6 bps cost floor.
     bus.publish(
         _flow_window_reading(
             active=1.0,
@@ -187,7 +185,7 @@ def test_emits_short_when_direction_prior_negative_and_ofi_negative(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
-    # Audit P1-2: ≥4-minute window so edge clears the 6.0 bps cost floor.
+    # Six minutes keeps edge above the cost floor.
     bus.publish(
         _flow_window_reading(
             active=1.0,
@@ -210,7 +208,7 @@ def test_emits_short_when_direction_prior_negative_and_ofi_negative(
 def test_no_emission_when_edge_below_cost_floor(
     loaded: LoadedSignalLayerModule,
 ) -> None:
-    """Audit P1-2: a thin window (edge < one-way cost) is suppressed.
+    """A thin window with edge below one-way cost is suppressed.
 
     At seconds_to_close=180 (3 min) edge = 3 * 1.5 = 4.5 bps, below the
     6.0 bps cost_floor_bps, so no Signal is emitted even though the gate
@@ -323,7 +321,7 @@ def test_tuple_sensor_expansion_populates_gate_bindings(
     )
     cache = engine._sensor_cache  # type: ignore[attr-defined]
     # Each slot holds the two most recent readings (oldest first); the
-    # newest reading is (timestamp_ns, value) — regime_audit_2026-07-02 §4.2/§9.
+    # The newest reading is ``(timestamp_ns, value)``.
     assert cache[("AAPL", "scheduled_flow_window_active")][-1][1] == 1.0
     assert cache[("AAPL", "seconds_to_window_close")][-1][1] == 180.0
     assert cache[("AAPL", "scheduled_flow_window_id_hash")][-1][1] == 42.0

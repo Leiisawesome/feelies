@@ -1,4 +1,4 @@
-"""RTH session calendar + entry-fill gating for backtest (BT-16).
+"""RTH calendar and entry-fill gating for backtests.
 
 Models US equity regular-hours bounds (09:30–16:00 ET), full-day market
 holidays, and early-close half-days (13:00 ET close).  Entry fills are
@@ -6,7 +6,7 @@ suppressed outside RTH and on holidays; exits are always permitted
 (Inv-11 fail-safe).
 
 MOC cutoff shifting on half-days is owned by
-:mod:`feelies.execution.moc_session` (BT-8); this module shares the
+:mod:`feelies.execution.moc_session`; this module shares the
 ``early_close_dates`` surface on :class:`~feelies.core.platform_config.PlatformConfig`.
 """
 
@@ -138,9 +138,8 @@ def should_suppress_entry(
 def opens_or_increases_signed(current_qty: int, post_signed: int) -> bool:
     """Entry detection: True iff the resulting position grows or flips sign.
 
-    Single source of truth for ENTRY classification across the BT-4 PDT
-    min-equity gate, the BT-15 Reg-T buying-power gate, and the BT-16
-    RTH router-side suppression — a future edge-case fix lands here.
+    This is the shared entry classifier for PDT equity, Reg-T buying power,
+    and RTH router gates.
     """
     return abs(post_signed) > abs(current_qty) or (
         current_qty != 0 and post_signed != 0 and (current_qty > 0) != (post_signed > 0)

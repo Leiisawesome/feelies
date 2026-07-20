@@ -1,4 +1,4 @@
-"""TupleSignedImbalanceFeature — directional Hawkes fingerprint (audit P1-3)."""
+"""Directional Hawkes fingerprint for ``TupleSignedImbalanceFeature``."""
 
 from __future__ import annotations
 

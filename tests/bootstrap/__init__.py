@@ -1,1 +1,1 @@
-"""Phase-4-finalize bootstrap wiring tests."""
+"""Bootstrap wiring tests."""

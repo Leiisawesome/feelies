@@ -1,13 +1,6 @@
-"""Multi-symbol L1 baseline — cross-symbol ``SensorReading`` interleave (P1 #8).
+"""Pin cross-symbol ``SensorReading`` interleaving.
 
-Every existing L1/L2/L3 sensor & snapshot baseline replays a **single-symbol**
-fixture (``frozenset({"AAPL"})``), so cross-symbol *emission interleave* —
-the order in which readings for different symbols hit the bus, and the
-sequence numbers they draw — is unpinned.  A bug that grouped emission by
-symbol (instead of preserving per-quote interleave) or that leaked one
-symbol's sequence counter into another's would not be caught.
-
-This baseline replays a deterministic **round-robin** quote stream across three
+The baseline replays a deterministic round-robin quote stream across three
 symbols (AAPL, MSFT, NVDA) through a real :class:`SensorRegistry` and hashes
 the ``SensorReading`` stream with the same serializer as the single-symbol L1
 baseline (``_hash_reading_stream`` — it includes ``symbol`` and ``sequence``),

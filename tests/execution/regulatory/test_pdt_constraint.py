@@ -1,4 +1,4 @@
-"""Tests for the BT-4 PDT round-trip counter + $25k minimum-equity gate."""
+"""Tests for PDT round trips and the $25k minimum-equity gate."""
 
 from __future__ import annotations
 

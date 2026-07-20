@@ -111,8 +111,7 @@ def test_decay_weighting_shrinks_old_signals():
 
 
 def test_decay_override_disables_decay_for_one_call():
-    # Instance flag ON, but the per-call override (audit P1-6) forces it OFF
-    # so a decay-OFF alpha sharing this ranker is unaffected by a decay-ON one.
+    # A per-call opt-out must not inherit another alpha's decay setting.
     ranker = CrossSectionalRanker(decay_weighting_enabled=True)
     sig_old = _make_signal(
         symbol="AAPL",
@@ -208,16 +207,10 @@ def test_mechanism_cap_scales_overrepresented_family():
         assert breakdown[TrendMechanism.KYLE_INFO] <= 0.5 + 1e-9
 
 
-# ── Composition audit 2026-07-02, finding P0-1 ──────────────────────────
+# ── Simultaneous mechanism-cap convergence ──────────────────────────────
 #
-# _apply_mechanism_cap / cap_family_vectors rescale one over-cap family at
-# a time, holding the others fixed -- exactly correct in one pass only
-# when at most one family is ever over cap simultaneously.  With 2+
-# families simultaneously over cap, the shared iteration budget used to be
-# 5, which left a confirmed ~9% relative cap overshoot for adversarial-but-
-# legitimate (G16 rule 8 requires sum(caps) >= 1.0, nothing more) 4-family
-# configurations.  These two tests hand-construct exactly such a case and
-# assert every family's realised share now satisfies its cap.
+# Rescaling one family changes the others' shares, so multi-family breaches
+# require iterative convergence.
 
 
 def test_cap_family_vectors_converges_for_simultaneous_multi_family_breach():

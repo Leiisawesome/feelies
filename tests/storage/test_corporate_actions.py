@@ -1,4 +1,4 @@
-"""BT-18: corporate-action ex-date calendar and replay guard."""
+"""Corporate-action ex-date calendar and replay guard."""
 
 from __future__ import annotations
 

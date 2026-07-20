@@ -1,4 +1,4 @@
-"""Phase P0/P1 — position-manager contracts, translator adapter, equivalence.
+"""Position-manager contracts and translator equivalence.
 
 The critical guarantee: :class:`LegacyPositionManager` is byte-for-byte
 faithful to :class:`SignalPositionTranslator`'s decision outcomes, so the
@@ -300,7 +300,7 @@ class TestCostGates:
         assert got == expected
 
 
-# ── P3: cost-aware TRIM ──────────────────────────────────────────────
+# Cost-aware trimming.
 
 
 class TestTargetPositionManagerTrim:

@@ -124,7 +124,7 @@ def _populate_ledger(path: Path) -> PromotionLedger:
     """Populate a ledger with three transitions for ALPHA-A and one for ALPHA-B."""
     ledger = PromotionLedger(path)
 
-    # ALPHA-A: RESEARCH -> PAPER (full F-2 research evidence — passes)
+    # ALPHA-A: RESEARCH -> PAPER with complete evidence.
     ledger.append(
         _make_entry(
             alpha_id="ALPHA-A",
@@ -136,7 +136,7 @@ def _populate_ledger(path: Path) -> PromotionLedger:
             metadata=evidence_to_metadata(_full_research()),
         )
     )
-    # ALPHA-A: PAPER -> LIVE (full F-2 paper+cpcv+dsr evidence — passes)
+    # ALPHA-A: PAPER -> LIVE with paper, CPCV, and DSR evidence.
     ledger.append(
         _make_entry(
             alpha_id="ALPHA-A",
@@ -148,7 +148,7 @@ def _populate_ledger(path: Path) -> PromotionLedger:
             metadata=evidence_to_metadata(_full_paper_window(), _full_cpcv(), _full_dsr()),
         )
     )
-    # ALPHA-A: LIVE -> QUARANTINED (legacy F-1-era reason-only metadata)
+    # ALPHA-A: LIVE -> QUARANTINED with reason-only metadata.
     ledger.append(
         _make_entry(
             alpha_id="ALPHA-A",
@@ -161,7 +161,7 @@ def _populate_ledger(path: Path) -> PromotionLedger:
         )
     )
 
-    # ALPHA-B: RESEARCH -> PAPER (legacy loose evidence shape — pre-F-2)
+    # ALPHA-B: RESEARCH -> PAPER with unstructured evidence.
     ledger.append(
         _make_entry(
             alpha_id="ALPHA-B",
@@ -253,7 +253,7 @@ class TestGateMatrixSubcommand:
             "quarantined_to_paper",
             "quarantined_to_decommissioned",
         }
-        # paper_to_live carries the three F-2 evidence types.
+        # paper_to_live carries all three evidence types.
         paper_to_live = next(g for g in payload["gates"] if g["gate_id"] == "paper_to_live")
         assert set(paper_to_live["required_evidence"]) == {
             "PaperWindowEvidence",
@@ -745,7 +745,7 @@ class TestReplayEvidenceSubcommand:
         assert payload["ok"] is True
         assert payload["alpha_id"] == "ALPHA-A"
         assert len(payload["results"]) == 3
-        # First two transitions carry F-2 evidence and pass the gate.
+        # The first two transitions carry evidence and pass the gate.
         assert payload["results"][0]["gate"] == "research_to_paper"
         assert payload["results"][0]["errors"] == []
         assert payload["results"][1]["gate"] == "paper_to_live"
@@ -762,11 +762,7 @@ class TestReplayEvidenceSubcommand:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        # Regression (audit P1-1): AlphaLifecycle.quarantine(
-        # structured_evidence=[...]) writes BOTH the free-form ``reason``
-        # co-key AND a schema_version + ``quarantine_trigger`` section.
-        # Before the fix, metadata_to_evidence raised "unknown kind
-        # ['reason']" and replay-evidence reported a false FAIL (exit 3).
+        # Structured quarantine metadata may coexist with a free-form reason.
         ledger_path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(ledger_path)
         metadata: dict[str, object] = {"reason": "edge decay detected"}
@@ -836,7 +832,7 @@ class TestReplayEvidenceSubcommand:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        # Hand-craft a ledger entry whose F-2 evidence would no longer
+        # Hand-craft a ledger entry whose evidence would no longer
         # satisfy current GateThresholds (DSR below the floor).
         ledger_path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(ledger_path)
@@ -930,12 +926,7 @@ class TestReplayEvidenceSubcommand:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        # Workstream F-6 wired the LIVE @ SMALL_CAPITAL -> LIVE @ SCALED
-        # capital-tier escalation as a state-machine self-loop, so the
-        # ledger now carries LIVE -> LIVE entries with trigger=
-        # "promote_capital_tier".  The F-3 replay-evidence path must
-        # infer GateId.LIVE_PROMOTE_CAPITAL_TIER for these entries and
-        # successfully validate the round-tripped CapitalStageEvidence.
+        # LIVE-to-LIVE capital promotions must replay through their dedicated gate.
         ledger_path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(ledger_path)
         cap = CapitalStageEvidence(

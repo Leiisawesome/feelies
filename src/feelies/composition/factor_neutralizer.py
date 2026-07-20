@@ -1,44 +1,12 @@
-"""``FactorNeutralizer`` — residualize cross-sectional weights against a factor model.
+"""Residualize cross-sectional weights against static factor loadings.
 
-Phase-4 v0.2 implements a *static factor loadings* path: the
-neutralizer reads per-symbol factor loadings (β) from
-:attr:`feelies.core.platform_config.PlatformConfig.factor_loadings_dir`
-at bootstrap; intra-day exposures are computed against those static
-loadings (per design Q5 — daily refresh; intraday uses static β).
-
-Default factor model is FF5 + momentum + STR (per design Q6); the
-loader file is a JSON / CSV mapping with shape
-``{symbol: {factor_name: float}}``.  Missing symbols default to all-
-zero loadings (no neutralization).
-
-Algorithm
----------
-
-Given vector of weights ``w`` (length ``N``) and the loadings matrix
-``B`` (shape ``N × K``), the neutralizer projects ``w`` onto the null
-space of ``Bᵀ``:
+For weights ``w`` and loadings matrix ``B``:
 
     w_neutral = w - B @ ((BᵀB)⁻¹ @ Bᵀ @ w)
 
-This is the ordinary linear regression residual — minimum-distance to
-``w`` while satisfying ``Bᵀ @ w_neutral == 0`` (zero exposure to
-every factor).
-
-Numerical safety
-----------------
-
-* The normal equations ``(BᵀB) β = Bᵀ w`` are solved with
-  ``numpy.linalg.solve``.  When ``BᵀB`` is singular (rank-deficient
-  loadings — e.g. fewer symbols than factors, or collinear loadings),
-  ``solve`` raises ``LinAlgError`` and the neutralizer falls back to the
-  minimum-norm least-squares solution ``numpy.linalg.lstsq(B, w)`` (which
-  internally truncates singular values below ``rcond``).  This still
-  yields a valid residual ``w − Bβ``; the residual is exactly factor-
-  orthogonal only on the non-degenerate subspace, so ``post_exposure``
-  may be non-zero along the degenerate directions and is reported as-is
-  for the monitoring layer rather than silently zeroed.
-* All linear algebra runs in NumPy ``float64``; iteration order over
-  symbols is the lex-sorted universe so replay is bit-stable.
+Normal equations use ``numpy.linalg.solve`` and fall back to least squares for
+rank-deficient loadings. Symbols are sorted before float64 linear algebra so
+replays use a stable reduction order.
 """
 
 from __future__ import annotations
@@ -63,8 +31,7 @@ except ImportError:  # pragma: no cover
 _logger = logging.getLogger(__name__)
 
 
-# Default factor universe per design Q6.  The neutralizer reads these
-# names from the loadings file; missing factors silently zero-fill.
+# Missing factors in the selected model receive zero loadings.
 _DEFAULT_FACTORS_BY_MODEL: dict[str, tuple[str, ...]] = {
     "FF5_momentum_STR": (
         "MKT",  # market excess return
@@ -127,8 +94,7 @@ class FactorNeutralizer:
 
         Folds the factor-model identity and the loaded β matrix into the
         composition-layer ``decision_basis_hash`` so the digest changes
-        when either the model or the loadings content changes (audit
-        P0-2).  An empty loadings table (no-op neutralizer) still yields a
+        with the model or loadings. An empty table still yields a
         stable model-only digest.
         """
         parts = [f"model={self._model}"]
@@ -199,7 +165,7 @@ class FactorNeutralizer:
 
         Public so the composition engine can report the carried exposure
         of an alpha that opted out of neutralization (``factor_neutralization:
-        false``) without residualizing it (audit P0-1).  Returns ``{}`` when
+        false``) without residualizing it. Returns ``{}`` when
         no loadings are configured.
         """
         if not self._factors or not self._loadings:
@@ -235,8 +201,7 @@ class FactorNeutralizer:
             raise MissingFactorLoadingsError(f"FactorNeutralizer: {path} is not a JSON object")
         out: dict[str, dict[str, float]] = {}
         for sym, loadings in data.items():
-            # ``_meta`` is the optional provenance block (e.g. ``as_of_ns``,
-            # audit P1-4) — it is metadata, not a symbol row, so skip it.
+            # _meta is provenance, not a symbol row.
             if sym == "_meta":
                 continue
             if not isinstance(loadings, dict):

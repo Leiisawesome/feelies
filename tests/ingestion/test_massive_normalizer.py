@@ -920,7 +920,7 @@ class TestMassiveLiveFeedBackpressure:
 
 
 class TestHaltStatusDetection:
-    """BT-5: normalizer surfaces DataHealth.HALTED from trade condition codes."""
+    """Normalizer surfaces ``HALTED`` from trade condition codes."""
 
     @staticmethod
     def _halt_normalizer(clock: SimulatedClock) -> MassiveNormalizer:
@@ -1070,8 +1070,7 @@ class TestMassiveNormalizerPriceValidation:
         normalizer: MassiveNormalizer,
         clock: SimulatedClock,
     ) -> None:
-        # "1.2.3" raises decimal.InvalidOperation, which the pre-fix catch
-        # tuple (KeyError, ValueError, TypeError) did NOT include.
+        # Malformed decimals raise InvalidOperation, not ValueError.
         events = normalizer.on_message(
             self._ws_quote("1.2.3"),
             clock.now_ns(),
@@ -1212,9 +1211,7 @@ class TestMassiveNormalizerCallbackBinding:
         norm.on_message(a, clock.now_ns(), "massive_ws")
         norm.on_message(b, clock.now_ns(), "massive_ws")
 
-        # Even with three identical binds, the callback fires exactly once
-        # per transition.  Pre-fix code would have fired three times because
-        # ``sm.on_transition`` appends rather than replacing.
+        # Rebinding the same callback must not duplicate notifications.
         gap_events = [s for s in seen if "seq_gap" in s]
         assert len(gap_events) == 1
 

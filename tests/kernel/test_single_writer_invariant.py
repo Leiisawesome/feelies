@@ -1,25 +1,7 @@
-"""Single-writer discipline guard (audit kernel-P1 2026-07-02, gap-test #4).
+"""Single-writer event-bus invariant.
 
-The 2026-06-24 kernel audit found (and fixed) a Signal echo: the
-orchestrator re-published the bus-arbitrated standalone-SIGNAL winner that
-``HorizonSignalEngine`` had already published, so every subscriber
-(``UniverseSynchronizer``, forensics) saw the same ``Signal`` twice. Nothing
-mechanical caught it — only manual audit did. The fix restricted the
-re-publish to synthetic forced-exit signals only
-(``orchestrator.py:_process_tick_inner``), but no test asserts the
-*invariant* the fix restores, so a future regression that re-broadens the
-re-publish condition (or introduces an analogous echo on any other event
-type) would again pass the entire test suite silently.
-
-This module closes that gap generically: it subscribes a ``subscribe_all``
-recorder to a full ``build_platform`` + ``run_backtest`` run and asserts no
-two captured events share both a type and a ``sequence`` value. Two
-distinct event *types* legitimately sharing a numeric sequence is expected
-and fine (several kernel-owned types share the orchestrator's single
-``_seq`` generator by design — see the kernel audit's "shared `_seq`"
-finding); the same *type* publishing the same sequence twice is not, and is
-exactly the echo bug's signature (the re-published object was the identical
-``Signal``, so both publishes carried its original sequence).
+A full platform replay must not publish the same ``(event type, sequence)``
+twice. Different event types may share a numeric sequence.
 """
 
 from __future__ import annotations
@@ -141,10 +123,7 @@ def test_same_sequence_across_different_types_is_not_a_false_positive() -> None:
 
 
 def test_signal_sequence_never_repeats_across_standalone_and_forced_exit_paths() -> None:
-    # Direct guard for the exact invariant the 06-24 fix restores: the
-    # standalone-SIGNAL path (HorizonSignalEngine, the sole writer of alpha
-    # Signals) and the synthetic forced-exit path (orchestrator, disjoint
-    # strategy_id namespace) must never both publish the same Signal.
+    # The signal engine and forced-exit path must not publish the same signal.
     config = _make_stop_exit_config()
     orchestrator, captured = _boot_and_record(config, _synth_stop_exit_events())
     orchestrator._positions.update(

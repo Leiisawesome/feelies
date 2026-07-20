@@ -17,11 +17,10 @@ Returns the hazard rate.  ``warm`` is true once at least
 (This is a count threshold, not an elapsed-time threshold — a burst
 that fills the window's count budget instantly satisfies it.)
 
-sensor_audit_2026-07-02 P1: optional ``min_window_span_seconds`` adds an
+Optional ``min_window_span_seconds`` adds an
 elapsed-time floor alongside the count, mirroring ``structural_break_score``'s
 dual (count AND duration) warm gate — a 20-quote burst inside a fraction of a
-second no longer counts as "warm" on its own.  Defaults to ``None`` (off),
-preserving the exact legacy behaviour and the locked golden vector.
+second no longer counts as warm on its own. ``None`` disables the duration floor.
 
 Determinism: pure integer timestamp comparisons; the float division
 at the end is the only floating-point operation.
@@ -49,8 +48,7 @@ class QuoteHazardRateSensor:
     - ``min_window_span_seconds`` (int | None, default None): when set,
       ``warm`` additionally requires the retained quotes to span at least
       this many seconds, so a burst cannot satisfy ``min_samples`` before a
-      genuine window of history has accumulated.  ``None`` preserves the
-      legacy count-only behaviour.
+      genuine window of history has accumulated. ``None`` disables the floor.
     """
 
     sensor_id: str = "quote_hazard_rate"

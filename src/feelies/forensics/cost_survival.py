@@ -1,21 +1,13 @@
-"""Per-alpha cost-survival report (close-the-loop: the *measure* layer).
+"""Per-alpha realized edge-versus-cost reporting.
 
-The audit's central finding is that the G12 / B4 gates trade on the
-author-disclosed ``edge_estimate_bps`` (an estimate) while the **realized**
-edge can be far lower — so an alpha clears the gate and still bleeds fees
-(e.g. a backtest where ``sig_kyle_drift_v1`` took 6 fills, realized $0, and
-paid $34.79 in fees).  This module turns a backtest's per-fill
-:class:`TradeRecord` stream into a per-alpha realized **edge-vs-cost
-verdict**, so the estimate→realized gap is measured per strategy rather than
-hidden in a fleet aggregate.
+Disclosed edge is an estimate; realized edge may be lower. This module turns
+per-fill :class:`TradeRecord` data into a per-alpha cost-survival verdict.
 
 It reuses :class:`feelies.forensics.decay_detector.DecayDetector` for the
 canonical realized edge / cost computation (``analyze_fills``), so the
 numbers match the rest of the forensics stack.
 
-This is the input the *automate* layer (evidence-driven auto-quarantine)
-consumes: an alpha whose realized edge does not clear cost over a window is
-exactly what the manual ``sig_inventory_revert_v1`` quarantine did by hand.
+Evidence-driven quarantine consumes this report.
 """
 
 from __future__ import annotations
@@ -46,7 +38,7 @@ VERDICT_SURVIVES = "SURVIVES"
 class AlphaCostSurvival:
     """One alpha's realized edge-vs-cost summary over a set of fills.
 
-    Two distinct cost views travel together — keep them straight (audit P1-9):
+    Keep the two cost views distinct:
 
     * ``net = gross_pnl - fees`` is the **economic** bottom line: mid-to-mid
       PnL less the booked ``fees`` (which include the spread component).  The

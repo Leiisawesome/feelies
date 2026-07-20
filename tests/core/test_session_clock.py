@@ -1,4 +1,4 @@
-"""Tests for RTH-open session anchoring (audit P1-8)."""
+"""Tests for RTH-open session anchoring."""
 
 from __future__ import annotations
 

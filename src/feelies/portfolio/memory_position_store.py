@@ -20,19 +20,10 @@ class MemoryPositionStore:
     def __init__(self) -> None:
         self._positions: dict[str, Position] = {}
         self._marks: dict[str, Decimal] = {}
-        # Audit F-H-03: spread-aware liquidation marks.  When
-        # ``update_mark`` is called with the BBO, ``_bids`` / ``_asks``
-        # store the side-specific liquidation prices so that
-        # ``_recompute_unrealized`` can use bid for longs and ask for
-        # shorts (the realistic close price).  Falls back to mid when
-        # not supplied (legacy callers preserve their existing values).
+        # Use bid for long liquidation and ask for short liquidation; fall back to mid.
         self._bids: dict[str, Decimal] = {}
         self._asks: dict[str, Decimal] = {}
-        # Phase-4-finalize: per-symbol "opened-at" shadow map used by
-        # the hazard-exit min-age safeguard and optional hard-exit-age
-        # reconciliation guard.  Set when an update starts a new open
-        # episode (flat→non-zero or direct sign flip); cleared when
-        # ``new_qty == 0`` so the next reopen records a fresh timestamp.
+        # Track open-episode age for hazard exits; sign flips restart and flat clears it.
         self._opened_at_ns: dict[str, int] = {}
 
     def get(self, symbol: str) -> Position:
@@ -57,10 +48,7 @@ class MemoryPositionStore:
         old_qty = pos.quantity
         new_qty = old_qty + quantity_delta
 
-        # Phase-4-finalize: track the start of each open episode for
-        # hazard exits. Only records when the caller supplies
-        # ``timestamp_ns`` — legacy callers that omit it see no
-        # behavioural change.
+        # Update episode age only when the caller provides an event timestamp.
         if timestamp_ns is not None:
             if new_qty == 0:
                 self._opened_at_ns.pop(symbol, None)
@@ -109,9 +97,8 @@ class MemoryPositionStore:
         store records them and ``_recompute_unrealized`` uses the
         side-specific liquidation price: longs mark to bid, shorts
         mark to ask.  This matches the realistic exit price (you
-        sell at the bid; you cover at the ask) and removes the
-        ~half-spread × |qty| optimistic bias in unrealized PnL that
-        caused the drawdown guard to fire late (audit F-H-03).
+        sell at the bid; you cover at the ask), avoiding an optimistic
+        half-spread bias in unrealized PnL.
         """
         if mark_price <= 0:
             return
@@ -132,9 +119,7 @@ class MemoryPositionStore:
         if pos.quantity == 0:
             pos.unrealized_pnl = Decimal("0")
             return
-        # Spread-aware liquidation mark when BBO is recorded; otherwise
-        # fall back to the legacy mid mark (no behavioural change for
-        # callers that don't pass BBO into ``update_mark``).
+        # Use side-specific BBO marks when available, otherwise mid.
         if pos.quantity > 0:
             mark = self._bids.get(pos.symbol) or self._marks.get(pos.symbol)
         else:

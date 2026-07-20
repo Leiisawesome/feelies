@@ -1,1 +1,1 @@
-"""Causality / anti-lookahead tests (Inv-6, BT-10)."""
+"""Causality and anti-lookahead tests for invariant 6."""

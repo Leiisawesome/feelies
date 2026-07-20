@@ -1,5 +1,5 @@
 # =============================================================
-#   PORTFOLIO template (schema 1.1, Phase 4 / 4.1)
+#   PORTFOLIO template (schema 1.1)
 #   ----------------------------------------------------------------
 #   Cross-sectional alpha consuming N upstream SIGNAL alphas.
 #   Emits one SizedPositionIntent per (alpha_id, horizon_seconds,
@@ -17,7 +17,7 @@
 #   Recommended:
 #     - factor_neutralization: true  (G11)
 #     - trend_mechanism.consumes     (per-family max_share_of_gross — G16 PORTFOLIO rule 8)
-#     - parameters.decay_weighting_enabled (Phase 4.1)
+#     - parameters.decay_weighting_enabled
 #
 #   See:
 #     - .cursor/skills/microstructure-alpha/SKILL.md (reasoning contract, hard gates)
@@ -96,7 +96,7 @@ parameters:
     type: bool
     default: false
     description: |
-      Phase-4.1 toggle for inverse-staleness decay weighting.
+      Enables inverse-staleness decay weighting.
       OFF reproduces the canonical baseline parity hash; ON applies
       exp(-Δt/hl) weighting per signal age × per-mechanism half-life.
   composition_completeness_threshold:
@@ -109,7 +109,7 @@ parameters:
       coverage falls below this fraction (default mirrors the
       platform.yaml setting; override here per-alpha).
 
-# ── Promotion Gate Thresholds (Workstream F-5 — optional) ──
+# ── Promotion gate thresholds (optional) ──────────────────
 # Per-alpha override of one or more `GateThresholds` fields used by
 # `validate_gate(...)` at promotion time (see
 # `src/feelies/alpha/promotion_evidence.py`).  Layering precedence

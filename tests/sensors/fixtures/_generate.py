@@ -1,37 +1,7 @@
-"""Deterministic generator for the Phase-2-γ complex-sensor fixtures.
+"""Generate deterministic JSONL vectors for complex sensors.
 
-Each fixture is a JSONL file with one record per input event:
-
-    {"input": <event_payload>, "expected_value": <float>, "expected_warm": <bool>}
-
-The generator drives a single, freshly constructed sensor instance
-through a synthetic event sequence — different per sensor — and
-records the output it produced.  The corresponding test rebuilds the
-same input sequence, drives the same sensor, and asserts the output
-matches the locked vector value-by-value.
-
-Why per-sensor sequences?  The simple-sensor unit tests in
-``tests/sensors/test_*.py`` already cover hand-computable corner
-cases.  The locked-vector tests catch *aggregate* drift across long
-sequences (deque eviction, rolling-window math, accumulator stability)
-that hand-computation cannot economically span.
-
-Determinism contract:
-
-- All synthesis uses ``random.Random(seed)``.
-- Timestamps are pure-integer (``base_ns + i * cadence_ns``).
-- Prices are integer cents converted to ``Decimal`` so we never
-  lose precision in the round-trip through JSON.
-- The generator writes JSONL with ``sort_keys=True`` so a textual
-  diff catches any reordering.
-
-To regenerate (after intentional sensor-implementation changes)::
-
-    PYTHONHASHSEED=0 python -m tests.sensors.fixtures._generate
-
-This will overwrite the five ``*.jsonl`` files in this package.  Each
-must then be explicitly re-baselined in the same commit, with the
-sensor change rationalised in the commit message.
+Each sensor gets a seeded event sequence. Integer timestamps, decimal prices,
+and sorted keys keep long-window drift checks reproducible.
 """
 
 from __future__ import annotations
@@ -295,9 +265,7 @@ def vpin_factory() -> VPIN50BucketSensor:
 
 
 def kyle_factory() -> KyleLambda60sSensor:
-    # Audit P0-1: the class default flipped to ``alignment="causal"`` / 2.0.0.
-    # This locked vector was generated under the legacy 1.2.0 alignment, so we
-    # pin it explicitly here to keep ``kyle_lambda_60s.jsonl`` byte-identical.
+    # This locked vector intentionally pins the 1.2.0 compatibility alignment.
     return KyleLambda60sSensor(
         window_seconds=60,
         min_samples=10,

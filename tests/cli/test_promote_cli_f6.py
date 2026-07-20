@@ -1,7 +1,7 @@
-"""Workstream F-6 ``feelies promote`` CLI surfaces.
+"""Capital-tier surfaces of the ``feelies promote`` CLI.
 
 These tests assert that the operator CLI correctly recognises the
-LIVE → LIVE capital-tier escalation introduced by F-6:
+LIVE → LIVE capital-tier escalation:
 
   * ``inspect`` (text + JSON) renders the tier suffix in the header,
     formats the LIVE @ SMALL_CAPITAL → LIVE @ SCALED arrow specially,
@@ -20,7 +20,7 @@ LIVE → LIVE capital-tier escalation introduced by F-6:
 The CLI is read-only and forensic-only — these tests build small
 ledger files in ``tmp_path`` and assert on stdout; they never import
 the orchestrator or risk engine and therefore preserve replay
-determinism (audit A-DET-02).
+determinism.
 """
 
 from __future__ import annotations
@@ -218,7 +218,7 @@ class TestInspectShowsCapitalTier:
         assert "tier=SCALED" in captured.out
         # Special-cased arrow rendering.
         assert "LIVE @ SMALL_CAPITAL -> LIVE @ SCALED" in captured.out
-        # Capital-tier entry must use the F-6 trigger.
+        # Capital-tier entries must use the dedicated trigger.
         assert "'promote_capital_tier'" in captured.out
 
     def test_inspect_text_header_shows_small_capital_when_pre_escalation(
@@ -484,27 +484,11 @@ class TestReplayEvidenceCapitalTier:
         assert any("deployment_days" in e for e in row["errors"])
 
 
-# ── F-6 P2: trigger-aware ("LIVE", "LIVE") gate inference ─────────
+# Trigger-aware live-to-live gate inference.
 
 
 class TestReplayEvidenceTriggerAwareLiveSelfLoop:
-    """The Codex-bot P2 review issue on PR #23.
-
-    Pre-fix, the CLI's ``_STATE_PAIR_TO_GATE`` mapping classified
-    *every* ``("LIVE", "LIVE")`` ledger entry as
-    :attr:`GateId.LIVE_PROMOTE_CAPITAL_TIER`, regardless of the
-    entry's ``trigger`` field.  That meant any future (or
-    accidental) ``LIVE -> LIVE`` self-loop carrying a different
-    trigger would be silently mis-replayed against the
-    capital-tier gate's evidence schema, masking real audit issues
-    behind a misleading row.
-
-    Post-fix, the CLI requires the trigger to match
-    :data:`PROMOTE_CAPITAL_TIER_TRIGGER` to apply the
-    capital-tier gate; any other ``LIVE -> LIVE`` trigger is
-    reported as *skipped — no gate registered* (the safe default
-    documented for unknown transitions).
-    """
+    """LIVE self-loops require the capital-tier trigger to infer that gate."""
 
     def test_live_to_live_with_unknown_trigger_is_skipped(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

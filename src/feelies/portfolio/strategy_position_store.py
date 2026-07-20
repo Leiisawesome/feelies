@@ -84,8 +84,7 @@ class StrategyPositionStore:
         per-strategy ``unrealized_pnl`` and ``total_exposure`` coherent
         with the aggregate view consumed by the risk engine.
 
-        ``bid`` / ``ask`` (when supplied) are forwarded so each sub-
-        store can use spread-aware liquidation marks (audit F-H-03).
+        ``bid`` / ``ask`` are forwarded for spread-aware liquidation marks.
         """
         if mark_price <= 0:
             return

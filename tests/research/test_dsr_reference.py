@@ -1,4 +1,4 @@
-"""Reference tests for :mod:`feelies.research.dsr` (Workstream C-2).
+"""Reference tests for :mod:`feelies.research.dsr`.
 
 Each assertion compares the module to an inline reimplementation of the
 same closed form using :func:`math.erf`,
@@ -237,19 +237,7 @@ class TestEdgeCasesPinned:
 
 
 class TestExpectedMaxSharpeKnownAnswer:
-    """P2-5: cross-check ``expected_max_sharpe`` against an INDEPENDENT
-    ground truth — the literature value of ``E[max of N iid standard
-    normals]``, the order-statistic expectation that Bailey-LdP eq. 7
-    closed-form *approximates*.
-
-    The other reference tests in this module compare the module to a
-    reimplementation of the *same* closed form (a formula-drift
-    tripwire, but circular).  This test instead pins the answer to
-    well-tabulated expected-largest-order-statistic values (e.g. Harter
-    1961; Royston 1982), against which the eq. 7 approximation is a
-    documented ~1-3% match for ``N >= 10`` — catching an error that
-    silently preserves the formula's internal structure.
-    """
+    """Compare the approximation with tabulated normal order statistics."""
 
     # E[max of N iid N(0,1)] from standard order-statistics tables.
     _E_MAX_STD_NORMAL = {

@@ -1,28 +1,9 @@
-"""Sensor Protocol — the contract every Layer-1 sensor satisfies.
+"""Contract for deterministic Layer-1 sensors.
 
-A ``Sensor`` is a deterministic, incremental computation over raw
-market events (``NBBOQuote``, ``Trade``).  It owns no instance state;
-all mutable state lives in a per-symbol ``dict`` owned by the
-:class:`feelies.sensors.registry.SensorRegistry` and threaded through
-``update()``.  This mirrors the legacy ``FeatureComputation`` Protocol
-in :mod:`feelies.features.definition` and inherits the same
-determinism guarantees (Inv 5).
-
-Design notes (plan §3.1):
-
-- **No** ``is_warm`` method.  Sensors set ``warm`` directly on the
-  emission they return; this avoids two-call redundancy and
-  keeps warmness an emission-time concern.
-- ``update()`` may return ``None`` to skip an emission (used by
-  trade-only sensors when they receive a quote, and vice versa).  The
-  registry never publishes ``None``.
-- Prefer :class:`SensorEmission` (value/warm/confidence only).  The
-  registry stamps provenance once into a ``SensorReading``.  Returning
-  a full ``SensorReading`` remains supported for legacy tests but
-  allocates a throwaway instance that ``_stamp`` discards.
-- ``provenance`` on the emitted ``SensorReading`` is **pre-baked** by
-  the registry from the sensor's ``SensorSpec``; sensors must not
-  allocate a fresh provenance per call (plan §3.1 / S4).
+Sensors incrementally consume quotes or trades while the registry owns their
+per-symbol state. Emissions carry value, warmth, and confidence; the registry
+adds provenance. ``None`` skips publication. Returning a full
+``SensorReading`` remains supported for compatibility.
 """
 
 from __future__ import annotations

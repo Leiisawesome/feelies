@@ -1,26 +1,7 @@
-"""Level-5 baseline — ``RegimeHazardSpike`` replay parity (Phase 3.1).
+"""Replay parity for ``RegimeHazardSpike`` output.
 
-Locks a deterministic Level-5 fingerprint of the
-``RegimeHazardSpike`` stream produced by
-:class:`feelies.services.regime_hazard_detector.RegimeHazardDetector`
-when driven against a synthetic regime-flip fixture.
-
-The fixture is a hand-crafted :class:`RegimeState` sequence that
-covers the four canonical hazard transitions enumerated in v0.3
-§20.3.1:
-
-1.  Quiet decay through the dominance floor (``p_now < 1.0 - h``)
-    while the dominant state is still nominally the same.
-2.  Hard flip from one dominant state to another within one tick.
-3.  Suppression: a second decay tick on the *same* departure episode
-    must not emit a second spike.
-4.  Re-arming: once the departing state regains dominance (or its
-    posterior recovers above the dominance floor) the next decay
-    fires a fresh spike.
-
-Replay must reproduce the locked SHA-256 hash bit-for-bit.  Any
-drift requires updating both the count and the hash in the same
-commit, with rationale.
+The fixture covers posterior decay, hard flips, duplicate suppression, and
+re-arming after recovery.
 """
 
 from __future__ import annotations
@@ -158,28 +139,11 @@ def test_two_replays_produce_identical_hazard_hash() -> None:
 # ── Locked baseline ─────────────────────────────────────────────────────
 
 
-# Level-5 baseline: hash of the (RegimeHazardSpike,...) stream emitted
-# by the canonical regime-flip fixture above.  Updates require a
-# justified commit message and bump of *both* count and hash.
+# Canonical detector output for the regime-flip fixture above.
 EXPECTED_LEVEL5_HAZARD_COUNT = 3
 
-# Frozen literal SHA-256 of the (RegimeHazardSpike,...) stream
-# produced by the canonical fixture above when fed through
-# :class:`RegimeHazardDetector` with ``hysteresis_threshold=0.30``.
-#
-# This constant is the actual locked baseline.  Earlier revisions of
-# this test computed ``expected`` via a sibling driver
-# (``_drive_reference``) that ran the same detector on the same
-# fixture, so any change in detector logic moved both sides in lock-
-# step and the assertion was vacuous.  Treat any drift here as a
-# Level-5 parity break:
-#
-#   * If intentional (a deliberate change to the fixture, the hazard
-#     formula, or the line format in ``_hash_spike_stream``), update
-#     this literal in the same commit and justify the change in the
-#     commit message.
-#   * If unintentional, the detector or one of its dependencies
-#     changed observable output and must be fixed before merge.
+# Frozen SHA-256 at ``hysteresis_threshold=0.30``. Drift means the fixture,
+# hazard formula, or serialized spike stream changed.
 EXPECTED_LEVEL5_HAZARD_HASH = "8092e88586a006ff7a46ee02dfc8f26c31d62d4cb2db7d1493bb8e8e81e3bf2e"
 
 

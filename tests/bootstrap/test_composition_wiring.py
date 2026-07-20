@@ -1,25 +1,7 @@
-"""Bootstrap-time wiring tests for the Phase-4 composition layer.
+"""Bootstrap wiring tests for the composition layer.
 
-Covers three sub-cases (plan §p4f_bootstrap_tests):
-
-1. ``test_no_portfolio_alpha_no_composition`` --when no PORTFOLIO alpha
-   is registered, none of the composition layer components are
-   constructed.  Validates Inv-A: SIGNAL-only deployments do not pay
-   for the composition pipeline.
-2. ``test_single_portfolio_alpha_wires_full_pipeline`` --registering a
-   single PORTFOLIO alpha brings up the entire composition pipeline:
-   ``CompositionEngine``, ``CrossSectionalTracker``,
-   ``HorizonMetricsCollector``, and (when hazard_exit is enabled) a
-   ``HazardExitController``.
-3. ``test_universe_scale_cap_fail_stop`` --exceeding
-   ``composition_max_universe_size`` raises :class:`UniverseScaleError`
-   at bootstrap rather than silently shipping a quietly-wrong pipeline
-   (Inv-11 fail-safe).
-
-Workstream D.2: the upstream-alpha fixture is now a ``layer: SIGNAL``
-manifest (LEGACY_SIGNAL was retired from the loader's accepted layer
-set).  PORTFOLIO alphas reference its ``alpha_id`` in
-``depends_on_signals``.
+SIGNAL-only builds omit composition. PORTFOLIO builds wire the full pipeline,
+and oversized universes fail at startup.
 """
 
 from __future__ import annotations
@@ -45,17 +27,7 @@ from tests._fixtures.sensor_specs import ALL_FINGERPRINT_SENSOR_SPECS
 
 # ── Sensor catalog the upstream SIGNAL fixture depends on ──────────────
 #
-# Workstream D.2 swapped the LEGACY_SIGNAL upstream fixture (which had
-# no sensor dependencies) for a horizon-anchored SIGNAL alpha.  SIGNAL
-# alphas declare ``depends_on_sensors:`` and the bootstrap layer
-# resolves those IDs against the configured ``sensor_specs`` tuple.
-#
-# Audit follow-up #6: ``ALL_FINGERPRINT_SENSOR_SPECS`` (shared fixture)
-# is the union of every G16 family fingerprint sensor plus the two
-# baseline sensors (``ofi_ewma`` / ``spread_z_30d``) the upstream
-# fixture's gate references.  Using the union lets SIGNAL fixtures
-# declare any ``trend_mechanism.family`` without G16's
-# ``MissingFingerprintSensorError`` blocking the load.
+# The shared catalog covers every mechanism fingerprint plus the gate sensors.
 _TEST_SENSOR_SPECS: tuple[SensorSpec, ...] = ALL_FINGERPRINT_SENSOR_SPECS
 
 
@@ -268,15 +240,7 @@ def _make_config(
         account_equity=100_000.0,
         composition_max_universe_size=composition_max_universe_size,
         sensor_specs=_TEST_SENSOR_SPECS,
-        # Workstream E flipped the platform default to ``true``.  These
-        # bootstrap-wiring tests are orthogonal to G16 (composition
-        # wiring, hazard-exit construction, scale-cap fail-stop) and
-        # the upstream SIGNAL fixture only registers ``ofi_ewma`` and
-        # ``spread_z_30d``, neither of which is a primary fingerprint
-        # sensor for any mechanism family.  Pinning the opt-out here
-        # preserves the v0.2-style fixture without dragging the
-        # mechanism taxonomy into a wiring test (parity with the
-        # ``platform.yaml`` opt-out documented for ``sig_benign_midcap_v1``).
+        # Keep composition wiring independent of mechanism validation.
         enforce_trend_mechanism=False,
     )
 
@@ -333,15 +297,7 @@ class TestCompositionWiring:
         assert policy.min_age_seconds == 60
 
     def test_signal_layer_hazard_exit_opt_in_wires_controller(self, tmp_path: Path) -> None:
-        """Audit P0 H-1: SIGNAL-layer ``hazard_exit.enabled: true`` must
-        actually wire a controller.  Before the fix,
-        ``_create_composition_layer`` scanned only PORTFOLIO modules
-        and a SIGNAL opt-in produced spikes with no consumer.
-
-        Re-introduced after follow-up #6 added the shared fingerprint-
-        sensor catalog, which lets the SIGNAL fixture declare a
-        ``trend_mechanism:`` block without G16 blocking the load.
-        """
+        """A SIGNAL alpha with hazard exits enabled wires a controller."""
         # KYLE_INFO has half-life range [60, 1800]; horizon 300 / half 150
         # = ratio 2.0, within G16's [0.5, 4.0].  Its fingerprint sensors
         # (kyle_lambda_60s, micro_price) ship in ALL_FINGERPRINT_SENSOR_SPECS

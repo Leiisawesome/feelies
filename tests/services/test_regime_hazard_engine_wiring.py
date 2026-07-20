@@ -77,15 +77,7 @@ class _StubModule:
 
 
 def _make_registry(*modules: _StubModule) -> AlphaRegistry:
-    """Build an :class:`AlphaRegistry` populated by stub modules.
-
-    The registry's full contract requires loaded alpha modules
-    (post-D.2 PR-2: :class:`LoadedSignalLayerModule` or
-    :class:`LoadedPortfolioLayerModule`); we monkey-patch
-    ``active_alphas`` for the bootstrap factory to keep the fixture
-    self-contained without instantiating the full alpha-loading
-    pipeline.
-    """
+    """Build a self-contained registry by replacing ``active_alphas``."""
     registry = AlphaRegistry()
     registry.active_alphas = lambda: list(modules)  # type: ignore[method-assign]
     return registry
@@ -321,9 +313,7 @@ class TestSessionBoundaryReset:
         assert det.detect(prev, start_curr) is None
 
     def test_run_backtest_invokes_session_reset(self) -> None:
-        """The fix is wired: ``run_backtest`` must invoke
-        ``_reset_regime_session_state`` so the misleading
-        orchestrator comment is now correct."""
+        """``run_backtest`` resets regime state between sessions."""
         orch = self._build_orchestrator()
         det = orch._regime_hazard_detector
         assert det is not None

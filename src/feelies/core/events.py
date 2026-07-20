@@ -31,12 +31,10 @@ from typing import Any, Literal
 class Event:
     """Base event.  Every event carries provenance metadata.
 
-    ``source_layer`` is an additive Phase-1 field (Appendix A of
-    three_layer_architecture.md) that tags every emitted event with the
-    layer that produced it.  Default ``"UNKNOWN"`` preserves construction
-    for every existing producer that does not yet pass the tag.
+    ``source_layer`` names the emitting layer. Default ``"UNKNOWN"`` supports
+    producers that do not set it.
 
-    Immutability is **shallow** (audit P2-3): ``frozen=True`` blocks
+    Immutability is shallow: ``frozen=True`` blocks
     rebinding a field, but events whose fields hold mutable containers
     (e.g. ``Signal.metadata``, ``RiskVerdict.constraints``,
     ``MetricEvent.tags``, ``HorizonFeatureSnapshot.values/warm/stale``,
@@ -118,7 +116,7 @@ class Trade(Event):
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class SymbolHalted(Event):
-    """Forensic marker for a per-symbol trading halt / resume (BT-5).
+    """Forensic marker for a per-symbol trading halt or resume.
 
     Emitted by the orchestrator when a symbol's tape signals an LULD /
     regulatory halt (``halted=True``) or a resume (``halted=False``).
@@ -146,40 +144,10 @@ class SymbolHalted(Event):
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class RegimeState(Event):
-    """Regime detection output published once per tick at M2.
+    """Regime output published after each platform-level update.
 
-    Emitted by the orchestrator after updating the platform-level
-    RegimeEngine.  Consumed by dashboards, risk engine (via cached
-    engine state), and logged for provenance.
-
-    Additive Phase-1 fields per §5.4:
-      ``horizon_seconds`` — 0 for the per-tick snapshot (legacy), positive
-      for horizon-anchored snapshots emitted by Layer-2 consumers in
-      Phase 3+.
-      ``stability`` — 0..1 stability of the dominant state over recent
-      posteriors.  Default 1.0 is a no-op for legacy producers.
-      ``posterior_entropy_nats`` — Shannon entropy (natural log base) of
-      the posterior categorical; ``0`` when unused (legacy producers).
-      ``calibrated`` — whether the producing engine's emission parameters
-      were fit from data.  ``False`` means the posteriors were computed
-      from placeholder/default emissions and are not trustworthy for
-      ``P(<state>)`` gating; the regime gate treats ``P()``/``dominant``/
-      ``entropy`` bindings as *unavailable* in that case so entry gates
-      fail safe to OFF (audit P0-1, Inv-11).  Defaults to ``True`` so
-      legacy producers — and the L6 parity hash, which does not serialize
-      this field — are unaffected.
-      ``discriminability`` — the engine's calibration-time min pairwise
-      emission separation ``d`` (audit R-1).  Near ``0`` means the states
-      are statistically indistinguishable (degenerate calibration on a
-      tight/stable spread) so ``P(state)`` is noise; consumers fail
-      regime-gates safe to OFF when it is below a configured floor.
-      Orthogonal to ``calibrated`` (placeholder emissions score high here
-      but are caught by ``calibrated=False``).  Defaults to ``+inf`` so
-      legacy producers are always treated as fully discriminative, and the
-      L6 parity hash does not serialize it.
-
-    When ``posteriors`` tie, producers pick the lowest ``dominant_state``
-    index (deterministic replay).
+    Uncalibrated or poorly discriminative posteriors fail regime gates closed.
+    Posterior ties choose the lowest state index for deterministic replay.
     """
 
     symbol: str
@@ -219,13 +187,10 @@ class Signal(Event):
                               horizon signals.
       ``consumed_features`` — tuple of feature_ids consulted during
                               evaluation (empty when unspecified).
-      ``trend_mechanism`` — None when unspecified; one of the 5
-                            ``TrendMechanism`` enum members for v0.3
-                            mechanism-bound signals (Phase 3.1+).
-      ``expected_half_life_seconds`` — 0 for unspecified;
-                                        positive for v0.3 mechanism-bound
-                                        signals (drives decay weighting
-                                        and hard-exit-age in Phase 4.1).
+      ``trend_mechanism`` — None when unspecified; otherwise a
+                            ``TrendMechanism`` member.
+      ``expected_half_life_seconds`` — 0 for unspecified; otherwise drives
+                                        decay weighting and hard-exit age.
     """
 
     symbol: str
@@ -234,10 +199,7 @@ class Signal(Event):
     strength: float
     edge_estimate_bps: float
     disclosed_cost_total_bps: float = 0.0
-    # B5: combined exit + entry round-trip cost (bps) estimated by the
-    # orchestrator's reversal edge guard in ``_execute_reverse``.  Additive
-    # and backward-compatible: all non-reversal producers leave it at 0.0,
-    # so it does not affect parity hashes by its presence alone.
+    # Combined exit and entry cost for a reversal; zero for other signals.
     reversal_cost_estimate_bps: float = 0.0
     disclosed_margin_ratio: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -304,10 +266,9 @@ class OrderAckStatus(Enum):
 class OrderRequest(Event):
     """Request to place an order — output of ORDER_DECISION micro-state.
 
-    ``reason`` is a v0.3-additive free-text tag (default ``""``) used by
-    Phase-4-finalize emitters to distinguish ordinary entry/exit orders
+    ``reason`` is a free-text tag used to distinguish ordinary orders
     from hazard-driven exits (``"HAZARD_SPIKE"`` / ``"HARD_EXIT_AGE"``)
-    and from Phase-4 PORTFOLIO-path orders (``"PORTFOLIO"``).  Present
+    and portfolio orders (``"PORTFOLIO"``). Present
     on every emitted ``OrderRequest`` so forensics / parity baselines
     can split the order stream by lineage without re-deriving it from
     ``correlation_id``.
@@ -320,11 +281,9 @@ class OrderRequest(Event):
     quantity: int
     limit_price: Decimal | None = None
     strategy_id: str = ""
-    # True for short-entry sells.  HTB fee applies on the fill day only;
-    # multi-day accrual over the holding period is a position-store
-    # concern and is documented as a remaining gap in cost_model.py.
+    # True for short-entry sells. HTB fees apply on the fill day only.
     is_short: bool = False
-    # BT-8: closing-auction (MOC) order — backtest routers queue until the
+    # Closing-auction orders remain queued until the
     # official close print instead of filling on the continuous book.
     is_moc: bool = False
     g12_disclosed_cost_total_bps: float = 0.0
@@ -461,17 +420,7 @@ class KillSwitchActivation(Event):
     activated_by: str
 
 
-# ── Three-Layer Architecture (v0.2) ─────────────────────────────────────
-#
-# Per docs/three_layer_architecture.md §5 and Appendix A.  All
-# events below are additive Phase-1 contracts; no producer is wired in
-# Phase 1 (Phase 2 ships the sensor framework, Phase 3 ships the
-# horizon signal engine, Phase 4 ships the composition layer).
-#
-# These types are defined for forward compatibility so that downstream
-# code can import them, type-check against them, and so that the YAML
-# loader can validate references to them without importing experimental
-# modules.
+# Layered sensor, signal, and portfolio event contracts.
 
 
 # ── v0.3 TrendMechanism Taxonomy (§20.2 / §20.3.2) ──────────────────────
@@ -498,13 +447,7 @@ class TrendMechanism(Enum):
     SCHEDULED_FLOW = auto()
 
 
-# Mechanisms that are **exit-only**: an alpha bound to one of these must never
-# open or increase exposure — it may only de-leverage (FLAT) or have its
-# positions flattened.  Single source of truth, consumed by the composition
-# layer (cross-sectional ranking zeroes their scores) AND the SIGNAL-layer
-# runtime guardrail (``HorizonSignalEngine`` suppresses any non-FLAT signal
-# they emit, closing the gap where G16's static analysis abstains on a
-# dynamically-computed direction — §20.6.1 rule 7).
+# Exit-only mechanisms may reduce exposure but never open or increase it.
 EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = frozenset(
     {
         TrendMechanism.LIQUIDITY_STRESS,
@@ -565,14 +508,14 @@ class TargetPosition:
     urgency: float = 0.5
 
 
-# ── v0.2 New Events ─────────────────────────────────────────────────────
+# ── Horizon and composition events ──────────────────────────────────────
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class HorizonTick(Event):
     """Deterministic event-time scheduler tick (§5.1).
 
-    Emitted by the (Phase-2) ``HorizonScheduler`` at boundaries
+    Emitted by ``HorizonScheduler`` at boundaries
     ``session_open_ns + k * horizon_seconds * 1e9`` for k = 1, 2, ....
     Drives Layer-2 aggregation and Layer-3 synchronization.
 
@@ -582,7 +525,7 @@ class HorizonTick(Event):
 
     ``timestamp_ns`` is the event time that caused the scheduler to
     emit the tick.  ``boundary_timestamp_ns`` is the exact horizon
-    boundary being finalized; legacy hand-built ticks leave it at ``0``
+    boundary being finalized; direct constructions may leave it at ``0``
     and consumers fall back to ``timestamp_ns``.
     """
 
@@ -592,13 +535,8 @@ class HorizonTick(Event):
     scope: Literal["SYMBOL", "UNIVERSE"]
     boundary_timestamp_ns: int = 0
     symbol: str | None = None
-    # ENG-1: the EXACT nominal boundary time
-    # ``session_open_ns + boundary_index * horizon_seconds * 1e9``.  Distinct
-    # from ``timestamp_ns`` (the *triggering* event time, which on sparse tapes
-    # lands at or after the boundary).  Lets consumers anchor to a regular grid
-    # (IC labels, forensics, cross-sectional sync) instead of the jittery
-    # trigger time.  Default 0 = "unset" (legacy / direct test construction);
-    # the scheduler always sets it.
+    # Nominal grid time, distinct from the event that triggered this boundary.
+    # Zero means unset for direct construction; the scheduler always sets it.
     boundary_ts_ns: int = 0
 
     @property
@@ -618,8 +556,7 @@ class SensorReading(Event):
 
     ``parent_correlation_id`` carries the ``correlation_id`` of the
     originating market-data event (``NBBOQuote`` / ``Trade``) that
-    triggered this reading.  Set by ``SensorRegistry._stamp``;
-    restores the audit-spine chain required by A-DATA-04.
+    triggered this reading. ``SensorRegistry._stamp`` sets it.
     """
 
     symbol: str
@@ -634,39 +571,17 @@ class SensorReading(Event):
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class HorizonFeatureSnapshot(Event):
-    """Layer-2 horizon-bucketed feature aggregate (§5.3).
+    """Horizon-bucketed feature aggregate.
 
-    Emitted by ``features/aggregator.py`` (Phase 2) on every
-    ``HorizonTick``.  Per-feature ``warm`` and ``stale`` flags carry the
-    aggregator's state so downstream signal evaluation can suppress on
-    either condition without re-reading sensor state.
-
-    Sole Layer-2 feature-event type (horizon-bucketed snapshot).
-
-    ``values`` contains only *warm* features; cold features are absent
-    (not 0.0) so consumers that key on presence correctly distinguish
-    "not yet warm" from "computed zero" (S2 / audit).
-    ``warm`` and ``stale`` include ALL registered features regardless
-    of warmth, so the engine can detect active-mode snapshots even when
-    all features are temporarily cold.
-
-    ``parent_correlation_id`` carries the ``correlation_id`` of the
-    ``HorizonTick`` that triggered this snapshot, restoring the
-    audit-spine chain (S4 / A-DATA-04).
-
-    ``feature_versions`` records the ``feature_version`` string for each
-    feature_id present in this snapshot.  Combined with ``source_sensors``
-    (which records ``input_sensor_ids``) this closes the Inv-13 provenance
-    gap: a consumer reading an archived snapshot can reconstruct exactly
-    which feature *version* produced each value, even when the same
-    ``feature_id`` is registered at multiple horizons with different
-    versions.  Empty dict in passive mode (no features).
+    ``values`` contains only warm features, while ``warm`` and ``stale`` cover
+    every registered feature. Version and source maps preserve replay
+    provenance; ``parent_correlation_id`` links the triggering horizon tick.
     """
 
     symbol: str
     horizon_seconds: int
     boundary_index: int
-    # ENG-1: exact nominal boundary time, carried verbatim from the triggering
+    # Exact nominal boundary time, carried verbatim from the triggering
     # ``HorizonTick.boundary_ts_ns``.  ``timestamp_ns`` remains the trigger
     # time; this is the regular-grid anchor for IC labels / forensics.
     boundary_ts_ns: int = 0
@@ -682,7 +597,7 @@ class HorizonFeatureSnapshot(Event):
 class CrossSectionalContext(Event):
     """Universe-wide barrier-synced snapshot for portfolio alphas (§5.6).
 
-    Emitted by ``composition/synchronizer.py`` (Phase 4) when every
+    Emitted by ``composition/synchronizer.py`` when every
     symbol in the universe has produced a ``HorizonFeatureSnapshot`` at
     the current decision-horizon boundary (or has been declared
     permanently absent for this boundary).  ``signals_by_symbol`` and
@@ -726,35 +641,11 @@ class SizedPositionIntent(Event):
     expected_turnover_usd: float = 0.0
     expected_gross_exposure_usd: float = 0.0
     mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
-    # Per-symbol disclosed one-way ``cost_total_bps`` carried over from
-    # the consumed SIGNAL events for each symbol in ``target_positions``.
-    # Populated by :class:`CompositionEngine` from
-    # :attr:`CrossSectionalContext.signals_by_symbol`; the risk engine
-    # stamps the corresponding entry onto each emitted PORTFOLIO
-    # ``OrderRequest.g12_disclosed_cost_total_bps`` so the post-fill G12
-    # cost-vs-disclosure stress alert (orchestrator §M9) fires for the
-    # PORTFOLIO path the same way it does for SIGNAL-driven orders.
-    # Empty when the composition engine emits no per-symbol disclosure
-    # (Inv-A / v0.2-compatible default).
+    # Per-symbol one-way cost disclosed by the consumed signals.
     disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
         default_factory=dict,
     )
-    # Content-addressable digest over the canonical *inputs* that produced
-    # ``target_positions`` (consumed signals, current positions, decision
-    # parameters).  Provides in-band provenance so two structurally-equal
-    # intents can be distinguished when they were derived from different
-    # inputs, and so forensics can detect silent input drift without
-    # re-deriving the decision (Inv-13).  Empty string ``""`` denotes
-    # "not computed" (degenerate intents, custom alphas that opt out) and
-    # is the v0.2-compatible default so existing replay hashes — which do
-    # not serialise this field — stay bit-identical (Inv-5).
+    # Digest of the signals, positions, and parameters that produced the targets.
     decision_basis_hash: str = ""
-    # Optimizer terminal status for the solve that produced this intent
-    # (e.g. ``"CLOSED_FORM"``, ``"optimal"``, ``"ECOS_FAILED_FALLBACK"``,
-    # or a non-optimal solver status).  Surfaced so the monitoring layer
-    # can alert on solver degradation without reaching into the optimizer
-    # (audit P1-8).  Empty string ``""`` denotes "not recorded" (degenerate
-    # intents, custom alphas) and is the v0.2-compatible default — like
-    # ``decision_basis_hash`` it is not serialised into the locked replay
-    # hashes, so determinism is unaffected (Inv-5).
+    # Optimizer terminal status; empty means not recorded.
     solver_status: str = ""

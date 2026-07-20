@@ -1,35 +1,7 @@
-"""Hypothesis property tests for the Phase-3-extended Micro state machine.
+"""Property tests for complete micro-state ticks and signal dispatch.
 
-The Phase-3 plan (P3-β / `p3b_micro_sm_property_tests`) requires that
-random pipeline configurations × random per-tick event flags drive
-the Micro SM through a complete tick that:
-
-* never raises :class:`feelies.core.state_machine.IllegalTransition`;
-* always reaches the terminal :class:`MicroState.LOG_AND_METRICS`
-  state and then loops back to
-  :class:`MicroState.WAITING_FOR_MARKET_EVENT`;
-* visits :class:`MicroState.SIGNAL_GATE` **iff** the configuration
-  enables sensors *and* registers at least one SIGNAL alpha *and*
-  the per-tick horizon-crossed flag is true (the v0.2 §10 contract);
-* never visits :class:`MicroState.SIGNAL_GATE` more than once per
-  tick (the no-duplicate-emission contract for the
-  :class:`HorizonSignalEngine`).
-
-Two complementary :class:`HorizonSignalEngine`-level properties are
-also locked here:
-
-* per-snapshot dispatch is one-shot — the engine emits at most one
-  ``Signal(layer="SIGNAL")`` per ``(alpha_id, symbol, boundary_index)``
-  no matter how many times the same snapshot is replayed on the bus
-  (idempotent re-delivery is *not* a feature, but accidental
-  duplication has surfaced before in adjacent codepaths and is
-  cheap to guard);
-* repeated replay of the same snapshot stream produces a byte-stable
-  emitted-Signal sequence (Inv-5 / determinism).
-
-The state-machine table is the single source of truth for legal
-transitions, so the SM-walking property functions consult it
-directly rather than baking edge constants into the test.
+Random configurations must follow legal transitions, visit ``SIGNAL_GATE``
+only when required, emit at most once per snapshot, and replay identically.
 """
 
 from __future__ import annotations
@@ -200,15 +172,7 @@ def test_every_tick_reaches_log_and_then_waiting(cfg: TickConfig) -> None:
 @_SETTINGS
 @given(cfg=_tick_config())
 def test_signal_gate_visited_iff_all_conditions_met(cfg: TickConfig) -> None:
-    """SIGNAL_GATE entry is gated on three independent conditions.
-
-    Per the SM table comments, ``SIGNAL_GATE`` is only entered when
-    all three of (a) sensors enabled, (b) horizon crossed for this
-    tick, (c) at least one SIGNAL alpha registered, are true.  Any
-    other combination must take the Phase-2 fast-path
-    ``HORIZON_AGGREGATE → FEATURE_COMPUTE`` (or skip even further
-    upstream).
-    """
+    """SIGNAL_GATE requires sensors, a crossed horizon, and a signal alpha."""
     visited = _walk_one_tick(cfg)
     expected = cfg.sensors_enabled and cfg.horizon_crossed and cfg.signal_alpha_loaded
     assert (MicroState.SIGNAL_GATE in visited) is expected
@@ -399,17 +363,7 @@ def test_engine_emits_one_signal_per_snapshot(
 def test_engine_replay_is_byte_stable(
     boundary_indices: list[int],
 ) -> None:
-    """Two replays of the same snapshot stream produce identical Signals.
-
-    Inv-5 / Phase-3 Level-2 guard: two fresh engines fed the same
-    sequence of snapshots must emit byte-for-byte identical
-    ``Signal`` streams on every structurally-engine-controlled
-    field (symbol, correlation_id, timestamp_ns, layer, direction).
-    The ``sequence`` field is allocated from a fresh
-    :class:`SequenceGenerator` per engine so it is *expected* to
-    match across two fresh runs (each starts at 1) — which is the
-    contract this property locks in.
-    """
+    """Fresh engines emit identical signals for the same snapshots."""
     snapshots = [_snapshot(i) for i in boundary_indices]
     assert _run_signals(snapshots) == _run_signals(snapshots)
 

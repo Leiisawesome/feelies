@@ -1,4 +1,4 @@
-"""Corporate-action ex-date calendar for replay integrity (BT-18).
+"""Corporate-action ex-date calendar for replay integrity.
 
 The platform ingests **raw, unadjusted** L1 NBBO. Splits and dividend
 ex-dates produce genuine price discontinuities; a replay window that
@@ -200,7 +200,7 @@ def check_ex_date_replay_window(
     *,
     precomputed_spans: dict[str, tuple[date, date]] | None = None,
 ) -> tuple[ExDateReplayViolation, ...]:
-    """Run the BT-18 guard for a populated replay log.
+    """Check a populated replay log for ex-date crossings.
 
     A symbol can only be flagged for an ex-date that falls inside *its
     own* per-symbol replay date span. Symbols listed in ``symbols`` but

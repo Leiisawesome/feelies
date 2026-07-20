@@ -1,70 +1,11 @@
-"""``HazardExitController`` — Phase-4.1 hazard-rate-driven exit emitter.
+"""Hazard- and age-driven exit emitter.
 
-Subscribes to two events on the bus:
+``RegimeHazardSpike`` triggers threshold exits; ``Trade`` timestamps drive
+optional maximum-age exits. Event time and content-derived order IDs keep
+replay deterministic. Each symbol emits at most one exit per open episode.
 
-* :class:`RegimeHazardSpike` (Phase 3.1) — publishes a per-symbol
-  hazard score when the dominant regime is about to flip.  When the
-  score exceeds an alpha-declared ``hazard_score_threshold`` and the
-  position has been open at least ``min_age_seconds``, an
-  :class:`OrderRequest` with ``reason='HAZARD_SPIKE'`` is emitted to
-  exit the position.
-* :class:`Trade` (M9 reconciliation) — used as the deterministic
-  clock for the optional ``hard_exit_age_seconds`` guard: if any
-  position has been open longer than the configured cap at the time
-  of any trade print on its symbol, an exit order is emitted with
-  ``reason='HARD_EXIT_AGE'``.
-
-Determinism (Inv-5)
--------------------
-
-Both triggers fire from event timestamps — the controller never reads
-wall-clock time.  Order ID derivation is SHA-256 of
-``(correlation_id, trigger_ts_ns, symbol, reason)`` (the triggering
-event's timestamp, not a sequence number — see ``_maybe_emit_exit``) so
-two replays produce identical IDs.
-
-Idempotency / suppression
--------------------------
-
-Once a hazard exit has been emitted for a symbol, subsequent spikes on
-the *same* ``(symbol, departing_state)`` are suppressed until the
-position returns to flat (Inv-11 fail-safe — never re-enter a hazard
-exit chain in a single regime departure).  Hard-age exits are
-suppressed identically — at most one per symbol per open episode.
-
-Per-alpha configuration
------------------------
-
-Each PORTFOLIO alpha that opts in declares::
-
-    hazard_exit:
-      enabled: true
-      hazard_score_threshold: 0.85       # exit when score > threshold
-      min_age_seconds: 30                # ignore until position is this old
-      hard_exit_age_seconds: 1800        # forcibly exit at this age (optional)
-
-The controller fans the configuration out per ``strategy_id`` so a
-universe with mixed-policy alphas behaves correctly.
-
-Position scope (audit P1-7)
----------------------------
-
-The exit acts on the **symbol-net** position read from a symbol-keyed
-:class:`~feelies.portfolio.position_store.PositionStore`
-(``position_store.get(symbol)``), **not** on a per-strategy slice.
-When two alphas hold the same symbol, a hazard spike attributed to one
-strategy's policy flattens the *shared* symbol position.  This is
-acceptable and fail-safe (the action is exit-only — it can only reduce
-exposure, never amplify it, Inv-11) but it means hazard exits are not
-attributable to a single strategy's book.  Per-strategy scoping would
-require routing a
-:class:`~feelies.portfolio.strategy_position_store.StrategyPositionStore`
-and a ``get(strategy_id, symbol)`` lookup through the controller and the
-orchestrator's fill-application path; that refactor is deferred (it
-touches reconciliation and is out of scope for the hazard fix).  Until
-then, treat the universe filter on each :class:`HazardPolicy` as the
-mechanism for keeping a strategy's hazard exits off symbols it does not
-trade.
+Policies are per strategy, but exits flatten the shared symbol-net position,
+not a strategy slice. Universe filters keep policies off unrelated symbols.
 """
 
 from __future__ import annotations
@@ -91,15 +32,7 @@ _DEFAULT_HAZARD_SCORE_THRESHOLD: float = 0.85
 _DEFAULT_MIN_AGE_SECONDS: int = 30
 
 # ── Hazard-exit OrderRequest signature (single source of truth) ──────────
-# Every hazard exit this controller emits carries ``source_layer`` ==
-# ``HAZARD_EXIT_SOURCE_LAYER`` and a ``reason`` drawn from
-# ``HAZARD_EXIT_REASONS``.  The orchestrator's bus bridge
-# (``Orchestrator._on_bus_hazard_order``) filters on *exactly* this signature
-# to decide which ``OrderRequest`` events to route to the backend, so the
-# producer (here, the sole writer) and the consumer (kernel) must agree
-# byte-for-byte.  Centralising the strings on the writer keeps them in lock-
-# step — adding a new hazard reason here surfaces immediately in the bridge's
-# membership test rather than silently failing to route (audit kernel-P1).
+# Export the controller signature used by the orchestrator's hazard bridge.
 HAZARD_EXIT_SOURCE_LAYER: str = "RISK"
 HAZARD_EXIT_REASON_SPIKE: str = "HAZARD_SPIKE"
 HAZARD_EXIT_REASON_HARD_AGE: str = "HARD_EXIT_AGE"
@@ -116,7 +49,7 @@ class HazardPolicy:
     *departures* trigger a hazard exit.  Each entry is a canonical
     ``"<departing> -> <incoming>"`` transition or a bare ``"<departing>"``
     departing-state name.  Empty ⇒ fire on **all** qualifying departures
-    (the historical behaviour).
+    (the default behavior).
     """
 
     strategy_id: str
@@ -148,7 +81,7 @@ def _spike_matches_regimes(
 
 
 class HazardExitController:
-    """Bus-attached hazard-exit emitter (Phase 4.1).
+    """Bus-attached hazard-exit emitter.
 
     Construction is **opt-in**: bootstrap only instantiates the
     controller when at least one PORTFOLIO alpha declares
@@ -183,27 +116,8 @@ class HazardExitController:
         # ``(strategy_id, symbol, reason)``.  Cleared when the position
         # returns to flat (see ``_clear_episode_if_flat``).
         self._emitted_for_episode: set[tuple[str, str, str]] = set()
-        # Audit HZ-1 (risk_engine_audit_2026-07-02.md): a symbol with an
-        # exit order already submitted but not yet reflected in
-        # ``position_store`` (PAPER/LIVE acks land asynchronously — see
-        # ``Orchestrator._filter_portfolio_orders_for_pending_conflicts``).
-        # ``_emitted_for_episode`` is keyed per ``reason`` (and per
-        # ``strategy_id``), so a *different* reason — or a different
-        # strategy's policy on the same symbol — is not suppressed by it and
-        # would otherwise re-emit a second full-size close against the same
-        # stale (pre-fill) quantity, netting to a position reversal once both
-        # fill.  This is the single per-*symbol* gate, mapping the symbol to
-        # the ``(opened_at_ns, quantity)`` snapshot the in-flight exit was
-        # sized against.  Scoping it to the episode means a *new* open (a
-        # different ``opened_at_ns``) is never blocked by a marker left over
-        # from a prior episode that flattened without a hazard evaluation
-        # observing the flat (e.g. a manual/emergency flatten).  Scoping it to
-        # the recorded quantity means the guard releases as soon as the fill
-        # reconciles into ``position_store`` — a partial fill that reduces the
-        # quantity (but stays in the same episode) leaves residual shares that
-        # a fresh, correctly-sized hazard exit must still be able to flatten;
-        # the double-close hazard only exists while ``quantity`` is still the
-        # stale pre-fill snapshot.
+        # Suppress duplicate asynchronous closes against one stale position.
+        # Episode or quantity changes release the guard for a new residual close.
         self._pending_exit_symbols: dict[str, tuple[int | None, int]] = {}
 
     # ── Public API ───────────────────────────────────────────────────
@@ -303,18 +217,7 @@ class HazardExitController:
 
         opened = self._position_store.opened_at_ns(symbol)
 
-        # Audit HZ-1: a *different* reason (or a different strategy's
-        # policy) already has an exit in flight for this symbol whose fill
-        # has not yet reconciled into ``position_store`` — ``quantity``
-        # below would be computed from the same stale, pre-fill snapshot,
-        # so emitting here would double the closing quantity rather than
-        # exit once.  This only applies while the position is still in the
-        # *same* open episode (same ``opened_at_ns``) *and* still shows the
-        # same stale quantity the in-flight exit was sized against.  Once
-        # the fill reconciles — the symbol reopens (a different
-        # ``opened_at_ns``) or the quantity changes, e.g. a partial fill
-        # leaving residual shares — the marker is dropped so a new,
-        # correctly-sized hazard exit is not silently suppressed.
+        # Release the duplicate-close guard when the episode or quantity changes.
         if symbol in self._pending_exit_symbols:
             if self._pending_exit_symbols[symbol] == (opened, position.quantity):
                 return

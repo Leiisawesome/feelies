@@ -1,13 +1,13 @@
-"""Regression tests for the composition-layer P0 audit fixes (2026-06-20).
+"""Composition-layer regression tests.
 
 Covers:
 
-* **P0-1** — ``factor_neutralization: false`` opt-out is honoured even when a
+* ``factor_neutralization: false`` is honored even when a
   global ``factor_loadings_dir`` is configured (the declared opt-out must not
   be silently overridden by platform-level loadings).
-* **P0-6** — the ``trend_mechanism.consumes`` family whitelist is enforced at
+* The ``trend_mechanism.consumes`` whitelist is enforced at
   runtime so an undeclared mechanism family cannot enter the book.
-* **P0-2** — ``decision_basis_hash`` is populated and covers the factor /
+* ``decision_basis_hash`` covers factor,
   sector / optimizer construction inputs, not just the ranker inputs.
 """
 
@@ -111,7 +111,7 @@ def _targets(intent: object) -> dict[str, float]:
     return {s: round(tp.target_usd, 2) for s, tp in intent.target_positions.items()}  # type: ignore[attr-defined]
 
 
-# ── P0-1: factor-neutralization opt-out ─────────────────────────────────
+# Factor-neutralization opt-out.
 
 
 def test_factor_neutralization_opt_out_bypasses_configured_loadings(tmp_path: Path) -> None:
@@ -140,15 +140,13 @@ def test_factor_neutralization_opt_out_bypasses_configured_loadings(tmp_path: Pa
     assert _targets(optout) == _targets(passthrough)
     # ... and is genuinely different from the neutralized book (loadings bite).
     assert _targets(optin) != _targets(optout)
-    # Reported exposure is the FINAL book's exposure (audit P1-2): the
-    # neutralized book carries materially less MKT exposure than the opted-out
-    # (un-neutralized) book.
+    # Report exposure from the final, neutralized book.
     assert abs(optin.factor_exposures.get("MKT", 0.0)) < abs(
         optout.factor_exposures.get("MKT", 0.0)
     )
 
 
-# ── P0-6: runtime consumes whitelist ────────────────────────────────────
+# Runtime mechanism whitelist.
 
 
 def test_consumes_whitelist_excludes_undeclared_family() -> None:
@@ -203,7 +201,7 @@ def test_consumes_whitelist_drops_only_undeclared_feeder_contribution() -> None:
     assert filtered.mechanism_by_symbol["AAPL"] == TrendMechanism.KYLE_INFO
 
 
-# ── P0-2: decision_basis_hash coverage ──────────────────────────────────
+# Decision-basis hash coverage.
 
 
 def test_decision_basis_hash_populated_and_covers_optimizer_params() -> None:
@@ -251,7 +249,7 @@ def test_decision_basis_hash_distinguishes_neutralize_flag() -> None:
     assert on.decision_basis_hash != off.decision_basis_hash
 
 
-# ── P0-3/P0-4: sleeve-based caps and mixed-mechanism attribution ────────
+# Sleeve caps and mixed-mechanism attribution.
 
 
 def test_sleeve_attribution_splits_mixed_mechanism_symbol() -> None:
@@ -290,7 +288,7 @@ def test_sleeve_attribution_splits_mixed_mechanism_symbol() -> None:
 
 
 def test_sleeve_cap_holds_on_emitted_book() -> None:
-    """A binding family cap must hold on the FINAL emitted dollar book (P0-3)."""
+    """A binding family cap must hold on the emitted dollar book."""
     universe = ("AAPL", "MSFT", "NVDA", "AMZN", "JPM", "BAC")
     sigs: dict[str, Signal | None] = {
         "AAPL": _sig("AAPL", SignalDirection.LONG, 1.0, 30.0, TrendMechanism.KYLE_INFO),

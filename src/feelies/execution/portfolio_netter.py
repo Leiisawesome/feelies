@@ -1,13 +1,13 @@
-"""Cross-alpha position netting — G-5 phase N0 (pure contracts).
+"""Pure cross-alpha position netting.
 
 A :class:`DesiredTargetBook` holds each alpha's *standing* desired target per
 symbol (signals are sparse/horizon-gated, so a target persists between
 emissions), with a per-alpha budget cap and a ``k × horizon`` expiry.  The
 :class:`PortfolioNetter` collapses the live standing targets for a symbol into
-a single **net** :class:`DesiredPosition` that the G-1 planner then diffs
+a single net :class:`DesiredPosition` that the planner diffs
 against the net book.
 
-Locked design decisions (G-5 netting contract):
+Netting contract:
 
   - **Stacking, capped** — same-direction alphas *sum* into a larger net
     target (conviction stacks), bounded by the portfolio cap.
@@ -16,8 +16,7 @@ Locked design decisions (G-5 netting contract):
     clamped to ``portfolio_max_abs_qty``.
   - **Expiry** — a standing target with no refresh by ``expiry_ns`` is dropped.
 
-Pure and order-independent (Inv-5).  N0 wires nothing to drive — it is
-parity-neutral plumbing for the shadow harness (N1) and the flip (N2).
+The calculation is pure and independent of input order.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Static per-symbol borrow-availability tiers for backtest short entries (BT-7).
+"""Static per-symbol borrow tiers for backtest short entries.
 
 Lightweight locate model: a symbol is ``available`` (easy to borrow — no HTB
 fee), ``hard`` (HTB fee path when ``cost_htb_borrow_annual_bps > 0``), or
@@ -56,7 +56,7 @@ def build_borrow_table(raw: Mapping[str, str]) -> dict[str, BorrowTier]:
 def is_short_sale_intent(intent: OrderIntent) -> bool:
     """True when the order would open or increase SHORT exposure.
 
-    Shared by SSR (BT-6) and borrow-availability (BT-7) gates: only these
+    Shared by SSR and borrow-availability gates: only these
     intents are short *sales* subject to Reg-SHO / locate constraints.  Buys,
     covers, and long-side exits are never short sales.
     """

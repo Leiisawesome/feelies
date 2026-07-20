@@ -125,41 +125,11 @@ class RegimeEngine(Protocol):
 
 
 class HMM3StateFractional:
-    """Built-in 3-state online regime filter on log-relative spread.
+    """Fixed three-state forward filter over log-relative spread.
 
-      Despite the historical registry name ``hmm_3state_fractional``, the
-      implementation is a **fixed-structure discrete-time forward filter**
-      (Markov prediction + diagonal Gaussian emissions), **not** a full
-      Baum–Welch / EM HMM fit: :meth:`calibrate` fits emission moments from
-      spread quantiles (optionally per symbol), while the transition matrix
-      stays author-controlled unless time scaling reshapes it.
-
-      States (indices after :meth:`calibrate` with
-      ``order_emissions_by_increasing_mean=True``):
-        0 — tightest log-relative-spread tercile
-        1 — middle tercile
-        2 — widest tercile
-
-      The default ``state_names`` (``compression_clustering``, ``normal``,
-      ``vol_breakout``) are **registry labels** for risk scaling and YAML
-      ``P(...)`` gates — they are **not** re-derived from data.  After
-      calibration, index ``i`` always maps to the *i*-th emission sorted by
-    increasing spread mean, which may not match the English name's intuition.
-
-      Tick-time semantics
-      -------------------
-
-      By default the transition matrix is applied **once per inbound
-      NBBOQuote** with no wall-clock adjustment, so mean dwell is in
-      *ticks* (see historical caveat in platform docs).  Enable
-      ``transition_time_scaling_enabled`` to re-exponentiate each row's
-      self-transition by ``p_stay ** (Δt / dt_reference)`` so bursty vs
-      sparse quote streams share comparable **per-second** mixing when
-      ``dt_reference`` is tuned to the deployment cohort.
-
-      Emission parameters are **log-relative-spread** based; call
-      :meth:`calibrate` with representative quotes (or pass explicit
-      ``emission_params``) before relying on posteriors in production.
+    Calibration fits spread-tercile emissions but not transitions. State names
+    are stable registry labels, while indices follow increasing spread mean.
+    Transitions occur per quote unless time scaling is enabled.
     """
 
     _DEFAULT_STATE_NAMES = ("compression_clustering", "normal", "vol_breakout")
@@ -174,36 +144,18 @@ class HMM3StateFractional:
         (0.002, 0.008, 0.990),
     )
 
-    # Emission: log-normal spread model — (mean_log_spread, std_log_spread)
-    # over ``log(spread / mid)`` (i.e., log-relative spread).  These are
-    # placeholder defaults; ``calibrate()`` should be called with
-    # representative historical quotes before live use, otherwise the
-    # one-shot uncalibrated warning fires from ``posterior()``.
+    # Placeholder log-relative-spread emissions; calibrate before live use.
     _DEFAULT_EMISSION = (
         (-4.5, 0.3),  # compression: very tight spreads
         (-3.5, 0.5),  # normal: moderate spreads
         (-2.5, 0.7),  # vol_breakout: wide spreads
     )
 
-    # Audit regime_audit_2026-07-02 §3.2/§9 (P2): this is a hard floor, not a
-    # target — at 30 samples each of the 3 quantile buckets gets only ~10
-    # points, a thin base for a Gaussian sigma estimate.  In practice this
-    # floor is rarely binding: the orchestrator calibrates from a prefix
-    # capped at ``regime_calibration_max_quotes`` (100_000 in the shipped
-    # ``platform.yaml``), so production calibration runs see orders of
-    # magnitude more samples than this minimum.  Raising the floor itself
-    # would change calibration behavior (and likely locked determinism
-    # baselines) for any deployment currently calibrating near it, so this
-    # is documentation, not a behavior change — see the audit for the data
-    # run that would justify picking a higher validated floor.
+    # Hard floor only: 30 samples leave roughly ten points per emission bucket.
     _MIN_CALIBRATION_SAMPLES = 30
     _MIN_SIGMA = 0.01
     _CHECKPOINT_SCHEMA_VERSION = 2
-    # Audit P1 E-1: when the schema version is bumped, also update the
-    # restore() compatibility branch so old blobs still load (or fail
-    # with a clear migration error).  v1 had no ``flags_fingerprint``;
-    # v2 carries one and uses it to reject restores into a differently-
-    # configured engine.
+    # Checkpoint v2 adds a flags fingerprint; restore still accepts v1 explicitly.
 
     def __init__(
         self,
@@ -293,29 +245,16 @@ class HMM3StateFractional:
 
     @property
     def discriminability(self) -> float:
-        """Calibration-time min pairwise emission separation ``d`` (audit R-1).
+        """Return pooled minimum pairwise emission separation.
 
-        ``d_min = min_{i<j} |mu_i - mu_j| / sqrt(sigma_i^2 + sigma_j^2)`` over
-        the *current* (pooled) emissions.  It measures whether the states are
-        statistically distinguishable at all: ``d >= ~0.5`` is usable, ``d → 0``
-        means the quantile-fit Gaussians have collapsed to near-identical
-        distributions (a tight, stable spread), so the posterior is uniform
-        noise and ``P(state)`` carries no information.  Consumers compare it
-        against a floor and fail regime-gates safe to OFF below it.  This is
-        *orthogonal* to :attr:`calibrated`: placeholder (uncalibrated)
-        emissions are well-separated yet mis-located, so they score high here
-        but are caught by ``calibrated=False`` instead.  ``+inf`` for a
-        single-state engine (no pair to compare).
-
-        Reports the *pooled* fit only.  When ``per_symbol_calibration`` is
-        enabled, callers that need to gate per symbol must use
-        :meth:`discriminability_for_symbol` instead — otherwise a tight
-        symbol whose per-symbol fit has collapsed could be gated against the
-        global ``d`` and pass falsely (audit R-1 fail-safe)."""
+        ``d = |mu_i-mu_j| / sqrt(var_i+var_j)``; near zero means states are
+        indistinguishable. Separately calibrated symbols must use
+        :meth:`discriminability_for_symbol`.
+        """
         return self._compute_min_pairwise_emission_separation(self._emission)
 
     def discriminability_for_symbol(self, symbol: str) -> float:
-        """Per-symbol counterpart of :attr:`discriminability` (audit R-1).
+        """Per-symbol counterpart of :attr:`discriminability`.
 
         Mirrors the emission-resolution rule used by :meth:`posterior` /
         :meth:`_emission_for_symbol`: returns the min pairwise separation
@@ -358,16 +297,7 @@ class HMM3StateFractional:
             global_fit = self._sort_emissions_by_mean(global_fit)
 
         if not self._emissions_pass_pairwise_gate(global_fit):
-            # Audit P2 E-4: with the separation gate enabled, a poorly-
-            # separated calibration would previously leave the engine
-            # uncalibrated forever (calibrate() returned False).  That's
-            # safe but operationally hostile — every subsequent posterior
-            # call fires the uncalibrated warning and the engine runs on
-            # placeholder defaults.  Soft-fail instead: warn, keep the
-            # constructor defaults but mark them as the "fallback after
-            # rejected calibration" so the caller can decide.  Return
-            # False so the bootstrap calibration log still says
-            # "calibration failed", but leave the engine in a sane state.
+            # Reject the fit but retain constructor defaults as a calibrated fallback.
             logger.warning(
                 "regime_engine: calibration produced emissions that "
                 "failed the pairwise-separation gate (min d < %.4f); "
@@ -553,13 +483,7 @@ class HMM3StateFractional:
                 )
                 updated = [1.0 / self._n_states] * self._n_states
 
-        # Commit the new posterior and seq watermark together.  Doing
-        # this only after the update fully succeeds means an exception
-        # mid-update leaves both ``_posteriors[symbol]`` and
-        # ``_last_update_seq[symbol]`` untouched — the next call sees
-        # the previous tick's posterior with a non-matching seq, and
-        # re-runs the update rather than returning a phantom-cached
-        # value.
+        # Commit posterior and sequence together only after a successful update.
         self._posteriors[symbol] = updated
         self._last_update_seq[symbol] = seq
         self._last_quote_ts_ns[symbol] = quote.timestamp_ns
@@ -577,13 +501,8 @@ class HMM3StateFractional:
     def _flags_fingerprint(self) -> str:
         """Stable hash of the constructor flags that change posteriors.
 
-        Audit P1 E-1: every flag that materially changes how
-        :meth:`posterior` computes its update is canonicalized into a
-        single short string.  Two engines that share this fingerprint
-        produce identical posterior trajectories given identical
-        quotes (modulo emission/transition values that *are* in the
-        blob).  Two engines that disagree on it would silently diverge
-        — :meth:`restore` rejects the blob in that case.
+        :meth:`restore` rejects checkpoints from an engine with a different
+        fingerprint to prevent silent replay divergence.
 
         The state-names tuple is included because the published
         ``dominant_name`` (and therefore downstream gate / risk
@@ -610,20 +529,15 @@ class HMM3StateFractional:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def checkpoint(self) -> bytes:
-        """Serialize per-symbol filter state to JSON bytes.
+        """Serialize filter state and configuration identity to JSON bytes.
 
         The blob carries posteriors, sequence watermarks, optional
         calibrated emissions, per-symbol emissions, last quote
         timestamps for time-scaled transitions, and a fingerprint of
         the constructor flags / transition matrix.
 
-        Audit P1 E-1: previously, constructor flags were not part of
-        the blob and :meth:`restore` made no attempt to verify them.
-        Restoring into a differently-configured engine (e.g. with
-        ``transition_time_scaling_enabled`` flipped or a different
-        transition matrix) therefore silently diverged replay.  The
-        ``flags_fingerprint`` field added in schema v2 lets
-        :meth:`restore` detect and reject the mismatch up front.
+        ``flags_fingerprint`` lets :meth:`restore` reject incompatible
+        engines before replay can diverge.
         """
         payload: dict[str, object] = {
             "checkpoint_schema_version": self._CHECKPOINT_SCHEMA_VERSION,
@@ -664,11 +578,7 @@ class HMM3StateFractional:
                         f"Unsupported checkpoint_schema_version {schema_v} "
                         f"(engine supports <= {self._CHECKPOINT_SCHEMA_VERSION})"
                     )
-            # Audit P1 E-1: schema v2 carries ``flags_fingerprint``; v1
-            # blobs predate the check and are accepted without it (with
-            # a one-shot warning) so existing checkpoints keep loading
-            # — but new checkpoints (v2+) MUST match the current
-            # engine's flags or the restore is rejected.
+            # v1 predates fingerprints; v2 and newer must match engine flags.
             blob_fingerprint = payload.get("flags_fingerprint")
             if blob_fingerprint is None:
                 if schema_v >= 2:
@@ -864,47 +774,15 @@ class HMM3StateFractional:
         return [u / total for u in unnorm]
 
 
-# ── HMM 3-State 2-D spread+vol implementation (audit R-3) ────────────
+# Three-state spread-and-volatility HMM.
 
 
 class HMM3StateSpreadVol:
-    """Opt-in 3-state forward filter on **two** L1 observations: log-relative
-    spread *and* short-window realized volatility of the mid (audit R-3).
+    """Opt-in forward filter over spread and realized mid volatility.
 
-    Why
-    ---
-    The default :class:`HMM3StateFractional` observes only log-relative
-    spread, so its three states are just spread terciles and ``vol_breakout``
-    means *widest spread*, not *high volatility* — it cannot see volatility
-    that arrives without spread widening (audit 2026-06-13 §3.2, §7).  This
-    engine adds a second, near-orthogonal dimension — realized vol of the mid
-    over a rolling window of quotes — and fits a 2-D diagonal-Gaussian
-    emission per state, with states ordered by **increasing realized-vol
-    mean**, so ``vol_breakout`` is genuinely the high-volatility regime.
-
-    Design / safety
-    ---------------
-    * **Opt-in, default-off.**  Selected only via ``regime_engine:
-      hmm_3state_spread_vol``; the default deployment and every locked
-      determinism baseline keep using :class:`HMM3StateFractional` unchanged.
-    * Still a **fixed-structure forward filter** (Markov predict + diagonal
-      Gaussian emission), *not* a Baum–Welch / EM HMM.  :meth:`calibrate`
-      fits per-state moments from realized-vol quantile buckets; the
-      transition matrix is author-controlled.
-    * **Deterministic** (Inv-5): realized vol is computed from a fixed-count
-      rolling window of mids in sequence order; no wall-clock.  Idempotent per
-      ``(symbol, sequence)`` like the default engine.
-    * Realized vol needs warm-up (``rv_min_returns`` returns).  Until warm the
-      vol dimension contributes likelihood ``1.0`` (the filter degrades to
-      spread-only), so cold starts never crash.
-    * Exposes the same :attr:`discriminability` contract (audit R-1) — the
-      joint min pairwise separation across both dimensions — so the gate's
-      indiscriminate-regime fail-safe works unchanged.
-
-    Validation gate (the hard lesson of this audit): no alpha should switch
-    its ``regime_engine`` to this until ``scripts/regime_diagnostics.py`` shows
-    its conditional forward-return tables are at least as informative as the
-    spread-only engine on the target cohort.
+    States follow increasing volatility mean. Before volatility warms, its
+    likelihood is neutral and the filter degrades to spread-only. Fixed-count
+    windows and sequence-based updates keep replay deterministic.
     """
 
     _DEFAULT_STATE_NAMES = ("compression_clustering", "normal", "vol_breakout")
@@ -915,10 +793,7 @@ class HMM3StateSpreadVol:
         (0.002, 0.008, 0.990),
     )
 
-    # Per state: ((mu_log_spread, sigma), (mu_log_realized_vol, sigma)).
-    # Placeholder defaults ordered by increasing realized vol; ``calibrate()``
-    # replaces them.  Uncalibrated use publishes ``calibrated=False`` so the
-    # gate fails safe to OFF (audit P0-1), exactly like the default engine.
+    # Placeholder emissions are ordered by volatility; uncalibrated gates fail OFF.
     _DEFAULT_EMISSION = (
         ((-4.5, 0.3), (-9.5, 1.0)),  # compression: tight spread, low vol
         ((-3.5, 0.5), (-8.5, 1.0)),  # normal
@@ -999,7 +874,7 @@ class HMM3StateSpreadVol:
 
     @property
     def discriminability(self) -> float:
-        """Joint min pairwise separation across both dimensions (audit R-1).
+        """Joint minimum pairwise separation across both dimensions.
 
         ``d_ij = sqrt( sum_dim (mu_i - mu_j)^2 / (sig_i^2 + sig_j^2) )`` — the
         2-D generalisation of the spread-only separation; ``+inf`` for a
@@ -1277,9 +1152,7 @@ _ENGINE_REGISTRY: dict[str, type[RegimeEngine]] = {
     "hmm_3state_fractional": HMM3StateFractional,
     # Preferred alias — same implementation; name reflects spread-filter semantics.
     "hmm_3state_spread_filter": HMM3StateFractional,
-    # Audit R-3: opt-in 2-D (spread + realized-vol) engine.  Default
-    # deployments keep the spread-only engine above; switch to this only after
-    # validating its conditional-return tables via scripts/regime_diagnostics.py.
+    # Opt-in spread-and-volatility engine; validate with regime_diagnostics.py.
     "hmm_3state_spread_vol": HMM3StateSpreadVol,
 }
 

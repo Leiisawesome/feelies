@@ -1,4 +1,4 @@
-"""BT-16 acceptance: RTH session gating + overnight buying-power flip."""
+"""Test RTH gating and the overnight buying-power switch."""
 
 from __future__ import annotations
 

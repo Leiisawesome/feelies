@@ -42,11 +42,7 @@ falsification_criteria:
     inactive.
 
 # ── Layer-1 sensor dependencies ───────────────────────────
-# sensor_audit_2026-07-02 P1: ``micro_price`` dropped — evaluate() never
-# reads a micro_price-derived value (only kyle_lambda_60s_percentile,
-# kyle_lambda_60s_zscore, and ofi_ewma), so it was a cosmetic dependency; the
-# same defect found and fixed in sig_benign_midcap_v1. kyle_lambda_60s is a
-# genuine, actually-read KYLE_INFO fingerprint (G16 rule 5) on its own.
+# Every listed dependency is consumed by the signal or gate.
 depends_on_sensors:
   - kyle_lambda_60s
   - ofi_ewma
@@ -91,16 +87,14 @@ parameters:
     min: 6.5
     max: 30.0
     description: |
-      One-way cost floor (bps). Audit P1-2: the engine does not gate
-      emission on edge, so the alpha must self-suppress signals whose
+      One-way cost floor (bps). The engine does not gate emission on edge,
+      so the alpha must suppress signals whose
       computed ``edge_bps`` does not exceed the disclosed one-way cost
       (half_spread + impact + fee = 2.5 + 3.0 + 1.0 = 6.5). Without it
       the alpha can emit directional entries with edge as low as 0.0
       (small/negative ``lam_z``). The authoritative round-trip Inv-12
       bar is the runtime B4 gate (~1.5x round-trip). Keep aligned with
-      cost_arithmetic. Audit P1 2026-07-02 (G12): ``min`` is pinned to
-      the disclosed ``cost_total_bps`` so no config override can weaken
-      this self-suppression below the alpha's own disclosed cost.
+      cost_arithmetic; ``min`` pins the disclosed ``cost_total_bps``.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 300
@@ -112,17 +106,14 @@ risk_budget:
   max_drawdown_pct: 1.5
   capital_allocation_pct: 15.0
 
-# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+# ── Regime gate ───────────────────────────────────────────
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
     P(normal) > 0.6 and spread_z_30d <= 1.0
   off_condition: |
     P(normal) < 0.4 or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5
-  # External-report §5.3: removed the dead hysteresis block (margins were
-  # declared but never referenced in the expressions — a no-op the strict
-  # loader now rejects).  Effective hysteresis is the implicit dual-threshold
-  # gap (ON P(normal)>0.6 / OFF P(normal)<0.4).
+  # The ON/OFF threshold gap provides hysteresis.
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:
@@ -131,9 +122,7 @@ cost_arithmetic:
   impact_bps: 3.0
   fee_bps: 1.0
   margin_ratio: 1.8
-  # Audit P1-1: components are a single crossing. Round-trip ≈ 13.0 bps;
-  # edge/round-trip ≈ 0.90. Inv-12's 1.5x round-trip bar is enforced at
-  # runtime by the orchestrator B4 gate, not by this one-way disclosure.
+  # One-way disclosure; the runtime gate checks round-trip survival.
   cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
@@ -169,8 +158,7 @@ signal: |
           params["edge_cap_bps"],
       )
 
-      # Audit P1-2: never emit an entry whose edge does not clear the
-      # disclosed one-way cost (also suppresses the edge==0.0 case).
+      # Do not emit entries that fail to clear one-way cost.
       if edge_bps <= params["cost_floor_bps"]:
           return None
 

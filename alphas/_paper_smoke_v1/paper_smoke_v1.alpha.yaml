@@ -18,9 +18,8 @@ falsification_criteria:
   - Realized vol sensor fails to warm within 120s during RTH.
 
 # ── Layer-1 sensor dependencies ───────────────────────────
-# sensor_audit_2026-07-02 P1: ``micro_price`` dropped — evaluate() only ever
-# read realized_vol_30s_zscore; the "micro-price direction tie-break" the
-# description used to claim was never implemented.
+# ``micro_price`` is omitted because evaluation reads only
+# ``realized_vol_30s_zscore``.
 depends_on_sensors:
   - realized_vol_30s
 

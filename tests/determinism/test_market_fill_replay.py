@@ -1,17 +1,7 @@
-"""Golden fill-replay parity for ``market_fill`` (audit P1.5).
+"""Replay parity for default MARKET-fill economics.
 
-The locked Inv-5 parity baselines in this package hash pre-router event
-streams (signals, intents, ``OrderRequest``s) and never route through
-``append_market_fill_acks`` — so the aggressive fill model's realized
-``OrderAck`` economics (cross price, walk-the-book split, stop slippage,
-cost_bps) were previously unlocked in CI.  This module closes that gap: a
-scripted MARKET-fill scenario is replayed through
-:class:`feelies.execution.backtest_router.BacktestOrderRouter` with the
-default cost model, and the resulting ack stream is pinned by SHA-256.
-
-Any change to the default fill economics now fails here and must be
-re-baselined in the same commit with a rationale (mirrors the parity-hash
-re-baseline workflow).
+The acknowledgement hash pins cross prices, depth walking, stop slippage, and
+cost attribution from the backtest router.
 """
 
 from __future__ import annotations
@@ -88,9 +78,7 @@ def _replay() -> tuple[str, int]:
 
 
 def _hash_acks(acks: list[OrderAck]) -> str:
-    # Audit-2026-07-02 P2 #10: ``.sequence`` is now included so a re-sequenced
-    # ack stream with identical economics/order_id flips the hash instead of
-    # passing unnoticed.
+    # Include sequence so reordered acknowledgements change the hash.
     lines = [
         f"{a.sequence}|{a.order_id}|{a.status.name}|{a.filled_quantity}|{a.fill_price}|"
         f"{a.fees}|{a.cost_bps}|{a.timestamp_ns}"
@@ -103,8 +91,6 @@ def _hash_acks(acks: list[OrderAck]) -> str:
 # Count includes the per-order ACKNOWLEDGED acks (Inv-9 parity): o1/o2/o4
 # emit ACK + FILLED (2 each); o3 walks the book → ACK + PARTIALLY_FILLED +
 # FILLED (3).  2 + 2 + 3 + 2 = 9.
-# Re-baselined audit-2026-07-02 P2 #10: added ``.sequence`` to ``_hash_acks``
-# (previously omitted, so ack sequence allocation was unpinned).
 EXPECTED_MARKET_FILL_HASH = "da66dd36e8bb68017d691162e87d3fddf4866cb2747ffcc7350263ccb88291a6"
 EXPECTED_MARKET_FILL_ACK_COUNT = 9
 

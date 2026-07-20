@@ -1,47 +1,9 @@
-"""End-to-end research → promotion integration suite — Workstream **C-3**.
+"""Exercise research evidence through the full promotion pipeline.
 
-This is the workstream-closing milestone for Workstream C: it
-proves the C-1 (CPCV) and C-2 (DSR) builders work in concert with
-the F-2 gate matrix, the F-4 ``AlphaLifecycle.promote_*(structured_evidence=...)``
-path, the F-1 promotion ledger, and the F-3 ``feelies promote
-replay-evidence`` operator CLI — all driven by **synthetic OOS
-return data** rather than hand-rolled evidence numbers.
-
-Coverage summary
-================
-
-- :class:`TestStrongAlphaPipeline` — happy path:
-
-    1. Synthesise a strong-alpha 240-bar daily-return series with a
-       seeded ``random.Random``.
-    2. Compute :class:`CPCVEvidence` via
-       :func:`build_cpcv_evidence` against the series.
-    3. Compute :class:`DSREvidence` via
-       :func:`build_dsr_evidence_from_returns` against the same
-       series.
-    4. Walk the alpha through ``RESEARCH → PAPER → LIVE`` using the
-       computed evidence (plus a hand-rolled
-       :class:`ResearchAcceptanceEvidence` for the
-       ``RESEARCH_TO_PAPER`` gate and a hand-rolled
-       :class:`PaperWindowEvidence` for the ``PAPER_TO_LIVE`` gate).
-    5. Verify the promotion ledger contains both transitions, every
-       computed evidence dataclass round-trips byte-for-byte through
-       :func:`metadata_to_evidence`, and the F-3 ``feelies promote
-       replay-evidence`` CLI re-validates every entry as ``OK``.
-
-- :class:`TestWeakAlphaPipeline` — negative paths driven by data:
-  a low-Sharpe synthetic return series produces CPCV / DSR
-  evidence that *organically* fails the gate (no fudged numbers).
-
-- :class:`TestPipelineDeterminism` — Inv-5: two pipeline runs on
-  the same seeded return series produce bit-identical evidence
-  *and* bit-identical ledger metadata payloads.
-
-These tests deliberately do not exercise the underlying CPCV /
-DSR math (covered exhaustively in the C-1 / C-2 unit / property /
-reference suites) — they verify that valid evidence flows
-end-to-end through the promotion pipeline without integration
-seams.
+Seeded synthetic returns produce CPCV and DSR evidence. Strong evidence moves
+an alpha from research through paper to live, persists in the ledger, and
+replays through the CLI. Weak evidence fails naturally. Repeated runs must
+produce identical evidence and ledger metadata.
 """
 
 from __future__ import annotations
@@ -76,9 +38,7 @@ from feelies.research.cpcv import (
 from feelies.research.dsr import build_dsr_evidence_from_returns
 
 
-# ─────────────────────────────────────────────────────────────────────
-#   Shared deterministic synthetic-return generators
-# ─────────────────────────────────────────────────────────────────────
+# Deterministic synthetic-return generators.
 
 
 def _strong_alpha_returns(seed: int = 42, n_bars: int = 240) -> list[float]:
@@ -163,12 +123,7 @@ def _build_dsr_from_returns(
     *,
     trials_count: int = 50,
 ) -> DSREvidence:
-    """Convenience wrapper around
-    :func:`build_dsr_evidence_from_returns` with annualisation
-    factor pinned to ``sqrt(252)`` — the per-day → per-year
-    convention the F-2 ``GateThresholds`` defaults are anchored
-    against.
-    """
+    """Build DSR evidence using the daily-to-annual ``sqrt(252)`` factor."""
     return build_dsr_evidence_from_returns(
         returns=returns,
         trials_count=trials_count,
@@ -254,10 +209,8 @@ class TestStrongAlphaPipeline:
     def test_paper_to_live_transitions_with_computed_cpcv_and_dsr(
         self,
     ) -> None:
-        # The end-to-end milestone: synthetic returns drive C-1 +
-        # C-2 evidence which drive F-4 ``promote_to_live`` against
-        # the F-2 gate matrix.  No hand-rolled evidence numbers in
-        # the path that matters.
+        # Synthetic returns produce the evidence consumed by
+        # ``promote_to_live``; no evidence values are hard-coded.
         returns = _strong_alpha_returns()
         cpcv = _build_cpcv_from_returns(returns)
         dsr = _build_dsr_from_returns(returns)
@@ -303,7 +256,7 @@ class TestStrongAlphaPipeline:
             "DSREvidence",
         }
         # Every reconstructed evidence dataclass is byte-identical
-        # to what we submitted — the F-2 metadata round-trip is
+        # to what we submitted; the metadata round-trip is
         # lossless.
         assert by_kind["CPCVEvidence"] == cpcv
         assert by_kind["DSREvidence"] == dsr
@@ -314,7 +267,7 @@ class TestStrongAlphaPipeline:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        # Round out the integration loop: the F-3 operator CLI must
+        # The operator CLI must
         # be able to read the ledger this pipeline produced and
         # re-validate every committed evidence package against
         # current ``GateThresholds`` without surfacing any FAIL.
@@ -343,7 +296,7 @@ class TestStrongAlphaPipeline:
         out = capsys.readouterr().out
         assert rc == EXIT_OK, out
         # Every transition must report OK (no SKIPPED, no FAIL).
-        # Both transitions (RESEARCH→PAPER, PAPER→LIVE) carry F-2
+        # Both transitions (RESEARCH→PAPER, PAPER→LIVE) carry
         # evidence so neither should be skipped.
         assert out.count("OK") >= 2
         assert "FAIL" not in out
@@ -534,26 +487,16 @@ class TestPipelineDeterminism:
         assert dsr_a == dsr_b
 
     def test_distinct_returns_produce_distinct_evidence(self) -> None:
-        # Counter-evidence: a *different* return series (different
-        # synthetic seed) must produce different CPCV and DSR
-        # evidence — the pipeline truly consumes the input series
-        # and is not silently constant.  We deliberately do not
-        # bootstrap-seed-vary the CPCV here: with the identity-
-        # model OOS projection above, all reconstructed paths
-        # cover every bar with the same realised return so every
-        # path's Sharpe is identical and the bootstrap p-value is
-        # degenerate at every seed (a known property of the
-        # synthetic test scaffold, exercised by the C-1 reference
-        # suite).
+        # Different return series must produce different evidence. Changing
+        # the bootstrap seed would not help here: the identity model gives
+        # every reconstructed path the same returns and Sharpe ratio.
         a = _strong_alpha_returns(seed=42)
         b = _strong_alpha_returns(seed=43)
         assert _build_cpcv_from_returns(a) != _build_cpcv_from_returns(b)
         assert _build_dsr_from_returns(a) != _build_dsr_from_returns(b)
 
 
-# Helper functions for narrowing reconstructed evidence types in the
-# determinism test above; keeping them at module scope so mypy strict
-# can see the cast without a per-call type: ignore.
+# Module-level helpers let mypy narrow reconstructed evidence without ignores.
 
 
 def _expect_cpcv(obj: object) -> CPCVEvidence:

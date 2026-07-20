@@ -1,32 +1,19 @@
-"""Sweep-flow imbalance sensor (KYLE_INFO ISO-urgency fingerprint).
+"""Measure signed intermarket-sweep aggression over event time.
 
-Incremental L1 proxy for net signed *intermarket sweep* aggression over a
-trailing event-time window. Only exchange-stamped ISO prints that survive
-the Class-A ∩ id-14 print-eligibility filter enter state
-(``docs/research/sig_sweep_kyle_drift_h900_v1_formal_spec.md`` §1.1.1;
-03b §3.3 / §4.3 / §4.4).
-
-Filter set (versioned constructor / ``SensorSpec.params`` — load-bearing):
+Only exchange-stamped ISO prints passing this filter enter state:
 
 - eligible iff sale condition **14 (ISO)** AND Class-A core after stripping
   the 41 (TTE) overlay — core ⊆ ``{14, 37}`` and contains 14;
 - ``drop_correction_records = {10, 11, 12}`` (follow-on bookkeeping);
-- **no** conditioning on retroactive ``correction ∈ {1, 7, 8}`` (Inv-6);
-- unknown condition ids never silently include (fail Class-A ∩ id-14).
+- retroactive corrections do not affect causal eligibility;
+- unknown condition IDs are excluded.
 
 Value::
 
     SFI = Σ(side · size) / (Σ size + ε)   ∈ [-1, 1]
 
-Tick-rule aggressor (platform convention): price > prior → +1; < prior → −1;
-equal → inherit; first eligible default +1. Positive ⇒ net aggressive buy
-sweeps ⇒ continuation LONG.
-
-Warm: ``len(window) ≥ min_eligible_prints``. Gap > ``max_gap_seconds``
-between successive *eligible* prints flushes the window (halt → cold).
-
-Determinism: integer volume accounting + one float division; event-time
-deque eviction; no RNG, no wall-clock reads (DTZ-clean).
+Tick rule assigns direction; positive values indicate buy aggression. Warmth
+requires enough eligible prints, and long eligible-print gaps flush the window.
 """
 
 from __future__ import annotations
@@ -40,15 +27,13 @@ from feelies.sensors.protocol import SensorEmission
 
 _EPS = 1e-12
 
-# 03b §3.3 Class-A core after stripping overlay 41; id-14 required.
+# Class-A core after stripping overlay 41; ISO ID 14 is required.
 DEFAULT_CLASS_A_CORE_IDS: frozenset[int] = frozenset({14, 37})
 DEFAULT_OVERLAY_IDS: frozenset[int] = frozenset({41})
 DEFAULT_ISO_ID: int = 14
 DEFAULT_DROP_CORRECTION_RECORDS: frozenset[int] = frozenset({10, 11, 12})
 
-# Offline §6(a) INTERPRETED TABLE — trade sale-condition ids cited in 03b
-# §3.2/§3.3 (Class A ∪ Class B ∪ overlay). Session pre-registration uses
-# this set; the tick path never silent-includes unknowns (eligibility fails).
+# Known sale-condition IDs used for session pre-registration.
 INTERPRETED_TRADE_CONDITION_IDS: frozenset[int] = frozenset(
     {
         2,

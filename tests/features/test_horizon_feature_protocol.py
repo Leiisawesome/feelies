@@ -1,18 +1,4 @@
-"""Contract tests for the :class:`HorizonFeature` Protocol.
-
-Phase-2-β ships the Protocol *only* — no concrete implementations
-land in ``feelies/features/``.  These tests therefore validate two
-things:
-
-1.  A minimal in-test class that satisfies the Protocol shape passes
-    ``isinstance(obj, HorizonFeature)`` (runtime-checkable).
-2.  An object missing any required attribute / method is rejected.
-
-Both checks pin the public surface of the contract so a Phase-3
-horizon-feature implementation cannot accidentally rename a method
-or omit ``feature_id`` / ``feature_version`` without breaking these
-tests first.
-"""
+"""Runtime contract tests for the ``HorizonFeature`` protocol."""
 
 from __future__ import annotations
 
@@ -132,13 +118,7 @@ def test_finalize_returns_value_warm_stale_triple() -> None:
 
 
 def test_finalize_resets_window_freshness_flag() -> None:
-    """Calling ``finalize`` must let the next horizon detect staleness.
-
-    The reference impl resets ``received`` inside ``finalize``; if a
-    Phase-3 implementation forgets to do so, the second horizon would
-    report ``stale=False`` even with no new readings — silently
-    masking the staleness signal.
-    """
+    """``finalize`` resets receipt state so the next empty window is stale."""
     feature = _GoodFeature()
     state = feature.initial_state()
     reading = SensorReading(

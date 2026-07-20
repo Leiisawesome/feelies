@@ -1,29 +1,7 @@
-"""Level-4 baseline — ``SensorReading`` replay parity.
+"""Replay parity for the four core sensor streams.
 
-Locks the bit-for-bit content and ordering of every ``SensorReading``
-emitted when the canonical 5-minute synthetic fixture is replayed
-through a fresh :class:`SensorRegistry` populated with the four
-Phase-2-β simple sensors:
-
-- ``ofi_ewma``
-- ``micro_price``
-- ``spread_z_30d``
-- ``realized_vol_30s``
-
-Adding the Level-4 hash here means any unintentional drift in
-sensor implementation (e.g. floating-point rearrangement, ordering
-change, extra emission, lost emission) immediately surfaces as a
-hash mismatch.  Without this baseline, drift would only appear
-downstream as Level-5 / Level-6 alpha-parity failures, which are
-much slower to diagnose.
-
-Updating the baseline
----------------------
-
-If you intentionally change a sensor's emission semantics (formula,
-warm-up rule, additional output dimension, etc.) the test fails and
-prints the new hash.  Copy it into ``EXPECTED_LEVEL4_READING_HASH``
-in the same commit and explain the change in the commit message.
+The baseline pins values and ordering for OFI EWMA, micro-price, spread z-score,
+and realized volatility over the canonical five-minute fixture.
 """
 
 from __future__ import annotations

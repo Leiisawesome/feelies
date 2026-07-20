@@ -1,62 +1,9 @@
-"""Strict-mode RESEARCH → PAPER promotion E2E — Workstream **E-1**.
+"""Verify strict-loaded reference alphas can promote to paper.
 
-This is the workstream-closing milestone for Workstream **E** (the
-``enforce_trend_mechanism: true`` default flip, acceptance row 84):
-it proves the four canonical reference alphas — one per non-stress
-family per §20.12.2 #4 — load under strict mode *and* clear the F-4
-``RESEARCH_TO_PAPER`` gate end-to-end on a real
-:class:`PromotionLedger`, mechanically closing the §20.12.1
-precondition that ≥3 reference alphas ship under strict mode in
-research/paper before the platform default is flipped.
-
-Coverage summary
-================
-
-- :class:`TestStrictModeReferenceAlphasPromote` — for each
-  ``(family, alpha_id)`` pair in ``_REFERENCE_BY_FAMILY``:
-
-    1. Load the YAML through
-       ``AlphaLoader(enforce_trend_mechanism=True)`` and assert it
-       returns a :class:`LoadedSignalLayerModule` with the expected
-       :class:`TrendMechanism` enum and a positive
-       ``expected_half_life_seconds`` (cross-check against the
-       existing :mod:`tests.acceptance.test_strict_mode_reference_alphas`
-       so a regression in either keeps the matrix row honest).
-
-    2. Construct a passing :class:`ResearchAcceptanceEvidence` and
-       promote a fresh :class:`AlphaLifecycle` from RESEARCH to
-       PAPER via :meth:`AlphaLifecycle.promote_to_paper`'s F-4
-       ``structured_evidence=...`` keyword — exercising the F-2
-       ``RESEARCH_TO_PAPER`` validator end-to-end.
-
-    3. Verify the transition was committed to a per-alpha
-       :class:`PromotionLedger` with the correct ``from_state`` /
-       ``to_state`` and the F-2 ``research_acceptance`` evidence
-       kind round-trippable through :func:`metadata_to_evidence`.
-
-- :class:`TestStrictModeReferenceFamilyCoverage` — schema-1.1
-  §20.12.1 precondition: the four reference alphas collectively
-  cover every non-stress family (KYLE_INFO, INVENTORY,
-  HAWKES_SELF_EXCITE, SCHEDULED_FLOW) — i.e. ≥3 distinct families
-  ship under strict mode.  ``LIQUIDITY_STRESS`` is intentionally
-  absent because G16 rule 7 forbids stress-family entry signals
-  (no production reference SIGNAL alpha can exist for that family);
-  stress mechanics are exercised through hazard-exit policies on
-  top of other-family alphas.
-
-Why this test is the workstream-E close
-=======================================
-
-The §20.12.1 precondition has two halves: (a) ≥3 reference alphas
-load under strict mode (closed by
-:mod:`tests.acceptance.test_strict_mode_reference_alphas`), and
-(b) those alphas have shipped under strict mode in research/paper.
-Half (b) requires evidence that the strict-loaded module survives
-the *next* lifecycle step — the RESEARCH → PAPER promotion gate —
-end-to-end on a real ledger.  This test closes half (b)
-mechanically.  Once it is green, the platform default in
-:class:`PlatformConfig.enforce_trend_mechanism` can be flipped
-``False → True`` (this PR) without violating §20.12.1.
+Each non-stress reference alpha loads with its expected mechanism, clears the
+research acceptance gate, records the transition in a real promotion ledger,
+and round-trips its evidence. ``LIQUIDITY_STRESS`` is excluded because it is
+exit-only.
 """
 
 from __future__ import annotations
@@ -81,24 +28,16 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import TrendMechanism
 
 
-# ── §20.12.2 #4 reference matrix ────────────────────────────────────────
-
-
 _ALPHAS_ROOT = Path("alphas")
 
 
-# One reference SIGNAL alpha per non-stress family.  The pair-form is
-# kept aligned with :mod:`tests.acceptance.test_strict_mode_reference_alphas`
-# so a future addition of a new family lands in both files together.
+# One reference signal alpha per non-stress family.
 _REFERENCE_BY_FAMILY: tuple[tuple[TrendMechanism, str], ...] = (
     (TrendMechanism.KYLE_INFO, "sig_kyle_drift_v1"),
     (TrendMechanism.INVENTORY, "sig_inventory_revert_v1"),
     (TrendMechanism.HAWKES_SELF_EXCITE, "sig_hawkes_burst_v1"),
     (TrendMechanism.SCHEDULED_FLOW, "sig_moc_imbalance_v1"),
 )
-
-
-# ── Helpers ─────────────────────────────────────────────────────────────
 
 
 def _alpha_path(alpha_id: str) -> Path:
@@ -127,9 +66,7 @@ def _passing_research_acceptance() -> ResearchAcceptanceEvidence:
     default ``GateThresholds`` for the ``RESEARCH_TO_PAPER`` gate.
 
     Mirrors :mod:`tests.research.test_promotion_pipeline_e2e`'s
-    helper (kept duplicated, not imported, so the strict-mode E2E
-    suite has no test-to-test coupling and can be deleted independently
-    once the workstream is closed).
+    helper. It is duplicated to avoid test-to-test coupling.
     """
     return ResearchAcceptanceEvidence(
         schema_valid=True,
@@ -153,9 +90,7 @@ def _make_lifecycle(alpha_id: str, *, ledger: PromotionLedger | None = None) -> 
 
 
 class TestStrictModeReferenceAlphasPromote:
-    """Each reference alpha loads under strict mode *and* clears the
-    F-4 RESEARCH → PAPER gate end-to-end on a real ledger.
-    """
+    """Reference alphas load strictly and clear the research-to-paper gate."""
 
     @pytest.mark.parametrize(
         ("family", "alpha_id"),
@@ -190,19 +125,11 @@ class TestStrictModeReferenceAlphasPromote:
     def test_research_to_paper_promotes_under_strict(
         self, family: TrendMechanism, alpha_id: str
     ) -> None:
-        """Strict-loaded module + structured RESEARCH evidence ⇒ PAPER.
-
-        This is the workstream-E §20.12.1 (b) closure: each reference
-        alpha that loads under strict mode also clears the F-4
-        ``RESEARCH_TO_PAPER`` gate against the F-2 evidence schema.
-        Together with the load test above, it mechanically proves
-        "≥3 reference alphas have shipped under strict mode in
-        research/paper" before the platform default flip.
-        """
+        """Structured research evidence promotes each strict-loaded alpha."""
         # Loaded for its side-effects (parses YAML + runs every G16
         # binding rule).  We never feed the module into the lifecycle
         # — the RESEARCH → PAPER gate is purely a function of the
-        # F-2 structured evidence, not of the alpha YAML.
+        # structured evidence, not of the alpha YAML.
         _load_under_strict(alpha_id)
 
         lc = _make_lifecycle(alpha_id)
@@ -226,10 +153,7 @@ class TestStrictModeReferenceAlphasPromote:
         alpha_id: str,
         tmp_path: Path,
     ) -> None:
-        """The F-4 promote_to_paper path persists the F-2 structured
-        evidence to the F-1 ledger, and the F-3 inverse helper
-        :func:`metadata_to_evidence` reconstructs it bit-identically.
-        """
+        """Ledger metadata reconstructs the persisted evidence exactly."""
         ledger = PromotionLedger(tmp_path / f"{alpha_id}.jsonl")
         lc = _make_lifecycle(alpha_id, ledger=ledger)
         ev = _passing_research_acceptance()
@@ -246,7 +170,7 @@ class TestStrictModeReferenceAlphasPromote:
         assert (entry.from_state, entry.to_state) == ("RESEARCH", "PAPER")
         assert entry.alpha_id == alpha_id
 
-        # F-2 metadata-to-evidence inverse: the entry must round-trip
+        # The metadata-to-evidence inverse must round-trip
         # back to the same dataclass content the writer emitted.
         # ``evidence_to_metadata`` flattens each evidence under its
         # stable kind string (looked up via :data:`KIND_TO_TYPE`);

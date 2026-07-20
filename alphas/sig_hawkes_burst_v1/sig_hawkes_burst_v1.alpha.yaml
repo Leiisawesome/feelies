@@ -85,14 +85,12 @@ parameters:
     min: 5.0
     max: 30.0
     description: |
-      One-way cost floor (bps). Audit P1-2: self-suppress entries whose
-      computed ``edge_bps`` does not exceed the disclosed one-way cost
+      One-way cost floor (bps). Suppress entries whose computed ``edge_bps``
+      does not exceed the disclosed one-way cost
       (half_spread + impact + fee = 2.0 + 2.0 + 1.0 = 5.0). The
       authoritative round-trip Inv-12 bar (~1.5x round-trip ≈ 7.5 bps)
       is enforced at runtime by the B4 gate. Keep aligned with
-      cost_arithmetic. Audit P1 2026-07-02 (G12): ``min`` is pinned to
-      the disclosed ``cost_total_bps`` so no config override can weaken
-      this self-suppression below the alpha's own disclosed cost.
+      cost_arithmetic; ``min`` pins the disclosed ``cost_total_bps``.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30
@@ -104,16 +102,14 @@ risk_budget:
   max_drawdown_pct: 0.75
   capital_allocation_pct: 5.0
 
-# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+# ── Regime gate ───────────────────────────────────────────
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
     P(normal) > 0.6 and spread_z_30d < 1.0
   off_condition: |
     P(normal) < 0.4 or spread_z_30d > 2.5 or realized_vol_30s_zscore > 3.5
-  # External-report §5.3: removed the dead hysteresis block (margins declared
-  # but never referenced — a no-op the strict loader now rejects).  Effective
-  # hysteresis is the implicit dual-threshold gap (ON >0.6 / OFF <0.4).
+  # The ON/OFF threshold gap provides hysteresis.
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:
@@ -122,9 +118,7 @@ cost_arithmetic:
   impact_bps: 2.0
   fee_bps: 1.0
   margin_ratio: 1.6
-  # Audit P1-1: one-way components. Round-trip ≈ 10.0 bps; edge/round-trip
-  # ≈ 0.80 (does not clear the 1.5x round-trip Inv-12 bar). The runtime B4
-  # gate is the authoritative round-trip survival test.
+  # One-way disclosure; the runtime gate checks round-trip survival.
   cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
@@ -140,22 +134,7 @@ trend_mechanism:
     - "P(vol_breakout) > 0.5"
 
 # ── Hazard-rate exit (v0.3 §20.7) ─────────────────────────
-# Audit P1 H-2 rename: ``posterior_drop_threshold`` was the historical
-# spelling but bootstrap only ever read ``hazard_score_threshold``, so
-# the 0.30 declared here was silently ignored and the controller used
-# its 0.85 default.  The loader still accepts the legacy name with a
-# WARN, but use the canonical spelling in new specs.
-# Audit regime_audit_2026-07-02 §7.3/§9: ``min_age_seconds`` is left at
-# the controller default (30s) — numerically equal to this alpha's own
-# horizon_seconds.  A hazard spike on a position younger than 30s is
-# therefore never actionable via this path; by the time a position clears
-# min_age_seconds it has already lived through one regular horizon-boundary
-# gate re-check, which (via the correlated spread_z_30d / P(normal) off
-# clauses) would typically have already caught the same deterioration.  The
-# hazard path is thus effectively a backstop for a position held past its
-# first boundary, not a replacement for the boundary-driven exit — this is
-# an accepted design tradeoff, not a bug; lower min_age_seconds explicitly
-# if sub-horizon hazard responsiveness is wanted instead.
+# The default 30-second minimum age makes this a post-boundary backstop.
 hazard_exit:
   enabled: true
   hazard_score_threshold: 0.30
@@ -181,7 +160,7 @@ signal: |
       direction = LONG if ofi > 0.0 else SHORT
       edge_bps = min(z * params["edge_per_z_bps"], params["edge_cap_bps"])
 
-      # Audit P1-2: never emit an entry below the disclosed one-way cost.
+      # Do not emit entries below disclosed one-way cost.
       if edge_bps <= params["cost_floor_bps"]:
           return None
 

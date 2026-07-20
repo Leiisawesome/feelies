@@ -1,16 +1,13 @@
-"""Tests for MultiHorizonAttributor — conservation + causal bucketing.
+"""Conservation and causal-bucketing tests for ``MultiHorizonAttributor``.
 
-Closes audit P0-5: the attributor (the Inv-1 attribution vehicle) previously
-had no test coverage.  These tests pin:
+These tests cover:
 
 * conservation on every axis (Σ buckets [+ unattributed] == total realized PnL),
 * per-trade mechanism provenance (Inv-1) preferred over the gross-share
   snapshot fallback — no KYLE→INVENTORY mis-bucketing, no smearing,
-* causal regime bucketing from the recorded ``TradeRecord.regime_state``
-  (deterministic — two audits over the same journal agree),
+* causal regime bucketing from recorded ``TradeRecord.regime_state``,
 * the gross-share snapshot fallback for cross-sectional fills, and
-* the ``unattributed`` residual that keeps the mechanism axis conserving
-  (audit P1-12).
+* the ``unattributed`` residual that keeps the mechanism axis conserving.
 """
 
 from __future__ import annotations
@@ -129,7 +126,7 @@ def test_unattributed_residual_for_mixed_provenance() -> None:
 
 
 def test_no_provenance_no_snapshot_is_unattributed_not_dropped() -> None:
-    # Audit P1-12: strategy PnL must not silently vanish from the mechanism axis.
+    # PnL without provenance remains visible as unattributed.
     trades = [_rec(strategy_id="a", pnl="9.00", idx=0)]
     rep = MultiHorizonAttributor(horizon_by_strategy={"a": 300}).attribute(trades)
     assert rep.mechanism == {}

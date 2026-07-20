@@ -1,25 +1,7 @@
-"""Level-1 + Level-4 hazard-exit subset — replay parity (Phase 4.1).
+"""Replay parity for hazard-exit orders.
 
-Locks the deterministic fingerprint of the ``OrderRequest`` stream
-emitted by :class:`feelies.risk.hazard_exit.HazardExitController` when
-fed a synthetic sequence of ``RegimeHazardSpike`` and ``Trade`` events
-against an open position book.
-
-Determinism (Inv-5)
--------------------
-
-* The controller never reads wall-clock time — both triggers fire
-  from event timestamps.
-* ``order_id`` is SHA-256 of
-  ``(correlation_id, trigger_ts_ns, symbol, reason)`` truncated to 16
-  hex chars.
-* The episode-suppression set keys on ``(strategy_id, symbol, reason)``
-  and is cleared on flat — duplicate spikes never re-fire while the
-  position is held, replays observe the same suppression decisions.
-
-Suppression (Inv-11) is exercised by publishing two consecutive spikes
-on the same symbol at the same boundary; the second must be suppressed
-and the order stream length / hash must reflect that.
+The hash pins event-time triggers, deterministic order IDs, and duplicate
+suppression until the position returns to flat.
 """
 
 from __future__ import annotations
@@ -111,7 +93,7 @@ def _replay() -> tuple[str, int]:
     )
     controller.attach()
 
-    # ── Phase A: spikes ──
+    # Hazard spikes.
     # 1. Below threshold → ignored.
     bus.publish(_make_spike(symbol="AAPL", score=0.50, ts_offset_s=120, seq=1))
     # 2. Above threshold but inside min_age window for a younger
@@ -125,7 +107,7 @@ def _replay() -> tuple[str, int]:
     # 5. Symbol outside policy universe → ignored.
     bus.publish(_make_spike(symbol="TSLA", score=0.99, ts_offset_s=131, seq=5))
 
-    # ── Phase B: hard-exit-age via Trade clock ──
+    # Hard-exit age advances on the trade clock.
     # GOOG was opened at offset +2s; trade at offset 700s → age ~698s
     # > 600s hard-exit cap → fires HARD_EXIT_AGE.
     bus.publish(_make_trade(symbol="GOOG", ts_offset_s=700, seq=6))
@@ -147,7 +129,7 @@ def _hash_order_stream(orders: list[OrderRequest]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-# Locked hazard-exit OrderRequest baseline (Phase 4.1).
+# Locked hazard-exit OrderRequest baseline.
 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH = (
     "79b35ea6d10038ec5e36b7844172afadda521734b298b3c8628bd98995bdbd81"
 )

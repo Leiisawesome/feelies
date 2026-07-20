@@ -1,37 +1,8 @@
-"""Mechanical proof that §18.3 #3 is closed — ``mypy --strict`` clean.
+"""Keep the full ``src/feelies`` tree clean under ``mypy --strict``.
 
-Closes the ``mypy --strict`` half of §18.3 of
-``docs/three_layer_architecture.md`` by running ``mypy`` as a
-subprocess against the entire ``src/feelies`` tree and asserting a
-zero exit code.
-
-Strict-mode coverage is governed by the ``[tool.mypy]`` block in
-``pyproject.toml``:
-
-* ``strict = true`` is the platform default and applies to **every**
-  module under ``src/feelies/`` — there are **no** per-module
-  ``ignore_errors = true`` overrides.  Workstream **gap-Z** closed the
-  historical 8-module override block by tightening the legacy modules
-  in place (``bootstrap``, ``execution.passive_limit_router``,
-  ``ingestion.massive_*``, ``kernel.orchestrator``,
-  ``storage.disk_event_cache``, ``storage.memory_trade_journal``).
-
-This test is the load-bearing artefact behind the matrix row, in two
-parts:
-
-1. ``test_mypy_strict_clean_on_src_feelies`` — runs ``mypy`` on the
-   full source tree and asserts a zero exit code.  A new strict-mode
-   error in any module fails the test loudly.
-2. ``test_no_strict_overrides_in_pyproject`` — parses
-   ``pyproject.toml`` and asserts that no ``[[tool.mypy.overrides]]``
-   block sets ``ignore_errors = true`` on any ``feelies.*`` module.
-   This locks the gap-Z invariant: a contributor who silences a new
-   strict-mode failure by re-introducing an override fails the test
-   even if mypy itself is happy.
-
-Marked ``slow`` because cold-cache mypy on the full source tree is
-several seconds — well beyond the per-test budget of the default
-``pytest tests/`` invocation but still trivial in the CI slow lane.
+One test runs mypy over the source tree. The other rejects per-module
+``ignore_errors`` overrides for ``feelies.*``. The module is marked slow because
+a cold mypy run takes several seconds.
 """
 
 from __future__ import annotations
@@ -99,15 +70,8 @@ def _override_module_names(entry: dict[str, Any]) -> list[str]:
     return []
 
 
-# Every boolean flag ``--strict`` turns on for mypy 1.20 (confirmed via
-# ``python -m mypy --help``): flipping any to ``false`` on a ``feelies.*``
-# override re-admits the corresponding class of un-checked code without
-# tripping ``ignore_errors`` or a blanket ``strict=false``.  Audit-2026-07-02
-# P2 #8: the prior list covered 5 of these 12 booleans (plus the blanket
-# ``strict=false`` escape hatch); this closes the rest, plus one flag whose
-# weakening direction is the *opposite* boolean (``no_implicit_reexport`` —
-# mypy's config key for it is ``implicit_reexport``, so the weakening value
-# is ``True``, not ``False``; handled separately below).
+# Per-module overrides may not weaken any boolean enabled by strict mode.
+# ``implicit_reexport`` weakens strictness when True and is checked separately.
 _STRICT_BOOL_FALSE_FLAGS: tuple[str, ...] = (
     "disallow_any_generics",
     "disallow_subclassing_any",
@@ -125,10 +89,7 @@ _STRICT_BOOL_FALSE_FLAGS: tuple[str, ...] = (
 )
 
 
-# Per-module knobs that re-weaken what ``strict = true`` turns on.  A
-# ``feelies.*`` override that trips any of these silences a strict-mode
-# failure without ``ignore_errors`` — closing the audit P0 gap where the
-# old lock only inspected ``ignore_errors``.
+# Report every per-module setting that weakens strict mode.
 def _strict_weakening_reasons(entry: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     if entry.get("ignore_errors"):
@@ -157,7 +118,7 @@ def _strict_weakening_reasons(entry: dict[str, Any]) -> list[str]:
 def test_strict_mode_enabled_in_pyproject() -> None:
     """Lock the linchpin: ``[tool.mypy] strict = true`` must be set.
 
-    Audit P0: ``test_mypy_strict_clean_on_src_feelies`` runs
+    ``test_mypy_strict_clean_on_src_feelies`` runs
     ``mypy --no-incremental src/feelies`` with **no** ``--strict`` on the
     CLI — strictness comes entirely from this key.  Without this assertion
     a contributor can flip ``strict = false`` (or delete it) and *both*

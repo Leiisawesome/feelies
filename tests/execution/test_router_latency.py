@@ -1,4 +1,4 @@
-"""Latency-queue tests for both routers (audit F-H-07).
+"""Latency-queue tests for both routers.
 
 Orders submitted with ``latency_ns > 0`` must defer their fill until a
 quote arrives whose ``timestamp_ns >= submit_time + latency_ns``.  The

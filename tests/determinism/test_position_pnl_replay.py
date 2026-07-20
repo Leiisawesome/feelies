@@ -1,17 +1,6 @@
-"""PnL baseline — ``PositionUpdate`` replay parity (determinism-audit P1 #5).
+"""Pin the ``PositionUpdate`` PnL replay stream.
 
-Inv-5 promises "same event log + params → bit-identical signals, **orders,
-PnL**", but no locked baseline reached PnL: the ``market_fill_acks`` baseline
-pins fill *economics* (``fill_price`` / ``fees`` / ``cost_bps``) and stops at
-the ``OrderAck``; nothing pinned the position/PnL reconciliation downstream.
-
-This baseline closes that gap.  It drives a deterministic fill + mark
-sequence through :class:`MemoryPositionStore` — the FIFO cost-basis engine
-the backtest path uses — and hashes the ``PositionUpdate`` stream the
-orchestrator emits from the resulting :class:`Position` (the field mapping
-mirrors ``orchestrator.py`` exactly: ``avg_price`` ← ``avg_entry_price``,
-``cost_bps`` ← the fill's disclosed cost).  The scenario exercises every PnL
-branch:
+A deterministic fill-and-mark sequence exercises:
 
 * open long, add to long (weighted-average entry),
 * partial close (realized PnL on a long reduce),
@@ -20,9 +9,8 @@ branch:
 * long and short mark-to-market (spread-aware: longs mark to bid, shorts to
   ask).
 
-Decimal fields are serialized at fixed precision so the hash is invariant to
-the working Decimal context's trailing-digit choices while still flipping on
-any cent-level PnL drift.
+Fixed-precision Decimal serialization ignores trailing context digits while
+still detecting cent-level PnL drift.
 """
 
 from __future__ import annotations
@@ -148,7 +136,7 @@ def test_two_replays_produce_identical_pnl_hash() -> None:
 
 
 def test_orchestrator_position_update_mapping_matches_this_baselines_assumption() -> None:
-    """Cross-check (audit-2026-07-02 P2 #11): this file's ``_replay()`` hand-
+    """Cross-check that this file's hand-built replay
     mirrors ``orchestrator.py``'s ``PositionUpdate`` field mapping
     (``avg_price`` <- ``avg_entry_price``, ``cost_bps`` <- the fill's
     disclosed cost, etc.) rather than calling it, so a future change to the

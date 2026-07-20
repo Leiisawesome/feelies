@@ -1,52 +1,9 @@
-"""Composition-layer metric collector — Phase-4-finalize observability.
+"""Read-only composition and hazard-exit metrics.
 
-Subscribes to the bus events emitted by the Phase-4 composition
-pipeline and the Phase-4.1 hazard-exit controller and records the 12
-metrics enumerated in :doc:`/docs/three_layer_architecture`
-§20.12.2:
-
-==  ====================================  ======================================
-#   Metric                                 Source event(s)
-==  ====================================  ======================================
-1   ``composition.completeness``           ``CrossSectionalContext.completeness``
-2   ``composition.gross_usd``              ``SizedPositionIntent``
-3   ``composition.net_usd``                ``SizedPositionIntent``
-4   ``composition.expected_turnover_usd``  ``SizedPositionIntent``
-5   ``composition.barriers_emitted``       ``CrossSectionalContext`` (counter)
-6   ``composition.intents_emitted``        ``SizedPositionIntent`` (counter)
-7   ``composition.degenerate_intents``     ``SizedPositionIntent`` w/ empty
-                                            ``target_positions`` (counter)
-8   ``composition.factor_residual_l2``     ``SizedPositionIntent.factor_exposures``
-9   ``composition.mechanism_share.{name}`` ``SizedPositionIntent.mechanism_breakdown``
-10  ``composition.regime_state.{name}``    ``RegimeState`` (passthrough)
-11  ``composition.hazard_spikes_observed`` ``RegimeHazardSpike`` (counter)
-12  ``composition.hazard_exits_emitted``   ``OrderRequest`` w/ ``reason='HAZARD_SPIKE'``
-                                            or ``'HARD_EXIT_AGE'`` (counter)
-==  ====================================  ======================================
-
-Each metric is also tagged with ``strategy_id``, ``horizon_seconds``
-where applicable so downstream dashboards can slice by alpha.
-
-Alert thresholds (§20.12.2 Alerts table):
-
-* ``composition.completeness < 0.50``           → WARNING
-* ``composition.degenerate_intents`` rate > 5%  → WARNING
-* ``composition.factor_residual_l2 > 0.05``     → WARNING (neutralization
-                                                  degraded — model may be
-                                                  rank-deficient)
-* ``composition.hazard_exits_emitted`` spike    → INFO  (auditable but not
-                                                  actionable on its own)
-
-The collector is **read-only** with respect to the pipeline: it only
-publishes :class:`MetricEvent` and :class:`Alert` events; it never
-mutates positions, intents, or orders.
-
-Determinism (Inv-5)
--------------------
-
-The collector performs no time reads — every emitted metric inherits
-the timestamp of the event that triggered it.  Two replays produce
-identical metric streams.
+The collector publishes completeness, exposure, turnover, intent, residual,
+mechanism-share, hazard, and solver-health metrics. It warns on low completeness,
+frequent degenerate intents, large factor residuals, and degraded solvers.
+Metrics inherit source-event timestamps, so replay output is deterministic.
 """
 
 from __future__ import annotations
@@ -79,9 +36,8 @@ FACTOR_RESIDUAL_WARN_THRESHOLD: float = 0.05
 # Optimizer terminal statuses that are *not* a degradation: the
 # deterministic closed-form path, a healthy ECOS solve, and the benign
 # "nothing to size" outcomes.  Any other non-empty status (e.g.
-# ``ECOS_FAILED_FALLBACK``, ``infeasible``, ``unbounded``) raises a
-# WARNING (audit P1-8).  Empty string ``""`` means "not recorded" and is
-# ignored.
+# ``ECOS_FAILED_FALLBACK``, ``infeasible``, ``unbounded``) raises a warning.
+# Empty string means not recorded and is ignored.
 _HEALTHY_SOLVER_STATUSES: frozenset[str] = frozenset(
     {"CLOSED_FORM", "optimal", "optimal_inaccurate", "ZERO_GROSS", "EMPTY_UNIVERSE"}
 )
@@ -90,11 +46,8 @@ _HEALTHY_SOLVER_STATUSES: frozenset[str] = frozenset(
 class HorizonMetricsCollector:
     """Bus-attached composition metrics + alert publisher.
 
-    One instance per platform.  Constructed by the bootstrap layer
-    when at least one PORTFOLIO alpha is registered (Inv-A: legacy
-    deployments stay bit-identical because the collector is never
-    instantiated and the bus carries zero ``MetricEvent`` /
-    ``Alert`` extras).
+    Bootstrap constructs one instance only when a PORTFOLIO alpha is registered,
+    so other deployments emit no extra metrics or alerts.
     """
 
     __slots__ = (
@@ -123,8 +76,7 @@ class HorizonMetricsCollector:
         self._barriers_total = 0
         self._hazard_spikes_total = 0
         self._hazard_exits_total = 0
-        # Per-alpha last-seen solver status — drives the state-change
-        # throttle for the solver-degradation alert (audit P1-8).
+        # Last status per alpha throttles repeated solver-degradation alerts.
         self._last_solver_status: dict[str, str] = {}
 
     # ── Public API ───────────────────────────────────────────────────
@@ -261,9 +213,7 @@ class HorizonMetricsCollector:
                     },
                 )
 
-        # Solver-degradation alert (audit P1-8): fire on the transition
-        # *into* a degraded optimizer status (state-change throttle so a
-        # persistently-degraded alpha alerts once, not every boundary).
+        # Alert only on transition into a degraded optimizer status.
         status = intent.solver_status
         prev_status = self._last_solver_status.get(intent.strategy_id, "")
         if status and status not in _HEALTHY_SOLVER_STATUSES and status != prev_status:

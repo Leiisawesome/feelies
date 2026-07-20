@@ -1,55 +1,10 @@
 #!/usr/bin/env python3
-"""Task 7 Amendment C — census-legal contamination read for H8
-(``sig_dislocation_lambda_drift_v1``).
+"""Measure Class-B print contamination at the H8 entry point.
 
-Resolves the dossier's one CONCERN: is the inherited *unfiltered*
-``kyle_lambda_60s`` materially contaminated by 03b Class-B prints at
-the H8 median-split entry point?  **NO forward returns, NO IC, NO
-signal evaluation** — the only quantities computed are print
-condition-code shares (03b §3.3) inside trailing 60 s windows, which
-condition on nothing return-related.
-
-Conditioning region (the H8 entry point, per the card):
-  - h=300 RTH boundary, session window (>= 300 s after open,
-    boundary ET <= 15:50);
-  - all entry features warm & fresh (kyle_lambda_60s_percentile,
-    micro_price_drift, micro_price, realized_vol_30s_zscore);
-  - kyle_lambda_60s_percentile >= 0.5      (the median split);
-  - |micro_price_drift| / micro_price >= 0.75 x median sigma_300
-    (pack-05 map: APP 33.8084 bps, RMBS 31.622 bps -> thresholds
-    25.3563 / 23.7165 bps of price, as fractions);
-  - P(vol_breakout) < 0.7 and realized_vol_30s_zscore <= 3.0
-    (the card's regime/vol screens).
-
-Measured, per symbol (pooled over the 10 frozen evidence dates):
-  - flagged-print share (count and volume basis) among ALL prints in
-    the trailing 60 s windows of conditioning boundaries — this is the
-    print population the unfiltered kyle_lambda_60s regresses on;
-  - the same share over the full RTH session tape (the base rate);
-  - the binary any-flag boundary rate in-region vs all in-window
-    boundaries (reference only).
-
-PRE-REGISTERED MATERIALITY CRITERION (frozen before this run):
-  materially elevated <=> pooled region flagged-print share >= 2.0 x
-  the pooled session base rate on EITHER the print-count OR the
-  volume basis, for APP (primary symbol).  RMBS reported alongside.
-
-Pipeline parity: events replay through the real ``SensorRegistry ->
-HorizonScheduler -> HorizonAggregator`` stack with the reference
-``platform.yaml`` sensor params; h=300 features come from the
-production ``_HORIZON_FEATURE_FACTORIES`` (bootstrap).  RTH filter
-and 09:30-ET session-open anchor mirror the inventory-fade census.
-Regime posterior is ``hmm_3state_fractional`` at reference defaults,
-calibrated per session on the causal prefix of the first 100_000 RTH
-quotes, updated once per quote before the boundary tick.
-
-Determinism: run under PYTHONHASHSEED=0; no RNG, no wall-clock reads;
-events sorted by (timestamp_ns, sequence); fresh state per cell.
-
-Usage
------
-    PYTHONHASHSEED=0 uv run python scripts/research/h8_contamination_read.py \
-        [--cache-dir ~/.feelies/cache] [--json out.json]
+The read compares flagged-print shares in eligible trailing 60-second windows
+with full-session base rates. A share at least twice APP's base rate is material.
+It computes no forward returns, IC, or signals. Replays use production sensors,
+the 300-second grid, causal regime calibration, and deterministic event order.
 """
 
 from __future__ import annotations

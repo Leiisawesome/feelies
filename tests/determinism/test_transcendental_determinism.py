@@ -1,23 +1,8 @@
-"""Transcendental-sensor determinism guard + cross-libm caveat (audit P0-3).
+"""Pin intra-process determinism for sensors using ``exp`` or ``log``.
 
-Several sensors call ``math.exp`` (``hawkes_intensity``, ``liquidity_stress_score``)
-or ``math.log`` (``realized_vol_30s``, ``snr_drift_diffusion``,
-``structural_break_score``).  IEEE-754 fixes ``+``/``*``/``sqrt`` to be
-correctly-rounded, but ``exp``/``log`` are **not** guaranteed correctly-rounded
-across libm implementations — two hosts with different C math libraries can
-differ in the last bit.
-
-Consequence for Inv-5: the locked parity hashes guarantee bit-identical replay
-**on a fixed (platform, libm) pair**, not universally.  This test locks the
-part that *is* guaranteed — *intra-process* reproducibility: replaying the same
-event stream through a transcendental sensor twice yields byte-identical
-readings.  A regression here means non-determinism was introduced inside the
-process (RNG, dict ordering, wall-clock), which would break replay everywhere.
-
-The cross-host bound (TG-5 "agreement to N ulps against a reference rational
-approximation") and pinning the libm/host in parity-hash provenance are tracked
-as follow-ups in ``tests/determinism/parity_manifest.py`` — they require
-provenance plumbing owned by the data-ingestion / determinism harness.
+Different libm implementations may differ in the last bit, so parity hashes are
+host/libm-specific. Within one process, identical event streams must still
+produce byte-identical readings.
 """
 
 from __future__ import annotations

@@ -1,29 +1,9 @@
-"""Hypothesis property tests for :mod:`feelies.research.dsr` (Workstream C-2).
+"""Property tests for :mod:`feelies.research.dsr`.
 
-Property invariants asserted here:
-
-- ``standard_normal_cdf`` ∈ [0, 1] for every input.
-- ``standard_normal_cdf`` is monotone non-decreasing.
-- CDF/quantile are inverses on the open interval ``(0, 1)``.
-- ``probabilistic_sharpe_ratio`` ∈ [0, 1] for every valid input.
-- ``probabilistic_sharpe_ratio`` is monotone non-decreasing in
-  ``observed_sharpe`` (holding everything else fixed).
-- ``probabilistic_sharpe_ratio`` is monotone non-increasing in
-  ``threshold_sharpe`` (higher null bar → smaller probability of
-  beating it).
-- ``probabilistic_sharpe_ratio`` saturates at 0.5 when observed ==
-  threshold (already covered in unit tests; re-asserted here as a
-  fuzzed sanity check).
-- ``expected_max_sharpe`` is non-decreasing in ``n_trials``.
-- ``expected_max_sharpe`` is ``√v``-scaled in ``trial_sharpe_variance``.
-- ``deflated_sharpe`` is deterministic (replay produces identical
-  results for identical inputs) — Inv-5.
-- ``build_dsr_evidence`` is deterministic and produces ``dsr_p_value
-  ∈ [0, 1]`` for every well-formed input.
-- ``build_dsr_evidence`` annualisation is linear in
-  ``annualization_factor``.
-- ``build_dsr_evidence_from_returns`` matches the explicit-stats
-  path when invoked with the same data.
+The suite checks CDF bounds, monotonicity, and inverse behavior; probabilistic
+Sharpe bounds and monotonicity; expected-maximum scaling; deterministic DSR
+evidence; linear annualization; and parity between return-based and
+explicit-statistics builders.
 """
 
 from __future__ import annotations
@@ -55,9 +35,7 @@ SETTINGS = settings(
 )
 
 
-# ─────────────────────────────────────────────────────────────────────
-#   Strategies
-# ─────────────────────────────────────────────────────────────────────
+# Strategies.
 
 
 # A "well-formed" Sharpe input that keeps the PSR variance term

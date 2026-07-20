@@ -5,9 +5,8 @@ all raw events; the trade journal is a structured, queryable record
 of completed trade lifecycles with computed fields (slippage, fees,
 PnL per trade).
 
-Supports audit (invariant 13) and post-trade forensics.  Every
-trade is traceable to the signal, risk verdict, and fill events
-that produced it via correlation_id.
+Every trade is traceable through ``correlation_id`` to its signal, risk
+verdict, and fills.
 """
 
 from __future__ import annotations
@@ -47,11 +46,7 @@ class TradeRecord:
     realized_pnl: Decimal
     correlation_id: str
     trading_intent: str = ""  # TradingIntent.name at order submission time
-    # Forensic provenance (Inv-1 / Inv-13): the causal mechanism and the
-    # regime in effect at fill time, captured on the record so post-trade
-    # attribution is a pure, causal function of the journal — no live-engine
-    # lookups at audit time.  All default to "unspecified" so existing
-    # producers and tests remain valid (v0.2-compatible).
+    # Capture mechanism and fill-time regime so attribution needs no live lookup.
     trend_mechanism: TrendMechanism | None = None
     expected_half_life_seconds: int = 0
     regime_state: str = ""
@@ -59,14 +54,13 @@ class TradeRecord:
 
     @property
     def net_pnl(self) -> Decimal:
-        """Audit F-M-21: realized PnL net of explicit fees.
+        """Realized PnL net of explicit fees.
 
-        Under the BT-3 cost convention (see
-        :class:`feelies.portfolio.position_store.Position`) a taker fill
+        Under the platform cost convention, a taker fill
         executes at the crossed price (BUY lifts the ask, SELL hits the bid),
         so ``realized_pnl`` already INCLUDES the half-spread paid to cross — it
         is not mid-to-mid, and ``fees`` carries no separate ``spread_cost``.
-        ``fees`` holds the explicit charges only (commission, regulatory/TAF,
+        ``fees`` holds explicit charges only (commission, regulatory/TAF,
         and any forced-exit panic slippage).  ``realized_pnl - fees`` therefore
         nets those explicit charges off a PnL that already reflects the spread;
         consumers must not subtract a spread component a second time.

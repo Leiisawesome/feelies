@@ -1,4 +1,4 @@
-"""Unit tests for Inv-12 joint stress harness (BT-9)."""
+"""Unit tests for the invariant-12 joint stress harness."""
 
 from __future__ import annotations
 

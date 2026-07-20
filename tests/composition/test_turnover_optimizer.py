@@ -1,4 +1,4 @@
-"""Closed-form ``TurnoverOptimizer`` behaviour (audit P2-4 + statuses).
+"""Closed-form ``TurnoverOptimizer`` behavior and statuses.
 
 These lock the deterministic closed-form path that runs by default
 (``require_solver=False``); the cvxpy/ECOS path parity is covered by
@@ -15,7 +15,7 @@ _CAPITAL = 100_000.0
 
 
 def test_round_cents_is_half_up() -> None:
-    """Target-dollar rounding is declared half-up, not binary-float banker's (P1-6)."""
+    """Target-dollar rounding is half-up, not banker's rounding."""
     # Half-cent cases where round-half-to-even (float ``round``) diverges from
     # the declared ROUND_HALF_UP mode used at the risk boundary.
     assert round_cents(2.675) == 2.68  # float round(2.675, 2) == 2.67
@@ -42,7 +42,7 @@ def test_zero_gross_status() -> None:
 
 def test_small_gross_reaches_target_gross() -> None:
     # gross(weights) = 0.6 < gross_cap (2.0) — the old min(..., capital)
-    # clamp under-levered this to gross ≈ 60k; post-P2-4 it scales up to
+    # clamping would under-lever this to about 60k; rescaling reaches
     # the full target 2.0 × capital = 200k (per-name cap 100% does not bind).
     opt = TurnoverOptimizer(capital_usd=_CAPITAL, gross_cap_pct=2.0, per_name_cap_pct=1.0)
     weights = {"AAPL": 0.2, "MSFT": 0.2, "TSLA": -0.2}
@@ -69,7 +69,7 @@ def test_gross_cap_enforced() -> None:
 
 
 def test_closed_form_ignores_lambda_penalties() -> None:
-    """The closed-form path is independent of lambda_tc / lambda_risk (P1-1).
+    """The closed-form path ignores lambda penalties.
 
     Documents that the turnover/risk penalties are inert outside the solver
     path, so an operator tuning them under ``composition_optimizer_mode:
@@ -94,18 +94,10 @@ def test_closed_form_is_deterministic() -> None:
 
 
 def test_small_universe_default_caps_collapse_conviction_to_equal_notional() -> None:
-    """Documents an implicit behavior (composition audit 2026-07-02 P2), not a bug.
+    """Default per-name caps flatten conviction in a small universe.
 
-    With the platform's default caps (200% gross, 5% per-name) and a small
-    universe -- e.g. the shipped N=3 research alphas -- the per-name cap can
-    bind for every name simultaneously, so distinct cross-sectionally
-    standardized weights collapse to identical position magnitudes: the
-    ranker's relative conviction does not survive to sizing. This is the
-    likely practical reason the shipped alphas' own YAML notes say
-    "IR = IC x sqrt(N) with N=3 does not justify composition-layer
-    complexity". Operators who want conviction to carry through for small
-    universes can now raise ``composition_per_name_cap_pct`` via
-    ``PlatformConfig`` (previously only a TurnoverOptimizer constructor arg).
+    Operators can raise ``composition_per_name_cap_pct`` when relative weights
+    must survive sizing.
     """
     capital = 150_000.0
     weights = {"AAPL": 0.371, "MSFT": -1.367, "NVDA": 0.997}

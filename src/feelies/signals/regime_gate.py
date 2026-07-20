@@ -1,54 +1,12 @@
-"""Regime gate DSL evaluator (§8.4 of three_layer_architecture.md).
+"""Safe expression evaluator and hysteresis latch for regime gates.
 
-Each ``layer: SIGNAL`` (and Phase-4 ``layer: PORTFOLIO``) alpha
-declares a ``regime_gate:`` block:
+Expressions are parsed once and evaluated without ``eval``. Bindings expose
+regime probabilities, sensor values, z-scores, percentiles, dominance, entropy,
+percentile literals, basic arithmetic and comparisons, plus ``abs``, ``min``,
+and ``max``. All other AST constructs are rejected.
 
-    regime_gate:
-      regime_engine: hmm_3state_fractional
-      on_condition: |
-          P(normal) > 0.7 AND ofi_ewma_zscore > 2.0 AND spread_z_30d < 0.5
-      off_condition: |
-          P(normal) < 0.5 OR spread_z_30d > 1.5
-      hysteresis:
-          posterior_margin: 0.20
-          percentile_margin: 0.30
-
-The conditions are **strings** evaluated under a tightly restricted
-DSL — *not* arbitrary Python.  The implementation parses the string
-once at YAML-load time, walks the AST, and rejects every node that is
-not in the whitelist below.  Evaluation at runtime is then a pure
-recursive walk over the validated AST against a fresh ``Bindings``
-mapping per ``(snapshot, regime)`` pair — no string interpolation, no
-``eval``, no symbol leakage.
-
-Whitelist (§8.4):
-
-    P(<state_name>)        — regime posterior, float in [0, 1]
-    <sensor_id>            — latest SensorReading.value for that sensor
-    <sensor_id>_percentile — percentile rank in rolling window
-    <sensor_id>_zscore     — z-score in rolling window
-    dominant               — name of the currently dominant state
-    entropy                — posterior Shannon entropy in nats (0 = peaked)
-    p<NN>                  — percentile literal, e.g. p40 = 0.40
-    Operators: and, or, not, ==, !=, <, <=, >, >=, +, -, *, /
-    Functions: abs, min, max
-    Numeric / string / bool / None constants
-
-Forbidden (raise :class:`UnsafeExpressionError` at parse time):
-
-    Attribute, Subscript, Call (outside whitelist), Lambda, ListComp,
-    SetComp, DictComp, GeneratorExp, Import / ImportFrom, FunctionDef,
-    ClassDef, Yield, Await, Starred, Assign, NamedExpr, JoinedStr,
-    FormattedValue.
-
-The :class:`RegimeGate` instance also owns the **per-(alpha_id, symbol)
-hysteresis state machine** (ON/OFF) — see §8.4 + §6.4 of the design
-doc.  When ``on_condition`` evaluates True the gate transitions
-OFF→ON; when ``off_condition`` evaluates True it transitions ON→OFF.
-Both conditions can fail simultaneously (the hysteresis band) — the
-state then carries forward unchanged.  This matches the regime-gate
-hysteresis margin requirement in §8.4 / §6.4 of the design doc and
-``.cursor/skills/microstructure-alpha/SKILL.md``.
+Each alpha-symbol gate moves OFF→ON on its entry condition and ON→OFF on its
+exit condition. When neither condition passes, hysteresis preserves the state.
 """
 
 from __future__ import annotations
@@ -115,10 +73,7 @@ class UnknownRegimeStateError(RegimeGateError):
 # ── Whitelist tables ────────────────────────────────────────────────────
 
 
-# Audit P2-3: allow 1–3 digits so ``p100`` is reachable (the prior
-# ``\d{1,2}`` capped at ``p99`` while the range-check message claimed
-# ``p0..p100``).  Values > 100 are still rejected by the bound check in
-# :func:`_resolve_name`.
+# Accept p0 through p100; _resolve_name rejects larger percentiles.
 _PERCENTILE_LITERAL_RE = re.compile(r"^p(\d{1,3})$")
 _PERCENTILE_SUFFIX = "_percentile"
 _ZSCORE_SUFFIX = "_zscore"
@@ -164,32 +119,11 @@ _ALLOWED_NODES: tuple[type[ast.AST], ...] = (
 
 
 class Bindings:
-    """Snapshot+regime view consumed by the gate at evaluation time.
+    """Read-only runtime values exposed to the gate evaluator.
 
-    All values are resolved from typed events (no dict introspection)
-    so the evaluator never needs to know about source serialization.
-
-    - ``regime`` — latest :class:`feelies.core.events.RegimeState` for
-      the snapshot's symbol, or ``None`` when no posterior has been
-      published yet (cold start).
-    - ``sensor_values`` — latest scalar sensor reading per ``sensor_id``
-      (typically copied from ``snapshot.values`` for sensor-id keys).
-    - ``percentiles`` — per-``sensor_id`` percentile rank in the
-      configured rolling window, suffix ``_percentile`` in the DSL.
-    - ``zscores`` — per-``sensor_id`` rolling-window z-score, suffix
-      ``_zscore`` in the DSL.
-
-    All four are read-only mappings — the evaluator never mutates
-    bindings.  Missing keys raise :class:`UnknownIdentifierError`
-    rather than silently defaulting to 0; gate authors must declare
-    every consumed sensor so the validator (G6) can DAG-check them.
-
-    - ``min_discriminability`` — audit R-1 floor on the engine's
-      calibration-time emission separation ``d``.  When the regime's
-      ``discriminability`` is below this floor the posterior cannot tell
-      the states apart, so ``P()``/``dominant``/``entropy`` are treated as
-      unavailable (gate fails safe to OFF).  Default ``0.0`` is an exact
-      no-op (the published ``discriminability`` is always ``>= 0``).
+    Missing identifiers raise :class:`UnknownIdentifierError`; they never
+    default to zero. Regime bindings are unavailable below the configured
+    discriminability floor, causing the gate to fail closed.
     """
 
     __slots__ = ("regime", "sensor_values", "percentiles", "zscores", "min_discriminability")
@@ -408,34 +342,11 @@ def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
 
 
 def _regime_unusable_reason(b: Bindings) -> str | None:
-    """Why a *present* RegimeState must be treated as unavailable for gating.
+    """Return why a present regime is unsafe for gate bindings.
 
-    Returns a short reason string, or ``None`` when the regime is usable.
-    Resolving ``P()``/``dominant``/``entropy`` against an unusable regime
-    raises :class:`UnknownIdentifierError`, which the
-    :class:`~feelies.signals.horizon_engine.HorizonSignalEngine` routes
-    through its fail-safe path (force OFF + unwind), so regime-gated entries
-    never fire on untrustworthy posteriors (Inv-11).  This is *only* reached
-    when a gate actually references a regime binding, so regime-free gates
-    (e.g. a pure schedule gate) are unaffected.
-
-    Two complementary failure modes:
-
-    * **Audit P0-1 (uncalibrated):** an engine without data-fit emissions
-      publishes ``RegimeState.calibrated=False``; its posteriors do not
-      reflect real microstructure (they collapse toward one state).
-    * **Audit R-1 (indiscriminate):** even a *calibrated* engine can be
-      degenerate — on a tight, stable spread the quantile-fit emissions
-      collapse to near-identical Gaussians (separation ``d → 0``), so the
-      posterior is uniform noise and ``P(state)`` carries no information.
-      The engine publishes its calibration-time min pairwise separation as
-      ``RegimeState.discriminability``; when it is below the configured
-      ``min_discriminability`` floor the regime is unusable.  ``calibrated``
-      does **not** catch this case (placeholder emissions are well-separated
-      yet mis-located), so the two checks are orthogonal.
-
-    Legacy / custom producers default to calibrated and ``discriminability``
-    ``= +inf`` (always usable); the floor defaults to ``0.0`` (exact no-op).
+    Uncalibrated or insufficiently discriminative posteriors are treated as
+    missing, causing regime-dependent gates to fail closed. Regime-free gates
+    are unaffected.
     """
     regime = b.regime
     if regime is None:
@@ -537,10 +448,7 @@ def _resolve_posterior(state_name: str, b: Bindings) -> float:
         )
     reason = _regime_unusable_reason(b)
     if reason is not None:
-        # Audit P0-1 / R-1: posteriors from placeholder or indiscriminate
-        # emissions are not trustworthy for gating — treat as unavailable so
-        # the entry gate fails safe to OFF (Inv-11).  A malformed state name
-        # is still caught first to surface authoring typos.
+        # Fail OFF on unusable posteriors, but report malformed state names first.
         if state_name not in tuple(b.regime.state_names):
             raise UnknownRegimeStateError(
                 f"regime-gate: state {state_name!r} not in engine "
@@ -608,12 +516,7 @@ class RegimeGate:
         self._off_tree = compile_expression(off_condition)
         self._state: dict[str, bool] = {}
         self._hysteresis: dict[str, float] = dict(hysteresis or {})
-        # Audit (external report §5.5 / inventory comment): declared alpha
-        # parameter defaults injectable as named gate constants so a gate
-        # threshold can reference the param (``abs(z) > asymmetry_z_threshold``)
-        # instead of duplicating its literal — which otherwise silently drifts
-        # under parameter sweeps.  Hysteresis margins take precedence on a name
-        # collision (they are the more specific gate-local constant).
+        # Expose alpha parameters as gate constants; hysteresis wins collisions.
         self._params: dict[str, float] = dict(params or {})
 
     @property
@@ -658,8 +561,7 @@ class RegimeGate:
     def referenced_posterior_states(self) -> frozenset[str]:
         """State names referenced by any ``P(<state>)`` in the ON/OFF ASTs.
 
-        Public accessor used by :class:`~feelies.alpha.loader.AlphaLoader`
-        for the audit P1-2 load-time check: every ``P(...)`` argument must
+        Used by :class:`~feelies.alpha.loader.AlphaLoader` so every ``P(...)`` argument must
         name a real engine state, validated against ``engine.state_names``
         at load rather than surfacing as a runtime
         :class:`UnknownRegimeStateError` on the first evaluation.
@@ -719,18 +621,7 @@ class RegimeGate:
         precedence than dynamic sensor readings to avoid accidental
         capture.
         """
-        # Overlay declared alpha-param constants then hysteresis margin
-        # constants so expression identifiers like ``asymmetry_z_threshold``,
-        # ``posterior_margin``, ``percentile_margin`` resolve to their declared
-        # values.  Merge order (later wins): params, then sensor_values, then
-        # hysteresis — i.e. a live sensor reading of the same name overrides a
-        # declared param default (params are a fallback for names that are not
-        # live sensors, not a shadow over them), and hysteresis margins win over
-        # both (audit regime_audit_2026-07-02 §4.3: precedence is
-        # hysteresis > sensor_values > params; see
-        # test_real_sensor_overrides_param_constant /
-        # test_hysteresis_overrides_param_on_collision). When both dicts are
-        # empty this creates no extra objects (fast path for the common case).
+        # Precedence is parameters, live sensor values, then hysteresis margins.
         if self._hysteresis or self._params:
             merged = {**self._params, **bindings.sensor_values, **self._hysteresis}
             bindings = Bindings(
@@ -778,8 +669,8 @@ class RegimeGate:
 
         When ``strict`` is True (loader passes ``enforce_layer_gates``), a
         ``hysteresis:`` block whose declared margins are referenced by neither
-        expression is a hard :class:`RegimeGateError` rather than a warning
-        (audit P1 GC-1 / external report §5.3): dead margin config silently
+        expression is a hard :class:`RegimeGateError` rather than a warning:
+        dead margin config silently
         misleads authors into thinking a band is active.
         """
         if not isinstance(spec, Mapping):
@@ -817,15 +708,7 @@ class RegimeGate:
             engine_name=str(engine_name) if engine_name is not None else None,
             params=params,
         )
-        # Audit P1 GC-1: warn when hysteresis margins are declared but
-        # never referenced inside the ON/OFF expressions.  Margins are
-        # only meaningful when an expression literally names them
-        # (e.g. ``P(normal) < 0.5 - posterior_margin``); they are NOT
-        # an automatic ON/OFF band derived from the threshold gap.
-        # Authors who write the block expecting automatic behavior
-        # get a quiet no-op today — surfacing this loudly at load
-        # time prevents that misuse without breaking the existing
-        # explicit-reference contract (e.g. sig_inventory_revert_v1).
+        # Hysteresis is explicit; unreferenced margins have no effect.
         if hyst:
             referenced = gate._referenced_identifiers()
             unreferenced = sorted(set(hyst) - referenced)
@@ -855,7 +738,7 @@ class RegimeGate:
     def _referenced_identifiers(self) -> frozenset[str]:
         """All bare Name identifiers referenced by either condition.
 
-        Used by :meth:`from_spec`'s P1 GC-1 dead-config warning.
+        Used by :meth:`from_spec` to detect dead configuration.
         """
         seen: set[str] = set()
         for tree in (self._on_tree, self._off_tree):

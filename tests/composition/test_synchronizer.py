@@ -212,7 +212,7 @@ def test_fan_in_cross_horizon_feeders_into_portfolio_context():
 
 
 def test_stale_signal_dropped_from_completeness_legacy():
-    """A signal older than the horizon window must not count (audit P0-5)."""
+    """A signal older than the horizon window must not count."""
     bus = EventBus()
     captured: list[CrossSectionalContext] = []
     bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
@@ -240,7 +240,7 @@ def test_stale_signal_dropped_from_completeness_legacy():
 
 
 def test_explicit_max_age_override_drops_signal():
-    """A configured window narrower than the horizon still applies (P0-5)."""
+    """A configured window narrower than the horizon still applies."""
     bus = EventBus()
     captured: list[CrossSectionalContext] = []
     bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
@@ -265,7 +265,7 @@ def test_explicit_max_age_override_drops_signal():
 
 
 def test_stale_feeder_dropped_multi_feeder():
-    """The stale gate also applies on the multi-feeder fan-in path (P0-5)."""
+    """The stale gate also applies on the multi-feeder path."""
     bus = EventBus()
     captured: list[CrossSectionalContext] = []
     bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
@@ -292,7 +292,7 @@ def test_stale_feeder_dropped_multi_feeder():
 
 
 def test_future_signal_not_captured_legacy():
-    """A future-dated signal must never be selected (Inv-6 fail-safe, P1-5)."""
+    """A future-dated signal must never be selected."""
     bus = EventBus()
     captured: list[CrossSectionalContext] = []
     bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
@@ -323,7 +323,7 @@ def test_future_signal_not_captured_legacy():
 
 
 def test_future_signal_not_captured_multi_feeder():
-    """Same causality guard on the multi-feeder fan-in path (Inv-6, P1-5)."""
+    """The same causality guard applies on the multi-feeder path."""
     bus = EventBus()
     captured: list[CrossSectionalContext] = []
     bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))

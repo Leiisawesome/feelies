@@ -1,10 +1,4 @@
-"""ENG-1: explicit nominal boundary timestamp (`boundary_ts_ns`).
-
-`timestamp_ns` is the *triggering* event time (which on a sparse tape lands at
-or after the nominal boundary); `boundary_ts_ns` is the exact grid boundary
-``session_open_ns + k * horizon * 1e9``.  These tests lock that the scheduler
-sets it and the aggregator carries it onto the snapshot.
-"""
+"""Preserve the nominal grid boundary separately from trigger time."""
 
 from __future__ import annotations
 

@@ -1,12 +1,11 @@
-"""Workstream F-5: AlphaRegistry per-alpha gate-threshold override tests.
+"""Per-alpha gate-threshold override tests for ``AlphaRegistry``.
 
 Pins the layering rules that
 :class:`feelies.alpha.registry.AlphaRegistry` honours when a manifest
 carries ``gate_thresholds_overrides``:
 
   1. **No registry base + no manifest overrides** — lifecycle uses the
-     skill-pinned :class:`GateThresholds` defaults (current F-2 / F-4
-     baseline).
+     default :class:`GateThresholds`.
   2. **Registry base only** — every alpha picks up the same base.
   3. **Manifest overrides only** — registry's ``None`` is upgraded to
      a fresh :class:`GateThresholds` and the manifest values are
@@ -286,19 +285,14 @@ class TestAlphaRegistryPerAlphaThresholds:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Audit P0-1: per-alpha overrides may not loosen an operator-pinned floor
-# ─────────────────────────────────────────────────────────────────────
+# ── Per-alpha overrides cannot loosen operator floors ──────────────────
 
 
 def _floored_registry(
     clock: SimulatedClock,
     overrides: dict[str, object],
 ) -> AlphaRegistry:
-    """A registry whose operator (platform.yaml) explicitly pinned
-    ``overrides`` — mirroring how ``bootstrap.build_platform`` wires the
-    materialised floor *and* the raw pinned-field dict together.
-    """
+    """Build a registry with explicit operator threshold floors."""
     base = apply_gate_thresholds_overrides(GateThresholds(), overrides)
     return AlphaRegistry(
         clock=clock,
@@ -335,7 +329,7 @@ class TestPerAlphaFloorEnforcement:
         self, clock: SimulatedClock
     ) -> None:
         # Operator pinned cpcv only; per-alpha loosens dsr_min (still at
-        # skill default) — preserves documented F-5 "per-alpha wins over
+        # skill default), preserving "per-alpha wins over
         # skill defaults" behavior.
         registry = _floored_registry(clock, {"cpcv_min_mean_sharpe": 2.0})
         registry.register(_StubModule("kyle", gate_thresholds_overrides={"dsr_min": 0.0}))

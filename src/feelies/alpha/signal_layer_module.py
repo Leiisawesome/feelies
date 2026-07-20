@@ -1,4 +1,4 @@
-"""Phase-3 ``layer: SIGNAL`` alpha module.
+"""Loader artifact for ``layer: SIGNAL`` alphas.
 
 Loader-side artifact for schema-1.1 ``layer: SIGNAL`` alphas (peer:
 :class:`~feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
@@ -38,15 +38,7 @@ from feelies.signals.regime_gate import RegimeGate
 
 
 class LoadedSignalLayerModule:
-    """Concrete ``AlphaModule`` for a schema-1.1 ``layer: SIGNAL`` alpha.
-
-    The class exposes the standard :class:`AlphaModule` surface so it
-    can be registered with the existing :class:`AlphaRegistry`.
-    Phase-3 wiring then introspects each registered module: those whose
-    ``manifest.layer == "SIGNAL"`` are constructed into a
-    :class:`feelies.signals.horizon_engine.RegisteredSignal` and handed
-    to the :class:`HorizonSignalEngine`.
-    """
+    """Concrete ``AlphaModule`` for a schema-1.1 SIGNAL alpha."""
 
     __slots__ = (
         "_manifest",
@@ -98,10 +90,8 @@ class LoadedSignalLayerModule:
     def feature_definitions(self) -> Sequence[FeatureDefinition]:
         """SIGNAL-layer alphas declare no inline features.
 
-        They consume Layer-1 sensors directly via ``depends_on_sensors``;
-        the per-tick composite feature engine was deleted by D.2 PR-2b-ii.
-        Returning ``()`` keeps the registry's dedup / version-conflict
-        logic free of corner cases.
+        They consume Layer-1 sensors through ``depends_on_sensors``. Returning
+        ``()`` keeps registry deduplication and version checks simple.
         """
         return ()
 
@@ -110,11 +100,7 @@ class LoadedSignalLayerModule:
 
         Mirrors
         :py:meth:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule.validate`
-        so registry-side per-alpha validation has consistent behavior
-        across the two surviving loaded-module types (SIGNAL and
-        PORTFOLIO).  The historical per-tick ``LoadedAlphaModule.validate``
-        was deleted by D.2 PR-2 along with the rest of the legacy
-        per-tick contract.
+        so SIGNAL and PORTFOLIO modules validate consistently.
         """
         errors: list[str] = []
         for pdef in self._manifest.parameter_schema:
@@ -133,10 +119,9 @@ class LoadedSignalLayerModule:
     def signal_source(self) -> str | None:
         """Raw ``signal:`` source the alpha was compiled from.
 
-        Retained so the platform can statically determine which
-        ``snapshot.values`` keys the body actually reads (audit 2P-1:
-        consume-driven ``required_warm`` derivation).  ``None`` for
-        modules constructed without the source (legacy / synthetic).
+        Retained so the platform can derive ``required_warm`` from the
+        ``snapshot.values`` keys the body reads. ``None`` for modules built
+        without source.
         """
         return self._signal_source
 
@@ -162,19 +147,17 @@ class LoadedSignalLayerModule:
 
     @property
     def trend_mechanism_enum(self) -> TrendMechanism | None:
-        """Mapped :class:`TrendMechanism` enum (Phase-3.1 propagation).
+        """Mapped :class:`TrendMechanism` enum.
 
-        ``None`` when the YAML omits ``trend_mechanism:`` (v0.2 SIGNAL
-        behavior preserved bit-identically).
+        ``None`` when YAML omits ``trend_mechanism:``.
         """
         return self._trend_mechanism_enum
 
     @property
     def expected_half_life_seconds(self) -> int:
-        """Declared expected half-life (Phase-3.1 propagation).
+        """Declared expected half-life.
 
-        ``0`` when unspecified (v0.2 SIGNAL behavior preserved
-        bit-identically).
+        ``0`` when unspecified.
         """
         return self._expected_half_life_seconds
 

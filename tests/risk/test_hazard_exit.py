@@ -1,14 +1,4 @@
-"""Tests for :mod:`feelies.risk.hazard_exit`.
-
-Phase-4-finalize replay byte-identity property test:
-
-  Replaying the same ordered ``(RegimeHazardSpike | Trade)`` event
-  stream through two independent ``HazardExitController`` instances
-  must produce **byte-identical** ``OrderRequest`` streams (Inv-5 /
-  Level-1 parity).  The Hypothesis strategy generates random ordered
-  event sequences over a small universe and asserts that two parallel
-  replays agree on every emitted order field.
-"""
+"""Tests for deterministic hazard-exit order generation."""
 
 from __future__ import annotations
 
@@ -356,18 +346,7 @@ def test_episode_suppression_prevents_double_fire():
 
 
 def test_cross_reason_race_suppresses_second_full_size_exit():
-    """Audit HZ-1 (risk_engine_audit_2026-07-02.md).
-
-    A HAZARD_SPIKE exit and a HARD_EXIT_AGE exit are independent
-    ``_emitted_for_episode`` keys, so before the HZ-1 fix a second trigger
-    reason firing on the same symbol while the first exit's fill has not
-    yet reconciled into the position store (PAPER/LIVE acks are
-    asynchronous) would emit a *second* full-size close order — netting to
-    a position reversal once both fill.  ``_build_controller``'s bus has no
-    order-router/reconciliation wiring, so the position stays at its
-    pre-exit quantity after the first order is published, reproducing that
-    unreconciled window deterministically.
-    """
+    """Emit at most one full-size exit while an earlier exit is unreconciled."""
     _, store, bus, out = _build_controller(
         seed_positions={"AAPL": (100, 1_000_000_000)},
     )

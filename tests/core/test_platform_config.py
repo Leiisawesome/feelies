@@ -38,27 +38,13 @@ class TestDefaults:
         assert cfg.account_equity == 50_000.0
 
     def test_default_composition_cap_pcts_match_turnover_optimizer_defaults(self) -> None:
-        # Composition audit 2026-07-02 P2: these were previously hardcoded
-        # constructor defaults in TurnoverOptimizer only; defaults here must
-        # match so existing deployments are unaffected until an operator
-        # opts in to a different value.
+        # Platform and optimizer defaults must agree.
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.composition_gross_cap_pct == 2.0
         assert cfg.composition_per_name_cap_pct == 0.05
 
     def test_ingest_health_gates_default_fail_open_by_design(self) -> None:
-        """DI-04 (data ingestion audit 2026-07-02): these two dataclass
-        defaults must stay False.  ``backtest_enforce_ingest_terminal_health``
-        raises in validate() for any non-BACKTEST mode, and
-        ``require_healthy_disk_cache_manifests`` raises whenever
-        ``disk_cache_ingestion_health_rows`` is empty — flipping either
-        default would break every PAPER config (``configs/paper_run.yaml``
-        does not set them) and the ~95 direct ``PlatformConfig(...)``
-        constructions across the test suite.  The fail-closed behavior is
-        pinned instead at the shipped-config layer — see
-        ``test_backtest_configs_are_fail_closed_on_ingest_health`` in
-        ``tests/acceptance/test_backtest_app_config_keys.py``.
-        """
+        """Dataclass defaults stay compatible; shipped backtests opt in."""
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.backtest_enforce_ingest_terminal_health is False
         assert cfg.require_healthy_disk_cache_manifests is False
@@ -184,8 +170,7 @@ class TestSnapshot:
         assert snap1.checksum == snap2.checksum
 
     def test_snapshot_ts_ns_is_injectable_and_excluded_from_checksum(self) -> None:
-        # ts_ns gives a deterministic provenance stamp (Inv-10) and must not
-        # influence the checksum (Inv-5) — audit P1-1.
+        # Provenance time must not change the configuration checksum.
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         snap_a = cfg.snapshot(ts_ns=123)
         snap_b = cfg.snapshot(ts_ns=456)
@@ -261,7 +246,7 @@ account_equity: 500000
             PlatformConfig.from_yaml(tmp_path / "bad.yaml")
 
     def test_int_field_for_float_field_is_accepted(self, tmp_path: Path) -> None:
-        # int → float widening is the one allowed coercion (audit P1-3).
+        # Integer-to-float widening is the only numeric coercion.
         (tmp_path / "c.yaml").write_text(
             "symbols: [AAPL]\nalpha_specs: [x.yaml]\naccount_equity: 500000\n"
         )
@@ -269,7 +254,7 @@ account_equity: 500000
         assert cfg.account_equity == 500_000.0
 
     def test_quoted_string_bool_rejected(self, tmp_path: Path) -> None:
-        # bool("false") is True — the footgun (audit P1-3).
+        # ``bool("false")`` would silently produce True.
         (tmp_path / "c.yaml").write_text(
             'symbols: [AAPL]\nalpha_specs: [x.yaml]\nenforce_trend_mechanism: "false"\n'
         )
@@ -277,7 +262,7 @@ account_equity: 500000
             PlatformConfig.from_yaml(tmp_path / "c.yaml")
 
     def test_float_for_int_field_rejected(self, tmp_path: Path) -> None:
-        # int(5.7) silently truncates — reject instead (audit P1-3).
+        # ``int(5.7)`` would silently truncate.
         (tmp_path / "c.yaml").write_text(
             "symbols: [AAPL]\nalpha_specs: [x.yaml]\nrisk_max_position_per_symbol: 5.7\n"
         )
@@ -294,8 +279,7 @@ account_equity: 500000
     def test_unknown_key_warns_not_raises(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        # A typo'd override key would silently no-op; we warn loudly but
-        # still load (audit P1-4).
+        # Lenient mode warns but preserves the default.
         (tmp_path / "c.yaml").write_text(
             "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_stress_multipler: 2.0\n"
         )
@@ -305,8 +289,7 @@ account_equity: 500000
         assert any("unrecognized config key" in r.message for r in caplog.records)
 
     def test_unknown_key_strict_raises(self, tmp_path: Path) -> None:
-        # strict=True (wired to --strict-config) fails closed on a typo instead
-        # of silently keeping the default (audit P1-4).
+        # Strict mode fails closed on unknown keys.
         (tmp_path / "c.yaml").write_text(
             "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_stress_multipler: 2.0\n"
         )
@@ -426,8 +409,7 @@ backtest_fill_latency_ns: 9999
         assert snap.data["backtest_fill_latency_ns"] == 9999
 
     def test_promotion_ledger_path_default_is_none(self, tmp_path: Path) -> None:
-        # Workstream F-1: omitted key defaults to None (preserves bit-identical
-        # snapshot for legacy configs that never set the field).
+        # Omission preserves the default snapshot value.
         yaml_content = """\
 symbols: [AAPL]
 alpha_specs: [x.yaml]
@@ -448,9 +430,7 @@ promotion_ledger_path: data/promotion/ledger.jsonl
         assert cfg.promotion_ledger_path == Path("data/promotion/ledger.jsonl")
 
     def test_promotion_ledger_path_basename_in_snapshot(self) -> None:
-        # Path-based fields are normalised to their basename in the
-        # snapshot to keep config checksums stable across machines
-        # (audit A-DET-02 / B-PROMO-04).
+        # Basenames keep configuration checksums stable across machines.
         cfg = PlatformConfig(
             symbols=frozenset({"AAPL"}),
             alpha_specs=[Path("x.yaml")],
@@ -461,12 +441,7 @@ promotion_ledger_path: data/promotion/ledger.jsonl
 
 
 class TestAdverseSelectionAliasResolution:
-    """cost_passive_adverse_selection_bps/cost_adverse_selection_drain_bps and
-    cost_through_fill_adverse_selection_bps/cost_adverse_selection_through_bps
-    are current-name/legacy-name pairs that must resolve to the same value
-    regardless of which name is set, and an explicit 0.0 must survive (audit
-    core_clock_config_2026-07-02, finding N1: a prior `x or y or default`
-    resolution silently discarded an explicit 0.0)."""
+    """Current and compatibility aliases resolve identically, including zero."""
 
     def test_explicit_zero_passive_adverse_selection_survives(self, tmp_path: Path) -> None:
         (tmp_path / "c.yaml").write_text(
@@ -742,7 +717,7 @@ class TestProtocolCompliance:
         assert isinstance(cfg.snapshot(), ConfigSnapshot)
 
 
-# ── Audit R-1: regime_min_discriminability ───────────────────────────────
+# ── Regime discriminability ──────────────────────────────────────────────
 
 
 def test_regime_min_discriminability_defaults_to_zero() -> None:

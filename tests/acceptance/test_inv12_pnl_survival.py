@@ -1,4 +1,4 @@
-"""Inv-12 PnL-survival CI gate (audit P1.4).
+"""Inv-12 PnL-survival CI gate.
 
 The pre-existing ``test_inv12_stress_gate`` exercises only the stress
 *helpers* (``apply_inv12_stress`` / disclosure arithmetic).  This module

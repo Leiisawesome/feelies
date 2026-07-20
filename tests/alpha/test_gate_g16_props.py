@@ -96,8 +96,7 @@ def _spec(
         sensors = [_FAMILY_FINGERPRINT[family], "ofi_ewma"]
     if signal_src is None:
         signal_src = "def evaluate(snapshot, regime, params):\n    return None\n"
-    # G16 rule 10 (audit P1-4): depends_on_sensors must be a superset of
-    # the registered signature sensors so happy-path fixtures pass.
+    # Dependencies must cover registered signature sensors.
     depends = sorted(
         {s for s in sensors if isinstance(s, str) and s in _SENSORS} | {"ofi_ewma", "spread_z_30d"}
     )

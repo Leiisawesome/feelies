@@ -1,19 +1,7 @@
-"""Tests for Phase-3.1 strict-mode field on PlatformConfig.
+"""Tests for strict trend-mechanism validation in ``PlatformConfig``.
 
-Covers ``enforce_trend_mechanism`` per §20.6.2:
-
-  - Default is True (post-Workstream-E flip, acceptance row 84) →
-    schema-1.1 SIGNAL/PORTFOLIO specs missing ``trend_mechanism:``
-    are refused at load time; v0.2-baseline alphas must explicitly
-    pin ``enforce_trend_mechanism: false`` to keep loading.
-  - YAML round-trip (``True`` / ``False`` / absent) reflects the
-    declared value with no surprises.
-  - Snapshot checksum is *deterministic* across repeated calls and
-    *changes* when the flag flips (Inv-13 provenance).
-  - End-to-end through :class:`AlphaLoader`: with strict mode on, a
-    schema-1.1 SIGNAL spec missing ``trend_mechanism:`` is refused
-    via :class:`MissingTrendMechanismError`; with strict mode off it
-    loads successfully.
+The suite covers defaults, YAML parsing, snapshot provenance, and loader
+behavior with strict mode enabled or explicitly disabled.
 """
 
 from __future__ import annotations
@@ -42,7 +30,7 @@ def _base_config(**overrides) -> PlatformConfig:
 
 class TestDefaults:
     def test_default_value_is_true(self) -> None:
-        """Workstream-E (acceptance row 84): default flipped False → True.
+        """The default is true.
 
         Operators relying on a v0.2-baseline alpha (no
         ``trend_mechanism:`` block) must now explicitly pin
@@ -61,7 +49,7 @@ class TestDefaults:
 
 class TestYAMLRoundTrip:
     def test_omitted_yields_default_true(self, tmp_path: Path) -> None:
-        """Workstream-E: an absent ``enforce_trend_mechanism:`` key in
+        """An absent ``enforce_trend_mechanism:`` key in
         the YAML now resolves to ``True`` (the new platform default),
         not ``False`` as in v0.2.  The dataclass default and the YAML
         parser default are kept in sync so a YAML omission and a
@@ -153,7 +141,7 @@ _SIGNAL_SPEC_NO_MECHANISM = {
 
 _SIGNAL_SPEC_WITH_MECHANISM = {
     **_SIGNAL_SPEC_NO_MECHANISM,
-    # G16 rule 10 (audit P1-4): signature sensors must be backed by deps.
+    # Signature sensors must also be declared dependencies.
     "depends_on_sensors": ["kyle_lambda_60s", "ofi_ewma", "spread_z_30d"],
     "trend_mechanism": {
         "family": "KYLE_INFO",

@@ -1,69 +1,9 @@
-"""Phase-4 e2e — SIGNAL + PORTFOLIO concurrent on a 10-symbol universe.
+"""End-to-end mixed SIGNAL and PORTFOLIO operation over ten symbols.
 
-Locks the structural invariants of mixed-mode operation when
-SIGNAL alphas (``sig_benign_midcap_v1``, ``sig_kyle_drift_v1``) and
-the PORTFOLIO reference alpha (``pro_kyle_benign_v1``) coexist in a
-single ``build_platform`` invocation driven by a deterministic
-multi-symbol synthetic event log.
-
-Workstream-D update — the LEGACY arm (``trade_cluster_drift``) was
-retired with the alpha; the test still exercises the cross-layer
-SIGNAL+PORTFOLIO contract end-to-end (signal stream determinism,
-composition wiring, per-strategy attribution) which was the
-substantive coverage anyway.
-
-What this test guarantees
--------------------------
-
-* All three layers register through ``build_platform`` without
-  ``AlphaLoadError``, ``LayerValidationError``, or wiring failures.
-* The composition layer is fully wired: ``CompositionEngine``,
-  ``CrossSectionalTracker``, ``HorizonMetricsCollector`` are all
-  present and attached.  The hazard-exit controller stays ``None``
-  because the reference PORTFOLIO alpha does not opt into
-  ``hazard_exit.enabled`` (Inv-A: opt-in only).
-* The bus subscription order documented in
-  :mod:`feelies.bootstrap` survives mixed-mode boot (no engine is
-  silenced when the composition layer is also wired).
-* A full backtest reaches ``MacroState.READY`` without exception.
-* Two replays of the exact same fixture produce a byte-identical
-  ``Signal`` stream *and* ``SizedPositionIntent`` stream (Inv-5).
-* Per-strategy fill attribution remains independent across the three
-  alpha boundaries: a fill against one alpha never appears in another
-  alpha's position view.
-* **PR-2b-iii contract:** every ``Signal(layer="SIGNAL")`` event whose
-  ``strategy_id`` is *not* listed in any registered PORTFOLIO's
-  ``depends_on_signals`` is processed by the orchestrator's bus-driven
-  Signal subscriber and translated through the risk → order pipeline.
-  Pre-PR-2b-iii nothing translated bus Signals into orders, so the
-  invariant was vacuously true; this test now locks the contract so
-  any future regression that re-orphans the standalone-SIGNAL → order
-  path fails loudly.
-
-  The current fixture's 36-second random walk does not trigger
-  ``sig_benign_midcap_v1``'s entry gate (|OFI z| > 2.0 inside the
-  benign regime), so the realised standalone-Signal count is zero and
-  the assertion holds vacuously today.  A future enrichment of the
-  synthetic stream (or addition of an "always-on" tracer SIGNAL alpha)
-  will make the assertion non-vacuous without rewriting it.
-* **PR-2b-iv contract:** every non-degenerate ``SizedPositionIntent``
-  emitted by a PORTFOLIO alpha (i.e. one whose ``target_positions``
-  contain at least one symbol with a non-zero notional delta vs the
-  current position) produces at least one ``OrderRequest`` on the bus.
-  Pre-PR-2b-iv ``CompositionEngine`` published intents end-to-end but
-  the production order pipeline silently ignored them; this test now
-  locks the bus-driven ``RiskEngine.check_sized_intent`` translation
-  in the same way the PR-2b-iii contract locks the SIGNAL path.
-
-  As with the PR-2b-iii assertion, the current fixture's 36-second
-  random walk happens to leave ``pro_kyle_benign_v1``'s realised non-trivial
-  intent count at zero (every intent collapses to an empty
-  ``target_positions`` because the cross-sectional gate rarely opens
-  inside the benign synthetic regime).  The assertion is therefore
-  vacuously true today and will become non-vacuous the moment the
-  fixture is enriched to actually drive the PORTFOLIO alpha — at which
-  point any future regression in the intent → order wiring will fire
-  loudly without test rewriting.
+The suite covers registration, composition wiring, replay determinism,
+strategy attribution, standalone signal orders, and intent-to-order routing.
+The short fixture may produce empty trading streams; locked counts and hashes
+still pin that behavior.
 """
 
 from __future__ import annotations
@@ -149,7 +89,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         params={},
         subscribes_to=(NBBOQuote,),
     ),
-    # Audit P1-B: sig_benign_midcap_v1 now depends on book_imbalance.
+    # Required by sig_benign_midcap_v1.
     SensorSpec(
         sensor_id="book_imbalance",
         sensor_version="1.0.0",
@@ -172,7 +112,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
-        # Audit P0-1: causal / 2.0.0 is the new class default.
+        # Pin the causal alignment used by production.
         sensor_id="kyle_lambda_60s",
         sensor_version="2.0.0",
         cls=KyleLambda60sSensor,
@@ -271,7 +211,7 @@ def _make_phase4_config() -> PlatformConfig:
         sector_map_path=_SECTOR_MAP_PATH,
         # Reference SIGNAL alpha carries ``trend_mechanism:`` (G16); keep
         # strict mechanism enforcement off here so the fixture focuses on
-        # Phase-4 wiring rather than loader strict-mode defaults.
+        # Exercise composition wiring rather than strict-loader defaults.
         enforce_trend_mechanism=False,
     )
 
@@ -375,11 +315,7 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
 def test_phase4_e2e_signal_and_portfolio_layers_register() -> None:
     """SIGNAL + PORTFOLIO must register in a single ``build_platform``.
 
-    Pre-workstream-D the test also asserted a third LEGACY arm
-    (``trade_cluster_drift_v12``); that alpha was retired with D.2 and
-    the assertion was dropped accordingly.  The cross-layer wiring
-    contract that remains — SIGNAL signals feeding PORTFOLIO
-    composition — is the substantive coverage.
+    This covers SIGNAL inputs feeding PORTFOLIO composition.
     """
     orchestrator, _signals, _intents, _orders = _build()
     registry = orchestrator._alpha_registry
@@ -471,28 +407,12 @@ def test_phase4_e2e_final_positions_and_journal_are_deterministic() -> None:
     )
 
 
-# ── Locked end-to-end baselines (determinism-audit P1 #6) ──────────────
+# ── Locked end-to-end baselines ─────────────────────────────────────────
 #
-# The two-run tests above prove *intra-process* determinism (run twice →
-# identical output) but pin no committed value, so a change that
-# deterministically alters the end-to-end output would move both runs in
-# lockstep and pass undetected (audit honesty gap E.1).  The constants below
-# lock the values so deterministic drift is caught.
-#
-# This fixture's regime engine is intentionally uncalibrated
-# (``regime_calibration_max_quotes`` unset), so every ``P(state)`` entry gate
-# fails safe to OFF (Inv-11) and the pipeline emits **0 signals / 0 orders**
-# and an empty position book + trade journal **by design**; the composition
-# layer still emits one degenerate ``SizedPositionIntent`` (empty targets).
-# The locked *counts* are therefore regression guards — if a change calibrates
-# the regime, opens a gate, or otherwise makes the fixture trade, the count
-# flips and this fails loudly (investigate before re-baselining).  The
-# non-empty intent hash pins the real composition output.
-#
-# Because ``_build()`` boots the real :class:`Orchestrator` and runs a full
-# backtest, this is the only determinism baseline that exercises the
-# orchestrator itself — the per-layer parity replays deliberately bypass it,
-# so an orchestrator boot/import regression surfaces here (and only here).
+# These constants catch stable drift as well as nondeterminism. The fixture's
+# uncalibrated regime keeps all entry gates off, so it emits no signals or
+# orders and leaves the book and journal empty. Composition still emits one
+# empty intent, whose hash pins the output.
 _EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 EXPECTED_E2E_SIGNAL_COUNT = 0
@@ -540,32 +460,11 @@ def test_phase4_e2e_matches_locked_baselines() -> None:
     )
 
 
-# ── PR-2b-iii contract: standalone-SIGNAL → OrderRequest ───────────────
+# Standalone signal-to-order contract.
 
 
 def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
-    """A standalone SIGNAL alpha's bus Signals must reach the order pipeline.
-
-    PR-2b-iii wires a bus-driven ``Signal`` subscriber on the Orchestrator
-    that translates ``Signal(layer="SIGNAL")`` events into ``OrderRequest``
-    events through the existing risk → order pipeline, *unless* the signal's
-    ``strategy_id`` is referenced by some PORTFOLIO alpha's
-    ``depends_on_signals`` (those are aggregated by ``CompositionEngine``
-    into ``SizedPositionIntent`` events instead, to be wired to orders by
-    PR-2b-iv).
-
-    The reference fixture registers ``sig_benign_midcap_v1`` and
-    ``sig_kyle_drift_v1`` as SIGNAL alphas and ``pro_kyle_benign_v1``
-    as a PORTFOLIO alpha.  The latter's ``depends_on_signals`` lists
-    both SIGNAL alpha ids, so neither fires a standalone bus Signal.
-
-    The synthetic 36-second random walk does not satisfy either SIGNAL
-    alpha's entry gate, so the realised count is zero and the assertion
-    is vacuously true.  This is a deliberate regression guard: if a
-    future change re-orphans the bus Signal → order path the assertion
-    will fire the moment the fixture is enriched to actually trigger an
-    alpha gate.
-    """
+    """Standalone bus signals reach orders unless a portfolio consumes them."""
     orchestrator, signals, _intents, orders = _build()
 
     registry = orchestrator._alpha_registry
@@ -605,32 +504,11 @@ def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
         )
 
 
-# ── PR-2b-iv contract: PORTFOLIO SizedPositionIntent → OrderRequest ────
+# Portfolio intent-to-order contract.
 
 
 def test_phase4_e2e_portfolio_intents_translate_to_orders() -> None:
-    """A non-degenerate SizedPositionIntent must reach the order pipeline.
-
-    PR-2b-iv wires a bus-driven ``SizedPositionIntent`` subscriber on the
-    Orchestrator that calls :meth:`RiskEngine.check_sized_intent` for every
-    intent and submits each surviving per-leg ``OrderRequest`` to
-    ``backend.order_router`` (without driving the per-tick micro-SM walk;
-    PORTFOLIO orders dispatch as a synchronous side-effect of the M3
-    ``CROSS_SECTIONAL`` ``bus.publish(intent)``).  Pre-PR-2b-iv production
-    silently ignored intents — the entire PORTFOLIO order pipeline was
-    dead code reachable only through the now-deleted ``MultiAlphaEvaluator``.
-
-    The assertion: for every non-degenerate intent (one whose
-    ``target_positions`` contain at least one symbol with a non-zero
-    notional delta vs the current position at intent time), at least one
-    ``OrderRequest`` with ``source_layer == "PORTFOLIO"`` and matching
-    ``strategy_id`` must appear on the captured bus stream.
-
-    Like the PR-2b-iii assertion above, this is vacuously true on the
-    current synthetic fixture (cross-sectional gate stays closed) but
-    becomes a load-bearing regression guard the moment a richer fixture
-    or "always-on" PORTFOLIO tracer alpha is introduced.
-    """
+    """Each nonzero portfolio intent produces a matching portfolio order."""
     orchestrator, _signals, intents, orders = _build()
 
     non_degenerate_intents = [it for it in intents if it.target_positions]

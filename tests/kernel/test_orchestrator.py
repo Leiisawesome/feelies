@@ -1,23 +1,4 @@
-"""Tests for the Orchestrator tick-processing pipeline.
-
-Workstream D.2 PR-2b-iv migrated this file off the legacy
-``feature_engine`` / ``signal_engine`` ctor stubs.  Tests that used to
-inject ``_StubSignalEngine(signal=signal)`` now publish ``Signal``
-events on the platform bus through ``_publish_signal_on_quote``;
-``_on_bus_signal`` buffers them and the M4 ``SIGNAL_EVALUATE`` drain
-walks the existing risk → order → fill pipeline.
-
-Tests for behaviours that no longer exist were dropped:
-
-* ``TestOrchestratorTickFailure`` (legacy signal-engine error → DEGRADED)
-  — the bus subscriber cannot raise; the analogous failure mode is now
-  exercised via a raising ``RiskEngine``.
-* ``TestMultiAlphaB4Gate`` (``_build_net_order`` direct calls) — the
-  helper was orphaned together with ``MultiAlphaEvaluator`` (PR-2b-ii)
-  and deleted by PR-2b-iv.  The B4 gate still fires through
-  ``_check_b4_gate`` on the per-tick walk and is covered by
-  ``TestEdgeCostGate``.
-"""
+"""Tests for the orchestrator tick-processing pipeline."""
 
 from __future__ import annotations
 
@@ -250,16 +231,7 @@ class _NonCallableHwmRiskEngine(_StubRiskEngine):
 
 
 class _RaisingRiskEngine:
-    """Risk engine that always raises to test orchestrator error handling.
-
-    Replaces the pre-PR-2b-iv ``_RaisingSignalEngine`` (which exercised
-    the now-deleted legacy ``signal_engine`` ctor stub).  The bus-driven
-    ``_on_bus_signal`` subscriber cannot raise, but the per-tick risk
-    check inside ``_process_tick_inner`` still runs ``check_signal`` —
-    making the risk engine the surviving choke-point for "tick raises →
-    DEGRADED" coverage (Inv-11: fail-safe degradation rather than
-    silent corruption).
-    """
+    """Always raise to test fail-safe orchestrator degradation."""
 
     def check_signal(self, signal: Signal, positions: PositionStore) -> RiskVerdict:
         raise RuntimeError("risk engine failure")
@@ -272,7 +244,7 @@ class _ScaleDownToZeroRiskEngine:
     """Risk engine: ALLOW at signal, SCALE_DOWN with near-zero factor at order.
 
     Used to verify that scale-down to zero suppresses the order
-    rather than forcing a min-lot of 1 (Finding 3).
+    rather than forcing a minimum order.
     """
 
     def check_signal(self, signal: Signal, positions: PositionStore) -> RiskVerdict:
@@ -1247,10 +1219,7 @@ class TestOrchestratorFlatSignalExit:
 
 
 class TestOrchestratorTickFailure:
-    """A raising RiskEngine (the surviving M5 choke-point post PR-2b-iv)
-    must degrade the macro state, mirroring the pre-PR-2b-iv test that
-    used a raising signal-engine stub.
-    """
+    """A risk-engine failure degrades the orchestrator's macro state."""
 
     def _build(self) -> Orchestrator:
         clock = SimulatedClock(start_ns=1000)
@@ -1332,7 +1301,7 @@ class TestStopExitSignalMetadata:
 
 
 class TestForcedExitReasonClassification:
-    """Audit P1 (2026-06-20): forced MARKET exits must carry the canonical
+    """Forced MARKET exits must carry the canonical
     ``OrderRequest.reason`` so the fill model classifies them for panic
     slippage / depth depletion (``STOP_EXIT_REASONS``).  A *scheduled*
     session flatten is an orderly unwind, not an adverse-move panic, and
@@ -1551,13 +1520,7 @@ class TestStrategyFillDistribution:
         assert strategy_positions.get("alpha_d", "AAPL").cumulative_fees == Decimal("0")
 
     def test_distribution_iterates_strategies_in_sorted_order(self) -> None:
-        # Audit kernel-P0: ``StrategyPositionStore.strategy_ids()`` returns a
-        # ``frozenset`` whose iteration order is hash-seed dependent.  The
-        # distribution now sorts the ids, so the largest-remainder tie-break is
-        # deterministic.  Two equal-weight strategies registered in
-        # reverse-sorted order tie on the remainder; the odd share must always
-        # land on the lexicographically-first id ("a_alpha"), never on hash
-        # order.
+        # Sorted IDs make largest-remainder ties independent of hash order.
         clock = SimulatedClock(start_ns=1000)
         strategy_positions = StrategyPositionStore()
         # Insertion order deliberately != sorted order.
@@ -1861,7 +1824,7 @@ class TestOrchestratorTradingSessionLifecycle:
         assert orch._events_prelogged is False
 
 
-# ── Macro lifecycle remediation (global stack audit) ──────────────────
+# Macro lifecycle.
 
 
 class TestOrchestratorMacroLifecycleRemediation:
@@ -2075,7 +2038,7 @@ class TestOrchestratorMacroLifecycleRemediation:
 
 
 class TestResetRiskEscalation:
-    """Audit ESC-1 (risk_engine_audit_2026-07-02.md): prior to this pass,
+    """Reset from WARNING or BREACH_DETECTED permits open exposure.
     ``reset_risk_escalation`` had zero test coverage anywhere in the suite.
     """
 
@@ -2152,10 +2115,7 @@ class TestResetRiskEscalation:
 
 
 class TestRealizedCostEscalation:
-    """Backtest-level coverage for the realized-cost-overrun kill-switch
-    escalation (P2.10). Previously only exercised by a ``paper_rth``-gated
-    integration test requiring a live IB Gateway connection (audit
-    execution_fills_audit_2026-07-02 finding #11 / backlog)."""
+    """Backtest coverage for realized-cost kill-switch escalation."""
 
     def _order(self, order_id: str, *, strategy_id: str = "alpha_1") -> OrderRequest:
         return OrderRequest(
@@ -2250,15 +2210,11 @@ class TestOrchestratorMultipleTicks:
         assert orch.macro_state == MacroState.BACKTEST_MODE
 
 
-# ── Tests: Scale-down to zero suppression (Finding 3) ────────────────
+# Scale-down-to-zero suppression.
 
 
 class TestScaleDownToZeroSuppression:
-    """When SCALE_DOWN yields quantity 0, the order must be suppressed.
-
-    Before the fix, max(1, round(...)) forced a min-lot of 1 share,
-    violating Inv-11 (fail-safe: safety controls only tighten).
-    """
+    """Suppress an order when scaling rounds its quantity to zero."""
 
     def test_m6_scale_down_to_zero_suppresses_order(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -2455,7 +2411,7 @@ class TestExecutionCostContext:
         assert actual_cost_bps == expected_cost_bps
 
 
-# ── G-1 Phase P1: position-manager shadow harness ─────────────────────
+# Position-manager shadow harness.
 
 
 class _EmptyPlanManager:
@@ -2651,9 +2607,7 @@ class TestPositionManagerDrive:
 
 
 class TestPositionManagerTrim:
-    """P3: a cost-aware TRIM partially reduces a same-direction position
-    that the translator path would hold — default-off (byte-identical when
-    disabled)."""
+    """A cost-aware trim can reduce a same-direction position."""
 
     @staticmethod
     def _run(*, enable_trim: bool) -> tuple[int, list[tuple[str, int]]]:
@@ -2708,7 +2662,7 @@ class TestPositionManagerTrim:
 
     @staticmethod
     def _run_edge_gate(*, edge_bps: float) -> int:
-        # P3b end-to-end: edge gate on, real cost model, tight spread.
+        # Use the real edge gate and cost model with a tight spread.
         from feelies.execution.cost_model import (
             DefaultCostModel,
             DefaultCostModelConfig,
@@ -2800,7 +2754,7 @@ class TestPositionManagerTrim:
         assert self._run_urgency(urgency_exec=False) == [("SELL", "MARKET", 50)]
 
 
-# ── G-6: session / end-of-day flatten ─────────────────────────────────
+# Session and end-of-day flattening.
 
 
 class TestSessionFlatten:
@@ -2908,30 +2862,21 @@ class TestSessionFlatten:
         assert pos.get("AAPL").quantity == 0  # entry suppressed in the window
         assert orders == []
 
-    # ── Per-day rebinding for multi-day backtest ranges ───────────────
-    #
-    # A CLI date *range* (``--date D1 --end-date D2``) leaves
-    # ``rth_session_date`` unset (``apply_backtest_session_dates_from_cli``
-    # only rebinds single-day runs), so ``_trading_session_bounds`` is booted
-    # anchored to a single — often stale ``event_calendar_path`` — date.  The
-    # session-flatten window must therefore resolve the close *per replayed
-    # day* (``TradingSessionBounds.resolve_for_timestamp``); otherwise every
-    # quote past the booted day's close reads as past-close and all entries
-    # are blocked with ``session_flatten_window`` (0 orders for the range).
+    # Date ranges have no fixed RTH session date, so the flatten window must
+    # resolve the close from each replayed timestamp. Reusing the boot date
+    # would classify later days as already closed.
 
     def test_session_flatten_window_rebinds_per_replayed_day(self) -> None:
         day1, day2 = date(2026, 6, 1), date(2026, 6, 2)
-        # Bounds booted anchored to DAY 1 (the stale-anchor range scenario).
+        # Boot with day 1 to reproduce a range run's stale anchor.
         orch, _bus, _orders, _pos = self._orch(
             position=0,
             anchor=day1,
             flatten_buffer_s=300,
         )
 
-        # Day-2 mid-session must NOT be in the flatten window — the regression:
-        # the stale day-1 16:00 close made every day-2 quote read as past-close.
+        # Day 2 must use its own close.
         assert not orch._in_session_flatten_window(self._quote_at(day2, "10:45"))
-        # Day-2 within 5 min of its OWN 16:00 close still flattens.
         assert orch._in_session_flatten_window(self._quote_at(day2, "15:58"))
         # Day-1 behaviour is preserved (mid-session open, near-close flat).
         assert not orch._in_session_flatten_window(self._quote_at(day1, "10:45"))
@@ -2970,7 +2915,7 @@ class TestSessionFlatten:
         assert orders == []
 
 
-# ── P4b: working-exit MARKET fallback ─────────────────────────────────
+# Market fallback for working exits.
 
 
 class TestWorkingExitFallback:
@@ -3094,7 +3039,7 @@ class TestWorkingExitFallback:
         assert limit_orders[0].order_id in orch._working_exit_fallback
 
 
-# ── G-5 N1: cross-alpha net shadow ────────────────────────────────────
+# Cross-alpha net shadow.
 
 
 class TestNetShadow:
@@ -3213,9 +3158,7 @@ class TestNetShadow:
 
 
 class TestSizeShadow:
-    """G-7 S1: the size shadow records, per sized signal, how the
-    edge/vol/inventory-tilted target would differ from the live single-factor
-    base target (pure measurement; live size untouched)."""
+    """Record tilted target sizes without changing live sizing."""
 
     @staticmethod
     def _budget():
@@ -3303,7 +3246,7 @@ class TestSizeShadow:
         assert sink == []
 
 
-# ── G-5 N2: net-driven decision ───────────────────────────────────────
+# Net-driven decisions.
 
 
 class TestNetDrive:
@@ -3363,7 +3306,7 @@ class TestNetDrive:
         assert qty == 0  # the two desires cancel → no trade
 
 
-# ── G-5 N3: PORTFOLIO → net shadow bridge ─────────────────────────────
+# Portfolio-to-net-shadow bridge.
 
 
 class TestPortfolioNetBridge:
@@ -3450,7 +3393,7 @@ class TestPortfolioNetBridge:
         assert net.target_qty == 160  # 100 (portfolio) + 60 (signal)
 
 
-# ── G-4: lot ledger integration ───────────────────────────────────────
+# Lot-ledger integration.
 
 
 class TestLotLedgerIntegration:
@@ -3652,7 +3595,7 @@ class TestReversalEdgeGuard:
         assert orch._positions.get("AAPL").quantity == 0
 
 
-# ── F1: Resting-order guard placed AFTER signal/risk evaluation ───────────
+# Resting-order guard runs after signal and risk evaluation.
 
 
 class _CancelRecordingBacktestRouter(BacktestOrderRouter):
@@ -3821,17 +3764,7 @@ class TestRestingOrderGuardAfterRisk:
         assert new_orders == []
 
     def test_stop_exit_supersedes_resting_passive_cover(self) -> None:
-        """Inv-11: a hard-stop MARKET exit cancels a stale passive cover and crosses.
-
-        Regression for ``docs/audits/app_backtest_sig_benign_2026-06-01_investigation.md``: a
-        gate-OFF FLAT passive LIMIT cover left resting must not subordinate a
-        breached hard stop.  Previously the resting-order guard treated the
-        pending cover as a pending exit and suppressed every ``__stop_exit__``
-        MARKET attempt until the passive order expired (~57 minutes later),
-        turning a configured 1.0% stop into a 1.49% realized loss.  The stop
-        must now cancel the resting cover and fill a MARKET close in the same
-        tick.
-        """
+        """A hard stop cancels a resting passive cover and crosses immediately."""
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
 
@@ -3889,11 +3822,11 @@ class TestRestingOrderGuardAfterRisk:
         assert any(a.alert_name == "forced_exit_supersedes_pending_order" for a in alerts)
 
 
-# ── P1: forced-exit panic-fill reason classification ─────────────────────
+# Forced-exit panic-fill reason classification.
 
 
 class TestForcedExitPanicReason:
-    """Audit P1 (2026-06-20): forced exits must populate ``OrderRequest.reason``
+    """Forced exits must populate ``OrderRequest.reason``
     so the backtest fill model classifies them for panic slippage.  The fill
     model keys on ``reason in STOP_EXIT_REASONS`` (``market_fill.py``), not on
     ``strategy_id`` — an empty ``reason`` silently underprices stops and forced
@@ -3949,12 +3882,7 @@ class TestForcedExitPanicReason:
         assert flatten_orders[0].order_type == OrderType.MARKET
 
     def test_stop_exit_fill_pays_panic_slippage_end_to_end(self) -> None:
-        """End-to-end: an orchestrator-driven stop fill carries the panic
-        half-spread fee.  Every other cost component is zeroed, so a non-zero
-        fee can only be the forced-exit slippage — which requires ``reason`` to
-        reach the fill model.  Before the fix (empty ``reason``) the fill is
-        priced as an ordinary market order and ``cumulative_fees`` stays 0.
-        """
+        """An orchestrator-driven stop fill pays panic slippage."""
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
 
@@ -3988,16 +3916,15 @@ class TestForcedExitPanicReason:
 
         closed = position_store.get("AAPL")
         assert closed.quantity == 0  # stop closed the long
-        # raw half-spread = (148.50 - 147.50)/2 = 0.50; panic fee for 50 sh =
-        # 0.50 x (2.0 - 1) x 50 = 25.00.  Without the reason fix this is 0.
+        # Panic fee: 0.50 half-spread × (2.0 - 1) × 50 shares = 25.00.
         assert closed.cumulative_fees == Decimal("25.00")
 
 
-# ── P2: fill-journal provenance (Inv-13) ─────────────────────────────────
+# Fill-journal provenance.
 
 
 class TestTradeJournalProvenance:
-    """Audit P2 (2026-06-20): fill-journal records carry order provenance
+    """Fill-journal records carry order provenance
     (reason + source_layer) so forced exits are distinguishable post-trade.
     """
 
@@ -4024,11 +3951,11 @@ class TestTradeJournalProvenance:
         assert "order_source_layer" in records[0].metadata
 
 
-# ── P1: RTH-close buying-power phase re-arms per session date ─────────────
+# RTH-close buying power re-arms per session date.
 
 
 class TestRthBuyingPowerPhaseMultiDay:
-    """Audit P1 (2026-06-20): the RTH-close buying-power flip must re-arm per
+    """The RTH-close buying-power flip must re-arm per
     NY session date.  A single booted bounds anchor replayed across multiple
     days must flip to OVERNIGHT at each day's close and reopen the next day on
     the intraday cap — not latch OVERNIGHT for the whole run after day 1.
@@ -4092,7 +4019,7 @@ class TestRthBuyingPowerPhaseMultiDay:
         ]
 
 
-# ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────
+# Exits bypass the minimum-order-size gate.
 
 
 class TestExitBypassesMinOrderShares:
@@ -4132,7 +4059,7 @@ class TestExitBypassesMinOrderShares:
         assert position_store.get("AAPL").quantity == 0
 
 
-# ── F3: EXIT bypasses B4 edge-cost gate ──────────────────────────────────
+# Exits bypass the edge-cost gate.
 
 
 class TestExitBypassesEdgeCostGate:
@@ -4191,7 +4118,7 @@ class TestExitBypassesEdgeCostGate:
 
 
 class TestHaltModeling:
-    """BT-5: LULD halt suppression + post-resolution entry blackout."""
+    """Suppress entries during LULD halts and the post-halt blackout."""
 
     _HALT_ON = (5,)
     _HALT_OFF = (6,)
@@ -4335,14 +4262,11 @@ class TestHaltModeling:
         assert position_store.get("AAPL").quantity == 0
 
     def test_halt_suppresses_passive_router_fill_paths(self) -> None:
-        """Task 12-P (AXIS-1): halt suppression covers BOTH passive-router
-        fill paths.  At halt-on the resting passive order is cancelled
-        (Inv-11) and, while halted, quotes never reach the router — so
-        neither a through-fill of the resting order nor a deferred-
-        aggressive fill can occur, even though the in-halt quote is past
-        both orders' latency-eligibility deadlines.  After resume, the
-        surviving deferred MARKET order fills off the post-resume quote
-        at that quote's own price (no lookahead into the halt window)."""
+        """Halt suppression covers passive and deferred-aggressive fills.
+
+        Halt-on cancels resting passive orders and withholds quotes from both
+        paths. After resume, a surviving market order uses the new quote.
+        """
         from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 
         clock = SimulatedClock(start_ns=1000)
@@ -4471,7 +4395,7 @@ def _ssr_intent(
 
 
 class TestSSRBlocksIntent:
-    """BT-6: _ssr_blocks_intent only refuses short-opening orders."""
+    """SSR blocks only orders that open or increase a short."""
 
     def _orch(self) -> Orchestrator:
         orch = _build_orchestrator(SimulatedClock(start_ns=1000))
@@ -4543,7 +4467,7 @@ class TestSSRBlocksIntent:
 
 
 class TestSSRRefuseShort:
-    """BT-6: end-to-end short-entry suppression under SSR."""
+    """Suppress short entries end to end while SSR is active."""
 
     @staticmethod
     def _trade(ts: int, seq: int, conditions: tuple[int, ...]) -> Trade:
@@ -4662,7 +4586,7 @@ class TestSSRRefuseShort:
 
 
 class TestBorrowAvailability:
-    """BT-7: locate-unavailable suppression + hard-tier HTB flag."""
+    """Suppress unavailable locates and flag hard-to-borrow symbols."""
 
     @staticmethod
     def _build(

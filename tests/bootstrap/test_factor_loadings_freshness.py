@@ -1,4 +1,4 @@
-"""Tests for the factor-loadings freshness check (audit P1-4).
+"""Tests for factor-loadings freshness checks.
 
 When ``loadings.json`` embeds ``_meta.as_of_ns`` the staleness verdict is
 computed from that content-addressable timestamp (reproducible) rather
@@ -104,9 +104,7 @@ def test_missing_symbol_still_raises_with_meta(tmp_path: Path) -> None:
 
 
 def test_backtest_without_session_open_ns_refuses_to_boot(tmp_path: Path) -> None:
-    # Audit kernel-P1 fix: BACKTEST has no causal "now" without session_open_ns
-    # (SimulatedClock reads 0 at this pre-replay point), so it must refuse
-    # rather than silently pass or falsely fail against a fabricated reference.
+    # Before replay, BACKTEST has no causal time without ``session_open_ns``.
     loadings_dir = tmp_path / "loadings"
     _write_loadings(loadings_dir, as_of_ns=_SESSION_OPEN_NS)
     with pytest.raises(StaleFactorLoadingsError, match="session_open_ns is unset"):
@@ -152,14 +150,7 @@ def test_paper_mode_without_session_open_ns_uses_injected_clock(tmp_path: Path) 
 def test_missing_session_open_ns_fails_closed_instead_of_reading_wall_clock(
     tmp_path: Path,
 ) -> None:
-    """Composition audit 2026-07-02, P1 finding.
-
-    Previously fell back to ``time.time()`` (self-documented as breaking
-    Inv-5 bit-identical replay) when ``session_open_ns`` was unset; now
-    raises rather than silently reading the wall clock, so the same
-    historical config cannot pass or fail this gate depending on when it
-    happens to be re-run.
-    """
+    """Backtests fail closed when no deterministic freshness anchor exists."""
     loadings_dir = tmp_path / "loadings"
     _write_loadings(loadings_dir, as_of_ns=_SESSION_OPEN_NS)
     config = PlatformConfig(

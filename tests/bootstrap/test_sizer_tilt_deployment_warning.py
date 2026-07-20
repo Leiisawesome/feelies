@@ -1,4 +1,4 @@
-"""Audit backlog item (risk_engine_audit_2026-07-02.md §9, P2 item 11).
+"""Sizer-tilt deployment warning tests.
 
 ``sizer_tilt_drive`` is the one platform-level switch that can size a
 SIGNAL-path order *above* the single-factor baseline.  It is off by

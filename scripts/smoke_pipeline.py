@@ -1,7 +1,6 @@
 """Smoke-test the full micro-state pipeline with synthetic data.
 
-Exercises every stage of the micro-state machine and both production
-Signal → Order paths:
+Exercises each state and both signal-to-order paths:
 
     WAITING_FOR_MARKET_EVENT
     → MARKET_EVENT_RECEIVED   (NBBOQuote / Trade)
@@ -19,48 +18,16 @@ Signal → Order paths:
     → POSITION_UPDATE         (PositionUpdate)
     → LOG_AND_METRICS         (StateTransition / MetricEvent)
 
-Three synthetic alphas cover both standalone-SIGNAL and PORTFOLIO paths:
-
-  smoke_always_on_v1        — standalone SIGNAL; alternates LONG (odd
-                               boundaries) / SHORT (even boundaries) to
-                               exercise both ENTER and REVERSE/EXIT intents.
-  smoke_portfolio_feeder_v1 — SIGNAL consumed by the portfolio; always LONG
-                               so the composition engine always has data.
-  smoke_portfolio_v1        — PORTFOLIO; universe=[AAPL]; exercises the
-                               CompositionEngine → SizedPositionIntent →
-                               _on_bus_sized_intent path.
-
-Four sensors cover both the quote-driven and trade-driven sensor paths:
-
-  ofi_ewma, micro_price, spread_z_30d — NBBOQuote sensors
-  kyle_lambda_60s                     — NBBOTrade mix (warm-up exercises both paths)
-
-Additional sub-runs:
-
-  run_risk_rejection_scenario — platform limit set to 1 share to confirm
-                                 check_order returns RiskAction.REJECT.
-
-Notes on architectural invariants visible in the report:
-
-  ``ORDER_AGGREGATION`` was removed from :class:`~feelies.kernel.micro.MicroState`
-  after Workstream D.2 — multi-alpha arbitration is bus-side before M4.
-
-  ``MicroState.CROSS_SECTIONAL`` is recorded on ticks that cross a horizon
-  boundary when at least one PORTFOLIO alpha is registered; PORTFOLIO
-  ``OrderRequest`` submission still runs inside ``_on_bus_sized_intent``
-  (outside the SIGNAL ``RISK_CHECK`` → ``ORDER_SUBMIT`` walk).
-
-  Signal/order drop ratio — the micro-SM permits at most ONE standalone
-    Signal → Order walk per tick. When multiple standalone SIGNAL alphas
-    fire at the same boundary, _select_bus_signal() picks the first
-    (alphabetically by alpha_id after registration-order sort). Multi-
-    symbol aggregation should be handled via a PORTFOLIO alpha.
+Synthetic standalone and portfolio alphas cover entry, reversal, exit, and
+cross-sectional intents. Quote- and trade-driven sensors cover warm-up. A
+separate scenario confirms risk rejection. At most one standalone signal is
+processed per tick; portfolio alphas own multi-symbol aggregation.
 
 Usage::
 
     python scripts/smoke_pipeline.py
 
-Exit code 0 = all stages exercised; non-zero = at least one gap.
+Exit code 0 means every required stage was observed.
 """
 
 from __future__ import annotations
@@ -73,7 +40,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-# ── repo root on sys.path ────────────────────────────────────────────────
+# Add the repository source tree for direct execution.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC = _REPO_ROOT / "src"
 if str(_SRC) not in sys.path:

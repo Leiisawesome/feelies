@@ -1,7 +1,7 @@
 """B5 (reversal combined-edge guard) consumes the same per-alpha realization
 calibration factor as B4.
 
-Position-mgmt audit (2026-07-02) P2: before this fix, B5 compared the raw
+The B5 reverse-entry gate compares the calibrated
 disclosed ``edge_estimate_bps`` while B4 compared a realization-calibrated
 edge, so a reversal's entry leg could clear B5 on a disclosed edge the
 platform already knows (via calibration) to be unreliable, then immediately

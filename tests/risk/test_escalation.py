@@ -1,13 +1,7 @@
-"""Tests for the ``RiskLevel`` escalation state machine's transition table.
+"""Tests for the ``RiskLevel`` transition table.
 
-Audit backlog item (``risk_engine_audit_2026-07-02.md`` §9, P2 item 7): the
-risk-specific ``_RISK_TRANSITIONS`` table was previously only exercised
-indirectly — via the generic ``StateMachine`` mechanism tests
-(``tests/core/test_state_machine.py``) and orchestrator integration tests
-that always walk the monotonic sequence forward.  These tests assert the
-table's actual shape directly: every legal forward edge succeeds, and every
-skip-a-level or go-backwards edge raises ``IllegalTransition`` without
-mutating state.
+Every legal edge succeeds. Skipped or backward transitions raise
+``IllegalTransition`` without changing state.
 """
 
 from __future__ import annotations
@@ -72,7 +66,7 @@ def test_illegal_edges_raise_without_mutating_state(start: RiskLevel, target: Ri
 
 
 def test_warning_cannot_skip_directly_to_locked() -> None:
-    """The specific scenario named in the audit finding."""
+    """A callback failure may strand escalation at WARNING."""
     sm = _machine()
     _walk_to(sm, RiskLevel.WARNING)
     with pytest.raises(IllegalTransition):
@@ -81,7 +75,7 @@ def test_warning_cannot_skip_directly_to_locked() -> None:
 
 
 def test_breach_detected_cannot_transition_directly_to_normal() -> None:
-    """The specific scenario named in the audit finding — ``.transition()``
+    """``.transition()`` may strand escalation at BREACH_DETECTED when
     (unlike ``.reset()``) must reject a direct de-escalation edge."""
     sm = _machine()
     _walk_to(sm, RiskLevel.BREACH_DETECTED)

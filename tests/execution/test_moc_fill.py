@@ -1,4 +1,4 @@
-"""BT-8: MOC session bounds and closing-auction fill controller."""
+"""MOC session bounds and closing-auction fill controller."""
 
 from __future__ import annotations
 

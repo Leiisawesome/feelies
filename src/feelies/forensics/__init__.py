@@ -1,4 +1,4 @@
-"""Post-trade forensics — edge decay detection and execution quality audit.
+"""Post-trade edge-decay and execution-quality analysis.
 
 :class:`~feelies.forensics.decay_detector.DecayDetector` implements TCA
 and edge-decay analysis. See post-trade-forensics skill for specification.

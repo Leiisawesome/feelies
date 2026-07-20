@@ -1,20 +1,16 @@
 """Level-3 baseline — ``SizedPositionIntent`` replay parity (cvxpy/ECOS path).
 
-Companion to :mod:`tests.determinism.test_sized_intent_replay` (which locks the
-closed-form fallback).  Audit P0-3: the cvxpy/ECOS optimizer path was previously
-**unverified** — ECOS failed on the closed-form fixture and silently fell back,
-so no golden hash ever exercised a successful solve.  This module drives the same
+Companion to :mod:`tests.determinism.test_sized_intent_replay`, which locks the
+closed-form fallback. This module drives the same
 synthetic ``CrossSectionalContext`` sequence through a ``TurnoverOptimizer`` built
-with ``require_solver=True`` (audit P0-1: the path is now selected by that flag,
-not by ``_HAS_CVXPY``) and locks the resulting intent-stream hash.
+with ``require_solver=True`` and locks the resulting intent-stream hash.
 
 Determinism requires:
 
 * cvxpy + ECOS installed (the test is skipped otherwise).
-* ECOS invoked with pinned ``abstol/reltol/feastol/max_iters`` (audit P0-2) so the
+* ECOS invoked with pinned ``abstol/reltol/feastol/max_iters`` so the
   solution does not drift across solver builds.
-* The weight-space objective (audit P0-1/P1-1) so a successful solve produces a
-  real book rather than the empty allocation the old USD-space objective returned.
+* The weight-space objective produces a real book.
 
 If this hash drifts, re-baseline in the same commit with justification (ideally
 attributing the drift to a deliberate ECOS-version or objective change).
@@ -60,8 +56,7 @@ def _validate_current_platform_for_ecos(monkeypatch: pytest.MonkeyPatch) -> None
     """This module's tests are themselves the platform-validation act.
 
     ``TurnoverOptimizer(require_solver=True)`` refuses to construct unless the
-    current host is declared in ``FEELIES_ECOS_VALIDATED_PLATFORMS`` (composition
-    audit 2026-07-02, P1 guard in ``composition/turnover_optimizer.py``).  Running
+    current host is declared in ``FEELIES_ECOS_VALIDATED_PLATFORMS``. Running
     this module to green on a given host *is* the validation that env var gates
     on, so every test here declares the current host validated for its own
     duration only -- this does not persist beyond the test process and does not
@@ -100,7 +95,7 @@ def _build_solver_engine() -> tuple[EventBus, CompositionEngine, list[SizedPosit
 
 
 def _solver_versions() -> dict[str, str]:
-    """Installed solver/linear-algebra library versions (audit P1-4).
+    """Installed solver and linear-algebra library versions.
 
     Recorded in parity-failure output so a hash drift observed on a different
     OS / BLAS / ECOS build can be attributed to a specific version set.
@@ -148,7 +143,7 @@ def test_solver_intent_stream_matches_locked_baseline() -> None:
 
 def test_solver_path_engages_and_records_versions() -> None:
     """The solver must actually run (not silently fall back), and the library
-    versions are recorded for cross-platform parity attribution (audit P1-4).
+    versions are recorded for cross-platform parity attribution.
 
     ``composition_optimizer_mode: ecos`` must not be enabled in production until
     this module passes on at least Linux x86_64 and macOS arm64 CI runners with
@@ -179,7 +174,7 @@ def test_solver_two_replays_produce_identical_hash() -> None:
 
 
 def test_solver_path_produces_non_empty_book() -> None:
-    """Guard against regression to the empty-allocation bug (audit P0-1/P1-1).
+    """Guard against an empty allocation from a successful solve.
 
     The old USD-space objective collapsed every successful solve to ``{}``; the
     weight-space objective must produce a real book on at least one boundary.

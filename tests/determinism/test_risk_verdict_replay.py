@@ -1,18 +1,6 @@
-"""``RiskVerdict`` parity baseline (audit-2026-07-02 P1 #4).
+"""Pin the risk engine's verdict stream directly.
 
-No baseline pinned the risk engine's own decision event directly: the L4
-``level4_portfolio_order`` / ``level4_hazard_exit_order`` baselines pin the
-*order legs* a verdict produces, but not the ``RiskVerdict`` (``action``,
-``reason``, ``scaling_factor``) itself.  A regression that changed which
-action a given position/exposure state resolves to — without changing the
-resulting order count — could slip past every existing baseline.
-
-This module drives the real :class:`feelies.risk.basic_risk.BasicRiskEngine`
-through four ``check_signal`` calls against an evolving
-:class:`~feelies.portfolio.memory_position_store.MemoryPositionStore`,
-deterministically exercising all four :class:`~feelies.core.events.RiskAction`
-members from the *shared* ``_check_exposure_and_drawdown`` cascade plus gate 1's
-own directional check:
+An evolving position store exercises every ``RiskAction``:
 
 1.  **ALLOW** — flat book, well within every limit.
 2.  **SCALE_DOWN** — a seeded $17,000 position lands gross exposure inside the
@@ -22,8 +10,8 @@ own directional check:
 4.  **FORCE_FLATTEN** — crashing the first position's mark breaches the
     drawdown guard against the high-water-mark set in step 1.
 
-Each step targets a different symbol so gate 1's own per-symbol position
-check never interferes with the cascade being exercised.
+Each step targets a different symbol so per-symbol position checks do not
+interfere with the exposure and drawdown cascade.
 """
 
 from __future__ import annotations

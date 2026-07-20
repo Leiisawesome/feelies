@@ -1,51 +1,8 @@
-"""Acceptance test: Phase-3.5 pipeline fires non-vacuous signals.
+"""Acceptance tests for non-empty signals from the horizon pipeline.
 
-Prior to commit df632ef (Phase 3.5, "activate HorizonAggregator with
-sensor feature layer"), HorizonAggregator ran in *passive* mode —
-``snapshot.values`` was always empty, so every alpha's ``evaluate()``
-returned ``None`` and no Signals ever fired from the horizon pipeline.
-Every existing e2e integration test acknowledges this explicitly:
-
-    "the realised standalone-Signal count is zero and the assertion
-     holds vacuously today"
-                          — tests/integration/test_phase4_e2e.py
-
-This test closes that verification gap by driving the full
-L1→L2→L3 chain manually and asserting that Signals fire when the
-regime gate and feature conditions are met.
-
-Pipeline under test
--------------------
-
-1. ``SensorReading(ofi_ewma)`` events →
-   ``RollingZscoreFeature.observe()`` in HorizonAggregator accumulates
-   rolling history (30 neutral readings + 1 spike to +3.0).
-
-2. ``HorizonTick(horizon_seconds=120, scope=UNIVERSE)`` →
-   ``RollingZscoreFeature.finalize()`` → ``HorizonFeatureSnapshot``
-   with ``values={"ofi_ewma_zscore": ~4.9, "ofi_ewma": 3.0, ...}``
-   published on the bus.
-
-3. ``HorizonSignalEngine._on_snapshot()``:
-   - gate: ``P(normal)=0.85 > 0.7 ✓`` and
-     ``abs(spread_z_30d)=0.05 < 0.5 ✓``
-   - ``evaluate()``: ``z≈4.9 > entry_threshold_z=0.8`` →
-     ``Signal(direction=LONG, strategy_id="sig_benign_midcap_v1")``
-
-4. Signal published on bus → captured by test subscriber.
-
-Assertions
-----------
-
-* At least one ``Signal`` is published (non-vacuous).
-* Signal has correct ``strategy_id``, direction ``LONG``, and
-  ``edge_estimate_bps > 0``.
-* Two independent ``build_platform()`` calls with identical event
-  sequences produce byte-identical signal streams (Inv-5 determinism).
-* Dropping the OFI spike (z≈1.65 < 2.0) yields zero signals
-  (feature threshold is enforced).
-* Closing the regime gate (P(normal)=0.30 < 0.70) yields zero signals
-  (regime gate is enforced).
+The fixture drives sensor readings through aggregation and signal evaluation.
+It checks signal identity, replay determinism, feature thresholds, and the
+regime gate.
 """
 
 from __future__ import annotations
@@ -117,9 +74,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),
     ),
-    # Audit P1-B: sig_benign_midcap_v1 now confirms the OFI footprint with
-    # ``book_imbalance`` (signed top-of-book size imbalance) instead of the
-    # momentum-laden ``micro_price_zscore``.
+    # The alpha confirms OFI with signed top-of-book imbalance.
     SensorSpec(
         sensor_id="book_imbalance",
         sensor_version="1.0.0",
@@ -142,9 +97,7 @@ def _make_config() -> PlatformConfig:
         horizons_seconds=frozenset({120}),
         session_open_ns=SESSION_OPEN_NS,
         account_equity=1_000_000.0,
-        # sig_benign_midcap_v1 has no trend_mechanism: block; this is the
-        # designated v0.2 parity anchor.  Workstream-E made True the
-        # platform default, so the test must opt out explicitly.
+        # This v0.2 parity fixture intentionally predates trend mechanisms.
         enforce_trend_mechanism=False,
     )
 
@@ -287,9 +240,7 @@ def _fire_signals(
                 ),
             )
             seq += 1
-            # Audit P1-B: positive book imbalance (bid-heavy) confirms the
-            # upward OFI footprint.  Slight per-step variation keeps the
-            # windowed z-score non-degenerate.
+            # Slight variation keeps the confirmation z-score non-degenerate.
             bus.publish(_reading(symbol, seq, "book_imbalance", 0.20 + 0.001 * i, ts))
             seq += 1
 
@@ -313,7 +264,7 @@ def _fire_signals(
             ),
         )
         seq += 1
-        # Audit P1-B: bid-heavy book confirms the positive OFI spike → LONG.
+        # Bid-heavy depth confirms the positive OFI spike.
         bus.publish(_reading(symbol, seq, "book_imbalance", 0.5, spike_ts))
         seq += 1
 
@@ -342,12 +293,7 @@ def _hash(signals: list[Signal]) -> str:
 
 
 def test_signal_fires_nonvacuously() -> None:
-    """At least one Signal is emitted when gate + threshold are satisfied.
-
-    This is the primary Phase-3.5 acceptance assertion: proves that
-    HorizonFeatureSnapshot.values is populated with real feature values
-    (not empty {}) and that the full evaluate() path is exercised.
-    """
+    """A populated snapshot emits a signal when gate and threshold pass."""
     signals = _fire_signals()
 
     assert len(signals) >= 1, (

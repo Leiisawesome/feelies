@@ -157,33 +157,11 @@ class TupleComponentFeature:
 
 
 class TupleSignedImbalanceFeature:
-    """Signed imbalance between two components of a tuple-valued sensor.
+    """Compute signed imbalance between two tuple components.
 
-    Computes ``(v[pos] - v[neg]) / (v[pos] + v[neg])`` from the latest
-    warm reading, bounded to ``[-1, 1]`` and returning ``0.0`` when the
-    denominator is below ``eps`` (no-information state).
-
-    Motivation (audit P1-3): :class:`HawkesIntensitySensor` emits a
-    ``(lambda_buy, lambda_sell, intensity_ratio, branching_ratio)``
-    tuple.  The only feature wired over it sums ``lambda_buy +
-    lambda_sell`` — an *undirected* burst magnitude that discards which
-    side is excited.  This feature exposes the **signed** buy/sell
-    imbalance so a directional HAWKES_SELF_EXCITE alpha has a usable
-    L1 fingerprint (positive ⇒ buy-side excitation dominates).
-
-    Parameters
-    ----------
-    sensor_id:
-        The ``SensorReading.sensor_id`` to observe.
-    pos_index, neg_index:
-        Zero-based indices of the positive / negative tuple components
-        (e.g. ``0`` = ``lambda_buy``, ``1`` = ``lambda_sell``).
-    feature_id:
-        Key used in ``HorizonFeatureSnapshot.values``.
-    horizon_seconds:
-        Which horizon boundary this feature contributes to.
-    eps:
-        Denominator floor below which the imbalance is reported as 0.0.
+    ``(positive-negative)/(positive+negative)`` is bounded to ``[-1, 1]``;
+    denominators below ``eps`` return zero. For Hawkes intensity, positive
+    output means buy-side excitation dominates.
     """
 
     feature_version: str = "1.0.0"

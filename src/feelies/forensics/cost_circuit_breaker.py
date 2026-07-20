@@ -1,29 +1,8 @@
-"""Cost circuit-breaker (close-the-loop: the *automate* layer).
+"""Evaluate and apply cost-based alpha quarantine decisions.
 
-Consumes the realized per-alpha cost-survival metrics
-(:mod:`feelies.forensics.cost_survival`) over a window of fills and decides
-which LIVE alphas should be **auto-quarantined** — the policy version of the
-manual ``sig_inventory_revert_v1`` quarantine.  An alpha that pays fees for
-no realized edge over a sufficient window does not get to keep trading
-capital just because its *disclosed* ``edge_estimate_bps`` cleared the gate.
-
-Two stages, deliberately separated:
-
-* :func:`evaluate_cost_circuit_breaker` — **pure**. A deterministic function
-  of (fills, policy) → decisions. No I/O, no state mutation. Safe to call
-  anywhere, including inside a replay, because it only *reads*.
-* :func:`apply_cost_circuit_breaker` — **boundary action**. Drives the real
-  :meth:`feelies.alpha.lifecycle.AlphaLifecycle.quarantine`
-  (LIVE → QUARANTINED + durable ledger entry) for the flagged alphas.
-
-Determinism (Inv-5): ``apply`` must run **only at a session / epoch
-boundary**, never per-tick — the quarantine writes a durable, versioned
-ledger entry, and the *next* run reads that state at load.  Within a replay
-run the lifecycle state is a fixed input, so replay stays bit-identical.
-
-The window of fills is supplied by the caller (e.g. a rolling N-session
-window), which is what makes the trip "persistent" rather than a one-day
-reaction — a thin single session lands in ``INSUFFICIENT_EVIDENCE``.
+``evaluate_cost_circuit_breaker`` is a pure function of fills and policy.
+``apply_cost_circuit_breaker`` writes lifecycle state and must run only at a
+session or epoch boundary. Insufficient fill history produces no action.
 """
 
 from __future__ import annotations
@@ -104,9 +83,7 @@ def evaluate_cost_circuit_breaker(
     :func:`per_alpha_cost_survival`, i.e. net descending).
     """
     pol = policy or CircuitBreakerPolicy()
-    # Materialize once: ``records`` may be a single-pass iterator (e.g. a
-    # journal query) and we walk it twice — once for cost survival, once to
-    # bucket per alpha for decay detection.
+    # Both cost survival and decay detection consume the records.
     records = list(records)
     rows = per_alpha_cost_survival(
         records,

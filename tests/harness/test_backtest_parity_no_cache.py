@@ -1,4 +1,4 @@
-"""No-disk-cache backtest trade-path determinism guard (audit P2-14).
+"""Backtest trade-path determinism without disk cache.
 
 The APP baseline test (``tests/acceptance/test_backtest_app_baseline.py``) is
 ``@pytest.mark.functional`` and **skips on cache miss**, so in a clean CI

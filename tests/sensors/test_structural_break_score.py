@@ -89,7 +89,7 @@ def test_structural_jump_increases_score() -> None:
         warm_samples=2,
     )
     state = sensor.initial_state()
-    # Stable phase.
+    # Stable regime.
     for i in range(20):
         sensor.update(
             _quote(ts_ns=(i + 1) * 1_000_000_000, mid="100", sequence=i),

@@ -1,30 +1,16 @@
-"""Tests for the PR-2b-iv bus-driven ``SizedPositionIntent`` subscriber.
+"""Test the orchestrator's bus-driven portfolio-intent path.
 
-The orchestrator's :meth:`Orchestrator._on_bus_sized_intent` translates
-``SizedPositionIntent`` events published on the platform bus into per-leg
-``OrderRequest`` events via :meth:`RiskEngine.check_sized_intent`, then
-submits each surviving order to ``backend.order_router`` and reconciles
-fills.  Pre-PR-2b-iv nothing in production translated bus-published
-intents into orders; PORTFOLIO alphas could fire intents end-to-end but
-the production order pipeline silently ignored them.
-
-These tests assert the contract:
+``Orchestrator._on_bus_sized_intent`` risk-checks each leg, submits survivors,
+and reconciles fills. The tests pin these rules:
 
 * A bus-published ``SizedPositionIntent`` with one or more non-zero
   ``TargetPosition`` deltas produces the expected ``OrderRequest`` events
   on the bus.
-* Symbols are emitted in lexicographic order (Inv-5 determinism).
-* ``order_id`` is bit-identical across two equal intents (Inv-5).
-* Per-leg veto: an exposure-breaching leg is dropped silently; the rest
-  of the intent proceeds (Inv-11 fail-safe).
+* Symbols are emitted in lexicographic order with deterministic order IDs.
+* A rejected leg does not block surviving legs.
 * An empty intent (no target_positions) emits no orders.
-* The handler runs *outside* the per-tick micro-SM walk: it submits
-  PORTFOLIO orders without driving M5 -> M10 transitions, leaving the
-  SIGNAL-reserved per-tick walk free for the at-most-one Signal it can
-  process.  Standalone SIGNAL + PORTFOLIO can therefore coexist on the
-  same tick.
-* Acks fired by the backtest router are republished and applied so the
-  position store reflects the PORTFOLIO order's effect.
+* Portfolio handling does not consume the standalone signal's micro-state walk.
+* Router acknowledgements are republished and applied to positions.
 """
 
 from __future__ import annotations
@@ -73,7 +59,7 @@ from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
-# -- Stubs ------------------------------------------------------------
+# Test doubles.
 
 
 class _NoOpMetricCollector:
@@ -329,14 +315,7 @@ def _seed_position(
 
 
 class TestBusDrivenSizedIntentProducesOrders:
-    """Bus-published SizedPositionIntent is the production PORTFOLIO path.
-
-    PR-2b-iv: composition publishes ``SizedPositionIntent`` on the bus and the
-    orchestrator translates it into per-symbol ``OrderRequest`` events.
-    Out-of-tick publishes execute immediately (micro unchanged); under
-    ``_process_tick`` the same work is flushed after the ``CROSS_SECTIONAL``
-    bookend with micro M5–M10 transitions.
-    """
+    """Translate a bus-published portfolio intent into per-symbol orders."""
 
     def test_intent_with_single_target_emits_single_order(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -673,13 +652,7 @@ class TestFillReconciliation:
 
 
 class TestPortfolioCoexistsWithStandaloneSignal:
-    """A PORTFOLIO intent and a standalone SIGNAL on the same tick both fire.
-
-    The PR-2b-iii ``depends_on_signals`` skip-rule is what prevents
-    double-trading when a SIGNAL alpha is consumed by a PORTFOLIO alpha;
-    here we exercise the *uncoupled* case where the SIGNAL alpha and the
-    PORTFOLIO alpha trade different symbols and must both produce orders.
-    """
+    """Independent portfolio and standalone signals both produce orders."""
 
     def test_signal_for_aapl_and_portfolio_for_msft_both_emit(self) -> None:
         clock = SimulatedClock(start_ns=1000)

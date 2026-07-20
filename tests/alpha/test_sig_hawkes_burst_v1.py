@@ -1,17 +1,7 @@
-"""Acceptance tests for the reference SIGNAL alpha
-``alphas/sig_hawkes_burst_v1`` (Phase 3.1, HAWKES_SELF_EXCITE family).
+"""Acceptance tests for the HAWKES_SELF_EXCITE reference alpha.
 
-Verifies that:
-
-* The YAML loads cleanly under both default and ``enforce_trend_mechanism``
-  strict mode.
-* G16 metadata propagates onto :class:`LoadedSignalLayerModule`.
-* The :class:`HorizonSignalEngine` emits a deterministic
-  ``Signal(layer="SIGNAL")`` with the expected provenance fields,
-  ``trend_mechanism``, and ``expected_half_life_seconds`` when the gate
-  is ON and the burst threshold is exceeded.
-* No emission when the regime gate is OFF or when intensity / trade-through
-  preconditions fail.
+The suite covers strict loading, G16 metadata, deterministic signals, and
+suppression by the regime gate or feature preconditions.
 """
 
 from __future__ import annotations

@@ -1,33 +1,8 @@
-"""Protocols for the Phase-2 horizon-aware feature layer.
+"""Contracts for horizon-aware Layer-2 features.
 
-Defines the contract a Layer-2 feature implementation must satisfy
-to be plugged into ``feelies.features.aggregator.HorizonAggregator``.
-A Layer-2 feature consumes ``SensorReading`` events (Layer-1 outputs)
-and produces a single scalar value per ``HorizonTick`` boundary, plus
-``warm`` / ``stale`` flags that propagate into the
-``HorizonFeatureSnapshot``.
-
-This module is **contract-only** in P2-α/β — no concrete features
-ship here.  The first concrete features land in Phase 3 (signal
-layer); P2-β only wires the protocol so Phase 3 can attach
-implementations without re-touching the feature layer.
-
-Design choices (plan §5):
-
-- **Pull, not push** — The aggregator drives ``finalize()`` on every
-  registered feature when a ``HorizonTick`` arrives, rather than
-  features subscribing to ``SensorReading`` events directly.  This
-  keeps the bus subscription count O(1) regardless of how many
-  features exist (mirrors the registry-as-single-subscriber pattern
-  in :class:`feelies.sensors.registry.SensorRegistry`).
-- **Per-symbol state** — Like sensors, features carry per-symbol
-  state owned by the aggregator and passed in as a mutable dict.
-  The feature implementation never holds per-symbol state on its
-  instance.
-- **Versioned identity** — ``feature_id`` + ``feature_version``
-  participate in the ``HorizonFeatureSnapshot.source_sensors`` /
-  provenance trail so consumers can reconstruct exactly which
-  feature version produced each value (Inv-13).
+Features fold sensor readings into aggregator-owned per-symbol state. The
+aggregator calls ``finalize`` at each horizon tick and records the value,
+warmth, staleness, and versioned provenance in a feature snapshot.
 """
 
 from __future__ import annotations
@@ -94,9 +69,7 @@ class HorizonFeature(Protocol):
         Returns ``(value, warm, stale)``:
 
         - ``value``: the scalar Layer-2 feature value.
-        - ``warm``: ``True`` once enough history has accumulated for
-          the value to be reliable (mirrors the legacy
-          :class:`feelies.features.definition.WarmUpSpec` semantics).
+        - ``warm``: ``True`` once enough history has accumulated.
         - ``stale``: ``True`` if no fresh sensor readings arrived in
           this horizon window — used downstream to suppress signal
           generation on stale features (Inv-11 fail-safe default).

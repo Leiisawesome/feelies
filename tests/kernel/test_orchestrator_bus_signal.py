@@ -1,34 +1,18 @@
-"""Tests for the PR-2b-iii bus-driven ``Signal`` subscriber.
+"""Test the orchestrator's bus-driven standalone-signal path.
 
-The orchestrator's :meth:`Orchestrator._on_bus_signal` translates
-``Signal(layer="SIGNAL")`` events published on the platform bus into the
-existing per-tick risk → order → fill walk.
-
-PR-2b-iv (this commit) deleted the legacy ``signal_engine`` /
-``feature_engine`` ctor scaffolding, so the bus subscriber is now the
-sole standalone-SIGNAL → Order path.
-
-These tests assert the contract:
+``Orchestrator._on_bus_signal`` translates ``SIGNAL`` events into the per-tick
+risk, order, and fill walk. The tests pin these rules:
 
 * A bus-published SIGNAL alpha's ``Signal`` triggers the order pipeline.
-* Stop-loss exits computed inline by ``_check_stop_exit`` always
-  override (Inv-11: position safety beats alpha conviction).
+* Stop-loss exits override alpha signals.
 * Signals with ``layer != "SIGNAL"`` and synthetic ``__stop_exit__``
   signals are filtered out of the buffer.
-* Signals from SIGNAL alphas referenced by any registered PORTFOLIO's
-  ``depends_on_signals`` are skipped — they aggregate through
-  ``CompositionEngine`` into ``SizedPositionIntent`` events and would
-  otherwise double-trade (Inv-11).
+* Signals consumed by a portfolio alpha do not trade independently.
 * The buffer is cleared at the start of every tick so prior-tick
   Signals cannot leak into subsequent ticks.
-* When more than one standalone SIGNAL alpha fires on the same tick,
-  ``EdgeWeightedArbitrator`` (default; injectable via ``signal_arbitrator``)
-  selects one candidate (FLAT privileged; else edge*strength; tie →
-  arrival order).  A once-per-process WARNING recommends PORTFOLIO
-  aggregation for richer multi-alpha policy.
-* Standalone Signals buffered only from Trade-driven horizon ticks (between
-  quote ticks) receive a trace row when the next quote tick clears the
-  buffer, so ``--trace-signal-orders`` stays aligned with bus Signal counts.
+* Multiple candidates use the configured arbitrator.
+* Trade-driven buffered signals receive a trace row when the next quote clears
+  the buffer.
 """
 
 from __future__ import annotations
@@ -67,7 +51,7 @@ from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
-# ── Stubs (mirror tests/kernel/test_orchestrator.py shape) ───────────
+# Test doubles.
 
 
 class _NoOpMetricCollector:
@@ -362,11 +346,7 @@ def _signal_from_bus(bus: EventBus, signal: Signal) -> None:
 
 
 class TestBusDrivenSignalProducesOrder:
-    """Bus-published Signal triggers the per-tick order pipeline.
-
-    This is the core PR-2b-iii contract: production SIGNAL alphas publish
-    on the bus, and the orchestrator translates that into an order.
-    """
+    """A bus-published signal enters the per-tick order pipeline."""
 
     def test_bus_signal_translates_to_order_request(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -901,17 +881,11 @@ def test_trace_sink_records_buffer_evicted_standalone_signals() -> None:
     assert evicted[0].outcome == "NO_ORDER"
 
 
-# ── H1 regression tests ───────────────────────────────────────────────
+# Trade-path signal freshness.
 
 
 def test_trade_path_fresh_signal_reaches_m4() -> None:
-    """Trade-path Signal within its horizon window is NOT evicted — H1 fix.
-
-    A Signal with ``horizon_seconds=30`` emitted by the trade path (between
-    quote ticks) must survive the PR-2b-iii freshness partition and reach M4
-    when the next quote tick arrives within the 30 s window, producing an
-    order rather than a trace eviction row.
-    """
+    """Keep a trade-path signal when the next quote is within its horizon."""
     _BASE_NS = 1_000_000_000  # 1 s — large enough for realistic arithmetic
     clock = SimulatedClock(start_ns=_BASE_NS)
     bus = EventBus()
@@ -956,12 +930,7 @@ def test_trade_path_fresh_signal_reaches_m4() -> None:
 
 
 def test_trade_path_fresh_signal_is_drained_only_once() -> None:
-    """Carried trade-path Signal is consumed on the next quote only once.
-
-    The H1 fix must preserve an inter-quote Signal until the first quote can
-    run M4, but once that happens the same signal sequence must not be
-    reconsidered on later quote ticks inside the same horizon window.
-    """
+    """Consume a carried trade-path signal on only the next quote."""
     _BASE_NS = 1_000_000_000
     clock = SimulatedClock(start_ns=_BASE_NS)
     bus = EventBus()
@@ -996,12 +965,7 @@ def test_trade_path_fresh_signal_is_drained_only_once() -> None:
 
 
 def test_trade_path_expired_signal_is_evicted() -> None:
-    """Trade-path Signal past its horizon window IS evicted — H1 fix.
-
-    Complement of ``test_trade_path_fresh_signal_reaches_m4``: a Signal with
-    ``horizon_seconds=30`` whose timestamp is more than 30 s before the
-    incoming quote must still be discarded and traced, not forwarded to M4.
-    """
+    """Evict and trace a trade-path signal past its horizon."""
     _BASE_NS = 1_000_000_000
     clock = SimulatedClock(start_ns=_BASE_NS)
     bus = EventBus()

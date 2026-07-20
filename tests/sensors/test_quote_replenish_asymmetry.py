@@ -152,7 +152,7 @@ def test_warm_requires_both_sides_with_adds() -> None:
     assert r is not None and r.warm is True  # 2 obs, both sides have adds
 
 
-# ── min_window_span_seconds (sensor_audit_2026-07-02 P1) ────────────────
+# Minimum window span.
 
 
 def test_burst_satisfies_count_but_not_elapsed_span() -> None:

@@ -1,4 +1,4 @@
-"""SensorSpec throttle/stateful guard (audit P1-D).
+"""``SensorSpec`` throttle and statefulness guard.
 
 A non-null ``throttled_ms`` on a sensor NOT marked ``stateful`` is the
 documented "undefined behaviour" combination: the registry skips ``update()``

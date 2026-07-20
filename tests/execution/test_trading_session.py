@@ -1,4 +1,4 @@
-"""BT-16: RTH session bounds and entry-suppression helpers."""
+"""RTH session bounds and entry-suppression helpers."""
 
 from __future__ import annotations
 

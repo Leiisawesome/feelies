@@ -57,7 +57,7 @@ def apply_backtest_session_dates_from_cli(
     """Align RTH/MOC session bounds (and calendar path) with a single-day CLI run.
 
     When ``start_date == end_date``, set ``rth_session_date`` and
-    ``moc_session_date`` so BT-16 gating matches the replayed tape instead of
+    ``moc_session_date`` so session gating matches the replayed tape instead of
     a stale ``event_calendar_path`` filename (e.g. platform.yaml pinned to
     ``2026-03-26.yaml`` while ``--date 2026-04-02``).  Multi-day ranges are
     left unchanged — per-day RTH rebinding is not implemented yet.

@@ -1,112 +1,16 @@
-"""Deflated Sharpe Ratio (DSR) — Workstream **C-2**.
+"""Deterministic Deflated Sharpe Ratio evidence.
 
-DSR is the multiple-testing-corrected Sharpe-significance procedure
-the platform uses to populate
-:class:`feelies.alpha.promotion_evidence.DSREvidence` for the
-``RESEARCH → PAPER`` and ``PAPER → LIVE`` promotion gates.  This
-module implements Bailey & López de Prado's procedure in pure
-Python (stdlib only, no numpy / scipy) so the resulting evidence is
-bit-identical across hosts and replays deterministically (Inv-5).
+This stdlib-only implementation follows Bailey and López de Prado's DSR/PSR
+procedure and emits :class:`feelies.alpha.promotion_evidence.DSREvidence`.
 
-References
-==========
+Platform naming differs from the paper: ``dsr`` is the Sharpe excess
+``observed - E[max under the null]``. The paper's probability-valued DSR is
+``1 - dsr_p_value`` here. Promotion requires both sufficient Sharpe excess and
+statistical significance.
 
-- Bailey & López de Prado (2014), "The Deflated Sharpe Ratio:
-  Correcting for Selection Bias, Backtest Overfitting, and
-  Non-Normality", *Journal of Portfolio Management*, vol. 40, no.
-  5, pp. 94-107.  Equations referenced inline as **eq. K** below
-  refer to that paper.
-- Bailey & López de Prado (2012), "The Sharpe Ratio Efficient
-  Frontier", *Journal of Risk*, vol. 15, no. 2 — for the
-  underlying probabilistic Sharpe ratio (PSR) derivation.
-- López de Prado (2018), *Advances in Financial Machine Learning*
-  §8 — for the textbook treatment.
-
-Public API
-==========
-
-- :func:`standard_normal_cdf`         — Φ(x) via :func:`math.erf`.
-- :func:`standard_normal_quantile`    — Φ⁻¹(p) via
-  :class:`statistics.NormalDist`.
-- :func:`probabilistic_sharpe_ratio`  — PSR (eq. 1) — probability
-  that the true Sharpe exceeds the supplied threshold.
-- :func:`expected_max_sharpe`         — E[max Sharpe] across
-  ``n_trials`` iid-Gaussian trials (eq. 7).
-- :func:`deflated_sharpe`             — return the
-  ``(dsr_value, dsr_p_value)`` pair.
-- :func:`standardised_moments`        — non-excess (skewness,
-  kurtosis) of a sample.
-- :func:`sharpe_ratio`                — population-style Sharpe;
-  re-exported here from :mod:`feelies.research.cpcv` for
-  symmetry with C-1.
-- :func:`build_dsr_evidence`          — emit
-  :class:`feelies.alpha.promotion_evidence.DSREvidence` from
-  caller-supplied summary stats.
-- :func:`build_dsr_evidence_from_returns` — convenience wrapper
-  that extracts Sharpe + skew + kurtosis from a return series
-  and forwards to :func:`build_dsr_evidence`.
-
-Schema interpretation
-=====================
-
-The F-2 :class:`DSREvidence` schema reports two fields:
-
-- ``dsr``: the **net** deflated Sharpe ratio,
-  ``observed_sharpe − E[max Sharpe under null]``, in the same
-  units as ``observed_sharpe``.  This is the *economic* component
-  of the gate: the alpha must clear the deflated null bar by at
-  least ``GateThresholds.dsr_min`` (default 1.0, anchored to
-  schema-1.1's "OOS DSR < 1.0 across any single calendar quarter
-  after LIVE" falsification rule for **annualised** Sharpe).
-- ``dsr_p_value``: ``1 − PSR(observed; threshold = E[max])``.
-  This is the *statistical* component: even if the alpha clears
-  the economic bar, the deflation-adjusted significance must be
-  below ``GateThresholds.dsr_max_p_value`` (default 0.05).
-
-Both checks are wired through :func:`validate_dsr` in F-2.  The
-two-of-two design intentionally blocks alphas that are
-statistically-significant-but-economically-marginal as well as
-economically-large-but-noisy.
-
-.. note::
-   **Naming vs. the paper.**  The *canonical* Bailey-LdP DSR is a
-   probability in ``[0, 1]`` — ``DSR = PSR(SR_0) = Prob[true Sharpe >
-   E[max]]`` — and equals ``1 − dsr_p_value`` here.  The field this
-   module calls ``dsr`` is the platform's *redefinition*: a deflated
-   Sharpe **excess** (``observed − E[max]``, in Sharpe units), which is
-   why ``GateThresholds.dsr_min = 1.0`` ("DSR ≥ 1") is meaningful — a
-   probability could never exceed 1.  When cross-checking against the
-   2014 paper, compare the paper's DSR to ``1 − dsr_p_value``, not to
-   the ``dsr`` field.
-
-Annualisation
-=============
-
-The Bailey-LdP test statistic is derived assuming the input
-Sharpe is computed at the **same frequency** as the sample-size
-``T`` (e.g. daily Sharpe + ``T`` in days; per-bar Sharpe + ``T``
-in bars).  The ``dsr_min`` threshold defaults are in **annualised**
-units, so :func:`build_dsr_evidence` accepts an
-``annualization_factor`` (default 1.0) that scales both
-``observed_sharpe`` and ``dsr`` on the emitted evidence:
-
-- Pass ``annualization_factor = sqrt(252)`` to convert
-  per-trading-day Sharpes to annualised.
-- Pass ``annualization_factor = sqrt(periods_per_year)`` for any
-  other bar frequency.
-
-The dimensionless PSR p-value is unaffected by annualisation —
-it's a probability under the same per-period null regardless of
-the unit choice.
-
-Determinism
-===========
-
-Every public function in this module is a pure function of its
-arguments.  No PRNG, no clock reads, no I/O, no global state.
-:func:`statistics.NormalDist.inv_cdf` is documented as a
-deterministic Newton-Raphson refinement (Acklam 2003), bit-stable
-across CPython versions at the same minor release.
+Sharpe and sample size must use the same frequency. ``annualization_factor``
+scales reported Sharpe values but not the dimensionless p-value. All functions
+are pure and deterministic.
 """
 
 from __future__ import annotations
@@ -422,7 +326,7 @@ def standardised_moments(returns: Sequence[float]) -> tuple[float, float]:
     matching :func:`feelies.research.cpcv.sharpe_ratio`'s
     convention).  The Gaussian baseline is ``(0.0, 3.0)`` — in
     particular, this function returns *non-excess* kurtosis to
-    align with the F-2 :class:`DSREvidence` schema (whose
+    align with :class:`DSREvidence`, whose
     ``kurtosis`` field defaults to ``3.0`` for the Gaussian case).
 
     Degenerate inputs (``len < 2`` or ``σ = 0``) return the
@@ -464,38 +368,11 @@ def build_dsr_evidence(
     trial_sharpe_variance: float | None = None,
     annualization_factor: float = 1.0,
 ) -> DSREvidence:
-    """Build :class:`DSREvidence` from caller-supplied summary stats.
+    """Build DSR evidence from per-period summary statistics.
 
-    Inputs are in **per-period** Sharpe units (i.e. computed at the
-    same bar frequency as ``n_obs``).  The ``annualization_factor``
-    parameter scales the emitted ``observed_sharpe`` and ``dsr``
-    fields onto whatever target unit the caller wants — e.g.
-    ``annualization_factor = math.sqrt(252)`` for the standard
-    daily-to-annual convention.
-
-    The ``dsr_p_value`` field is dimensionless and unaffected by
-    ``annualization_factor``; the deflation null is evaluated at
-    the same per-period frequency as the inputs.
-
-    **Honest deflation.**  When ``trial_sharpe_variance`` is omitted
-    (and ``trials_count > 0``) the deflation falls back to the
-    iid-Gaussian null floor ``1 / (n_obs - 1)`` — the *smallest*
-    plausible cross-trial dispersion, hence the weakest honest
-    deflation.  A :class:`UserWarning` is emitted in that case: callers
-    who actually explored a family of variants should pass the
-    empirically-measured variance of those trials' Sharpes so the
-    deflation reflects how spread the real search was.
-
-    The function is permissive about ``trials_count`` — it accepts
-    ``trials_count = 0`` and produces a valid (but inevitably
-    failing-validator) :class:`DSREvidence` so a researcher can
-    inspect the no-deflation baseline without the function raising
-    in the middle of an exploration notebook.  ``trials_count <
-    0`` is rejected as nonsensical.
-
-    Raises ``ValueError`` for ``n_obs < 2``, ``trials_count < 0``,
-    ``annualization_factor <= 0``, or any inputs the underlying
-    :func:`probabilistic_sharpe_ratio` rejects.
+    ``annualization_factor`` scales Sharpe fields but not the p-value. If trial
+    variance is omitted, the weakest honest iid-Gaussian floor is used with a
+    warning. Zero trials are allowed for exploratory no-deflation evidence.
     """
     if n_obs < 2:
         raise ValueError(f"build_dsr_evidence requires n_obs >= 2, got {n_obs}")

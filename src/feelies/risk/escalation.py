@@ -33,8 +33,7 @@ _RISK_TRANSITIONS: dict[RiskLevel, frozenset[RiskLevel]] = {
         }
     ),
     # R1 → R2 only.  Once WARNING, escalation is forward-only.
-    # De-escalation is forbidden — only the full cycle R4 → R0
-    # (human unlock + audit) can return to NORMAL.
+    # Only human-authorized R4-to-R0 unlock can de-escalate.
     RiskLevel.WARNING: frozenset(
         {
             RiskLevel.BREACH_DETECTED,
@@ -50,7 +49,7 @@ _RISK_TRANSITIONS: dict[RiskLevel, frozenset[RiskLevel]] = {
             RiskLevel.LOCKED,
         }
     ),
-    # LOCKED -> NORMAL only via human override + system audit
+    # LOCKED-to-NORMAL requires human authorization.
     RiskLevel.LOCKED: frozenset(
         {
             RiskLevel.NORMAL,

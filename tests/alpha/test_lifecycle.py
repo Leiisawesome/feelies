@@ -414,7 +414,7 @@ class TestAlphaLifecycle:
         assert lc.is_active is False
 
 
-# ── Workstream F-1: PromotionLedger wiring ──────────────────────────────
+# ── Promotion-ledger wiring ─────────────────────────────────────────────
 
 
 def _paper_evidence() -> PromotionEvidence:
@@ -443,8 +443,7 @@ def _revalidation_evidence() -> PromotionEvidence:
 
 
 class TestAlphaLifecycleWithLedger:
-    """F-1: every successful transition is appended to the
-    promotion ledger; rejected transitions are NOT recorded."""
+    """Record successful transitions, but not rejected ones."""
 
     @pytest.fixture
     def clock(self) -> SimulatedClock:

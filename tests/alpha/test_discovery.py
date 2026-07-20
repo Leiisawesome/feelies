@@ -1,6 +1,6 @@
 """Unit tests for alpha spec discovery and load_and_register.
 
-Workstream D.2: the fixture template is a minimal ``layer: SIGNAL``
+The fixture template is a minimal ``layer: SIGNAL``
 alpha (LEGACY_SIGNAL was retired from the loader's accepted layer
 set).  The discovery layer is layer-agnostic — these tests assert
 filename selection, sort order, and per-alpha-fault tolerance, not

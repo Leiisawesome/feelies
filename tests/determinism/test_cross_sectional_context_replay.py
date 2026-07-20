@@ -1,13 +1,6 @@
-"""SIGNAL→PORTFOLIO handoff baseline — ``CrossSectionalContext`` parity (P1 #7).
+"""Pin ``CrossSectionalContext`` parity across the signal-to-portfolio handoff.
 
-The Level-3 sized-intent baselines feed a *hand-built* ``CrossSectionalContext``
-straight into the composition engine, so the universe-synchronization step —
-the barrier fan-in that turns a stream of per-symbol ``Signal`` events into one
-cross-sectional snapshot — had **no** parity hash.  The glossary asserts the
-synchronizer "enforces deterministic emission order … so cross-sectional
-construction is replay-byte-identical (Inv-5)" but nothing pinned it.
-
-This baseline drives the real :class:`UniverseSynchronizer` over a 4-symbol,
+The baseline drives the real :class:`UniverseSynchronizer` over a four-symbol,
 2-boundary scenario: boundary 1 drops one symbol (no feeder signal) to exercise
 the ``None`` / sub-unity ``completeness`` path; boundary 2 has the full
 universe.  The emitted ``CrossSectionalContext`` stream is hashed — pinning the

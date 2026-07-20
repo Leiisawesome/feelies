@@ -1,49 +1,8 @@
-"""Append-only JSONL ledger of alpha promotion events.
+"""Append-only JSONL ledger of committed alpha lifecycle transitions.
 
-Records every committed lifecycle transition (RESEARCH→PAPER, PAPER→LIVE,
-LIVE→QUARANTINED, QUARANTINED→PAPER, QUARANTINED→DECOMMISSIONED) with the
-full evidence package, trigger, timestamp, and correlation_id.  The ledger
-is the durable, replay-friendly substrate that downstream Workstream-F
-PRs (operator CLI, demote/audit tooling, CPCV+DSR gate in workstream C)
-read to make capital-allocation decisions.
-
-Design constraints:
-
-- **Append-only**: once a transition is committed, its entry is never
-  rewritten.  Re-opening the file always seeks-to-end before writing.
-  This preserves Inv-13 (provenance) and gives operators a tamper-evident
-  audit trail.
-
-- **Forensics-only consumer contract**: production code paths MUST NOT
-  read the ledger to make per-tick decisions.  The ledger exists for
-  off-line audit, operator review, and the post-trade-forensics skill
-  (§14.3).  Replay determinism is preserved because writes happen
-  through ``StateMachine.on_transition`` callbacks (i.e. driven by the
-  same clock-derived ``TransitionRecord`` that is already part of the
-  deterministic transition history).
-
-- **Pre-commit write semantics**: ``StateMachine.transition`` invokes
-  ``on_transition`` callbacks *before* committing the new state to its
-  history (see ``state_machine.py`` ``transition`` docstring).  If the
-  ledger write raises (e.g. disk full), the lifecycle transition is
-  atomically rolled back and the ledger remains consistent — no torn
-  records, no half-promoted alpha.
-
-- **JSONL on disk** (one record per line, ``\\n`` terminator, UTF-8).
-  Decimal values are serialised to canonical strings via the lifecycle's
-  evidence-dict projection.  Schema version is embedded per-line so
-  future migrations stay forward-compatible.
-
-The ledger is *optional*: the feature is opt-in via
-``PromotionLedger(path=...)`` passed into ``AlphaLifecycle`` /
-``AlphaRegistry``.  Backtest deployments — which already disable
-per-alpha lifecycle tracking via ``registry_clock=None`` — leave the
-ledger inert.
-
-Workstream F-1 PR-1: minimal, additive evidence-recording layer.  Later
-F-2 (gate-catalog reconciliation) will read the ledger to verify
-gate-id coverage; F-5 (operator CLI) will offer ``promote-status`` /
-``audit`` views over it.
+The optional ledger is for offline provenance and never drives per-tick
+decisions. Writes occur before lifecycle state commits, so a write failure
+rolls back the transition instead of leaving a partial promotion.
 """
 
 from __future__ import annotations

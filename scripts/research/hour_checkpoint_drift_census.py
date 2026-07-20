@@ -1,41 +1,19 @@
 #!/usr/bin/env python3
-"""Task 9-A-H13 Phase A — park-rule census instrument for
-``sig_hour_checkpoint_drift_h1800_v1``.
+"""Census instrument for ``sig_hour_checkpoint_drift_h1800_v1``.
 
-Implements EXACTLY the frozen protocol step-1 predicate
-(``docs/research/sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md``
-§1, FROZEN 2026-07-17) — **no forward returns, no IC, no signal
-evaluation**. The only return-like quantity is unconditional session
-σ₁₈₀₀ (Bessel-corrected std of non-overlapping 1800 s mid log-returns
-on the 09:30-anchored RTH grid, bps), which conditions on nothing
-signal-related.
+The frozen predicate computes no forward returns, IC, or signals. Its only
+return-like value is unconditional session volatility on the 1800-second grid.
 
-Episode = h=1800 boundary satisfying §1.1 (session window, required-
-warm, ``W_hr`` clock predicate for in-hour primary OR inverted for F2
-:30 matched contrast, OFI quintile, breakout gate, vol-z backstop,
-sign agreement). Counts both ``episodes_in_hour`` (``W_hr=1``) and
-``episodes_halfhour`` (matched OFI quintile, ``W_hr=0``).
+It counts extreme-OFI episodes at hourly checkpoints and matched half-hour
+controls after warm-up, regime, volatility, and sign-agreement gates.
 
-Calendar injection = **hour-only derived view** (``:00`` subset;
-``:30`` excluded — JC-10 / spec §1.5.2). Calendar-warm: per (symbol,
-session) share of in-window h=1800 boundaries with
-``scheduled_flow_window`` warm. Warm-drop: warm fraction < 0.5 on > 2
-sessions ⇒ symbol leaves D (evidence-only report the same metric but
-cannot enter D).
+The derived calendar contains only ``:00`` windows. Symbols leave the primary
+pool when calendar warm coverage is below 0.5 in more than two sessions.
 
-JC-1 REPORTS (diagnostic, never binding): leakage share on primary
-in-hour eligible boundaries; ``halfhour_not_hour_cotravel_rate`` among
-quintile-OFI boundaries (design ≈ 0.50); ``tranche1b_kappa_drift`` on
-{OLN, DIOD, PCTY, CROX}.
+Diagnostics report leakage, half-hour co-travel, and kappa drift. ENSG and MLI
+contribute evidence but cannot enter the primary pool.
 
-Evidence pool (config B): D = {APP, RMBS, OLN, DIOD, PCTY, CROX} ×20;
-evidence-only {ENSG, MLI} ×10 preamble — ENSG/MLI count toward the
-pooled ≥ 100 power floor; never-promotable into D.
-
-Determinism: PYTHONHASHSEED=0; no RNG; no wall-clock reads; events
-sorted by (timestamp_ns, sequence); fresh sensor/regime state per cell.
-**This module is the instrument — do not execute against the grid from
-Phase A** (N = 12 must survive unchanged).
+Events are sorted by ``(timestamp_ns, sequence)`` with fresh state per cell.
 
 Usage
 -----
