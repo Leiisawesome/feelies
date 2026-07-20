@@ -856,31 +856,13 @@ Empty tuples mean the gate has no structured-evidence requirement
 free-form reason; the operator is the audit substrate)."""
 
 
-_VALIDATOR_BY_TYPE: Mapping[
-    _EvidenceType,
-    Any,
-] = {
-    ResearchAcceptanceEvidence: validate_research_acceptance,
-    CPCVEvidence: validate_cpcv,
-    DSREvidence: validate_dsr,
-    PaperWindowEvidence: validate_paper_window,
-    CapitalStageEvidence: validate_capital_stage,
-    QuarantineTriggerEvidence: validate_quarantine_trigger,
-    RevalidationEvidence: validate_revalidation,
-}
+@dataclass(frozen=True)
+class _EvidenceRegistration:
+    """Validation and metadata codecs registered for one evidence type."""
 
-
-_KIND_BY_TYPE: Mapping[_EvidenceType, str] = {
-    ResearchAcceptanceEvidence: "research_acceptance",
-    CPCVEvidence: "cpcv",
-    DSREvidence: "dsr",
-    PaperWindowEvidence: "paper_window",
-    CapitalStageEvidence: "capital_stage",
-    QuarantineTriggerEvidence: "quarantine_trigger",
-    RevalidationEvidence: "revalidation",
-}
-"""Stable string keys used in the JSON metadata payload — never
-rename without bumping :data:`EVIDENCE_SCHEMA_VERSION`."""
+    kind: str
+    validator: Any
+    reconstructor: Any
 
 
 def required_evidence_types(gate_id: GateId) -> tuple[_EvidenceType, ...]:
@@ -903,7 +885,7 @@ def validate_gate(
 
     ``evidences`` is an arbitrary-order list of evidence dataclasses
     (each must be one of the supported types in
-    :data:`_KIND_BY_TYPE`).  The dispatcher:
+    :data:`_EVIDENCE_REGISTRY`).  The dispatcher:
 
       1. Looks up the required evidence types for ``gate_id``.
       2. Indexes the supplied evidences by their type.
@@ -928,11 +910,11 @@ def validate_gate(
     by_type: dict[_EvidenceType, object] = {}
     for ev in evidences:
         ev_type = type(ev)
-        if ev_type not in _VALIDATOR_BY_TYPE:
+        if ev_type not in _EVIDENCE_REGISTRY:
             errors.append(
                 f"unsupported evidence type {ev_type.__name__!r}; "
                 f"supported types: "
-                f"{sorted(t.__name__ for t in _VALIDATOR_BY_TYPE)}"
+                f"{sorted(t.__name__ for t in _EVIDENCE_REGISTRY)}"
             )
             continue
         if ev_type in by_type:
@@ -954,7 +936,7 @@ def validate_gate(
         ev = by_type.get(req_type)
         if ev is None:
             continue
-        validator = _VALIDATOR_BY_TYPE[req_type]
+        validator = _EVIDENCE_REGISTRY[req_type].validator
         sub_errors: list[str] = validator(ev, thresholds)
         errors.extend(sub_errors)
 
@@ -975,7 +957,7 @@ def evidence_to_metadata(*evidences: object) -> dict[str, Any]:
 
       * ``"schema_version"`` — :data:`EVIDENCE_SCHEMA_VERSION`
       * one entry per supplied evidence, keyed by its stable ``kind``
-        string from :data:`_KIND_BY_TYPE`
+        string from :data:`_EVIDENCE_REGISTRY`
       * any nested :class:`tuple` is serialised as a list (round-trips
         via JSON), :class:`Decimal` is left in place — the ledger's
         :func:`feelies.alpha.promotion_ledger._json_default` hook
@@ -990,13 +972,14 @@ def evidence_to_metadata(*evidences: object) -> dict[str, Any]:
 
     for ev in evidences:
         ev_type = type(ev)
-        kind = _KIND_BY_TYPE.get(ev_type)
-        if kind is None:
+        registration = _EVIDENCE_REGISTRY.get(ev_type)
+        if registration is None:
             raise TypeError(
                 f"unsupported evidence type {ev_type.__name__!r}; "
                 f"supported types: "
-                f"{sorted(t.__name__ for t in _KIND_BY_TYPE)}"
+                f"{sorted(t.__name__ for t in _EVIDENCE_REGISTRY)}"
             )
+        kind = registration.kind
         if kind in seen:
             raise ValueError(
                 f"duplicate evidence kind {kind!r} — each kind may "
@@ -1041,18 +1024,6 @@ def _evidence_to_jsonable(ev: object) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────
 #   Inverse projection (metadata dict → evidence dataclasses)
 # ─────────────────────────────────────────────────────────────────────
-
-
-KIND_TO_TYPE: Mapping[str, _EvidenceType] = {
-    kind: ev_type for ev_type, kind in _KIND_BY_TYPE.items()
-}
-"""Public reverse mapping of :data:`_KIND_BY_TYPE`.
-
-Stable ``"kind"`` string → evidence dataclass type.  Used by
-:func:`metadata_to_evidence` (and by Workstream **F-3**'s
-``feelies promote replay-evidence`` CLI subcommand) to reconstruct
-typed evidence dataclasses from the JSON metadata persisted on a
-:class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`."""
 
 
 RESERVED_METADATA_KEYS: frozenset[str] = frozenset({"schema_version", "reason"})
@@ -1123,15 +1094,45 @@ def _reconstruct_revalidation(
     return RevalidationEvidence(**payload)
 
 
-_RECONSTRUCTOR_BY_TYPE: Mapping[_EvidenceType, Any] = {
-    ResearchAcceptanceEvidence: _reconstruct_research_acceptance,
-    CPCVEvidence: _reconstruct_cpcv,
-    DSREvidence: _reconstruct_dsr,
-    PaperWindowEvidence: _reconstruct_paper_window,
-    CapitalStageEvidence: _reconstruct_capital_stage,
-    QuarantineTriggerEvidence: _reconstruct_quarantine_trigger,
-    RevalidationEvidence: _reconstruct_revalidation,
+_EVIDENCE_REGISTRY: Mapping[_EvidenceType, _EvidenceRegistration] = {
+    ResearchAcceptanceEvidence: _EvidenceRegistration(
+        "research_acceptance",
+        validate_research_acceptance,
+        _reconstruct_research_acceptance,
+    ),
+    CPCVEvidence: _EvidenceRegistration("cpcv", validate_cpcv, _reconstruct_cpcv),
+    DSREvidence: _EvidenceRegistration("dsr", validate_dsr, _reconstruct_dsr),
+    PaperWindowEvidence: _EvidenceRegistration(
+        "paper_window", validate_paper_window, _reconstruct_paper_window
+    ),
+    CapitalStageEvidence: _EvidenceRegistration(
+        "capital_stage", validate_capital_stage, _reconstruct_capital_stage
+    ),
+    QuarantineTriggerEvidence: _EvidenceRegistration(
+        "quarantine_trigger",
+        validate_quarantine_trigger,
+        _reconstruct_quarantine_trigger,
+    ),
+    RevalidationEvidence: _EvidenceRegistration(
+        "revalidation", validate_revalidation, _reconstruct_revalidation
+    ),
 }
+"""Single registration source for validation and metadata round-tripping.
+
+The stable ``kind`` strings must not change without bumping
+:data:`EVIDENCE_SCHEMA_VERSION`."""
+
+
+KIND_TO_TYPE: Mapping[str, _EvidenceType] = {
+    registration.kind: evidence_type for evidence_type, registration in _EVIDENCE_REGISTRY.items()
+}
+"""Public reverse mapping of :data:`_EVIDENCE_REGISTRY`.
+
+Stable ``"kind"`` string → evidence dataclass type.  Used by
+:func:`metadata_to_evidence` (and by Workstream **F-3**'s
+``feelies promote replay-evidence`` CLI subcommand) to reconstruct
+typed evidence dataclasses from the JSON metadata persisted on a
+:class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`."""
 
 
 def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
@@ -1143,7 +1144,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
     ``"kind": {field: value, ...}`` entries).
 
     Returns the list of reconstructed evidence dataclass instances in
-    the canonical kind-iteration order of :data:`_KIND_BY_TYPE`.  An
+    the canonical kind-iteration order of :data:`_EVIDENCE_REGISTRY`.  An
     empty list signals "the metadata has no F-2 evidence sections"
     (e.g. a quarantine/decommission entry that only carries a free-form
     ``reason``, or a legacy pre-F-2 entry with the loose
@@ -1174,7 +1175,8 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
         )
 
     evidences: list[object] = []
-    for ev_type, kind in _KIND_BY_TYPE.items():
+    for registration in _EVIDENCE_REGISTRY.values():
+        kind = registration.kind
         if kind not in metadata:
             continue
         payload = metadata[kind]
@@ -1182,8 +1184,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
             raise ValueError(
                 f"metadata[{kind!r}] must be an object, got {type(payload).__name__!r}"
             )
-        reconstruct = _RECONSTRUCTOR_BY_TYPE[ev_type]
-        evidences.append(reconstruct(payload))
+        evidences.append(registration.reconstructor(payload))
 
     unknown = sorted(
         k for k in metadata.keys() if k not in RESERVED_METADATA_KEYS and k not in KIND_TO_TYPE
@@ -1496,12 +1497,13 @@ def _check_validator_coverage() -> None:
     """
     for gate, types in GATE_EVIDENCE_REQUIREMENTS.items():
         for t in types:
-            if t not in _VALIDATOR_BY_TYPE:
+            registration = _EVIDENCE_REGISTRY.get(t)
+            if registration is None:
                 raise RuntimeError(
                     f"Gate {gate.value!r} requires evidence type "
                     f"{t.__name__!r} but no validator is registered"
                 )
-            if t not in _KIND_BY_TYPE:
+            if not registration.kind:
                 raise RuntimeError(
                     f"Gate {gate.value!r} requires evidence type "
                     f"{t.__name__!r} but no metadata kind is registered"
@@ -1515,8 +1517,8 @@ def _check_reconstructor_coverage() -> None:
     """
     missing = sorted(
         ev_type.__name__
-        for ev_type in _KIND_BY_TYPE.keys()
-        if ev_type not in _RECONSTRUCTOR_BY_TYPE
+        for ev_type, registration in _EVIDENCE_REGISTRY.items()
+        if not callable(registration.reconstructor)
     )
     if missing:
         raise RuntimeError(

@@ -849,7 +849,7 @@ class TestEvidenceToMetadata:
             evidence_to_metadata(Bogus(x=1))
 
     def test_non_dataclass_input_rejected(self) -> None:
-        # Anything that is registered in _KIND_BY_TYPE is by construction a
+        # Anything that is registered in _EVIDENCE_REGISTRY is by construction a
         # dataclass (we control the registration), so the only way to hit
         # the non-dataclass branch is to spoof a registered type via a
         # subclass.  We exercise the safe path: the unsupported-type
