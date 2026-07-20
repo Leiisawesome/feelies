@@ -310,6 +310,13 @@ class _MinimalConfig:
         return None
 
 
+class _ExecutionCostConfig(_MinimalConfig):
+    cost_market_impact_factor = 0.73
+    cost_max_impact_half_spreads = 8.5
+    cost_within_l1_impact_factor = 0.21
+    cost_permanent_impact_coefficient = 0.04
+
+
 class _FailingConfig:
     """Configuration that raises on validate()."""
 
@@ -568,6 +575,71 @@ class TestOrchestratorFullPipeline:
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE
 
+    @pytest.mark.parametrize(
+        ("publish_signal", "risk_action", "terminal_trigger"),
+        [
+            (False, RiskAction.ALLOW, "no_signal_this_tick"),
+            (True, RiskAction.REJECT, "risk_reject_no_order"),
+        ],
+    )
+    def test_tick_completion_preserves_transition_and_metric_order(
+        self,
+        publish_signal: bool,
+        risk_action: RiskAction,
+        terminal_trigger: str,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[Event] = []
+        bus.subscribe_all(events.append)
+        quote = _make_quote()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(action=risk_action),
+        )
+        if publish_signal:
+            _publish_signal_on_quote(bus, _make_signal(quote))
+        _boot_to_backtest(orch)
+        events.clear()
+
+        orch._process_tick(quote)
+
+        transitions = [
+            event
+            for event in events
+            if isinstance(event, StateTransition) and event.machine_name == "tick_pipeline"
+        ]
+        expected = [
+            ("WAITING_FOR_MARKET_EVENT", "MARKET_EVENT_RECEIVED", "tick_arrived"),
+            ("MARKET_EVENT_RECEIVED", "STATE_UPDATE", "event_logged"),
+            ("STATE_UPDATE", "FEATURE_COMPUTE", "state_updated"),
+            ("FEATURE_COMPUTE", "SIGNAL_EVALUATE", "features_computed"),
+        ]
+        if publish_signal:
+            expected.append(("SIGNAL_EVALUATE", "RISK_CHECK", "signal_evaluated"))
+            terminal_from = "RISK_CHECK"
+        else:
+            terminal_from = "SIGNAL_EVALUATE"
+        expected.extend(
+            [
+                (terminal_from, "LOG_AND_METRICS", terminal_trigger),
+                ("LOG_AND_METRICS", "WAITING_FOR_MARKET_EVENT", "tick_complete"),
+            ]
+        )
+        assert [
+            (event.from_state, event.to_state, event.trigger) for event in transitions
+        ] == expected
+
+        log_index = events.index(transitions[-2])
+        latency_index = next(
+            index
+            for index, event in enumerate(events)
+            if isinstance(event, MetricEvent) and event.name == "tick_to_decision_latency_ns"
+        )
+        waiting_index = events.index(transitions[-1])
+        assert log_index < latency_index < waiting_index
+
     def test_mark_only_tick_refreshes_risk_high_water_mark(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         rally_quote = _make_quote(ts=1000, bid="119.50", ask="120.50", seq=1)
@@ -736,6 +808,92 @@ class TestOrchestratorFullPipeline:
 
         assert len(updates) == 1
         assert updates[0].timestamp_ns == 2000
+
+
+class TestOrchestratorAckProcessing:
+    def test_async_acks_preserve_exact_event_order_and_reconciliation_lineage(
+        self,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[Event] = []
+        bus.subscribe_all(events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=1000,
+            correlation_id="order-cid",
+            sequence=20,
+            order_id="ack-order",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        events.clear()
+        acks = [
+            OrderAck(
+                timestamp_ns=1100,
+                correlation_id="ack-cid",
+                sequence=40,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.ACKNOWLEDGED,
+            ),
+            OrderAck(
+                timestamp_ns=1200,
+                correlation_id="ack-cid",
+                sequence=41,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.FILLED,
+                filled_quantity=10,
+                fill_price=Decimal("150.00"),
+                fees=Decimal("0.10"),
+            ),
+        ]
+        orch._poll_order_router_acks = lambda _expected=None: acks  # type: ignore[method-assign]
+
+        orch._drain_async_fills("reconcile-cid")
+
+        assert [type(event) for event in events] == [
+            OrderAck,
+            StateTransition,
+            OrderAck,
+            StateTransition,
+            PositionUpdate,
+        ]
+        assert [event.timestamp_ns for event in events] == [1100, 1000, 1200, 1000, 1200]
+        assert [event.sequence for event in events] == [40, 1, 41, 2, 3]
+        assert [event.correlation_id for event in events] == [
+            "ack-cid",
+            "ack-cid",
+            "ack-cid",
+            "ack-cid",
+            "reconcile-cid",
+        ]
+        transitions = [event for event in events if isinstance(event, StateTransition)]
+        assert [
+            (event.machine_name, event.from_state, event.to_state, event.trigger)
+            for event in transitions
+        ] == [
+            ("order:ack-order", "SUBMITTED", "ACKNOWLEDGED", "broker_ack"),
+            ("order:ack-order", "ACKNOWLEDGED", "FILLED", "fill_complete"),
+        ]
+        update = events[-1]
+        assert isinstance(update, PositionUpdate)
+        assert update.quantity == 10
+        position = orch._positions.get("AAPL")
+        assert position.quantity == 10
+        assert position.avg_entry_price == Decimal("150.00")
+        assert position.cumulative_fees == Decimal("0.10")
 
 
 class TestOrchestratorFillReconcileGuards:
@@ -1215,13 +1373,13 @@ class TestForcedExitReasonClassification:
             reason="ok",
         )
 
-        stop_order = orch._build_order_from_intent(
+        stop_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("__stop_exit__"), verdict, "AAPL:2000:1"
         )
-        session_order = orch._build_order_from_intent(
+        session_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("__session_flat__"), verdict, "AAPL:2000:1"
         )
-        alpha_order = orch._build_order_from_intent(
+        alpha_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
         )
 
@@ -1489,6 +1647,218 @@ class TestOrchestratorHalt:
         _boot_to_ready(orch)
         orch.halt()
         assert orch.macro_state == MacroState.READY
+
+
+# ── Tests: Trading session lifecycle ──────────────────────────────────
+
+
+class TestOrchestratorTradingSessionLifecycle:
+    @pytest.mark.parametrize(
+        (
+            "method_name",
+            "mode",
+            "session_trigger",
+            "start_trigger",
+            "completion_trigger",
+            "expected_prelogged",
+            "clears_consumed",
+        ),
+        [
+            (
+                "run_backtest",
+                MacroState.BACKTEST_MODE,
+                "session_start:backtest",
+                "CMD_BACKTEST",
+                "BACKTEST_COMPLETE",
+                True,
+                True,
+            ),
+            (
+                "run_paper",
+                MacroState.PAPER_TRADING_MODE,
+                "session_start:paper",
+                "CMD_PAPER_DEPLOY",
+                "SESSION_FEED_COMPLETE",
+                False,
+                True,
+            ),
+            (
+                "run_live",
+                MacroState.LIVE_TRADING_MODE,
+                "session_start:live",
+                "CMD_LIVE_DEPLOY",
+                "SESSION_FEED_COMPLETE",
+                False,
+                False,
+            ),
+        ],
+    )
+    def test_success_preserves_exact_events_and_pipeline_entry_state(
+        self,
+        method_name: str,
+        mode: MacroState,
+        session_trigger: str,
+        start_trigger: str,
+        completion_trigger: str,
+        expected_prelogged: bool,
+        clears_consumed: bool,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[StateTransition] = []
+        bus.subscribe(StateTransition, events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        events.clear()
+        seeded_consumed = frozenset({"seeded-alpha"})
+        orch._consumed_by_portfolio_ids = seeded_consumed
+        pipeline_entry: list[tuple[bool, frozenset[str] | None]] = []
+
+        def capture_pipeline_entry() -> None:
+            pipeline_entry.append((orch._events_prelogged, orch._consumed_by_portfolio_ids))
+
+        orch._run_pipeline = capture_pipeline_entry  # type: ignore[method-assign]
+        getattr(orch, method_name)()
+
+        expected_consumed = None if clears_consumed else seeded_consumed
+        assert pipeline_entry == [(expected_prelogged, expected_consumed)]
+        assert orch._events_prelogged is False
+        assert [
+            (
+                event.timestamp_ns,
+                event.correlation_id,
+                event.sequence,
+                event.machine_name,
+                event.from_state,
+                event.to_state,
+                event.trigger,
+                event.metadata,
+            )
+            for event in events
+        ] == [
+            (
+                1000,
+                "",
+                2,
+                "tick_pipeline",
+                "WAITING_FOR_MARKET_EVENT",
+                "WAITING_FOR_MARKET_EVENT",
+                session_trigger,
+                {"type": "reset"},
+            ),
+            (1000, "", 3, "global_stack", "READY", mode.name, start_trigger, {}),
+            (
+                1000,
+                "",
+                4,
+                "global_stack",
+                mode.name,
+                "READY",
+                completion_trigger,
+                {},
+            ),
+        ]
+
+    @pytest.mark.parametrize(
+        ("method_name", "mode", "session_trigger", "start_trigger", "failure_trigger"),
+        [
+            (
+                "run_backtest",
+                MacroState.BACKTEST_MODE,
+                "session_start:backtest",
+                "CMD_BACKTEST",
+                "BACKTEST_INTEGRITY_FAIL:RuntimeError",
+            ),
+            (
+                "run_paper",
+                MacroState.PAPER_TRADING_MODE,
+                "session_start:paper",
+                "CMD_PAPER_DEPLOY",
+                "PAPER_PIPELINE_FAIL:RuntimeError",
+            ),
+            (
+                "run_live",
+                MacroState.LIVE_TRADING_MODE,
+                "session_start:live",
+                "CMD_LIVE_DEPLOY",
+                "LIVE_PIPELINE_FAIL:RuntimeError",
+            ),
+        ],
+    )
+    def test_pipeline_failure_preserves_exact_events(
+        self,
+        method_name: str,
+        mode: MacroState,
+        session_trigger: str,
+        start_trigger: str,
+        failure_trigger: str,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[StateTransition] = []
+        bus.subscribe(StateTransition, events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        events.clear()
+
+        def fail_pipeline() -> None:
+            raise RuntimeError("pipeline boom")
+
+        orch._run_pipeline = fail_pipeline  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="pipeline boom"):
+            getattr(orch, method_name)()
+
+        assert orch.macro_state == MacroState.DEGRADED
+        assert orch._events_prelogged is False
+        assert [
+            (
+                event.sequence,
+                event.machine_name,
+                event.from_state,
+                event.to_state,
+                event.trigger,
+            )
+            for event in events
+        ] == [
+            (
+                2,
+                "tick_pipeline",
+                "WAITING_FOR_MARKET_EVENT",
+                "WAITING_FOR_MARKET_EVENT",
+                session_trigger,
+            ),
+            (3, "global_stack", "READY", mode.name, start_trigger),
+            (4, "global_stack", mode.name, "DEGRADED", failure_trigger),
+        ]
+
+    @pytest.mark.parametrize(
+        ("method_name", "completion_trigger", "expected_state"),
+        [
+            ("run_backtest", "BACKTEST_COMPLETE", MacroState.DEGRADED),
+            ("run_paper", "SESSION_FEED_COMPLETE", MacroState.PAPER_TRADING_MODE),
+            ("run_live", "SESSION_FEED_COMPLETE", MacroState.LIVE_TRADING_MODE),
+        ],
+    )
+    def test_completion_veto_preserves_mode_specific_exception_boundary(
+        self,
+        method_name: str,
+        completion_trigger: str,
+        expected_state: MacroState,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+
+        def veto_completion(record: TransitionRecord) -> None:
+            if record.trigger == completion_trigger:
+                raise RuntimeError("completion veto")
+
+        orch._macro.on_transition(veto_completion)
+        with pytest.raises(RuntimeError, match="completion veto"):
+            getattr(orch, method_name)()
+
+        assert orch.macro_state == expected_state
+        assert orch._events_prelogged is False
 
 
 # ── Macro lifecycle remediation (global stack audit) ──────────────────
@@ -2017,6 +2387,72 @@ class TestEdgeCostGate:
 
         pos = orch._positions.get("AAPL")
         assert pos.quantity != 0  # gate disabled, order allowed
+
+
+class TestExecutionCostContext:
+    def test_cost_inputs_are_shared_by_gate_and_position_planner(self) -> None:
+        from feelies.execution.position_manager import PositionPlan, round_trip_cost_bps
+
+        class _RecordingPositionManager:
+            market = None
+
+            def plan(self, *, desired, current, market=None, config=None):
+                del desired, current, config
+                self.market = market
+                return PositionPlan()
+
+        clock = SimulatedClock(start_ns=1000)
+        manager = _RecordingPositionManager()
+        orch = _build_orchestrator(clock)
+        orch._position_manager = manager
+        orch._cost_model = DefaultCostModel(DefaultCostModelConfig())
+        orch.boot(_ExecutionCostConfig())
+
+        replacement_cost_model = DefaultCostModel(DefaultCostModelConfig())
+        orch._cost_model = replacement_cost_model
+        quote = _make_quote(bid="99.80", ask="100.20")
+        signal = _make_signal(quote)
+        orch._plan_for_signal(
+            signal,
+            Position(symbol="AAPL"),
+            target_qty=100,
+            quote=quote,
+        )
+
+        market = manager.market
+        assert market is not None
+        assert market.quote == quote
+        assert market.cost_model is replacement_cost_model
+        assert market.market_impact_factor == Decimal("0.73")
+        assert market.max_impact_half_spreads == Decimal("8.5")
+        assert market.within_l1_impact_factor == Decimal("0.21")
+        assert market.permanent_impact_coefficient == Decimal("0.04")
+
+        actual_cost_bps = orch._round_trip_cost_bps(
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=100,
+            quote=quote,
+            is_taker_entry=True,
+            is_short_entry=False,
+        )
+        expected_cost_bps = round_trip_cost_bps(
+            replacement_cost_model,
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=100,
+            mid_price=Decimal("100.00"),
+            half_spread=Decimal("0.20"),
+            is_taker_entry=True,
+            is_short_entry=False,
+            bid_size=quote.bid_size,
+            ask_size=quote.ask_size,
+            market_impact_factor=Decimal("0.73"),
+            max_impact_half_spreads=Decimal("8.5"),
+            within_l1_impact_factor=Decimal("0.21"),
+            permanent_impact_coefficient=Decimal("0.04"),
+        )
+        assert actual_cost_bps == expected_cost_bps
 
 
 # ── G-1 Phase P1: position-manager shadow harness ─────────────────────

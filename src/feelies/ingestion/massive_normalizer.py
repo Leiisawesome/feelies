@@ -111,18 +111,26 @@ def _optional_wire_ts_ns(raw: object) -> int | None:
     return n * _MS_TO_NS
 
 
+def _int_tuple(raw: object, *, allow_scalar: bool = False) -> tuple[int, ...]:
+    if isinstance(raw, list):
+        return tuple(int(value) for value in raw)
+    if allow_scalar and raw is not None:
+        return (int(raw),)  # type: ignore[call-overload]
+    return ()
+
+
+def _first_wire_ts_ns(record: dict, keys: Sequence[str]) -> int | None:  # type: ignore[type-arg]
+    for key in keys:
+        timestamp_ns = _optional_wire_ts_ns(record.get(key))
+        if timestamp_ns is not None:
+            return timestamp_ns
+    return None
+
+
 def _fingerprint_ws_quote(msg: dict) -> str:  # type: ignore[type-arg]
     """Stable hash of WS quote payload fields (sequence reuse detection)."""
-    raw_c = msg.get("c")
-    conditions: tuple[int, ...]
-    if raw_c is not None and not isinstance(raw_c, list):
-        conditions = (int(raw_c),)
-    elif isinstance(raw_c, list):
-        conditions = tuple(int(x) for x in raw_c)
-    else:
-        conditions = ()
-    raw_i = msg.get("i")
-    indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
+    conditions = _int_tuple(msg.get("c"), allow_scalar=True)
+    indicators = _int_tuple(msg.get("i"))
     parts = (
         str(msg["bp"]),
         str(msg["ap"]),
@@ -142,8 +150,7 @@ def _fingerprint_ws_quote(msg: dict) -> str:  # type: ignore[type-arg]
 
 
 def _fingerprint_ws_trade(msg: dict) -> str:  # type: ignore[type-arg]
-    raw_c = msg.get("c")
-    conditions = tuple(int(x) for x in raw_c) if isinstance(raw_c, list) else ()
+    conditions = _int_tuple(msg.get("c"))
     parts = (
         str(msg["p"]),
         str(msg["s"]),
@@ -161,10 +168,8 @@ def _fingerprint_ws_trade(msg: dict) -> str:  # type: ignore[type-arg]
 
 
 def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
-    raw_cond = rec.get("conditions")
-    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
-    raw_ind = rec.get("indicators")
-    indicators = tuple(int(x) for x in raw_ind) if isinstance(raw_ind, list) else ()
+    conditions = _int_tuple(rec.get("conditions"))
+    indicators = _int_tuple(rec.get("indicators"))
     # ``participant_timestamp`` and ``trf_timestamp`` are intentionally part
     # of the fingerprint so that a REST retransmission carrying the same
     # ``sequence_number`` but a corrected participant timestamp is treated
@@ -187,8 +192,7 @@ def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
 
 
 def _fingerprint_rest_trade(rec: dict) -> str:  # type: ignore[type-arg]
-    raw_cond = rec.get("conditions")
-    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+    conditions = _int_tuple(rec.get("conditions"))
     parts = (
         str(rec["price"]),
         str(rec["size"]),
@@ -419,28 +423,10 @@ class MassiveNormalizer:
             if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
 
-            raw_c = msg.get("c")
-            conditions: tuple[int, ...]
-            if raw_c is not None and not isinstance(raw_c, list):
-                conditions = (int(raw_c),)
-            elif isinstance(raw_c, list):
-                conditions = tuple(int(x) for x in raw_c)
-            else:
-                conditions = ()
-
-            raw_i = msg.get("i")
-            indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
-
-            part_ns: int | None = None
-            for key in ("participant_timestamp", "ft"):
-                part_ns = _optional_wire_ts_ns(msg.get(key))
-                if part_ns is not None:
-                    break
-            trf_quote_ns: int | None = None
-            for key in ("trf_timestamp", "y"):
-                trf_quote_ns = _optional_wire_ts_ns(msg.get(key))
-                if trf_quote_ns is not None:
-                    break
+            conditions = _int_tuple(msg.get("c"), allow_scalar=True)
+            indicators = _int_tuple(msg.get("i"))
+            part_ns = _first_wire_ts_ns(msg, ("participant_timestamp", "ft"))
+            trf_quote_ns = _first_wire_ts_ns(msg, ("trf_timestamp", "y"))
 
             # Price / size validation — raises on NaN, Infinity, negative
             # price, or unparseable Decimal.  ``allow_zero=True`` because
@@ -501,17 +487,12 @@ class MassiveNormalizer:
             if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
 
-            raw_c = msg.get("c")
-            conditions = tuple(int(x) for x in raw_c) if isinstance(raw_c, list) else ()
+            conditions = _int_tuple(msg.get("c"))
 
             raw_trft = msg.get("trft")
             trf_ts = int(raw_trft) * _MS_TO_NS if raw_trft is not None else None
 
-            part_trade: int | None = None
-            for key in ("participant_timestamp", "ft"):
-                part_trade = _optional_wire_ts_ns(msg.get(key))
-                if part_trade is not None:
-                    break
+            part_trade = _first_wire_ts_ns(msg, ("participant_timestamp", "ft"))
             corr_raw = msg.get("correction")
             correction = int(corr_raw) if corr_raw is not None else None
 
@@ -617,11 +598,8 @@ class MassiveNormalizer:
             if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
 
-            raw_cond = rec.get("conditions")
-            conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
-
-            raw_ind = rec.get("indicators")
-            indicators = tuple(int(x) for x in raw_ind) if isinstance(raw_ind, list) else ()
+            conditions = _int_tuple(rec.get("conditions"))
+            indicators = _int_tuple(rec.get("indicators"))
 
             raw_part = rec.get("participant_timestamp")
             part_ts = int(raw_part) if raw_part is not None else None
@@ -684,8 +662,7 @@ class MassiveNormalizer:
             if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
 
-            raw_cond = rec.get("conditions")
-            conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+            conditions = _int_tuple(rec.get("conditions"))
 
             raw_part = rec.get("participant_timestamp")
             part_ts = int(raw_part) if raw_part is not None else None

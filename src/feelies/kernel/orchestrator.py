@@ -627,6 +627,7 @@ class Orchestrator:
         self._fill_ledger = fill_ledger
         self._strategy_positions = strategy_positions
         self._cost_model: "CostModel | None" = cost_model
+        self._market_context = MarketContext()
         # BACKTEST bootstrap passes thread_safe_sequences=False (single-
         # threaded replay); paper/live keep the lock.
         _seq_kw = {"thread_safe": thread_safe_sequences}
@@ -1203,6 +1204,22 @@ class Orchestrator:
         try:
             config.validate()
             self._config = config
+            market_impact_factor = Decimal(str(getattr(config, "cost_market_impact_factor", 0.5)))
+            max_impact_half_spreads = Decimal(
+                str(getattr(config, "cost_max_impact_half_spreads", 10.0))
+            )
+            within_l1_impact_factor = Decimal(
+                str(getattr(config, "cost_within_l1_impact_factor", 0.0))
+            )
+            permanent_impact_coefficient = Decimal(
+                str(getattr(config, "cost_permanent_impact_coefficient", 0.0))
+            )
+            self._market_context = MarketContext(
+                market_impact_factor=market_impact_factor,
+                max_impact_half_spreads=max_impact_half_spreads,
+                within_l1_impact_factor=within_l1_impact_factor,
+                permanent_impact_coefficient=permanent_impact_coefficient,
+            )
             if hasattr(config, "stop_loss_per_share"):
                 self._stop_loss_per_share = config.stop_loss_per_share
             if hasattr(config, "trail_activate_per_share"):
@@ -1393,42 +1410,10 @@ class Orchestrator:
                                     True,
                                 )
                             ),
-                            market_impact_factor=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_market_impact_factor",
-                                        0.5,
-                                    )
-                                )
-                            ),
-                            max_impact_half_spreads=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_max_impact_half_spreads",
-                                        10.0,
-                                    )
-                                )
-                            ),
-                            within_l1_impact_factor=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_within_l1_impact_factor",
-                                        0.0,
-                                    )
-                                )
-                            ),
-                            permanent_impact_coefficient=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_permanent_impact_coefficient",
-                                        0.0,
-                                    )
-                                )
-                            ),
+                            market_impact_factor=market_impact_factor,
+                            max_impact_half_spreads=max_impact_half_spreads,
+                            within_l1_impact_factor=within_l1_impact_factor,
+                            permanent_impact_coefficient=permanent_impact_coefficient,
                             passive_non_fill_probability=Decimal(
                                 str(
                                     getattr(
@@ -1528,33 +1513,13 @@ class Orchestrator:
         Exceptions during the pipeline transition to **DEGRADED** and
         re-raise.
         """
-        self._macro.assert_state(MacroState.READY)
-        self._require_safe_session_entry()
-        self._pipeline_abort_requested = False
-        self._micro.reset(trigger="session_start:paper")
-        self._reset_buying_power_phase_for_session()
-        self._bind_router_position_qty_for_rth()
-        self._pending_sized_intents.clear()
-        self._consumed_by_portfolio_ids = None
-        self._reset_regime_session_state()
-        self._macro.transition(
-            MacroState.PAPER_TRADING_MODE,
-            trigger="CMD_PAPER_DEPLOY",
+        self._run_deployment_session(
+            mode=MacroState.PAPER_TRADING_MODE,
+            session_name="paper",
+            command_trigger="CMD_PAPER_DEPLOY",
+            failure_trigger_prefix="PAPER_PIPELINE_FAIL",
+            reset_portfolio_consumption=True,
         )
-        try:
-            self._run_pipeline()
-        except Exception as exc:
-            if self._macro.state == MacroState.PAPER_TRADING_MODE:
-                self._macro.transition(
-                    MacroState.DEGRADED,
-                    trigger=f"PAPER_PIPELINE_FAIL:{type(exc).__name__}",
-                )
-            raise
-        if self._macro.state == MacroState.PAPER_TRADING_MODE:
-            self._macro.transition(
-                MacroState.READY,
-                trigger="SESSION_FEED_COMPLETE",
-            )
 
     def run_live(self) -> None:
         """G2 → G6 → pipeline.
@@ -1565,28 +1530,44 @@ class Orchestrator:
         Normal completion (feed iterator exhausted without exception)
         returns macro to **READY**. Exceptions transition to **DEGRADED**.
         """
+        self._run_deployment_session(
+            mode=MacroState.LIVE_TRADING_MODE,
+            session_name="live",
+            command_trigger="CMD_LIVE_DEPLOY",
+            failure_trigger_prefix="LIVE_PIPELINE_FAIL",
+            reset_portfolio_consumption=False,
+        )
+
+    def _run_deployment_session(
+        self,
+        *,
+        mode: MacroState,
+        session_name: str,
+        command_trigger: str,
+        failure_trigger_prefix: str,
+        reset_portfolio_consumption: bool,
+    ) -> None:
         self._macro.assert_state(MacroState.READY)
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
-        self._micro.reset(trigger="session_start:live")
+        self._micro.reset(trigger=f"session_start:{session_name}")
         self._reset_buying_power_phase_for_session()
         self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
+        if reset_portfolio_consumption:
+            self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
-        self._macro.transition(
-            MacroState.LIVE_TRADING_MODE,
-            trigger="CMD_LIVE_DEPLOY",
-        )
+        self._macro.transition(mode, trigger=command_trigger)
         try:
             self._run_pipeline()
         except Exception as exc:
-            if self._macro.state == MacroState.LIVE_TRADING_MODE:
+            if self._macro.state == mode:
                 self._macro.transition(
                     MacroState.DEGRADED,
-                    trigger=f"LIVE_PIPELINE_FAIL:{type(exc).__name__}",
+                    trigger=f"{failure_trigger_prefix}:{type(exc).__name__}",
                 )
             raise
-        if self._macro.state == MacroState.LIVE_TRADING_MODE:
+        if self._macro.state == mode:
             self._macro.transition(
                 MacroState.READY,
                 trigger="SESSION_FEED_COMPLETE",
@@ -2128,9 +2109,7 @@ class Orchestrator:
             )
             expected_order_ids = {o.order_id for o in orders}
             acks = self._poll_order_router_acks(expected_order_ids)
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
 
             self._micro.transition(
                 MicroState.POSITION_UPDATE,
@@ -2175,9 +2154,7 @@ class Orchestrator:
             self._backend.order_router.submit(order)
             self._bus.publish(order)
         acks = self._poll_order_router_acks({o.order_id for o in orders})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
         self._reconcile_fills(acks, correlation_id)
 
     def _process_tick(self, quote: NBBOQuote) -> None:
@@ -2527,12 +2504,7 @@ class Orchestrator:
             signal = stop_signal
 
         if signal is None:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="no_signal_this_tick",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "no_signal_this_tick")
             return
 
         # Inv-7 single-writer: only synthetic forced-exit signals are first
@@ -2634,12 +2606,7 @@ class Orchestrator:
                 reasons=tuple(reasons_no),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="intent_no_action",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "intent_no_action")
             return
 
         # ── M4 → M5: RISK_CHECK ────────────────────────────────
@@ -2710,12 +2677,7 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="risk_force_flatten_simulated",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "risk_force_flatten_simulated")
             return
 
         # ── M5 branch: risk rejected → M10 ─────────────────────
@@ -2727,12 +2689,7 @@ class Orchestrator:
                 reasons=("risk_check_signal_reject", verdict.reason),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="risk_reject_no_order",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "risk_reject_no_order")
             return
 
         # ── M5 → M6: risk pass, order warranted ────────────────
@@ -2765,12 +2722,7 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="halt_resolution_blackout",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "halt_resolution_blackout")
             return
 
         # G-6: inside the session-flatten window, refuse any new ENTRY-
@@ -2787,12 +2739,7 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="session_flatten_window",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "session_flatten_window")
             return
 
         # BT-6: Reg-SHO / SSR conservative refuse-short.  Under an active
@@ -2808,12 +2755,7 @@ class Orchestrator:
                 reasons=("ssr_suppressed", f"symbol={intent.symbol}"),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="ssr_suppressed",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "ssr_suppressed")
             return
 
         # BT-7: short-locate gate — refuse short sales when borrow is
@@ -2828,12 +2770,7 @@ class Orchestrator:
                 reasons=("locate_unavailable", f"symbol={intent.symbol}"),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="locate_unavailable",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "locate_unavailable")
             return
 
         # H2/H3/H7: REVERSE intents decompose into EXIT(MARKET) +
@@ -2864,12 +2801,7 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="risk_scale_down_to_zero",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "risk_scale_down_to_zero")
             return
 
         # ── M6: Pre-submission risk check on concrete order ─────
@@ -2917,12 +2849,7 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="check_order_force_flatten_simulated",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "check_order_force_flatten_simulated")
             return
 
         if order_verdict.action == RiskAction.REJECT:
@@ -2933,12 +2860,11 @@ class Orchestrator:
                 reasons=("risk_check_order_reject", order_verdict.reason),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger=f"check_order_rejected:{order_verdict.reason}",
-                correlation_id=cid,
+            self._finalize_tick(
+                t_wall_start,
+                cid,
+                f"check_order_rejected:{order_verdict.reason}",
             )
-            self._finalize_tick(t_wall_start, cid)
             return
 
         if order_verdict.action == RiskAction.SCALE_DOWN:
@@ -2962,12 +2888,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="check_order_scale_down_to_zero",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
+                self._finalize_tick(t_wall_start, cid, "check_order_scale_down_to_zero")
                 return
             if scaled_qty != order.quantity:
                 order = replace(order, quantity=scaled_qty)
@@ -3017,12 +2938,7 @@ class Orchestrator:
                         ),
                         trading_intent=intent.intent.name,
                     )
-                    self._micro.transition(
-                        MicroState.LOG_AND_METRICS,
-                        trigger="resting_order_pending",
-                        correlation_id=cid,
-                    )
-                    self._finalize_tick(t_wall_start, cid)
+                    self._finalize_tick(t_wall_start, cid, "resting_order_pending")
                     return
                 self._emit_forced_exit_supersedes_pending_alert(order, cid)
                 self._cancel_resting_for_symbol(order.symbol, cid)
@@ -3039,12 +2955,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="resting_order_pending",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
+                self._finalize_tick(t_wall_start, cid, "resting_order_pending")
                 return
 
         # ── Track order lifecycle (Inv-4) ───────────────────────
@@ -3100,12 +3011,7 @@ class Orchestrator:
                 trigger="order_submit_failed_no_fills",
                 correlation_id=cid,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="order_submit_failed",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "order_submit_failed")
             return
 
         self._bus.publish(order)
@@ -3128,9 +3034,7 @@ class Orchestrator:
             correlation_id=cid,
         )
         acks = self._poll_order_router_acks({order.order_id})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
 
         # ── M8 → M9: POSITION_UPDATE ───────────────────────────
         self._micro.transition(
@@ -3141,17 +3045,22 @@ class Orchestrator:
         self._reconcile_fills(acks, cid)
 
         # ── M9 → M10: LOG_AND_METRICS ──────────────────────────
-        self._micro.transition(
-            MicroState.LOG_AND_METRICS,
-            trigger="position_updated",
-            correlation_id=cid,
-        )
-        self._finalize_tick(t_wall_start, cid)
+        self._finalize_tick(t_wall_start, cid, "position_updated")
 
     # ── Helpers ─────────────────────────────────────────────────────
 
-    def _finalize_tick(self, t_wall_start_ns: int, correlation_id: str) -> None:
-        """Emit tick latency and per-segment timing metrics, then M10 → M0."""
+    def _finalize_tick(
+        self,
+        t_wall_start_ns: int,
+        correlation_id: str,
+        trigger: str,
+    ) -> None:
+        """Enter M10, emit tick timing metrics, then transition to M0."""
+        self._micro.transition(
+            MicroState.LOG_AND_METRICS,
+            trigger=trigger,
+            correlation_id=correlation_id,
+        )
         latency_ns = time.perf_counter_ns() - t_wall_start_ns
         now_ns = self._clock.now_ns()
 
@@ -3328,50 +3237,10 @@ class Orchestrator:
             is_short_entry=is_short_entry,
             bid_size=quote.bid_size,
             ask_size=quote.ask_size,
-            market_impact_factor=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_market_impact_factor",
-                        0.5,
-                    )
-                )
-            )
-            if self._config
-            else None,
-            max_impact_half_spreads=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_max_impact_half_spreads",
-                        10.0,
-                    )
-                )
-            )
-            if self._config
-            else None,
-            within_l1_impact_factor=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_within_l1_impact_factor",
-                        0.0,
-                    )
-                )
-            )
-            if self._config
-            else Decimal("0"),
-            permanent_impact_coefficient=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_permanent_impact_coefficient",
-                        0.0,
-                    )
-                )
-            )
-            if self._config
-            else Decimal("0"),
+            market_impact_factor=self._market_context.market_impact_factor,
+            max_impact_half_spreads=self._market_context.max_impact_half_spreads,
+            within_l1_impact_factor=self._market_context.within_l1_impact_factor,
+            permanent_impact_coefficient=(self._market_context.permanent_impact_coefficient),
         )
 
     def _reversal_passes_combined_edge_gate(
@@ -3836,9 +3705,7 @@ class Orchestrator:
 
                 self._bus.publish(order)
                 acks = self._poll_order_router_acks({order_id})
-                for ack in acks:
-                    self._bus.publish(ack)
-                    self._apply_ack_to_order(ack)
+                self._publish_and_apply_order_acks(acks)
                 self._reconcile_fills(acks, correlation_id)
                 # A reject / zero-fill ack still leaves the position open.
                 # Surface it as a failure so the residual alert sees it.
@@ -4153,53 +4020,10 @@ class Orchestrator:
         return self._position_manager.plan(
             desired=desired,
             current=current_position,
-            market=MarketContext(
+            market=replace(
+                self._market_context,
                 quote=quote,
                 cost_model=self._cost_model,
-                market_impact_factor=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_market_impact_factor",
-                            0.5,
-                        )
-                    )
-                )
-                if self._config
-                else None,
-                max_impact_half_spreads=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_max_impact_half_spreads",
-                            10.0,
-                        )
-                    )
-                )
-                if self._config
-                else None,
-                within_l1_impact_factor=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_within_l1_impact_factor",
-                            0.0,
-                        )
-                    )
-                )
-                if self._config
-                else Decimal("0"),
-                permanent_impact_coefficient=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_permanent_impact_coefficient",
-                            0.0,
-                        )
-                    )
-                )
-                if self._config
-                else Decimal("0"),
             ),
             config=PositionManagerConfig(
                 shadow=not self._position_manager_drive,
@@ -4445,12 +4269,7 @@ class Orchestrator:
                 # open position) directly with a properly-tagged flatten,
                 # so defer to it here rather than also submitting this leg.
                 self._escalate_risk(cid)
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="reverse_exit_force_flatten_escalation",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
+                self._finalize_tick(t_wall_start, cid, "reverse_exit_force_flatten_escalation")
                 return
             # BACKTEST_MODE has no reachable lockdown transition, so there
             # is no compensating flatten to rely on — normalize to ALLOW so
@@ -4689,21 +4508,14 @@ class Orchestrator:
                 correlation_id=cid,
             )
             acks = self._poll_order_router_acks({exit_order.order_id})
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
             self._micro.transition(
                 MicroState.POSITION_UPDATE,
                 trigger="reverse_acks_after_failed_exit_submit",
                 correlation_id=cid,
             )
             self._reconcile_fills(acks, cid)
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="reverse_aborted_exit_submit_failed",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "reverse_aborted_exit_submit_failed")
             return
 
         self._bus.publish(exit_order)
@@ -4745,9 +4557,7 @@ class Orchestrator:
         if entry_order is not None and entry_submitted_ok:
             expected_order_ids.add(entry_order.order_id)
         acks = self._poll_order_router_acks(expected_order_ids)
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
 
         # ── M8 → M9: POSITION_UPDATE ──────────────────────────────
         self._micro.transition(
@@ -4775,12 +4585,7 @@ class Orchestrator:
             )
 
         # ── M9 → M10: LOG_AND_METRICS ─────────────────────────────
-        self._micro.transition(
-            MicroState.LOG_AND_METRICS,
-            trigger="reverse_position_updated",
-            correlation_id=cid,
-        )
-        self._finalize_tick(t_wall_start, cid)
+        self._finalize_tick(t_wall_start, cid, "reverse_position_updated")
 
     def _try_build_order_from_intent(
         self,
@@ -4791,7 +4596,7 @@ class Orchestrator:
         *,
         exec_style: ExecStyle | None = None,
     ) -> tuple[OrderRequest | None, str | None]:
-        """Like :meth:`_build_order_from_intent` but returns a failure token.
+        """Construct an order and return a stable failure token on suppression.
 
         ``exec_style`` (P4): when ``ExecStyle.PASSIVE`` is supplied by the
         planner (a discretionary working leg, e.g. an urgency-driven TRIM),
@@ -4930,36 +4735,6 @@ class Orchestrator:
             None,
         )
 
-    def _build_order_from_intent(
-        self,
-        intent: OrderIntent,
-        verdict: RiskVerdict,
-        correlation_id: str,
-        quote: NBBOQuote | None = None,
-    ) -> OrderRequest | None:
-        """Construct an OrderRequest from an OrderIntent.
-
-        order_id is derived from correlation_id + sequence via SHA-256
-        so that replay of identical events produces identical order IDs
-        (invariant 5).  uuid4 is forbidden here.
-
-        The intent's ``target_quantity`` is the pre-computed quantity
-        from the IntentTranslator (which may include position sizer
-        output).  ``verdict.scaling_factor`` is applied on top for
-        risk-driven scaling.
-
-        When ``_use_passive_entries`` is set and ``quote`` is provided,
-        entry/exit orders use LIMIT at the near BBO.  Stop-loss exits
-        always use MARKET (invariant 11: fail-safe).
-        """
-        order, _reason = self._try_build_order_from_intent(
-            intent,
-            verdict,
-            correlation_id,
-            quote,
-        )
-        return order
-
     @staticmethod
     def _compose_scaled_quantity(base_quantity: int, *factors: float) -> int:
         """Apply the tightest risk cap exactly once to ``base_quantity``."""
@@ -5050,9 +4825,7 @@ class Orchestrator:
             return True
         accepted = cancel_fn(order_id)
         acks = self._poll_order_router_acks({order_id})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
         self._reconcile_fills(acks, order.correlation_id)
         # Only resolve locally when the router rejected the cancel
         # (e.g. unknown id, or backtest non-MOC paths with no resting
@@ -5172,9 +4945,7 @@ class Orchestrator:
         }
         cancel_acks = self._poll_order_router_acks(cancel_order_ids)
         if cancel_acks:
-            for ack in cancel_acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(cancel_acks)
             self._reconcile_fills(cancel_acks, cid)
 
     def _poll_order_router_acks(
@@ -5208,6 +4979,12 @@ class Orchestrator:
                 deferred.append(ack)
         self._deferred_router_acks.extend(deferred)
         return matched
+
+    def _publish_and_apply_order_acks(self, acks: list[OrderAck]) -> None:
+        """Publish router acks in order, then advance their order state machines."""
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
 
     def _reject_order_after_submit_failure(
         self,
@@ -5331,9 +5108,7 @@ class Orchestrator:
         t0 = time.perf_counter_ns()
         acks = self._poll_order_router_acks()
         if acks:
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
             self._reconcile_fills(acks, correlation_id)
             # P4b: escalate any working-exit reduction that terminated
             # unfilled to a guaranteed MARKET fallback (after reconcile, so
@@ -6502,9 +6277,7 @@ class Orchestrator:
             self._reject_order_after_submit_failure(event, exc)
             return
         acks = self._poll_order_router_acks({event.order_id})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
         self._reconcile_fills(acks, event.correlation_id)
 
     # ── Configuration and data integrity ────────────────────────────
@@ -6883,9 +6656,7 @@ class Orchestrator:
             self._backend.order_router.submit(order)
             self._bus.publish(order)
             acks = self._poll_order_router_acks({order_id})
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
             self._reconcile_fills(acks, correlation_id)
         except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
             logger.exception(
