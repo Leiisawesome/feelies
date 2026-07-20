@@ -552,3 +552,5 @@ appended below (Lei, 2026-07-18).*
     **PAUSE-AND-HARVEST** with reopening conditions in entry 7.
 
 11. Success matrix distilled — pack-14; binds any reopened round.
+
+12. reopening condition 3 concretized — pack-15

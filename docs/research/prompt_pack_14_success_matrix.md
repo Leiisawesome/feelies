@@ -169,3 +169,5 @@ Before any future candidate consumes a census:
 ---
 
 *Every number above traces to a committed artifact with provenance. The program that produced them closed with its integrity intact; this matrix is what it was for.*
+
+companion doctrine: pack-15
