@@ -1,42 +1,7 @@
-"""Wiring e2e for pro_burst_revert_v1 driven by both of its feeder alphas.
+"""End-to-end wiring for ``pro_burst_revert_v1`` and its signal feeders.
 
-Boots ``sig_inventory_revert_v1`` and ``sig_hawkes_burst_v1`` (SIGNAL
-feeders) alongside ``pro_burst_revert_v1`` (PORTFOLIO) through
-``build_platform`` over a 360-second deterministic multi-symbol synthetic
-stream.
-
-What this test guarantees
---------------------------
-
-* All three alphas register without ``AlphaLoadError``,
-  ``LayerValidationError``, or wiring failures.
-* The composition layer is fully wired.
-* At least one 300-second boundary fires at least one
-  ``SizedPositionIntent`` tagged with
-  ``strategy_id == "pro_burst_revert_v1"``.
-* A full backtest reaches ``MacroState.READY`` without exception.
-* Two replays of the same fixture produce byte-identical
-  ``SizedPositionIntent`` streams (Inv-5 determinism), verifying that
-  the mechanism-cap arithmetic in ``CrossSectionalRanker`` is
-  deterministic.
-
-Relationship to test_mixed_mechanism_universe
----------------------------------------------
-
-``tests/integration/test_mixed_mechanism_universe.py`` drives
-``CompositionEngine`` directly with hand-crafted
-``CrossSectionalContext`` events to isolate the mechanism-cap path.
-This test is the complementary full-stack counterpart: it verifies
-that the two sensor pipelines register and the bus wiring from
-L1 → L2 → L3 holds end-to-end.
-
-Active-aggregator note
------------------------
-
-In v0.2 passive-aggregator mode the composition cycle fires but
-emits degenerate intents (empty ``target_positions``).  The
-mechanism-breakdown assertions from ``test_mixed_mechanism_universe``
-therefore only activate once the Phase 3.5 active aggregator ships.
+The suite covers registration, composition, 300-second intent emission, ready
+state, and deterministic mechanism-cap arithmetic.
 """
 
 from __future__ import annotations
@@ -329,7 +294,7 @@ def test_mixed_mechanism_e2e_composition_layer_is_wired() -> None:
         orchestrator._composition_metrics_collector,
         HorizonMetricsCollector,
     )
-    # sig_hawkes_burst_v1 opts into hazard_exit.enabled=true (audit P0 H-1).
+    # The Hawkes alpha opts into hazard exits.
     assert isinstance(orchestrator._hazard_exit_controller, HazardExitController)
 
 

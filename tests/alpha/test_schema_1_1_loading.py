@@ -1,25 +1,4 @@
-"""Loader tests for schema_version 1.1 dispatch (§6.6 + §8.7).
-
-After workstreams D.1 + D.2, the matrix collapses to:
-
-  - (no schema_version)           ⇒ rejected (D.1 hard-removal).
-  - ("1.0", any layer)            ⇒ rejected (D.1 hard-removal).
-  - ("2.0+", any layer)           ⇒ rejected (unsupported version).
-  - (1.1, no layer)               ⇒ rejected (§8.7 mandatory layer).
-  - (1.1, LEGACY_SIGNAL)          ⇒ rejected (D.2 hard-removal).
-  - (1.1, SIGNAL/PORTFOLIO)       ⇒ accepted via dedicated layer paths.
-  - (1.1, SENSOR)                 ⇒ rejected with phase-not-implemented.
-  - (1.1, unknown layer)          ⇒ rejected with allowed-layers list.
-
-Also covers:
-  - Loaded ``AlphaManifest`` carries ``layer`` when set.
-  - The LayerValidator's G14 (data scope) and G15 (fill-model) gates
-    fire for malformed declarations on schema-1.1 specs.
-
-Workstream D.2: the base spec is now a ``layer: SIGNAL`` minimal alpha.
-LEGACY_SIGNAL acceptance tests have been replaced with a single
-rejection-path test pinning the post-D.2 contract.
-"""
+"""Loader tests for schema 1.1 layer dispatch and validation."""
 
 from __future__ import annotations
 
@@ -31,7 +10,7 @@ from feelies.alpha.layer_validator import LayerValidationError
 from feelies.alpha.loader import AlphaLoadError, AlphaLoader
 
 
-# ── Minimal valid SIGNAL spec (post-D.2 canonical fixture) ──────────────
+# Minimal valid signal spec.
 
 
 _BASE_SPEC = {
@@ -65,40 +44,25 @@ def _spec(**overrides: object) -> dict[str, object]:
     return out
 
 
-# ── Schema-1.0 hard-removal (workstream D.1) ────────────────────────────
+# ── Schema 1.0 rejection ────────────────────────────────────────────────
 
 
 def test_schema_1_0_is_rejected_post_d1() -> None:
-    """``schema_version: "1.0"`` was removed in workstream D.1.
-
-    The loader must reject the legacy version with a message pointing
-    at the migration cookbook.  Authors must migrate to
-    ``schema_version: "1.1"`` and pick one of the still-loadable layer
-    values (``SIGNAL`` or ``PORTFOLIO``).
-    """
+    """Reject schema 1.0 with migration guidance."""
     spec = _spec(schema_version="1.0")
     with pytest.raises(AlphaLoadError, match="unsupported schema_version"):
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
 def test_schema_1_0_with_layer_field_is_also_rejected() -> None:
-    """Even a 1.0 spec carrying a ``layer:`` field is rejected.
-
-    The version-level rejection fires before any layer-specific check;
-    this guards against authors who half-migrate their schema and
-    leave the version pin behind.
-    """
+    """Version rejection takes precedence over layer validation."""
     spec = _spec(schema_version="1.0", layer="SIGNAL")
     with pytest.raises(AlphaLoadError, match="unsupported schema_version"):
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
 def test_missing_schema_version_is_rejected() -> None:
-    """Omitting ``schema_version:`` no longer defaults to 1.0.
-
-    Pre-D.1 the loader emitted a warning and silently fell back to
-    schema 1.0; post-D.1 the field is mandatory.
-    """
+    """Require an explicit schema version."""
     spec = _spec()
     spec.pop("schema_version", None)
     with pytest.raises(AlphaLoadError, match="missing required 'schema_version'"):
@@ -115,23 +79,17 @@ def test_schema_1_1_without_layer_is_rejected() -> None:
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
-# ── (1.1, LEGACY_SIGNAL): rejected (workstream D.2) ─────────────────────
+# ── (1.1, LEGACY_SIGNAL): rejected ─────────────────────────────────────
 
 
 def test_schema_1_1_legacy_signal_layer_is_rejected_post_d2() -> None:
-    """``layer: LEGACY_SIGNAL`` was retired by workstream D.2.
-
-    The loader must hard-reject the legacy layer with a migration
-    pointer.  There is no longer a sunset banner, no fallback dispatch
-    — every alpha author must declare ``SIGNAL`` or ``PORTFOLIO``.
-    """
+    """Reject ``LEGACY_SIGNAL`` with a migration pointer."""
     spec = _spec(schema_version="1.1", layer="LEGACY_SIGNAL")
     with pytest.raises(AlphaLoadError) as excinfo:
         AlphaLoader().load_from_dict(spec, source="<test>")
     msg = str(excinfo.value)
     assert "LEGACY_SIGNAL" in msg
-    # Every rejection must direct authors to the migration cookbook so
-    # they have a known, stable destination URL to follow.
+    # Point authors to the stable migration guide.
     assert "schema_1_0_to_1_1.md" in msg
 
 
@@ -144,15 +102,15 @@ def test_schema_1_1_signal_loads_ok() -> None:
     assert loaded.manifest.layer == "SIGNAL"
 
 
-# ── (1.1, future layers): rejected with phase-not-implemented msg ───────
+# Unsupported schema-1.1 layers are rejected clearly.
 
 
 @pytest.mark.parametrize(
     "layer,expected_phase",
     [
-        # Phase 3-α activates SIGNAL — its acceptance test lives in
+        # SIGNAL acceptance lives in
         # tests/alpha/test_signal_layer_loader.py.
-        # Phase 4 activates PORTFOLIO — its acceptance test lives in
+        # PORTFOLIO acceptance lives in
         # tests/composition/test_portfolio_loader.py.
         ("SENSOR", "Phase 2"),
     ],
@@ -166,9 +124,7 @@ def test_schema_1_1_future_layers_rejected_with_phase_message(
     msg = str(excinfo.value)
     assert layer in msg
     assert expected_phase in msg
-    # Post-D.2 the only loadable layer values are SIGNAL and PORTFOLIO,
-    # so the loader's not-yet-implemented message must direct authors
-    # to one of them rather than to the retired LEGACY_SIGNAL fallback.
+    # Direct authors to a supported loadable layer.
     assert "SIGNAL" in msg
 
 
@@ -181,8 +137,7 @@ def test_schema_1_1_unknown_layer_rejected_with_taxonomy() -> None:
         AlphaLoader().load_from_dict(spec, source="<test>")
     msg = str(excinfo.value)
     assert "MAGIC" in msg
-    # Post-D.2 the recognised set is SIGNAL / PORTFOLIO / SENSOR.
-    # LEGACY_SIGNAL is no longer enumerated as a recognised value.
+    # LEGACY_SIGNAL is not a recognized layer.
     for valid in ("SIGNAL", "PORTFOLIO", "SENSOR"):
         assert valid in msg
     assert "LEGACY_SIGNAL" not in msg
@@ -256,14 +211,7 @@ def test_g15_inactive_when_fill_model_absent() -> None:
 
 
 def test_layer_validator_fires_on_every_schema_1_1_spec() -> None:
-    """LayerValidator now runs unconditionally on every accepted spec.
-
-    Pre-D.1 schema 1.0 bypassed the LayerValidator; post-D.1 schema 1.0
-    is rejected outright, so every spec the loader accepts has been
-    through the LayerValidator's gates.  This test pins that property
-    by feeding a malformed ``data_sources`` block on a SIGNAL spec and
-    asserting G14 fires.
-    """
+    """Every accepted spec passes through ``LayerValidator``."""
     spec = _spec(
         schema_version="1.1",
         layer="SIGNAL",

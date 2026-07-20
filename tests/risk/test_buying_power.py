@@ -1,4 +1,4 @@
-"""Unit tests for Reg-T buying-power helpers (BT-15)."""
+"""Unit tests for Reg-T buying-power helpers."""
 
 from __future__ import annotations
 
@@ -37,9 +37,7 @@ def test_unimplemented_account_type_raises() -> None:
 
 
 def test_zero_equity_returns_zero_limit() -> None:
-    """Audit backlog item (risk_engine_audit_2026-07-02.md §9, P2 item 8):
-    the equity <= 0 branch had no direct unit test — see Finding FS-2 for
-    why this specific behavior (a full block on ENTRY orders) matters."""
+    """Zero equity blocks entry buying power in every phase."""
     cfg = BuyingPowerConfig(account_type="margin_25k")
     assert buying_power_limit(Decimal("0"), BuyingPowerPhase.INTRADAY, cfg) == Decimal("0")
     assert buying_power_limit(Decimal("0"), BuyingPowerPhase.OVERNIGHT, cfg) == Decimal("0")

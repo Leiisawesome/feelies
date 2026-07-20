@@ -14,7 +14,7 @@ class FailureMode(Enum):
     """Structured response category for each error class.
 
     Lets handlers branch on the intended reaction without parsing
-    docstrings (audit P2-6).  Each :class:`FeeliesError` subclass declares
+    docstrings. Each :class:`FeeliesError` subclass declares
     its ``failure_mode`` so the prose in the docstring and the
     machine-readable category cannot drift apart.
     """

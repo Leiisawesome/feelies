@@ -254,9 +254,7 @@ class TestMarkToMarketExposureAndDrawdown:
     ) -> None:
         """Open losses must be visible to the drawdown guard.
 
-        Realized PnL is zero; only unrealized moves.  Pre-fix this
-        would have silently passed because ``_is_drawdown_breached``
-        used realized-only equity.
+        Realized PnL stays zero; the unrealized loss alone must trigger.
         """
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
@@ -342,7 +340,7 @@ class TestSizedIntentMarkSelection:
 
 
 class TestSizedIntentDroppedLegAlert:
-    """Audit R4: per-leg PORTFOLIO veto must surface a diagnostic Alert.
+    """A per-leg PORTFOLIO veto must emit a diagnostic alert.
 
     Without the Alert, a partial portfolio-construction execution
     silently executes the surviving legs without re-validating any
@@ -457,13 +455,7 @@ class TestSizedIntentDrawdownAbortsWholeIntent:
 
 
 class TestPortfolioOrderG12Disclosure:
-    """Audit R3: PORTFOLIO orders must carry the per-symbol disclosed cost.
-
-    Without the stamp, the post-fill cost-vs-disclosure stress alert
-    in the orchestrator (only fires when ``g12_disclosed_cost_total_bps
-    > 0``) is silently disabled for every PORTFOLIO leg — and PORTFOLIO
-    is the only production-reachable order path post-D.2.
-    """
+    """Portfolio orders carry per-symbol disclosed cost."""
 
     def test_portfolio_order_carries_disclosed_cost_per_symbol(
         self, config: RiskConfig, store: MemoryPositionStore
@@ -511,13 +503,7 @@ class TestPortfolioOrderG12Disclosure:
 
 
 class TestSizedIntentCumulativeGrossCap:
-    """Audit R-1: the gross cap must bind across legs of one intent.
-
-    Each leg's ``check_order`` previously saw only the pre-intent
-    ``positions`` snapshot, so K legs each individually under the cap
-    could collectively breach it.  ``build_sized_intent_orders`` now
-    threads the running admitted gross into ``additional_exposure``.
-    """
+    """The gross cap binds cumulatively across every admitted intent leg."""
 
     def test_second_leg_dropped_when_aggregate_breaches_cap(
         self, store: MemoryPositionStore
@@ -564,7 +550,7 @@ class TestSizedIntentCumulativeGrossCap:
 
 
 class TestSizedIntentRaisingCheckContained:
-    """Audit R-2: a raising per-leg check_order must not propagate."""
+    """A raising per-leg ``check_order`` must not propagate."""
 
     def test_raising_leg_is_veto_dropped(self, config: RiskConfig) -> None:
         engine = BasicRiskEngine(config)
@@ -603,7 +589,7 @@ class TestSizedIntentRaisingCheckContained:
 
 
 class TestNonPositiveEquityForceFlattens:
-    """Audit R-6: a wiped-out book must force-flatten, never size against
+    """A wiped-out book must force-flatten, never size against
     initial capital it no longer has — independent of drawdown config."""
 
     def test_negative_equity_force_flattens_even_with_loose_drawdown(
@@ -628,20 +614,7 @@ class TestNonPositiveEquityForceFlattens:
     def test_negative_equity_force_flattens_entry_with_buying_power_wired(
         self, store: MemoryPositionStore
     ) -> None:
-        """Audit FS-2 (risk_engine_audit_2026-07-02.md).
-
-        Reproduces the bootstrap-realistic configuration (``bootstrap.py``
-        wires ``BuyingPowerConfig`` unconditionally for every mode): before
-        the FS-2 fix, ``_check_buying_power`` ran ahead of
-        ``_check_exposure_and_drawdown`` inside ``check_order`` and
-        ``buying_power_limit`` returns ``Decimal("0")`` for non-positive
-        equity, so an ENTRY order was rejected with
-        ``INSUFFICIENT_BUYING_POWER`` instead of reaching the intended
-        unconditional ``FORCE_FLATTEN``.  The prior test in this class
-        (``test_negative_equity_force_flattens_even_with_loose_drawdown``)
-        does not catch this because it constructs the engine with no
-        ``buying_power_config`` at all.
-        """
+        """Force-flatten nonpositive equity before buying-power checks."""
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
             max_gross_exposure_pct=10.0,
@@ -663,7 +636,7 @@ class TestNonPositiveEquityForceFlattens:
 
 
 class TestRegimeMissingDataFailsSafe:
-    """Audit R-3: a configured engine with no committed posterior for the
+    """A configured engine with no committed posterior for the
     symbol tightens to min(scales), not the 1.0 baseline."""
 
     def test_missing_posterior_uses_min_scale(self, store: MemoryPositionStore) -> None:
@@ -698,7 +671,7 @@ class TestRegimeMissingDataFailsSafe:
         assert engine._regime_scaling("AAPL") <= 1.0
 
     def test_nan_posterior_fails_safe_to_min_scale_not_baseline(self) -> None:
-        """Audit FS (risk_engine_audit_2026-07-02.md, §3.2).
+        """Missing regime data tightens limits fail-safe.
 
         A third-party ``RegimeEngine`` that fails to sanitize its own
         posterior (the shipped ``HMM3StateFractional`` always does) could
@@ -759,15 +732,7 @@ class TestSizedIntentScaleDownDecimal:
         config: RiskConfig,
         store: MemoryPositionStore,
     ) -> None:
-        """Audit FS-3 (risk_engine_audit_2026-07-02.md).
-
-        2 x 0.1 = 0.2 rounds to 0 shares (``ROUND_HALF_UP``).  Before the
-        FS-3 fix this was floored to a minimum 1-share order regardless of
-        how aggressively the risk engine intended to scale down; the leg
-        must instead drop, mirroring the SIGNAL path's
-        ``_compose_scaled_quantity`` + ``scaled_qty <= 0`` -> ``NO_ORDER``
-        behavior in the orchestrator.
-        """
+        """Drop a sized-intent leg when risk scaling rounds it to zero."""
         engine = BasicRiskEngine(config)
         store.update("AAPL", 0, Decimal("100"))
         store.update_mark("AAPL", Decimal("100"))

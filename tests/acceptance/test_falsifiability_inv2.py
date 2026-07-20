@@ -1,6 +1,6 @@
-"""Audit P2-5 — executable Inv-2 (falsifiability) gate for the SIGNAL fleet.
+"""Executable Inv-2 falsifiability gate for the SIGNAL fleet.
 
-The audit recommended promoting the per-alpha falsification criteria from
+Promote per-alpha falsification criteria from
 YAML prose into an enforced check.  Inv-2 requires falsifiability be
 *defined before testing* — every shipped ``layer: SIGNAL`` alpha must
 therefore declare:

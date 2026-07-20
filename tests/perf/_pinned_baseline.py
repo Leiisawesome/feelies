@@ -40,16 +40,7 @@ class PinnedBaseline:
     host_label: str
     baseline_best_seconds: float
     secondary_best_seconds: float
-    """Phase-4.1 calls this 'extended'.
-
-    Workstream-D update — the original generic shape served two perf
-    gates: Phase-3 (``mixed_best_seconds``) and Phase-4.1
-    (``extended_best_seconds``).  The Phase-3 gate
-    (``test_signal_layer_no_regression``) was retired with the
-    ``trade_cluster_drift`` reference alpha (D.2); the field is kept
-    generic so a future perf gate can re-use the helper without
-    schema churn.
-    """
+    """Secondary timing, named ``extended`` by the decay benchmark."""
 
 
 def _load_json() -> dict[str, dict[str, dict[str, float | str]]]:
@@ -71,27 +62,14 @@ def load_pinned_baseline(
     section: str,
     secondary_key: str,
 ) -> PinnedBaseline | None:
-    """Look up the pinned baseline for the running host, or return ``None``.
-
-    Parameters
-    ----------
-    section :
-        ``'phase4_1_decay_weighting'`` — the per-test-section key
-        written by ``record_perf_baseline.py``.  Workstream-D retired
-        ``'phase3_signal_layer'`` together with the
-        ``trade_cluster_drift`` reference alpha; legacy entries on
-        disk are still loadable.
-    secondary_key :
-        ``'extended_best_seconds'`` for the phase-4.1 gate.
-    """
+    """Return one baseline field for the running host, if configured."""
     host_label = os.environ.get("PERF_HOST_LABEL", "").strip()
     if not host_label:
         return None
     data = _load_json()
     host_blob = data["hosts"].get(host_label)
     if host_blob is None:
-        # Greppable miss line so CI logs can show "we tried but
-        # found nothing" without flipping the test red.
+        # Report optional baseline misses without failing the test.
         print(
             f"PERF_BASELINE_MISS host_label={host_label!r} "
             f"section={section!r} reason=host_not_in_baseline_file"

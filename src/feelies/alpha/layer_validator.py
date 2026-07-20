@@ -1,17 +1,6 @@
-"""Layer-validation gates for the three-layer architecture (§6.6).
+"""Three-layer architecture validation gates.
 
-This module owns the architectural compliance gates G1-G16 enumerated
-in ``alphas/SCHEMA.md`` and ``docs/three_layer_architecture.md`` §6.6.
-
-Phase 3-α status
-----------------
-
-Per §10 of ``docs/three_layer_architecture.md`` the Phase-3-α
-slice activates **G2, G4, G5, G6, G7, G8, G12, G13** for the new
-``layer: SIGNAL`` specs.  G14 and G15 remain the universally-active
-gates from Phase 1.  G1, G3, G9, G10, G11 stay scaffolded for Phase 4
-(composition layer) and G16 stays scaffolded for Phase 3.1
-(mechanism enforcement).
+This module owns G1-G16 as defined in ``alphas/SCHEMA.md``.
 
 Each newly active gate is *purely structural* — it operates on the
 raw YAML spec dict without invoking the alpha loader's compilation
@@ -22,8 +11,8 @@ into an AST) live in the dedicated parsers
 re-used here so a single error class
 (:class:`LayerValidationError`) is raised from the gate path.
 
-Wiring contract
----------------
+Wiring
+------
 
 The loader invokes :py:meth:`LayerValidator.validate` on every
 ``schema_version: "1.1"`` spec after the syntactic schema check has
@@ -122,14 +111,7 @@ class UnauthorizedMechanismDependencyError(TrendMechanismValidationError):
 
 
 class UnbackedSignatureSensorError(TrendMechanismValidationError):
-    """G16 rule 10 — a SIGNAL alpha declares a ``l1_signature_sensors``
-    entry that is not in its ``depends_on_sensors``.
-
-    A signature sensor the alpha does not depend on (and therefore
-    cannot consume in ``evaluate``) is a *cosmetic fingerprint*: it
-    satisfies the rule-5 family-marker check on paper while the signal
-    logic reads something else entirely (audit P1-4).  The mechanism a
-    SIGNAL claims must be backed by a real sensor dependency."""
+    """A signature sensor is missing from the alpha's dependencies."""
 
 
 class MissingTrendMechanismError(TrendMechanismValidationError):
@@ -162,19 +144,7 @@ _FAMILY_HALF_LIFE_RANGES_SECONDS: dict[str, tuple[int, int]] = {
 
 
 _FAMILY_FINGERPRINT_SENSORS: dict[str, tuple[str, ...]] = {
-    # sensor_audit_2026-07-02 P1: ``book_imbalance`` added alongside
-    # ``kyle_lambda_60s`` / ``micro_price``.  It is algebraically the
-    # level-invariant transform of the micro-price deviation from mid
-    # (``(micro - mid)/spread = book_imbalance / 2`` —
-    # ``sensors/impl/book_imbalance.py:11-21``), so it is a genuine,
-    # independently-computed KYLE_INFO L1 signature in its own right, not a
-    # derivative of ``micro_price``.  Without this entry, an alpha that reads
-    # ``book_imbalance`` but not ``micro_price`` (e.g. ``sig_benign_midcap_v1``)
-    # had no way to satisfy rule 5 honestly — it either declared a
-    # ``micro_price``/``kyle_lambda_60s`` dependency it never read (a cosmetic
-    # fingerprint rule 10 cannot detect, since rule 10 only checks
-    # ``l1_signature_sensors`` against ``depends_on_sensors``, not against
-    # what ``evaluate()`` actually reads) or failed to load.
+    # Book imbalance is the level-invariant micro-price deviation signature.
     "KYLE_INFO": ("kyle_lambda_60s", "micro_price", "book_imbalance"),
     "INVENTORY": ("quote_replenish_asymmetry",),
     "HAWKES_SELF_EXCITE": ("hawkes_intensity",),
@@ -185,12 +155,7 @@ _FAMILY_FINGERPRINT_SENSORS: dict[str, tuple[str, ...]] = {
 
 _HORIZON_RATIO_FLOOR: float = 0.5
 _HORIZON_RATIO_CEILING: float = 4.0
-# sensor_audit_2026-07-02 P2: soft warning band around the hard G16 rule-3
-# bounds above. Purely advisory (logs, never raises, never blocks a load) —
-# a horizon/half-life ratio landing this close to [floor, ceiling] means a
-# small future expected_half_life_seconds recalibration (e.g. from a decay
-# re-study) could silently flip a currently-passing alpha into a rule-3
-# rejection on its next load with no advance notice.
+# Warn when minor half-life recalibration could cross a hard ratio bound.
 _HORIZON_RATIO_WARN_MARGIN: float = 0.05
 
 
@@ -198,18 +163,10 @@ _STRESS_FAMILY: str = "LIQUIDITY_STRESS"
 _NON_FLAT_DIRECTIONS: frozenset[str] = frozenset({"LONG", "SHORT"})
 
 
-# ── Validator ──────────────────────────────────────────────────────────
-
-
 # ── Active-gate constants ──────────────────────────────────────────────
 
 
-# Default registered-horizon set used when the loader doesn't inject
-# a platform-specific list.  Mirrors the
-# :class:`feelies.core.platform_config.PlatformConfig` default so the
-# gate behaves consistently in unit tests that don't go through
-# bootstrap.  G7 elevates this to a refusal when ``horizon_seconds``
-# is set outside this set.
+# Fallback horizon set when the loader has no platform-specific values.
 DEFAULT_REGISTERED_HORIZONS: frozenset[int] = frozenset({30, 120, 300, 900, 1800})
 
 # G5 / G8: AST node types and bare names that are forbidden in inline
@@ -241,13 +198,7 @@ _BANNED_SIGNAL_NAMES: frozenset[str] = frozenset(
 
 
 class LayerValidator:
-    """Architectural-compliance gates for schema-1.1 alpha specs.
-
-    Phase 3-α activates G2, G4, G5, G6, G7, G8, G12, G13 in addition
-    to the universally-active G14 / G15.  G1, G3, G9, G10, G11 stay
-    scaffolded for Phase 4 (composition layer); G16 stays scaffolded
-    for Phase 3.1 (mechanism enforcement).
-    """
+    """Architectural-compliance gates for schema-1.1 alpha specs."""
 
     def __init__(
         self,
@@ -268,8 +219,7 @@ class LayerValidator:
         - ``known_sensor_ids``: set of sensor IDs the platform has
           available.  When provided, G6 asserts every entry in
           ``depends_on_sensors`` resolves; when ``None`` the check
-          is skipped (Phase-3 default — the platform may load alphas
-          before the sensor registry exists).
+          is skipped because the platform may load alphas before the registry.
         """
         self._registered_horizons = (
             registered_horizons if registered_horizons is not None else DEFAULT_REGISTERED_HORIZONS
@@ -328,8 +278,7 @@ class LayerValidator:
             Filesystem path or sentinel (``<dict>``) for the spec.
             Threaded into all error messages for operator triage.
         """
-        # G1-G13 — scaffolded no-ops (Phase 3+).  Order matters for
-        # determinism of error reporting once they go live.
+        # Gate order makes error reporting deterministic.
         self._softly(
             self._check_g1_layer_independence,
             spec,
@@ -354,21 +303,19 @@ class LayerValidator:
         self._check_g12_cost_arithmetic_disclosure(spec, source)
         self._check_g13_warm_up_documentation(spec, source)
 
-        # G14, G15 — ACTIVE (Phase 1).
+        # Data-scope and fill-assumption gates.
         self._check_g14_data_scope(spec, source)
         self._check_g15_fill_assumptions(spec, source)
 
-        # G16 — scaffolded no-op (Phase 3.1, mechanism enforcement).
+        # Trend-mechanism gate.
         self._check_g16_trend_mechanism_compliance(spec, source)
-
-    # ── Active gates (Phase 1) ────────────────────────────────────────
 
     def _check_g14_data_scope(self, spec: dict[str, Any], source: str) -> None:
         """G14 — alpha must declare no data dependency beyond L1 NBBO + trades.
 
         Per gate G14 in ``alphas/SCHEMA.md`` / §6.6.
 
-        Phase 1 enforcement: the loader's existing namespace exposes
+        The loader's namespace exposes
         only ``NBBOQuote`` and ``Trade`` event types to compiled
         feature/signal code.  A spec that declares a ``data_sources``
         block referencing anything outside this scope is rejected.
@@ -398,7 +345,7 @@ class LayerValidator:
 
         Per gate G15 in ``alphas/SCHEMA.md`` / §6.6.
 
-        Phase 1 enforcement: when an alpha declares a ``fill_model:``
+        When an alpha declares a ``fill_model:``
         block, its ``router:`` field must name an implementation that
         the platform actually ships
         (``PassiveLimitOrderRouter`` or ``BacktestOrderRouter``).
@@ -423,13 +370,10 @@ class LayerValidator:
                 f"Allowed: {sorted(allowed_routers)}."
             )
 
-    # ── Scaffolded gates (Phase 4+) ──────────────────────────────────
-
     def _check_g1_layer_independence(self, spec: dict[str, Any], source: str) -> None:
         """G1 — no Layer-N alpha may import or call into Layer-(N+k) code.
 
-        Phase 4: structurally enforced by the loader's compile
-        namespace, which exposes only layer-appropriate event types
+        The loader exposes only layer-appropriate event types
         (``HorizonFeatureSnapshot`` + ``RegimeState`` for SIGNAL,
         ``CrossSectionalContext`` for PORTFOLIO).  ``import`` is
         already banned by G5 / G2 AST checks.  Here we additionally
@@ -455,7 +399,7 @@ class LayerValidator:
     def _check_g3_no_cross_horizon_leakage(self, spec: dict[str, Any], source: str) -> None:
         """G3 — alphas must operate on a single declared horizon.
 
-        Phase 4 active enforcement: PORTFOLIO alphas declare a single
+        PORTFOLIO alphas declare a single
         ``horizon_seconds`` and their ``depends_on_signals`` must
         reference signals at the same horizon.  We can't cross-check
         the dependency horizons here (registry-level concern), but we
@@ -475,7 +419,7 @@ class LayerValidator:
     def _check_g9_session_alignment(self, spec: dict[str, Any], source: str) -> None:
         """G9 — horizon boundaries must align with ``session_open_ns``.
 
-        Phase 4: the :class:`HorizonScheduler` aligns boundaries
+        :class:`HorizonScheduler` aligns boundaries
         automatically (``session_open_ns + k * horizon_seconds * 1e9``).
         At validation time we only check the horizon is in the
         registered platform set (already covered by G7) and that
@@ -537,12 +481,10 @@ class LayerValidator:
                 f"got {type(val).__name__}={val!r}"
             )
 
-    # ── ACTIVE gates (Phase 3-α) ─────────────────────────────────────
-
     def _check_g2_event_typing(self, spec: dict[str, Any], source: str) -> None:
         """G2 — every cross-layer event must be a typed dataclass (Inv-7).
 
-        Phase 3-α enforcement: a SIGNAL spec must declare its inline
+        A SIGNAL spec must declare its inline
         ``signal:`` block as a string of Python source code.  The
         loader compiles that source into a function whose return type
         is a typed :class:`feelies.core.events.Signal` (or ``None``);
@@ -565,7 +507,7 @@ class LayerValidator:
     def _check_g4_regime_gate_purity(self, spec: dict[str, Any], source: str) -> None:
         """G4 — regime gate must be a pure boolean function of posteriors.
 
-        Phase 3-α enforcement: parse both ``on_condition`` and
+        Parse both ``on_condition`` and
         ``off_condition`` through the regime-gate DSL compiler
         (:func:`feelies.signals.regime_gate.compile_expression`).
         Any unsafe AST node, attribute access, lambda, comprehension,
@@ -604,8 +546,7 @@ class LayerValidator:
     def _check_g5_signal_purity(self, spec: dict[str, Any], source: str) -> None:
         """G5 — signal evaluate() must be a pure function of features.
 
-        Phase 3-α enforcement: AST-scan the inline ``signal:`` source
-        and reject:
+        AST-scan the inline ``signal:`` source and reject:
 
         * Any :class:`ast.Import` or :class:`ast.ImportFrom` node.
         * Any reference to a banned built-in name
@@ -636,8 +577,6 @@ class LayerValidator:
     def _check_g6_feature_dependency_dag(self, spec: dict[str, Any], source: str) -> None:
         """G6 — sensor / feature dependency graph must be a DAG.
 
-        Phase 3-α enforcement (post-D.2 PR-2):
-
         - **SIGNAL**: ``depends_on_sensors`` must be a non-empty list
           of unique sensor identifiers.  When ``known_sensor_ids`` was
           injected at construction, every entry must resolve.
@@ -645,13 +584,7 @@ class LayerValidator:
           a no-op.  Cross-alpha dependencies on upstream SIGNAL outputs
           are resolved at registry merge time by the composition layer.
 
-        The historical ``layer: LEGACY_SIGNAL`` branch (which used to
-        validate an inline ``features:`` DAG via Kahn topological sort)
-        was deleted by D.2 PR-2 along with the per-tick execution path.
-        Any post-D.2 caller passing ``layer: LEGACY_SIGNAL`` directly
-        to :meth:`LayerValidator.validate` will fall through this gate
-        without enforcement; the loader's ``_RETIRED_LAYERS`` check is
-        the canonical rejection point and runs before any G-gate.
+        ``LEGACY_SIGNAL`` is rejected by the loader before these gates run.
         """
         layer = str(spec.get("layer") or "")
         if layer != "SIGNAL":
@@ -690,8 +623,7 @@ class LayerValidator:
         """G7 — declared ``horizon_seconds`` must be in
         ``platform.yaml`` registered horizons.
 
-        Phase 3-α enforcement (SIGNAL only): verify
-        ``horizon_seconds`` is an integer present in the validator's
+        For SIGNAL specs, verify ``horizon_seconds`` is an integer in the validator's
         ``registered_horizons`` set.  Defaults to the canonical
         ``{30, 120, 300, 900, 1800}`` when bootstrap doesn't inject
         a platform-specific list.
@@ -715,8 +647,7 @@ class LayerValidator:
     def _check_g8_no_implicit_lookahead(self, spec: dict[str, Any], source: str) -> None:
         """G8 — feature/signal code must not reference future state.
 
-        Phase 3-α enforcement: AST-scan inline computation/signal
-        blocks for symbols that imply wall-clock or schedule lookups
+        AST-scan inline signal code for symbols that imply wall-clock lookups
         (``time``, ``datetime``, ``perf_counter``, ``monotonic``,
         ``now``).  Combined with G5's import ban this prevents the
         compiled function from peeking at future events through the
@@ -748,8 +679,7 @@ class LayerValidator:
     def _check_g12_cost_arithmetic_disclosure(self, spec: dict[str, Any], source: str) -> None:
         """G12 — alpha must declare ``cost_arithmetic:`` (bps vs $) explicitly.
 
-        Phase 3-α enforcement (SIGNAL): ``cost_arithmetic:`` is
-        required and must validate via
+        SIGNAL specs require ``cost_arithmetic:`` validated by
         :func:`feelies.alpha.cost_arithmetic.CostArithmetic.from_spec`.
         That parser enforces the canonical ``margin_ratio >= 1.5``
         floor and the disclosed-vs-computed reconciliation rule.
@@ -777,18 +707,7 @@ class LayerValidator:
         except CostArithmeticError as exc:
             raise LayerValidationError(f"{source}: G12 — {exc}") from exc
 
-        # Audit P1 2026-07-02: when the spec declares a numeric
-        # ``parameters.cost_floor_bps`` entry — the platform-wide convention
-        # every production SIGNAL alpha uses to self-suppress an entry whose
-        # computed edge doesn't clear the disclosed one-way cost inside its
-        # own ``evaluate()`` — its ``min`` bound must not sit below the
-        # disclosed ``cost_total_bps``.  Without this, a config
-        # ``parameter_overrides`` value inside the declared ``[min, max]``
-        # range could silently drop the floor below the alpha's own
-        # disclosed cost with no gate noticing; the runtime B4 gate would
-        # become the sole backstop instead of a second, independent one.
-        # Purely structural (only fires on the ``cost_floor_bps`` naming
-        # convention) so alphas with no such parameter are unaffected.
+        # A declared cost floor cannot be overridden below disclosed one-way cost.
         params_block = spec.get("parameters")
         if not isinstance(params_block, dict):
             return
@@ -810,21 +729,7 @@ class LayerValidator:
             )
 
     def _check_g13_warm_up_documentation(self, spec: dict[str, Any], source: str) -> None:
-        """G13 — every feature must declare ``warm_up:`` (events or duration).
-
-        Phase 3-α enforcement (post-D.2 PR-2): SIGNAL alphas don't
-        declare inline features (they consume sensors which carry their
-        own ``min_history``); PORTFOLIO alphas don't declare inline
-        features either.  The gate is therefore a no-op for both
-        surviving layers.
-
-        The historical ``layer: LEGACY_SIGNAL`` branch (which iterated
-        a spec's inline ``features:`` list and required a ``warm_up:``
-        mapping per entry) was deleted by D.2 PR-2 along with the
-        per-tick execution path.  Like G6/G8, the loader's
-        ``_RETIRED_LAYERS`` rejection runs before this gate is reached
-        for any LEGACY_SIGNAL spec.
-        """
+        """No-op: surviving layers declare no inline features."""
         del spec, source  # all surviving layers are no-ops
 
     # ── AST-scan helpers (G5 / G8) ───────────────────────────────────
@@ -893,7 +798,7 @@ class LayerValidator:
                 )
 
     def _check_g16_trend_mechanism_compliance(self, spec: dict[str, Any], source: str) -> None:
-        """G16 — mechanism-horizon binding (§20.6.1, ACTIVE in Phase 3.1).
+        """G16 — mechanism-horizon binding (§20.6.1).
 
         Two activation triggers per §20.6:
 
@@ -1049,12 +954,7 @@ class LayerValidator:
                 f"clauses (Inv-2)"
             )
 
-        # Rule 10 (audit P1-4) — every declared signature sensor must be a
-        # real dependency.  A ``l1_signature_sensors`` entry absent from
-        # ``depends_on_sensors`` cannot be consumed by ``evaluate`` and is
-        # therefore a cosmetic fingerprint.  Independent of the sensor
-        # registry, so it runs even when ``known_sensor_ids`` is unset
-        # (e.g. the loader's load-time validation pass).
+        # A signature sensor must be a real dependency, not cosmetic metadata.
         depends_raw = spec.get("depends_on_sensors") or []
         depends_ids = {d for d in depends_raw if isinstance(d, str)}
         unbacked = sorted(declared_sensor_ids - depends_ids)
@@ -1094,8 +994,7 @@ class LayerValidator:
         cannot be resolved statically, this rule abstains, but
         :class:`~feelies.signals.horizon_engine.HorizonSignalEngine` provides a
         runtime backstop — it suppresses any non-FLAT signal emitted by an
-        ``EXIT_ONLY_MECHANISMS`` alpha — so a dynamically-directed stress alpha
-        still cannot open exposure (external audit §5.6).
+        ``EXIT_ONLY_MECHANISMS`` alpha, so dynamic direction cannot open exposure.
         """
         signal_src = spec.get("signal")
         if not isinstance(signal_src, str):

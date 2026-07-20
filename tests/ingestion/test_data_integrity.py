@@ -65,7 +65,7 @@ class TestCreateDataIntegrityMachine:
 
 
 class TestHaltedState:
-    """BT-5: DataHealth.HALTED transitions."""
+    """DataHealth.HALTED transitions."""
 
     def test_healthy_to_halted_and_back(self) -> None:
         clock = SimulatedClock(0)
@@ -90,7 +90,7 @@ class TestHaltedState:
 
 
 class TestClassifyHaltStatus:
-    """BT-5: shared condition-code classifier."""
+    """Shared condition-code classifier."""
 
     def test_no_codes_configured_is_inert(self) -> None:
         assert classify_halt_status((1, 2, 3), frozenset(), frozenset()) is None

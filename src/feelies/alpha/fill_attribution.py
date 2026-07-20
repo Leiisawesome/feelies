@@ -53,14 +53,8 @@ class FillAttributionLedger:
 
     def __init__(self) -> None:
         self._records: dict[str, AttributionRecord] = {}
-        # Cumulative integer allocation per contributor across all
-        # partial fills against an order — keyed by order_id and indexed
-        # by contributor position.  Used to compute per-fill deltas via
-        # largest-remainder over the *cumulative* quantity, so the sum
-        # across partial fills equals the single-shot allocation for
-        # the same total — preserving Inv-5 determinism and Inv-13
-        # provenance when a passive through is capped (P1.1) into a
-        # PARTIALLY_FILLED + later FILLED sequence.
+        # Cumulative largest-remainder allocation makes partial fills sum to
+        # the same result as one fill of the final quantity.
         self._cumulative_allocations: dict[str, list[int]] = {}
 
     def record(self, record: AttributionRecord) -> None:
@@ -81,8 +75,7 @@ class FillAttributionLedger:
         tuples.  Uses largest-remainder method for integer rounding.
         Fees are allocated proportionally to each alpha's share of the fill.
 
-        ``is_final=True`` (the default) preserves the legacy single-shot
-        semantics: the attribution record is popped after allocation.
+        ``is_final=True`` pops the attribution record after allocation.
         ``is_final=False`` is used for ``PARTIALLY_FILLED`` acks so the
         record stays available for subsequent fills against the same
         order_id; per-contributor cumulative allocations are tracked so

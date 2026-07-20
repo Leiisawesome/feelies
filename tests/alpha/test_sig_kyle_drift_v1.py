@@ -1,5 +1,4 @@
-"""Acceptance tests for the reference SIGNAL alpha
-``alphas/sig_kyle_drift_v1`` (Phase 3.1, KYLE_INFO family)."""
+"""Acceptance tests for the KYLE_INFO reference signal alpha."""
 
 from __future__ import annotations
 

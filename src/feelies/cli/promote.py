@@ -4,14 +4,14 @@ Implements the five subcommands documented in :mod:`feelies.cli`:
 
   - ``inspect``         — chronological timeline for one alpha
   - ``list``            — summarise every alpha in the ledger
-  - ``replay-evidence`` — re-run F-2 ``validate_gate`` against
+  - ``replay-evidence`` — re-run ``validate_gate`` against
                           historical evidence with current thresholds
   - ``validate``        — preflight the ledger file
-  - ``gate-matrix``     — render the declarative F-2 gate matrix
+  - ``gate-matrix``     — render the declarative gate matrix
 
 All handlers are read-only.  They never write to the ledger and they
-never import orchestrator / risk-engine production code, so operator
-invocation cannot perturb replay determinism (audit A-DET-02).
+never import orchestrator or risk-engine production code, so invocation cannot
+perturb replay.
 
 Output discipline:
 
@@ -218,37 +218,14 @@ _STATE_PAIR_TO_GATE: Mapping[tuple[str, str], GateId] = {
     ("QUARANTINED", "PAPER"): GateId.QUARANTINED_TO_PAPER,
     ("QUARANTINED", "DECOMMISSIONED"): GateId.QUARANTINED_TO_DECOMMISSIONED,
 }
-"""Map a recorded ``(from_state, to_state)`` pair onto the F-2 gate id.
+"""Map unambiguous state transitions to promotion gates.
 
-The Workstream **F-6** ``LIVE @ SMALL_CAPITAL → LIVE @ SCALED``
-escalation is **deliberately not** in this table: a ``("LIVE", "LIVE")``
-self-loop transition can in principle carry any trigger (the state
-machine permits self-loops generically), so the gate inference must
-also consult the trigger to avoid misclassifying a non-capital-tier
-``LIVE → LIVE`` event as a capital-tier promotion.  The
-``("LIVE", "LIVE")`` ↔ :attr:`GateId.LIVE_PROMOTE_CAPITAL_TIER`
-binding is applied by :func:`_gate_for_entry` only when
-``entry.trigger == PROMOTE_CAPITAL_TIER_TRIGGER``.  The
-``replay-evidence`` subcommand handles unknown pairs gracefully (skip
-with a notice rather than crash).
+``LIVE → LIVE`` is excluded because its trigger determines the gate.
 """
 
 
 def _gate_for_entry(entry: PromotionLedgerEntry) -> GateId | None:
-    """Resolve the F-2 gate id implied by a ledger entry.
-
-    For most state pairs the lookup is unambiguous, but the F-6
-    ``LIVE → LIVE`` self-loop must additionally match
-    :data:`PROMOTE_CAPITAL_TIER_TRIGGER`: the state machine allows
-    arbitrary self-loop triggers in general (e.g. a future
-    book-keeping event could record some other ``LIVE → LIVE``
-    metadata), and silently classifying every ``LIVE → LIVE``
-    transition as ``LIVE_PROMOTE_CAPITAL_TIER`` would mask such cases
-    behind a misleading ``replay-evidence`` row.  When the trigger
-    does not match, return ``None`` so the entry is reported as
-    *skipped — no gate registered* rather than mis-replayed against
-    the capital-tier gate's evidence schema.
-    """
+    """Resolve an entry's gate without guessing ambiguous self-loops."""
     pair = (entry.from_state, entry.to_state)
     if pair == ("LIVE", "LIVE"):
         if entry.trigger == PROMOTE_CAPITAL_TIER_TRIGGER:
@@ -257,9 +234,7 @@ def _gate_for_entry(entry: PromotionLedgerEntry) -> GateId | None:
     return _STATE_PAIR_TO_GATE.get(pair)
 
 
-# ─────────────────────────────────────────────────────────────────────
-#   Capital-stage tier inference (Workstream F-6)
-# ─────────────────────────────────────────────────────────────────────
+# Capital-stage tier inference.
 
 
 def _capital_tier_from_entries(

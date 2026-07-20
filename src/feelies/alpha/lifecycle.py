@@ -60,10 +60,7 @@ class AlphaLifecycleState(Enum):
 _LIFECYCLE_TRANSITIONS: dict[AlphaLifecycleState, frozenset[AlphaLifecycleState]] = {
     AlphaLifecycleState.RESEARCH: frozenset({AlphaLifecycleState.PAPER}),
     AlphaLifecycleState.PAPER: frozenset({AlphaLifecycleState.LIVE}),
-    # LIVE -> LIVE is the Workstream F-6 capital-tier escalation
-    # (SMALL_CAPITAL -> SCALED).  The lifecycle state is unchanged;
-    # the tier flip is recorded as a metadata-only ledger entry whose
-    # ``trigger`` distinguishes it from the LIVE -> QUARANTINED demotion.
+    # LIVE-to-LIVE records capital-tier escalation; the trigger distinguishes it.
     AlphaLifecycleState.LIVE: frozenset(
         {
             AlphaLifecycleState.LIVE,
@@ -186,45 +183,11 @@ def check_revalidation_gate(evidence: PromotionEvidence) -> list[str]:
 
 
 class AlphaLifecycle:
-    """Manages the lifecycle state machine for a single alpha module.
+    """Manage one alpha's gated lifecycle transitions.
 
-    Wraps the platform's generic ``StateMachine`` with alpha-specific
-    gate checks.  Transitions that fail gate checks are rejected with
-    descriptive error messages.
-
-    Two evidence paths are supported on every promote/revalidate
-    method (Workstream **F-4**):
-
-    1. **Structured path (preferred).**  Pass
-       ``structured_evidence=[ResearchAcceptanceEvidence(...), ...]``.
-       The lifecycle dispatches to
-       :func:`feelies.alpha.promotion_evidence.validate_gate` against
-       the gate-specific :class:`GateThresholds` (default values come
-       from the testing-validation and post-trade-forensics skills,
-       and Workstream **F-5** will allow per-alpha YAML overrides).
-       The committed ledger entry's ``metadata`` is the JSON-safe
-       projection produced by
-       :func:`feelies.alpha.promotion_evidence.evidence_to_metadata`,
-       carrying ``schema_version`` so :func:`metadata_to_evidence`
-       can reverse it for forensic replay.
-
-    2. **Legacy path (backwards compat).**  Pass a
-       :class:`PromotionEvidence` positional / keyword.  The
-       lifecycle dispatches to the lightweight
-       ``check_paper_gate`` / ``check_live_gate`` /
-       ``check_revalidation_gate`` validators against
-       :class:`GateRequirements`.  The committed ledger entry's
-       ``metadata`` is the loose ``{"evidence": {...}}`` shape used
-       since Workstream F-1.
-
-    Supplying *both* or *neither* raises :class:`ValueError` — the
-    caller must pick one path.
-
-    The two paths produce *different* metadata shapes on purpose: the
-    structured payload is round-trippable through
-    :func:`metadata_to_evidence` and the F-3 ``feelies promote
-    replay-evidence`` CLI; the legacy payload retains the historical
-    shape for pre-F-4 tooling.
+    Promotion accepts either structured evidence or the compatibility
+    :class:`PromotionEvidence` shape, never both. Structured metadata is
+    round-trippable through :func:`metadata_to_evidence`.
 
     .. note::
        :py:meth:`quarantine` is a fail-safe demotion (Inv-11 — the
@@ -234,14 +197,7 @@ class AlphaLifecycle:
        inconsistencies log a ``WARNING`` but do *not* block the
        transition.
 
-    Workstream **F-6** added :py:meth:`promote_capital_tier` for the
-    LIVE @ SMALL_CAPITAL -> LIVE @ SCALED escalation.  The lifecycle
-    state remains ``LIVE`` (the tier is *evidence on LIVE*, not a
-    distinct state), but the underlying state machine commits a
-    ``LIVE -> LIVE`` self-loop transition with
-    :data:`PROMOTE_CAPITAL_TIER_TRIGGER` so the ledger captures a
-    durable provenance record.  See :py:meth:`current_capital_tier`
-    for the live-epoch tier inference.
+    Capital-tier escalation is a LIVE-to-LIVE transition recorded in the ledger.
     """
 
     def __init__(
@@ -258,15 +214,7 @@ class AlphaLifecycle:
         self._gate_thresholds = gate_thresholds or GateThresholds()
         self._ledger = ledger
         self._lifecycle_cap = lifecycle_cap
-        # Workstream F-6 P1 fix: when ``restore()`` rehydrates an alpha
-        # from a checkpoint, the in-memory ``StateMachine.history`` is
-        # empty but the alpha may still have been at LIVE @ SCALED in
-        # the previous process.  ``current_capital_tier`` consults this
-        # fallback hint **only** when the live-epoch scan over history
-        # is silent; once any fresh ``PAPER -> LIVE`` (or
-        # ``PROMOTE_CAPITAL_TIER_TRIGGER``) record lands in history
-        # post-restore, the scan finds it first and the hint is
-        # naturally bypassed (history > hint).
+        # Restored tier is a fallback until fresh transition history supersedes it.
         self._persisted_capital_tier: CapitalStageTier | None = None
         self._sm = StateMachine(
             name=f"alpha_lifecycle:{alpha_id}",
@@ -274,11 +222,7 @@ class AlphaLifecycle:
             transitions=_LIFECYCLE_TRANSITIONS,
             clock=clock,
         )
-        # Workstream F-1: forensic evidence ledger receives every
-        # successfully-committed transition.  Wired through
-        # ``StateMachine.on_transition`` (callbacks fire pre-commit, so
-        # a ledger-write failure rolls the SM back atomically — Inv-13
-        # provenance + Inv-11 fail-safe).
+        # Ledger-write failure rolls back the transition atomically.
         if self._ledger is not None:
             self._sm.on_transition(self._record_to_ledger)
 
@@ -345,17 +289,7 @@ class AlphaLifecycle:
         structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> list[str]:
-        """Attempt RESEARCH -> PAPER promotion.
-
-        Returns list of gate check errors (empty = success).
-
-        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
-        path, validated by :func:`check_paper_gate`) *or*
-        ``structured_evidence`` (Workstream F-4 path, validated by
-        :func:`validate_gate` against
-        :data:`GateId.RESEARCH_TO_PAPER`'s required evidence types).
-        Supplying both or neither raises :class:`ValueError`.
-        """
+        """Attempt RESEARCH → PAPER; return gate errors."""
         return self._promote_with_evidence(
             evidence,
             structured_evidence,
@@ -373,19 +307,7 @@ class AlphaLifecycle:
         structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> list[str]:
-        """Attempt PAPER -> LIVE promotion.
-
-        Returns list of gate check errors (empty = success).
-
-        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
-        path, validated by :func:`check_live_gate` against
-        :class:`GateRequirements`) *or* ``structured_evidence``
-        (Workstream F-4 path, validated by :func:`validate_gate`
-        against :data:`GateId.PAPER_TO_LIVE`'s required evidence
-        types — :class:`PaperWindowEvidence` + :class:`CPCVEvidence`
-        + :class:`DSREvidence`).  Supplying both or neither raises
-        :class:`ValueError`.
-        """
+        """Attempt PAPER → LIVE; return gate errors."""
         return self._promote_with_evidence(
             evidence,
             structured_evidence,
@@ -447,18 +369,7 @@ class AlphaLifecycle:
         structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> list[str]:
-        """Attempt QUARANTINED -> PAPER re-entry.
-
-        Returns list of gate check errors (empty = success).
-
-        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
-        path, validated by :func:`check_revalidation_gate`) *or*
-        ``structured_evidence`` (Workstream F-4 path, validated by
-        :func:`validate_gate` against
-        :data:`GateId.QUARANTINED_TO_PAPER`'s required evidence
-        types — :class:`RevalidationEvidence`).  Supplying both or
-        neither raises :class:`ValueError`.
-        """
+        """Attempt QUARANTINED → PAPER; return gate errors."""
         return self._promote_with_evidence(
             evidence,
             structured_evidence,
@@ -494,8 +405,7 @@ class AlphaLifecycle:
         and friends.
 
         Unlike the other promote/revalidate methods this one is
-        structured-evidence-only: there is no legacy
-        :class:`PromotionEvidence` shape that captures the
+        structured-evidence-only: :class:`PromotionEvidence` cannot capture the
         Small-Capital exit criteria, so accepting one would be
         ambiguous.
         """
@@ -593,20 +503,10 @@ class AlphaLifecycle:
                 return CapitalStageTier.SCALED
             if record.to_state == live_name and record.from_state != live_name:
                 return CapitalStageTier.SMALL_CAPITAL
-        # History exhausted without determining the tier — fall back to
-        # the hint persisted at checkpoint time, if any.  This matters
-        # when ``restore()`` rehydrates an alpha that reached
-        # ``LIVE @ SCALED`` in a prior process: the in-memory history
-        # is empty but the alpha is still SCALED for the operator.
-        # Without this fallback, ``promote_capital_tier()`` would
-        # happily commit a *duplicate* SCALED escalation post-restart
-        # because the SCALED-rejection guard would mis-read the tier
-        # as SMALL_CAPITAL.
+        # Restored lifecycles may lack history; use the checkpointed tier.
         if self._persisted_capital_tier is not None:
             return self._persisted_capital_tier
         return CapitalStageTier.SMALL_CAPITAL
-
-    # ── Evidence dispatch helpers (Workstream F-4) ───────────
 
     def _select_evidence(
         self,
@@ -619,8 +519,7 @@ class AlphaLifecycle:
         """Resolve which evidence path to use and run its validator.
 
         Enforces the "exactly one of ``evidence``/``structured_evidence``"
-        contract.  Returns ``(legacy_evidence_or_None,
-        validation_errors)``: the legacy evidence is forwarded back so
+        contract. Returns ``(evidence_or_None, validation_errors)``: unstructured evidence is returned so
         :py:meth:`_build_metadata` can project it; the structured
         evidence sequence is captured by the closure for the same
         purpose.
@@ -642,7 +541,7 @@ class AlphaLifecycle:
         if structured_evidence is not None:
             errors = validate_gate(gate_id, structured_evidence, self._gate_thresholds)
             return None, errors
-        # legacy path
+        # Unstructured evidence path.
         assert evidence is not None  # narrowed by the early returns above
         errors = legacy_validator(evidence)
         return evidence, list(errors)
@@ -654,8 +553,8 @@ class AlphaLifecycle:
     ) -> dict[str, Any]:
         """Project the chosen evidence path into ledger metadata.
 
-        Legacy path → ``{"evidence": _evidence_to_dict(ev)}`` (the
-        F-1 shape).  Structured path → :func:`evidence_to_metadata`
+        Unstructured evidence becomes ``{"evidence": _evidence_to_dict(ev)}``.
+        Structured evidence uses :func:`evidence_to_metadata`
         output (carries ``schema_version`` + kind-keyed sections,
         round-trippable via :func:`metadata_to_evidence`).
         """
@@ -686,22 +585,7 @@ class AlphaLifecycle:
     # ── Persistence ──────────────────────────────────────────
 
     def checkpoint(self) -> bytes:
-        """Serialize lifecycle state for persistence.
-
-        Returns a JSON-encoded blob containing the current state name
-        and — when the alpha is currently in ``LIVE`` — the capital
-        tier of the live epoch.
-
-        The ``capital_tier`` field was added by Workstream **F-6 P1**:
-        without it, restoring a ``LIVE @ SCALED`` alpha from a prior
-        process would silently revert the in-memory tier to
-        ``SMALL_CAPITAL`` (because the inferred tier reads
-        ``StateMachine.history``, which is empty after restore), and a
-        subsequent ``promote_capital_tier()`` call would commit a
-        *duplicate* SCALED escalation to the ledger.  The field is
-        only emitted when ``state == LIVE`` because the tier is
-        meaningless in any other state (mirrors
-        :py:attr:`current_capital_tier`).
+        """Serialize lifecycle state and the current LIVE capital tier.
 
         The format is forward-compatible: older blobs without
         ``capital_tier`` restore as ``SMALL_CAPITAL`` (the historic
@@ -739,7 +623,7 @@ class AlphaLifecycle:
                 f"Unknown lifecycle state '{state_name}' in checkpoint for '{self._alpha_id}'"
             )
 
-        # BT-13: enforce the research-only cap on rehydration too, so a
+        # Rehydration must also enforce the research-only cap so a
         # checkpoint blob cannot bypass the promotion-API guard and
         # leave a research-only alpha in an ``is_active`` state.
         cap_errors = self._lifecycle_promotion_errors(target)
@@ -748,12 +632,7 @@ class AlphaLifecycle:
                 f"Cannot restore '{self._alpha_id}' to {target.name}: {cap_errors[0]}"
             )
 
-        # Rehydrate the F-6 capital-tier hint *before* the state is
-        # actually flipped: ``current_capital_tier`` consults the hint
-        # only after exhausting history, so the order doesn't change
-        # behavior, but persisted-tier-before-state-set keeps the
-        # invariant tidy (no transient window where state==LIVE and
-        # the tier hint is stale).
+        # Restore the capital tier before exposing LIVE state.
         tier_name = payload.get("capital_tier")
         if tier_name is not None:
             if target is not AlphaLifecycleState.LIVE:
@@ -769,8 +648,7 @@ class AlphaLifecycle:
                     f"Unknown capital_tier '{tier_name}' in checkpoint for '{self._alpha_id}'"
                 )
         else:
-            # Legacy checkpoint (pre-F-6) or non-LIVE state — clear any
-            # hint from a prior restore to avoid stale-fallback bugs.
+            # Clear stale tier hints for checkpoints without a live tier.
             self._persisted_capital_tier = None
 
         self._restore_to_checkpoint(target, _RESTORE_TOKEN)

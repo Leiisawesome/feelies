@@ -216,7 +216,7 @@ def test_apply_ignores_non_quarantine_decisions() -> None:
 
 
 def test_apply_records_structured_quarantine_evidence(tmp_path) -> None:
-    """Audit P1-6: the auto-trigger records a QuarantineTriggerEvidence on the
+    """The auto-trigger records ``QuarantineTriggerEvidence`` on the
     ledger (Inv-13), round-trippable, not only a free-text reason."""
     clock = SimulatedClock(start_ns=0)
     ledger = PromotionLedger(tmp_path / "ledger.jsonl")
@@ -249,7 +249,7 @@ def test_apply_records_structured_quarantine_evidence(tmp_path) -> None:
 
 
 def test_spurious_trigger_still_commits_and_warns(caplog) -> None:
-    """Inv-11 fail-safe (audit P1-11): a quarantine whose evidence trips no
+    """A quarantine whose evidence trips no
     documented threshold still commits; the validator only logs a WARNING."""
     clock = SimulatedClock(start_ns=0)
     lc = _live_lifecycle("borderline", clock)

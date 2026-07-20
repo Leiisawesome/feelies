@@ -32,7 +32,7 @@ from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote, Trade
 from feelies.sensors.spec import SensorSpec
 
-# BT-17 locked conservative baselines until measured IB / feed RTT exists.
+# Conservative defaults until measured broker and feed latency is available.
 DEFAULT_BACKTEST_FILL_LATENCY_NS: int = 50_000_000  # 50 ms order-submission leg
 DEFAULT_MARKET_DATA_LATENCY_NS: int = 20_000_000  # 20 ms feed-propagation leg
 
@@ -43,7 +43,7 @@ def latency_stress_ns(
     *,
     multiplier: int = 2,
 ) -> tuple[int, int]:
-    """Scale both latency legs for Inv-12 stress (BT-9 harness)."""
+    """Scale both latency legs for invariant-12 stress."""
     return fill_latency_ns * multiplier, market_data_latency_ns * multiplier
 
 
@@ -84,74 +84,44 @@ class PlatformConfig:
     risk_max_gross_exposure_pct: float = 20.0
     risk_max_drawdown_pct: float = 5.0
 
-    # Regime-aware position-limit scaling (BasicRiskEngine expected-value gate).
-    # Keys correspond to built-in HMM state_names (vol_breakout /
-    # compression_clustering / normal).  Tune via YAML; defaults match
-    # RiskConfig skill baselines.
+    # Position-limit scales for the built-in HMM states.
     risk_regime_vol_breakout_scale: float = 0.5
     risk_regime_compression_scale: float = 0.75
     risk_regime_normal_scale: float = 1.0
 
-    # Offline replay only: when True, ``disk_cache_ingestion_health_rows`` must
-    # be populated (typically after ingest/replay) and every row must be
-    # HEALTHY — mirrors normalizer HEALTHY checks when no Massive normalizer
-    # is wired at orchestrator boot.
+    # Require every cached replay manifest to report HEALTHY ingestion.
     require_healthy_disk_cache_manifests: bool = False
     disk_cache_ingestion_health_rows: tuple[tuple[str, str, str], ...] = ()
-    # When True and a Massive normalizer is wired, GAP_DETECTED halts ticks/trades
-    # for that symbol the same way CORRUPTED does (strict streaming policy).
-    # BT-0: defaults to True (fail-safe, Inv-11/Inv-8) — a backtest replaying gappy
-    # historical data should suppress signals on a stale feed, not trade through it.
+    # Treat a detected gap like corruption and stop processing that symbol.
     degrade_on_data_gap: bool = True
-    # Log WARNING at boot when disk_cache_ingestion_health_rows carries non-HEALTHY
-    # rows while require_healthy_disk_cache_manifests is False (advisory path).
+    # Warn about unhealthy cache rows when strict manifest checks are disabled.
     warn_on_unhealthy_disk_cache: bool = True
-    # After historical ingest / cache load, worst-case per-symbol DataHealth.name
-    # (populated by run_backtest / cache replay — not usually hand-authored in YAML).
+    # Worst DataHealth state observed per symbol during ingest or cache loading.
     ingest_terminal_symbol_health: tuple[tuple[str, str], ...] = ()
-    # BACKTEST only: ``validate()`` requires ``ingest_terminal_symbol_health`` to cover
-    # every config symbol with ``HEALTHY`` (fail closed on GAP_DETECTED / CORRUPTED).
+    # Require a terminal HEALTHY state for every backtest symbol.
     backtest_enforce_ingest_terminal_health: bool = False
     # BACKTEST ingest path: refuse runs with zero events when True.
     backtest_reject_zero_ingest_events: bool = False
-    # When a Massive normalizer is wired, universe symbols must appear in
-    # ``normalizer.all_health()`` before ticks/trades are consumed (live/paper hook).
+    # Require every universe symbol to appear in the normalizer health map.
     strict_normalizer_symbol_coverage: bool = False
-    # Historical Massive REST rows are usually thinned (non-contiguous SIP
-    # ``sequence_number``).  Keep False for default ingest; set True only when
-    # the REST stream is full-tick contiguous so gap detection matches WS.
+    # Enable only for full-tick REST data; ordinary REST rows have sequence gaps.
     enable_rest_sequence_gap_detection: bool = False
 
-    # BT-5: LULD / regulatory halt modeling. Tape condition codes that mark a
-    # halt-on / resume on the Trade stream. Empty ⇒ halt modeling is inert (no
-    # DataHealth.HALTED transitions, no fill suppression) — set these to match
-    # the halt/resume condition encoding of the deployment's historical tape.
-    # On resume, new ENTRY fills stay suppressed for the blackout window so the
-    # reopening-auction print can stabilize; exits are always permitted.
+    # Trade condition codes that start and end a regulatory halt. Entries remain
+    # blocked during the post-resume blackout; exits remain allowed.
     halt_on_condition_codes: tuple[int, ...] = ()
     halt_off_condition_codes: tuple[int, ...] = ()
     halt_resolution_blackout_seconds: int = 60
 
-    # BT-6: Reg-SHO / SSR (short-sale restriction) modeling. ``ssr_active_symbols``
-    # is the daily SSR list — symbols SSR-active for the whole session (carried
-    # over from a prior-day trigger). ``ssr_trigger_condition_codes`` are tape
-    # condition codes that flip a symbol SSR-active intraday; SSR is sticky (no
-    # intraday clear). ``ssr_mode`` is the (locked) conservative posture: under
-    # SSR a short ENTRY fill is refused (SSR_SUPPRESSED); the entry retries next
-    # horizon boundary. The permissive uptick-routed variant is deferred — the
-    # field is the config hook so it can be added later without rework.
+    # Daily and intraday SSR inputs. Once active, SSR remains set for the session.
     ssr_active_symbols: tuple[str, ...] = ()
     ssr_trigger_condition_codes: tuple[int, ...] = ()
     ssr_mode: str = "refuse_short"
 
-    # BT-7: static per-symbol short-locate availability. Keys are symbols;
-    # values are ``available`` (default when omitted — easy to borrow, no HTB
-    # fee), ``hard`` (HTB fee path when cost_htb_borrow_annual_bps > 0), or
-    # ``unavailable`` (short entries refused with LOCATE_UNAVAILABLE). Empty
-    # table ⇒ every symbol treated as available.
+    # Per-symbol locate tier: available, hard, or unavailable.
     borrow_availability: dict[str, str] = field(default_factory=dict)
 
-    # BT-8: MOC / closing-auction fill modeling.
+    # MOC and closing-auction fill modeling.
     moc_strategy_ids: tuple[str, ...] = ("sig_moc_imbalance_v1",)
     moc_session_date: str | None = None
     moc_cutoff_et: str = "15:50"
@@ -160,7 +130,7 @@ class PlatformConfig:
     early_close_moc_cutoff_et: str = "12:50"
     early_close_official_close_et: str = "13:00"
 
-    # BT-16: RTH session gating (09:30–16:00 ET; 13:00 on early-close days).
+    # RTH gating uses 09:30–16:00 ET, or 13:00 on early-close days.
     rth_session_gating_enabled: bool = True
     rth_session_date: str | None = None
     rth_open_et: str = "09:30"
@@ -169,24 +139,21 @@ class PlatformConfig:
     market_holiday_dates: tuple[str, ...] = ()
     no_entry_first_seconds: int = 0
 
-    # BT-15: deployed-capital placeholder ($25k–$100k bracket).
+    # Deployed capital in the supported account bracket.
     account_equity: float = 50_000.0
-    # BT-17: order-submission latency (exchange-time fill eligibility in routers).
+    # Order-submission latency before exchange-time fill eligibility.
     backtest_fill_latency_ns: int = DEFAULT_BACKTEST_FILL_LATENCY_NS
-    # BT-17: feed-propagation delay before a quote/trade is visible to the pipeline.
+    # Feed delay before quotes and trades reach the pipeline.
     market_data_latency_ns: int = DEFAULT_MARKET_DATA_LATENCY_NS
 
-    # BT-4: account type + PDT (Pattern Day Trader) minimum-equity gate.
-    # Locked to ``margin_25k`` (PDT-exempt). The enum is forward-compatible
-    # with ``margin_under_25k`` / ``cash`` but only the ``margin_25k`` path
-    # is implemented; bootstrap refuses to wire the others.
+    # Only margin_25k is supported; bootstrap rejects other account types.
     account_type: str = "margin_25k"
     account_id: str = "default"
     # Maintenance floor below which a PDT-flagged account is barred from
     # opening new day trades (entries suppressed, exits always permitted).
     pdt_min_equity_usd: float = 25_000.0
 
-    # BT-15: Reg-T buying-power multipliers (margin_25k only).
+    # Reg-T buying-power multipliers for margin_25k accounts.
     risk_margin_intraday_buying_power_multiplier: float = 4.0
     risk_margin_overnight_buying_power_multiplier: float = 2.0
 
@@ -198,58 +165,31 @@ class PlatformConfig:
     stop_loss_pct: float = 0.0
     trail_activate_pct: float = 0.0
 
-    # IBKR-conservative defaults (audit F-H-08, F-M-25, F-C-01):
-    #   - min_spread_bps: 0.3 floor on taker spread (tight tape proxy).
-    #   - maker_exchange_per_share: 0.0 — SmartRouter blends positive
-    #     and negative venue maker fees; net for a personal account is
-    #     ≈ 0.  Operators with venue-controlled routing can opt back in.
-    #   - sell_regulatory_bps: 0.5 — current SEC Section 31 fee (~0.278
-    #     bps) with conservative headroom for rate changes.
+    # Conservative IBKR retail defaults, including blended SmartRouter fees.
     cost_min_spread_bps: float = 0.3
     cost_commission_per_share: float = 0.0035
-    cost_exchange_per_share: float = 0.0005  # deprecated; use taker/maker fields below
+    cost_exchange_per_share: float = 0.0005  # Deprecated: use taker/maker fields.
     cost_taker_exchange_per_share: float = 0.003
     cost_maker_exchange_per_share: float = 0.0
-    # Audit F-H-09: per-fill-type passive adverse selection.
-    # ``cost_passive_adverse_selection_bps`` is LEVEL (queue-drain).
-    # ``cost_through_fill_adverse_selection_bps`` is THROUGH (BBO
-    # crossed our limit — strictly more adverse).  Defaults 2.0 / 5.0
-    # are conservative for liquid US large-caps.
+    # Through-fills are more adverse than queue-drain fills.
     cost_passive_adverse_selection_bps: float = 2.0
     cost_through_fill_adverse_selection_bps: float = 5.0
-    # Legacy alias fields kept for compatibility with the refactored
-    # minimum-cost / snapshot paths on main.
+    # Compatibility aliases; new configs should use the fields above.
     cost_adverse_selection_through_bps: float = 5.0
     cost_adverse_selection_drain_bps: float = 2.0
     cost_sell_regulatory_bps: float = 0.5
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
-    # IBKR-realism cost knobs (mirror of DefaultCostModelConfig fields).
-    # Exposed at platform level for snapshot completeness (Inv-13) and
-    # operator override.  Defaults match the cost model's published
-    # IBKR-conservative values (see DefaultCostModelConfig docstring).
+    # Cost-model fields exposed for operator overrides and complete snapshots.
     cost_finra_taf_per_share: float = 0.000166
     cost_finra_taf_max_per_order: float = 8.30
     cost_min_commission_applies_to_per_share_only: bool = True
     cost_spread_floor_taker_only: bool = True
-    # Audit F-H-10: panic-slippage multiplier on stop / hazard exit /
-    # force-flatten fills.  2× is conservative for IBKR retail; the
-    # spread component (not the fill price) is multiplied, so the
-    # extra slippage flows through ``fees``.
+    # Half-spreads charged to stop, hazard, and forced-exit fills.
     cost_stop_slippage_half_spreads: float = 2.0
 
-    # Execution mode:
-    #   "market"        — every order routes as MARKET (mid-price fill,
-    #                     spread charged via cost model).  Conservative
-    #                     baseline, identical to the v0.1 backend.
-    #   "passive_limit" — entry/exit orders post LIMIT at the near BBO
-    #                     and fall through to MARKET only on stop/exit.
-    #   "minimum_cost"  — per-order policy picks LIMIT vs MARKET based
-    #                     on the cost-model comparison plus configured
-    #                     carve-outs (small-order, tight-spread,
-    #                     short-entry).  See feelies.execution
-    #                     .min_cost_policy.MinimumCostExecutionPolicy.
+    # Routing mode: always market, passive at the near BBO, or per-order minimum cost.
     execution_mode: str = "market"
     # Minimum-cost policy knobs (only consumed when
     # ``execution_mode == "minimum_cost"``; ignored otherwise).
@@ -257,26 +197,20 @@ class PlatformConfig:
     cost_min_small_order_threshold_shares: int = 0
     cost_min_half_spread_threshold: float = 0.0
     cost_min_allow_passive_short_entry: bool = True
-    # Audit F-M-19: opportunity cost of a passive non-fill, applied by
-    # MinimumCostExecutionPolicy as ``probability × edge_bps``.  0.30
-    # is a conservative starting point (~70% expected fill).
+    # Minimum-cost policy prices a passive non-fill as probability × edge.
     cost_min_passive_non_fill_probability: float = 0.30
-    # Audit F-M-22: dedicated ratio for the realized-cost alert.  The
-    # previous orchestrator code reused MIN_MARGIN_RATIO (a load-time
-    # G12 margin) as the alert threshold, labelling it
-    # "stress_multiplier" in the alert context — both confusing and
-    # ambiguous.  This field decouples the two semantics.
+    # Alert when realized fill cost exceeds disclosed cost by this ratio.
     realized_cost_alert_ratio: float = 1.5
-    # Ticks at our level before queue-drain fill triggers (legacy tick-based mode).
+    # Ticks at our level before a queue-drain fill in tick-based mode.
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
     passive_max_resting_ticks: int = 50
     # Maker rebate per share — deprecated; maker fee now in cost model.
     passive_rebate_per_share: float = 0.002
-    # Shares traded at our level before queue-drain fill triggers (D10 mode).
+    # Shares traded at our level before a queue-drain fill.
     # 0 = disabled, use tick-based fill_delay_ticks instead.
     passive_queue_position_shares: int = 0
-    # BT-2: cap on the per-tick seeded-Bernoulli level-fill hazard.  Bounds
+    # Cap the per-tick seeded-Bernoulli level-fill hazard. This bounds
     # the residual queue-position uncertainty so no single quote tick is a
     # near-certain fill (1.0 = no cap, deterministic fill once at the front).
     passive_fill_hazard_max: float = 0.5
@@ -286,91 +220,35 @@ class PlatformConfig:
     # Minimum order size gate: orders below this number of shares are suppressed.
     platform_min_order_shares: int = 1
 
-    # B4: signal edge vs round-trip cost gate.
-    # Orders are suppressed when signal.edge_estimate_bps < ratio × RT cost_bps,
-    # where RT cost is the sum of model entry + exit legs (asymmetric:
-    # entry leg follows execution_mode, exit leg always priced as taker
-    # — conservative direction; see estimate_round_trip_cost_bps).
-    # HTB is applied on short-entry sells when configured.
-    #
-    # SEMANTIC (audit F-H-13): the gate compares ``edge_estimate_bps``
-    # (interpreted per ``signal_edge_cost_basis``) to round-trip cost.
-    # When ``signal_edge_cost_basis == "round_trip"`` (the default) the
-    # disclosed one-way edge is scaled by 2 inside the gate to bring
-    # both sides onto the round-trip basis explicitly.  When the basis
-    # is ``"one_way"`` the gate skips the scaling (legacy behaviour).
-    #
-    # Audit F-H-14: default flipped 0.0 → 1.0.  Round-trip-breakeven is
-    # the minimum useful gate (edge must at least cover round-trip
-    # cost to be worth executing).  Operators wanting research-mode
-    # disable can explicitly set 0; operators wanting G12-equivalent
-    # 1.5× one-way (≈ 0.75× round-trip) margin can set 0.75.
+    # Suppress orders whose calibrated edge does not cover this multiple of
+    # modeled round-trip cost. A ratio of 0 disables the gate.
     signal_min_edge_cost_ratio: float = 1.0
     signal_edge_cost_basis: str = "round_trip"
 
-    # B5: reversal edge guard. Entry leg of a REVERSE intent is suppressed
-    # unless signal.edge_estimate_bps exceeds this multiplier times the
-    # combined exit + entry round-trip cost. 0.0 = disabled (legacy).
+    # Require reversal entry edge to cover combined exit and entry cost.
     reversal_min_edge_cost_multiplier: float = 1.5
 
-    # G-1: position-management decision layer.  ``drive`` routes the live
-    # decision through the planner (plan -> OrderIntent -> existing
-    # execution machinery); byte-identical to the legacy translator while
-    # ``enable_trim`` is off.  ``enable_trim`` emits a cost-aware partial
-    # reduce (TRIM) when a same-direction target shrinks below the current
-    # position.  ``trim_min_fraction`` is the churn guard: trims smaller
-    # than this fraction of the position are suppressed.
+    # The planner may drive live intents and trim same-direction positions.
+    # trim_min_fraction suppresses small, churn-prone reductions.
     position_manager_drive: bool = True
     position_manager_enable_trim: bool = True
     position_manager_trim_min_fraction: float = 0.10
-    # P3b: edge-aware trim gate.  Hold the excess (suppress the trim) while
-    # the signal's forward edge still clears this multiple of the trim's
-    # round-trip cost.  0.0 disables the gate (churn-guard-only trim).
+    # Suppress trims while forward edge clears this cost multiple; 0 disables.
     position_manager_trim_edge_gate_multiplier: float = 1.0
-    # P4: urgency-driven execution style.  When True, discretionary trims
-    # work PASSIVE (post a limit) instead of crossing at MARKET, saving the
-    # spread on a non-safety reduce.  Audit P2 (2026-06-18): flipped default
-    # ON now that the working-exit-with-market-fallback layer has landed
-    # (``_escalate_unfilled_working_exits`` / ``_submit_working_exit_fallback``
-    # re-submit any unfilled passive residual as MARKET), so a passive trim
-    # that does not fill is still guaranteed to complete.  Only the
-    # discretionary TRIM leg is affected; entries/exits/reverses are
-    # unchanged.  This changes the trade path — re-baseline the APP backtest.
+    # Post discretionary trims passively, then cross unfilled residuals at MARKET.
     position_manager_urgency_exec: bool = True
 
-    # G-6: session / EOD flatten.  When enabled (and an RTH session is
-    # configured), open positions are flattened — and new entries blocked —
-    # once the quote crosses ``rth_close - session_flatten_seconds_before
-    # _close``.  Closes the overnight-gap-risk hole for intraday strategies.
+    # Block entries and flatten positions near the RTH close.
     session_flatten_enabled: bool = True
     session_flatten_seconds_before_close: int = 0
 
-    # G-5 N2: cross-alpha position netting.  When enabled, the SIGNAL-path
-    # decision is driven by the budget-weighted, portfolio-capped sum of every
-    # alpha's standing desired target (conviction stacks; opposing desires
-    # offset) instead of the single arbitrated winner.  Default-off → the
-    # winner-take-all path, byte-identical.  ``net_staleness_k`` is the expiry
-    # multiple (a standing target dies after k × horizon_seconds unrefreshed).
+    # Net standing alpha targets instead of trading only the arbitrated winner.
+    # Targets expire after net_staleness_k × their horizon.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
-    # G-7: edge-weighted / vol-targeted sizing with an inventory penalty.
-    # The base sizer (capital × strength × regime) is tilted by up to three
-    # multiplicative factors.  ``sizer_tilt_drive`` routes the live decision
-    # through the tilted sizer; with it off (default) the tilt is computed
-    # only for the shadow measurement stream (``--emit-size-divergence-jsonl``)
-    # and the live size stays single-factor — byte-identical to the baseline.
-    # Each factor is independently disabled by default, so even when driving,
-    # an all-off config reproduces the base sizer exactly.
-    #
-    # Audit P2.3 (2026-06-18): the EDGE-weighted tilt is fully wired and
-    # available **opt-in** — an operator promotes it per deployment by setting
-    # ``sizer_tilt_drive: true`` + ``sizer_edge_weighting_enabled: true`` (then
-    # a disclosed-positive-edge entry is sized by ``edge / edge_ref_bps``
-    # clamped to ``[edge_floor, edge_cap]``, re-capped at
-    # ``max_position_per_symbol`` and floored at 0 — Inv-11 holds).  It is left
-    # OFF by default so promoting edge-amplified sizing is a conscious,
-    # re-baselined per-deployment choice rather than a platform-wide default.
+    # Optional edge, volatility, and inventory tilts multiply the base size.
+    # sizer_tilt_drive applies them live; otherwise they remain shadow-only.
     sizer_tilt_drive: bool = False
     sizer_edge_weighting_enabled: bool = False
     sizer_edge_ref_bps: float = 20.0
@@ -392,13 +270,8 @@ class PlatformConfig:
     # input — causal prefix, never the full session.
     regime_calibration_max_quotes: int | None = None
 
-    # Audit R-1: floor on the regime engine's calibration-time emission
-    # separation ``d`` (min pairwise).  When the published
-    # ``RegimeState.discriminability`` is below this, regime-gates fail safe
-    # to OFF (the posterior cannot tell the states apart — degenerate
-    # calibration on a tight/stable spread).  ``0.0`` (default) is an exact
-    # no-op; ``~0.5`` enables the guard.  Orthogonal to the calibrated
-    # fail-safe (P0-1).  Wired into ``HorizonSignalEngine``.
+    # Disable regime gates when calibrated states are insufficiently distinct.
+    # A floor of 0 disables this guard.
     regime_min_discriminability: float = 0.0
 
     # When True, bootstrap refuses to start if ``RegimeEngine.state_names``
@@ -415,181 +288,59 @@ class PlatformConfig:
     # Cap on the walk-the-book market-impact premium, expressed in multiples
     # of the half-spread.  Threaded into the backtest routers (which otherwise
     # default to 10).  Default 10.0 preserves prior router behaviour for
-    # callers that do not set it; platform.yaml tightens this to 4.0 for the
-    # L1-only retail book (BT-0).
+    # callers that do not set it; platform.yaml tightens this to 4.0 for an
+    # L1-only retail book.
     cost_max_impact_half_spreads: float = 10.0
 
-    # 2g: annualised hard-to-borrow fee in basis points for short-side fills.
+    # Annualized hard-to-borrow fee in basis points for short-side fills.
     # Applied as a daily cost (annual_bps / 252) on SELL fills flagged as_short.
     # Default 0 = disabled.  Set for short-selling strategies only.
     cost_htb_borrow_annual_bps: float = 0.0
 
-    # ── Execution-realism knobs (audit 2026-06-19; additive, default-neutral) ──
-    # Each defaults to the prior trade-path behaviour so every locked Inv-5
-    # parity hash and the APP PnL baseline remain valid; only the config
-    # snapshot grows.  Operators opt into the more-conservative realism per
-    # knob (platform.yaml enables them for live-like backtests).
-    #
-    # P1.3: participation-based impact applied to the *within-L1* filled
-    # portion (the excess-over-L1 walk-the-book term is unchanged).  Moves
-    # the taker fill price by ``factor × (fill_qty / available_depth) ×
-    # half_spread`` for the L1 leg too.  0.0 reproduces "impact only on
-    # excess".  Mirrored by the round-trip cost estimators.
+    # Apply participation impact to the within-L1 portion; 0 disables it.
     cost_within_l1_impact_factor: float = 0.0
-    # P2.11: permanent square-root market-impact coefficient.  Adds
-    # ``coef × sqrt(quantity / available_depth) × half_spread`` to the taker
-    # fill price.  0.0 = disabled (calibration from cached fills is a data
-    # task — see the audit appendix).
+    # Add square-root permanent impact to taker fills; 0 disables it.
     cost_permanent_impact_coefficient: float = 0.0
-    # P2.8: MOC closing-auction penalty in bps of notional, charged as a fee
-    # on every MOC fill to proxy auction imbalance the close-mid proxy
-    # ignores.  0.0 preserves prior MOC economics (close mid, no spread).
+    # Charge MOC fills for closing-auction imbalance; 0 disables it.
     cost_moc_penalty_bps: float = 0.0
-    # P2.9: forced-exit (stop / hazard / force-flatten) depth-depletion
-    # factor.  The effective L1 depth a panic exit fills against is divided
-    # by this factor before the walk-the-book split, so a stop walks deeper
-    # into a depleted book.  1.0 = no change; 2.0 halves usable L1 depth.
+    # Divide usable L1 depth for forced exits by this factor.
     cost_stop_depth_depletion_factor: float = 1.0
-    # P1.1: cap a passive through-fill at the crossing quote's opposite-side
-    # size and rest the remainder instead of filling the whole order in one
-    # tick (models queue position on through-trades).  False = prior full-fill.
+    # Cap passive through-fills at the crossing quote's opposite-side size.
     passive_through_fill_size_cap_enabled: bool = False
-    # P1.2: require observed trade volume at the resting level before a
-    # quote-imbalance level (drain) fill can fire — a passive order cannot
-    # drain-fill on quote ticks alone.  False = prior quote-imbalance-only
-    # behaviour.  (Explicit queue-depth mode already requires volume.)
+    # Require traded volume before a quote-imbalance drain fill.
     passive_require_trade_for_level_fill: bool = False
-    # P1.7: borrow tier assumed for symbols absent from
-    # ``borrow_availability``.  "available" (default) is optimistic for
-    # non-large-cap universes; "hard" / "unavailable" are conservative.
+    # Default locate tier for symbols absent from borrow_availability.
     borrow_default_tier: str = "available"
-    # P2.10: when True, a realized fill cost_bps that exceeds
-    # ``realized_cost_alert_ratio`` × the disclosed G12 one-way cost for
-    # ``realized_cost_escalation_streak`` consecutive fills escalates the
-    # risk engine (SCALE_DOWN) rather than only emitting a WARNING alert.
+    # Escalate risk after this many consecutive realized-cost overruns.
     realized_cost_escalation_enabled: bool = False
     realized_cost_escalation_streak: int = 3
 
     cache_dir: Path | None = None
 
-    # ── Phase-2 (three-layer architecture) — all optional ──────────────
-    #
-    # These fields drive the new sensor / horizon scheduler subsystem
-    # introduced by ``docs/three_layer_architecture.md``.  They
-    # are *all* optional with defaults that preserve Phase-1 behaviour
-    # bit-for-bit:
-    #
-    # - ``sensor_specs=()`` causes the bootstrap layer to skip the
-    #   sensor registry entirely and the orchestrator to take the
-    #   legacy micro-state path (Inv-A in the implementation plan).
-    # - ``session_open_ns=None`` defers session-anchor binding to the
-    #   ``HorizonScheduler``'s lazy first-event auto-bind.
-    # - ``horizons_seconds`` carries the canonical five horizons from
-    #   §7.4 of the design doc; consumers that don't need them simply
-    #   register no sensors and pay no cost.
-    # - ``event_calendar_path`` is parsed in P2.1 by the calendar
-    #   adapter; ``None`` keeps the demo deterministic.
+    # Optional sensor and horizon scheduling configuration.
+    # A missing session anchor binds the scheduler to its first event.
     session_open_ns: int | None = None
     horizons_seconds: frozenset[int] = field(
         default_factory=lambda: frozenset({30, 120, 300, 900, 1800})
     )
     sensor_specs: tuple[SensorSpec, ...] = ()
-    # When True, bootstrap registers only sensors listed in loaded SIGNAL
-    # alphas' ``depends_on_sensors`` (intersected with ``sensor_specs``).
-    # Default False preserves locked Inv-5 baselines that use the full
-    # reference sensor stack; research backtest configs opt in explicitly.
+    # Register only sensors required by loaded SIGNAL alphas.
     prune_unused_sensors: bool = False
     event_calendar_path: Path | None = None
-    # BT-18: split/dividend ex-date calendar for replay integrity (see
+    # Split and dividend ex-date calendar for replay integrity (see
     # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
     ex_date_calendar_path: Path | None = None
     backtest_enforce_ex_date_guard: bool = True
     market_id: str = "US_EQUITY"
     session_kind: str = "RTH"
 
-    # ── Phase-3.1 (mechanism enforcement) ─────────────────────────────
-    #
-    # Strict-mode default for gate G16 (§20.6.2).  When ``True``
-    # (the post-Workstream-E default), every schema-1.1 SIGNAL/PORTFOLIO
-    # spec MUST declare a fully-formed ``trend_mechanism:`` block —
-    # the loader refuses to load otherwise via
-    # :class:`MissingTrendMechanismError`.  When ``False`` (legacy
-    # opt-out), schema-1.1 SIGNAL/PORTFOLIO specs may omit the block
-    # and G16 only fires for specs that *do* declare it; this is the
-    # documented escape hatch for v0.2-baseline alphas (such as the
-    # reference ``sig_benign_midcap_v1``) that pre-date the mechanism
-    # taxonomy.
-    #
-    # Workstream E (acceptance row 84, §20.12.1) flipped the default
-    # from False → True now that the four canonical reference alphas
-    # (one per non-stress family — KYLE_INFO / INVENTORY /
-    # HAWKES_SELF_EXCITE / SCHEDULED_FLOW) ship under strict mode and
-    # close the §20.12.2 #4 acceptance criterion.  Operators relying
-    # on a v0.2 baseline alpha must now opt back in by pinning
-    # ``enforce_trend_mechanism: false`` in their ``platform.yaml``;
-    # the reference ``platform.yaml`` documents this opt-out path
-    # alongside the v0.2 reference alpha.
+    # Require schema-1.1 SIGNAL and PORTFOLIO alphas to declare a complete
+    # trend mechanism. Disable only for manifests that predate the taxonomy.
     enforce_trend_mechanism: bool = True
 
-    # ── Phase-4 (composition layer) ──────────────────────────────────
-    #
-    # All optional with v0.2-preserving defaults.  When no PORTFOLIO
-    # alpha is loaded, the composition pipeline is not wired and these
-    # fields are inert (Inv-A; bootstrap §6.11 step 7-8).
-    #
-    # ``composition_completeness_threshold`` — UNIVERSE-scope barrier
-    # close: if the fraction of universe symbols with valid signals at
-    # the decision-horizon tick is below this, the composition engine
-    # *skips* the decision (per-symbol fallback = no position change,
-    # Inv-11 fail-safe).  Default 0.80.
-    #
-    # ``factor_model`` — neutralization model identifier consumed by
-    # ``composition/factor_neutralizer.py``.  ``"none"`` disables
-    # neutralization (passthrough).  Default ``"FF5_momentum_STR"``.
-    #
-    # ``factor_loadings_refresh_seconds`` — cadence at which the
-    # neutralizer reloads its loadings table.  ``0`` = static-at-bootstrap
-    # (deterministic for backtests; the recommended setting).
-    #
-    # ``factor_loadings_max_age_seconds`` — bootstrap-time staleness
-    # gate: every symbol in any loaded PORTFOLIO alpha's effective
-    # universe MUST have a loadings row dated within this window or
-    # bootstrap raises ``StaleFactorLoadingsError``.  Default 7 days.
-    #
-    # ``composition_lambda_tc`` / ``composition_lambda_risk`` — turnover
-    # and risk penalty weights in the CVXPY objective
-    # ``max w·α − λ_TC·‖Δw‖₁ − λ_risk·w'Σw``.  These bind **only** under
-    # ``composition_optimizer_mode: ecos`` (audit P1-1); the default
-    # ``closed_form`` path is a deterministic gross rescale that ignores both
-    # penalties, so tuning them there has no effect on the desired book.
-    #
-    # ``composition_optimizer_mode`` — ``"closed_form"`` (default) selects the
-    # deterministic closed-form rescale; ``"ecos"`` selects the CVXPY/ECOS
-    # solver path (requires the ``[portfolio]`` extra and is subject to
-    # cross-platform solver-parity verification before production use).
-    #
-    # ``composition_max_universe_size`` — Phase-4 ships with a 10-symbol
-    # reference universe.  Per §15.1 we hard-cap at 50 in v0.2 and defer
-    # universe-scaling to a separate workstream (v0.4); exceeding this
-    # cap raises ``UniverseScaleError`` at bootstrap.
-    #
-    # ``composition_gross_cap_pct`` / ``composition_per_name_cap_pct`` —
-    # composition-shaping caps on the *desired* book the
-    # ``TurnoverOptimizer`` constructs, as a fraction of ``account_equity``
-    # (audit 2026-06-20 P2-3 / 2026-07-02 P2): intentionally separate from
-    # an alpha's own ``risk_budget`` (shares-domain, enforced downstream by
-    # the risk engine) — see ``turnover_optimizer.py`` docstring. Defaults
-    # (200% gross, 5% per-name) match the platform's historical hardcoded
-    # values. For small universes the per-name cap can bind for every name
-    # simultaneously, collapsing the ranker's cross-sectional weights into
-    # an equal-notional, sign-only book (composition audit 2026-07-02) —
-    # raise ``composition_per_name_cap_pct`` if a small-universe alpha's
-    # relative conviction should carry through to sizing.
-    #
-    # ``enforce_layer_gates`` — when True (default, production setting)
-    # alphas failing G1/G3/G9/G10/G11 are refused.  When False, G1/G3
-    # downgrade to WARN (research escape hatch).  G9/G10/G11 are
-    # always blocking regardless of this flag (data-integrity gates).
+    # PORTFOLIO composition settings are inert unless a PORTFOLIO alpha is loaded.
+    # ECOS alone uses the turnover and risk penalties; closed_form ignores them.
+    # Gross and per-name caps shape desired weights before downstream risk checks.
     composition_completeness_threshold: float = 0.80
     factor_model: str = "FF5_momentum_STR"
     factor_loadings_refresh_seconds: int = 0
@@ -601,93 +352,28 @@ class PlatformConfig:
     composition_max_universe_size: int = 50
     composition_gross_cap_pct: float = 2.0
     composition_per_name_cap_pct: float = 0.05
-    # ``composition_signal_max_age_seconds`` — stale-feeder gate (audit
-    # P0-5).  A feeder ``Signal`` whose event-time age at the PORTFOLIO
-    # barrier exceeds this window is dropped before completeness is
-    # counted and before it can enter a context, so a signal carried over
-    # from a much earlier boundary cannot inflate completeness.  ``None``
-    # (default) uses the context's own decision horizon as the window, so
-    # one fully-missed barrier drops the signal.
+    # Drop stale feeder signals before computing portfolio completeness.
+    # None uses the portfolio decision horizon as the age limit.
     composition_signal_max_age_seconds: int | None = None
     composition_optimizer_mode: str = "closed_form"
     enforce_layer_gates: bool = True
 
-    # ── Audit R2: per-alpha risk-budget enforcement ───────────────
-    # When True, the platform wraps the BasicRiskEngine in
-    # AlphaBudgetRiskWrapper at boot so each alpha's
-    # ``risk_budget`` block (max_position_per_symbol,
-    # max_gross_exposure_pct, max_drawdown_pct,
-    # capital_allocation_pct) is enforced at runtime in addition to
-    # the platform-wide caps.  Default is False to preserve
-    # Default True — per-alpha YAML ``risk_budget`` blocks are enforced
-    # at runtime in addition to platform-wide caps.
+    # Enforce each alpha's risk_budget in addition to platform-wide caps.
     enforce_per_alpha_risk_budget: bool = True
 
-    # ── Workstream F-1 (promotion evidence ledger) ────────────────
-    #
-    # Optional path to an append-only JSONL ledger that records every
-    # committed alpha-lifecycle transition (RESEARCH→PAPER, PAPER→LIVE,
-    # LIVE→QUARANTINED, QUARANTINED→PAPER, QUARANTINED→DECOMMISSIONED).
-    # When ``None`` (default), no ledger is constructed and lifecycle
-    # transitions emit no forensic record (preserving Phase-1/2/3/4
-    # behaviour bit-identically).
-    #
-    # When set, ``bootstrap.build_platform`` instantiates a
-    # :class:`feelies.alpha.promotion_ledger.PromotionLedger` at this
-    # path, passes it to :class:`AlphaRegistry`, and every
-    # :class:`AlphaLifecycle` constructed by the registry registers a
-    # ``StateMachine.on_transition`` callback that appends a
-    # :class:`PromotionLedgerEntry` for each successful transition.
-    # Backtest deployments — which already disable per-alpha lifecycle
-    # tracking via ``registry_clock=None`` — leave the ledger file
-    # untouched (no transitions occur).
-    #
-    # The ledger is *forensic-only*: production code paths must NOT
-    # consume it for per-tick decisions.  See
-    # :mod:`feelies.alpha.promotion_ledger` for the consumer contract.
+    # Optional append-only lifecycle ledger. It is observational and must not
+    # influence trading decisions; backtests do not write transitions.
     promotion_ledger_path: Path | None = None
 
-    # ── PAPER mode connection settings (IB Gateway + Massive WS) ─────
-    #
-    # Consumed by ``bootstrap._create_backend`` when
-    # ``mode == OperatingMode.PAPER`` (or LIVE).  Default values
-    # target an IB Gateway paper account on the local machine; live
-    # deployments must override ``ib_port`` to 4001 explicitly.
-    # ``massive_ws_url`` is also the implicit default for
-    # :class:`MassiveLiveFeed` (kept in sync via the ``from_yaml``
-    # loader).  These fields are inert for BACKTEST mode.
+    # ── PAPER/LIVE connections ───────────────────────────────────────
+    # Defaults target a local IB paper account; LIVE must set port 4001.
     ib_host: str = "127.0.0.1"
     ib_port: int = 4002  # 4002 = paper, 4001 = live
     ib_client_id: int = 1
     massive_ws_url: str = "wss://socket.massive.com/stocks"
 
-    # ── Workstream F-5 (per-platform gate-threshold overrides) ─────
-    #
-    # Optional flat-key mapping of
-    # :class:`feelies.alpha.promotion_evidence.GateThresholds` field
-    # names to override values applied on top of the skill-pinned
-    # defaults at bootstrap time.  Per-alpha overrides declared in the
-    # ``promotion: { gate_thresholds: ... }`` block of an
-    # ``.alpha.yaml`` are then layered on top of *this* result by
-    # :class:`feelies.alpha.registry.AlphaRegistry`.
-    #
-    # Layering precedence (lowest to highest):
-    #
-    #   1. ``GateThresholds()`` skill-pinned defaults
-    #      (``promotion_evidence.py``).
-    #   2. ``platform.yaml :: gate_thresholds`` (this field).
-    #   3. ``<alpha>.alpha.yaml :: promotion.gate_thresholds``
-    #      (manifest-level).
-    #
-    # An empty dict (default) means "no platform overrides; pure
-    # skill-pinned defaults are used everywhere except where a
-    # per-alpha override applies".
-    #
-    # Keys are *not* validated at config-construction time — the
-    # validator is invoked from
-    # :func:`feelies.bootstrap.build_platform` so YAML errors surface
-    # at bootstrap with a single error class
-    # (:class:`feelies.core.errors.ConfigurationError`).
+    # Gate thresholds resolve from defaults, then platform overrides, then alpha
+    # overrides. Bootstrap validates keys and reports one configuration error.
     gate_thresholds_overrides: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
@@ -735,8 +421,7 @@ class PlatformConfig:
                 "disjoint (a code cannot mean both halt and resume)"
             )
         if self.ssr_mode != "refuse_short":
-            # The permissive uptick-routed variant is deferred (BT-6 LOCKED:
-            # conservative refuse-short). The field exists as the forward hook.
+            # Only the conservative refuse-short mode is supported.
             raise ConfigurationError(
                 f"ssr_mode={self.ssr_mode!r} is not implemented; only "
                 "'refuse_short' is supported (the uptick-routed variant is "
@@ -887,7 +572,7 @@ class PlatformConfig:
         if self.cost_max_commission_pct <= 0.0:
             raise ConfigurationError("cost_max_commission_pct must be > 0")
 
-        # ── Phase-2 validation ────────────────────────────────────────
+        # Sensor and horizon validation.
         for h in self.horizons_seconds:
             if h <= 0:
                 raise ConfigurationError(
@@ -943,9 +628,7 @@ class PlatformConfig:
             seen_ids.add(spec.sensor_id)
 
         if self.event_calendar_path is not None and not self.event_calendar_path.is_file():
-            # P2.1: the calendar adapter loads YAML at boot; surface
-            # a missing file as a config error rather than letting it
-            # explode at first event.
+            # Surface a missing boot-time calendar as a configuration error.
             raise ConfigurationError(
                 f"event_calendar_path does not exist: {self.event_calendar_path}"
             )
@@ -955,7 +638,7 @@ class PlatformConfig:
                 f"ex_date_calendar_path does not exist: {self.ex_date_calendar_path}"
             )
 
-        # ── Phase-4 validation ────────────────────────────────────────
+        # Portfolio composition validation.
         if not 0.0 <= self.composition_completeness_threshold <= 1.0:
             raise ConfigurationError(
                 f"composition_completeness_threshold must be in [0,1], "
@@ -1018,13 +701,7 @@ class PlatformConfig:
         )
 
     def _to_dict(self) -> dict[str, Any]:
-        # Path-based fields are normalised to their basename before being
-        # folded into the snapshot. Absolute filesystem paths are
-        # environment metadata (per machine, per tempdir, per checkout
-        # location) and would otherwise leak into ``checksum``, breaking
-        # both two-run determinism (audit A-DET-02) and cross-machine
-        # reproducibility (audit B-PROMO-04). The basename still
-        # discriminates between distinct alpha bundles by name.
+        # Hash path basenames, not machine-specific absolute locations.
         return {
             "version": self.version,
             "author": self.author,
@@ -1176,10 +853,7 @@ class PlatformConfig:
             "borrow_default_tier": self.borrow_default_tier,
             "realized_cost_escalation_enabled": (self.realized_cost_escalation_enabled),
             "realized_cost_escalation_streak": (self.realized_cost_escalation_streak),
-            # Phase-2 fields (folded into the snapshot so determinism
-            # checksums change when sensor configuration changes — but
-            # default values keep the snapshot bit-stable for legacy
-            # configs).
+            # Sensor settings participate in the deterministic checksum.
             "session_open_ns": self.session_open_ns,
             "horizons_seconds": sorted(self.horizons_seconds),
             "sensor_specs": [
@@ -1207,10 +881,7 @@ class PlatformConfig:
             "market_id": self.market_id,
             "session_kind": self.session_kind,
             "enforce_trend_mechanism": self.enforce_trend_mechanism,
-            # Phase-4 fields (folded into the snapshot so determinism
-            # checksums change when composition configuration changes;
-            # default values keep the snapshot bit-stable for legacy
-            # configs).
+            # Composition settings participate in the deterministic checksum.
             "composition_completeness_threshold": (self.composition_completeness_threshold),
             "factor_model": self.factor_model,
             "factor_loadings_refresh_seconds": (self.factor_loadings_refresh_seconds),
@@ -1222,8 +893,7 @@ class PlatformConfig:
             "composition_lambda_tc": self.composition_lambda_tc,
             "composition_lambda_risk": self.composition_lambda_risk,
             "composition_max_universe_size": self.composition_max_universe_size,
-            # Only serialized when non-default so legacy configs keep a
-            # bit-stable snapshot checksum (audit P0-5 / P1-1).
+            # Omit defaults to preserve established snapshot checksums.
             **(
                 {"composition_signal_max_age_seconds": self.composition_signal_max_age_seconds}
                 if self.composition_signal_max_age_seconds is not None
@@ -1234,8 +904,7 @@ class PlatformConfig:
                 if self.composition_optimizer_mode != "closed_form"
                 else {}
             ),
-            # Only serialized when non-default (composition audit 2026-07-02
-            # P2), matching the ``composition_optimizer_mode`` precedent above.
+            # Omit default caps for the same checksum policy.
             **(
                 {"composition_gross_cap_pct": self.composition_gross_cap_pct}
                 if self.composition_gross_cap_pct != 2.0
@@ -1248,10 +917,7 @@ class PlatformConfig:
             ),
             "enforce_layer_gates": self.enforce_layer_gates,
             "enforce_per_alpha_risk_budget": (self.enforce_per_alpha_risk_budget),
-            # Workstream F-1: ledger path is folded as a basename only
-            # (same Path-normalisation policy as event_log_path /
-            # cache_dir) so absolute-fs paths don't leak into the
-            # config checksum and break two-run determinism (A-DET-02).
+            # Hash the ledger basename, not its machine-specific location.
             "promotion_ledger_path": (
                 self.promotion_ledger_path.name if self.promotion_ledger_path else None
             ),
@@ -1298,8 +964,7 @@ class PlatformConfig:
         if not isinstance(data, dict):
             raise ConfigurationError(f"{path}: root must be a YAML mapping")
 
-        # Audit F-L-34: warn on deprecated cost fields that are loaded
-        # for backward compat but no longer threaded into the cost model.
+        # Warn when ignored cost aliases appear in operator config.
         for deprecated in ("cost_exchange_per_share", "passive_rebate_per_share"):
             if deprecated in data:
                 logger.warning(
@@ -1310,9 +975,7 @@ class PlatformConfig:
                     deprecated,
                 )
 
-        # Audit P1-3 / P1-4: reject loosely-typed scalars (e.g. quoted
-        # "false" for a bool, a float for an int) and surface unrecognized
-        # keys (typo'd overrides that would otherwise silently no-op).
+        # Reject loose scalar types and unknown keys before coercion hides mistakes.
         cls._check_yaml_keys_and_types(data, source=path, strict=strict)
 
         symbols_raw = data.get("symbols", [])
@@ -1352,7 +1015,7 @@ class PlatformConfig:
                 parsed_term.append((str(item[0]), str(item[1])))
             ingest_terminal_symbol_health = tuple(parsed_term)
 
-        # ── Phase-2 fields (optional in YAML) ─────────────────────────
+        # Optional sensor and horizon fields.
         horizons_raw = data.get("horizons_seconds")
         if horizons_raw is None:
             horizons_seconds = frozenset({30, 120, 300, 900, 1800})
@@ -1387,12 +1050,7 @@ class PlatformConfig:
         if maker_exch_raw is None and legacy_exch is not None:
             maker_exch_raw = legacy_exch
 
-        # cost_passive_adverse_selection_bps / cost_adverse_selection_drain_bps
-        # and cost_through_fill_adverse_selection_bps / cost_adverse_selection_through_bps
-        # are current-name/legacy-name pairs that must resolve to the same
-        # value regardless of which name the operator used. Resolve each pair
-        # to a single raw value with an `is None` check (not `or`) so an
-        # explicit 0.0 override is preserved instead of being treated as unset.
+        # Resolve each adverse-selection alias pair while preserving explicit zero.
         passive_adverse_raw = data.get("cost_passive_adverse_selection_bps")
         if passive_adverse_raw is None:
             passive_adverse_raw = data.get("cost_adverse_selection_drain_bps")
@@ -1728,25 +1386,12 @@ class PlatformConfig:
     def _check_yaml_keys_and_types(
         cls, data: dict[str, Any], *, source: Path, strict: bool = False
     ) -> None:
-        """Validate YAML key recognition and scalar typing before coercion.
+        """Validate YAML keys and bare scalar types before coercion.
 
-        Two fail-fast guards (audit P1-3 / P1-4):
-
-        - **Unknown keys** (P1-4): keys that are neither a ``PlatformConfig``
-          field nor a recognised non-field key (``_NON_FIELD_YAML_KEYS``) are
-          almost always typos (e.g. ``cost_stress_multipler``) whose intended
-          override would silently no-op.  We log a loud WARNING rather than
-          raise so a config with a harmless stray key still runs — but the
-          drift is no longer silent.
-
-        - **Loose scalars** (P1-3): for fields annotated as a bare ``bool`` /
-          ``int`` / ``float``, the YAML value (already parsed by
-          ``yaml.safe_load``) must be the matching Python type, with the one
-          conventional widening of ``int`` → ``float``.  This rejects the
-          ``bool("false") is True`` footgun, silent ``int(5.7) → 5``
-          truncation, and string→number auto-parsing.  Optional / union
-          scalars (``int | None`` etc.) keep their bespoke parsing and are
-          not policed here.
+        Unknown keys warn because they are usually misspelled overrides.
+        Bare ``bool``, ``int``, and ``float`` fields require matching YAML
+        types, except that integers may widen to floats. Union fields retain
+        their dedicated parsers.
         """
         fields = cls.__dataclass_fields__
         known = set(fields) | cls._NON_FIELD_YAML_KEYS
@@ -1797,11 +1442,9 @@ class PlatformConfig:
         *,
         source: Path,
     ) -> dict[str, Any]:
-        """Parse the optional top-level ``gate_thresholds:`` YAML block.
+        """Parse the optional top-level ``gate_thresholds:`` block.
 
-        Workstream F-5 platform-level override entry-point.  The
-        block, when present, must be a mapping whose keys correspond
-        to fields of
+        Keys must name fields of
         :class:`feelies.alpha.promotion_evidence.GateThresholds`.
         Per-key validation + type coercion is delegated to
         :func:`feelies.alpha.promotion_evidence.parse_gate_thresholds_overrides`
@@ -1852,11 +1495,8 @@ class PlatformConfig:
                 min_history: 100
                 throttled_ms: null
 
-        ``cls:`` is a fully-qualified dotted path resolved by importlib.
-        Sensor classes live exclusively in
-        ``feelies.sensors.impl.*`` per the design doc; we enforce that
-        prefix here to keep the YAML attack surface narrow (no
-        arbitrary-import via config).
+        ``cls`` is an importable dotted path restricted to
+        ``feelies.sensors.impl.*`` to prevent arbitrary imports from config.
         """
         if not isinstance(entry, dict):
             raise ConfigurationError(
@@ -1905,18 +1545,8 @@ class PlatformConfig:
         min_history = int(entry.get("min_history", 0))
         throttled_ms_raw = entry.get("throttled_ms")
         throttled_ms = None if throttled_ms_raw is None else int(throttled_ms_raw)
-        # ``stateful`` was previously unreachable from YAML: the loader never
-        # read it, so any accumulator sensor (EWMA / Kyle-lambda / Hawkes)
-        # paired with a non-null ``throttled_ms`` silently advanced its
-        # estimator only on emissions — biasing it — with no way for an
-        # operator to opt into the documented unbiased path (audit P1-2 /
-        # SensorSpec.stateful contract).  Plumb it through now.
-        #
-        # Explicit ``stateful: false`` next to a non-null throttle is the
-        # operator acknowledgment that the sensor is truly non-accumulator
-        # (e.g. scheduled_flow_window).  That silences SensorSpec's P1-D
-        # warning via ``stateless_throttle_ok``.  Omitting the key still
-        # warns — the footgun for "added throttle, forgot accumulator".
+        # Stateful throttled sensors update on every event. Explicit false confirms
+        # that skipping intermediate updates is safe; omission still warns.
         stateful_key_present = "stateful" in entry
         stateful = bool(entry.get("stateful", False))
         stateless_throttle_ok = (

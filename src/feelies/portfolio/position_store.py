@@ -17,49 +17,12 @@ from typing import Protocol
 
 @dataclass
 class Position:
-    """Current position in a single symbol.
+    """Current position and PnL for one symbol.
 
-    Cost-accounting convention (audit R6, revised BT-3)
-    ---------------------------------------------------
-
-    The platform's :class:`feelies.execution.backtest_router.BacktestOrderRouter`
-    fills market orders at the **executed cross price** (ask for taker
-    buys, bid for taker sells) — the price IB reports — embedding the
-    half-spread in the fill price rather than recording it as a separate
-    ``spread_cost`` fee (the cost model is called with ``half_spread=0``).
-    This means:
-
-    * :attr:`avg_entry_price` is recorded at the **executed cross
-      price**, so it INCLUDES the half-spread cost.
-
-    * :attr:`realized_pnl` is computed against ``avg_entry_price`` and
-      therefore now INCLUDES the half-spread (a taker round trip realizes
-      the full spread in PnL).  ``spread_cost`` no longer flows through
-      :attr:`cumulative_fees`, so a consumer reading
-      :attr:`cumulative_fees` as "total transaction cost" will *understate*
-      cost by the spread; the spread lives in realized/unrealized PnL.
-      The platform's NAV calculation (`BasicRiskEngine._compute_current_equity`)
-      and the post-trade-forensics analyzer both subtract fees explicitly,
-      so platform-internal accounting is self-consistent — but external
-      reporting code that pulls :attr:`realized_pnl` directly must
-      apply the same fee subtraction.
-
-    * The ``walk-the-book`` partial-fill remainder stacks its
-      market-impact premium on top of the cross (above the ask for
-      buys, below the bid for sells) and that adverse component is
-      likewise reflected in :attr:`avg_entry_price`.  See
-      :meth:`BacktestOrderRouter.submit` for the explicit comment.
-
-    * Mark-to-market via :meth:`PositionStore.update_mark` uses the
-      next quote's mid.  Because a taker enters at the cross but marks
-      at the mid, a flat-to-flat round trip on a quote that never moved
-      shows the round-trip spread as a (un)realized PnL loss while
-      :attr:`cumulative_fees` carries only commission + regulatory
-      charges (the half-spread is now in the price, not the fees).
-
-    Live deployments must mirror this convention (or update both the
-    fill model and this docstring together) to preserve Inv-9
-    backtest/live parity.
+    Taker fills use the executed cross price, so spread and depth impact live in
+    entry price and realized/unrealized PnL. ``cumulative_fees`` contains only
+    explicit fees and therefore is not total transaction cost. Live and
+    backtest implementations must use the same convention.
     """
 
     symbol: str
@@ -87,12 +50,10 @@ class PositionStore(Protocol):
     ) -> Position:
         """Update position after a fill.  Returns updated position.
 
-        ``timestamp_ns`` (Phase-4-finalize, optional) records the wall-
-        time of the underlying fill.  When provided and the update
+        Optional ``timestamp_ns`` records the fill time. When provided and the update
         causes a flat → non-zero transition, the implementation records
         the timestamp under :meth:`opened_at_ns` for the symbol.  When
-        omitted, position-age tracking is disabled for that fill (Inv-A
-        legacy callers see no behavioural change).
+        omitted, position-age tracking is disabled for that fill.
         """
         ...
 
@@ -144,13 +105,11 @@ class PositionStore(Protocol):
         flips the position sign, the returned timestamp reflects the
         **most recent** open episode — never the original.
 
-        Phase-4-finalize uses this to enforce the hazard-exit
-        ``min_age_seconds`` safeguard and the optional
+        Hazard exits use this to enforce ``min_age_seconds`` and the optional
         ``hard_exit_age_seconds`` reconciliation guard (§20.7.3).
 
-        Implementations that do not track this MUST return ``None`` so
-        the hazard controller falls back to the no-min-age behaviour
-        (Inv-A: legacy v0.2 deployments unaffected).
+        Implementations that do not track this must return ``None`` so the
+        hazard controller falls back to no minimum age.
         """
         ...
 
@@ -158,7 +117,7 @@ class PositionStore(Protocol):
         """Return the most recent mark recorded via :meth:`update_mark`.
 
         Returns ``None`` when no mark has been recorded for ``symbol``.
-        Used by the Phase-4 risk-engine helper to translate intent
+        Used by the risk engine to translate intent
         ``target_usd`` into share counts (see
         :meth:`feelies.risk.basic_risk.BasicRiskEngine.check_sized_intent`).
         """

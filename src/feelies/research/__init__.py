@@ -1,21 +1,7 @@
-"""Research infrastructure — experiment tracking, hypothesis
-management, and statistical-significance computation.
+"""Deterministic research and promotion-significance utilities.
 
-Workstream **C** equips the platform with the pure-Python
-significance procedures the F-2 promotion-gate matrix already
-expects:
-
-- :mod:`feelies.research.cpcv` (Workstream C-1) — Combinatorial
-  Purged Cross-Validation, emitting
-  :class:`feelies.alpha.promotion_evidence.CPCVEvidence`.
-- :mod:`feelies.research.dsr` (Workstream C-2) — Bailey & López de
-  Prado Deflated Sharpe Ratio, emitting
-  :class:`feelies.alpha.promotion_evidence.DSREvidence`.
-
-The experiment / hypothesis modules remain protocol stubs; their
-concrete implementations are future work.  See the
-research-workflow and testing-validation skills for the broader
-specification.
+CPCV and DSR produce the evidence consumed by promotion gates. Experiment
+and hypothesis modules currently define protocols only.
 """
 
 from feelies.research.cpcv import (

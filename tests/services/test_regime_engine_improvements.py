@@ -231,7 +231,7 @@ def test_checkpoint_includes_schema_version() -> None:
     )
     engine.posterior(_q(sequence=1))
     payload = json.loads(engine.checkpoint())
-    # Audit P1 E-1 bumped the schema to 2 to carry flags_fingerprint.
+    # Schema 2 carries the flags fingerprint.
     assert payload["checkpoint_schema_version"] == 2
     assert "flags_fingerprint" in payload
 

@@ -1,13 +1,13 @@
-"""Execution-realism knobs (audit 2026-06-19, P1/P2 backlog).
+"""Execution-realism configuration tests.
 
 Covers the additive, default-neutral fill-model knobs:
 
-* P1.3 within-L1 participation impact (``cost_within_l1_impact_factor``)
-* P2.11 permanent square-root impact (``cost_permanent_impact_coefficient``)
-* P2.9 forced-exit depth depletion (``cost_stop_depth_depletion_factor``)
-* P1.1 passive through-fill size cap (``passive_through_fill_size_cap_enabled``)
-* P1.2 volume-gated passive level fill (``passive_require_trade_for_level_fill``)
-* P2.8 MOC closing-auction penalty (``cost_moc_penalty_bps``)
+* within-L1 participation impact (``cost_within_l1_impact_factor``)
+* permanent square-root impact (``cost_permanent_impact_coefficient``)
+* forced-exit depth depletion (``cost_stop_depth_depletion_factor``)
+* passive through-fill size cap (``passive_through_fill_size_cap_enabled``)
+* volume-gated passive level fill (``passive_require_trade_for_level_fill``)
+* MOC closing-auction penalty (``cost_moc_penalty_bps``)
 
 Each knob's default value reproduces the prior trade path; these tests pin
 both the no-op default and the enabled behaviour.
@@ -87,7 +87,7 @@ def _fills(acks: list) -> list:
     return [a for a in acks if a.status == OrderAckStatus.FILLED]
 
 
-# ── P1.3: within-L1 participation impact ─────────────────────────────────
+# Within-L1 participation impact.
 
 
 class TestWithinL1Impact:
@@ -124,7 +124,7 @@ class TestWithinL1Impact:
         assert fills[0].fill_price == Decimal("99.99")
 
 
-# ── P2.11: permanent square-root impact ──────────────────────────────────
+# Permanent square-root impact.
 
 
 class TestPermanentImpact:
@@ -147,7 +147,7 @@ class TestPermanentImpact:
         assert fills[0].fill_price == Decimal("100.15")
 
 
-# ── P2.9: forced-exit depth depletion ────────────────────────────────────
+# Forced-exit depth depletion.
 
 
 class TestStopDepthDepletion:
@@ -194,7 +194,7 @@ class TestStopDepthDepletion:
         assert fills[0].fill_price == Decimal("100.00")
 
 
-# ── P1.1: passive through-fill size cap ──────────────────────────────────
+# Passive through-fill size cap.
 
 
 def _buy_limit(order_id: str = "p1") -> OrderRequest:
@@ -243,7 +243,7 @@ class TestPassiveThroughFillCap:
         assert acks2[0].filled_quantity == 70
 
 
-# ── P1.2: volume-gated passive level fill ────────────────────────────────
+# Volume-gated passive level fill.
 
 
 class TestVolumeGatedLevelFill:
@@ -301,7 +301,7 @@ class TestVolumeGatedLevelFill:
         assert any(a.status == OrderAckStatus.FILLED for a in acks)
 
 
-# ── P2.8: MOC closing-auction penalty ────────────────────────────────────
+# MOC closing-auction penalty.
 
 
 def _moc_order() -> OrderRequest:

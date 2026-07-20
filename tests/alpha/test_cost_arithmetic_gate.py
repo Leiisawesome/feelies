@@ -1,16 +1,4 @@
-"""Tests for the cost-arithmetic disclosure gate (G12 / Phase 3-α).
-
-Covers ``feelies.alpha.cost_arithmetic.CostArithmetic``:
-
-* :py:meth:`CostArithmetic.from_spec` — happy path, missing fields,
-  type coercion, sign / magnitude rules, declared-vs-computed
-  reconciliation, MIN_MARGIN_RATIO floor.
-* :py:func:`compute_margin_ratio` — pure arithmetic helper, including
-  the zero-cost edge case.
-
-The gate is purely structural: it never inspects platform state, so
-all tests are fast unit-tests.
-"""
+"""Unit tests for the G12 cost-arithmetic disclosure gate."""
 
 from __future__ import annotations
 

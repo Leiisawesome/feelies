@@ -1,35 +1,10 @@
 #!/usr/bin/env python3
-"""Task 11-A-H10 step 2 — boundary-level extraction for
-``sig_sweep_kyle_drift_h900_v1`` statistical validation.
+"""Extract boundary data for ``sig_sweep_kyle_drift_h900_v1`` validation.
 
-ONE deterministic replay per (symbol, session) cell over the frozen
-grid ({APP, RMBS} × 20 + OLN × 10 preamble), producing the boundary-
-level dataset step-2b / 2.3 / JC-5 statistics consume
-(``sweep_kyle_drift_validation_stats.py``).
-
-Ordering B (slate-C): Phase B YAML is NOT implemented — step 2b runs
-on the census-pinned §1.1 predicate via this extract + stats pair
-(H8 pattern).
-
-Instrument integrity: the census module is IMPORTED for ALL constants,
-sensor specs, RTH filter, session window, entry predicate
-(``is_entry_eligible``), σ₉₀₀ estimator, and residual / Class-B
-REPORTS. Additive vs census (count-direction neutral):
-
-- ``kyle_lambda_60s`` sensor v2.0.0 causal alongside (F2 fingerprint;
-  independent state — cannot perturb census sensors / episode counts);
-- its horizon features via ``_horizon_features_for`` PLUS census
-  ``_sfi_features()``;
-- per-boundary forward mid log-returns at t ∈ {120, 300, 900, 1800} s
-  (zero-move → 0.0 valid pair, NOT None — H8 convention);
-- SFI value/percentile, rvz, p_breakout, kyle_lambda_60s + percentile,
-  eligible episode flag + side, viable_long/short, in_window, all_warm,
-  spread_ticks, trailing-900 s print volume (F2 co-travel), residual
-  share fields as census.
-
-Determinism: PYTHONHASHSEED=0; no RNG; no wall-clock reads; events
-sorted by (timestamp_ns, sequence); fresh sensor/regime state per cell;
-bit-identical JSON re-run required (P0-4).
+Each symbol-session cell receives one deterministic replay. The script reuses
+the census constants, filters, entry predicate, and estimators, then adds causal
+Kyle-lambda features and forward mid returns at 120, 300, 900, and 1800 seconds.
+Events are sorted and each cell starts with fresh sensor and regime state.
 
 Usage
 -----
@@ -80,9 +55,9 @@ _TZ_ET = census._TZ_ET
 _HORIZON = census._HORIZON
 _TICK = census._TICK
 _SFI_WINDOW_NS = census._SFI_WINDOW_NS
-FWD_HORIZONS_S = (120, 300, 900, 1800)  # protocol §2.2 / IC(t) companions
+FWD_HORIZONS_S = (120, 300, 900, 1800)
 
-# F2 fingerprint — offline diagnostic only; never in the entry predicate.
+# Offline diagnostic only; never part of the entry predicate.
 _KYLE_SPEC = SensorSpec(
     sensor_id="kyle_lambda_60s",
     sensor_version="2.0.0",

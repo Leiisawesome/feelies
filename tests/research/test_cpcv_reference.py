@@ -1,41 +1,8 @@
-"""Pinned reference vectors for :mod:`feelies.research.cpcv`.
+"""Pin numerical reference vectors for :mod:`feelies.research.cpcv`.
 
-These tests fix the *floating-point output* of the CPCV pipeline to
-hand-computed or computed-once-then-locked golden values.  Any
-algorithmic regression — even one that preserves the structural
-invariants the unit + property suites cover — will move at least
-one of the pinned numbers and trip a clear, focused test.
-
-Coverage
---------
-
-1. :func:`generate_cpcv_splits` — pinned ``test_indices`` /
-   ``train_indices`` for the canonical N=4 / k=2 / embargo=1
-   reference run.
-2. :func:`build_cpcv_evidence` — full ``CPCVEvidence`` payload
-   pinned for two reference runs:
-
-   - **identity-returns**: each split's OOS test returns equal the
-     bar indices themselves, so every path's return series is
-     identical and the per-path Sharpes are all equal to the
-     analytical mean / pstdev of [0, …, n-1].
-   - **split-perturbed-returns**: each split injects a tiny
-     split-index-dependent offset, so per-path Sharpes diverge by
-     a known amount.  Pins ``fold_sharpes``,
-     ``mean_sharpe``, ``median_sharpe``, ``mean_pnl``, ``p_value``,
-     and ``fold_pnl_curves_hash``.
-
-3. :func:`lo_bootstrap_p_value` — pinned p-value for a fixed Sharpe
-   vector + seed + bootstrap count.
-
-4. :func:`fold_pnl_curves_sha256` — pinned hash for a fixed return
-   matrix.
-
-The hashes lock the **canonical float repr + comma-separated
-serialisation** in :mod:`feelies.research.cpcv`; if those are ever
-adjusted, the corresponding reference value here must be updated
-in the same PR (and reviewers should verify the migration was
-intentional).
+The suite locks split generation, full evidence payloads, bootstrap p-values,
+and fold-PnL hashes. Hashes include canonical float representation and
+comma-separated serialization.
 """
 
 from __future__ import annotations
@@ -57,9 +24,7 @@ from feelies.research.cpcv import (
 )
 
 
-# ─────────────────────────────────────────────────────────────────────
-#   Pinned generate_cpcv_splits output (N=4, k=2, embargo=1)
-# ─────────────────────────────────────────────────────────────────────
+# Pinned split output for N=4, k=2, embargo=1.
 
 
 class TestGenerateCPCVSplitsReference:
@@ -308,7 +273,7 @@ class TestFoldPnLCurvesSha256Reference:
 
     def test_empty_paths_hash_pinned(self) -> None:
         # Even an empty input must produce a stable hash so the
-        # F-2 ``CPCVEvidence`` round-trip never crashes when an
+        # The ``CPCVEvidence`` round-trip never crashes when an
         # operator submits a stub package without the heavy
         # artefact.
         h = fold_pnl_curves_sha256(())

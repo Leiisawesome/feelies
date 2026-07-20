@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hawkes (exp-kernel) MLE calibration for ``hawkes_intensity`` (audit P1-4b).
+"""Hawkes exponential-kernel MLE calibration for ``hawkes_intensity``.
 
 Read-only. Fits the univariate exponential-kernel Hawkes intensity
 

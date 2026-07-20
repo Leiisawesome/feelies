@@ -1,4 +1,4 @@
-"""Audit P0 (2026-06-18): lock the default-on TRIM wiring without a dataset.
+"""Lock default-on TRIM wiring without a dataset.
 
 The kernel-level TRIM behaviour is exercised in
 ``tests/kernel/test_orchestrator.py``, but those tests pass
@@ -98,7 +98,7 @@ def _make_config(tmp_path: Path) -> PlatformConfig:
 
 
 class TestPositionManagerConfigDefaults:
-    """The audited default-ON contract is a deliberate, pinned choice."""
+    """Pin the default-on position-manager contract."""
 
     def test_drive_and_trim_default_on(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}))
@@ -107,24 +107,13 @@ class TestPositionManagerConfigDefaults:
         assert cfg.position_manager_trim_edge_gate_multiplier == 1.0
 
     def test_trim_execution_style_defaults_to_passive(self) -> None:
-        # Audit P2.1 (2026-06-18): urgency_exec ON → discretionary trims work
-        # PASSIVE (post a limit, save the spread) with a guaranteed MARKET
-        # fallback if unfilled.  Pinned so any future flip back to MARKET-by-
-        # default is a conscious, re-baselined change rather than a silent
-        # regression.
+        # Discretionary trims post passively before falling back to market.
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}))
         assert cfg.position_manager_urgency_exec is True
 
 
 class TestSizerTiltConfigDefaults:
-    """Audit P2.3 (2026-06-18): the EDGE tilt is available **opt-in**.
-
-    It is fully wired but left OFF by default, so the live size stays
-    single-factor (byte-identical to the baseline) unless an operator
-    consciously promotes it per deployment.  Pinned so any future flip to
-    default-on is a deliberate, re-baselined change rather than a silent
-    regression of the platform-wide trade path.
-    """
+    """Keep edge-based size tilting opt-in."""
 
     def test_edge_tilt_off_by_default(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}))
@@ -144,17 +133,14 @@ class TestBuildPlatformPositionManagerWiring:
         (tmp_path / "pm.alpha.yaml").write_text(_SIGNAL_ALPHA_YAML, encoding="utf-8")
         orchestrator, _ = build_platform(_make_config(tmp_path))
 
-        # The planner is the cost-aware TargetPositionManager (not the
-        # legacy translator), and it is wired to drive the live decision
-        # with TRIM enabled — i.e. the audited default-on trade path.
+        # The cost-aware planner drives live sizing with trims enabled.
         assert isinstance(orchestrator._position_manager, TargetPositionManager)  # noqa: SLF001
         assert orchestrator._position_manager_drive is True  # noqa: SLF001
         assert orchestrator._position_manager_enable_trim is True  # noqa: SLF001
         assert orchestrator._position_manager_trim_edge_gate_multiplier == 1.0  # noqa: SLF001
 
     def test_defaults_keep_the_base_sizer_live(self, tmp_path: Path) -> None:
-        # Audit P2.3: with sizer_tilt_drive OFF (default), bootstrap leaves the
-        # bare base sizer driving the live decision — the tilt is shadow-only.
+        # With tilting off, the base sizer remains authoritative.
         (tmp_path / "pm.alpha.yaml").write_text(_SIGNAL_ALPHA_YAML, encoding="utf-8")
         orchestrator, _ = build_platform(_make_config(tmp_path))
 
@@ -163,9 +149,7 @@ class TestBuildPlatformPositionManagerWiring:
         assert not isinstance(sizer, EdgeWeightedSizer)
 
     def test_opt_in_routes_through_the_edge_weighted_sizer(self, tmp_path: Path) -> None:
-        # Audit P2.3: an operator promoting the edge tilt per deployment
-        # (sizer_tilt_drive + sizer_edge_weighting_enabled) routes the live
-        # decision through the EdgeWeightedSizer with the edge factor on.
+        # Enabling the edge tilt makes EdgeWeightedSizer authoritative.
         (tmp_path / "pm.alpha.yaml").write_text(_SIGNAL_ALPHA_YAML, encoding="utf-8")
         cfg = replace(
             _make_config(tmp_path),

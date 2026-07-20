@@ -1,5 +1,5 @@
 """Bootstrap-time wiring tests for the per-alpha risk-budget enforcement
-flag (audit R2).
+flag.
 
 Covers:
 

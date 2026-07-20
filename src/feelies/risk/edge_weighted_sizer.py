@@ -1,33 +1,8 @@
-"""G-7 — edge-weighted / vol-targeted sizing with an inventory penalty.
+"""Tilt base position size by edge, volatility, and current inventory.
 
-The default ``BudgetBasedSizer`` is single-factor: ``equity × capital_pct ×
-strength × regime / price``, capped.  It ignores three things an
-institutional sizer would not:
-
-  * **edge magnitude** — a 2-bps and a 40-bps signal of equal ``strength``
-    take the same size, even though their expected value differs 20×;
-  * **realized volatility** — a calm name and a turbulent one are sized
-    identically, so risk-per-position is uncontrolled;
-  * **current inventory** — size does not taper as the book fills toward
-    the per-symbol cap, so the last add is as large as the first.
-
-``EdgeWeightedSizer`` wraps a base :class:`PositionSizer` and applies a
-deterministic multiplicative *tilt* — ``edge × vol × inventory`` — on top
-of the base target, then re-caps at the alpha's per-symbol budget.
-
-Parity (Inv-5).  Every factor is **disabled by default**.  With the
-default :class:`SizerTiltConfig`, each factor is exactly ``1.0``, the
-combined tilt is ``1.0``, and ``floor(base × 1.0) == base`` — so the
-sizer is byte-identical to its base until a factor is explicitly enabled.
-This lets G-7 ship dark and be measured in shadow before any flip,
-matching the B5 / G-1…G-6 rollout pattern.
-
-Inv-11 (fail-safe).  The factors here *can* amplify (edge-weighting a
-high-conviction signal is the point of G-7), so amplification is a
-deliberate, config-gated behaviour — distinct from the regime factor,
-which still only ever shrinks.  Each factor is independently clamped, the
-combined tilt is clamped to ``[tilt_floor, tilt_cap]``, and the result is
-always re-capped at ``max_position_per_symbol`` and floored at 0.
+All tilts are disabled by default, preserving the wrapped sizer's result.
+Enabled factors are independently clamped, their product is clamped, and the
+final target remains within the alpha's per-symbol budget.
 """
 
 from __future__ import annotations
@@ -49,23 +24,23 @@ class SizerTiltConfig:
     wrapped sizer reproduces its base byte-for-byte.
     """
 
-    # ── Edge factor: scale by edge relative to a reference. ────────────
+    # Scale edge against a reference value.
     edge_enabled: bool = False
     edge_ref_bps: float = 20.0  # edge == ref → factor 1.0
     edge_floor: float = 0.25  # never shrink an entry below 25% on edge
     edge_cap: float = 2.0  # never amplify beyond 2× on edge
 
-    # ── Vol factor: target_vol / realized_vol (vol targeting). ─────────
+    # Target volatility divided by realized volatility.
     vol_enabled: bool = False
     vol_target_bps: float = 100.0  # realized == target → factor 1.0
     vol_floor: float = 0.25
     vol_cap: float = 2.0
 
-    # ── Inventory factor: taper as |inventory| nears the cap. ──────────
+    # Taper as absolute inventory approaches its cap.
     inventory_enabled: bool = False
     inventory_floor: float = 0.0  # at the cap, factor floors here
 
-    # ── Combined-tilt clamp (applied after the product). ───────────────
+    # Clamp the product of enabled factors.
     tilt_floor: float = 0.10
     tilt_cap: float = 3.0
 
@@ -88,13 +63,7 @@ class TiltBreakdown:
 
 @dataclass(frozen=True)
 class SizeDivergence:
-    """G-7 S1 shadow record: the tilted target differs from the base target.
-
-    Emitted when the edge/vol/inventory-tilted size for a sized signal
-    disagrees with the live single-factor budget target — the measurement
-    that quantifies how much G-7 sizing would change the order book before
-    any flip.  ``magnitude = tilted - base``.
-    """
+    """Record a difference between tilted and base position targets."""
 
     symbol: str
     signal_sequence: int
@@ -275,7 +244,7 @@ class EdgeWeightedSizer:
             symbol_price=symbol_price,
             account_equity=account_equity,
         )
-        # Parity short-circuit: all factors off → byte-identical to base.
+        # With every tilt disabled, return the base size directly.
         if base_target <= 0 or not self._config.any_enabled:
             return base_target
 

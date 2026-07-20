@@ -92,12 +92,7 @@ class BudgetBasedSizer:
             account_equity * Decimal(str(risk_budget.capital_allocation_pct)) / Decimal("100")
         )
 
-        # Clamp conviction into [0, 1] (audit R-8).  ``strength`` is the
-        # alpha's self-reported conviction and is contractually in [0, 1];
-        # a stray value > 1.0 would size *above* the alpha's allocated
-        # capital before the (<=1.0) regime factor is even applied, leaving
-        # ``budget.max_position_per_symbol`` as the only backstop.  Clamp so
-        # conviction can never amplify exposure beyond the full allocation.
+        # Conviction cannot allocate more than the alpha's full capital budget.
         strength = min(1.0, max(0.0, signal.strength))
         conviction_capital = allocated * Decimal(str(strength))
 
@@ -110,11 +105,7 @@ class BudgetBasedSizer:
         return max(0, capped)
 
     def _get_regime_factor(self, symbol: str) -> float:
-        # Missing-data policy (audit R-3): mirror BasicRiskEngine._regime_scaling.
-        # No engine configured → 1.0 (operator opted out of regime scaling).
-        # Engine configured but no committed posterior for ``symbol`` yet
-        # (warm-up / never filtered) → genuine missing data → tighten to
-        # min(all factors) rather than the 1.0 baseline.
+        # No engine means no scaling; missing posterior means the tightest scale.
         if self._regime_engine is None:
             return 1.0
 
@@ -128,19 +119,8 @@ class BudgetBasedSizer:
             posteriors[i] * self._regime_factors.get(state_names[i], default)
             for i in range(len(posteriors))
         )
-        # Audit FS (risk_engine_audit_2026-07-02.md, §3.2): mirror
-        # BasicRiskEngine._regime_scaling's non-finite guard — ``min(1.0,
-        # nan)`` evaluates to ``1.0`` under Python's comparison semantics,
-        # so a poisoned custom engine would silently fail to the unscaled
-        # baseline rather than the fail-safe minimum.  Treat non-finite EV
-        # as missing data.
+        # Treat non-finite expected scale as missing data, not an unscaled pass.
         if not math.isfinite(ev):
             return default
-        # Audit P1 R-1: enforce Inv-11 ("regime state never amplifies
-        # exposure beyond the 1.0 baseline") at the value level rather
-        # than relying on operator config discipline.  An operator-
-        # supplied ``regime_factors={"normal": 1.5}`` (or a posterior
-        # tilt > 1.0 from a custom engine) would otherwise breach the
-        # invariant silently.  Clamp at 1.0; the EV can still drop
-        # arbitrarily low.
+        # Regime scaling may tighten exposure but never amplify it above one.
         return min(1.0, ev)

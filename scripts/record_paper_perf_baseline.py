@@ -40,10 +40,7 @@ def _parse_timing(run_dir: Path) -> dict[str, float]:
             tick_ns.append(dur)
         elif kind == "drain_async_fills":
             drain_ns.append(dur)
-    # Audit P2-4: a run-dir whose timing.jsonl exists but carries zero
-    # tick_process samples (an aborted/near-instant session) must not
-    # silently record a 0.0 p99 baseline — treat it the same as a missing
-    # timing.jsonl rather than merging garbage into the shared baseline file.
+    # An empty timing run cannot produce a meaningful latency baseline.
     if not tick_ns:
         return {}
     return {

@@ -37,8 +37,8 @@ def build_paper_backend(
     """Compose a PAPER ``ExecutionBackend`` with a Massive feed + IB router.
 
     Does NOT call ``MassiveLiveFeed.start()`` or
-    ``IBGatewayConnection.connect_and_start()`` — the entry script
-    owns the connect-then-start ordering (see plan §9).
+    ``IBGatewayConnection.connect_and_start()``. The entry script owns
+    the connect-then-start ordering.
     """
     live_feed = MassiveLiveFeed(
         api_key=massive_api_key,

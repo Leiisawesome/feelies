@@ -70,7 +70,7 @@ def test_split_emit_tolerates_legacy_colon_form(tmp_path: Path) -> None:
 
 
 def test_prefix_map_covers_every_backtest_jsonl_prefix() -> None:
-    """Audit P2-3: ``_PREFIX_MAP`` must stay in sync with what
+    """``_PREFIX_MAP`` must stay in sync with what
     ``backtest_jsonl._emit_jsonl_line`` actually emits — neither missing a
     prefix (silently falling through to an uncurated ``{prefix.lower()}.jsonl``
     filename) nor carrying a stale entry nothing emits any more."""

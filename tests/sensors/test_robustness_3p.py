@@ -1,4 +1,4 @@
-"""Institutional-grade robustness guards (audit 3P-1, 3P-2)."""
+"""Sensor robustness guards."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _quote(
     )
 
 
-# ── 3P-1: registry suppresses non-finite emissions ──────────────────────────
+# Registry suppresses non-finite emissions.
 
 
 class _BadSensor:
@@ -115,7 +115,7 @@ def test_registry_publishes_finite_value() -> None:
     assert len(readings) == 1 and readings[0].value == 0.42
 
 
-# ── 3P-2: crossed-book rejection ────────────────────────────────────────────
+# Crossed-book rejection.
 
 
 def test_price_sensors_reject_crossed_book() -> None:
@@ -135,7 +135,7 @@ def test_price_sensors_reject_crossed_book() -> None:
         assert out is None, f"{type(sensor).__name__} did not reject a crossed book"
 
 
-# ── 3P-7: book_imbalance winsorisation ──────────────────────────────────────
+# Book-imbalance winsorization.
 
 
 def test_book_imbalance_winsorises_fat_finger() -> None:

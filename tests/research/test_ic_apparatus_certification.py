@@ -1,17 +1,4 @@
-"""ENG-3: known-answer certification of the measurement apparatus.
-
-The IC *statistics* are certified in ``test_forward_ic.py`` (rho=±1, ties, NaN
-drops).  This test certifies the **apparatus** end-to-end: a deterministic tape
-is replayed through the *real production* path
-``SensorRegistry → HorizonScheduler → HorizonAggregator`` and the warm boundary
-feature values are paired with forward returns exactly as the IC harness does
-(``forward_ic.forward_return_at``).  We assert closed-form known answers so any
-pairing error — off-by-one, wrong timestamp anchor, look-ahead, aggregation bug
-— is caught.
-
-This is the precondition for trusting any IC the harness produces, i.e. the gate
-that lets the platform move from engine work to gas (sensor/feature) selection.
-"""
+"""Certify IC pairing end to end against closed-form answers."""
 
 from __future__ import annotations
 

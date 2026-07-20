@@ -1,4 +1,4 @@
-"""Forward-return / information-coefficient utilities (audit P2-1).
+"""Forward-return and information-coefficient utilities.
 
 Pure-Python (stdlib only — no numpy/scipy, matching ``research/cpcv`` and
 ``research/dsr``) tooling to validate a feature's *directional* edge: the
@@ -6,7 +6,7 @@ Spearman rank information coefficient (IC) of a feature value against the
 forward return over a fixed horizon, plus an equal-count bucketed
 conditional-forward-return view.
 
-Motivating use (audit P2-1): confirm or refute the sign convention of
+Use these measures to confirm or refute the sign convention of
 ``sig_inventory_revert_v1`` — does a positive
 ``quote_replenish_asymmetry_zscore`` predict a *positive* forward
 30-second micro-price return (LONG), or is the sign inverted/absent?  The

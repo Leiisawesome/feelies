@@ -52,7 +52,7 @@ def _fills(acks):
 
 class TestBacktestOrderRouter:
     def test_fill_at_cross_price(self):
-        """BT-3: a taker BUY fills at the cross (ask=151.00), not the mid."""
+        """A taker buy fills at the ask, not the midpoint."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
@@ -123,7 +123,7 @@ class TestBacktestOrderRouter:
         assert second_poll == []
 
     def test_latency_injection(self):
-        """Audit F-H-07: latency defers the FILL to the first post-
+        """Latency defers the fill to the first eligible
         latency quote.  ACK is emitted immediately at submit+latency,
         but the fill waits for a quote whose ts ≥ eligible_at_ns."""
         clock = SimulatedClock(start_ns=5000)
@@ -280,7 +280,7 @@ class TestBacktestOrderRouter:
         fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 2
         by_id = {a.order_id: a for a in fills}
-        # BT-3: taker BUYs fill at the ask (the cross).
+        # Taker buys fill at the ask.
         assert by_id["o1"].fill_price == Decimal("151.00")
         assert by_id["o2"].fill_price == Decimal("302.00")
 
@@ -294,7 +294,7 @@ class TestBacktestOrderRouter:
         router.submit(_order("AAPL"))
 
         fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
-        # BT-3: taker BUY fills at the latest ask (the cross).
+        # Taker buys fill at the latest ask.
         assert fills[0].fill_price == Decimal("200.20")
 
     def test_fill_timestamp_without_latency(self):
@@ -371,7 +371,7 @@ class TestPartialFillAndSlippage:
         ]
         fill = acks[1]
         assert fill.filled_quantity == 100
-        assert fill.fill_price == Decimal("101.00")  # cross (ask), BT-3
+        assert fill.fill_price == Decimal("101.00")  # Cross at the ask.
 
     def test_partial_fill_emits_ack_partial_filled(self) -> None:
         """Order qty > ask_size → ACKNOWLEDGED + PARTIALLY_FILLED + FILLED acks."""
@@ -389,7 +389,7 @@ class TestPartialFillAndSlippage:
         ]
         _, partial, filled = acks
         assert partial.filled_quantity == 50
-        assert partial.fill_price == Decimal("101.00")  # cross (ask) for L1 depth, BT-3
+        assert partial.fill_price == Decimal("101.00")  # L1 crosses at the ask.
 
         assert filled.filled_quantity == 100  # excess = 150 - 50
         assert filled.order_id == partial.order_id
@@ -408,7 +408,7 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(150, side=Side.BUY))
 
         _, _, filled = router.poll_acks()
-        cross = Decimal("102.00")  # ask, BT-3
+        cross = Decimal("102.00")  # Ask.
         half_spread = Decimal("2.00")
         expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
         assert filled.fill_price == cross + expected_impact
@@ -424,7 +424,7 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(150, side=Side.SELL))
 
         _, _, filled = router.poll_acks()
-        cross = Decimal("98.00")  # bid, BT-3
+        cross = Decimal("98.00")  # Bid.
         half_spread = Decimal("2.00")
         expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
         assert filled.fill_price == cross - expected_impact
@@ -445,7 +445,7 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(1001, side=Side.BUY))
 
         _, _, filled = router.poll_acks()
-        cross = Decimal("102.00")  # ask, BT-3
+        cross = Decimal("102.00")  # Ask.
         half_spread = Decimal("2.00")
         # Cap: 10 × 2 = 20, stacked on the cross
         assert filled.fill_price == cross + Decimal("10") * half_spread
@@ -479,16 +479,7 @@ class TestPartialFillAndSlippage:
 
 
 class TestExcessLegImpactNotDoubleCounted:
-    """Audit fix F2: walk-the-book impact must not be double-charged.
-
-    Before the fix, the cost model received ``half_spread + impact`` on
-    the excess leg — the impact was already encoded in ``fill_price``,
-    so this added an extra ``impact * qty`` to fees on top of the
-    already-worse fill price.  After the fix, the model receives
-    plain ``half_spread`` on both legs; the L1 leg fees and the
-    excess leg fees scale linearly with their respective quantities
-    instead of the excess leg paying a quadratic-ish premium.
-    """
+    """Charge walk-the-book impact in price exactly once."""
 
     def test_excess_leg_fees_per_share_match_l1_leg(self) -> None:
         from feelies.execution.cost_model import (
@@ -523,16 +514,11 @@ class TestExcessLegImpactNotDoubleCounted:
         # Spread-cost per share is $1.00 on both legs (the impact is
         # encoded in fill_price, NOT in fees).  Commission scales with
         # quantity only.  So fees-per-share should be approximately
-        # equal on the two legs.  Before the fix, the excess leg
-        # included an additional $1.50/share spread charge.
+        # equal on the two legs.
         l1_fee_per_share = partial.fees / partial.filled_quantity
         excess_fee_per_share = filled.fees / filled.filled_quantity
 
-        # Equality is expected up to commission's per-share rate +
-        # rounding.  The pre-fix bug produced excess_fee_per_share ≈
-        # l1_fee_per_share + $1.50 — a 100%+ blowup.  Tolerance here
-        # is set tight enough to catch that without flaking on
-        # legitimate per-share rounding.
+        # Allow per-share commission rounding, but no second spread charge.
         assert abs(excess_fee_per_share - l1_fee_per_share) < Decimal("0.05")
 
     def test_excess_fill_price_still_includes_impact(self) -> None:
@@ -544,13 +530,13 @@ class TestExcessLegImpactNotDoubleCounted:
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
         _, _, filled = router.poll_acks()
-        # BT-3: cross=ask=$102, impact = 0.5 * (100/50) * $2 = $2.00.
+        # Cross at $102 ask; impact = 0.5 × (100/50) × $2 = $2.
         # Excess leg fills at $104.00 (cross + impact).
         assert filled.fill_price == Decimal("104.00")
 
 
 class TestCrossPriceConvention:
-    """BT-3: the half-spread is embedded in the fill price, not a fee."""
+    """Embed the half-spread in the fill price, not a fee."""
 
     def test_taker_buy_fills_at_ask_with_no_spread_fee(self) -> None:
         """BUY fills at the ask; fees carry commission + exchange only — the

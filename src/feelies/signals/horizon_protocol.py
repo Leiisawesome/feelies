@@ -1,13 +1,7 @@
-"""HorizonSignal protocol — Layer-2 signal contract (Phase 3).
+"""Layer-2 horizon signal contract.
 
-A ``HorizonSignal`` is a pure, stateless function that maps a
-:class:`feelies.core.events.HorizonFeatureSnapshot` (the Layer-2
-feature aggregate at a horizon boundary) and the latest
-:class:`feelies.core.events.RegimeState` for the same symbol to an
-optional :class:`feelies.core.events.Signal`.
-
-Three-layer architecture (§5.5, §6.4 of
-``docs/three_layer_architecture.md``):
+``HorizonSignal`` maps a feature snapshot and the symbol's latest regime to an
+optional signal:
 
     Sensor (Layer 1) ──► HorizonAggregator (Layer 2)
                           │
@@ -17,37 +11,9 @@ Three-layer architecture (§5.5, §6.4 of
                           ▼
                   HorizonSignalEngine ──► Signal(layer="SIGNAL")
 
-Design choices:
-
-- **Pure function** — Implementations must be deterministic, hold no
-  per-instance mutable state, and avoid wall-clock reads.  The
-  :class:`feelies.signals.horizon_engine.HorizonSignalEngine` may
-  call ``evaluate`` from multiple call sites (live, replay, smoke
-  test); identical inputs must produce identical outputs (Inv-5).
-- **Regime in, regime not consulted internally** — The engine
-  resolves the latest ``RegimeState`` for the snapshot's symbol and
-  threads it in as an argument.  Implementations must never reach
-  into the regime engine themselves; this preserves the read-only
-  boundary on the regime layer (§5.4).
-- **Optional signal** — Returning ``None`` is the canonical "no
-  trade this boundary" answer.  The engine never publishes a
-  ``Signal`` event when ``evaluate`` returns ``None``.
-
-This protocol is the **only** Layer-2 signal contract in the platform.
-The legacy per-tick ``feelies.signals.engine.SignalEngine`` Protocol —
-once mirrored by ``layer="LEGACY_SIGNAL"`` alphas — was retired by
-workstream D.2: the loader rejects ``LEGACY_SIGNAL`` manifests at
-parse time (PR-1), the orphaned leaf surfaces (``LoadedAlphaModule``,
-``LegacyFeatureShim``, the ``LayerValidator`` G6/G8/G13 inline-features
-branches) were deleted by PR-2a, the orchestrator's per-tick engine
-constructor parameters were made optional and unwired by PR-2b-i, and
-PR-2b-ii deleted the engine classes themselves
-(``CompositeFeatureEngine``, ``CompositeSignalEngine``,
-``MultiAlphaEvaluator``) along with the ``FeatureEngine`` and
-``SignalEngine`` Protocols.  ``Signal.layer`` is now a strict
-``Literal["SIGNAL", "PORTFOLIO"]``; every horizon-anchored ``Signal``
-that flows out of :class:`HorizonSignalEngine` is stamped
-``layer="SIGNAL"``.
+Implementations are pure and stateless. The engine supplies regime state, so
+implementations do not query the regime layer. ``None`` means no signal at the
+current boundary.
 """
 
 from __future__ import annotations
@@ -59,20 +25,7 @@ from feelies.core.events import HorizonFeatureSnapshot, RegimeState, Signal
 
 @runtime_checkable
 class HorizonSignal(Protocol):
-    """Layer-2 horizon-anchored signal contract.
-
-    Implementations satisfy a single method, ``evaluate``, that maps
-    ``(snapshot, regime, params)`` to ``Signal | None``.
-
-    Determinism (Inv-5) — two identical input triples must produce
-    identical outputs.  ``params`` is treated as immutable; mutating
-    it is undefined behavior.
-
-    Stateless — implementations carry no per-instance fields beyond
-    metadata (``signal_id``, ``signal_version``).  All per-symbol
-    state lives in upstream sensors / horizon features and reaches
-    ``evaluate`` via the snapshot.
-    """
+    """Pure mapping from ``(snapshot, regime, params)`` to ``Signal | None``."""
 
     signal_id: str
     signal_version: str
@@ -83,34 +36,10 @@ class HorizonSignal(Protocol):
         regime: RegimeState | None,
         params: Mapping[str, Any],
     ) -> Signal | None:
-        """Evaluate a horizon-feature snapshot into an optional signal.
+        """Return a signal for a horizon snapshot, or ``None``.
 
-        Parameters
-        ----------
-        snapshot :
-            Layer-2 horizon-bucketed feature aggregate emitted by
-            :class:`feelies.features.aggregator.HorizonAggregator` at
-            the current horizon boundary.
-        regime :
-            Latest ``RegimeState`` for ``snapshot.symbol`` (read-only
-            view from :class:`feelies.services.regime_engine.RegimeEngine`).
-            ``None`` when the regime engine has not produced a
-            posterior yet for this symbol; implementations should
-            treat this as "regime unknown" and typically return
-            ``None`` to suppress emission.
-        params :
-            Bound alpha parameters (the validated ``parameters:``
-            block from the YAML spec).  Must be treated as immutable.
-
-        Returns
-        -------
-        Signal | None
-            A new :class:`Signal` with ``layer="SIGNAL"`` when a
-            tradeable condition is detected, or ``None`` when no
-            action is warranted at this boundary.  The engine wraps
-            the returned signal with sequence / correlation_id /
-            ``regime_gate_state`` / ``consumed_features`` provenance
-            before publishing on the bus.
+        Treat ``regime=None`` as unknown and ``params`` as immutable. The engine
+        adds sequence, correlation, gate, and feature provenance before publish.
         """
         ...
 

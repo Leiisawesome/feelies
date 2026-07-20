@@ -1,47 +1,9 @@
-"""Rolling statistical HorizonFeature implementations.
+"""Count-bounded rolling z-score and percentile features.
 
-Computes rolling z-scores and percentile ranks of scalar sensor
-readings at horizon boundaries.  These are the Layer-2 features that
-give signal ``evaluate()`` functions statistically normalised views of
-raw Layer-1 sensor outputs.
-
-Both classes accumulate warm sensor readings in a bounded FIFO window
-(``max_samples``) and compute their statistic on every
-:class:`HorizonTick`.  They return ``warm=False`` until at least
-``min_samples`` readings have been observed; the engine treats
-``warm=False`` features as missing and the signal's ``evaluate()``
-function typically returns ``None`` in that case.
-
-:class:`RollingZscoreFeature`
-    Z-score of the latest reading: ``(latest - mean) / std``, clamped
-    to ``[-_MAX_ZSCORE, +_MAX_ZSCORE]`` (audit #5) so near-zero variance
-    early in the window cannot produce unbounded values that poison
-    downstream signals.  Returns ``(0.0, False, False)`` during warm-up;
-    ``(0.0, True, False)`` when std < 1e-10 (constant sensor; z-score
-    undefined).
-
-:class:`RollingPercentileFeature`
-    Hazen plotting position of the latest reading: ``(rank - 0.5) / n``
-    where ``rank = |{x in window : x <= latest}|`` (audit #9).  This
-    debiases the naive ``rank / n`` formula whose minimum reachable
-    value was ``1/n`` because ``latest`` itself is always counted in
-    ``rank``; the Hazen form is symmetric around 0.5 and maps to
-    ``[1/(2n), 1 - 1/(2n)]``.  Returns ``(0.5, False, False)`` during
-    warm-up (neutral prior).
-
-Determinism
------------
-Both implementations use only the FIFO window contents and arithmetic
-that is associative over float64 — identical event sequences produce
-identical outputs on every platform (Inv-5).
-
-Performance note
-----------------
-``sum()`` and the rank count in ``finalize()`` are O(n) in the window
-size.  At ``max_samples=2000`` and one finalize per horizon boundary
-(every 30–1800 seconds in production), this is comfortably within
-budget.  For real-time deployments with sub-second horizons, switch to
-Welford's online algorithm or a sorted-list structure.
+Warm readings enter a FIFO window. Z-scores use the latest value and clamp to
+``±_MAX_ZSCORE``; percentiles use Hazen's ``(rank - 0.5) / n`` plotting
+position. Both return neutral, cold values until ``min_samples`` is reached.
+Finalization is O(window size) and deterministic.
 """
 
 from __future__ import annotations
@@ -95,10 +57,7 @@ class RollingZscoreFeature:
         max_samples: int = 2000,
         tuple_sum_component_indices: tuple[int, ...] | None = None,
     ) -> None:
-        # Audit #10: sample variance with Bessel's correction requires
-        # n >= 2.  The previous code used ``max(n - 1, 1)`` to silently
-        # mask the n=1 edge; we now branch on it explicitly in
-        # ``finalize`` (n=1 → std undefined → constant-sensor path).
+        # Sample variance needs two observations; finalize treats n=1 as constant.
         if min_samples < 1:
             raise ValueError(f"RollingZscoreFeature: min_samples must be >= 1, got {min_samples}")
         if max_samples < min_samples:
@@ -112,10 +71,7 @@ class RollingZscoreFeature:
         self._min_samples = min_samples
         self._max_samples = max_samples
         self._tuple_sum_component_indices = tuple_sum_component_indices
-        # Audit #18: track silent-drop categories so misconfigurations
-        # surface in operator logs instead of producing perpetually-cold
-        # features without explanation.  Each warning fires at most once
-        # per feature instance per category.
+        # Warn once for each input category that would otherwise stay silently cold.
         self._warned_categories: set[str] = set()
 
     def _warn_once(self, category: str, detail: str) -> None:
@@ -184,9 +140,7 @@ class RollingZscoreFeature:
         n = len(vals)
         if n < self._min_samples:
             return 0.0, False, False
-        # Audit #10: with n=1, sample variance is undefined.  Treat it
-        # the same as a constant sensor (warm, value 0) so the math is
-        # explicit rather than hidden behind ``max(n - 1, 1)``.
+        # One observation has undefined sample variance; treat it as constant.
         if n < 2:
             return 0.0, True, False
         mean = sum(vals) / n
@@ -216,7 +170,7 @@ class RollingPercentileFeature:
     ``rank = |{x in window : x <= latest}|`` and ``latest`` is the most
     recently observed warm reading.
 
-    The Hazen formula (audit #9) replaces the naive ``rank / n``: because
+    The Hazen formula replaces naive ``rank / n``: because
     ``latest`` itself is always in the window, ``rank`` is always at
     least 1, so ``rank / n`` had a minimum reachable value of ``1/n``
     (≈ 0.033 at ``min_samples=30``) — a threshold at "percentile < 0.05"
@@ -291,8 +245,7 @@ class RollingPercentileFeature:
             return
         v = reading.value
         if isinstance(v, tuple):
-            # Audit #18: tuple-valued sensors are not supported here —
-            # use a TupleComponentFeature to extract a scalar first.
+            # Extract tuple inputs with TupleComponentFeature before rolling stats.
             self._warn_once(
                 "tuple_value",
                 "sensor delivered a tuple value; "
@@ -314,7 +267,7 @@ class RollingPercentileFeature:
             return 0.5, False, False
         latest = vals[-1]
         rank = sum(1 for v in vals if v <= latest)
-        # Hazen plotting position (audit #9): debiased empirical CDF.
+        # Hazen plotting position gives a debiased empirical CDF.
         return (rank - 0.5) / n, True, False
 
 

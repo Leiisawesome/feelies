@@ -1,87 +1,14 @@
-"""Regime hazard detector — pure two-tick decay-spike detector.
+"""Detect sharp decay in a dominant regime posterior.
 
-Phase 3.1 / v0.3 §20.3.1 and §20.7
-----------------------------------
+``detect(prev, curr)`` is pure and requires matching symbol, engine, state
+ordering, and posterior shape. It fires when the departing posterior falls,
+and either dominance changes or the posterior crosses the configured floor.
+The normalized score is::
 
-A ``RegimeHazardSpike`` event is emitted when the posterior probability
-of the currently-dominant regime state drops sharply within a single
-tick — i.e., the regime is *about to flip*. Downstream consumers
-(risk engine via §20.7.1, composition layer) use it to trigger
-hazard-rate-driven exits without waiting for the next horizon
-boundary.
+    clip01((p_prev - p_now) / max(p_prev, epsilon))
 
-The detector itself is **purely functional**: ``detect(prev, curr)``
-takes two consecutive :class:`RegimeState` events from the same
-``(symbol, engine_name)`` pair and returns either a
-:class:`RegimeHazardSpike` description or ``None``.  All state
-needed for *suppression* (§20.3.1: at most one spike per
-``(symbol, engine_name, departing_state)`` *departure episode*,
-where an episode begins when the state loses dominance and ends
-only when that same state regains dominance) is held by the
-caller — typically the regime-engine extension wired in the next
-sub-task.
-
-Why pure?
-~~~~~~~~~
-
-Per Inv-5 (deterministic replay) and Inv-7 (typed events on the bus)
-the detector must contribute zero hidden state of its own to the
-replay tape.  By restricting it to a free function over two
-``RegimeState`` snapshots, we guarantee that the spike condition is
-a pure function of the existing :class:`RegimeState` stream — which
-is itself deterministic (v0.2 §12.2) — so :class:`RegimeHazardSpike`
-inherits bit-identical replay (verifiable via the Level-5 parity
-hash, §20.11.2).
-
-Hazard semantics
-~~~~~~~~~~~~~~~~
-
-Let ``d`` = ``prev.dominant_state`` (departing state) and let
-``p_prev`` = ``prev.posteriors[d]`` and ``p_now`` =
-``curr.posteriors[d]``.
-
-* The detector fires iff:
-
-  1. ``prev.dominant_state == d`` *and* ``curr.dominant_state != d``
-     OR ``p_now < 1.0 - hysteresis_threshold``.  Either signals
-     loss of dominance.
-  2. ``p_now < p_prev`` (departing posterior is actually decaying;
-     prevents firing on numerical noise around an already-flipped
-     state).
-
-* ``hazard_score`` is the normalized magnitude of the decay clamped
-  to ``[0.0, 1.0]``::
-
-       hazard_score = clip01((p_prev - p_now) / max(p_prev, eps))
-
-  A drop from 0.95 → 0.45 ⇒ ``hazard_score ≈ 0.526``;
-  a drop from 0.95 → 0.05 ⇒ ``hazard_score ≈ 0.947``;
-  a drop from 0.55 → 0.05 ⇒ ``hazard_score ≈ 0.909``.
-
-* ``incoming_state`` is the new dominant state's *name*, or
-  ``None`` if two non-departing states are tied (avoid breaking
-  ties with arbitrary order — downstream code should handle the
-  ambiguous case explicitly).
-
-Inputs
-~~~~~~
-
-* ``prev`` — last :class:`RegimeState` seen on the
-  ``(symbol, engine_name)`` channel.
-* ``curr`` — newly arrived :class:`RegimeState` for the same channel.
-* ``hysteresis_threshold`` — float in ``(0.0, 1.0)`` controlling the
-  *absolute* dominance floor; the default ``0.30`` matches v0.3
-  §20.3.1 prose ("posterior of the currently-dominant regime drops
-  below ``1.0 - hysteresis_threshold``").
-
-Validation
-~~~~~~~~~~
-
-The detector raises :class:`HazardDetectorContractError` when its
-preconditions are violated — same ``(symbol, engine_name)``,
-identical ``state_names`` ordering, and matching ``len(posteriors)``.
-This prevents silent semantic corruption when the upstream engine is
-swapped or reconfigured between ticks.
+Tied incoming states are reported as ``None``. The stateful wrapper suppresses
+duplicates until the departing state regains dominance.
 """
 
 from __future__ import annotations
@@ -120,24 +47,9 @@ class HazardDetectorContractError(ValueError):
 
 
 class RegimeHazardDetector:
-    """Stateful wrapper around the pure :func:`detect` function.
+    """Suppress duplicate hazards within one departure episode.
 
-    Owns the suppression set so callers can simply hand it
-    successive :class:`RegimeState` events and let the detector
-    emit at most one :class:`RegimeHazardSpike` per
-    ``(symbol, engine_name, departing_state)`` transition.
-
-    The detector is *not* thread-safe — instantiate one per channel
-    on the orchestrator's main event loop, matching the pattern
-    used by the rest of the kernel (see :mod:`feelies.kernel.orchestrator`).
-
-    Reset semantics
-    ---------------
-
-    Calling :meth:`reset` clears all suppression keys.  This is used
-    by determinism-replay tests and by the orchestrator on session
-    boundary so the new session starts from a clean tape (v0.2
-    §12.5).
+    The wrapper is not thread-safe. ``reset`` clears all suppression keys.
     """
 
     __slots__ = (
@@ -320,14 +232,7 @@ def _validate_pair(prev: RegimeState, curr: RegimeState) -> None:
             f"length; got posteriors={len(prev.posteriors)} "
             f"state_names={len(prev.state_names)}"
         )
-    # Producers populate ``dominant_state`` (int index) and
-    # ``dominant_name`` (str) independently; the detector reads BOTH
-    # — ``dominant_state`` to index into ``state_names`` for the
-    # departing label, ``dominant_name`` to drive re-arming on
-    # round-trip dominance.  Disagreement between the two would
-    # silently produce wrong suppression keys and inconsistent spike
-    # text.  Catching it at the layer boundary upholds Inv-7 (typed
-    # events on the bus carry self-consistent invariants).
+    # Both dominant representations drive behavior, so they must agree.
     _validate_dominant_consistency(prev, "prev")
     _validate_dominant_consistency(curr, "curr")
 

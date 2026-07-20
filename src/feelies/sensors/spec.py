@@ -13,8 +13,7 @@ boot time.  It binds a sensor implementation (``cls``) to:
 The registry pre-bakes a :class:`feelies.core.events.SensorProvenance`
 record from ``subscribes_to`` and ``input_sensor_ids`` at registration
 time so each emitted reading shares the same immutable provenance
-instance — both for performance (no per-event allocation) and for
-audit reproducibility (plan §3.1 / S4).
+instance for performance and reproducible provenance.
 """
 
 from __future__ import annotations
@@ -33,38 +32,11 @@ _VALID_SUBSCRIPTION_TYPES: tuple[type[Event], ...] = (NBBOQuote, Trade)
 
 @dataclass(frozen=True, kw_only=True)
 class SensorSpec:
-    """One row in the sensor registration table.
+    """Immutable sensor registration.
 
-    Fields:
-
-    - ``sensor_id`` / ``sensor_version`` — composite registration key.
-      Two specs sharing the same ``(id, version)`` raise
-      :class:`feelies.sensors.errors.DuplicateSensorRegistrationError`
-      at registration time.
-    - ``cls`` — class implementing the :class:`feelies.sensors.protocol.Sensor`
-      Protocol.  The registry instantiates it once via
-      ``cls(**params)`` and reuses the singleton across all symbols.
-    - ``params`` — keyword arguments forwarded to ``cls(**params)`` and
-      also threaded into every ``update()`` call as the ``params``
-      mapping (kept immutable as a frozen mapping view).
-    - ``subscribes_to`` — tuple of event classes the sensor consumes.
-      Must be a subset of ``(NBBOQuote, Trade)`` in Phase 2; the
-      registry uses this tuple to populate
-      ``SensorProvenance.input_event_kinds``.
-    - ``input_sensor_ids`` — upstream sensors whose ``SensorReading``
-      events this sensor consumes (cross-sensor dependencies, e.g.
-      ``structural_break_score`` over ``hawkes_intensity``).  The
-      registry enforces topological registration order.
-    - ``min_history`` — minimum number of warmup events before
-      ``warm=True`` readings are emitted.  Sensors should consult this
-      via ``params`` (the registry does not gate on it; warmth is a
-      sensor-level concern as per :mod:`feelies.sensors.protocol`).
-    - ``throttled_ms`` — optional emit-rate limiter, enforced at the
-      registry level (plan §3.1 / S5).  ``None`` disables throttling.
-      The registry skips an ``update()`` call if the time since the
-      last emission for this ``(sensor_id, symbol)`` is below the
-      threshold; the sensor is *not* invoked in that case (preserves
-      determinism vs. running and discarding).
+    ``(sensor_id, sensor_version)`` is unique. Dependencies must be registered
+    first, subscriptions are limited to quotes and trades, and throttling skips
+    the sensor update entirely to preserve deterministic state.
     """
 
     sensor_id: str
@@ -84,9 +56,7 @@ class SensorSpec:
     Effect on throttle behaviour:
 
     * ``stateful=False`` (default): when inside the throttle window,
-      ``sensor.update()`` is skipped entirely (legacy behaviour,
-      preserves the original determinism contract — the sensor only
-      advances on emissions).
+      ``sensor.update()`` is skipped; the sensor advances only on emissions.
     * ``stateful=True``: ``sensor.update()`` is called on every event
       regardless of the throttle window, but the resulting
       ``SensorReading`` is only *emitted* (published to the bus) when
@@ -94,9 +64,8 @@ class SensorSpec:
       "emission rate-limiting" so the estimator remains unbiased.
 
     Operators MUST set ``stateful=True`` for any accumulator sensor
-    paired with a non-null ``throttled_ms``.  Setting
-    ``throttled_ms`` on a stateful sensor without this flag is
-    undefined behaviour (H4 / M4 audit).
+    paired with a non-null ``throttled_ms``. Otherwise skipped updates bias
+    the estimator.
     """
     stateless_throttle_ok: bool = False
     """Operator acknowledgment that a ``throttled_ms`` + ``stateful=False``
@@ -136,20 +105,7 @@ class SensorSpec:
                 f"SensorSpec({self.sensor_id!r}).throttled_ms must be >= 0 "
                 f"or None, got {self.throttled_ms}"
             )
-        # Audit P1-D: surface the documented "undefined behaviour" combination
-        # (a non-null throttle on a sensor NOT marked ``stateful``) loudly.  We
-        # cannot reject it outright — a genuinely stateless sensor (a pure
-        # function of the current event with no accumulator) is safe to
-        # throttle — but an accumulator (EWMA / Hawkes / Kyle / rolling window)
-        # left unflagged will be biased by every skipped event inside the
-        # throttle window.  The registry skips ``update()`` entirely for
-        # ``stateful=False`` sensors inside the window, so confirm the sensor
-        # truly carries no state across events before relying on this.
-        #
-        # Silence path: ``stateless_throttle_ok=True`` (YAML: explicit
-        # ``stateful: false`` beside ``throttled_ms``) means the operator
-        # affirmed non-accumulator semantics — keep the footgun loud for
-        # the default/omitted case.
+        # Skipping updates biases accumulators; require an explicit stateless opt-in.
         if (
             self.throttled_ms is not None
             and self.throttled_ms > 0

@@ -6,9 +6,8 @@ rolling Welford mean/variance over the last ``window`` quotes:
     spread_t = ask_t - bid_t
     z_t      = (spread_t - mean_t) / sqrt(var_t)
 
-Despite the historical "30d" naming (matching the legacy alpha
-catalog's window terminology) the actual window is bounded by quote
-count, not wall-clock days, so the sensor behaves identically in
+Despite the ``30d`` name, the window is bounded by quote count rather than
+days, so the sensor behaves identically in
 backtest and live trading (Inv-9).  The default ``window`` of 6_000
 quotes is roughly 10 minutes at typical equity-market depth and is
 enough to estimate the spread distribution stably across the trading
@@ -43,16 +42,16 @@ class SpreadZScoreSensor:
     - ``min_std`` (float, default 1e-9): floor on the rolling
       standard deviation; below this we emit ``value=0.0`` to avoid
       pathological z-scores in degenerate (constant-spread) books.
-    - ``max_gap_seconds`` (int | None, default None): audit P1-E
-      event-time staleness reset.  This is a **count**-window sensor, so
+    - ``max_gap_seconds`` (int | None, default None): event-time staleness
+      reset. This is a count-window sensor, so
       unlike the event-time-windowed sensors it cannot un-warm on its
       own — once the 6000-quote deque fills it stays warm and keeps
       z-scoring against a distribution that may predate a halt.  When set,
       an inter-quote gap longer than ``max_gap_seconds`` (e.g. a LULD
       halt) flushes the rolling window so the post-gap z-score is built
       against post-gap data, and the sensor correctly reverts to cold
-      until ``warm_after`` fresh quotes accumulate.  ``None`` (default)
-      preserves the exact legacy behaviour and the locked golden vector.
+      until ``warm_after`` fresh quotes accumulate. ``None`` disables gap
+      resets.
     """
 
     sensor_id: str = "spread_z_30d"
@@ -89,7 +88,7 @@ class SpreadZScoreSensor:
             "n": 0,  # Welford element count (== len(spreads))
             "mean": 0.0,  # Welford running mean
             "M2": 0.0,  # Welford sum of squared deviations from mean
-            "last_ts_ns": None,  # event-time of the previous accepted quote (P1-E)
+            "last_ts_ns": None,  # event time of the previous accepted quote
         }
 
     def update(
@@ -103,16 +102,13 @@ class SpreadZScoreSensor:
 
         bid = float(event.bid)
         ask = float(event.ask)
-        # A1: uniform bid/ask positivity validation across price-consuming
+        # Validate positive prices consistently across price-consuming
         # sensors.  A zero/negative side gives a nonsense spread and
         # would poison the rolling mean/variance.
-        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
             return None
 
-        # Audit P1-E: flush the count window after a long event-time gap so
-        # the post-halt z-score is built against post-halt data (and the
-        # sensor reverts to cold).  Disabled when ``max_gap_seconds is None``,
-        # which keeps the legacy behaviour and the locked golden vector.
+        # After a long gap, rebuild the window from post-gap data and return cold.
         ts_ns = event.timestamp_ns
         last_ts = state["last_ts_ns"]
         if (
@@ -129,12 +125,7 @@ class SpreadZScoreSensor:
         spread = ask - bid
         spreads: deque[float] = state["spreads"]
 
-        # S14: Welford sliding-window variance (Pébay 2008).
-        # If the deque is full, the oldest element will be evicted
-        # by the append below; remove it from the Welford accumulators first.
-        # ``window >= 2`` is enforced in __init__, so when we hit ``maxlen``
-        # we always have n_cur == maxlen >= 2 — the ``n_cur == 1`` branch
-        # is unreachable.
+        # Remove the evicted value from Welford state before appending.
         if len(spreads) == spreads.maxlen:
             x_old = spreads[0]
             n_cur = state["n"]  # == len(spreads) == maxlen >= 2
@@ -173,7 +164,7 @@ class SpreadZScoreSensor:
         # Deque has maxlen=window with FIFO eviction; once the window
         # fills, ``len`` stays at ``window`` for the lifetime of the
         # state.  (Unlike the event-time-windowed sensors, this one
-        # cannot un-warm — there is no S3 reversion path.)
+        # cannot become cold without an explicit gap reset.)
         return SensorEmission(
             value=value,
             warm=len(spreads) >= self._warm_after,

@@ -1,10 +1,4 @@
-"""Direct unit tests for ``market_fill.py`` — the shared aggressive-fill
-chokepoint both ``BacktestOrderRouter`` and ``PassiveLimitOrderRouter``
-delegate to (audit execution_fills_audit_2026-07-02, P2 backlog: this module
-previously had no isolated test file — coverage was embedded only in the two
-router test files, ``test_router_latency.py``, and the determinism golden
-replay).
-"""
+"""Unit tests for the aggressive-fill helper shared by both routers."""
 
 from __future__ import annotations
 

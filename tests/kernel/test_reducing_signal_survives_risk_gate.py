@@ -1,34 +1,8 @@
-"""Position-mgmt audit (2026-07-02) P0/P1: reducing signals must survive the
-shared risk-engine exposure/drawdown gate.
+"""Ensure risk verdicts cannot strand exposure-reducing orders.
 
-``BasicRiskEngine.check_signal``/``check_order`` exempt reducing orders from
-the position-limit, PDT, RTH, and buying-power checks (via
-``_opens_or_increases`` / ``signal_reduces``), but the shared
-``_check_exposure_and_drawdown`` sub-check does not — it can return
-``REJECT`` (gross exposure at/above cap) or ``FORCE_FLATTEN`` (non-positive
-equity, drawdown breach) for an order that only ever *reduces* exposure.
-Before the 2026-07-02 fix, the orchestrator's M4-M6 walk dropped the tick on
-either verdict without ever building an order, silently stranding a
-stop-loss / session-flatten / alpha-FLAT-exit / reversal-exit-leg position.
-
-``tests/execution/test_reducing_leg_invariants.py`` already locks the
-*economic* half of the reduce-always-submits contract (B4 / min-lot, at the
-planner layer). This module locks the *risk-gate* half — the property that
-was missing and let the bug through the 06-20 and prior audits — using a
-stubbed :class:`RiskVerdict` and the real orchestrator tick pipeline, the
-same style as ``tests/kernel/test_orchestrator_hazard_exit_routing.py``.
-
-All scenarios run in ``BACKTEST_MODE``: a ``REJECT`` verdict has no
-mode-dependent handling (it must never block a reduce in any mode), and
-``BACKTEST_MODE`` is exactly the mode where a ``FORCE_FLATTEN`` verdict has
-no reachable ``RISK_LOCKDOWN`` transition to fall back on (see
-``kernel/macro.py``), so it is the mode where stranding was possible.  The
-complementary claim — that ``FORCE_FLATTEN`` still escalates to
-``RISK_LOCKDOWN`` (and flattens the whole book) in PAPER/LIVE — is already
-covered by
-``test_orchestrator.py::test_live_mode_force_flatten_reaches_macro_risk_lockdown``
-and
-``test_orchestrator_bus_signal.py::test_reverse_exit_force_flatten_triggers_global_escalation``.
+Reducing signals must still submit when shared exposure checks return
+``REJECT`` or ``FORCE_FLATTEN``. Backtest mode isolates this contract because
+it has no risk-lockdown transition to perform the reduction indirectly.
 """
 
 from __future__ import annotations
@@ -62,9 +36,7 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
 
-# Both verdicts must never block or strand a reduce: REJECT has no
-# escalation semantics at all, and FORCE_FLATTEN has no reachable
-# RISK_LOCKDOWN transition from BACKTEST_MODE to fall back on.
+# Neither verdict may block a reduction in backtest mode.
 _BLOCKING_ACTIONS = (RiskAction.REJECT, RiskAction.FORCE_FLATTEN)
 
 

@@ -1,24 +1,7 @@
-"""Alpha module protocol — the pluggable unit of the trading system.
+"""Alpha metadata and layer-specific module protocols.
 
-An AlphaModule is the atomic unit of plug/unplug.  It bundles:
-  - Metadata (AlphaManifest): hypothesis, falsification, version, risk budget
-  - Feature declarations (FeatureDefinition): what features it introduces/needs
-  - Layer-typed evaluation logic supplied by the layer-specific subclass
-    (``LoadedSignalLayerModule.evaluate_horizon`` for SIGNAL alphas;
-    ``LoadedPortfolioLayerModule.evaluate_cross_section`` for PORTFOLIO
-    alphas)
-
-Alpha modules are registered with the AlphaRegistry before the
-orchestrator boots.  Phase-3 / Phase-4 dispatch flows through the
-bus-driven HorizonAggregator → HorizonSignalEngine → CompositionEngine
-chain — the orchestrator never sees AlphaModule directly (invariant 9:
-no mode-specific branching, invariant 8: layer separation preserved).
-
-Workstream D.2 PR-2b-iv deleted the legacy per-tick ``evaluate(features)``
-method that used to map a :class:`FeatureVector` to a :class:`Signal`;
-the surviving protocol surface is metadata-only.  Layer-specific
-``LoadedSignalLayerModule`` / ``LoadedPortfolioLayerModule`` subclasses
-expose typed evaluation hooks consumed by the bus-driven chain.
+Modules register metadata and feature requirements before startup. Signal and
+portfolio subclasses expose the evaluation hooks used by the event pipeline.
 """
 
 from __future__ import annotations
@@ -51,10 +34,7 @@ class ParameterDef:
     name: str
     param_type: str  # "int", "float", "bool", "str"
     default: int | float | bool | str
-    # ``range`` marks a parameter as *free for optimization* (counts
-    # against the §8.5 cap of 3 free knobs).  ``bounds`` (audit P1-8)
-    # carries the YAML ``min``/``max`` validation envelope — enforced on
-    # every value but NOT counted as a free-optimization knob.
+    # ``range`` marks an optimization knob; ``bounds`` only validates values.
     range: tuple[float, float] | None = None
     bounds: tuple[float, float] | None = None
     description: str = ""
@@ -84,9 +64,7 @@ class ParameterDef:
             if value < lo or value > hi:
                 errors.append(f"parameter '{self.name}': value {value} outside range [{lo}, {hi}]")
 
-        # Audit P1-8: the YAML ``min``/``max`` envelope was historically
-        # parsed into nothing and silently ignored; it is now enforced so
-        # an override outside the declared bounds is rejected.
+        # Reject overrides outside the YAML validation envelope.
         if self.bounds is not None and isinstance(value, (int, float)):
             blo, bhi = self.bounds
             if value < blo or value > bhi:
@@ -126,35 +104,15 @@ class AlphaManifest:
     scope, parameters, and risk budget — everything needed to audit,
     reproduce, and lifecycle-manage the alpha without opening its code.
 
-    Three-layer architecture additive fields (Phase 1 / 1.1 of
-    docs/three_layer_architecture.md):
+    Three-layer architecture fields:
 
-      ``layer`` — declared layer for the alpha.  Post-D.2 the only
-                  values produced by the loader are ``"SIGNAL"`` and
-                  ``"PORTFOLIO"``.  ``None`` and ``"LEGACY_SIGNAL"``
-                  may still appear on hand-built manifests but are
-                  rejected at load time.
+      ``layer`` — declared ``SIGNAL`` or ``PORTFOLIO`` layer.
 
-      ``trend_mechanism`` — opt-in v0.3 ``trend_mechanism:`` block as a
-                            raw dict (parsed but not enforced in Phase 1.1
-                            per §20.1; consumed by the v0.3 mechanism
-                            classification gate G16 in Phase 3.1).
+      ``trend_mechanism`` — optional mechanism classification block.
 
-      ``hazard_exit`` — opt-in v0.3 ``hazard_exit:`` block as a raw dict
-                        (parsed but not enforced in Phase 1.1 per §20.1;
-                        consumed by the composition layer in Phase 4.1).
+      ``hazard_exit`` — optional hazard-exit policy block.
 
-      ``gate_thresholds_overrides`` — Workstream F-5 per-alpha
-                        ``promotion.gate_thresholds:`` overrides.  A
-                        flat-key mapping of
-                        :class:`~feelies.alpha.promotion_evidence.GateThresholds`
-                        field names to override values, validated and
-                        coerced at load time by
-                        :func:`feelies.alpha.promotion_evidence.parse_gate_thresholds_overrides`.
-                        ``None`` means "no per-alpha overrides; use
-                        platform defaults".  Empty ``dict`` is also
-                        treated as "no overrides" by the registry
-                        merge step.
+      ``gate_thresholds_overrides`` — validated per-alpha promotion thresholds.
     """
 
     alpha_id: str
@@ -192,12 +150,8 @@ class AlphaModule(Protocol):
       - ``validate()`` performs self-checks and returns a list of error
         strings (empty = valid).
 
-    Workstream D.2 PR-2b-iv deleted the per-tick ``evaluate(features)``
-    method.  Layer-specific evaluation lives on the loader-emitted
-    subclasses (``LoadedSignalLayerModule.evaluate_horizon`` /
-    ``LoadedPortfolioLayerModule.evaluate_cross_section``) which are
-    consumed by the bus-driven HorizonSignalEngine / CompositionEngine
-    chain — invariant 5 (purity) is enforced at those entry points.
+    Layer-specific subclasses expose evaluation through the signal and
+    composition pipelines.
     """
 
     @property

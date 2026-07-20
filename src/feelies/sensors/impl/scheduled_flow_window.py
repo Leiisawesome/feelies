@@ -1,16 +1,7 @@
-"""Scheduled-flow window sensor (v0.3 §20.4.2).
+"""Report whether event time falls inside a scheduled-flow window.
 
-Time-of-day conditional sensor exposing whether the current event-time
-falls inside any registered scheduled-flow window from the bootstrap
-:class:`feelies.storage.reference.event_calendar.EventCalendar`.
-
-This is the canonical L1 fingerprint sensor for the
-``SCHEDULED_FLOW`` mechanism family.  It is *stateless* in the
-classical sense — no per-symbol accumulator — but is per-symbol *aware*
-because some windows are symbol-scoped (e.g. ``EARNINGS_DRIFT`` for
-``AAPL``) and others are universe-wide (e.g. ``MOC_IMBALANCE``).
-
-Outputs (length-4 tuple):
+The sensor is stateless but honors symbol-scoped and universe-wide windows.
+It emits:
 
 .value = (
         active,                  # 1.0 if inside any matching window, else 0.0
@@ -19,23 +10,8 @@ Outputs (length-4 tuple):
         flow_direction_prior,    # ±1.0 expected sign; 0.0 if neutral / inactive
     )
 
-When multiple windows are simultaneously active for a symbol (e.g.
-``OPENING_AUCTION`` and ``EARNINGS_DRIFT`` overlap at 09:30), the
-sensor returns the window with the *earliest* ``end_ns`` — the one
-about to close first — so the reported ``seconds_to_window_close``
-remains a useful regime-clock signal.  Ties on ``end_ns`` are broken
-by lexicographic ``window_id`` so selection is fully deterministic
-and independent of the underlying calendar's iteration order.
-
-Determinism:
-
-- Uses only integer nanosecond comparisons against pre-resolved
-  window bounds.
-- ``window_id_hash`` is ``int(hashlib.sha256(window_id.encode()).hexdigest()[:8], 16)``
-  — fast, salt-free, and identical across processes (unlike Python's
-  built-in ``hash``, which is salted by ``PYTHONHASHSEED``).
-- Calendar is injected at construction time; the sensor never reads
-  the wall clock.
+Overlaps select the earliest close, then the lexicographically smallest ID.
+Window IDs use a stable SHA-256-derived 32-bit hash.
 """
 
 from __future__ import annotations
@@ -88,16 +64,9 @@ class ScheduledFlowWindowSensor:
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._calendar = calendar
-        # An empty calendar can't produce any informative readings — surface
-        # this as ``warm=False`` so misconfigurations (e.g. wrong session
-        # date, missing YAML) don't silently look like normal "outside any
-        # window" readings.
+        # Empty calendars stay cold instead of looking inactive.
         self._has_windows = len(calendar.windows) > 0
-        # Per-tick warm gate: True only when at least one symbol-eligible
-        # window exists in the calendar.  A calendar populated with
-        # windows for OTHER symbols (e.g. an EARNINGS_DRIFT-only file
-        # consumed by a non-event symbol) would otherwise warm to
-        # ``active=0.0`` and silently mask scope misconfiguration.
+        # Each symbol stays cold until it has an eligible window.
         self._symbol_has_windows: dict[str, bool] = {}
         for w in calendar.windows:
             if w.symbol is None:

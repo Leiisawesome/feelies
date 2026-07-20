@@ -1,4 +1,4 @@
-"""Smoke tests for the Phase-4 PORTFOLIO layer load path."""
+"""Smoke tests for the PORTFOLIO-layer load path."""
 
 from __future__ import annotations
 

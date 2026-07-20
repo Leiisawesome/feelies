@@ -1,34 +1,18 @@
 #!/usr/bin/env python3
-"""Task 9-A-H12 Phase A — park-rule census instrument for
-``sig_halfhour_clock_drift_h900_v1``.
+"""Census instrument for ``sig_halfhour_clock_drift_h900_v1``.
 
-Implements EXACTLY the frozen protocol step-1 predicate
-(``docs/research/sig_halfhour_clock_drift_h900_v1_validation_protocol.md`` §1,
-FROZEN 2026-07-17) — **no forward returns, no IC, no signal evaluation**.
-The only return-like quantity is unconditional session σ₉₀₀ (Bessel-
-corrected std of non-overlapping 900 s mid log-returns on the 09:30-
-anchored RTH grid, bps), which conditions on nothing signal-related.
+The frozen predicate computes no forward returns, IC, or signals. Its only
+return-like value is unconditional session volatility on the 900-second grid.
 
-Episode = h=900 boundary satisfying §1.1 (session window, required-warm,
-``W_hh`` clock predicate for in-window primary OR inverted for F2 off-
-clock contrast, OFI quintile, breakout gate, vol-z backstop, sign
-agreement). Counts both ``episodes_in_window`` (``W_hh=1``) and
-``episodes_out_window`` (matched OFI quintile, ``W_hh=0``).
+It counts extreme-OFI episodes inside clock windows and matched off-clock
+controls after warm-up, regime, volatility, and sign-agreement gates.
 
-Calendar-warm (JC-10): per (symbol, session) share of in-window
-boundaries with ``scheduled_flow_window_active`` warm (sensor warm
-propagated via ``TupleComponentFeature``). Warm-drop: warm fraction
-< 0.5 on > 2 sessions ⇒ symbol leaves D.
+Symbols leave the primary pool when calendar warm coverage is below 0.5 in more
+than two sessions.
 
-JC-1 REPORTS (diagnostic, never binding): leakage share on primary
-in-window eligible boundaries (degenerate/crossed quotes on trailing-
-900 s OFI path); ``off_clock_cotravel_rate`` among quintile-OFI
-eligible-class boundaries ignoring clock (design ≈ 0.52).
+Diagnostics report quote leakage and off-clock co-travel.
 
-Determinism: PYTHONHASHSEED=0; no RNG; no wall-clock reads; events
-sorted by (timestamp_ns, sequence); fresh sensor/regime state per cell.
-**This module is the instrument — do not execute against the grid from
-Phase A** (N = 12 must survive unchanged).
+Events are sorted by ``(timestamp_ns, sequence)`` with fresh state per cell.
 
 Usage
 -----

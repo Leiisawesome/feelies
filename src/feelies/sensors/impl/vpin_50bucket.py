@@ -1,30 +1,12 @@
-"""Volume-Synchronized Probability of Informed Trading (VPIN).
+"""Volume-synchronized probability of informed trading.
 
-VPIN sequences trades into equal-volume *buckets* (rather than equal
-time intervals) and reports the average absolute order-flow imbalance
-across the trailing window of buckets.
+Trades fill equal-volume buckets. Tick-rule classification assigns buy and sell
+volume, and each completed bucket contributes:
 
-Reference: Easley, López de Prado & O'Hara (2012) "Flow Toxicity and
-Liquidity in a High-Frequency World" — RFS 25(5).
+``abs(buy_volume - sell_volume) / bucket_volume``
 
-Algorithm (deterministic, integer bucket boundaries):
-
-1. Maintain a running volume bucket of total size ``bucket_volume``.
-2. Each incoming trade contributes ``size`` shares.  Trades are
-   classified buy / sell using the *tick rule*: a trade above the
-   previous trade price is buy-initiated, below is sell-initiated,
-   equal price inherits the prior side (defaulting to buy on the
-   very first trade).
-3. When the running bucket fills, compute its imbalance
-   ``|buy_volume - sell_volume| / bucket_volume`` and append it to
-   a deque of length ``window_buckets``.  Excess shares spill into
-   the next bucket so total volume is conserved exactly.
-4. The sensor's value is the rolling mean of the deque.  ``warm`` is
-   true once at least ``min_buckets`` buckets have been completed.
-
-Determinism: pure integer arithmetic for volume accounting; floats
-only for the imbalance value.  Tick-rule classification removes any
-dependence on quote midpoint, so VPIN is robust to NBBO inversion.
+Excess shares spill into the next bucket. The emitted value is the trailing
+mean, warm after ``min_buckets`` completions.
 """
 
 from __future__ import annotations
@@ -81,7 +63,7 @@ class VPIN50BucketSensor:
             "last_price": None,
             "last_side": +1,
             "buckets": deque(maxlen=self._window_buckets),
-            "buckets_sum": 0.0,  # running sum of bucket imbalances (O(1) mean)
+            "buckets_sum": 0.0,  # Running sum for an O(1) mean.
         }
 
     def update(

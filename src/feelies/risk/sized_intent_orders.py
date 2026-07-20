@@ -31,8 +31,7 @@ from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
 _logger = logging.getLogger(__name__)
 
-# Loosely typed so callers may pass the ``additional_exposure`` keyword
-# (audit R-1); the concrete engines accept it, test stubs may ignore it.
+# Concrete engines accept additional_exposure; simple test doubles may ignore it.
 CheckOrder = Callable[..., RiskVerdict]
 DroppedLegsCallback = Callable[[SizedPositionIntent, list[tuple[str, str]]], None]
 
@@ -75,31 +74,11 @@ def build_sized_intent_orders(
     check_order: CheckOrder,
     on_dropped_legs: DroppedLegsCallback | None = None,
 ) -> SizedIntentRiskResult:
-    """Translate a ``SizedPositionIntent`` into vetted per-leg orders.
+    """Translate a sized intent into independently risk-checked orders.
 
-    ``check_order`` is invoked per leg so the caller controls which risk
-    surface enforces limits (the wrapper routes through its per-alpha budget
-    gate; the base engine routes through itself).  A ``FORCE_FLATTEN`` verdict
-    aborts the whole intent and requests global escalation; ``REJECT`` drops
-    only the offending leg; ``SCALE_DOWN`` rebuilds the leg at the scaled
-    quantity.  Veto-dropped legs are surfaced via ``on_dropped_legs``.
-
-    Cumulative cap (audit R-1)
-    --------------------------
-    Each admitted leg's signed gross-notional delta is accumulated into
-    ``running_extra`` and passed to the *next* leg's ``check_order`` as
-    ``additional_exposure``.  Without this, every leg sees only the
-    pre-intent ``positions`` snapshot (fills land after the whole intent is
-    vetted), so K legs each individually under the gross/buying-power cap
-    could collectively breach it.  Reducing legs contribute a negative delta,
-    so netting is handled correctly.
-
-    Fail-safe containment (audit R-2)
-    ---------------------------------
-    A per-leg ``check_order`` that *raises* is contained: the offending leg
-    is veto-dropped (treated like REJECT) rather than propagating out of
-    ``check_sized_intent`` — the protocol contract is that implementations
-    MUST NOT raise.
+    Admitted exposure accumulates across legs so the intent cannot exceed a
+    cap collectively. Force-flatten aborts the intent; rejection, zero scaling,
+    and raised risk checks drop only the offending leg.
     """
     if not intent.target_positions:
         return SizedIntentRiskResult(orders=())
@@ -165,11 +144,7 @@ def build_sized_intent_orders(
             dropped.append((symbol, verdict.reason))
             continue
         if verdict.action == RiskAction.SCALE_DOWN:
-            # Audit FS-3 (risk_engine_audit_2026-07-02.md): no floor here —
-            # a scale-down that rounds to zero shares must drop the leg
-            # (like the SIGNAL path's ``_compose_scaled_quantity`` +
-            # ``scaled_qty <= 0`` handling in the orchestrator), not force
-            # a minimum 1-share order the scaling factor did not intend.
+            # Drop scale-downs that round to zero; never force a one-share order.
             scaled_qty = int(
                 (Decimal(quantity) * Decimal(str(verdict.scaling_factor))).to_integral_value(
                     rounding=ROUND_HALF_UP
@@ -195,8 +170,7 @@ def build_sized_intent_orders(
                     g12_disclosed_cost_total_bps=disclosed_cost,
                 )
 
-        # Accumulate this admitted leg's signed gross-notional change so the
-        # next leg's cap check sees it (audit R-1).
+        # Include each admitted leg in later legs' exposure checks.
         admitted_signed = quantity if side == Side.BUY else -quantity
         post_qty = current.quantity + admitted_signed
         running_extra += (abs(post_qty) - abs(current.quantity)) * mark

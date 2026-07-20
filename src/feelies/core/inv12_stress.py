@@ -1,4 +1,4 @@
-"""Inv-12 joint cost + latency stress harness (BT-9).
+"""Joint cost and latency stress harness for invariant 12.
 
 Invariant 12 requires every edge to survive **1.5× variable cost** and
 **2× fill latency** relative to the operator's baseline backtest config.
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from feelies.core.platform_config import PlatformConfig
 
-# Locked Inv-12 stress factors (remediation plan BT-9).
+# Locked stress factors for invariant 12.
 INV12_COST_STRESS_MULTIPLIER: float = 1.5
 INV12_LATENCY_STRESS_MULTIPLIER: int = 2
 
@@ -37,8 +37,7 @@ def stressed_cost_multiplier(baseline_multiplier: float) -> float:
 
 
 def apply_inv12_stress(config: PlatformConfig) -> PlatformConfig:
-    """Return a copy with joint 1.5× cost-stress and 2× fill +
-    market-data latency (BT-17: both latency legs scale together)."""
+    """Return a copy with 1.5× cost stress and 2× both latency legs."""
     return replace(
         config,
         cost_stress_multiplier=stressed_cost_multiplier(

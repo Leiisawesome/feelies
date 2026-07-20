@@ -1,45 +1,13 @@
-"""Inventory-pressure sensor (INVENTORY mechanism fingerprint).
+"""Volume-normalized market-maker inventory proxy.
 
-Estimates the market maker's net inventory accumulated from aggressive
-trade flow over a short event-time window, normalised to ``[-1, 1]``.
-This is the trade-side companion to ``quote_replenish_asymmetry`` (the
-quote-side INVENTORY proxy) and the canonical L1 fingerprint for the
-``INVENTORY`` mechanism family (half-life 10–120 s, mean-reverting).
+The tick rule classifies aggressor side. Market-maker inventory takes the
+opposite side, so the rolling score is::
 
-Mechanism (Ho & Stoll 1981; Madhavan & Smidt 1991): a liquidity
-provider who absorbs one-sided aggressive flow accumulates inventory and
-shades quotes to offload it; the price move that loaded the inventory
-mean-reverts as the position is unwound.  On L1 we cannot see the MM's
-book, but we can infer the *sign and size* of the inventory they must be
-carrying from the aggressor side of trades:
+    sum(-aggressor_side * size) / max(sum(size), epsilon)
 
-- An aggressive **buy** (print lifting the ask) is filled *by* the MM →
-  the MM goes **short** that size.
-- An aggressive **sell** (print hitting the bid) is filled *by* the MM →
-  the MM goes **long** that size.
-
-So per trade the MM inventory change is ``-aggressor_side * size`` (the
-MM takes the opposite side).  We accumulate this over a trailing
-``window_seconds`` window and normalise by traded volume:
-
-    inventory_pressure = Σ(-aggressor_side · size) / (Σ size + ε)   ∈ [-1, 1]
-
-Sign convention (tradeable): **positive ⇒ MM net long** (it has absorbed
-net selling) ⇒ the down-move that loaded it is expected to *revert up* ⇒
-positive forward return. Symmetric for negative. ``|pressure|`` near 1
-means the window's flow was strongly one-sided (large MM inventory,
-strong reversion pressure).
-
-Aggressor classification: tick rule (price strictly above the prior
-trade ⇒ buy; below ⇒ sell; equal ⇒ inherit prior side; default ``+1`` on
-the first trade), matching ``hawkes_intensity`` / ``vpin_50bucket`` so
-the sensor is robust to NBBO inversion / stale quotes.
-
-Determinism: integer volume accounting + one float division; event-time
-deque eviction; no RNG, no clock reads.
-
-Warm-up: ``warm = True`` once at least ``min_trades`` trades sit in the
-trailing window.
+Positive means market makers absorbed net selling and are net long. The score
+is bounded to ``[-1, 1]`` and becomes warm after ``min_trades`` in the event-time
+window. Processing uses integer volume accounting and no RNG.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paper-trading runner — wires MassiveLiveFeed + IB Gateway end-to-end.
+"""Run paper trading with Massive market data and IB Gateway.
 
 Usage::
 
@@ -13,20 +13,9 @@ Usage::
     python scripts/run_paper.py --config configs/paper_smoke_rth.yaml \\
         --max-runtime-s 600 --run-dir runs/paper_$(date +%F)
 
-The script wires the platform like ``run_backtest.py`` does, then:
-
-    1. ``orchestrator.boot(config)``                       — G0 → G2 boot
-    2. ``orchestrator.ib_connection.connect_and_start()``  — IB handshake
-    3. ``orchestrator.live_feed.start()``                  — Massive WS start
-    4. ``orchestrator.run_paper()``                        — drive pipeline
-    5. SIGINT handler → ``orchestrator.halt()`` (CMD_STOP → READY)
-    6. ``finally:`` teardown — ``orchestrator.shutdown()`` (drains IB
-       acks while connected) → feed.stop → ib.disconnect_and_stop
-
-Note: this script is the *only* place the platform's wall-clock-driven
-threads are spun up.  Backtest replay never touches this code path
-(Inv-9 mode-swap parity), so the determinism parity hashes in
-``tests/determinism/`` are unaffected by changes here.
+The runner boots the platform, starts IB and the live feed, runs the paper
+pipeline, handles SIGINT, drains acknowledgements, and disconnects. Backtests do
+not execute this wall-clock-driven path.
 """
 
 from __future__ import annotations
@@ -41,8 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
 
-# Ensure the project root is on sys.path so ``feelies`` is importable
-# when running the script directly (e.g. ``python scripts/run_paper.py``).
+# Add the source tree for direct script execution.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 

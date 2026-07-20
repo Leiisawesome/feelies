@@ -1,4 +1,4 @@
-"""Aggregator non-finite demotion (3P-1) and Welford drift recompute (3P-4)."""
+"""Test non-finite demotion and Welford drift recomputation."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 _NS = 1_000_000_000
 
 
-# ── 3P-1: aggregator demotes a non-finite warm feature value to cold ────────
+# Non-finite warm features become cold.
 
 
 class _NaNFeature:
@@ -70,7 +70,7 @@ def test_aggregator_demotes_nonfinite_feature_to_cold() -> None:
     assert all(math.isfinite(v) for v in snap.values.values())
 
 
-# ── 3P-4: reverse-Welford drift is recomputed exactly from the window ───────
+# Reverse-Welford drift is recomputed from the window.
 
 
 def test_welford_recompute_on_drift_flag() -> None:

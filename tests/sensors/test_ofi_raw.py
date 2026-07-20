@@ -1,4 +1,4 @@
-"""OFIRawSensor — per-event OFI and the integrated-flow property (audit 2P-2)."""
+"""Per-event OFI and integrated-flow tests for ``OFIRawSensor``."""
 
 from __future__ import annotations
 

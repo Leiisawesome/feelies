@@ -1,8 +1,7 @@
-"""Unit tests for the H10 sweep_kyle_drift census instrument (no cache contact).
+"""Cache-free tests for the H10 sweep-Kyle census instrument.
 
-Phase-A helpers + Task 8-C-H10 instrument pin: synthetic-fixture golden that
-reproduces the frozen §1.1 predicate (hand-computable episode count, warm
-handling, filter boundaries). Zero forward-return / IC / grid execution.
+The synthetic golden covers episode counts, warm-up, and filter boundaries
+without forward returns, IC, or grid execution.
 """
 
 from __future__ import annotations
@@ -102,22 +101,10 @@ def test_integrity_pin_reproduces_overlapping_counts() -> None:
     assert len(mism) == 1 and "n_trades" in mism[0]
 
 
-# ── §1.1 synthetic-fixture golden (instrument pin; Task 8-C-H10) ─────────
-#
-# Hand computation (fixed construction):
-#   session_open = 09:30 ET on 2026-01-15.
-#   Tape spans 09:30 → 09:50 → emitted h=900 boundaries at 09:30 (k=0) and
-#   09:45 (k=1).  Session window = offset ≥ 300 s AND ET ≤ 15:50 ⇒ only the
-#   09:45 boundary is in-window ⇒ n_in_window = 1 by construction.
-#   Quotes every 1 s (constant mid) warm realized_vol_30s_zscore.
-#   SFI min_eligible_prints=20 ⇒ first 19 ISO readings are cold (not
-#   observed by the percentile feature); HorizonWindowedFeature
-#   percentile min_samples=20 ⇒ need ≥ 20 *warm* SFI readings ⇒ ≥ 39
-#   Class-A ∩ id-14 rising ISO prints in [09:31, 09:44].  With n_iso=45:
-#   warm SFI readings ≈ 26 → Hazen pctl = (n−0.5)/n ≥ 0.90 under equal
-#   +1 readings; calm HMM keeps P(vol_breakout) < 0.7; rvz ≈ 0 ≤ 3.
-#   ⇒ exactly 1 LONG episode.
-#   Filter / warm variants change only the trade arm — episode count → 0.
+# Synthetic golden: the tape has one in-window 900-second boundary at 09:45.
+# Forty-five rising ISO prints warm SFI and its percentile; a calm regime and
+# flat volatility then produce one LONG episode. Filtered or cold trades
+# produce none.
 
 
 def _synth_tape(

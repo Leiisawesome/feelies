@@ -1,21 +1,4 @@
-"""BT-12 — G12 + CPCV + DSR re-validation for all five SIGNAL reference alphas.
-
-After the post-fix backtest fill path (BT-1..BT-8) and determinism re-baseline
-(BT-11), every deployed SIGNAL alpha must clear:
-
-* **G12** — ``cost_arithmetic.margin_ratio >= 1.5`` at load (defence-in-depth
-  beyond :class:`CostArithmetic.from_spec`).
-* **CPCV** — ``mean_sharpe >= 1.0``, ``p_value <= 0.05``, ``fold_count >= 8``.
-* **DSR** — ``dsr >= 1.0``, ``dsr_p_value <= 0.05``.
-* **Inv-12 cost leg (surrogate)** — OOS returns remain above the CPCV bar when
-  a fixed per-bar cost drag is applied (proxy for 1.5× variable fees until full
-  post-fix replay artefacts land in the research store).
-
-Return series live under ``tests/fixtures/bt12/`` as deterministic,
-per-alpha seeded surrogates (see each file's ``description``).  Replace with
-content-addressed curves from a full replay when the artefact pipeline is wired;
-until then these fixtures lock the F-2 gate wiring for BT-12 acceptance.
-"""
+"""Validate reference-alpha cost, CPCV, and DSR evidence."""
 
 from __future__ import annotations
 
@@ -53,10 +36,8 @@ _MARGIN_RATIO_FLOOR = 1.5
 _INV12_COST_DRAG_PER_BAR = 4.0 / 10_000.0
 
 # Inv-5: per-alpha golden ``fold_pnl_curves_hash`` baselines for the
-# committed fixture series.  Any drift in ``tests/fixtures/bt12/*.json``
-# (intentional or accidental) flips one of these hashes and forces an
-# explicit re-baseline in the same PR — mirroring how
-# ``tests/determinism/parity_manifest.py`` pins L1/L2/L3/L4/L5 hashes.
+# committed fixture series. Any fixture drift requires an explicit
+# re-baseline, like the determinism parity hashes.
 _FIXTURE_GOLDEN_HASHES: dict[str, str] = {
     "sig_benign_midcap_v1": (
         "sha256:be1848ba2375bbbb26161141e202b259fe2145ce060703f4d7aee0ba75dfccd8"
@@ -129,7 +110,7 @@ def test_paper_to_live_gate_accepts_computed_cpcv_and_dsr(alpha_id: str) -> None
 
 @pytest.mark.parametrize("alpha_id", _REFERENCE_SIGNAL_ALPHAS)
 def test_cpcv_survives_inv12_cost_drag_surrogate(alpha_id: str) -> None:
-    """Surrogate for the BT-9 1.5× variable-cost leg on OOS returns."""
+    """Apply the 1.5× variable-cost stress to out-of-sample returns."""
     returns = _load_post_fix_returns(alpha_id)
     stressed = [r - _INV12_COST_DRAG_PER_BAR for r in returns]
     cpcv = _build_cpcv_from_returns(stressed)

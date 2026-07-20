@@ -1,5 +1,5 @@
 # =============================================================
-#   SIGNAL template (schema 1.1, Phase 3 / 3.1)
+#   SIGNAL template (schema 1.1)
 #   ----------------------------------------------------------------
 #   Horizon-anchored, regime-gated, cost-disclosed signal alpha.
 #   This is the recommended template for new alphas.
@@ -13,7 +13,7 @@
 #     - cost_arithmetic           (margin_ratio ≥ 1.5 — Inv-12)
 #     - signal                    (evaluate(snapshot, regime, params))
 #
-#   Recommended (Phase 3.1, gate G16):
+#   Recommended by gate G16:
 #     - trend_mechanism           (family + half-life + L1 signature)
 #
 #   See:
@@ -91,7 +91,7 @@ risk_budget:
   max_drawdown_pct: 1.5
   capital_allocation_pct: 15.0
 
-# ── Regime Gate (Phase 3 DSL — bindings: P(<state>), <sensor>, <sensor>_zscore, <sensor>_percentile) ──
+# ── Regime gate — bindings: P(<state>), <sensor>, <sensor>_zscore, <sensor>_percentile ──
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
@@ -113,7 +113,7 @@ cost_arithmetic:
   fee_bps: 1.0
   margin_ratio: 1.8                   # = edge / (half_spread + impact + fee); ≥ 1.5
 
-# ── Trend Mechanism (Phase 3.1, gate G16 — recommended) ──
+# ── Trend mechanism (gate G16) ──
 trend_mechanism:
   family: KYLE_INFO                   # KYLE_INFO | INVENTORY | HAWKES_SELF_EXCITE | LIQUIDITY_STRESS | SCHEDULED_FLOW
   expected_half_life_seconds: 600     # within family envelope; horizon/half_life ∈ [0.5, 4.0]
@@ -124,7 +124,7 @@ trend_mechanism:
     - "spread_z_30d > 2.0"
     - "kyle_lambda_60s_zscore < -1.5"
 
-# ── Promotion Gate Thresholds (Workstream F-5 — optional) ──
+# ── Promotion gate thresholds (optional) ──────────────────
 # Per-alpha override of one or more `GateThresholds` fields used by
 # `validate_gate(...)` at promotion time (see
 # `src/feelies/alpha/promotion_evidence.py`).  Layering precedence

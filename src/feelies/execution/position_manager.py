@@ -1,22 +1,19 @@
-"""Position-management decision layer — contracts + legacy adapter (G-1).
+"""Target-based position planning and compatibility comparison.
 
-This module introduces the *contracts* for a unified, target-based
-position-management decision layer and a :class:`LegacyPositionManager`
-that reproduces today's 7-intent matrix **exactly** as a
-:class:`PositionPlan`.  Nothing here drives execution yet — it is the
-substrate for the shadow-equivalence harness wired into the orchestrator
-(default-off, parity-neutral).
+:class:`TargetPositionManager` builds executable plans.
+:class:`LegacyPositionManager` reproduces the translator's intent matrix for
+shadow comparison.
 
 Design invariants:
   - Inv-5 (determinism): :meth:`PositionManager.plan` is a pure function
     of ``(desired, current, market, config)``.
-  - Default-off parity: the legacy adapter is byte-for-byte faithful to
+  - The compatibility adapter is faithful to
     :class:`~feelies.execution.intent.SignalPositionTranslator` +
     ``_execute_reverse`` / ``_try_build_order_from_intent`` *decision
     outcomes* — no TRIM, no cost gating, full-size MARKET exits/reverses.
   - Inv-11: reducing legs (EXIT / TRIM / REVERSE_EXIT) are never
     suppressed; only additive legs (ENTRY / SCALE_UP / REVERSE_ENTRY) are
-    ever cost-gated (a property exercised by later phases, not P0/P1).
+    ever cost-gated.
 """
 
 from __future__ import annotations
@@ -39,7 +36,7 @@ class PlanLeg(Enum):
 
     ``REVERSE_EXIT`` + ``REVERSE_ENTRY`` are the two legs a flip
     decomposes into (mirrors ``_execute_reverse``).  ``TRIM`` (partial
-    same-direction reduce) is reserved for Phase P3 and is never emitted
+    same-direction reduce) is not emitted
     by :class:`LegacyPositionManager`.
     """
 
@@ -55,17 +52,14 @@ class PlanLeg(Enum):
 class ExecStyle(Enum):
     """How a planned order should be worked.
 
-    Phase P0/P1 only ever uses the styles the legacy path already uses
-    (passive entries, MARKET exits/reverses).  ``urgency``-driven style
-    selection is a Phase-P4 capability (G-3).
+    Plans use passive or market execution according to urgency and leg type.
     """
 
     PASSIVE = auto()
     MARKET = auto()
 
 
-# Additive legs are the only legs the economic cost gate (B4/B5) may ever
-# block (locked decision 3, 2026-06-08).  Reducing legs always execute.
+# Economic cost gates may block only additive legs. Reducing legs always run.
 ADDITIVE_LEGS: frozenset[PlanLeg] = frozenset(
     {PlanLeg.ENTRY, PlanLeg.SCALE_UP, PlanLeg.REVERSE_ENTRY}
 )
@@ -85,14 +79,13 @@ class DesiredPosition:
     *intent* when ``target_qty == 0`` — a directional signal that sized to
     zero (hold/clamp) vs. a genuine FLAT (exit).  For non-zero targets it
     is redundant with ``sign(target_qty)``.  The forward-looking planner
-    keys on ``target_qty``; only the legacy adapter consults ``direction``
-    to reproduce the legacy clamp faithfully.
+    keys on ``target_qty``; the compatibility adapter also consults
+    ``direction`` to reproduce translator clamping.
 
     A risk-driven desired (stop / hazard / flatten / session-flat) is
     always FLAT (``direction == 0``), which structurally never reaches the
-    P3b trim cost gate below — :meth:`TargetPositionManager.plan` only
-    overrides the legacy hold on a same-direction shrink, so a FLAT desired
-    always takes the unconditional legacy-EXIT path (Inv-11).  There is no
+    trim cost gate below. :meth:`TargetPositionManager.plan` turns a FLAT
+    desired into an unconditional exit. There is no
     separate ``mandatory`` marker: the cost gate is forced open by
     construction, not by an explicit flag.
     """
@@ -110,15 +103,13 @@ class DesiredPosition:
 class MarketContext:
     """Market inputs the planner prices a disturbance against.
 
-    Optional in P0/P1 — the legacy adapter does no cost math.  Carried so
-    later phases fold B4/B5 into ``plan`` without a signature change.
+    The compatibility adapter does no cost math.
 
     The impact knobs (``market_impact_factor``, ``max_impact_half_spreads``,
     ``within_l1_impact_factor``, ``permanent_impact_coefficient``) mirror
     the orchestrator's B4 entry-gate plumbing so the P3b trim gate prices
     its round-trip churn cost against the same depth-aware / within-L1
-    model the entry gate and fill path use.  Defaults preserve the legacy
-    flat-impact behaviour when no knobs are supplied.
+    model used by the entry gate and fill path. Defaults imply no within-L1 impact.
     """
 
     quote: NBBOQuote | None = None
@@ -165,26 +156,20 @@ class PositionPlan:
 
     @property
     def total_quantity(self) -> int:
-        """Sum of child-order quantities (matches the legacy intent qty)."""
+        """Sum the child-order quantities."""
         return sum(o.quantity for o in self.orders)
 
 
 @dataclass(frozen=True, kw_only=True)
 class PositionManagerConfig:
-    """Planner feature flags.  Defaults reproduce legacy behaviour."""
+    """Planner controls."""
 
-    enabled: bool = False  # drive execution from the plan (Phase P2+)
-    shadow: bool = False  # run alongside legacy and record divergence
-    enable_trim: bool = False  # emit TRIM legs (Phase P3 / G-2)
-    # P3b: edge-aware trim gate.  When > 0, a trim is *suppressed* (the book
-    # is held) while the forward edge still justifies the excess —
-    # i.e. while ``edge_bps >= multiplier × round_trip_cost_bps(Δ)``.  0
-    # disables the gate (churn-guard-only trim).
+    enabled: bool = False  # Drive execution from the plan.
+    shadow: bool = False  # Compare the plan with translator output.
+    enable_trim: bool = False  # Emit partial reductions.
+    # Suppress trims while edge covers this multiple of churn cost; 0 disables.
     trim_edge_gate_multiplier: float = 0.0
-    # P4: urgency-driven execution style.  When True, the planner sets a
-    # leg's ExecStyle from urgency — e.g. a discretionary TRIM works
-    # PASSIVE (post a limit, save the spread) rather than crossing at
-    # MARKET.  Risk-driven and reverse-exit legs stay aggressive.
+    # Post discretionary trims passively; safety and reversal exits stay aggressive.
     urgency_exec: bool = False
 
 
@@ -201,26 +186,15 @@ class PositionManager(Protocol):
     ) -> PositionPlan: ...
 
 
-# ── Legacy adapter ───────────────────────────────────────────────────
-
-
 def _sign(x: int) -> int:
     return (x > 0) - (x < 0)
 
 
 class LegacyPositionManager:
-    """Reproduce the legacy 7-intent matrix exactly, as a ``PositionPlan``.
+    """Represent ``SignalPositionTranslator`` decisions as a ``PositionPlan``.
 
-    Faithful to :class:`SignalPositionTranslator`:
-      - over-target same-direction → ``NO_ACTION`` (**no** TRIM)
-      - entries are PASSIVE-style, exits/reverse-exits are MARKET-style
-        (matching ``_try_build_order_from_intent`` / ``_execute_reverse``
-        decision outcomes — execution mode still governs the concrete
-        order type downstream)
-      - no cost gating
-
-    The ``default_target_quantity`` mirrors the translator's default so
-    the ``None`` target path resolves identically.
+    Same-direction reductions remain ``NO_ACTION``. Entries are passive;
+    exits and reversal exits are aggressive. This planner has no cost gates.
     """
 
     def __init__(self, default_target_quantity: int = 100) -> None:
@@ -239,10 +213,7 @@ class LegacyPositionManager:
         d = desired.direction or _sign(desired.target_qty)
         mag = abs(desired.target_qty)
 
-        # Legacy *effective* target — the clamp the 7-intent matrix
-        # encodes: a directional signal never reduces a same-direction
-        # position (max/min), so |effective| >= |current| on the same
-        # side.  A FLAT desired targets 0 (exit).
+        # Directional targets cannot reduce a same-direction position.
         if d > 0:
             eff = max(cur, mag)
         elif d < 0:
@@ -252,7 +223,7 @@ class LegacyPositionManager:
 
         delta = eff - cur
         if delta == 0:
-            return PositionPlan()  # legacy NO_ACTION
+            return PositionPlan()
 
         # Sign flip with a non-zero residual → REVERSE (exit + entry).
         if cur != 0 and eff != 0 and (cur > 0) != (eff > 0):
@@ -265,8 +236,7 @@ class LegacyPositionManager:
                 is_short=eff < 0,
             )
 
-        # Pure reduce to flat → EXIT (covers the legacy degenerate-reverse
-        # whose entry leg is zero: same single flatten order).
+        # An exit-only reversal is the same flatten order as EXIT.
         if eff == 0:
             return PositionPlan(
                 orders=(
@@ -280,10 +250,7 @@ class LegacyPositionManager:
                 )
             )
 
-        # Same-direction additive (ENTRY from flat, or SCALE_UP).  The
-        # legacy clamp never produces a same-direction *reduce*, so TRIM
-        # is unreachable here (it arrives in Phase P3 when the clamp is
-        # dropped).
+        # The target clamp leaves only entry or same-direction scale-up here.
         leg = PlanLeg.ENTRY if cur == 0 else PlanLeg.SCALE_UP
         side = Side.BUY if delta > 0 else Side.SELL
         return PositionPlan(
@@ -348,22 +315,10 @@ class LegacyPositionManager:
 
 
 class TargetPositionManager:
-    """Forward planner: legacy-faithful plus a cost-aware ``TRIM`` (G-2 / P3).
+    """Add cost-aware partial reductions to translator-compatible planning.
 
-    With ``config.enable_trim`` **off** this is byte-identical to
-    :class:`LegacyPositionManager` (it delegates), so driving from it stays
-    parity-neutral.  With it **on**, the single case it overrides is the
-    legacy *hold*: a same-direction target that has shrunk **below** the
-    current position.  Legacy clamps (``max(current, +m)``) and emits
-    ``NO_ACTION``; this planner instead emits a partial reduce (``TRIM``) of
-    ``|current| − |target|`` — the first real de-risking / partial-profit
-    capability the system has had.
-
-    ``trim_min_fraction`` is the **churn guard** (locked decision: TRIM is
-    cost-aware): a trim smaller than this fraction of the current position is
-    suppressed, so target wobble doesn't bleed round-trip cost on noise.
-    Every other case (entry, scale-up, reverse, exit, the directional-zero
-    corner) defers to the legacy planner unchanged.
+    A same-direction target shrink emits ``TRIM`` when it clears the churn
+    guard. All other decisions delegate to :class:`LegacyPositionManager`.
     """
 
     def __init__(
@@ -395,15 +350,14 @@ class TargetPositionManager:
         cur = current.quantity
         d = desired.direction or _sign(desired.target_qty)
         m = abs(desired.target_qty)
-        # Only override the legacy hold on a *same-direction shrink*; every
-        # other classification (flip, exit, entry, scale-up) is untouched.
+        # Only same-direction shrink overrides the delegated plan.
         if d == 0 or _sign(cur) != d or m >= abs(cur):
             return legacy_plan
 
         trim_qty = abs(cur) - m
         threshold = max(1, math.ceil(self._trim_min_fraction * abs(cur)))
         if trim_qty < threshold:
-            # Churn guard: hold (same as legacy), but record why for forensics.
+            # Hold small trims and record the binding churn constraint.
             return PositionPlan(
                 suppressed=(
                     SuppressedLeg(
@@ -419,8 +373,7 @@ class TargetPositionManager:
             )
 
         side = Side.SELL if cur > 0 else Side.BUY
-        # Round-trip cost of churning the excess Δ (priced once; reused by
-        # the P3b edge gate and the leg rationale).
+        # Price the excess once for both the gate and plan rationale.
         rt_cost_bps: float | None = None
         if market is not None and market.cost_model is not None and market.quote is not None:
             q = market.quote
@@ -441,12 +394,7 @@ class TargetPositionManager:
                 permanent_impact_coefficient=market.permanent_impact_coefficient,
             )
 
-        # P3b: edge-aware trim gate — the symmetric mirror of the B4 entry
-        # gate.  While the forward edge still clears the churn cost
-        # (``edge_bps >= k × round_trip_cost``), the target dip is treated
-        # as noise and the excess is *held*; only once the edge falls below
-        # it does the excess become dead weight worth trimming.  Inert when
-        # the multiplier is 0 or no cost model is wired (fail-safe).
+        # Hold excess while forward edge still covers its round-trip churn cost.
         k = config.trim_edge_gate_multiplier
         if (
             k > 0
@@ -481,9 +429,7 @@ class TargetPositionManager:
         }
         if rt_cost_bps is not None:
             rationale["round_trip_cost_bps"] = rt_cost_bps
-        # P4: a TRIM is a discretionary reduce — work it PASSIVE when
-        # urgency-driven execution is on (a non-fill just defers the trim;
-        # no risk is created).  Otherwise cross at MARKET (legacy).
+        # A discretionary trim may rest passively without creating exposure.
         trim_style = ExecStyle.PASSIVE if config.urgency_exec else ExecStyle.MARKET
         return PositionPlan(
             orders=(
@@ -499,13 +445,7 @@ class TargetPositionManager:
         )
 
 
-# ── Cost gates (B4 entry / B5 reversal) — single source of truth ─────
-#
-# G-1 Phase P2: the edge-vs-cost economics live with the planner.  The
-# orchestrator's live gate call sites delegate here, and the future
-# cost-aware planner applies the same functions when it owns the live
-# decision.  These are pure — no alerts, no side effects; callers own
-# provenance/alerting and the no-op (disabled / no-cost-model) fast paths.
+# Pure cost gates shared by planning and orchestration; callers own alerts.
 
 
 def round_trip_cost_bps(
@@ -525,13 +465,7 @@ def round_trip_cost_bps(
     within_l1_impact_factor: Decimal = Decimal("0"),
     permanent_impact_coefficient: Decimal = Decimal("0"),
 ) -> float:
-    """Model round-trip (entry + *taker* exit) cost in bps for one leg.
-
-    The exit leg is always priced as a taker (``is_taker_exit=True``) —
-    the conservative assumption for IBKR-style realism, since exits and
-    reverse-exits reach the router aggressively even when the entry is
-    passive (see ``estimate_round_trip_cost_bps``).
-    """
+    """Model entry plus aggressive-exit cost in basis points."""
     return estimate_round_trip_cost_bps(
         cost_model,
         symbol=symbol,
@@ -558,12 +492,7 @@ def entry_edge_clears_cost(
     min_ratio: float,
     basis: str,
 ) -> bool:
-    """B4: True when the entry edge clears ``min_ratio ×`` round-trip cost.
-
-    ``basis == "round_trip"`` doubles the disclosed one-way edge so both
-    sides share the round-trip basis explicitly; ``"one_way"`` keeps the
-    legacy comparison.
-    """
+    """Return whether entry edge clears the required round-trip cost."""
     edge_basis = edge_bps * 2.0 if basis == "round_trip" else edge_bps
     return edge_basis >= min_ratio * rt_cost_bps
 
@@ -585,21 +514,13 @@ def reversal_edge_gate(
     return combined, required, edge_bps > required
 
 
-# ── Signal → DesiredPosition adapter (orchestrator SIGNAL path) ───────
-
-
 def desired_from_signal(
     signal: Signal,
     target_qty: int | None,
     *,
     default_target_quantity: int = 100,
 ) -> DesiredPosition:
-    """Map a ``Signal`` + unsigned sizer target to a signed desired.
-
-    Resolves the ``None`` target via ``default_target_quantity`` exactly
-    as :class:`SignalPositionTranslator` does, so the shadow plan sees the
-    same effective magnitude the legacy translator used.
-    """
+    """Map a signal and unsigned size to a signed desired position."""
     tgt = target_qty if target_qty is not None else default_target_quantity
     if tgt < 0:
         raise ValueError(f"target_quantity must be non-negative, got {tgt}")
@@ -619,15 +540,7 @@ def desired_from_signal(
     )
 
 
-# ── Plan → OrderIntent (drive-from-plan flip) ────────────────────────
-#
-# G-1 "the flip": when the orchestrator drives from the planner, the plan
-# is projected back onto the existing ``OrderIntent`` so the battle-tested
-# execution machinery (risk scaling, order-id hashing, MOC/passive/borrow
-# routing, the B4/B5 gates) is reused unchanged.  For the legacy planner
-# this reconstruction is *byte-faithful* to the translator — proven
-# exhaustively by the equivalence test — so flipping ``drive`` on is
-# parity-neutral while ``enable_trim`` is off.
+# Project plans onto OrderIntent so existing risk and routing remain authoritative.
 
 
 def order_intent_from_plan(
@@ -636,7 +549,7 @@ def order_intent_from_plan(
     signal: Signal,
     current: Position,
 ) -> OrderIntent:
-    """Project a ``PositionPlan`` back onto a legacy ``OrderIntent``.
+    """Project a ``PositionPlan`` onto an ``OrderIntent``.
 
     The ``target_quantity`` convention matches the translator: ENTRY/
     SCALE_UP carry the leg quantity, EXIT carries ``|current|``, and a
@@ -667,10 +580,7 @@ def order_intent_from_plan(
     if leg in (PlanLeg.REVERSE_EXIT, PlanLeg.REVERSE_ENTRY):
         return _oi(reverse_intent, plan.total_quantity)
     if leg is PlanLeg.EXIT:
-        # A FLAT signal is a genuine EXIT; a *directional* signal that
-        # sized to zero against an opposite book is the legacy degenerate
-        # REVERSE (exit-only).  Preserving that label keeps the order-id
-        # hashing — and thus parity — byte-identical.
+        # A directional zero target keeps the reversal label used in order IDs.
         if signal.direction == SignalDirection.FLAT:
             return _oi(TradingIntent.EXIT, plan.total_quantity)
         return _oi(reverse_intent, plan.total_quantity)
@@ -684,24 +594,13 @@ def order_intent_from_plan(
         )
         return _oi(intent, plan.total_quantity)
     if leg is PlanLeg.TRIM:
-        # P3: a partial same-direction reduce executes via the EXIT path —
-        # ``target_quantity`` carries the trim size (not ``|current|``), and
-        # the reducing side is derived from the current position, identical
-        # to a partial flatten.  Reducing legs are never cost-gated (Inv-11 /
-        # locked decision 3), which the EXIT path already guarantees.
+        # TRIM uses the EXIT path so reductions bypass entry cost gates.
         return _oi(TradingIntent.EXIT, plan.total_quantity)
     return _oi(TradingIntent.NO_ACTION, 0)
 
 
-# ── Shadow-equivalence comparison ────────────────────────────────────
-#
-# Equivalence is defined at the **order** level, not the label level:
-# the plan agrees with legacy iff it would submit the same multiset of
-# ``(side, quantity)`` child orders.  This is the parity-relevant notion
-# (the parity hash keys on submitted orders, not intent labels) and it
-# correctly treats the legacy degenerate-``REVERSE`` (a directional
-# signal that sizes to 0 against an opposite position → exit-only, entry
-# leg zero) as equal to the planner's ``EXIT`` — same flatten order.
+# Compare plans by child orders, not intent labels; both paths may name the same
+# exit-only reversal differently while submitting an identical flatten order.
 
 
 def _legacy_orders(
@@ -709,7 +608,7 @@ def _legacy_orders(
     target_quantity: int,
     current_quantity: int,
 ) -> list[tuple[Side, int]] | None:
-    """Reconstruct the (side, qty) child orders the legacy path emits.
+    """Reconstruct the child orders emitted by the translator path.
 
     Mirrors ``SignalPositionTranslator`` + ``_execute_reverse`` /
     ``_try_build_order_from_intent`` decomposition.  ``None`` when the
@@ -747,7 +646,7 @@ def _norm(orders: list[tuple[Side, int]]) -> list[tuple[str, int]]:
 
 @dataclass(frozen=True, kw_only=True)
 class PlanDivergence:
-    """A recorded mismatch between the legacy and shadow-plan order sets."""
+    """Mismatch between compatibility and shadow-plan order sets."""
 
     symbol: str
     signal_sequence: int

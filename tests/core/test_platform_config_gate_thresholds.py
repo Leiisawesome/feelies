@@ -1,4 +1,4 @@
-"""Workstream F-5: PlatformConfig ``gate_thresholds:`` block tests.
+"""``PlatformConfig.gate_thresholds`` block tests.
 
 Pins the YAML / dataclass surface of platform-level
 :class:`feelies.alpha.promotion_evidence.GateThresholds` overrides:
@@ -13,7 +13,7 @@ Pins the YAML / dataclass surface of platform-level
     path embedded.
   * **Snapshot stability** — the merged overrides are folded into
     ``_to_dict()`` in sorted-key order so two equivalent configs
-    produce byte-identical checksums (audit A-DET-02).
+    produce byte-identical checksums.
 """
 
 from __future__ import annotations

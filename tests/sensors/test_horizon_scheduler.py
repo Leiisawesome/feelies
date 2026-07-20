@@ -32,7 +32,7 @@ def _make_scheduler(
 
 
 def test_auto_bind_anchor_fn_snaps_session_open() -> None:
-    """Audit P1-8: with no explicit session_open_ns, the anchor fn snaps the
+    """Without ``session_open_ns``, the anchor snaps the
     bound open (e.g. to an RTH open) instead of the raw first-event ts."""
     sched = HorizonScheduler(
         horizons=frozenset({30}),
@@ -70,7 +70,7 @@ def test_first_event_emits_boundary_zero_for_each_scope() -> None:
 def test_emission_order_horizon_then_scope_then_symbol() -> None:
     sched = _make_scheduler(symbols=frozenset({"ZZZ", "AAA", "MID"}))
     ticks = sched.on_event(make_quote(symbol="AAA", ts_ns=SESSION_OPEN_NS))
-    # Per plan §3.2: horizon asc, then SYMBOL before UNIVERSE, then symbol asc.
+    # Sort by horizon, scope, then symbol.
     expected = [
         (30, "SYMBOL", "AAA"),
         (30, "SYMBOL", "MID"),

@@ -13,9 +13,8 @@ between WS frames.
 * never appended to the :class:`EventLog`,
 * never carries a correlation id or sequence number.
 
-It is a *control signal* on the data path only — the orchestrator's
-micro state machine does not advance for an idle tick, preserving
-Inv-A (legacy bit-identical path when no live feed is in use).
+It is a data-path control signal only. The micro state machine does not advance
+for idle ticks.
 """
 
 from __future__ import annotations

@@ -1,21 +1,4 @@
-"""Helpers to replay an event-log fixture through the orchestrator.
-
-Used by Phase-2 determinism tests:
-
-- :func:`replay_quotes_through_scheduler` — minimal harness that
-  builds a ``HorizonScheduler`` (no orchestrator) and walks a fixture
-  through it, returning the emitted ``HorizonTick`` stream for hash
-  comparison (Level-2 baseline).
-- :func:`replay_through_registry` — builds a bus + registry +
-  scheduler + recorder and walks a fixture through them.  Returns the
-  recorder so consumers can inspect every event the bus saw.
-
-These helpers intentionally do *not* boot the full ``Orchestrator``
-to keep the determinism tests focused: orchestrator booting drags in
-the alpha registry, regime engine, etc., which are unrelated to
-sensor/scheduler determinism and would otherwise make a Level-2 hash
-brittle to unrelated platform changes.
-"""
+"""Focused replay helpers for scheduler, sensor, and aggregator fixtures."""
 
 from __future__ import annotations
 
@@ -152,13 +135,10 @@ def replay_through_aggregator(
     session_open_ns: int = SESSION_OPEN_NS,
     session_id: str = "TEST_SYNTH",
 ) -> BusRecorder:
-    """Compose bus + registry + scheduler + aggregator; replay the fixture.
+    """Replay through the bus, registry, scheduler, and aggregator.
 
-    When *horizon_features* is ``None`` the aggregator runs in
-    passive-emitter mode (empty ``values`` / ``warm`` / ``stale`` dicts).
-    Pass a non-empty list to exercise the active Phase-3.5 path where
-    ``HorizonFeatureSnapshot.values`` is populated with real sensor-derived
-    feature values — this is the production mode after commit df632ef.
+    ``None`` selects passive empty snapshots; a non-empty feature list produces
+    sensor-derived snapshot values.
     """
     bus = EventBus()
     recorder = BusRecorder()

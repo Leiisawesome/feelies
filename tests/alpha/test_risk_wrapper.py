@@ -98,7 +98,7 @@ def _build_wrapper(
 
 
 class TestCheckOrderPerAlphaPositionLimit:
-    """check_order must enforce per-alpha position limits (Finding 2)."""
+    """``check_order`` enforces per-alpha position limits."""
 
     def test_rejects_when_post_fill_exceeds_alpha_limit(self) -> None:
         alpha = _make_alpha(max_position=50)
@@ -148,7 +148,7 @@ class TestCheckOrderPerAlphaPositionLimit:
 
 
 class TestCheckOrderPerAlphaExposureLimit:
-    """check_order must enforce per-alpha exposure limits (Finding 2)."""
+    """``check_order`` enforces per-alpha exposure limits."""
 
     def test_rejects_when_alpha_exposure_exceeds_budget(self) -> None:
         alpha = _make_alpha(
@@ -316,14 +316,7 @@ class TestCheckOrderDelegatesToInner:
 
 
 class TestCheckSizedIntent:
-    """Audit R2: wrapper must enforce per-alpha caps on the PORTFOLIO path.
-
-    The protocol's ``check_sized_intent`` is the only production-
-    reachable order path post-D.2.  Without an override on the
-    wrapper, the inner engine's implementation calls
-    ``self._inner.check_order`` directly and silently skips the
-    wrapper's per-alpha caps.
-    """
+    """The portfolio path enforces per-alpha caps."""
 
     def _make_intent(
         self,

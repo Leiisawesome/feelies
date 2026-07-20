@@ -209,7 +209,7 @@ class TestCostComparison:
 
 
 class TestNonFillRisk:
-    """Audit F-M-19: passive route penalised by opportunity cost of non-fill."""
+    """The passive route includes the opportunity cost of non-fill."""
 
     def test_high_edge_with_high_non_fill_pushes_to_aggressive(self) -> None:
         cfg = MinCostPolicyConfig(
@@ -264,7 +264,7 @@ class TestNonFillRisk:
 
 
 class TestQuantizationStability:
-    """Audit F-M-20: decision uses raw_cost_bps, not quantized cost_bps."""
+    """Decisions use raw rather than quantized cost bps."""
 
     def test_decision_stable_under_subcent_perturbation(self) -> None:
         policy = MinimumCostExecutionPolicy(_model())

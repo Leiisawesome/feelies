@@ -1,4 +1,4 @@
-"""Purity property tests for the shipped SIGNAL alphas (audit P2 2026-07-02).
+"""Purity property tests for shipped SIGNAL alphas.
 
 ``HorizonSignal.evaluate`` is documented as a pure function (no per-instance
 state, deterministic on identical inputs) and the loader's compiled-code
@@ -9,11 +9,7 @@ must produce equal ``Signal`` outputs and must not mutate ``params`` or
 ``snapshot.values`` — the two containers a buggy alpha body could plausibly
 write through despite the sandbox (Inv-5).
 
-Each fixture is hand-tuned to clear every gate in the corresponding alpha's
-``evaluate()`` body so the comparison is meaningful (a ``None`` output can't
-demonstrate output equality). See
-``docs/audits/signal_alpha_audit_2026-07-02.md`` §4 for the per-alpha gating
-logic each fixture exercises.
+Each fixture clears its alpha's gates so the comparison produces a signal.
 """
 
 from __future__ import annotations

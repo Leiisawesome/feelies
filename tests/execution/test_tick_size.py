@@ -1,4 +1,4 @@
-"""Unit tests for Reg NMS tick snapping (BT-14)."""
+"""Unit tests for Reg NMS tick snapping."""
 
 from __future__ import annotations
 

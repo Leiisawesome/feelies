@@ -1,17 +1,4 @@
-"""Unit tests for ``scripts/run_backtest.py::_emit_hazard_spikes_jsonl``.
-
-Verifies the canonical JSON shape emitted under
-``--emit-hazard-spikes-jsonl`` (Phase-3.1 Level-5 hazard parity stream,
-docs/three_layer_architecture.md §20.11.2):
-
-* prefix ``HAZARD_JSONL`` on every line,
-* keys sorted (stable across Python versions),
-* every Phase-3.1 hazard provenance field present
-  (sequence, symbol, engine_name, departing_state,
-  departing_posterior_prev/now, incoming_state, hazard_score,
-  timestamp_ns, correlation_id), and
-* arrival order preserved.
-"""
+"""Tests for the canonical hazard-spike JSONL shape and ordering."""
 
 from __future__ import annotations
 
@@ -64,7 +51,7 @@ def _make_recorder(runner, spikes: list[RegimeHazardSpike]):
     return rec
 
 
-# ── Shape and prefix ────────────────────────────────────────────────────
+# Shape and prefix.
 
 
 def test_emit_hazard_spikes_jsonl_prefix_and_count(runner, capsys) -> None:
@@ -124,7 +111,7 @@ def test_emit_hazard_spikes_jsonl_empty(runner, capsys) -> None:
 
 
 def test_emit_phase2_jsonl_dispatches_to_hazard_emitter(runner, capsys) -> None:
-    """The Phase-3.1 flag must compose with the prior emitter wrapper."""
+    """The combined JSONL dispatcher includes hazards when enabled."""
     import argparse
 
     args = argparse.Namespace(

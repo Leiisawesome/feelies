@@ -1,4 +1,4 @@
-"""Central registry of locked Inv-5 parity hashes (BT-11 batched re-baseline).
+"""Central registry of locked replay hashes.
 
 Each entry maps a stable name to ``(hash_hex, event_count)`` pinned in
 ``tests/determinism/``.  Re-baseline workflow:
@@ -10,20 +10,9 @@ Each entry maps a stable name to ``(hash_hex, event_count)`` pinned in
 The manifest is checked by :mod:`tests.determinism.test_parity_manifest`
 so drift between modules is caught in CI.
 
-Cross-libm caveat (audit P0-3)
-------------------------------
-These hashes guarantee bit-identical replay on a **fixed (platform, libm)
-pair**, not universally.  Sensors that call ``math.exp`` / ``math.log``
-(``hawkes_intensity``, ``realized_vol_30s``, ``snr_drift_diffusion``,
-``structural_break_score``, ``liquidity_stress_score``) depend on the C math
-library's rounding of those transcendental functions, which is not guaranteed
-correctly-rounded across libm versions — so a hash computed on one host may
-differ in the last bit on another.  Intra-process reproducibility (the part
-that *is* guaranteed) is locked by
-:mod:`tests.determinism.test_transcendental_determinism`.  FOLLOW-UP: record
-the libm / host fingerprint alongside each parity hash so a cross-host
-mismatch is attributable rather than mysterious (provenance plumbing owned by
-the data-ingestion / determinism harness).
+Hashes involving transcendental math are stable only for a fixed platform and
+libm. In-process reproducibility is covered separately by
+``test_transcendental_determinism``.
 """
 
 from __future__ import annotations
@@ -153,52 +142,42 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
         EXPECTED_LEVEL6_REGIME_STATE_HASH,
         EXPECTED_LEVEL6_REGIME_STATE_COUNT,
     ),
-    # Audit P1.5: golden aggressive fill-replay (default market_fill economics).
+    # Aggressive-fill replay with default market-fill economics.
     "market_fill_acks": (
         EXPECTED_MARKET_FILL_HASH,
         EXPECTED_MARKET_FILL_ACK_COUNT,
     ),
-    # Audit P1 #5: PnL — PositionUpdate reconciliation over a deterministic
-    # fill/mark scenario (FIFO cost-basis math; closes the Inv-5 "PnL" clause).
+    # FIFO PnL reconciliation over deterministic fills and marks.
     "position_pnl": (
         EXPECTED_POSITION_PNL_HASH,
         EXPECTED_POSITION_PNL_COUNT,
     ),
-    # Audit P1 #12: StateTransition stream from a deterministic RiskLevel +
-    # OrderState walk (pins SM emission order + sequence allocation).
+    # State-machine emission order and sequence allocation.
     "state_transition": (
         EXPECTED_STATE_TRANSITION_HASH,
         EXPECTED_STATE_TRANSITION_COUNT,
     ),
-    # Audit P1 #7: CrossSectionalContext from the real UniverseSynchronizer
-    # (pins the SIGNAL→PORTFOLIO barrier fan-in + completeness + _ctx_seq).
+    # UniverseSynchronizer fan-in, completeness, and context sequencing.
     "cross_sectional_context": (
         EXPECTED_XSECT_CONTEXT_HASH,
         EXPECTED_XSECT_CONTEXT_COUNT,
     ),
-    # Audit P1 #4: non-empty Signal emission from the real HorizonSignalEngine
-    # (the level2_signal baseline pins only the empty stream).
+    # Non-empty signal emission from the real HorizonSignalEngine.
     "signal_fires": (
         EXPECTED_SIGNAL_FIRES_HASH,
         EXPECTED_SIGNAL_FIRES_COUNT,
     ),
-    # Audit P1 #8: cross-symbol SensorReading interleave (single-symbol
-    # fixtures cannot pin inter-symbol emission order / sequence allocation).
+    # Cross-symbol sensor emission order and sequence allocation.
     "multi_symbol_sensor_reading": (
         EXPECTED_MULTI_SYMBOL_READING_HASH,
         EXPECTED_MULTI_SYMBOL_READING_COUNT,
     ),
-    # Audit-2026-07-02 P1 #6: non-empty Signal emission from the *real*
-    # reference alpha sig_benign_midcap_v1 (signal_fires above uses a
-    # hand-written probe signal + trivial gate; level2_signal pins only the
-    # empty stream for every actual reference alpha).
+    # Non-empty signal emission from the reference alpha.
     "reference_alpha_signal_fires": (
         EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH,
         EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT,
     ),
-    # Audit-2026-07-02 P1 #3: the forensic SymbolHalted stream and the
-    # halt-gate / post-resume-blackout fill suppression it documents were
-    # previously unpinned.
+    # Halt events and fill suppression through the resume blackout.
     "symbol_halted": (EXPECTED_SYMBOL_HALTED_HASH, EXPECTED_SYMBOL_HALTED_COUNT),
     "halt_order": (EXPECTED_HALT_ORDER_HASH, EXPECTED_HALT_ORDER_COUNT),
     "halt_ack": (EXPECTED_HALT_ACK_HASH, EXPECTED_HALT_ACK_COUNT),
@@ -206,26 +185,13 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
         EXPECTED_HALT_POSITION_UPDATE_HASH,
         EXPECTED_HALT_POSITION_UPDATE_COUNT,
     ),
-    # Audit-2026-07-02 P1 #4: the risk engine's own decision event
-    # (action/reason/scaling_factor) was previously unpinned — only the
-    # order legs a verdict produces were hashed elsewhere.
+    # Risk verdict action, reason, and scale.
     "risk_verdict": (EXPECTED_RISK_VERDICT_HASH, EXPECTED_RISK_VERDICT_COUNT),
 }
 
 
 def manifest_fingerprint() -> str:
-    """SHA-256 over the whole sorted manifest (audit-2026-07-02 P2 #15).
-
-    A re-pin of any single baseline changes this one value, so a coordinated
-    (intentional or not) multi-baseline re-pin surfaces in code review as a
-    one-line diff on the locked constant in
-    :mod:`tests.determinism.test_parity_manifest`, instead of requiring a
-    reviewer to notice several unrelated-looking hash-literal changes spread
-    across the manifest. This is a review-visibility aid, not a new
-    correctness check — ``test_manifest_entry_matches_replay`` already
-    catches any individual drift; this just makes *how many* baselines moved
-    in one commit legible at a glance.
-    """
+    """Hash the sorted manifest so coordinated re-pins remain visible."""
     canonical = "\n".join(
         f"{name}|{hash_hex}|{count}"
         for name, (hash_hex, count) in sorted(LOCKED_PARITY_BASELINES.items())

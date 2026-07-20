@@ -146,14 +146,10 @@ class EdgeWeightedArbitrator:
 
         flats = [s for s in signals if s.direction == SignalDirection.FLAT]
         if flats:
-            # Audit P2-3: highest-strength FLAT wins; ties broken by
-            # ``strategy_id`` (ascending) so the winner is independent of
-            # input ordering rather than relying on first-seen iteration.
+            # Strategy ID makes equal-strength ties independent of input order.
             return min(flats, key=lambda s: (-s.strength, s.strategy_id))
 
-        # Audit P2-3: highest composite score wins; explicit, deterministic
-        # tie-break on ``strategy_id`` (ascending) removes the implicit
-        # dependence on buffered iteration order.
+        # Strategy ID makes equal-score ties independent of input order.
         best = min(
             signals,
             key=lambda s: (-(s.edge_estimate_bps * s.strength), s.strategy_id),

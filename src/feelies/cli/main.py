@@ -6,7 +6,7 @@ constructed here.  Each subcommand handler takes a parsed
 :class:`argparse.Namespace` and returns an integer exit code; the
 dispatcher propagates that code straight to the caller.
 
-Exit-code convention (Workstream F-3):
+Exit-code convention:
 
   ``0``  success (subcommand ran and reported all-clear)
   ``1``  user error (missing args, unrecognised subcommand,
@@ -36,21 +36,7 @@ EXIT_VALIDATION_FAILED = 3
 
 
 def _build_parser(argv: Sequence[str] | None = None) -> argparse.ArgumentParser:
-    """Build the top-level parser with **lazy** subcommand registration.
-
-    The read-only ``promote`` subtree is always wired (its handlers import
-    only ``feelies.alpha.promotion_*`` — no orchestrator / risk / broker
-    code, preserving the forensic-only contract and Inv-5 / A-DET-02).
-
-    The ``backtest`` subtree is wired **only when it is the selected
-    command**, because ``feelies.cli.backtest`` transitively imports the
-    harness / bootstrap / IB-broker stack (which requires the optional
-    ``ib`` extra).  Importing it eagerly here would make ``feelies
-    promote`` unusable in a minimal forensic environment (it previously
-    raised ``ModuleNotFoundError: ibapi``).  When ``backtest`` is not the
-    selected command we register a lightweight placeholder so ``feelies
-    --help`` still lists it without paying the import cost.
-    """
+    """Build the parser, loading the optional backtest stack only when selected."""
     parser = argparse.ArgumentParser(
         prog="feelies",
         description=(

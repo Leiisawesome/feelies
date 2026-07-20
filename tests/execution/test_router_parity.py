@@ -1,4 +1,4 @@
-"""Cross-router parity tests (audit F-H-11).
+"""Cross-router parity tests.
 
 Both BacktestOrderRouter and PassiveLimitOrderRouter share a single
 aggressive-fill helper.  For an equivalent MARKET order against the
@@ -85,7 +85,7 @@ class TestAggressiveFillParity:
         assert fa[0].fees == fb[0].fees
 
     def test_walk_the_book_parity(self) -> None:
-        """Audit F-H-11: passive aggressive-fallback walks the book just
+        """Passive aggressive fallback walks the book just
         like BacktestOrderRouter for orders > L1 depth."""
         cfg = DefaultCostModelConfig()
         clock_a = SimulatedClock(start_ns=0)

@@ -1,10 +1,4 @@
-"""Tests for the Phase-2 sensor / horizon micro-states.
-
-These exercise the new transitions added by P2-α
-(``SENSOR_UPDATE``, ``HORIZON_CHECK``, ``HORIZON_AGGREGATE``) and
-verify the legacy fast-path (``STATE_UPDATE → FEATURE_COMPUTE``)
-still works bit-for-bit when sensors are absent.
-"""
+"""Tests for sensor and horizon micro-state paths."""
 
 from __future__ import annotations
 

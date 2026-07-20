@@ -365,7 +365,7 @@ def test_binding_identifier_names_keeps_zscore_identifiers() -> None:
     assert g.binding_identifier_names() == frozenset({"ofi_ewma_zscore"})
 
 
-# ── Audit P1 GC-1: warn on unreferenced hysteresis margins ──────────
+# ── Warn on unreferenced hysteresis margins ─────────────────────────
 
 
 def test_from_spec_warns_when_hysteresis_unreferenced(caplog):
@@ -411,17 +411,11 @@ def test_from_spec_no_warning_when_hysteresis_referenced(caplog):
     assert not any("dead config" in r.message for r in caplog.records)
 
 
-# ── Audit P0-1: uncalibrated regime fails P()/dominant/entropy safe ──────
+# ── Uncalibrated regimes fail gate bindings safely ──────────────────────
 
 
 def test_uncalibrated_regime_makes_posterior_unavailable() -> None:
-    """P(<state>) on an uncalibrated RegimeState raises UnknownIdentifierError.
-
-    Audit P0-1: placeholder-emission posteriors are not trustworthy for
-    gating, so the binding is treated as unavailable and the entry gate
-    fails safe to OFF via the HorizonSignalEngine's UnknownIdentifierError
-    path (Inv-11).
-    """
+    """Treat uncalibrated posteriors as unavailable to trading gates."""
     regime = _FakeRegime(
         state_names=("compression_clustering", "normal", "vol_breakout"),
         posteriors=(0.0, 0.0, 1.0),
@@ -493,7 +487,7 @@ def test_uncalibrated_gate_latches_off() -> None:
     assert gate.is_on("AAPL") is False
 
 
-# ── Audit P2-3: p100 percentile literal is reachable ─────────────────────
+# ── Percentile literal boundaries ───────────────────────────────────────
 
 
 def test_percentile_literal_p100_resolves() -> None:
@@ -506,7 +500,7 @@ def test_percentile_literal_out_of_range_rejected() -> None:
         evaluate(compile_expression("p101 > 0.5"), _bindings())
 
 
-# ── Audit R-1: indiscriminate regime fails P()/dominant/entropy safe ─────
+# ── Indiscriminate regimes fail gate bindings safely ────────────────────
 
 
 def _discr_regime(d: float) -> _FakeRegime:
@@ -521,7 +515,7 @@ def _discr_regime(d: float) -> _FakeRegime:
 
 
 def test_indiscriminate_regime_below_floor_unavailable() -> None:
-    """P()/dominant/entropy raise when discriminability < floor (audit R-1)."""
+    """P(), dominant, and entropy fail below the discriminability floor."""
     regime = _discr_regime(0.05)  # degenerate calibration
     b = _bindings(regime=regime, min_discriminability=0.5)
     for expr in ("P(normal) > 0.5", 'dominant == "normal"', "entropy < 1.0"):
@@ -561,7 +555,7 @@ def test_regime_free_gate_unaffected_by_floor() -> None:
     assert evaluate(compile_expression("spread_z_30d < 1.5"), b) is True
 
 
-# ── Param injection as gate constants (external report §5.5) ─────────────
+# Parameter injection as gate constants.
 
 
 def test_param_injected_as_gate_constant() -> None:
@@ -620,7 +614,7 @@ def test_hysteresis_overrides_param_on_collision() -> None:
     assert gate.evaluate(symbol="X", bindings=_bindings(regime=regime)) is True
 
 
-# ── Strict dead-hysteresis load error (external report §5.3 / P1 GC-1) ────
+# Strict dead-hysteresis load error.
 
 
 def _dead_hyst_spec() -> dict:

@@ -1,23 +1,10 @@
 #!/usr/bin/env python3
-"""Task 11-A-H10 step 2 — statistics for ``sig_sweep_kyle_drift_h900_v1``.
+"""Score ``sig_sweep_kyle_drift_h900_v1`` validation artifacts.
 
-Consumes the extraction artifact from
-``sweep_kyle_drift_validation_extract.py`` plus the committed census
-artifact, and scores frozen protocol §2.2 / §2.3 / JC-5 exactly once.
-NO parameter is varied (tuning prohibition, protocol §9).
-
-Order lock and stopping rule:
-  stage 0 (integrity) → 2b → (on 2b PASS only) 2.3 + JC-5.
-On first FAIL at 2b, §9 consequence REJECTED is assigned and later
-stages are NOT computed.
-
-Binding evidence set (§2.2): census eligible episodes on viable_long
-sessions, pooled {APP ∪ RMBS} (expect n = 152 = APP 94 + RMBS 58).
-IC pair: x = sweep_flow_imbalance (signed), y = signed forward 900 s
-mid log-return.  Statistics via ``feelies.research.forward_ic``.
-
-Determinism: PYTHONHASHSEED=0; bit-identical JSON on re-run (P0-4).
-First step-2 outcome contact advances ledger N 11 → 12.
+The script combines the boundary extract and committed census without varying
+parameters. It checks integrity, continuation edge, economics, and pooled
+robustness in a fixed order, stopping after a failed continuation-edge test.
+The binding sample is viable APP and RMBS episodes.
 
 Usage
 -----
@@ -56,7 +43,7 @@ from feelies.research.forward_ic import (  # noqa: E402
     spearman_ic,
 )
 
-# Frozen floors / power (protocol §1.2 / §2.2 / §2.3).
+# Fixed floors and power requirement.
 FLOOR_LONG_BPS = dict(census.FLOOR_LONG_BPS)
 FLOOR_SHORT_BPS = dict(census.FLOOR_SHORT_BPS)
 POWER_FLOOR = census.POWER_FLOOR
@@ -288,7 +275,7 @@ def stage_2b(app: list[dict], rmbs: list[dict]) -> dict[str, Any]:
     im, ise, in_ = _mean_se(iy_cont)
     interior_not_sig_pos = not (in_ >= 2 and im > 0.0 and im / ise > 2.0)
 
-    # F2 λ / volume co-travel.
+    # Lambda and volume co-travel.
     elev_kyle = [
         float(b["kyle_lambda_60s_percentile"])
         for _s, b in extreme
@@ -315,7 +302,7 @@ def stage_2b(app: list[dict], rmbs: list[dict]) -> dict[str, Any]:
     edge = long_short_edge_bps(ex, ey) if len(ex) >= 5 else float("nan")
     buckets = bucketed_forward_return(ex, ey, n_buckets=5) if len(ex) >= 5 else []
 
-    # Conditional tail (F1): mean continuation-signed 900 s on primary eligible.
+    # Mean continuation-signed 900-second return on primary eligible rows.
     tail = [y for _s, b in extreme if (y := _ycont(b)) is not None]
     tm, tse, tn = _mean_se(tail)
     tt = _tstat(tail)

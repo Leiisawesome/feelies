@@ -37,7 +37,7 @@ def discover_alpha_specs(spec_dir: Path) -> list[Path]:
 
     Supports flat (``alphas/*.alpha.yaml``), nested per-alpha dirs, and
     deeper trees — but **excludes** anything under a ``research/`` segment
-    (BT-13: PORTFOLIO reference alphas are research-only at this scale).
+    because portfolio references are research-only at this scale.
 
     Returns paths sorted alphabetically for deterministic load order.
     """

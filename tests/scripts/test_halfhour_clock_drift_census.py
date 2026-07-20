@@ -80,18 +80,9 @@ def test_warm_drop_rule() -> None:
     assert apply_warm_drop_rule({"APP": [0.4, 0.3, 0.9]}) == set()
 
 
-# ── §1.1 synthetic-fixture golden (both F2 arms; pinned at build time) ───
-#
-# Hand computation (fixed construction on 2026-01-15 + authored calendar):
-#   session_open = 09:30 ET.
-#   Tape 09:30 → 10:20 ⇒ h=900 boundaries at 09:30, 09:45, 10:00, 10:15.
-#   Session window = offset ≥ 300 s AND ET ≤ 15:50 ⇒ {09:45, 10:00, 10:15}
-#   (n_in_window = 3).  ALGO_CLOCK [M, M+1s) admits only 10:00 among these
-#   ⇒ W_hh=1 at 10:00; W_hh=0 at 09:45 and 10:15.
-#   Quotes every 1 s at a flat mid with rising bid size ⇒ ofi_raw warm
-#   (≥50) and Hazen ofi_integrated_percentile = (n−0.5)/n ≥ 0.80 under
-#   equal +Δsize readings; ofi_integrated > 0; calm HMM (no mid trend);
-#   rvz ≈ 0.  ⇒ exactly 1 in-window LONG + 2 out-window LONG episodes.
+# Synthetic golden: 900-second boundaries fall at 09:45, 10:00, and 10:15.
+# The calendar admits only 10:00. Warm positive OFI, a calm regime, and flat
+# volatility therefore produce one in-window LONG episode and two outside it.
 
 
 def _synth_tape(*, buy_pressure: bool = True, end_hour: int = 10, end_minute: int = 20) -> list:

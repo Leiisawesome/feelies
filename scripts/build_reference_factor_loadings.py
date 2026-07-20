@@ -1,37 +1,8 @@
-"""Build the reference factor-loadings + sector-map fixtures (Phase 4-finalize).
+"""Build deterministic reference factor loadings and sector mappings.
 
-This script materializes a *deterministic*, vendor-independent factor
-model file consumed by :class:`feelies.composition.factor_neutralizer.FactorNeutralizer`
-and a flat sector-map JSON consumed by
-:class:`feelies.composition.sector_matcher.SectorMatcher`.
-
-Outputs (idempotent — safe to re-run):
-
-  ``src/feelies/storage/reference/factor_loadings/loadings.json``
-      Per-symbol FF5 + momentum + STR betas.  Values are seeded from a
-      ``hashlib.sha256(symbol)`` PRNG so reruns produce bit-identical
-      bytes; this is critical for replay determinism (Inv-5).
-
-  ``src/feelies/storage/reference/sector_map/sector_map.json``
-      Flat ``{symbol: sector_id_str}`` mapping.
-
-  ``src/feelies/storage/reference/factor_loadings/loadings.parquet``  *(optional)*
-      Same content as ``loadings.json`` but in columnar parquet for
-      research notebooks.  Skipped silently when ``pyarrow`` is not
-      installed (see ``[project.optional-dependencies].portfolio``).
-
-The fixture is intentionally *small* (10 symbols × 7 factors); the
-universe matches the reference deployment used by
-``alphas/research/pro_burst_revert_v1/``, ``alphas/research/pro_kyle_benign_v1/``, and
-the Phase-4 end-to-end tests.
-
-Determinism contract
---------------------
-
-* All floats are rounded to 6 decimal places before serialization so
-  the JSON byte stream is locale-independent.
-* JSON output uses ``sort_keys=True`` and ``separators=(",", ":")`` so
-  byte-identity holds across operating systems and Python versions.
+The idempotent outputs are JSON, a flat sector map, and optional Parquet.
+Symbol-seeded values, six-decimal rounding, and sorted compact JSON keep bytes
+stable across runs.
 """
 
 from __future__ import annotations
@@ -86,14 +57,7 @@ FACTORS_FF5_MOMENTUM_STR: tuple[str, ...] = (
     "STR",
 )
 
-# Content-embedded freshness anchor for the committed fixture (audit P1-3).
-# Daily-refresh factor loadings are "as of" the prior trading day; this value
-# is one trading day before the reference end-to-end session
-# (``tests.fixtures.event_logs._generate.SESSION_OPEN_NS`` = 2026-01-15 09:30
-# ET), i.e. 2026-01-14 09:30 ET.  Embedding it in ``_meta.as_of_ns`` makes the
-# bootstrap staleness verdict reproducible across checkouts (independent of
-# file mtime), so suites use a realistic ``factor_loadings_max_age_seconds``
-# instead of a ~century-long window.
+# Prior trading day for the reference session, embedded for deterministic freshness checks.
 REFERENCE_AS_OF_NS: int = 1_768_446_000_000_000_000
 
 
@@ -208,10 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     sector_map_payload: dict[str, object] = dict(sector_map)
     if args.as_of_ns:  # 0 (or None) omits the block
         loadings_payload["_meta"] = {"as_of_ns": int(args.as_of_ns)}
-        # Composition audit 2026-07-02 P2: mirror the loadings fixture's
-        # provenance anchor onto the sector map so both reference fixtures
-        # carry the same auditability guarantee (SectorMatcher._load_map
-        # skips this key the same way FactorNeutralizer._load_loadings does).
+        # Give both fixtures the same reproducible freshness anchor.
         sector_map_payload["_meta"] = {"as_of_ns": int(args.as_of_ns)}
 
     write_json(

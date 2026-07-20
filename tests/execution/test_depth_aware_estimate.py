@@ -1,4 +1,4 @@
-"""Depth-aware aggressive cost estimator (audit F-H-04, F-H-18).
+"""Depth-aware aggressive cost estimator tests.
 
 The estimator splits an order into L1 + excess legs (mirroring
 ``BacktestOrderRouter.submit``) and returns the realistic blended

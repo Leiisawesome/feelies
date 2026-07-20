@@ -351,7 +351,7 @@ class TestAlphaRegistryLifecycle:
 
 
 class TestAlphaRegistryWithPromotionLedger:
-    """Workstream F-1: registry passes the promotion ledger through to
+    """Registry passes the promotion ledger through to
     every constructed lifecycle, so transitions made via the registry
     surface in the durable JSONL audit trail."""
 

@@ -1,21 +1,7 @@
-"""Tests for the four Phase-2 sensor-layer metrics.
+"""Tests for sensor, horizon, and snapshot metrics.
 
-Plan §4.5 requires the following metrics to be emitted into the
-:class:`InMemoryMetricCollector` whenever a metric collector is wired
-into the registry / scheduler / aggregator:
-
-- ``feelies.sensor.reading.count`` — counter, per ``SensorReading``.
-- ``feelies.sensor.reading.latency`` — histogram, per ``SensorReading``.
-- ``feelies.horizon.tick.emitted`` — counter, per ``HorizonTick``.
-- ``feelies.feature.snapshot.stale_fraction`` — gauge, per snapshot.
-
-These tests exercise each component in isolation (no orchestrator) so
-the metric flow is validated independently of the legacy execution
-path.  They also verify that the metric sequence numbers come from a
-*dedicated* generator separate from the locked event streams (Inv-A /
-C1) — the simplest way to assert this is to check that the locked
-event sequences (e.g. SensorReading.sequence) start at 1 and are
-contiguous regardless of how many metrics fire alongside them.
+Components are isolated from the orchestrator, and metrics use a sequence
+generator separate from replay-locked event streams.
 """
 
 from __future__ import annotations
@@ -91,10 +77,10 @@ def test_registry_emits_reading_count_and_latency_per_reading() -> None:
 
     assert len(captured) == 3
     counts = [e for e in mc.events if e.name == "feelies.sensor.reading.count"]
-    # S6: latency histogram removed (A-CLOCK-01 violation in dispatch path).
+    # Dispatch does not emit wall-clock latency metrics.
     latencies = [e for e in mc.events if e.name == "feelies.sensor.reading.latency"]
     assert len(counts) == 3
-    assert len(latencies) == 0  # S6: no longer emitted
+    assert len(latencies) == 0
     assert all(e.metric_type is MetricType.COUNTER for e in counts)
     assert all(e.value == 1.0 for e in counts)
     # Tags must include sensor_id and symbol for the count metric.
@@ -293,7 +279,7 @@ def test_aggregator_metrics_dont_perturb_snapshot_sequence() -> None:
 
 
 def test_metric_collector_summary_keys_match_plan() -> None:
-    """The summary key format ``layer.name`` must match plan §4.5."""
+    """Summary keys use the ``layer.name`` format."""
 
     bus = EventBus()
     mc = InMemoryMetricCollector()
@@ -316,5 +302,5 @@ def test_metric_collector_summary_keys_match_plan() -> None:
 
     keys = set(mc.summaries.keys())
     assert "sensor.feelies.sensor.reading.count" in keys
-    # S6: latency histogram removed from registry dispatch path (A-CLOCK-01).
+    # Registry dispatch does not emit wall-clock latency metrics.
     assert "sensor.feelies.sensor.reading.latency" not in keys

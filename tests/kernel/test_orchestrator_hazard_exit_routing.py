@@ -1,4 +1,4 @@
-"""Audit R1: orchestrator must route bus-published hazard ``OrderRequest``
+"""The orchestrator must route bus-published hazard ``OrderRequest``
 events to ``backend.order_router.submit``.
 
 Pre-R1 ``HazardExitController._emit_exit`` only called
@@ -371,7 +371,7 @@ class TestIdempotency:
 
 
 class TestHazardSignatureSingleSourceOfTruth:
-    """Audit kernel-P1: the bridge filter and the controller share one
+    """The bridge filter and controller share one
     definition of the hazard-exit signature, so they cannot drift.
 
     ``Orchestrator._on_bus_hazard_order`` imports ``HAZARD_EXIT_REASONS`` and

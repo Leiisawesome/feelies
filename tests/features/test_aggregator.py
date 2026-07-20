@@ -1,14 +1,4 @@
-"""Unit tests for :class:`feelies.features.aggregator.HorizonAggregator`.
-
-Two execution modes are exercised:
-
-- **Passive mode** (Phase-2 default) — no horizon features registered;
-  the aggregator emits one empty :class:`HorizonFeatureSnapshot` per
-  ``HorizonTick`` it receives.
-- **Active mode** — a tiny test :class:`HorizonFeature` is registered
-  to verify ``observe`` / ``finalize`` lifecycle, per-symbol state
-  isolation, ring-buffer eviction, and snapshot wiring.
-"""
+"""Tests for passive and feature-backed ``HorizonAggregator`` operation."""
 
 from __future__ import annotations
 
@@ -303,7 +293,7 @@ def test_active_mode_second_horizon_reports_stale_when_no_new_readings() -> None
     assert len(captured) == 2
     assert captured[0].stale == {"sum_feat": False}
     assert captured[1].stale == {"sum_feat": True}
-    assert captured[1].values == {}  # S2: cold features are absent from values
+    assert captured[1].values == {}  # Cold features are absent.
 
 
 def test_horizon_mismatch_skips_feature() -> None:
@@ -438,7 +428,7 @@ def test_same_boundary_dedup_prevents_snapshot_cid_collision() -> None:
 
 
 def test_symbol_after_universe_dedup_symmetry() -> None:
-    """Audit #1 regression guard: dedup must hold even when SYMBOL arrives
+    """Dedup must hold even when SYMBOL arrives
     after UNIVERSE at the same boundary.  The scheduler currently emits
     SYMBOL before UNIVERSE, but anything publishing ticks directly to the
     bus (replayers, tests) could invert that order — the aggregator must
@@ -481,7 +471,7 @@ def test_symbol_after_universe_dedup_symmetry() -> None:
 
 
 def test_feature_versions_in_snapshot_provenance() -> None:
-    """Audit #12 regression guard: snapshot.feature_versions records the
+    """``snapshot.feature_versions`` records the
     feature_version per feature_id so consumers can reconstruct exactly
     which version produced each value."""
 
@@ -532,7 +522,7 @@ def test_feature_versions_in_snapshot_provenance() -> None:
 
 
 def test_feature_params_plumbed_to_observe_and_finalize() -> None:
-    """Audit #7 regression guard: feature_params from construction reach
+    """Construction ``feature_params`` reach
     both observe() and finalize() instead of being hard-coded to {}."""
 
     seen_params: list[Mapping[str, Any]] = []
@@ -582,7 +572,7 @@ def test_feature_params_plumbed_to_observe_and_finalize() -> None:
         assert params == {"threshold": 0.5, "mode": "test"}
 
 
-# ── Multi-version dispatch tests (sensor_audit_2026-07-02 P0) ───────
+# Multi-version dispatch.
 
 
 def test_multi_version_reading_raises_when_feature_consumes_sensor() -> None:

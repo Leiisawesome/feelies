@@ -47,30 +47,11 @@ class KyleLambda60sSensor:
     """
 
     sensor_id: str = "kyle_lambda_60s"
-    # Audit P0-1: the class default is the *causal* (correct-sign) estimator,
-    # version 2.0.0.  Previously the default was ``legacy`` / 1.2.0, which the
-    # cached IC shows carries the WRONG sign at KYLE horizons (platform.yaml
-    # P1-5 note) — any construction without explicit params silently produced
-    # an inverted λ.  Defaulting to causal removes that footgun; the legacy
-    # estimator is still reachable only by explicit ``alignment="legacy"``
-    # (used to regenerate the locked 1.2.0 golden vector).
+    # Causal alignment is the correct-sign default; legacy alignment is explicit.
     sensor_version: str = "2.0.0"
 
-    # Audit P1-5 / P0-1: ``alignment`` selects how ``Δp`` and ``Δq`` are paired.
-    #
-    # * ``"causal"`` (DEFAULT, sensor_version 2.0.0): ``Δp`` over ``[t-1, t)`` is
-    #   paired with ``Δq_{t-1}`` — the flow that occurred at the *start* of that
-    #   interval and whose permanent impact the move realises.  This is the
-    #   correct Kyle alignment and remains causal (at trade ``t`` both the
-    #   previous trade's size and the current mid are known; no lookahead,
-    #   Inv-6 holds).
-    #
-    # * ``"legacy"`` (sensor_version 1.2.0, opt-in only): ``Δp`` over the
-    #   interval ``[t-1, t)`` is paired with the *current* trade's signed size
-    #   ``Δq_t``.  This regresses *past* mid drift on *current* flow — closer to
-    #   a flow-autocorrelation statistic than Kyle's contemporaneous impact λ,
-    #   and wrong-signed at the KYLE horizons.  Preserved byte-identically for
-    #   the locked 1.2.0 golden vector; do not use in new configs.
+    # causal pairs an interval's price move with its preceding signed flow.
+    # legacy pairs it with the current trade and exists only for vector replay.
     _VALID_ALIGNMENTS = ("legacy", "causal")
 
     def __init__(
@@ -125,8 +106,8 @@ class KyleLambda60sSensor:
         if isinstance(event, NBBOQuote):
             bid = float(event.bid)
             ask = float(event.ask)
-            if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
-                # A2: invalidate carry-forward mid so the next trade waits
+            if bid <= 0.0 or ask <= 0.0 or bid > ask:
+                # Invalidate the carried mid so the next trade waits
                 # for a fresh NBBO snapshot rather than using a stale mid
                 # from before the bad-data gap.
                 state["last_nbbo_mid"] = None
@@ -150,9 +131,7 @@ class KyleLambda60sSensor:
         if last_trade_price is None:
             state["last_trade_price"] = price
             state["mid_at_prev_trade"] = mid_now
-            # Seed the previous-trade flow for the causal alignment: the
-            # first trade's side defaults to ``last_side`` (+1) under the
-            # tick rule, exactly as the legacy classifier would assign it.
+            # Seed prior flow using the tick rule's initial side.
             state["prev_signed_size"] = state["last_side"] * size
             return None
 
@@ -172,7 +151,7 @@ class KyleLambda60sSensor:
             # Pair Δp over [t-1, t) with the flow that drove it: trade t-1.
             dq = state["prev_signed_size"]
         else:
-            dq = side * size  # legacy: current trade's flow (1.2.0 vector)
+            dq = side * size  # Legacy 1.2.0 vector behavior.
 
         samples = state["samples"]
         samples.append((event.timestamp_ns, dp, dq))
@@ -202,14 +181,8 @@ class KyleLambda60sSensor:
 
         sum_dq2 = state["sum_dq2"]
         denom = n * sum_dq2 - state["sum_dq"] * state["sum_dq"]
-        # Relative threshold: by Cauchy-Schwarz ``denom = n²·Var(dq) >= 0``
-        # in exact arithmetic, but FP cancellation can produce tiny positive
-        # values when dq is nearly constant (e.g. a steady stream of same-
-        # size buys).  Treat ``denom < n·sum_dq2·1e-12`` as numerically
-        # degenerate and emit 0/warm=False; otherwise the OLS slope would
-        # blow up under cancellation.  (The associativity here — ``(1e-12 *
-        # n) * sum_dq2`` — is deliberate and pinned by the locked vectors;
-        # do not refactor into ``1e-12 * (n * sum_dq2)``.)
+        # Near-constant flow makes the OLS denominator unstable. Keep this
+        # multiplication order: locked replay vectors depend on its rounding.
         denom_eps = 1e-12 * n * sum_dq2
         if n < 2 or denom <= denom_eps:
             value = 0.0

@@ -1,4 +1,4 @@
-"""Reg-T buying-power limits for margin accounts (BT-15).
+"""Reg-T buying-power limits for margin accounts.
 
 Only ``margin_25k`` is implemented: **4× intraday** and **2× overnight**
 multipliers on live NAV (initial equity + realized − fees + unrealized).

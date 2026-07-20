@@ -80,7 +80,7 @@ def test_algo_clock_half_open_mark_membership() -> None:
     mark = _et_ns(session, 10, 0, 0)
     assert any(w.kind is WindowKind.ALGO_CLOCK and w.contains(mark) for w in cal.windows)
     assert not any(w.kind is WindowKind.ALGO_CLOCK and w.contains(mark + _NS) for w in cal.windows)
-    # 10:15 is the F2 off-clock mark — must not be inside any ALGO_CLOCK window.
+    # 10:15 is off-clock and outside every ALGO_CLOCK window.
     off = _et_ns(session, 10, 15, 0)
     assert not any(w.kind is WindowKind.ALGO_CLOCK and w.contains(off) for w in cal.windows)
 

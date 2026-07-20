@@ -152,15 +152,13 @@ class TestJsonLineEventSerializer:
             dict_to_event(d)
 
     def test_forward_schema_unknown_field_is_dropped(self) -> None:
-        # A record from a newer build with an extra additive field must
-        # round-trip to an equal event, not raise (audit P1-2).
+        # Additive fields from newer schemas are safe to ignore.
         d = event_to_dict(_quote())
         d["future_field_added_later"] = 42
         assert dict_to_event(d) == _quote()
 
     def test_missing_required_field_raises_value_error(self) -> None:
-        # Corrupt record (required field absent) surfaces as ValueError per
-        # the deserialize contract, not a raw TypeError (audit P1-2).
+        # The serializer contract exposes corrupt records as ValueError.
         d = event_to_dict(_quote())
         del d["symbol"]
         with pytest.raises(ValueError, match="cannot reconstruct"):

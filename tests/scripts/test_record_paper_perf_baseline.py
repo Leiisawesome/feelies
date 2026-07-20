@@ -1,4 +1,4 @@
-"""Unit tests for scripts/record_paper_perf_baseline.py (audit P2-4).
+"""Unit tests for ``scripts/record_paper_perf_baseline.py``.
 
 Every test that calls ``main()`` monkeypatches the module's ``_BASELINE``
 constant to a temp path first — ``main()`` otherwise reads/writes the real
@@ -53,9 +53,7 @@ def test_refuses_when_timing_jsonl_has_no_tick_process_samples(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # Audit P2-4: an aborted/near-instant session can produce a timing.jsonl
-    # that exists but carries no tick_process rows — this must not silently
-    # record a 0.0 p99 baseline.
+    # A timing file without tick samples cannot define a p99 baseline.
     mod = _load_module()
     monkeypatch.setattr(mod, "_BASELINE", tmp_path / "v02_baseline.json")
     run_dir = tmp_path / "run"

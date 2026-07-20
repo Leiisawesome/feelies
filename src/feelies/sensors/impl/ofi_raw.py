@@ -1,7 +1,6 @@
-"""Raw per-event Order-Flow Imbalance (pre-smoothing).
+"""Emit unsmoothed order-flow imbalance between consecutive quotes.
 
-Emits the **single-event** OFI contribution between consecutive quotes — the
-same Cont–Kukanov–Stoikov quantity that ``ofi_ewma`` smooths, but *unsmoothed*:
+Each quote contributes once:
 
     ofi_t = +bid_size_t              if bid_t  > bid_{t-1}
             -bid_size_{t-1}          if bid_t  < bid_{t-1}
@@ -10,26 +9,9 @@ same Cont–Kukanov–Stoikov quantity that ``ofi_ewma`` smooths, but *unsmoothe
             -ask_size_t              if ask_t  < ask_{t-1}
             -(ask_size_t - ask_size_{t-1}) if ask_t == ask_{t-1}
 
-Why a separate sensor (audit 2P-2):
-    The price impact a KYLE alpha cares about is permanent impact ∝ **integrated
-    signed flow** ``Σ ofi_t`` over the decision horizon (Cont, Kukanov & Stoikov
-    2014).  Summing ``ofi_ewma`` over a window is *not* that integral — the EWMA
-    already low-passes the flow, so each raw event is counted many times with
-    geometric weights (double-counting), and the result is contaminated by the
-    EWMA decay.  Emitting the **raw per-event** OFI lets a ``sum`` reducer
-    compute the true ``Σ ofi_t`` over the horizon: each event contributes
-    exactly once, so the windowed sum is the genuine net signed flow.
-
-Reference: Cont, Kukanov & Stoikov (2014) "The Price Impact of Order Book
-Events," *J. Financial Econometrics* 12(1).  Sign convention identical to
-``ofi_ewma``: positive ⇒ net buy pressure.
-
-Determinism: pure float arithmetic; no RNG; no time-of-day dependency.
-
-Warm-up: ``warm = True`` once at least ``warm_after`` quotes with a measurable
-OFI (i.e. after the first, level-establishing quote) have arrived within the
-trailing ``warm_window_seconds`` event-time window — a sliding window, so the
-sensor reverts to cold after sustained data gaps (S3), mirroring ``ofi_ewma``.
+Positive values indicate buy pressure. Unlike ``ofi_ewma``, summing this sensor
+over a horizon yields integrated signed flow without double-counting. Warmth is
+based on OFI-bearing quotes in the trailing event-time window.
 """
 
 from __future__ import annotations
@@ -80,7 +62,7 @@ class OFIRawSensor:
             "last_ask": None,
             "last_bid_size": 0,
             "last_ask_size": 0,
-            "warm_ts": deque(),  # event-time timestamps of OFI-bearing quotes (S3)
+            "warm_ts": deque(),  # OFI-bearing quote timestamps.
         }
 
     def update(
@@ -94,9 +76,8 @@ class OFIRawSensor:
 
         bid = float(event.bid)
         ask = float(event.ask)
-        # A1: drop a degenerate (halt / pre-open) book rather than poisoning
-        # state with zero-price deltas.
-        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
+        # Invalid books would corrupt the next OFI delta.
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
             return None
         bid_sz = event.bid_size
         ask_sz = event.ask_size
@@ -133,7 +114,7 @@ class OFIRawSensor:
         state["last_bid_size"] = bid_sz
         state["last_ask_size"] = ask_sz
 
-        # S3: sliding-window warm check — reverts to cold after data gaps.
+        # Sliding-window warmth reverts after data gaps.
         ts_ns = event.timestamp_ns
         warm_ts: deque[int] = state["warm_ts"]
         warm_ts.append(ts_ns)

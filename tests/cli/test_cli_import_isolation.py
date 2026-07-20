@@ -1,16 +1,6 @@
-"""Audit P1-3: the read-only ``feelies promote`` surface must not drag in
-the orchestrator / harness / bootstrap / IB-broker stack.
+"""Keep the read-only promotion CLI isolated from trading dependencies.
 
-``feelies.cli.main`` previously did ``from feelies.cli import backtest``
-at module load, and ``feelies.cli.backtest`` transitively imports
-``harness → bootstrap → execution.paper_backend → broker.ib → ibapi``.
-That made ``feelies promote`` raise ``ModuleNotFoundError: ibapi`` in any
-environment without the optional ``ib`` extra, and violated the
-documented read-only / forensic-only import contract (Inv-5 / A-DET-02).
-
-These tests run in a subprocess so the assertion is not contaminated by
-other tests in the session that may legitimately import the heavy stack
-(e.g. ``test_backtest_cli``).
+Subprocesses prevent imports from other tests from contaminating the checks.
 """
 
 from __future__ import annotations

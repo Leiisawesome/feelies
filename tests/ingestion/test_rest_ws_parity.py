@@ -1,4 +1,4 @@
-"""REST vs WS normalization parity (audit ING-09).
+"""REST versus WebSocket normalization parity.
 
 A logically-identical quote/trade must normalize to equal canonical fields
 regardless of whether it arrives via the REST backfill wire format

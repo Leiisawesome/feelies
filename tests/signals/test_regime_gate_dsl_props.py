@@ -234,15 +234,10 @@ def test_gate_post_state_is_boolean_and_in_two_value_set(
     assert g.is_on("AAPL") is states[-1]
 
 
-# ── Property 5 (audit P2-6): non-empty hysteresis band for shipped gates ─
+# ── Property 5: shipped gates have a non-empty hysteresis band ──────────
 #
-# A design-agnostic *economic* invariant: each shipped P(normal)-gated alpha
-# must have a non-empty hold band — a posterior region where neither
-# on_condition nor off_condition fires, so the gate latches rather than
-# oscillating tick-to-tick.  (The stronger "ON ⇒ bounded vol mass" guard was
-# tried in PR #123 but an APP backtest showed it net-harmful; re-introducing
-# such an entry bound is deferred to a calibrated, data-validated threshold —
-# see the audit appendix.)  These load the real shipped condition strings.
+# Each shipped P(normal) gate needs a region where neither condition fires,
+# preventing tick-to-tick oscillation. These tests load the shipped expressions.
 
 import yaml  # noqa: E402
 from pathlib import Path  # noqa: E402

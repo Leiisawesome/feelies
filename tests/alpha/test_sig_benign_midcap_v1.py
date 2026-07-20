@@ -1,18 +1,7 @@
-"""Acceptance tests for the reference SIGNAL alpha
-``alphas/sig_benign_midcap_v1`` (Phase 3-α).
+"""Acceptance tests for ``sig_benign_midcap_v1``.
 
-Verifies:
-
-* The YAML loads cleanly via :class:`AlphaLoader`, dispatches to the
-  SIGNAL-layer path, and surfaces a :class:`LoadedSignalLayerModule`.
-* All declared sensors resolve, the regime gate compiles, and the
-  cost-arithmetic block validates.
-* The :class:`HorizonSignalEngine` end-to-end emits a Phase-3
-  ``Signal(layer="SIGNAL")`` with the expected provenance fields when
-  the gate is ON and the threshold is exceeded.
-* The same engine swallows the snapshot when the OFI z-score is
-  below threshold (gate-on but no edge).
-* The signal is suppressed when the regime gate is OFF.
+The suite covers loading, sensor and gate bindings, cost validation, signal
+provenance, thresholds, and gate suppression.
 """
 
 from __future__ import annotations
@@ -154,7 +143,7 @@ def _snapshot_with_z(
 ) -> HorizonFeatureSnapshot:
     """Snapshot with OFI z-score and an aligned book-imbalance footprint.
 
-    Audit P1-B: the alpha now confirms with ``book_imbalance`` (∈ [-1, 1])
+    The alpha confirms with ``book_imbalance`` (∈ [-1, 1])
     instead of ``micro_price_zscore``.  ``z_micro`` overrides the imbalance
     (used to test the disagree / neutral cases); when ``None`` the imbalance
     is sign-aligned with the OFI z (magnitude 0.5).
@@ -220,7 +209,7 @@ def test_no_emission_when_micro_price_disagrees(
 def test_no_emission_when_imbalance_below_floor(
     loaded: LoadedSignalLayerModule,
 ) -> None:
-    """Audit 3P-3: a near-zero book_imbalance_mean is no confirmation.
+    """Near-zero ``book_imbalance_mean`` is not confirmation.
 
     With z above threshold but |imb| (0.02) below the default imbalance_floor
     (0.05), the footprint is unconfirmed and no signal fires — the old

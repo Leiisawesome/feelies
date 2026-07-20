@@ -1,44 +1,9 @@
-"""Top-of-book size-imbalance sensor (KYLE_INFO / micro-price fingerprint).
+"""Signed top-of-book displayed-size imbalance.
 
-The signed displayed-depth imbalance at the top of book:
-
-    book_imbalance = (bid_size - ask_size) / (bid_size + ask_size)   ∈ [-1, 1]
-
-Positive ⇒ more size resting on the bid ⇒ upward micro-price pressure (the
-next marketable order is more likely to lift the offer); negative ⇒ ask-heavy.
-
-Why this sensor exists (audit P1-B / P1-C):
-    The Stoikov micro-price deviation from mid is algebraically
-
-        micro - mid = (spread / 2) · (bid_size - ask_size)/(bid_size + ask_size)
-                    = (spread / 2) · book_imbalance,
-
-    so ``(micro - mid)/spread = book_imbalance / 2``.  The shipped
-    ``micro_price`` sensor emits the micro-price *level* (~$100), and the wired
-    z-score of that level is dominated by price drift — the sub-cent imbalance
-    content is < 0.01 % of the variance, so the Stoikov edge is destroyed at the
-    feature layer.  This sensor exposes the imbalance *directly* and
-    level-invariantly, recovering the L1 footprint that the level z-score loses.
-
-Reference: Stoikov (2018) "The Micro-Price: A High-Frequency Estimator of
-Future Prices"; Cont, Kukanov & Stoikov (2014) for the queue-imbalance ⇒
-short-horizon price-pressure mechanism.
-
-Edge case: a degenerate book with zero total displayed depth (or a non-positive
-side, a halt / pre-open marker) carries no imbalance information — we emit
-``value=0.0`` with ``warm=False`` so the absence of liquidity is not conflated
-with a balanced book (the FeatureComputation ``float``-only sentinel problem the
-legacy ``BidAskImbalanceComputation`` could not avoid, audit #13). A crossed
-book (``bid > ask``) is dropped entirely (3P-2), matching every sibling
-price-consuming sensor.
-
-Determinism: a single float division per event; no RNG, no clock reads, no
-time-of-day dependency.  Replay-stable to the bit.
-
-Warm-up: ``warm = True`` once at least ``warm_after`` quotes with positive
-two-sided depth have arrived within the trailing ``warm_window_seconds``
-event-time window (sliding window ⇒ reverts to cold after sustained data gaps,
-mirroring ``ofi_ewma`` / ``micro_price`` S3 handling).
+``(bid_size - ask_size) / (bid_size + ask_size)`` is positive for a bid-heavy
+book and negative for an ask-heavy book. It exposes microprice pressure without
+the price-level drift of a raw microprice. Invalid or empty books are cold.
+Warmth requires enough valid quotes in the trailing event-time window.
 """
 
 from __future__ import annotations
@@ -88,18 +53,12 @@ class BookImbalanceSensor:
             self.sensor_version = sensor_version
         self._warm_after = warm_after
         self._warm_window_ns = warm_window_seconds * 1_000_000_000
-        # 3P-7: winsorise the per-quote contribution.  A lone lopsided resting
-        # order (fat-finger / spoof) saturates the raw imbalance toward ±1 and,
-        # because (b-a)/(b+a) is asymptotic to ±1, a 1000:1 book (±0.998) is
-        # indistinguishable from a 40:1 book (±0.95).  Clamping to ``±cap``
-        # bounds the influence of any single extreme quote before it is
-        # averaged over the horizon.  Default 1.0 is a no-op (preserves the
-        # 1.0.0 estimator exactly); production opts into a tighter cap.
+        # Cap each quote's influence before horizon averaging; 1.0 is a no-op.
         self._imbalance_cap = float(imbalance_cap)
 
     def initial_state(self) -> dict[str, Any]:
         return {
-            "warm_ts": deque(),  # timestamps of valid (total > 0) quotes (S3)
+            "warm_ts": deque(),  # Valid-quote timestamps for the warm window.
         }
 
     def update(
@@ -113,13 +72,7 @@ class BookImbalanceSensor:
 
         bid = float(event.bid)
         ask = float(event.ask)
-        # A1: uniform bid/ask positivity validation across price-consuming
-        # sensors.  A zero/negative side is a halt / pre-open marker.
-        # 3P-2: reject crossed book — sensor_audit_2026-07-02 P1: this sensor
-        # previously omitted the crossed-book guard every sibling
-        # price-consuming sensor applies (ofi_ewma, ofi_raw, micro_price,
-        # spread_z_30d, ...), so a locked/crossed NBBO tick would update
-        # book_imbalance while siblings silently skipped the same tick.
+        # Invalid or crossed books carry no usable imbalance.
         if bid <= 0.0 or ask <= 0.0 or bid > ask:
             return None
 
@@ -132,14 +85,14 @@ class BookImbalanceSensor:
             return SensorEmission(value=0.0, warm=False)
 
         value = (bid_sz - ask_sz) / float(total)
-        # 3P-7: winsorise to bound a single fat-finger / spoof quote's influence.
+        # Bound one anomalous quote's influence.
         cap = self._imbalance_cap
         if value > cap:
             value = cap
         elif value < -cap:
             value = -cap
 
-        # S3: sliding-window warm check — reverts to cold after data gaps.
+        # Sliding-window warmth reverts after data gaps.
         ts_ns = event.timestamp_ns
         warm_ts: deque[int] = state["warm_ts"]
         warm_ts.append(ts_ns)

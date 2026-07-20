@@ -7,7 +7,7 @@ populated through any ingestor.
 When a ``SimulatedClock`` is provided, advances the clock to each event's
 **visibility time** before yielding:
 
-  ``exchange_timestamp_ns + market_data_latency_ns`` (BT-17).
+  ``exchange_timestamp_ns + market_data_latency_ns``.
 
 That models feed-propagation delay separately from order-submission /
 fill latency (``backtest_fill_latency_ns`` in the execution routers).

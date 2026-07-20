@@ -1,46 +1,9 @@
-"""Horizon-time-windowed HorizonFeature implementations.
+"""Features over true event-time horizon windows.
 
-Unlike :mod:`feelies.features.impl.rolling_stats` — whose deques are
-*count*-bounded (``max_samples``) and therefore independent of
-``horizon_seconds`` — these features aggregate over the **actual
-event-time window** ``[tick.asof - horizon_seconds, tick.asof]``.  The
-horizon is finally a *window*, not just a *clock*: the same sensor at
-horizon 30 s and 1800 s now produces genuinely different baselines, so
-the G16 ``horizon / half_life`` binding has real effect (audit P1-1).
-
-Design (mirrors the numerically-stable sensor pattern in
-``sensors/impl/spread_z_30d.py`` and ``realized_vol_30s.py``):
-
-- Per-symbol/per-horizon state holds an event-time deque of
-  ``(ts_ns, x)`` plus **Welford** running ``mean`` / ``M2`` so the
-  z-score / variance reducers avoid the catastrophic cancellation of
-  the naive ``Σx²/n − mean²`` form.  This matters here because the
-  ``micro_price`` reducer z-scores a price *level* (~$10²) whose
-  variance is cents — naive accumulation eats most of the precision
-  over a 1800 s window.
-- ``observe`` folds each warm reading in and evicts (reverse-Welford)
-  anything older than the window anchored at the *reading* ts (bounds
-  memory under bursts).  ``finalize`` re-evicts anchored at the *tick*
-  ts (correctness: a silent sensor's window must shrink at the
-  boundary) and emits the reducer.
-
-Reducers
---------
-``last``   most recent in-window value (fast inventory / queue state)
-``mean``   time-window mean (persistent imbalance, e.g. OFI drift)
-``sum``    integrated value over the window (``mean * n``)
-``rms``    ``sqrt(E[x²])`` over the window (realized-vol-style scale)
-``zscore`` ``(latest - mean) / std`` clamped to ``±_MAX_ZSCORE``
-``percentile`` Hazen plotting position ``(rank - 0.5) / n`` of the
-           latest value within the window (rank-based; debiased CDF)
-``delta``  ``latest - oldest`` over the window: the signed *drift* of
-           the value across the horizon.  Level-invariant — for a
-           level-valued sensor like ``micro_price`` this captures the
-           directional tilt without leaking the absolute price level
-           that a z-score of the raw level does (audit P1-9).
-
-Determinism (Inv-5): insertion-ordered float arithmetic over the
-event-time deque; no wall-clock, no RNG.
+Per-symbol state uses a timestamped deque and Welford moments. ``observe``
+evicts against reading time; ``finalize`` evicts again against the boundary so
+silent sensors age correctly. Reducers are ``last``, ``mean``, ``sum``, ``rms``,
+``zscore``, Hazen ``percentile``, and ``delta``. Processing is deterministic.
 """
 
 from __future__ import annotations
@@ -54,8 +17,7 @@ from feelies.core.events import HorizonTick, SensorReading
 _logger = logging.getLogger(__name__)
 
 _NS_PER_SECOND = 1_000_000_000
-# Same clamp as rolling_stats / library so a near-zero-variance window
-# cannot emit an unbounded z that poisons downstream signals (audit #5).
+# Match rolling_stats: clamp z-scores from near-zero-variance windows.
 _MAX_ZSCORE = 10.0
 
 _REDUCERS = frozenset({"last", "mean", "sum", "rms", "zscore", "percentile", "delta"})
@@ -161,7 +123,7 @@ class HorizonWindowedFeature:
             "n": 0,
             "mean": 0.0,
             "M2": 0.0,
-            # 3P-4: set when a reverse-Welford remove drives M2 negative (the
+            # Set when reverse-Welford removal drives M2 negative, which
             # catastrophic-cancellation indicator); triggers an exact recompute.
             "_drift_dirty": False,
         }
@@ -187,7 +149,7 @@ class HorizonWindowedFeature:
         mean_without = (n * mean_cur - x) / (n - 1)
         state["M2"] -= (x - mean_cur) * (x - mean_without)
         if state["M2"] < 0.0:
-            # 3P-4: M2 < 0 is impossible in exact arithmetic — it signals
+            # M2 below zero is impossible in exact arithmetic and signals
             # catastrophic cancellation has corrupted the incremental
             # accumulator.  Clamp to keep the immediate result sane, but flag
             # for an exact recompute from the live window so the drift is
@@ -199,7 +161,7 @@ class HorizonWindowedFeature:
 
     @staticmethod
     def _recompute_from_window(state: dict[str, Any]) -> None:
-        """Exact two-pass mean/M2 over the live window (3P-4 drift reset)."""
+        """Recompute exact two-pass mean and M2 over the live window."""
         win: deque[tuple[int, float]] = state["win"]
         n = len(win)
         if n == 0:
@@ -218,7 +180,7 @@ class HorizonWindowedFeature:
         while win and win[0][0] < cutoff_ns:
             _ts, x_old = win.popleft()
             self._welford_remove(state, x_old)
-        # 3P-4: if cancellation corrupted the accumulator during this eviction
+        # If cancellation corrupted the accumulator during this eviction,
         # sweep, restore it exactly from the window so drift cannot persist.
         if state["_drift_dirty"]:
             self._recompute_from_window(state)
@@ -330,7 +292,7 @@ class HorizonWindowedFeature:
             # a single-sample window has zero drift by definition.
             return latest - oldest, True, False
         if reducer == "percentile":
-            # Hazen plotting position over the in-window values (audit #9).
+            # Hazen plotting position over in-window values.
             rank = sum(1 for (_ts, x) in win if _ts <= asof_ns and x <= latest)
             return (rank - 0.5) / n, True, False
 

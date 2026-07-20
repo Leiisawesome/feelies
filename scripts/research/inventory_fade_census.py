@@ -1,45 +1,10 @@
 #!/usr/bin/env python3
-"""Task 8 step 1 — park-rule census for ``sig_inventory_fade_v1``.
+"""Build the deterministic census for ``sig_inventory_fade_v1``.
 
-Executes EXACTLY the frozen protocol step 1
-(``docs/research/sig_inventory_fade_v1_validation_protocol.md`` §1,
-frozen at commit f2055d5).  Offline deterministic scan of the frozen
-80-cell grid (8 symbols x 10 dates).  **NO forward returns, NO IC, NO
-signal evaluation** — the only return-like quantity is the
-unconditional session sigma_120 (std of non-overlapping 120 s mid log
-returns over RTH, bps), which conditions on nothing signal-related.
-
-Per (symbol, session) cell this script reports (protocol §1.3):
-
-- eligible-episode counts under the frozen §1.2 boundary rule (total,
-  fade-long p >= +0.5, fade-short p <= -0.5), both primary
-  (contamination-excluded) and including-flagged;
-- sensor warm coverage per entry-warm id (fraction of emitted RTH
-  h=120 boundaries warm);
-- §1.5 contamination-flag fraction over eligible boundaries (any
-  Class-B print per 03b §3.3, or any correction in {10,11,12}, inside
-  the trailing 60 s window of the boundary);
-- realized session sigma_120 (bps) and the viable / non-viable label
-  against the §1.1 strict-anchor thresholds (kappa = 0.16 frozen);
-- benign-on-elevated eligible counts split per elevated episode A/B;
-- the (intraday gate state x daily stratum) boundary-count table.
-
-Pipeline parity: events replay through the real ``SensorRegistry ->
-HorizonScheduler -> HorizonAggregator`` stack with the reference
-``platform.yaml`` sensor params; h=120 features come from the
-production ``_HORIZON_FEATURE_FACTORIES`` (bootstrap), which
-regression-locks the commit-6a3ac12 ``inventory_pressure`` passthrough
-wiring at h=120.  The RTH filter and the 09:30-ET session-open anchor
-mirror ``prepare_backtest_event_log`` / audit P1-8.  The regime
-posterior is ``hmm_3state_fractional`` at reference defaults,
-calibrated per session on the causal prefix of the first
-``100_000`` RTH quotes (``platform.yaml
-regime_calibration_max_quotes``), updated once per quote before the
-boundary tick — the latched boundary-time posterior, as in production.
-
-Determinism: run under PYTHONHASHSEED=0; no RNG, no wall-clock reads;
-events sorted by (timestamp_ns, sequence); fresh sensor/regime state
-per (symbol, session) — sessions never concatenate state.
+Each symbol-session cell reports eligible episodes, warm coverage,
+contamination, 120-second session volatility, viability, and regime-by-stratum
+counts. Events replay through production sensors and aggregation with causal
+regime calibration. The census computes no forward returns, IC, or signals.
 
 Usage
 -----
@@ -86,7 +51,7 @@ _NS = 1_000_000_000
 _TZ_ET = ZoneInfo("America/New_York")
 _HORIZON = 120
 
-# ── Frozen evidence set (protocol Amendment B / 03c §5.1) ────────────────
+# Fixed evidence set.
 
 SYMBOLS = ("APP", "RMBS", "OLN", "ENSG", "DIOD", "PCTY", "MLI", "CROX")
 DATES_ELEVATED_A = ("2025-11-25", "2025-12-04")
@@ -100,11 +65,10 @@ STRATUM = (
     | {d: "elevated_B" for d in DATES_ELEVATED_B}
 )
 
-# ── Frozen viable-region arithmetic (protocol §1.1; §11.1 ruling) ────────
+# Fixed viable-region arithmetic.
 # floor = 2.25 x (2.0 + fee_s); fee_s = $0.35 on an 80-share fill at the
-# 03c §3.1 median RTH bid, in bps of notional; sigma_min = floor / 0.16.
-# kappa = 0.16 FROZEN (spec §15(i)).  OLN: evidence-set-only (Amendment G)
-# — no floor, never in D.
+# median RTH bid, in bps of notional; sigma_min = floor / 0.16.
+# Kappa is fixed at 0.16. OLN has no floor and never enters D.
 
 KAPPA = 0.16
 MEDIAN_BID = {

@@ -1,4 +1,4 @@
-"""Tests for the append-only promotion evidence ledger (Workstream F-1).
+"""Tests for the append-only promotion evidence ledger.
 
 Covers:
 1.  Empty-ledger semantics (file created, ``len == 0``).
@@ -300,7 +300,7 @@ class TestPromotionLedgerDecimalSafety:
 class TestPromotionLedgerReplayDeterminism:
     def test_repeated_append_produces_identical_file(self, tmp_path: Path) -> None:
         # Build the same evidence-stream twice in two fresh ledgers and
-        # assert the on-disk bytes match exactly.  This is the F-1
+        # assert the on-disk bytes match exactly. This is the
         # replay-determinism guarantee that downstream gate-replay
         # tests will rely on.
         evidence_stream = [

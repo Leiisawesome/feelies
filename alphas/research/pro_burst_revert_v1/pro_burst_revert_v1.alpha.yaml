@@ -88,7 +88,7 @@ parameters:
     type: bool
     default: false
     description: |
-      Phase-4.1 toggle for inverse-staleness decay weighting.
+      Enables inverse-staleness decay weighting.
       OFF preserves baseline parity hash; ON applies
       exp(-Δt/hl) weighting per signal age × per-mechanism half-life.
   composition_completeness_threshold:

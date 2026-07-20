@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
-"""Derive hour-only ALGO_CLOCK calendar views (H13 Phase A).
+"""Derive hour-only views from committed ``ALGO_CLOCK`` calendars.
 
-Deterministic SUBSET transform over committed half-hour ``ALGO_CLOCK``
-YAMLs (H12 authoring). Implements formal-spec §1.5.2 / protocol §1.1
-JC-10:
+The deterministic subset transform:
 
 * retain only ``ALGO_CLOCK`` rows whose mark minute is ``:00``
   (``10:00 … 15:00`` America/New_York);
 * ``:30`` marks remain in the committed files for H12 / platform use
-  and are **excluded from the H13 injection view** so
+  and are excluded so
   ``scheduled_flow_window_active`` encodes hour membership (non-
   tautological at H = 1800);
 * non-``ALGO_CLOCK`` rows are also excluded from the injection view
-  (hour-predicate purity — OPENING/MOC do not contribute to ``W_hr``);
+  so opening and MOC windows do not contribute;
 * exchange-schedule only — no market data, no σ, no IC, no forward
   returns.
 
-Does **not** rewrite committed YAMLs. Re-running under
-``PYTHONHASHSEED=0`` must produce bit-identical derived
-``EventCalendar`` content / content-addressed hash per date (census
-precondition).
-
-Date surface = union of operative sessions across the eight-symbol
-evidence pool (APP/RMBS ×20; OLN/DIOD/PCTY/CROX ×20 D grid; ENSG/MLI
-×10 preamble — calendars are date-keyed, so all 20 operative dates).
+Committed YAML is never rewritten. Sorted output and stable hashing make reruns
+identical. The date set is the union of operative evidence sessions.
 
 Usage
 -----
@@ -55,7 +47,7 @@ from feelies.storage.reference.event_calendar import (  # noqa: E402
 )
 from feelies.storage.reference.paths import EVENT_CALENDAR_DIR  # noqa: E402
 
-# Re-use the H12 operative date set (union covers all eight symbols).
+# Reuse the operative date set across all evidence symbols.
 from scripts.research.author_algo_clock_calendars import (  # noqa: E402
     DATES_ALL,
     DATES_PREAMBLE,
@@ -63,7 +55,7 @@ from scripts.research.author_algo_clock_calendars import (  # noqa: E402
 
 _TZ_ET = ZoneInfo("America/New_York")
 
-# Frozen on-the-hour marks (formal-spec §1.5.2).
+# On-the-hour marks.
 HOUR_MARKS: tuple[tuple[int, int], ...] = (
     (10, 0),
     (11, 0),

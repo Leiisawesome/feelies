@@ -1,47 +1,12 @@
-"""Hawkes self-exciting trade-arrival intensity sensor (v0.3 §20.4.1).
+"""Two-sided exponentially decayed trade-arrival intensity.
 
-Estimates the conditional buy- and sell-side trade arrival rates above
-a baseline using two parallel exponentially-weighted self-exciting
-kernels — one per side.  A jump in either intensity is the L1
-fingerprint of the ``HAWKES_SELF_EXCITE`` mechanism family
-(``docs/three_layer_architecture.md`` §20.2).
+Each side decays toward ``mu`` at rate ``beta`` and receives an ``alpha``
+impulse on a same-side trade. The output is buy intensity, sell intensity,
+dominant-side ratio, and configured ``alpha / beta``. These are impulse-EWMA
+units, not fitted Hawkes arrival rates or a branching-ratio estimate.
 
-Algorithm (per side, incremental):
-
-Between trades:    λ(t) = μ + (λ(t_last) - μ) · exp(-β · (t - t_last))
-On a same-side trade at t_i:  λ(t_i) = λ(t_i⁻) + α
-Between-side trades leave the side's λ unchanged except for the decay
-above.
-
-Outputs (length-4 tuple):
-
-.value = (
-        intensity_buy,         # λ_buy(t)  — impulse-EWMA intensity in ARBITRARY
-                               # units (impulse α decayed at rate β); NOT
-                               # normalised to events/second (audit P2-1)
-        intensity_sell,        # λ_sell(t) — same units as λ_buy
-        intensity_ratio,       # ∈ [0.5, 1]; defaults to 0.5 when both sides
-                               # are below ε (no information state)
-        impulse_decay_ratio,   # configured α / β (NOT a runtime estimate and
-                               # NOT a Hawkes branching-ratio stability metric:
-                               # this is an *additive-impulse EWMA* tracker, not
-                               # a fitted self-exciting process, so the impulse
-                               # never feeds back into arrival generation).  β
-                               # alone is meaningful: the decay half-life is
-                               # ln(2)/β seconds.
-    )
-
-Determinism: pure float arithmetic; no RNG; ``math.exp`` over an
-integer nanosecond delta is deterministic on IEEE-754.
-
-Trade side classification: tick rule (price strictly above prior trade
-price ⇒ buy; below ⇒ sell; equal ⇒ inherit prior side; default ``+1``
-on the very first trade).  This avoids a dependency on the prevailing
-NBBO so the sensor is robust to NBBO inversion / stale quotes.
-
-Warm-up: ``warm = True`` once at least ``warm_trades_per_side`` trades
-of *each* side have been observed within the rolling
-``warm_window_seconds`` window.
+Trade side follows the tick rule. Warm-up requires enough trades on both sides
+within the rolling window. Processing is deterministic and uses no RNG.
 """
 
 from __future__ import annotations
@@ -58,31 +23,11 @@ _EPS: float = 1e-12
 
 
 class HawkesIntensitySensor:
-    """Two-sided exponentially-weighted Hawkes intensity estimator.
+    """Track two-sided trade intensity with exponential impulse decay.
 
-    Parameters:
-
-    - ``alpha`` (float, default 0.4): impulse magnitude added to a
-      side's intensity on a same-side trade.  Typical range
-      ``[0.05, 1.0]``.
-    - ``beta`` (float, default 0.05): exponential decay rate (per
-      second) of the intensity between trades.  Typical range
-      ``[0.01, 0.5]``.  The decay half-life is ``ln(2)/β`` seconds
-      (≈ 13.9 s at the default).  ``α/β`` is emitted as a diagnostic
-      *impulse-decay ratio*, not a stability metric — see the module
-      docstring (this estimator is an additive-impulse EWMA tracker,
-      not a fitted Hawkes process, so the classical branching-ratio
-      ``< 1`` stability condition does not apply).  Use
-      ``scripts/calibrate_hawkes.py`` to fit ``α, β`` from data.
-    - ``warm_window_seconds`` (int, default 60): event-time window
-      used for the per-side trade-count warm-up criterion.
-    - ``warm_trades_per_side`` (int, default 20): minimum trades on
-      *each* side within ``warm_window_seconds`` before ``warm=True``.
-    - ``baseline_mu`` (float, default ``0.0``): background level μ toward
-      which both sides decay between impulses, in the **same arbitrary
-      impulse units as λ and α** (NOT events/second — audit 2P-6).  Only β
-      carries physical units (1/second), via the decay half-life ln(2)/β.
-      Must be non-negative.
+    ``alpha`` is impulse size and ``beta`` is the per-second decay rate, with
+    half-life ``ln(2)/beta``. The emitted ``alpha/beta`` is diagnostic, not a
+    fitted Hawkes branching ratio. Warmth requires enough trades on each side.
     """
 
     sensor_id: str = "hawkes_intensity"
@@ -186,10 +131,10 @@ class HawkesIntensitySensor:
         if side > 0:
             state["lambda_buy"] = (
                 state["lambda_buy"] + self._alpha
-            )  # S1: additive impulse; decay already applied by _decay_to
+            )  # Additive impulse; decay already applied by ``_decay_to``.
             state["buy_ts"].append(ts_ns)
         else:
-            state["lambda_sell"] = state["lambda_sell"] + self._alpha  # S1: additive impulse
+            state["lambda_sell"] = state["lambda_sell"] + self._alpha  # Additive impulse.
             state["sell_ts"].append(ts_ns)
 
         cutoff = ts_ns - self._warm_window_ns

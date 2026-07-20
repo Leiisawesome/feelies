@@ -1,30 +1,8 @@
-"""State-machine baseline — ``StateTransition`` replay parity (audit P1 #12,
-extended to all five SMs by audit-2026-07-02 P1 #5).
+"""Replay parity for the five platform state machines.
 
-The five platform state machines are covered by *property* tests (legal-edge
-enforcement, enum completeness) but no parity hash pinned the
-``StateTransition`` *stream* a deterministic run produces — so a reordered
-emission or a re-allocated ``sequence`` on the SM audit trail would slip past
-the determinism suite.
-
-This baseline drives all **five** real state machines — ``RiskLevel``
-escalation (monotonic-tighten + human-unlock cycle), ``OrderState`` lifecycle
-(full-fill, cancel, and reject paths), ``MacroState`` lifecycle (boot through
-a backtest run to shutdown), ``MicroState`` (one full M0-M10 tick walk down
-the deepest legal spine — sensor + signal + portfolio + order path), and
-``DataHealth`` (gap → resume → halt → resume → corrupted) — through a
-deterministic legal walk, emitting a ``StateTransition`` event per edge from
-a single shared ``SequenceGenerator`` (mirroring the orchestrator, which
-publishes one StateTransition stream).  The hash therefore pins:
-
-* which edges fire and in what order (driving an illegal edge raises
-  ``IllegalTransition`` and fails the replay, so the real transition tables
-  are load-bearing here, not a permissive mock),
-* the global ``sequence`` allocation across machines, and
-* the per-edge ``machine_name`` / ``from_state`` / ``to_state`` / ``trigger``.
-
-Timestamps come from an injected :class:`SimulatedClock` advanced
-deterministically, so the stream is bit-identical across replays (Inv-5).
+The baseline pins legal-edge order, shared sequence allocation, transition
+fields, and deterministic timestamps across risk, order, macro, micro, and
+data-health machines.
 """
 
 from __future__ import annotations
@@ -160,9 +138,7 @@ def _replay() -> tuple[str, int]:
 # Locked StateTransition baseline.  Re-baseline only with an intentional
 # change to a transition table or the driven walk, justified in the commit.
 #
-# Audit-2026-07-02 P1 #5: re-baselined to add MacroState (5 edges),
-# MicroState (14 edges), and DataHealth (5 edges) to the original
-# RiskLevel + OrderState walk (16 edges) — 16 + 24 = 40.
+# Covers RiskLevel, OrderState, MacroState, MicroState, and DataHealth walks.
 EXPECTED_STATE_TRANSITION_HASH = "3faaec4824e41ed855ef3ef1f24e7392bb242f88814c86f09be7ed976d186ba7"
 EXPECTED_STATE_TRANSITION_COUNT = 40
 

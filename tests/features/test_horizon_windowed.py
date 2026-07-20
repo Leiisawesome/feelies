@@ -1,4 +1,4 @@
-"""HorizonWindowedFeature — true event-time windowing (audit P1-1)."""
+"""True event-time windowing for ``HorizonWindowedFeature``."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def test_construction_validates_reducer_and_min_samples() -> None:
 
 
 def test_window_is_time_bounded_not_count_bounded() -> None:
-    """The defining P1-1 property: horizon width changes the window.
+    """Horizon width determines the window.
 
     Same reading stream, two horizons → different in-window sample sets,
     so the mean differs.  Under the old count-window features these were
@@ -185,8 +185,7 @@ def test_deterministic_across_two_runs() -> None:
 
 
 def test_delta_reducer_is_level_invariant_drift() -> None:
-    """latest - oldest over the window; adding a constant offset to every
-    sample must not change the drift (the P1-9 point)."""
+    """A constant level offset must not change latest-minus-oldest drift."""
     base = [(i * _NS, 100.0 + i * 0.1) for i in range(50)]  # rises 0.1/sec
     feat = HorizonWindowedFeature(
         "micro_price",

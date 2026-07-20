@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Sensor / feature IC harness — does horizon-windowing lift SNR? (audit P1-1).
+"""Compare sensor-feature IC across horizon-window variants.
 
-Read-only offline validation.  For one or more ``(symbol, date)`` pairs of
-**cached NBBO + trades** (the platform's ``DiskEventCache``), this script:
+For cached quote and trade sessions, the script:
 
 1. Replays the events through the real Layer-1 → Layer-1.5 pipeline
    (``SensorRegistry`` → ``HorizonScheduler`` → ``HorizonAggregator``),
@@ -12,16 +11,8 @@ Read-only offline validation.  For one or more ``(symbol, date)`` pairs of
 3. Reports the Spearman **RankIC** and Pearson **IC** (with a naive
    t-stat and sample count) per ``(feature, horizon, variant)``.
 
-The headline comparison is, for each z-scored sensor, the **old
-count-window** feature (``RollingZscoreFeature``) versus the **new
-horizon-windowed** feature (``HorizonWindowedFeature``).  If P1-1 helped,
-the windowed variant's |RankIC| should rise toward the longer horizons
-while the count-window variant stays roughly flat in ``h`` (because its
-baseline never depended on ``h``).
-
-This script computes **no point estimate of edge** and makes no trading
-claim — it is a falsification tool: it tells you whether the new feature
-is *more* monotonically related to forward returns than the old one.
+The comparison is ``RollingZscoreFeature`` versus ``HorizonWindowedFeature``.
+It measures association with forward returns and makes no trading claim.
 
 Usage
 -----
@@ -163,7 +154,7 @@ def _window_builder(sensor_id: str) -> _FeatureBuilder:
     return build
 
 
-# Production used max_samples=200 for ofi_ewma, default 2000 elsewhere.
+# OFI uses 200 samples; other sensors use 2,000.
 _TARGETS: dict[str, int] = {
     "ofi_ewma": 200,
     "micro_price": 2000,
@@ -331,11 +322,8 @@ def _collect_pairs(
         v = s.values.get(feature_id)  # present only when warm
         if v is None:
             continue
-        # sensor_audit_2026-07-02 P1: pair from boundary_ts_ns (the nominal
-        # grid anchor `core/events.py` documents "for IC labels / forensics"),
-        # not timestamp_ns (the trigger time of the event that crossed the
-        # boundary). On a sparse tape these diverge, silently shifting every
-        # RankIC this script reports.
+        # Use the nominal boundary, not the event that crossed it. Sparse tapes
+        # can separate those timestamps enough to shift RankIC labels.
         r = _forward_return(mids, s.boundary_ts_ns, horizon)
         if r is None:
             continue
@@ -387,10 +375,7 @@ def _run_one(
         print(f"  ! no cached events for {symbol}/{date} (skipping)", file=sys.stderr)
         return []
     events = sorted(events, key=lambda e: (e.timestamp_ns, e.sequence))
-    # Audit P1-8 parity: production bootstrap anchors the horizon grid to the
-    # 09:30 ET RTH open when ``session_open_ns`` is unset for RTH US equity,
-    # not the raw first cached event.  Mirror that here so IC boundaries and
-    # snapshot pairing match a live replay of the same tape.
+    # Match production's 09:30 ET horizon-grid anchor.
     session_open_ns = rth_open_ns(events[0].timestamp_ns)
     mids = _MidSeries.from_events(events)
     if len(mids.ts) < 10:
@@ -433,11 +418,7 @@ def _run_one(
                     )
                 )
 
-    # Audit P1-5: A/B the Kyle *alignment* (legacy 1.2.0 vs causal 2.0.0),
-    # both under the horizon-window feature, isolating the alignment change
-    # from the windowing change.  The main loop above already tests windowing
-    # on whatever kyle version sits in _SENSOR_SPECS (currently causal);
-    # this answers the distinct question "did the causal re-alignment help?".
+    # Compare Kyle alignments under the same horizon-window feature.
     rows.extend(
         _kyle_alignment_ab(
             events,
@@ -462,20 +443,13 @@ def _run_one(
             session_open_ns,
         )
     )
-    # Protocol §2.2 H10 row (sig_sweep_kyle_drift_h900_v1) — pinned to
-    # h=900; SFI-stratified contrast; additive only; no outcome contact in
-    # Phase A (instrument land only).
+    # H10: 900-second SFI-stratified contrast.
     if _H10_HORIZON in horizons:
         rows.extend(_h10_sweep_kyle(events, mids, symbol, date, session_open_ns))
-    # Protocol §2.2 H12 row (sig_halfhour_clock_drift_h900_v1) — pinned to
-    # h=900; clock-stratified in-window / out-window extreme-OFI contrast;
-    # additive only; no outcome contact in Phase A (instrument land only).
+    # H12: 900-second in-window/out-window extreme-OFI contrast.
     if _H12_HORIZON in horizons:
         rows.extend(_h12_halfhour_clock(events, mids, symbol, date, session_open_ns))
-    # Protocol §2.2 H13 row (sig_hour_checkpoint_drift_h1800_v1) — pinned to
-    # h=1800; hour-stratified in-hour / :30 extreme-OFI contrast under
-    # hour-only calendar injection; additive only; no outcome contact in
-    # Phase A (instrument land only). N = 12 unchanged.
+    # H13: 1800-second hourly versus half-hour extreme-OFI contrast.
     if _H13_HORIZON in horizons:
         rows.extend(_h13_hour_checkpoint(events, mids, symbol, date, session_open_ns))
     return rows
@@ -566,12 +540,7 @@ def _kyle_alignment_ab(
     horizons: frozenset[int],
     session_open_ns: int,
 ) -> list[_Row]:
-    """Replay legacy- and causal-aligned Kyle (each horizon-windowed) and
-    report RankIC per horizon, so the P1-5 alignment can be settled directly.
-
-    Different sensor versions share a sensor_id and cannot co-register in one
-    registry (features are version-blind), so each runs under its own spec set.
-    """
+    """Compare horizon RankIC for legacy and causal Kyle alignment."""
     feature_id = "kyle_lambda_60s_zscore"
     base = tuple(s for s in _SENSOR_SPECS if s.sensor_id != "kyle_lambda_60s")
     legacy_kyle = SensorSpec(
@@ -624,17 +593,8 @@ def _kyle_alignment_ab(
     return rows
 
 
-# ── H10 row — sig_sweep_kyle_drift_h900_v1 (protocol §2.2; Task 9-A Phase A)
-#
-# Measurement plumbing for the pre-registered H10 primary trial, not a new
-# trial: x = sweep_flow_imbalance (signed) vs y = signed forward 900 s mid
-# log-return, stratified by the extreme-SFI decile
-# (percentile ≥ 0.90 OR ≤ 0.10 with sign agreement) vs the interior
-# (0.10, 0.90).  Primary contamination posture = filter-clean by SFI
-# construction (JC-1); no intensity exclusion on the IC row.  OLN cells are
-# evidence-only §2.4 tick-artifact inputs — reported to stderr, never
-# contributing an IC row.  Phase A lands the instrument only — no cached-
-# data IC run executes here (N = 11 unchanged).
+# H10: compare signed 900-second returns for extreme SFI deciles versus the
+# interior. OLN supplies tick-artifact evidence only and produces no IC row.
 
 _H10_HORIZON = 900
 _H10_SFI_PCTL_HI = 0.90
@@ -838,17 +798,9 @@ def _h10_sweep_kyle(
     return rows
 
 
-# ── H12 row — sig_halfhour_clock_drift_h900_v1 (protocol §2.2; Task 9-A)
-#
-# Measurement plumbing for the pre-registered H12 primary trial, not a new
-# trial: x = ofi_integrated (signed) vs y = signed forward 900 s mid
-# log-return, stratified by the census-pinned extreme-OFI quintile
-# (percentile ≥ 0.80 OR ≤ 0.20 with sign agreement) into:
-#   * in_window_extreme  (W_hh = 1 — ALGO_CLOCK membership)
-#   * out_window_extreme (W_hh = 0 — matched OFI, F2 arm)
-#   * clock_contrast     (in RankIC − out RankIC)
-# OLN cells are evidence-only §2.4 tick-artifact inputs — empty IC rows.
-# Phase A lands the instrument only — no cached-data IC run (N = 12).
+# H12: compare signed 900-second returns for extreme OFI inside and outside
+# half-hour clock windows. The contrast is in-window RankIC minus out-window
+# RankIC. OLN supplies evidence only and produces empty IC rows.
 
 _H12_HORIZON = 900
 _H12_OFI_PCTL_HI = 0.80
@@ -1007,18 +959,9 @@ def _h12_halfhour_clock(
     return rows
 
 
-# ── H13 row — sig_hour_checkpoint_drift_h1800_v1 (protocol §2.2; Task 9-A)
-#
-# Measurement plumbing for the pre-registered H13 primary trial, not a new
-# trial: x = ofi_integrated (signed) vs y = signed forward 1800 s mid
-# log-return, stratified by the census-pinned extreme-OFI quintile
-# (percentile ≥ 0.80 OR ≤ 0.20 with sign agreement) into:
-#   * in_hour_extreme     (W_hr = 1 — hour-only ALGO_CLOCK membership)
-#   * halfhour_extreme    (W_hr = 0 — matched OFI at :30, F2 arm)
-#   * hour_contrast       (in RankIC − halfhour RankIC)
-# Eight-symbol evidence pool (incl. ENSG/MLI) produces IC rows — JC-12.
-# Calendar injection = hour-only derived view (:30 excluded).
-# Phase A lands the instrument only — no cached-data IC run (N = 12).
+# H13: compare signed 1800-second returns for extreme OFI at hourly and
+# half-hour checkpoints. The contrast is hourly RankIC minus half-hour RankIC;
+# the derived calendar excludes :30 windows.
 
 _H13_HORIZON = 1800
 _H13_OFI_PCTL_HI = 0.80

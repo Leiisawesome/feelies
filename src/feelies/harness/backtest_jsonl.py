@@ -49,7 +49,7 @@ __all__ = [
 
 
 def emit_size_divergence_jsonl(divergences: list[SizeDivergence]) -> None:
-    """G-7 S1 measurement: one JSON line per recorded SizeDivergence.
+    """Emit one JSON line per recorded size divergence.
 
     Sourced from the orchestrator's size-shadow sink (not the bus), in
     record order.  ``magnitude`` is ``tilted − base`` so the stream is
@@ -78,7 +78,7 @@ def emit_size_divergence_jsonl(divergences: list[SizeDivergence]) -> None:
 
 
 def emit_net_divergence_jsonl(divergences: list[NetDivergence]) -> None:
-    """G-5 measurement: one JSON line per recorded cross-alpha NetDivergence.
+    """Emit one JSON line per recorded cross-alpha net divergence.
 
     Sourced from the orchestrator's net-shadow sink (not the bus), in
     record order.  ``magnitude`` is ``net − winner`` so the stream is
@@ -272,7 +272,7 @@ def emit_hazard_exits_jsonl(recorder: BusEventRecorder) -> None:
 
 
 def emit_phase2_jsonl(args: argparse.Namespace, recorder: BusEventRecorder) -> None:
-    """Composable wrapper — invokes each enabled Phase-2/3/3.1/4 emitter."""
+    """Invoke every enabled replay emitter."""
     if args.emit_sensor_readings_jsonl:
         emit_sensor_readings_jsonl(recorder)
     if args.emit_horizon_ticks_jsonl:

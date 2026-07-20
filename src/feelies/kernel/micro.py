@@ -18,35 +18,11 @@ from feelies.core.state_machine import StateMachine
 
 
 class MicroState(Enum):
-    """Sequential tick-processing pipeline states.
+    """Sequential tick-processing states.
 
-    Phase 2 additions (sensor layer): three new states slot in
-    between ``STATE_UPDATE`` and ``FEATURE_COMPUTE``:
-
-    - ``SENSOR_UPDATE`` — registry fans the event out to every
-      registered sensor; each emits at most one ``SensorReading``.
-    - ``HORIZON_CHECK`` — scheduler inspects the event time and
-      emits any ``HorizonTick`` events for crossed boundaries.
-    - ``HORIZON_AGGREGATE`` — aggregator drains the sensor buffer for
-      each emitted tick and publishes a ``HorizonFeatureSnapshot``.
-
-    These three states are **only entered when at least one sensor
-    is registered** (``sensor_specs`` non-empty in
-    :class:`feelies.core.platform_config.PlatformConfig`).  Without
-    sensors the orchestrator transitions
-    ``STATE_UPDATE → FEATURE_COMPUTE`` directly (Inv-A).
-
-    - ``SIGNAL_GATE`` — :class:`HorizonSignalEngine` evaluates SIGNAL
-      alphas against the boundary snapshot + latest ``RegimeState``.
-      Entered only when ``AlphaRegistry.has_signal_alphas()`` is true.
-
-    - ``CROSS_SECTIONAL`` — composition evaluates PORTFOLIO alphas
-      against a barrier-synced ``CrossSectionalContext``.  Entered only
-      when ``AlphaRegistry.has_portfolio_alphas()`` is true.
-
-    ``FEATURE_COMPUTE`` (M3) is bookkeeping only (per-tick feature
-    engine removed in D.2); the SM still visits M3 so
-    ``FEATURE_COMPUTE → SIGNAL_EVALUATE → …`` remains a legal spine.
+    Sensor, horizon, signal, and portfolio states are visited only when their
+    layers are configured. ``FEATURE_COMPUTE`` remains a bookkeeping state in
+    the legal transition spine.
     """
 
     WAITING_FOR_MARKET_EVENT = auto()
@@ -79,8 +55,7 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         }
     ),
     # STATE_UPDATE branches:
-    #   sensor-enabled config: → SENSOR_UPDATE (P2-α)
-    #   legacy / sensor-empty config: → FEATURE_COMPUTE (bit-identical Phase-1 path)
+    # Sensor-enabled configs visit SENSOR_UPDATE; sensor-empty configs skip it.
     MicroState.STATE_UPDATE: frozenset(
         {
             MicroState.SENSOR_UPDATE,  # sensor layer registered
@@ -102,9 +77,7 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         }
     ),
     # HORIZON_AGGREGATE branches (orchestrator picks exactly one per tick):
-    #   SIGNAL alpha(s) loaded → SIGNAL_GATE (P3-α)
-    #   else → FEATURE_COMPUTE (Phase-2 fast-path)  OR  via orchestrator bookend
-    #   ``CROSS_SECTIONAL`` → FEATURE_COMPUTE when PORTFOLIO alphas are registered
+    # SIGNAL alphas visit SIGNAL_GATE; otherwise proceed to FEATURE_COMPUTE.
     MicroState.HORIZON_AGGREGATE: frozenset(
         {
             MicroState.SIGNAL_GATE,
@@ -113,8 +86,7 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         }
     ),
     # SIGNAL_GATE branches:
-    #   PORTFOLIO alpha(s) loaded → CROSS_SECTIONAL (P4)
-    #   no PORTFOLIO alpha        → FEATURE_COMPUTE (Phase-3 bit-identical)
+    # PORTFOLIO alphas visit CROSS_SECTIONAL before FEATURE_COMPUTE.
     MicroState.SIGNAL_GATE: frozenset(
         {
             MicroState.CROSS_SECTIONAL,

@@ -1,4 +1,4 @@
-"""Unit tests for BT-7 borrow-availability tiers."""
+"""Unit tests for borrow-availability tiers."""
 
 from __future__ import annotations
 

@@ -1,13 +1,8 @@
 """Unit tests for :class:`feelies.sensors.impl.book_imbalance.BookImbalanceSensor`.
 
-Sign convention and winsorization are already covered by
-``test_sensor_sign_goldens.py`` and ``test_robustness_3p.py``; this file adds
-the coverage sensor_audit_2026-07-02 (P1) found missing — the sensor is the
-only registered sensor without a dedicated test module: crossed-book
-rejection (3P-2, added by this same audit pass), zero-depth handling, the
-warm-up count threshold, the sliding-window (S3) gap-reversion its own
-docstring claims to mirror from ``ofi_ewma`` / ``micro_price``, and that
-``Trade`` events are ignored.
+This module covers crossed books, zero depth, warm-up thresholds, gap-driven
+cold reversion, and ignored trade events. Sign and winsorization are covered by
+the shared sensor tests.
 """
 
 from __future__ import annotations
@@ -63,7 +58,7 @@ def test_zero_depth_is_undefined_not_balanced() -> None:
 
 
 def test_crossed_book_is_rejected() -> None:
-    """3P-2 (sensor_audit_2026-07-02 P1): a crossed NBBO (bid > ask) must be
+    """A crossed NBBO must be
     dropped like every sibling price-consuming sensor (ofi_ewma, ofi_raw,
     micro_price, spread_z_30d, ...), not folded into the imbalance series."""
     s = BookImbalanceSensor(warm_after=1)

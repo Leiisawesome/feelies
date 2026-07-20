@@ -49,9 +49,8 @@ class InMemoryEventLog:
     inbound quote/trade) must set it ``False``: a live feed delivers events
     in *arrival* order, which is not necessarily exchange-timestamp
     monotonic across symbols (or across exchanges for a single symbol).
-    Rejecting a benign out-of-order arrival would crash the live pipeline
-    to DEGRADED (audit ING-01).  The log stays a faithful arrival-order
-    audit record; ``ReplayFeed`` and ``resequence_event_list`` re-impose
+    Rejecting a benign out-of-order arrival would degrade the live pipeline.
+    The log preserves arrival order; ``ReplayFeed`` and ``resequence_event_list`` re-impose
     deterministic order at forensic-replay time, so determinism is
     preserved where it is contractual.
     """

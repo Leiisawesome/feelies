@@ -1,16 +1,14 @@
-"""BT-9 acceptance — Inv-12 joint 1.5× cost + 2× latency stress gate.
+"""Test the invariant-12 joint cost and latency stress gate.
 
-Locks the remediation-plan harness that every SIGNAL alpha must be
-re-validated against under BT-12.  This module asserts:
+The module asserts:
 
 * The stress helpers exist and apply the locked factors.
 * ``apply_inv12_stress`` composes on ``platform.yaml`` defaults.
 * The cost model scales variable fees at 1.5× when stressed.
 * Deferred MARKET fills honour 2× ``backtest_fill_latency_ns``.
 
-Load-time G12 (``margin_ratio >= 1.5``) is in
-``test_reference_alpha_load_invariants.py``.  Per-alpha survival under
-joint stress (DSR, CPCV, full backtest PnL) is the BT-12 bar.
+Load-time G12 (``margin_ratio >= 1.5``) is covered in
+``test_reference_alpha_load_invariants.py``.
 """
 
 from __future__ import annotations
@@ -177,8 +175,7 @@ def test_passive_router_aggressive_fallback_uses_doubled_latency() -> None:
     ``platform.yaml`` runs ``execution_mode: passive_limit`` (not
     ``market``), so ``test_router_deferred_fill_uses_doubled_latency`` above
     — which only exercises ``BacktestOrderRouter`` — does not prove the
-    latency-doubling contract for the router the reference profile actually
-    uses (audit execution_fills_audit_2026-07-02, finding #7 / P1). Same
+    latency-doubling contract for the router the reference profile uses. Same
     discriminative construction: the intermediate quote sits at the
     *baseline* deadline and must not fill; only the final quote, at the
     stressed deadline, clears it.
@@ -256,18 +253,7 @@ def test_passive_router_aggressive_fallback_uses_doubled_latency() -> None:
 
 
 def test_passive_router_resting_post_uses_doubled_latency() -> None:
-    """A resting passive LIMIT order must not become fill-eligible until 2×
-    ``backtest_fill_latency_ns`` has elapsed under Inv-12 stress.
-
-    This is the order-entry latency gate added by the 2026-07-01 P0 fix
-    (``passive_limit_router.py:540,589-593``) — distinct from the aggressive-
-    fallback path covered above. Discriminative construction: the
-    intermediate quote already satisfies the guaranteed "through fill"
-    price condition (ask at/below the resting limit) at exactly the
-    *baseline* deadline; under correct 2× stress it must still not fill,
-    because the order is not yet live at the exchange. Only the final quote,
-    at the stressed deadline, clears the gate and fills.
-    """
+    """A resting limit becomes fill-eligible only after stressed latency."""
     cfg = PlatformConfig.from_yaml(Path("platform.yaml"))
     baseline_latency_ns = cfg.backtest_fill_latency_ns
     if baseline_latency_ns <= 0:

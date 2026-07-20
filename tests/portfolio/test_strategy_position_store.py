@@ -86,12 +86,7 @@ class TestGetAggregate:
         self,
         store: StrategyPositionStore,
     ) -> None:
-        """Long + short across strategies must not inflate avg_entry_price.
-
-        Before the fix, +100@10 / -50@20 produced avg=40 (impossible).
-        Signed-notional / net-qty gives avg=0: the short's proceeds
-        fully offset the long's cost for the net 50 shares.
-        """
+        """Use signed notional when averaging opposing strategy positions."""
         store.update("long_alpha", "AAPL", 100, Decimal("10"))
         store.update("short_alpha", "AAPL", -50, Decimal("20"))
 
@@ -129,7 +124,7 @@ class TestGetAggregate:
         self,
         store: StrategyPositionStore,
     ) -> None:
-        """Same-direction aggregation still works correctly after the fix."""
+        """Aggregate same-direction strategy positions normally."""
         store.update("a", "AAPL", 100, Decimal("10"))
         store.update("b", "AAPL", 200, Decimal("25"))
 

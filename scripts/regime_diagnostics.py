@@ -1,49 +1,10 @@
 #!/usr/bin/env python3
-"""Regime diagnostics harness — is the regime posterior discriminative, and
-does ``P(vol_breakout)`` actually predict adverse forward behaviour? (audit
-second-pass R-2).
+"""Read-only diagnostics for regime separation and predictive value.
 
-Read-only offline falsification tool.  Given cached NBBO for one or more
-``(symbol, date)`` pairs (the platform's :class:`DiskEventCache`) **or** a raw
-NBBO JSONL event log, this script:
-
-1. Builds the *same* :class:`RegimeEngine` a real run would (from a
-   ``PlatformConfig``), calibrates it on the causal prefix of
-   ``regime_calibration_max_quotes`` quotes (mirroring the orchestrator's
-   ``_calibrate_regime_engine``), then runs ``posterior()`` over the full
-   stream.
-2. Reports the engine's **discriminative power**: calibrated emission
-   means/sigmas, the min pairwise separation ``d = |mu_i-mu_j| /
-   sqrt(sig_i^2+sig_j^2)``, argmax occupancy, the per-state posterior
-   distribution, and the posterior-entropy distribution.
-3. Reports how the shipped / candidate regime gate clauses would **prune**
-   entries (``P(normal) > x``, ``P(vol_breakout) < tau``, ``entropy <= e``)
-   so a threshold's effect is measured before it ships.
-4. Buckets the **forward mid log-return** (and its absolute value, a realized-
-   vol / cost proxy) by ``P(vol_breakout)`` decile and by entropy decile —
-   directly testing the P1-6 premise that high ``P(vol_breakout)`` marks
-   adverse / costly windows.  No lookahead: a tick is dropped if its forward
-   window extends past the last quote.
-
-This makes **no** trading-edge claim and proposes **no** threshold.  It is the
-merge gate the second pass (R-2) requires: any change to a regime-gate
-condition, hazard threshold, or regime-conditioned scaling must show its delta
-here on a cached symbol first.
-
-Usage
------
-    # Cache mode (mirrors a real backtest's engine + calibration):
-    uv run python scripts/regime_diagnostics.py \
-        --config configs/bt_app.yaml \
-        --symbol APP --date 2026-06-01 --date 2026-06-05 \
-        [--cache-dir ~/.feelies/cache] [--horizon 120] [--vol-bound 0.30]
-
-    # JSONL mode (smoke / no cache; uses default engine unless --config given):
-    uv run python scripts/regime_diagnostics.py \
-        --event-log tests/fixtures/event_logs/synth_5min_aapl.jsonl
-
-``--symbol`` / ``--date`` may be repeated or comma-separated; dates expand to
-the inclusive calendar range when exactly two are given.
+Cached or JSONL quotes run through the configured engine with causal
+calibration. Reports cover emission separation, state occupancy, posterior
+entropy, gate pass rates, and forward-return buckets without proposing a
+threshold or trading edge.
 """
 
 from __future__ import annotations
@@ -227,12 +188,8 @@ def compute_diagnostics(
     pvb_series: list[float] = []
     fwd_series: list[float | None] = []
     horizon_ns = horizon_seconds * _NS_PER_SECOND
-    # Anchor to the *first event* of the prepared replay (mirrors
-    # ``HorizonScheduler.session_open_ns``, which ``backtest_runner`` derives
-    # from ``prepare_backtest_event_log.first_event_ts_ns`` — the first kept
-    # event of any type, possibly a trade).  Falling back to the first quote
-    # would misalign the latch bins with the production cadence when the first
-    # RTH event is not an NBBO.
+    # Match the scheduler's first-event anchor. The first RTH event may be a
+    # trade, so a first-quote fallback can shift every latch bin.
     t0_ns = (
         boundary_anchor_ns
         if boundary_anchor_ns is not None
@@ -240,12 +197,8 @@ def compute_diagnostics(
     )
     n = 0
     pass_pnorm = pass_pnorm_vol = pass_pnorm_vol_ent = 0
-    # Per-quote (timestamp, symbol, posterior, entropy) samples are retained
-    # so the boundary-view pass below can latch the most-recent posterior at
-    # each bin crossing — production ``HorizonSignalEngine`` evaluates the
-    # gate against the cached regime *per symbol*, and ``RegimeEngine``
-    # advances each symbol's posterior independently, so latching must be
-    # keyed by symbol when quotes from multiple symbols are interleaved.
+    # Retain samples by symbol so each boundary uses that symbol's latest
+    # posterior rather than the last quote in a merged stream.
     quote_samples: list[tuple[int, str, tuple[float, ...], float]] = []
     for q in quotes:
         p = engine.posterior(q)
@@ -265,15 +218,9 @@ def compute_diagnostics(
                     pass_pnorm_vol_ent += 1
         quote_samples.append((q.timestamp_ns, q.symbol, tuple(p), e))
 
-    # Sample one regime view per horizon-width window at the production
-    # ``HorizonScheduler`` cadence: a tick is emitted on the first event of
-    # *any* type that crosses a new bin (trades and metrics included), and
-    # the gate evaluates against the *latched* posterior at that moment —
-    # i.e. the most recent quote's posterior, since ``RegimeEngine`` only
-    # updates on quotes.  When the caller supplies the full event-timestamp
-    # stream we mirror that exactly; otherwise we fall back to quote
-    # timestamps (correct only when no non-quote event ever leads a bin —
-    # the JSONL/no-cache case where only quotes are loaded).
+    # Mirror the scheduler: the first event crossing a bin triggers a view,
+    # while the posterior remains the latest quote. Without full event times,
+    # quote times are an exact fallback only for quote-only replays.
     boundary_views: list[_RegimeView] = []
     if horizon_ns > 0 and quote_samples:
         if boundary_event_timestamps_ns is not None:
@@ -281,11 +228,7 @@ def compute_diagnostics(
         else:
             boundary_ts_seq = [ts for ts, _sym, _p, _e in quote_samples]
         cal = bool(getattr(engine, "calibrated", False))
-        # Group quote samples per symbol; production ``HorizonSignalEngine``
-        # caches regime under ``(symbol, engine_name)`` and evaluates the
-        # gate per symbol at each tick, so a boundary view for symbol A must
-        # read A's most-recent posterior — never whichever symbol happens to
-        # have quoted last on a merged multi-symbol stream.
+        # The engine caches regime by symbol, so boundary views must do the same.
         samples_by_sym: dict[str, list[tuple[int, tuple[float, ...], float]]] = {}
         for ts_q, sym, p_q, e_q in quote_samples:
             samples_by_sym.setdefault(sym, []).append((ts_q, p_q, e_q))
@@ -324,10 +267,7 @@ def compute_diagnostics(
                     )
                 )
 
-    # 1-D engines expose ``_emission`` as (mu, sigma) pairs; 2-D engines (audit
-    # R-3, spread+vol) use a nested structure.  Display the per-state mu/sigma
-    # and pairwise table only for the 1-D shape; otherwise rely on the engine's
-    # canonical ``discriminability`` property for min_separation.
+    # Only one-dimensional emissions expose per-state mu/sigma pairs.
     emis = getattr(engine, "_emission", tuple((0.0, 1.0) for _ in names))
     try:
         mu = tuple(float(m) for m, _ in emis)
@@ -381,8 +321,8 @@ def simulate_latch_on_fraction(
 ) -> tuple[float, int]:
     """Fraction of horizon boundaries the hysteresis latch holds ON.
 
-    Audit second-pass: instantaneous on-eligibility (the prune table) does NOT
-    capture a gate's *latched* behaviour — an aggressive ``off_condition`` (e.g.
+    Instantaneous on-eligibility does not capture latched behavior. An aggressive
+    ``off_condition`` (e.g.
     ``P(vol_breakout) > 0.40``) can knock the latch OFF during exactly the
     windows the on-condition would admit, collapsing the realised ON-fraction
     far below the instantaneous eligibility.  This drives signal count, so it is

@@ -1,5 +1,4 @@
-# Platform reference config (v0.2.0-dev). PlatformConfig snapshots a checksum
-# from the normalized dict (paths baselined) for audit/replay.
+# Reference configuration. Snapshots hash normalized, portable paths.
 version: "0.2.0-dev"
 author: "system"
 
@@ -17,23 +16,16 @@ alpha_specs:
 
 parameter_overrides: {}
 
-# Reference alpha ships a schema-1.1 ``trend_mechanism:`` block (G16).
-# This pin stays ``false`` so local smoke runs match historical v0.2-style
-# operator configs that pointed at the same id before strict-by-default.
+# Keep local smoke runs compatible with the reference alpha.
 enforce_trend_mechanism: false
 
-# When a Massive normalizer is wired (e.g. live WS), GAP_DETECTED is treated like
-# CORRUPTED: macro DEGRADED and no further ticks/trades for that symbol. Standard
-# backtest replay has no normalizer; use ingest terminal health enforcement below
-# for strict offline runs.
+# With a live normalizer, data gaps degrade the platform and stop that symbol.
 degrade_on_data_gap: true
 
-# After ingest/cache load, ``run_backtest.py`` attaches worst-case per-symbol health.
-# When true, ``validate()`` requires every config symbol to be HEALTHY or boot fails.
+# Require healthy, non-empty ingest results before a backtest boots.
 backtest_enforce_ingest_terminal_health: true
 backtest_reject_zero_ingest_events: true
-# Live/paper with ``build_platform(..., normalizer=...)``: require symbols in universe
-# to appear in normalizer.all_health() before consumption (catches replay/normalizer skew).
+# Optionally require normalizer health for every configured symbol.
 strict_normalizer_symbol_coverage: false
 # Historical REST rows are usually thinned; enable only for full contiguous SIP dumps.
 enable_rest_sequence_gap_detection: false
@@ -41,20 +33,8 @@ enable_rest_sequence_gap_detection: false
 regime_engine: hmm_3state_fractional
 # Alias: hmm_3state_spread_filter (same implementation).
 
-# Optional engine kwargs (forwarded at bootstrap). Defaults preserve tick-based
-# transitions and pooled prefix calibration only.
-#
-# Audit P1-3 (RECOMMENDED for live cohorts): enable transition_time_scaling.
-# With the default (off) the transition matrix is applied once per inbound
-# quote, so the mean regime dwell is measured in *ticks* and drifts ~10x with
-# intraday quote intensity (100 ticks ≈ 10 s @ 10 q/s but ≈ 1 s @ 100 q/s).
-# Enabling it re-exponentiates each row's self-transition by
-# (dt / transition_dt_reference_seconds) so dwell is comparable in *seconds*.
-# It is left OFF by default because (a) the right transition_dt_reference_seconds
-# is cohort-specific and (b) flipping the global default would change every
-# posterior and invalidate the locked Level-5/6 determinism baselines.  Set it
-# explicitly per deployment, tuning transition_dt_reference_seconds to the
-# cohort's typical inter-quote gap.
+# Optional engine settings. Time scaling expresses regime dwell in seconds
+# instead of ticks; tune its reference interval per quote-rate cohort.
 # regime_engine_options:
 #   transition_time_scaling_enabled: true
 #   transition_dt_reference_seconds: 0.05
@@ -64,40 +44,25 @@ regime_engine: hmm_3state_fractional
 # data_dir: data/
 # event_log_path: data/event_log.jsonl
 
-# BT-5: LULD / regulatory halt modeling. Condition codes on the Trade tape that
-# mark a halt-on / resume. Empty (default) = halt modeling inert. Set these to
-# the halt/resume condition encoding of your historical tape to enable: during a
-# halt no fills occur and resting passive orders are cancelled; after resume new
-# ENTRY fills stay suppressed for halt_resolution_blackout_seconds (exits always
-# permitted).
+# Trade condition codes can start and end halts. Halts cancel passive orders;
+# the resume blackout blocks entries but always permits exits.
 halt_on_condition_codes: []
 halt_off_condition_codes: []
 halt_resolution_blackout_seconds: 60
 
-# BT-6: Reg-SHO / SSR (short-sale restriction). ssr_active_symbols is the daily
-# SSR list (symbols SSR-active all session). ssr_trigger_condition_codes are tape
-# condition codes that flip a symbol SSR-active intraday (sticky; no intraday
-# clear). Under SSR a short ENTRY fill is refused (SSR_SUPPRESSED) and retries
-# next boundary; long entries, covers, and long-exits are unaffected. ssr_mode
-# is locked to "refuse_short" (the permissive uptick-routed variant is deferred).
+# SSR symbols reject new short entries; long trades and covers remain allowed.
+# Triggered SSR state is sticky for the session.
 ssr_active_symbols: []
 ssr_trigger_condition_codes: []
 ssr_mode: refuse_short
 
-# BT-7: per-symbol short-locate availability (static table). Omitted symbols
-# default to available (easy to borrow). unavailable refuses short ENTRY fills
-# (LOCATE_UNAVAILABLE); hard applies the HTB fee path when
-# cost_htb_borrow_annual_bps > 0.
+# Omitted symbols are easy to borrow; ``unavailable`` rejects short entries.
 borrow_availability: {}
 
-# Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
-# BT-15 deployed capital (locked placeholder $50k; override for your book).
+# Sandbox equity; PAPER/LIVE overlays must set real capital.
 account_equity: 50000.0
 
-# BT-4: account type drives the PDT (Pattern Day Trader) constraint model.
-# Locked to margin_25k (opens above $25k, PDT-exempt: no 3-round-trip hard cap,
-# no cash T+2 settlement branch). Only margin_25k is implemented; the
-# margin_under_25k / cash values are accepted by config but refused at bootstrap.
+# Only the PDT-exempt ``margin_25k`` account model is implemented.
 account_type: margin_25k
 account_id: default
 # Maintenance floor: a PDT-flagged account below this equity is barred from
@@ -112,7 +77,7 @@ risk_max_gross_exposure_pct: 200.0
 
 risk_max_drawdown_pct: 5.0
 
-# BT-17 locked baselines: 50 ms fill leg, 20 ms market-data propagation leg.
+# Simulated fill and market-data latency.
 backtest_fill_latency_ns: 50000000
 market_data_latency_ns: 20000000
 
@@ -125,14 +90,12 @@ trail_pct: 0.50
 cost_min_spread_bps: 0.3
 cost_commission_per_share: 0.0035
 cost_taker_exchange_per_share: 0.003
-# IBKR-realistic default 0.0 — SmartRouter blends positive (NASDAQ) and
-# negative (BATS EDGA / inverted) maker fees; net for personal account ≈ 0.
+# Smart-routed maker fees average near zero across venue schedules.
 cost_maker_exchange_per_share: 0.0
-# Per-fill-type adverse selection (audit F-H-09): LEVEL = queue-drain
-# fills; THROUGH = opposite-side BBO crossed our limit.
+# LEVEL means queue drain; THROUGH means the opposite BBO crossed the limit.
 cost_passive_adverse_selection_bps: 2.0
 cost_through_fill_adverse_selection_bps: 5.0
-# Legacy alias fields kept aligned with the audited split above.
+# Compatibility aliases; keep aligned with the fields above.
 cost_adverse_selection_through_bps: 5.0
 cost_adverse_selection_drain_bps: 2.0
 # SEC Section 31 fee (~0.278 bps current rate) + headroom for adjustments.
@@ -141,18 +104,8 @@ cost_stress_multiplier: 1.0
 cost_min_commission: 0.35
 cost_max_commission_pct: 1.0
 
-# Runtime edge-vs-cost gate (audit F-H-13, F-H-14).  Suppresses orders
-# when (edge_bps_basis) < ratio × round_trip_cost_bps.  Default 1.0 =
-# round-trip breakeven floor.  Operators wanting G12-equivalent margin
-# (1.5× one-way) can set 0.75.  Set 0.0 to disable (research-only).
-#
-# Audit P1-3: Inv-12 requires edge > 1.5× ROUND-TRIP cost.  This default
-# (1.0) is only round-trip break-even; it is intentionally permissive for
-# the reference profile.  Every deployment config that trades for real
-# (configs/bt_app*.yaml, configs/bt_multialpha.yaml,
-# configs/paper_run.yaml, configs/paper_smoke_rth.yaml) overrides this to
-# 1.5 to satisfy Inv-12.  Leave reference at 1.0 only for research; raise
-# to 1.5 for any cost-realistic run.
+# Suppress signals below ``ratio × round_trip_cost_bps``. Zero disables the gate.
+# This research profile uses breakeven; cost-realistic configs must use 1.5.
 signal_min_edge_cost_ratio: 1.0
 signal_edge_cost_basis: round_trip
 
@@ -161,25 +114,13 @@ signal_edge_cost_basis: round_trip
 # is enabled in regime_engine_options). Omit or null to skip boot calibration.
 regime_calibration_max_quotes: 100000
 
-# Audit R-1: floor on the regime engine's calibration-time emission separation
-# d (min pairwise |mu_i-mu_j|/sqrt(sig_i^2+sig_j^2)).  When the calibrated
-# states are statistically indistinguishable (d below this), regime gates fail
-# safe to OFF — the posterior is uniform noise (e.g. a tight, stable spread
-# whose quantile-fit Gaussians collapse).  0.0 (default) is an exact no-op;
-# ~0.5 enables the guard (the conventional weak-discrimination floor).  This is
-# orthogonal to the calibrated fail-safe (uncalibrated placeholder emissions
-# are well-separated yet mis-located, caught separately).
+# Minimum pairwise emission separation. Zero disables this fail-safe.
 regime_min_discriminability: 0.0
 
-# Short borrow annual bps; 0 = off (optimistic for SHORT alphas like benign).
-# Audited (BT-0): HTB *fee* modeling is deferred per plan §2 for the intraday
-# large-cap universe; short *availability* is modeled separately (BT-7).
+# Annual hard-to-borrow fee in bps; zero disables it.
 cost_htb_borrow_annual_bps: 0.0
 
-# Cap on walk-the-book market-impact premium, in multiples of the half-spread.
-# BT-0: tightened from the router default 10 to 4 — for an L1-only book a single
-# retail-size order rarely walks more than ~4 half-spreads, so a 10x cap let the
-# model assign implausibly large slippage on thin quotes.
+# Cap walk-the-book impact at four half-spreads.
 cost_max_impact_half_spreads: 4.0
 
 execution_mode: passive_limit
@@ -187,38 +128,22 @@ passive_fill_delay_ticks: 3
 passive_max_resting_ticks: 8000
 # Aggressive volume through limit before level fill (L1 queue proxy). 0 = delay-ticks only.
 passive_queue_position_shares: 200
-# BT-2: cap on the per-tick seeded-Bernoulli level-fill hazard. Bounds residual
-# queue-position uncertainty so no single quote tick is a near-certain fill.
+# Cap per-tick queue-fill probability.
 passive_fill_hazard_max: 0.5
 passive_cancel_fee_per_share: 0.0
 
-# ── Execution-realism profile (audit 2026-06-19 P1/P2 backlog) ──────────────
-# These knobs default to behaviour-neutral in code; the reference platform
-# config flips them ON so every backtest prices fills live-realistically by
-# default.  They are BACKTEST-only (the live/paper path fills via the IB
-# broker router, not these simulators), so enabling them here does not change
-# PAPER/LIVE behaviour.  Flipping them changed the APP trade path — the
-# regression baseline in tests/acceptance/test_backtest_app_baseline.py was
-# re-baked in the same commit.
-#
-# P1.1: cap a passive through-fill at the crossing quote's opposite-side size
-# and rest the remainder (models queue position on through-trades).
+# ── Backtest execution realism ───────────────────────────────────────────
+# Cap through-fills at opposite-side size and rest the remainder.
 passive_through_fill_size_cap_enabled: true
-# P1.2: require an observed print at the level before a quote-imbalance drain
-# fill (inert while passive_queue_position_shares > 0, which already requires
-# volume; protects quote-imbalance-mode configs).
+# Require a trade at the level before a quote-imbalance drain fill.
 passive_require_trade_for_level_fill: true
-# P1.3: participation impact on the within-L1 leg of aggressive fills (stops,
-# marketable limits, reverses), measured in half-spreads.  0.3 × (qty/depth).
+# Within-L1 participation impact, measured in half-spreads.
 cost_within_l1_impact_factor: 0.3
-# P2.9: forced exits (stop / hazard / force-flatten) fill into a depleted book
-# — 2.0 halves the usable L1 depth so a stop walks deeper.
+# Forced exits see depleted L1 depth; 2.0 halves usable depth.
 cost_stop_depth_depletion_factor: 2.0
-# P2.8: MOC closing-auction penalty (bps of notional).  Inert for non-MOC
-# alphas; priced for any MOC-routed config that extends this base.
+# MOC closing-auction penalty in bps.
 cost_moc_penalty_bps: 3.0
-# P2.11: permanent sqrt impact stays 0 — its coefficient needs calibration
-# from cached fills (audit §10 open question), so it is not flipped on blind.
+# Permanent impact stays off until calibrated from fills.
 cost_permanent_impact_coefficient: 0.0
 
 platform_min_order_shares: 50
@@ -226,8 +151,6 @@ platform_min_order_shares: 50
 # Explicit no-op overrides; PAPER/LIVE often set promotion_ledger_path.
 gate_thresholds: {}
 promotion_ledger_path: null
-
-# Phase-2: optional; omit for legacy path. See docs/three_layer_architecture.md.
 
 market_id: US_EQUITY
 session_kind: RTH
@@ -245,7 +168,7 @@ horizons_seconds:
 # For scheduled_flow_window sensor (e.g. sig_moc_imbalance_v1); bootstrap injects calendar.
 event_calendar_path: src/feelies/storage/reference/event_calendar/2026-03-26.yaml
 
-# BT-18: split/dividend ex-date guard (see docs/data_adjustment_policy.md).
+# Split and dividend ex-date guard.
 ex_date_calendar_path: src/feelies/storage/reference/corporate_actions/ex_dates.yaml
 
 # Sensors for sig_benign_midcap_v1 (depends_on_sensors: ofi_ewma, micro_price, spread_z_30d, realized_vol_30s).
@@ -257,9 +180,7 @@ sensor_specs:
     params:
       window: 6000
       min_std: 1.0e-9
-      # Audit P1-E: count-window sensors cannot un-warm; flush the rolling
-      # distribution after a >5 min inter-quote gap (e.g. a halt) so the
-      # z-score is built against post-gap data and re-warms cleanly.
+      # Rebuild the count window after a five-minute gap.
       max_gap_seconds: 300
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
@@ -272,8 +193,7 @@ sensor_specs:
     params:
       window_seconds: 5
       min_observations: 20
-      # Audit sensor_audit_2026-07-02 P1: require the min_observations quotes
-      # to span the full window, not just satisfy the count via a burst.
+      # Require observations to span the full window.
       min_window_span_seconds: 5
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
@@ -286,8 +206,7 @@ sensor_specs:
     params:
       window_seconds: 5
       min_samples: 20
-      # Audit sensor_audit_2026-07-02 P1: require the min_samples quotes to
-      # span the full window, not just satisfy the count via a burst.
+      # Require samples to span the full window.
       min_window_span_seconds: 5
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
@@ -299,8 +218,6 @@ sensor_specs:
     cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
     params:
       # Time-stable OFI smoothing: alpha_t = 1 - exp(-dt / tau).
-      # Retains the same broad responsiveness as the old alpha=0.1 path
-      # around a ~10 Hz quote stream, without making memory quote-rate dependent.
       decay_tau_seconds: 10.0
       # Reset stale book levels after a >5 min inter-quote gap so the next
       # quote seeds a fresh OFI baseline instead of generating a cross-gap jump.
@@ -316,9 +233,7 @@ sensor_specs:
     min_history: 50
     throttled_ms: null
 
-  # Audit 2P-2: per-event raw OFI so a ``sum`` reducer yields the TRUE
-  # integrated signed flow (Σ ofi_t) over a horizon — the literature-correct
-  # Kyle input, unlike a sum over the smoothed ``ofi_ewma``.
+  # Per-event OFI supports integrated signed flow over a horizon.
   - sensor_id: ofi_raw
     sensor_version: "1.0.0"
     cls: feelies.sensors.impl.ofi_raw.OFIRawSensor
@@ -341,17 +256,14 @@ sensor_specs:
     min_history: 1
     throttled_ms: null
 
-  # Audit P1-B/P1-C: signed top-of-book size imbalance — the level-invariant
-  # micro-price footprint that ``micro_price_zscore`` (a z of the price level)
-  # cannot carry.  (micro - mid)/spread = book_imbalance / 2.
+  # Signed top-of-book imbalance; (micro - mid) / spread = imbalance / 2.
   - sensor_id: book_imbalance
     sensor_version: "1.0.0"
     cls: feelies.sensors.impl.book_imbalance.BookImbalanceSensor
     params:
       warm_after: 1
       warm_window_seconds: 60
-      # Audit 3P-7: winsorise the per-quote imbalance so a lone fat-finger /
-      # spoof quote cannot pin the horizon mean near ±1 (0.95 ≈ a 39:1 book).
+      # Cap single-quote influence; 0.95 is roughly a 39:1 book.
       imbalance_cap: 0.95
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
@@ -361,30 +273,14 @@ sensor_specs:
   # Trade-backed sensors for Kyle / Hawkes / trade-through reference alphas.
   # Extend this block when wiring additional shipped SIGNAL specs locally.
   - sensor_id: kyle_lambda_60s
-    # Audit P1-5: 2.0.0 uses the causal lag-one alignment (Δp over [t-1,t)
-    # paired with Δq_{t-1}, the flow that drove it) instead of the 1.2.0
-    # legacy alignment (Δp paired with the *current* trade's Δq, which
-    # measured lagged drift vs current flow).  Semantic change ⇒ major bump;
-    # 1.2.0 is retained (class default) for the locked golden vector.
-    #
-    # VALIDATED (cached AAPL IC, kyle_legacy_win vs kyle_causal_win RankIC):
-    #   horizon   legacy    causal
-    #   300s     -0.225    +0.145
-    #   900s     -0.155    +0.160
-    #   1800s    -0.194    +0.150
-    # Legacy carries the WRONG sign at the KYLE_INFO horizons (it reads
-    # reversal/flow-autocorrelation); causal flips it to correct positive
-    # impact.  Keep 2.0.0.
+    # Causal lag-one alignment pairs each price change with the flow that drove it.
     sensor_version: "2.0.0"
     cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
     params:
-      # 30 samples is the sensor's documented default; the prior value of
-      # 5 produced high-variance OLS slopes that the downstream z-score
-      # feature standardized into spuriously large signals.
+      # Thirty samples stabilize the OLS slope.
       min_samples: 30
       alignment: "causal"
-      # The instance must report the spec version (registry check); the
-      # class exposes ``sensor_version`` for exactly this versioned variant.
+      # The instance version must match this spec.
       sensor_version: "2.0.0"
     subscribes_to: [NBBOQuote, Trade]
     input_sensor_ids: []
@@ -405,9 +301,7 @@ sensor_specs:
     sensor_version: "1.2.0"
     cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
     params:
-      # Audit P1-4: 3 trades/side is too thin for a stable per-side
-      # intensity estimate; raised to 10.  (Data-driven alpha/beta is the
-      # separate P1-4b step — see scripts/calibrate_hawkes.py.)
+      # Ten trades per side stabilize the intensity estimate.
       warm_trades_per_side: 10
     subscribes_to: [Trade]
     input_sensor_ids: []
@@ -421,15 +315,7 @@ sensor_specs:
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 0
-    # Audit sensor_audit_2026-07-02 P2: update() is a pure function of
-    # (timestamp, symbol, injected calendar) with no state to bias — the
-    # stateful=False path (skip update() entirely inside the window) is
-    # therefore safe here, unlike an accumulator. Cuts tick-path overhead on
-    # a sensor whose output is otherwise constant between calendar-window
-    # boundaries; the platform only reads it at horizon boundaries
-    # (30-1800s), so up to 1s of added latency on a boundary crossing is
-    # negligible. Explicit ``stateful: false`` (not omission) acknowledges
-    # the SensorSpec P1-D throttle guard so boot stays quiet.
+    # Stateless calendar output is safe to throttle between boundaries.
     throttled_ms: 1000
     stateful: false
 
@@ -444,8 +330,7 @@ sensor_specs:
     min_history: 16
     throttled_ms: null
 
-  # P2-3: previously-missing G16 fingerprint sensors for the INVENTORY and
-  # LIQUIDITY_STRESS families (implemented in this pass; see audit report).
+  # Fingerprint sensors for INVENTORY and LIQUIDITY_STRESS.
   - sensor_id: inventory_pressure
     sensor_version: "1.0.0"
     cls: feelies.sensors.impl.inventory_pressure.InventoryPressureSensor
@@ -463,7 +348,7 @@ sensor_specs:
     params:
       window: 6000
       sensitivity: 2.0
-      # Audit P1-E: flush both count-window baselines after a >5 min gap.
+      # Rebuild both count windows after a five-minute gap.
       max_gap_seconds: 300
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
@@ -476,11 +361,9 @@ sensor_specs:
     params:
       window_seconds: 5
       min_quotes: 20
-      # Audit sensor_audit_2026-07-02 P1: require the min_quotes quotes to
-      # span the full window, not just satisfy the count via a burst.
+      # Require quotes to span the full window.
       min_window_span_seconds: 5
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 20
     throttled_ms: null
-

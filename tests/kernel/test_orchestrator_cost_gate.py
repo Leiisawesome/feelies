@@ -1,4 +1,4 @@
-"""Tests for the runtime cost gate (audit F-H-05, F-H-13, F-H-14)."""
+"""Tests for the runtime cost gate."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.backtest_validation
 
 
 class TestRoundTripBasis:
-    """Audit F-H-13: gate compares edge in the configured basis."""
+    """The gate compares edge in the configured basis."""
 
     def test_one_way_basis_legacy_arithmetic(self) -> None:
         # One-way edge 5 bps, round-trip cost 4 bps, ratio 1.0:
@@ -57,7 +57,7 @@ class TestRoundTripBasis:
 
 
 class TestDefaultGateActiveBreakeven:
-    """Audit F-H-14: default ratio is 1.0, gate active at breakeven."""
+    """The default ratio is 1.0, so the gate is active at breakeven."""
 
     def test_default_signal_min_edge_cost_ratio_is_one(self) -> None:
         from feelies.core.platform_config import PlatformConfig
@@ -82,7 +82,7 @@ class TestDefaultGateActiveBreakeven:
 
 
 class TestWorstCaseEntryInMinCostMode:
-    """Audit F-H-05: in minimum_cost mode the gate prices entry as taker."""
+    """Minimum-cost mode prices the entry as taker."""
 
     def test_taker_entry_costs_strictly_more_than_maker_entry(self) -> None:
         model = DefaultCostModel(

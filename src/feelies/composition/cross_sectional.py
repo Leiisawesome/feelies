@@ -1,48 +1,12 @@
-"""``CrossSectionalRanker`` — converts signals to standardized weights.
+"""Convert signals to standardized cross-sectional weights.
 
-Phase-4 v0.2 behaviour
-----------------------
-
-For every symbol in ``ctx.universe`` with a non-``None`` signal, the
-ranker produces a *raw alpha score*:
+Each signal first receives a raw score:
 
     raw[symbol] = sign(direction) * strength * f(edge_estimate_bps)
 
-where ``sign`` is ``+1`` for ``LONG``, ``-1`` for ``SHORT``, and the
-edge multiplier ``f`` is currently the identity (``edge_estimate_bps``
-in basis points).  The output of ``rank`` is a mapping
-``symbol → standardized_weight`` cross-sectionally z-scored across the
-universe and clipped to ``[-clip, +clip]`` (default ``clip=4.0``).
-
-Phase-4.1 v0.3 decay weighting (§20.4.1)
-----------------------------------------
-
-When ``decay_weighting_enabled=True`` the raw score is multiplied by
-``exp(-Δt / expected_half_life_seconds)`` where ``Δt`` is the
-event-time age of the signal at barrier close.  Signals whose
-``expected_half_life_seconds == 0`` (legacy / unspecified) are
-skipped (raw score retained).  Mechanism families known to be
-exit-only (``LIQUIDITY_STRESS``) are forced to zero raw score on the
-*entry* path; the hazard-exit path consumes them separately.
-
-Mechanism concentration cap (Phase-4.1, §20.4.4)
-------------------------------------------------
-
-After standardization, weights of any single ``TrendMechanism``
-family that exceeds ``mechanism_max_share_of_gross`` are scaled down
-proportionally so the family's share of gross book equals the cap.
-The reduction is reported on
-:attr:`SizedPositionIntent.mechanism_breakdown`.
-
-Determinism
------------
-
-* Iteration order over ``ctx.universe`` is the sorted tuple already
-  guaranteed by the synchronizer.
-* All numeric operations use Python ``float`` (IEEE-754).  No NumPy
-  reductions whose order may differ across builds.  The standardizer
-  uses an explicit sample mean and population standard deviation
-  computed in the same iteration order on every replay.
+Scores may decay with event-time age, are z-scored and clipped, then receive a
+per-mechanism gross-share cap. Exit-only mechanisms contribute no entry score.
+The synchronizer's sorted universe fixes reduction order across replays.
 """
 
 from __future__ import annotations
@@ -63,27 +27,12 @@ from feelies.core.events import (
 _logger = logging.getLogger(__name__)
 
 
-# Mechanisms that may only be consumed on the *exit* path.  See §20.2:
-# LIQUIDITY_STRESS is a hazard signal — entries are forbidden by Gate
-# G16 rule 5 — but we still defend against malformed alphas slipping
-# through validation.
-# Single source of truth lives in core.events (also consumed by the SIGNAL-
-# layer runtime guardrail).  Re-exported under the historical private name.
+# Re-export the core event constant under this module's private name.
 _EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = EXIT_ONLY_MECHANISMS
 
-# Cap-scaling convergence budget (composition audit 2026-07-02, finding P0-1).
-# Each pass rescales one over-cap family at a time, holding the others fixed —
-# correct in one pass when at most one family is ever over cap simultaneously,
-# but only an approximation when 2+ families are over cap at once (scaling one
-# changes the shared denominator the others' shares are measured against).  5
-# iterations left a confirmed ~9% relative cap overshoot for 3-4 simultaneously
-# over-cap families even under trend_mechanism.consumes caps that legitimately
-# pass G16 rule 8 at load time.  200 iterations is still sub-millisecond
-# (bounded by num_families * num_symbols per pass) and empirically converges
-# every case audited, including adversarial 4-family skews, within ~120 passes.
+# Rescaling one family changes every family's share, so iterate to convergence.
 _MAX_CAP_SCALE_ITERS: int = 200
-# Tolerance for the post-loop convergence check below, matching the emit-time
-# backstop's existing epsilon in composition/engine.py.
+# Match the emit-time cap backstop tolerance.
 _CAP_CONVERGENCE_TOLERANCE: float = 1e-9
 
 
@@ -101,7 +50,7 @@ class RankResult:
 
 @dataclass(frozen=True)
 class SleeveRankResult:
-    """Per-mechanism standardized sleeves + combined provenance (audit P0-4).
+    """Per-mechanism standardized sleeves and combined provenance.
 
     ``weights_by_mech`` maps each mechanism family to a standardized
     ``symbol -> weight`` vector built from *only* that family's signal
@@ -127,12 +76,12 @@ class CrossSectionalRanker:
     clip :
         Symmetric clip on the standardized weight (default ``4.0``).
     decay_weighting_enabled :
-        Phase-4.1 toggle (default ``False`` — pure v0.2 behaviour).
+        Enables event-time signal decay.
     decay_floor :
         Minimum decay multiplier (clamped to avoid divide-by-zero on
         very-old signals).  Default ``1e-6``.
     mechanism_max_share_of_gross :
-        Phase-4.1 mechanism concentration cap in ``[0, 1]``.  Default
+        Mechanism concentration cap in ``[0, 1]``. Default
         ``1.0`` (disabled).  When ``< 1.0`` and any mechanism family
         accounts for more than the cap of total gross, the family's
         weights are scaled down proportionally.
@@ -179,38 +128,11 @@ class CrossSectionalRanker:
         decay_weighting_enabled: bool | None = None,
         consumes_mechanisms: tuple[TrendMechanism, ...] | None = None,
     ) -> RankResult:
-        """Rank ``ctx``; return :class:`RankResult`.
+        """Rank a synchronized context into deterministic portfolio weights.
 
-        When *feeder_strategy_ids* is non-empty and the synchronizer
-        populated ``signals_by_strategy_by_symbol``, raw scores sum the
-        marginal contribution of each upstream SIGNAL alpha (deterministic
-        iteration order).  Otherwise the legacy single-slot
-        ``signals_by_symbol`` path is used.
-
-        *mechanism_caps* / *global_mechanism_cap* are the per-alpha
-        ``trend_mechanism.consumes[*].max_share_of_gross`` and the global
-        ``trend_mechanism.max_share_of_gross`` declared on the PORTFOLIO
-        alpha YAML (audit P0-4).  When supplied they **override** the
-        ranker's instance-level ``mechanism_max_share_of_gross`` for this
-        call, so an alpha's declared caps are enforced at emit time
-        (G16 rule 8) rather than only validated at load.  When omitted the
-        instance default applies (back-compat).
-
-        *decay_weighting_enabled* (audit P1-6) overrides the ranker's
-        instance-level decay toggle **per call**, so the shared ranker can
-        serve one PORTFOLIO alpha with decay ON and another with decay OFF
-        without the global ``any(...)`` leakage.  ``None`` (default) uses
-        the instance flag (back-compat).
-
-        *consumes_mechanisms* is the PORTFOLIO alpha's declared
-        ``trend_mechanism.consumes`` family whitelist (audit P0-6).  When
-        non-empty, any consumed ``Signal`` whose ``trend_mechanism`` is a
-        concrete family **outside** the whitelist is excluded fail-safe
-        (its contribution is zeroed and it never enters the book), so an
-        undeclared mechanism family cannot be traded at runtime.  ``None``
-        or an empty tuple disables the filter (back-compat); a ``None``
-        mechanism is always allowed (it declares no family to police —
-        exit-only families are guarded separately).
+        Feeder scores are summed in stable order. Per-call mechanism caps,
+        decay settings, and family allowlists override instance defaults.
+        Signals from undeclared concrete families are excluded fail-safe.
         """
         caps = self._resolve_caps(mechanism_caps, global_mechanism_cap)
         decay_enabled = (
@@ -230,7 +152,7 @@ class CrossSectionalRanker:
         mech: TrendMechanism | None,
         whitelist: frozenset[TrendMechanism] | None,
     ) -> bool:
-        """``True`` when *mech* may enter the book under *whitelist* (P0-6)."""
+        """Return whether *mech* may enter the book under *whitelist*."""
         if whitelist is None or mech is None:
             return True
         return mech in whitelist
@@ -242,9 +164,8 @@ class CrossSectionalRanker:
     ) -> tuple[dict[TrendMechanism, float], float]:
         """Public wrapper over :meth:`_resolve_caps` for sleeve capping.
 
-        The composition engine resolves the same effective caps the ranker
-        would, then applies them structurally to the per-family sleeves
-        (audit P0-3/P0-4).
+        The composition engine resolves the ranker's effective caps, then
+        applies them structurally to each family sleeve.
         """
         return self._resolve_caps(mechanism_caps, global_mechanism_cap)
 
@@ -256,7 +177,7 @@ class CrossSectionalRanker:
         decay_weighting_enabled: bool | None = None,
         consumes_mechanisms: tuple[TrendMechanism, ...] | None = None,
     ) -> SleeveRankResult:
-        """Standardize each mechanism family into its own sleeve (audit P0-4).
+        """Standardize each mechanism family into its own sleeve.
 
         Unlike :meth:`rank` (which standardizes the combined book and applies
         caps in-place), this partitions each symbol's signal contributions by
@@ -422,7 +343,7 @@ class CrossSectionalRanker:
 
             mech = sig.trend_mechanism
             if not self._is_allowed(mech, whitelist):
-                # Undeclared mechanism family — exclude fail-safe (P0-6).
+                # Exclude undeclared mechanism families fail-safe.
                 _logger.debug(
                     "CrossSectionalRanker: excluding %s — mechanism %s outside consumes whitelist",
                     symbol,
@@ -499,7 +420,7 @@ class CrossSectionalRanker:
                 mech = sig.trend_mechanism
                 if not self._is_allowed(mech, whitelist):
                     # Undeclared family on this feeder — drop only this
-                    # contribution; other feeders on the symbol stand (P0-6).
+                    # contribution; other feeders on the symbol remain.
                     _logger.debug(
                         "CrossSectionalRanker: excluding %s feeder %s — "
                         "mechanism %s outside consumes whitelist",
@@ -736,7 +657,7 @@ def cap_family_vectors(
     family and families whose effective cap is ``>= 1.0`` are never scaled.
 
     Used for both the weight-space structural cap and the final dollar-space
-    backstop (audit P0-3/P0-4).  Deterministic: families are processed in
+    backstop. Families are processed in
     mechanism-name order.  Returns the scaled vectors and the realised
     per-(real)-family gross-share breakdown.
     """
@@ -806,7 +727,7 @@ def compute_sleeve_breakdown(
     gross_by_symbol: Mapping[str, float],
     weights_by_mech: Mapping["TrendMechanism | None", Mapping[str, float]],
 ) -> dict[TrendMechanism, float]:
-    """Realised per-family gross share, splitting mixed symbols (audit P0-4).
+    """Realised per-family gross share, splitting mixed symbols.
 
     Each symbol's final gross (``|gross_by_symbol[s]|``) is attributed across
     the families that built it, in proportion to each family's ``|weight|``

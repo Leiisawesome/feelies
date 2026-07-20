@@ -1,31 +1,7 @@
-"""Level-2 baseline — ``Signal`` replay parity for layer: SIGNAL alphas.
+"""Replay parity for reference SIGNAL alphas.
 
-Phase 3-α locks a deterministic Level-2 fingerprint of the
-``Signal(layer="SIGNAL")`` stream produced by the reference alpha
-``alphas/sig_benign_midcap_v1`` when driven through the canonical
-synthetic event-log fixture under the standard sensor / scheduler /
-aggregator wiring.
-
-Phase 3.1 extends the lock-down to the four v0.3 reference alphas
-(``sig_hawkes_burst_v1``, ``sig_kyle_drift_v1``,
-``sig_inventory_revert_v1``, ``sig_moc_imbalance_v1``).  Each is
-driven through the same fixture and its Signal stream is hashed
-independently so any future drift is attributable to the specific
-alpha that introduced it.
-
-The :class:`HorizonAggregator` runs in passive-emitter mode in v0.2,
-so :class:`HorizonFeatureSnapshot.values` is empty.  All registered
-alphas consult ``snapshot.values`` for their decision inputs and
-therefore never cross their entry thresholds on the synthetic
-fixture — the locked Level-2 baseline is **zero signals** for every
-alpha at this milestone.
-
-This is by design.  Locking the empty baseline immediately surfaces
-any future drift (extra subscriptions, accidental emission, sequence
-allocation changes, alpha namespace leakage) the moment it appears.
-The same alphas will lock non-empty Level-2 baselines once their
-sensors emit z-scores into the snapshot in the Phase 3.5+
-active-aggregator slice.
+Each alpha is hashed independently under the standard sensor, scheduler, and
+aggregator wiring so drift is attributable to one signal stream.
 """
 
 from __future__ import annotations
@@ -204,7 +180,7 @@ def test_two_replays_produce_identical_signal_hash() -> None:
 # Empty-stream sha256: e3b0c44...b855 — the well-known SHA-256 of the
 # empty input.  Replays must reproduce this exactly until either
 # (a) the active aggregator slice ships and snapshots carry sensor
-# z-scores, or (b) a Phase-3 reference alpha is added that emits on
+# z-scores, or a reference alpha is added that emits on
 # the synthetic fixture.  Either change will require updating both
 # the count and the hash in the same commit.
 EXPECTED_LEVEL2_SIGNAL_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -229,13 +205,11 @@ def test_signal_stream_matches_locked_baseline() -> None:
 # ── Cross-check that the wiring is real (no false-empty pass) ──────────
 
 
-# ── Phase-3.1 reference alphas — locked Level-2 baselines ──────────────
+# ── Reference alphas — locked Level-2 baselines ───────────────────────
 
 
-# Each of the four v0.3 reference alphas locks the same empty-stream
-# baseline at this milestone (see module docstring).  Listed here so a
-# future commit that promotes any one of them to a non-empty stream
-# only has to touch this list and bump the (per-alpha) hash + count.
+# Each reference alpha currently locks the same empty-stream baseline.
+# A nonempty stream requires updating its count and hash here.
 _V03_REFERENCE_ALPHAS: tuple[tuple[str, str], ...] = (
     (
         "sig_hawkes_burst_v1",

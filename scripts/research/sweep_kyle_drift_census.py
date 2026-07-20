@@ -1,36 +1,22 @@
 #!/usr/bin/env python3
-"""Task 9-A-H10 Phase A — park-rule census instrument for
-``sig_sweep_kyle_drift_h900_v1``.
+"""Census instrument for ``sig_sweep_kyle_drift_h900_v1``.
 
-Implements EXACTLY the frozen protocol step-1 predicate
-(``docs/research/sig_sweep_kyle_drift_h900_v1_validation_protocol.md`` §1,
-FROZEN 2026-07-15) — **no forward returns, no IC, no signal evaluation**.
-The only return-like quantity is unconditional session σ₉₀₀ (Bessel-
-corrected std of non-overlapping 900 s mid log-returns on the 09:30-
-anchored RTH grid, bps), which conditions on nothing signal-related.
+The frozen predicate computes no forward returns, IC, or signals. Its only
+return-like value is unconditional session volatility on the 900-second grid.
 
-Episode = h=900 boundary satisfying §1.1 arms 1–6 (session window,
-required-warm, SFI decile, breakout gate, vol-z backstop, sign
-agreement). Primary count IS the filter-clean §1.1 predicate
-(contamination-excluded multiplier = 1.0; JC-1 no-double-exclusion).
+An episode passes the session, warm-up, SFI-decile, regime, volatility, and
+sign-agreement gates. Primary counts use filter-clean SFI.
 
-ISO-warm (JC-10): per (symbol, session) share of in-window boundaries
-with ``sweep_flow_imbalance.warm == True``. Warm-drop: warm fraction
-< 0.5 on > 2 sessions ⇒ symbol leaves D.
+Symbols leave the primary pool when SFI warm coverage is below 0.5 in more than
+two sessions.
 
-JC-1 REPORTS (diagnostic, never binding): residual non-A / non-id-14
-co-travel share in the trailing 900 s at eligible boundaries; share
-> 1 % ⇒ ``sensor_bug_investigation_trigger`` flag. Class-B intensity
-(2.0× count-basis) reported alongside for Lei adjudication.
+Diagnostics report residual excluded-print co-travel and Class-B intensity.
+Co-travel above 1% raises ``sensor_bug_investigation_trigger``.
 
-Integrity pin: optional path to a prior census JSON; on cells
-overlapping that artifact, cross-checkable quantities ``n_events`` /
-``n_quotes`` / ``n_trades`` must reproduce (same RTH filter + cache load).
+An optional integrity pin verifies event, quote, and trade counts for overlapping
+cells.
 
-Determinism: PYTHONHASHSEED=0; no RNG; no wall-clock reads; events
-sorted by (timestamp_ns, sequence); fresh sensor/regime state per cell.
-**This module is the instrument — do not execute against the grid from
-Phase A** (N = 11 must survive unchanged).
+Events are sorted by ``(timestamp_ns, sequence)`` with fresh state per cell.
 
 Usage
 -----
@@ -166,7 +152,7 @@ def _in_rth(exchange_timestamp_ns: int) -> bool:
 
 
 def _sfi_features() -> list[Any]:
-    """Phase-A local wiring (bootstrap factories land in Phase B)."""
+    """Build the local sweep-flow feature set."""
     h = _HORIZON
     return [
         SensorPassthroughFeature("sweep_flow_imbalance", h),

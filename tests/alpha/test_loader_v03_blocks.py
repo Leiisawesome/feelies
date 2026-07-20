@@ -1,4 +1,4 @@
-"""Phase-1.1 (v0.3) loader tests for ``trend_mechanism:`` and ``hazard_exit:``.
+"""Loader tests for ``trend_mechanism:`` and ``hazard_exit:`` blocks.
 
 Covers the opt-in YAML blocks per §20.5 of
 ``docs/three_layer_architecture.md``:
@@ -8,16 +8,8 @@ Covers the opt-in YAML blocks per §20.5 of
     stored verbatim on the loaded ``AlphaManifest``.
   - Malformed (non-mapping) block ⇒ rejected with a structured error.
 
-**Workstream D.2.** Pre-D.2 these tests used a ``layer: LEGACY_SIGNAL``
-base spec to bypass G16 and exercise only the schema-shape contract.
-Post-D.2 the loader rejects ``LEGACY_SIGNAL`` outright, so the base
-spec is now ``layer: SIGNAL`` and every accepted ``trend_mechanism:``
-block has to be G16-compliant. Family-name *rejection* paths and
-field-level enforcement live in
-``tests/alpha/test_signal_layer_loader.py`` and
-``tests/alpha/test_gate_g16{,_props}.py``; this file pins the loader
-contract that an opt-in v0.3 block survives the round-trip onto
-``AlphaManifest``.
+The SIGNAL fixture must pass G16. These tests pin the loader round trip onto
+``AlphaManifest``; field-level validation is covered by the G16 suites.
 """
 
 from __future__ import annotations
@@ -171,7 +163,7 @@ def test_hazard_exit_absent_yields_none_on_manifest() -> None:
 
 
 def test_hazard_exit_block_accepted_with_known_keys() -> None:
-    """Audit P1 H-2 schema: ``enabled`` + ``hazard_score_threshold``
+    """``enabled`` and ``hazard_score_threshold``
     + ``min_age_seconds`` + ``hard_exit_age_seconds`` are accepted and
     coerced; values are range-checked."""
     block = {
@@ -190,8 +182,7 @@ def test_hazard_exit_block_accepted_with_known_keys() -> None:
 
 
 def test_hazard_exit_unknown_key_rejected() -> None:
-    """Audit P1 H-2: previously-silent unknown keys (e.g. legacy doc
-    spellings ``trigger`` / ``min_hazard_score``) must fail loudly."""
+    """Reject unknown hazard-exit keys, including obsolete spellings."""
     with pytest.raises(_LOAD_REJECTED, match="hazard_exit block carries unknown key 'trigger'"):
         AlphaLoader().load_from_dict(
             _spec(hazard_exit={"enabled": True, "trigger": "regime_hazard_spike"}),
@@ -202,10 +193,7 @@ def test_hazard_exit_unknown_key_rejected() -> None:
 def test_hazard_exit_legacy_posterior_drop_threshold_renamed_with_warning(
     caplog,
 ) -> None:
-    """Audit P1 H-2: ``posterior_drop_threshold`` was the wording the
-    only opted-in alpha actually used; bootstrap silently ignored it
-    before this fix.  The loader now translates it to the canonical
-    ``hazard_score_threshold`` and logs a WARNING."""
+    """Translate the supported alias and emit a warning."""
     import logging
 
     with caplog.at_level(logging.WARNING, logger="feelies.alpha.loader"):
@@ -266,7 +254,7 @@ def test_hazard_exit_non_mapping_rejected() -> None:
 
 def test_both_v03_blocks_present_independently_stored() -> None:
     tm = copy.deepcopy(_TREND_MECHANISM_FIXTURES["HAWKES_SELF_EXCITE"])
-    # Audit P1 H-2: hazard_exit now enforces a schema, so use known keys.
+    # Use only declared hazard-exit keys.
     he = {"enabled": True, "hazard_score_threshold": 0.7}
     loaded = AlphaLoader().load_from_dict(
         _spec(trend_mechanism=tm, hazard_exit=he), source="<test>"

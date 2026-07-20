@@ -1,39 +1,8 @@
-"""Wiring e2e for sig_moc_imbalance_v1 (SIGNAL layer, calendar-injected).
+"""Verify calendar-injected wiring for ``sig_moc_imbalance_v1``.
 
-Boots ``sig_moc_imbalance_v1`` (SIGNAL) through ``build_platform`` over a
-360-second deterministic 3-symbol synthetic stream anchored at
-SESSION_OPEN_NS (2026-01-15 09:30 ET).
-
-What this test guarantees
---------------------------
-
-* ``sig_moc_imbalance_v1`` registers without ``AlphaLoadError``,
-  ``LayerValidationError``, or wiring failures.
-* ``ScheduledFlowWindowSensor`` is constructed successfully — which
-  proves bootstrap correctly loaded the ``EventCalendar`` from
-  ``event_calendar_path`` and injected it as ``calendar=`` into the
-  sensor spec before handing it to ``SensorRegistry``.
-* ``HorizonSignalEngine`` is wired (SIGNAL layer present).
-* A full backtest reaches ``MacroState.READY`` without exception.
-* Zero ``Signal`` events are emitted during the 09:30–09:36 ET
-  synthetic stream: the MOC_IMBALANCE window in
-  ``2026-01-15.yaml`` opens at 15:50 ET, so the regime gate condition
-  ``scheduled_flow_window_active == 1.0`` is never satisfied during the
-  run.  This asserts the alpha's activation semantics — it must only
-  trade inside the declared window.
-* Two replays of the exact same fixture produce a byte-identical
-  ``Signal`` stream (Inv-5 determinism), even when that stream is empty.
-
-Calendar injection path
------------------------
-
-``PlatformConfig`` stores ``event_calendar_path`` as a ``Path``.
-``bootstrap._create_sensor_layer`` loads it at boot time via
-``load_event_calendar()`` and splices the resulting ``EventCalendar``
-object into the ``ScheduledFlowWindowSensor`` spec's ``params`` using
-``dataclasses.replace`` before passing the spec to ``SensorRegistry``.
-``SensorRegistry.register`` then calls ``cls(**params)`` — so a
-missing or wrong-typed calendar would raise at boot, not at first event.
+The platform loads the event calendar, injects it into the scheduled-flow
+sensor, wires the signal engine, and completes a deterministic backtest. The
+09:30–09:36 fixture precedes the 15:50 MOC window, so no signal may fire.
 """
 
 from __future__ import annotations

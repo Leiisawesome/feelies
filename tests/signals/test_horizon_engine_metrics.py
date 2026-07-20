@@ -1,9 +1,6 @@
-"""ENG-2: signal-engine observability counters.
+"""Tests for signal-engine observability counters.
 
-The ``HorizonSignalEngine`` was previously log-only.  These tests lock the four
-counters it now emits (gate transitions, entry suppression, fail-safe unwinds,
-emitted signals) into a dedicated metrics sequence — off the locked Signal
-stream, so they cannot perturb the Level-2 parity hash.
+Metrics use a dedicated sequence so they cannot perturb signal parity.
 """
 
 from __future__ import annotations
@@ -63,7 +60,7 @@ def test_entry_suppressed_counter_increments_when_required_feature_cold() -> Non
 
 
 def test_gate_transition_not_double_counted_across_entry_blocked_boundary() -> None:
-    """Regression test — audit P1 2026-07-02.
+    """Gate-error metrics use a dedicated sequence.
 
     A single logical OFF->ON admission must count once.  When the gate's
     ``on_condition`` first evaluates true on an entry-blocked (cold/stale)
@@ -125,7 +122,7 @@ def test_gate_transition_on_and_emitted_counters_on_real_signal() -> None:
 
 
 def test_duplicate_boundary_is_metered_but_still_dispatched() -> None:
-    """Audit P2 2026-07-02: a non-increasing ``boundary_index`` for the same
+    """A non-increasing ``boundary_index`` for the same
     ``(symbol, alpha_id)`` is logged and metered, never blocked — dispatch
     still proceeds normally (Inv-11: observe, don't speculatively reject).
     """

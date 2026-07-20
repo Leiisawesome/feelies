@@ -1,28 +1,7 @@
-"""Event serialization protocol — durable, type-faithful event encoding.
+"""Deterministic JSON serialization for cached market-data events.
 
-Disk-cache codec for the *input* market-data tape (``NBBOQuote`` / ``Trade``)
-that ``DiskEventCache`` persists and ``ReplayFeed`` reloads for backtests.
-Every event the concrete :class:`JsonLineEventSerializer` accepts must be
-serializable to bytes and reconstructable with full type fidelity:
-
-  - Decimal precision preserved (not float-converted)
-  - Enum values round-trip correctly
-  - Frozen dataclass fields restored as the correct Event subclass
-  - Schema evolution handled explicitly (not silently dropped)
-
-Invariant 5 (deterministic replay) requires that serialization is
-bit-deterministic: ``serialize(event)`` always produces identical
-bytes for the same event.
-
-Scope: only ``NBBOQuote``/``Trade`` are supported (``serialize`` raises
-``ValueError`` for any other event). This is intentional, not a gap —
-downstream events (``Signal``, ``OrderRequest``, etc.) are recomputed
-deterministically from the input tape on every replay rather than persisted
-and reloaded, so they have no bit-identical round-trip requirement to meet.
-
-Tradeoff: type safety + correctness over serialization speed.
-The storage layer is off the critical tick-to-trade path, so
-fidelity is prioritized over throughput.
+Only ``NBBOQuote`` and ``Trade`` are persisted. Downstream events are
+recomputed from that input tape during replay.
 """
 
 from __future__ import annotations
@@ -36,28 +15,12 @@ from feelies.core.events import Event, NBBOQuote, Trade
 _TYPE_QUOTE = "NBBOQuote"
 _TYPE_TRADE = "Trade"
 
-# On-disk event schema version.  Written into every serialized record and
-# validated on load so schema evolution is explicit (Inv-7) rather than a
-# silent ``TypeError`` from a future field.  Records written before this tag
-# existed carry no ``__schema_version__`` key and are treated as version 1,
-# so existing disk caches remain loadable (DiskEventCache backward-compat).
+# Records without a schema tag are version 1.
 _SCHEMA_VERSION = 1
 
 
 class EventSerializer(Protocol):
-    """Serialize and deserialize typed events with full fidelity.
-
-    Implementations must guarantee, for the event types they support:
-      1. Round-trip correctness: ``deserialize(serialize(e)) == e``
-      2. Bit-determinism: ``serialize(e)`` is identical across calls
-      3. Type preservation: Event subclass identity is maintained
-      4. Decimal fidelity: no precision loss from float conversion
-
-    The concrete :class:`JsonLineEventSerializer` in this module supports
-    only ``NBBOQuote``/``Trade`` (the market-data disk-cache codec) — see
-    the module docstring for why the other ~19 event types in
-    ``core/events.py`` are out of scope by design.
-    """
+    """Serialize typed events deterministically and without precision loss."""
 
     def serialize(self, event: Event) -> bytes:
         """Encode an event to bytes.  Output must be bit-deterministic."""
@@ -118,7 +81,7 @@ def dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
     """
     work = dict(d)
     type_tag = work.pop("__type__", None)
-    # Absent tag ⇒ legacy record written before versioning existed (== v1).
+    # Missing tags identify version-1 records.
     schema_version = work.pop("__schema_version__", _SCHEMA_VERSION)
     if schema_version != _SCHEMA_VERSION:
         raise ValueError(
@@ -142,10 +105,7 @@ def dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
             if val is not None:
                 work[name] = Decimal(str(val))
         elif "tuple" in ft_str:
-            # Any tuple field (tuple[int, ...], tuple[str, ...], …): JSON
-            # decodes tuples as lists, so restore tuple identity for every
-            # element type, not just int (audit P2-1 — prevents list/tuple
-            # drift breaking Inv-5 round-trip equality).
+            # JSON decodes tuples as lists; restore tuple identity.
             if isinstance(val, list):
                 work[name] = tuple(val)
 
@@ -166,9 +126,7 @@ class JsonLineEventSerializer:
 
     Bit-deterministic by construction: ``__dataclass_fields__`` iteration
     order is stable, ``json.dumps`` preserves dict insertion order, and
-    Decimal/tuple coercion is total.  This is the single source of truth
-    for ``NBBOQuote`` / ``Trade`` persistence — :class:`DiskEventCache`
-    and any future JSONL writer route through it (audit ING-05).
+    Decimal/tuple coercion is total.
     """
 
     def serialize(self, event: Event) -> bytes:

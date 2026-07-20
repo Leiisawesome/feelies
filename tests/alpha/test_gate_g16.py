@@ -1,20 +1,7 @@
-"""Tests for gate G16 — mechanism-horizon binding (§20.6.1).
+"""Tests for G16 mechanism, horizon, and sensor bindings.
 
-Phase 3.1 status: G16 is **ACTIVE** for any schema-1.1 SIGNAL or
-PORTFOLIO spec that declares a ``trend_mechanism:`` block.  Strict mode
-(``enforce_trend_mechanism=True``) additionally refuses to load any
-schema-1.1 SIGNAL/PORTFOLIO spec missing the block.
-
-Each of the 9 binding rules from §20.6.1 raises a *distinct subclass*
-of :class:`TrendMechanismValidationError` so callers can attribute
-failures cleanly without parsing message strings.  This module covers
-both pass-paths and fail-paths for every rule, including the
-AST-driven rule 7 stress-family-entry check.
-
-The fingerprint-sensor table inside the validator MUST stay aligned
-with the production sensor universe.  Each test passes the relevant
-sensor IDs in via ``known_sensor_ids`` so we are testing the gate
-logic, not coupling to the global sensor registry.
+Each rule has a distinct exception type. Tests inject known sensor IDs to
+isolate validator behavior from the global registry.
 """
 
 from __future__ import annotations
@@ -89,11 +76,7 @@ def _signal_spec_with_mechanism(
         ]
     if signal_src is None:
         signal_src = "def evaluate(snapshot, regime, params):\n    return None\n"
-    # G16 rule 10 (audit P1-4): l1_signature_sensors must be a subset of
-    # depends_on_sensors.  Derive depends as a superset of the *registered*
-    # signature sensors (plus the base gate sensors) so happy-path fixtures
-    # satisfy rule 10; unregistered ids (the rule-4 fixtures) are excluded
-    # so rule 4 still fires on them and depends stays G6-clean.
+    # Derive dependencies from registered signature and gate sensors.
     sig_ids: set[str] = set()
     for s in sensors:
         if isinstance(s, str):
@@ -309,12 +292,7 @@ class TestRule3HorizonRatio:
     def test_ratio_at_floor_accepted_but_warns_no_advance_notice(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """sensor_audit_2026-07-02 P2: a ratio sitting exactly at the floor
-        (matching sig_kyle_drift_v1 and sig_moc_imbalance_v1 in production,
-        both at 300/600 and 120/240 = 0.500) is accepted — rule 3 never
-        blocks on the warning band — but must warn, not pass silently: a
-        small half-life recalibration could flip it to a G16 rejection with
-        zero advance notice today."""
+        """A ratio at the floor is accepted but still warns."""
         spec = _signal_spec_with_mechanism(half_life=600, horizon=300)
         with caplog.at_level(logging.WARNING, logger="feelies.alpha.layer_validator"):
             _validator().validate(spec, source="<test>")
@@ -355,9 +333,7 @@ class TestRule4SensorRegistration:
             "kyle_lambda_60s",
             "imaginary_sensor_42",
         ]
-        # Back both signature sensors with deps so rule 10 (audit P1-4)
-        # does not pre-empt the rule-4 abstention this test isolates;
-        # with the registry unset, depends resolution (G6) also abstains.
+        # Satisfy rule 10 so this test isolates rule-4 abstention.
         spec["depends_on_sensors"] = [
             "kyle_lambda_60s",
             "imaginary_sensor_42",
@@ -399,11 +375,7 @@ class TestRule5FingerprintSensor:
         _validator().validate(spec, source="<test>")
 
     def test_kyle_with_book_imbalance_only_accepted(self) -> None:
-        """sensor_audit_2026-07-02 P1: book_imbalance is algebraically the
-        level-invariant micro-price-deviation transform (docstring-verified),
-        so it is a genuine KYLE_INFO fingerprint in its own right — an alpha
-        should not have to declare an unread micro_price/kyle_lambda_60s
-        dependency just to satisfy rule 5."""
+        """Book imbalance alone satisfies the Kyle-information fingerprint."""
         spec = _signal_spec_with_mechanism(
             family="KYLE_INFO",
             half_life=600,
@@ -599,7 +571,7 @@ class TestRule7StressEntryProhibited:
         _validator().validate(spec, source="<test>")
 
 
-# ── Rule 10 — l1_signature_sensors ⊆ depends_on_sensors (audit P1-4) ────
+# ── Rule 10 — l1_signature_sensors ⊆ depends_on_sensors ────────────────
 
 
 class TestRule10SignatureBacked:

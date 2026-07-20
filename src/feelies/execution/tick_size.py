@@ -1,4 +1,4 @@
-"""Reg NMS tick-size grid for simulated US equity prices (BT-14).
+"""Reg NMS tick-size grid for simulated US equity prices.
 
 Sub-penny rule (simplified for the backtest book):
   - prices >= ``$1.00`` → ``$0.01`` minimum increment

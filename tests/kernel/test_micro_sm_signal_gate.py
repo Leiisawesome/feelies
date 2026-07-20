@@ -1,17 +1,4 @@
-"""Phase-3-α micro state-machine tests for ``SIGNAL_GATE``.
-
-Verifies the new transitions slotted in by P3-α:
-
-- ``HORIZON_AGGREGATE → SIGNAL_GATE`` is legal (with at least one
-  SIGNAL alpha registered).
-- ``SIGNAL_GATE → FEATURE_COMPUTE`` is the only valid exit.
-- ``HORIZON_AGGREGATE → FEATURE_COMPUTE`` (Phase-2 fast-path) remains
-  legal so SIGNAL-only deployments without a portfolio layer take the
-  short path through the orchestrator.
-- ``SIGNAL_GATE`` cannot be entered from any non-aggregate state.
-- The full sensor-enabled + SIGNAL-loaded pipeline reaches
-  ``WAITING_FOR_MARKET_EVENT`` cleanly.
-"""
+"""Micro state-machine tests for ``SIGNAL_GATE`` transitions."""
 
 from __future__ import annotations
 
@@ -27,7 +14,7 @@ def clock() -> SimulatedClock:
     return SimulatedClock(start_ns=0)
 
 
-# ── New transitions ─────────────────────────────────────────────────────
+# Signal-gate transitions.
 
 
 class TestSignalGateTransitions:

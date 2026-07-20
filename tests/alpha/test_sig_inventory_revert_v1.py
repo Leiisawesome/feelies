@@ -1,5 +1,4 @@
-"""Acceptance tests for the reference SIGNAL alpha
-``alphas/sig_inventory_revert_v1`` (Phase 3.1, INVENTORY family)."""
+"""Acceptance tests for the INVENTORY reference signal alpha."""
 
 from __future__ import annotations
 
@@ -322,7 +321,7 @@ def test_edge_capped_at_capturable_peak(
     assert captured[0].edge_estimate_bps == pytest.approx(14.0 * 0.646)
     # Strength is normalized against the capturable cap, so saturation
     # produces strength = 1.0, preserving downstream conviction
-    # resolution that the legacy formula lost.
+    # resolution lost by the level-based formula.
     assert captured[0].strength == pytest.approx(1.0)
 
 

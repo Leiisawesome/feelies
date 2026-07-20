@@ -1,33 +1,8 @@
-"""Cross-process PYTHONHASHSEED independence (determinism-audit P1 #9).
+"""Verify replay hashes are independent of ``PYTHONHASHSEED``.
 
-The same-process ``test_two_replays_produce_identical_*`` tests share one
-``PYTHONHASHSEED`` and therefore **cannot** catch a hash that depends on
-Python's salted ``hash()`` (dict / set iteration order).  ``§12.5`` of
-docs/three_layer_architecture.md claims "CI sets ``PYTHONHASHSEED=0``" but
-nothing in the repo actually wires it (no conftest setting, no CI file).
-
-This test re-runs representative replays in *subprocesses* under several
-different ``PYTHONHASHSEED`` values and asserts the hashes are identical —
-which proves seed-independence directly (a stronger guarantee than pinning
-the seed, and one that survives a CI that forgets to).  It also regression-
-guards the ``sorted(...)`` canonicalization in the hash functions: drop a
-sort and this test goes red even though the in-process two-run tests stay
-green.
-
-The probe runs the replays whose hash functions iterate dicts — regime
-posteriors, the sorted ``target_positions`` / ``factor_exposures`` /
-``mechanism_breakdown`` maps, the sorted snapshot ``values`` / ``warm`` /
-``stale`` maps, the sorted ``StateTransition.metadata`` map, and the sorted
-``CrossSectionalContext.signals_by_symbol`` / ``snapshots_by_symbol`` maps —
-i.e. the paths where a salted ``hash()`` could bite.  Audit-2026-07-02 P2 #9:
-the original probe covered 4 of these 6 paths; ``state_transition`` and
-``cross_sectional_context`` were added after independently re-auditing every
-hash function in this package for a ``sorted(...)`` over a dict/set.
-
-Audit kernel-P1 (2026-07-02) further extended the probe to ``signal_fires``
-(a real engine's gate-state dict) and ``multi_symbol_sensor_reading``
-(cross-symbol dict fan-out) — each explicitly ``sorted(...)``-canonicalizes
-a dict or set per its own docstring.
+Representative dict-heavy replays run in subprocesses under several seeds.
+Identical output proves that canonical sorting, rather than salted mapping or
+set order, determines parity hashes.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Shared aggressive-fill constants used by both routers (audit F-H-11).
+"""Aggressive-fill constants shared by both routers.
 
 Currently exports the canonical ``STOP_EXIT_REASONS`` set consumed by
 ``market_fill.append_market_fill_acks`` so panic-slippage classification

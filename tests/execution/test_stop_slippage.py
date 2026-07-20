@@ -1,4 +1,4 @@
-"""Tests for forced-exit panic slippage (audit F-H-10).
+"""Tests for forced-exit panic slippage.
 
 Stop / hazard / forced-flatten orders fill in depleted depth and
 widened spread.  The cost model alone (using quoted half_spread)

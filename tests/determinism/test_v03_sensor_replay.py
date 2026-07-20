@@ -1,26 +1,7 @@
-"""Combined v0.3 sensor replay determinism baseline (Phase 2.1).
+"""Replay parity for mechanism-fingerprint sensor streams.
 
-Locks the bit-for-bit content and ordering of every ``SensorReading``
-emitted when the canonical 5-minute synthetic fixture is replayed
-through a fresh :class:`SensorRegistry` populated with the **four
-v0.3 mechanism-fingerprint sensors**:
-
-- ``hawkes_intensity``         (HAWKES_SELF_EXCITE family)
-- ``scheduled_flow_window``    (SCHEDULED_FLOW family; calendar-driven)
-- ``snr_drift_diffusion``      (cross-cutting SNR exploitability gate)
-- ``structural_break_score``   (cross-cutting page-Hinkley diagnostic)
-
-This baseline is *additive* to the Level-4 baseline in
-``test_sensor_reading_replay.py``: the Phase-2-β baseline locks the
-four simple sensors; this one locks the four v0.3 sensors.  Both must
-remain green for Phase 2 + Phase 2.1 to ship together.
-
-The v0.3 ``scheduled_flow_window`` sensor uses an in-test synthetic calendar;
-the committed reference calendar lives next to
-``feelies.storage.reference.event_calendar`` as ``2026-03-24.yaml``.
-
-Re-baseline protocol matches ``test_sensor_reading_replay.py``:
-print-on-fail, then update the constant in the same commit.
+The baseline covers Hawkes intensity, scheduled flow, SNR drift-diffusion, and
+structural-break readings. Scheduled flow uses an in-test calendar.
 """
 
 from __future__ import annotations
@@ -150,28 +131,7 @@ def test_v03_sensor_reading_stream_matches_locked_baseline() -> None:
     """Locks SHA-256 + count of the v0.3 SensorReading stream."""
     actual_hash, actual_count = _replay()
 
-    # Re-baselined 2026-05-16: ``snr_drift_diffusion`` 1.1.0 → 1.2.0 fixed
-    # the multi-bar consolidated-return bias by splitting an ``N``-bar
-    # log-return into ``N`` per-bar increments and advancing the EWMA in
-    # closed form.  For the v0.3 fixture (no large data gaps) the per-call
-    # behaviour matches the prior implementation bit-for-bit; the
-    # ``scheduled_flow_window`` 1.0.0 → 1.1.0 bump (added a deterministic
-    # ``window_id`` tiebreaker for end_ns ties) drives the hash drift via
-    # the version-string contribution, not the values.
-    # Re-baselined 2026-05-17 (audit pass 2):
-    #   * ``hawkes_intensity`` 1.1.0 → 1.2.0 — neutral 0.5 fallback for
-    #     intensity_ratio at startup (#5), guarded backwards-timestamp
-    #     decay anchor (#7), renamed ``branching_ratio_est`` →
-    #     ``branching_ratio_param`` (doc only);
-    #   * ``snr_drift_diffusion`` 1.2.0 → 1.3.0 — bootstrap quote no
-    #     longer counted toward warm-sample gate (#13), grid anchored to
-    #     epoch (``grid_anchor_ns=0`` default) so all symbols share
-    #     boundaries (#14);
-    #   * ``scheduled_flow_window`` 1.1.0 → 1.2.0 — ``warm`` now reflects
-    #     calendar emptiness (#16);
-    #   * ``structural_break_score`` 1.1.0 → 1.2.0 — invalidate
-    #     carry-forward mid on bad quote (#A2), Kahan-compensated running
-    #     sum for the rolling-mean baseline (#15).
+    # The hash covers reading values, warm state, and sensor versions.
     assert actual_count == EXPECTED_V03_READING_COUNT, (
         f"v0.3 reading count drift: expected {EXPECTED_V03_READING_COUNT}, got {actual_count}"
     )

@@ -86,18 +86,10 @@ def test_sigma_min_bps_matches_protocol_floors() -> None:
     assert abs(sigma_min_bps("MLI") - 30.9302) < 1e-3
 
 
-# ── §1.1 synthetic-fixture golden (both F2 arms; pinned at build time) ───
-#
-# Hand computation (fixed construction on 2026-01-15 + hour-only view):
-#   session_open = 09:30 ET; H = 1800.
-#   Tape 09:30 → 11:00 ⇒ h=1800 boundaries at 09:30, 10:00, 10:30, 11:00.
-#   Session window = offset ≥ 300 s AND ET ≤ 15:50 ⇒ {10:00, 10:30, 11:00}
-#   (n_in_window = 3).  Hour-only ALGO_CLOCK admits 10:00 and 11:00
-#   ⇒ W_hr=1 at those; W_hr=0 at 10:30 (:30 F2 arm).
-#   Quotes every 1 s at a flat mid with rising bid size ⇒ ofi_raw warm
-#   (≥50) and Hazen ofi_integrated_percentile = (n−0.5)/n ≥ 0.80 under
-#   equal +Δsize readings; ofi_integrated > 0; calm HMM (no mid trend);
-#   rvz ≈ 0.  ⇒ exactly 2 in-hour LONG + 1 halfhour LONG episodes.
+# Synthetic golden: 1800-second boundaries fall at 10:00, 10:30, and 11:00.
+# The hour-only calendar admits 10:00 and 11:00. Warm positive OFI, a calm
+# regime, and flat volatility therefore produce two in-hour LONG episodes and
+# one half-hour episode.
 
 
 def _synth_tape(

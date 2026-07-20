@@ -1,4 +1,4 @@
-"""Property tests for the G-7 sizing tilt (position-mgmt audit 2026-07-02 P2).
+"""Property tests for edge-weighted sizing.
 
 ``tests/risk/test_edge_weighted_sizer.py`` pins the tilt-bounds contract
 with fixed examples (``test_recapped_at_budget``, ``test_combined_tilt_clamped``).
@@ -6,8 +6,7 @@ This module complements them with randomized ``SizerTiltConfig`` /
 ``apply_tilt`` inputs, asserting the invariant that must hold regardless of
 how aggressively an operator configures the tilt factors: the sized
 quantity is never negative and never exceeds the alpha's declared
-``max_position_per_symbol`` (Inv-11 — amplification is deliberate for G-7,
-but always structurally bounded).
+``max_position_per_symbol``.
 """
 
 from __future__ import annotations
