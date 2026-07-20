@@ -714,6 +714,17 @@ class Orchestrator:
         # per-symbol HMM posterior is the very state we want to carry
         # across sessions (calibration is done once at boot).
         self._last_regime_state: dict[tuple[str, str], RegimeState] = {}
+        # Symbols for which ``_update_regime`` has published at least one
+        # ``RegimeState`` on the bus this session.  The trade path drives
+        # the horizon scheduler without a micro-SM walk and without calling
+        # ``_update_regime`` (regime engines require NBBO quotes).  Emitting
+        # ``HorizonTick``s before the first quote-driven publish leaves
+        # ``HorizonSignalEngine`` with an empty regime cache, so ``P(...)``
+        # gates fail safe with a cold-start WARNING.  Trade-path ticks are
+        # deferred until this set contains the symbol (see
+        # ``_process_trade_inner``); quote-path ticks are unaffected because
+        # M2 publishes RegimeState before the scheduler runs.
+        self._regime_bus_published_symbols: set[str] = set()
 
         self._stop_loss_per_share: float = 0.0
         self._trail_activate_per_share: float = 0.0
@@ -1917,7 +1928,16 @@ class Orchestrator:
         # micro-state walk; trade ticks just produce HorizonTicks if
         # they cross a boundary.  Sensor registry runs through the
         # bus subscription on ``self._bus.publish(trade)`` above.
-        if self._horizon_scheduler is not None:
+        #
+        # Defer until a quote has published RegimeState for this symbol
+        # (Inv-11): regime engines update only on NBBO, so a trade at
+        # RTH open that crosses boundary 0 would otherwise emit snapshots
+        # into an empty HorizonSignalEngine regime cache.  Skipping
+        # ``on_event`` (not discarding its ticks) keeps the scheduler's
+        # last-boundary cursor unadvanced so the first quote still emits.
+        if self._horizon_scheduler is not None and self._trade_path_may_emit_horizon_ticks(
+            trade.symbol
+        ):
             for tick in self._horizon_scheduler.on_event(trade):
                 self._bus.publish(tick)
 
@@ -3633,13 +3653,26 @@ class Orchestrator:
             discriminability=d_value,
         )
         self._bus.publish(regime_state)
+        self._regime_bus_published_symbols.add(quote.symbol)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)
+
+    def _trade_path_may_emit_horizon_ticks(self, symbol: str) -> bool:
+        """Whether trade-path HorizonTicks are safe to emit for *symbol*.
+
+        When no regime engine is configured, ticks are always allowed
+        (gates that need ``P(...)`` are not wired).  Otherwise require
+        at least one bus-published :class:`RegimeState` for *symbol*
+        this session so ``HorizonSignalEngine`` can bind posteriors.
+        """
+        if self._regime_engine is None:
+            return True
+        return symbol in self._regime_bus_published_symbols
 
     def _reset_regime_session_state(self) -> None:
         """Clear hazard-detection state that must not span sessions.
 
         Called from every ``run_*`` entry point alongside ``_micro.reset``.
-        Two structures are cleared:
+        Three structures are cleared:
 
         * ``self._last_regime_state`` — the prev-pointer dict feeding
           :class:`RegimeHazardDetector`.  Without this clear, a
@@ -3652,12 +3685,16 @@ class Orchestrator:
           session N-1 would silence legitimate spikes early in
           session N for the same ``(symbol, engine_name,
           departing_state)`` triple.
+        * ``self._regime_bus_published_symbols`` — forces trade-path
+          HorizonTicks to wait for a fresh quote-driven ``RegimeState``
+          publish in the new session (see ``_process_trade_inner``).
 
         The :class:`RegimeEngine` itself is intentionally NOT reset:
         its per-symbol HMM posterior is the carry-over we want
         (boot-time calibration is the only place that wipes it).
         """
         self._last_regime_state.clear()
+        self._regime_bus_published_symbols.clear()
         if self._regime_hazard_detector is not None:
             self._regime_hazard_detector.reset()
 
