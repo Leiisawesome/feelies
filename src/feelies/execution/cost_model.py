@@ -628,15 +628,21 @@ def estimate_round_trip_cost_bps(
         and max_impact_half_spreads is not None
     )
 
-    def _entry_bps() -> float:
-        if is_taker and use_depth_aware:
+    def _leg_bps(
+        side: Side,
+        *,
+        taker: bool,
+        short: bool,
+        through_fill: bool,
+    ) -> float:
+        if taker and use_depth_aware:
             assert market_impact_factor is not None
             assert max_impact_half_spreads is not None
-            depth = ask_size if entry_side == Side.BUY else bid_size
+            depth = ask_size if side == Side.BUY else bid_size
             return estimate_aggressive_taker_cost_bps(
                 model,
                 symbol=symbol,
-                side=entry_side,
+                side=side,
                 quantity=quantity,
                 mid_price=mid_price,
                 half_spread=half_spread,
@@ -645,53 +651,30 @@ def estimate_round_trip_cost_bps(
                 max_impact_half_spreads=max_impact_half_spreads,
                 within_l1_impact_factor=within_l1_impact_factor,
                 permanent_impact_coefficient=permanent_impact_coefficient,
-                is_short=entry_short,
+                is_short=short,
             )
         return float(
             model.compute(
                 symbol,
-                entry_side,
+                side,
                 quantity,
                 mid_price,
                 half_spread,
-                is_taker=is_taker,
-                is_short=entry_short,
-                fill_type="THROUGH" if is_through_fill_entry else None,
-                is_through_fill=is_through_fill_entry,
+                is_taker=taker,
+                is_short=short,
+                fill_type="THROUGH" if through_fill else None,
+                is_through_fill=through_fill,
             ).cost_bps
         )
 
-    def _exit_bps() -> float:
-        if is_taker_exit and use_depth_aware:
-            assert market_impact_factor is not None
-            assert max_impact_half_spreads is not None
-            depth = ask_size if exit_side == Side.BUY else bid_size
-            return estimate_aggressive_taker_cost_bps(
-                model,
-                symbol=symbol,
-                side=exit_side,
-                quantity=quantity,
-                mid_price=mid_price,
-                half_spread=half_spread,
-                available_depth=int(depth or 0),
-                market_impact_factor=market_impact_factor,
-                max_impact_half_spreads=max_impact_half_spreads,
-                within_l1_impact_factor=within_l1_impact_factor,
-                permanent_impact_coefficient=permanent_impact_coefficient,
-                is_short=False,
-            )
-        return float(
-            model.compute(
-                symbol,
-                exit_side,
-                quantity,
-                mid_price,
-                half_spread,
-                is_taker=is_taker_exit,
-                is_short=False,
-                fill_type="THROUGH" if is_through_fill_exit else None,
-                is_through_fill=is_through_fill_exit,
-            ).cost_bps
-        )
-
-    return _entry_bps() + _exit_bps()
+    return _leg_bps(
+        entry_side,
+        taker=is_taker,
+        short=entry_short,
+        through_fill=is_through_fill_entry,
+    ) + _leg_bps(
+        exit_side,
+        taker=is_taker_exit,
+        short=False,
+        through_fill=is_through_fill_exit,
+    )

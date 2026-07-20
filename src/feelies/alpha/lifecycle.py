@@ -308,6 +308,36 @@ class AlphaLifecycle:
             ]
         return []
 
+    def _promote_with_evidence(
+        self,
+        evidence: PromotionEvidence | None,
+        structured_evidence: Sequence[object] | None,
+        *,
+        gate_id: GateId,
+        target: AlphaLifecycleState,
+        trigger: str,
+        legacy_validator: Any,
+        correlation_id: str,
+    ) -> list[str]:
+        errors = self._lifecycle_promotion_errors(target)
+        if errors:
+            return errors
+        legacy_evidence, errors = self._select_evidence(
+            evidence,
+            structured_evidence,
+            gate_id=gate_id,
+            legacy_validator=legacy_validator,
+        )
+        if errors:
+            return errors
+        self._sm.transition(
+            target,
+            trigger=trigger,
+            correlation_id=correlation_id,
+            metadata=self._build_metadata(legacy_evidence, structured_evidence),
+        )
+        return []
+
     def promote_to_paper(
         self,
         evidence: PromotionEvidence | None = None,
@@ -326,28 +356,15 @@ class AlphaLifecycle:
         :data:`GateId.RESEARCH_TO_PAPER`'s required evidence types).
         Supplying both or neither raises :class:`ValueError`.
         """
-        cap_errors = self._lifecycle_promotion_errors(
-            AlphaLifecycleState.PAPER,
-        )
-        if cap_errors:
-            return cap_errors
-        legacy_ev, errors = self._select_evidence(
+        return self._promote_with_evidence(
             evidence,
             structured_evidence,
             gate_id=GateId.RESEARCH_TO_PAPER,
-            legacy_validator=check_paper_gate,
-        )
-        if errors:
-            return errors
-
-        metadata = self._build_metadata(legacy_ev, structured_evidence)
-        self._sm.transition(
-            AlphaLifecycleState.PAPER,
+            target=AlphaLifecycleState.PAPER,
             trigger="pass_paper_gate",
+            legacy_validator=check_paper_gate,
             correlation_id=correlation_id,
-            metadata=metadata,
         )
-        return []
 
     def promote_to_live(
         self,
@@ -369,28 +386,15 @@ class AlphaLifecycle:
         + :class:`DSREvidence`).  Supplying both or neither raises
         :class:`ValueError`.
         """
-        cap_errors = self._lifecycle_promotion_errors(
-            AlphaLifecycleState.LIVE,
-        )
-        if cap_errors:
-            return cap_errors
-        legacy_ev, errors = self._select_evidence(
+        return self._promote_with_evidence(
             evidence,
             structured_evidence,
             gate_id=GateId.PAPER_TO_LIVE,
-            legacy_validator=lambda ev: check_live_gate(ev, self._gate_requirements),
-        )
-        if errors:
-            return errors
-
-        metadata = self._build_metadata(legacy_ev, structured_evidence)
-        self._sm.transition(
-            AlphaLifecycleState.LIVE,
+            target=AlphaLifecycleState.LIVE,
             trigger="pass_live_gate",
+            legacy_validator=lambda ev: check_live_gate(ev, self._gate_requirements),
             correlation_id=correlation_id,
-            metadata=metadata,
         )
-        return []
 
     def quarantine(
         self,
@@ -455,28 +459,15 @@ class AlphaLifecycle:
         types — :class:`RevalidationEvidence`).  Supplying both or
         neither raises :class:`ValueError`.
         """
-        cap_errors = self._lifecycle_promotion_errors(
-            AlphaLifecycleState.PAPER,
-        )
-        if cap_errors:
-            return cap_errors
-        legacy_ev, errors = self._select_evidence(
+        return self._promote_with_evidence(
             evidence,
             structured_evidence,
             gate_id=GateId.QUARANTINED_TO_PAPER,
-            legacy_validator=check_revalidation_gate,
-        )
-        if errors:
-            return errors
-
-        metadata = self._build_metadata(legacy_ev, structured_evidence)
-        self._sm.transition(
-            AlphaLifecycleState.PAPER,
+            target=AlphaLifecycleState.PAPER,
             trigger="revalidation_passed",
+            legacy_validator=check_revalidation_gate,
             correlation_id=correlation_id,
-            metadata=metadata,
         )
-        return []
 
     def promote_capital_tier(
         self,
