@@ -550,3 +550,5 @@ appended below (Lei, 2026-07-18).*
 10. **pack-12 Status → PROGRAM RECORD CLOSED.** Cycles 1–3 closed
     (stop-rule); capital fork closed (pack-13 NO-GO); standing state
     **PAUSE-AND-HARVEST** with reopening conditions in entry 7.
+
+11. Success matrix distilled — pack-14; binds any reopened round.
