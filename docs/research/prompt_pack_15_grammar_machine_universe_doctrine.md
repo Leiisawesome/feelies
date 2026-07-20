@@ -119,3 +119,5 @@ This doctrine sharpens pack-12's conditions rather than replacing them. A cost-f
 ---
 
 *One-sentence version: three cycles proved the machine kills honestly; the next round — if one ever opens — should stop asking "what alpha lives on this universe" and start asking "what universe lets this machine, speaking this grammar, prove anything at all," and then measure whether that universe exists before spending a single card on it.*
+
+binding for Campaign 2 per pack-16
