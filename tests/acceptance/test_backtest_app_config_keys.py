@@ -34,6 +34,7 @@ _SIG_ALLOWED_DELTA_KEYS = frozenset(
         "extends",
         "symbols",
         "alpha_specs",
+        "prune_unused_sensors",
         "signal_min_edge_cost_ratio",
         "parameter_overrides",
     }
@@ -82,6 +83,7 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
             "alpha_specs": [
                 "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml",
             ],
+            "prune_unused_sensors": True,
             "signal_min_edge_cost_ratio": 1.5,
             "parameter_overrides": {
                 "sig_benign_midcap_v1": {
@@ -93,6 +95,7 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
     )
     assert merged["symbols"] == expected["symbols"]
     assert merged["alpha_specs"] == expected["alpha_specs"]
+    assert merged["prune_unused_sensors"] is expected["prune_unused_sensors"]
     assert merged["signal_min_edge_cost_ratio"] == expected["signal_min_edge_cost_ratio"]
     assert merged["parameter_overrides"] == expected["parameter_overrides"]
 
@@ -100,6 +103,7 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
     assert sorted(cfg.symbols) == ["APP"]
     assert len(cfg.alpha_specs) == 1
     assert cfg.alpha_specs[0].name == "sig_benign_midcap_v1.alpha.yaml"
+    assert cfg.prune_unused_sensors
     assert cfg.signal_min_edge_cost_ratio == 1.5
     assert cfg.parameter_overrides["sig_benign_midcap_v1"] == {
         "entry_threshold_z": 1.5,

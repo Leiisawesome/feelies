@@ -4,9 +4,9 @@ Owns the macro state machine and coordinates all layers through the
 deterministic micro-state pipeline.  Enforces the single-threaded,
 sequential tick processing loop.
 
-The orchestrator contains NO business logic.  It is a coordinator
-that calls each layer in the deterministic order defined by the
-micro-state machine.
+Domain calculations live in their owning layers. This module retains the
+cross-layer sequencing and fail-safe decisions needed to keep the macro and
+micro state machines deterministic.
 
 System invariants enforced here (Section V):
   Inv-1: No order submission outside G5/G6.
@@ -38,7 +38,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
@@ -55,7 +55,14 @@ if TYPE_CHECKING:
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
     from feelies.risk.hazard_exit import HazardExitController
 
-from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
+from feelies.alpha.arbitration import (
+    EdgeWeightedArbitrator,
+    SignalArbitrator,
+    StandaloneArbitrationCollision,
+    collision_is_harmless_flat_gate_close,
+    is_redundant_gate_close_flat,
+    standalone_signal_actionable_for_strategy,
+)
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
@@ -165,6 +172,7 @@ from feelies.risk.edge_weighted_sizer import (
     apply_tilt,
 )
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
+from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine, regime_posterior_entropy_nats
@@ -174,10 +182,6 @@ from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal, TradeRecord
 
-# Avoid a hard execution-layer import at module level: imported lazily in boot()
-# or via TYPE_CHECKING to preserve the layer boundary.
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
     from feelies.portfolio.position_store import Position
@@ -185,94 +189,6 @@ if TYPE_CHECKING:
 # Stable correlation id for boot-time macro transitions (audit replay).
 _PLATFORM_BOOT_CORRELATION_ID = "platform_boot"
 _ORCHESTRATOR_SHUTDOWN_CORRELATION_ID = "orchestrator_shutdown"
-
-
-class _PostExitPositionView:
-    """Position view that simulates a pending exit fill for risk checking.
-
-    Used by ``_execute_reverse()`` so the entry leg's ``check_order()``
-    sees the post-exit position rather than the stale pre-exit snapshot.
-    Without this, the risk engine computes an incorrectly favorable
-    ``post_fill_qty`` for the entry leg (e.g. 0 instead of the actual
-    new-entry quantity), allowing entries that should be rejected.
-
-    Only ``get``, ``all_positions``, and ``total_exposure`` are needed
-    by the risk engine — mutating methods raise ``RuntimeError``.
-    """
-
-    __slots__ = ("_inner", "_symbol", "_adj")
-
-    def __init__(
-        self,
-        inner: PositionStore,
-        symbol: str,
-        quantity_adjustment: int,
-    ) -> None:
-        self._inner = inner
-        self._symbol = symbol
-        self._adj = quantity_adjustment
-
-    def _adjusted(self, pos: "Position") -> "Position":
-        from feelies.portfolio.position_store import Position
-
-        new_qty = pos.quantity + self._adj
-        mark = self.latest_mark(pos.symbol)
-        unrealized = Decimal("0")
-        if new_qty != 0:
-            if mark is not None and mark > 0:
-                unrealized = (mark - pos.avg_entry_price) * new_qty
-            else:
-                unrealized = pos.unrealized_pnl
-        return Position(
-            symbol=pos.symbol,
-            quantity=new_qty,
-            avg_entry_price=pos.avg_entry_price,
-            realized_pnl=pos.realized_pnl,
-            unrealized_pnl=unrealized,
-            cumulative_fees=pos.cumulative_fees,
-        )
-
-    def get(self, symbol: str) -> "Position":
-        pos = self._inner.get(symbol)
-        if symbol == self._symbol:
-            return self._adjusted(pos)
-        return pos
-
-    def all_positions(self) -> "dict[str, Position]":
-        result = dict(self._inner.all_positions())
-        if self._symbol in result:
-            result[self._symbol] = self._adjusted(result[self._symbol])
-        return result
-
-    def total_exposure(self) -> Decimal:
-        total = self._inner.total_exposure()
-        pos = self._inner.get(self._symbol)
-        mark = self.latest_mark(self._symbol)
-        if mark is None or mark <= 0:
-            mark = pos.avg_entry_price
-        old_contrib = abs(pos.quantity) * mark
-        new_contrib = abs(pos.quantity + self._adj) * mark
-        return total - old_contrib + new_contrib
-
-    def update(self, *args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("_PostExitPositionView is read-only")
-
-    def debit_fees(self, *args: Any, **kwargs: Any) -> None:
-        raise RuntimeError("_PostExitPositionView is read-only")
-
-    def update_mark(self, *args: Any, **kwargs: Any) -> None:
-        raise RuntimeError("_PostExitPositionView is read-only")
-
-    # ----- Phase-4 PositionStore Protocol shims --------------------------
-    # These delegate to the inner store unmodified.  The post-exit view
-    # only adjusts ``quantity`` for the in-flight reverse leg; the mark
-    # price and open-timestamp shadow maps are unaffected by the simulated
-    # exit and must therefore reflect the underlying store.
-    def latest_mark(self, symbol: str) -> Decimal | None:
-        return self._inner.latest_mark(symbol)
-
-    def opened_at_ns(self, symbol: str) -> int | None:
-        return self._inner.opened_at_ns(symbol)
 
 
 _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
@@ -330,154 +246,18 @@ def _int_to_direction(sign: int) -> SignalDirection:
     return SignalDirection.FLAT
 
 
-def _signal_reduces_book(current_qty: int, direction: SignalDirection) -> bool:
-    """True when *direction* would close or offset a non-flat *current_qty*."""
-    if current_qty == 0:
-        return False
-    if direction == SignalDirection.FLAT:
-        return True
-    if current_qty > 0 and direction == SignalDirection.SHORT:
-        return True
-    if current_qty < 0 and direction == SignalDirection.LONG:
-        return True
-    return False
-
-
-def standalone_signal_actionable_for_strategy(
-    signal: Signal,
-    *,
-    strategy_qty: int,
-    aggregate_qty: int,
-    alpha_has_prior_fill: bool,
-) -> bool:
-    """Whether a standalone SIGNAL may participate in per-tick arbitration.
-
-    Gate-close FLAT (``regime_gate_state == "OFF"``) from an alpha that
-    has never filled on this symbol is suppressed while the aggregate
-    book is open, so passive alphas cannot hijack another alpha's exit
-    tick.  Directional exits require matching strategy exposure; entries
-    always pass.
-    """
-    if (
-        signal.direction == SignalDirection.FLAT
-        and signal.regime_gate_state == "OFF"
-        and strategy_qty == 0
-        and aggregate_qty != 0
-        and not alpha_has_prior_fill
-    ):
-        return False
-    if signal.direction == SignalDirection.FLAT:
-        return True
-    if _signal_reduces_book(aggregate_qty, signal.direction):
-        return _signal_reduces_book(strategy_qty, signal.direction)
-    return True
-
-
-def is_redundant_gate_close_flat(
-    signal: Signal,
-    *,
-    aggregate_qty: int,
-    alpha_has_prior_fill: bool,
-) -> bool:
-    """True when a gate-close FLAT is a no-op (never traded, flat book)."""
-    return (
-        signal.direction == SignalDirection.FLAT
-        and signal.regime_gate_state == "OFF"
-        and aggregate_qty == 0
-        and not alpha_has_prior_fill
-    )
-
-
-def collision_is_harmless_flat_gate_close(
-    candidates: Sequence[Signal],
-    aggregate_qty: int,
-) -> bool:
-    """True when every arbitration candidate is inert gate-close on a flat book."""
-    if aggregate_qty != 0:
-        return False
-    return all(
-        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF" for s in candidates
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class StandaloneArbitrationCollision:
-    """One post-filter standalone-SIGNAL arbitration tick (forensics)."""
-
-    candidate_count: int
-    strategy_ids: tuple[str, ...]
-    kinds: tuple[tuple[str, str, str], ...]
-    harmless: bool
-
-
 class Orchestrator:
     """Central coordinator for the deterministic tick-processing pipeline.
 
-    Lifecycle:
-      1. __init__   — wire up all components
-      2. boot()     — G0 → G1 → G2
-      3. run_*()    — G2 → {G3|G4|G5|G6} → pipeline → G2
-      4. shutdown() — → G9
+    ``boot`` wires configuration, ``run_*`` drives the one shared tick path,
+    and ``shutdown`` drains outstanding acknowledgements before G9. Execution
+    mode differences remain confined to :class:`ExecutionBackend`.
 
-    The orchestrator never inspects ``backend.mode`` to branch logic.
-    Mode-specific behavior is confined to ExecutionBackend (platform inv 9).
-
-    Workstream D.2 has retired the per-tick legacy alpha pipeline:
-
-      * PR-2b-ii deleted :class:`CompositeFeatureEngine`,
-        :class:`CompositeSignalEngine`, :class:`MultiAlphaEvaluator`,
-        and the :class:`feelies.features.engine.FeatureEngine` /
-        :class:`feelies.signals.engine.SignalEngine` Protocols.
-      * PR-2b-iii added the bus-driven ``Signal`` subscriber
-        (``_on_bus_signal``) — the first production-reachable
-        Signal → Order path in the platform.
-      * PR-2b-iv (this commit) (1) added the bus-driven
-        ``SizedPositionIntent`` subscriber (``_on_bus_sized_intent``) so
-        PORTFOLIO alphas finally submit orders end-to-end via
-        ``RiskEngine.check_sized_intent``, and (2) deleted the surviving
-        scaffolding: ``feature_engine`` / ``signal_engine`` ctor params,
-        the per-tick :class:`feelies.core.events.FeatureVector` event,
-        :meth:`AlphaModule.evaluate`, the legacy gated single-alpha
-        branch in :py:meth:`_process_tick_inner`, and the orphan
-        multi-alpha helpers ``_build_net_order`` / ``_compute_contributions``.
-
-    Two production Signal / Intent → Order paths now coexist on the bus:
-
-      * **Standalone SIGNAL alphas** (``_on_bus_signal``).  Buffer
-        ``Signal(layer="SIGNAL")`` events per tick after filtering out
-        SIGNAL alphas referenced by any registered PORTFOLIO's
-        ``depends_on_signals`` (those flow through CompositionEngine and
-        emerge as SizedPositionIntent, not OrderRequest).  Drain the
-        first buffered signal at M4 ``SIGNAL_EVALUATE`` and run it
-        through the per-tick risk → order → fill walk.
-      * **PORTFOLIO alphas** (``_on_bus_sized_intent`` + ``_flush_pending_sized_intents``).
-        Each ``SizedPositionIntent`` is buffered on the bus, then drained after the
-        ``CROSS_SECTIONAL`` bookend: ``RiskEngine.check_sized_intent`` runs under
-        micro ``RISK_CHECK`` through ``LOG_AND_METRICS`` (M5–M10) before ``FEATURE_COMPUTE``,
-        preserving position updates before the standalone-SIGNAL M4 drain.  Multiple intents
-        on the same quote walk ``LOG_AND_METRICS → RISK_CHECK`` between legs.
-
-    Concurrency / coexistence rules:
-
-      * The micro-SM permits at most one Signal → Order walk per tick.
-        When more than one standalone SIGNAL alpha fires on the same
-        tick the orchestrator picks the first arrival
-        (HorizonSignalEngine's deterministic registration-order
-        dispatch) and emits a once-per-process WARNING hinting that
-        the operator should aggregate via a PORTFOLIO alpha.
-      * Standalone SIGNAL and PORTFOLIO can coexist on the same tick:
-        the SIGNAL-bus subscriber's ``depends_on_signals`` skip-rule
-        prevents double-trading when the same Signal feeds both paths.
-      * Stop-loss exits computed inline by ``_check_stop_exit`` always
-        override (Inv-11: position safety beats alpha conviction).
-
-    The micro-state transitions ``FEATURE_COMPUTE`` (M3) and
-    ``SIGNAL_EVALUATE`` (M4) still fire unconditionally so the SM stays
-    on its legal path; M3's body is now empty (Phase-3 SIGNAL/PORTFOLIO
-    outputs are produced via the bus-driven HorizonAggregator →
-    HorizonSignalEngine → CompositionEngine chain attached upstream of
-    the orchestrator); M4's body either dispatches a buffered Signal or
-    finalises with no order.
+    Standalone ``Signal`` and portfolio ``SizedPositionIntent`` events arrive
+    on the bus. Portfolio intents are drained first; one arbitrated standalone
+    signal may then walk M4–M10. Signals consumed by a portfolio are filtered
+    from the standalone path to prevent double trading. Forced exits override
+    alpha conviction and always retain fail-safe priority.
     """
 
     def __init__(
@@ -3000,24 +2780,16 @@ class Orchestrator:
             trigger="order_constructed",
             correlation_id=cid,
         )
-        self._transition_order(
-            order.order_id,
-            OrderState.SUBMITTED,
-            "submitted",
-            correlation_id=cid,
-        )
-        try:
-            self._backend.order_router.submit(order)
-        except Exception as exc:
-            self._reject_order_after_submit_failure(order, exc)
+        submit_error = self._submit_tracked_order(order)
+        if submit_error is not None:
             self._append_signal_order_trace(
                 quote,
                 signal,
                 outcome="NO_ORDER",
                 reasons=(
                     "order_router_submit_raised",
-                    type(exc).__name__,
-                    repr(exc),
+                    type(submit_error).__name__,
+                    repr(submit_error),
                 ),
                 trading_intent=intent.intent.name,
             )
@@ -3727,17 +3499,12 @@ class Orchestrator:
 
             try:
                 self._track_order(order_id, side, order)
-                self._transition_order(
-                    order_id,
-                    OrderState.SUBMITTED,
-                    "emergency_flatten",
-                    correlation_id=correlation_id,
+                submit_exc = self._submit_tracked_order(
+                    order,
+                    trigger="emergency_flatten",
                 )
-                try:
-                    self._backend.order_router.submit(order)
-                except Exception as submit_exc:
+                if submit_exc is not None:
                     failures[symbol] = f"submit_exception: {submit_exc!r}"
-                    self._reject_order_after_submit_failure(order, submit_exc)
                     continue
 
                 self._bus.publish(order)
@@ -4332,7 +4099,7 @@ class Orchestrator:
 
         # Signed adjustment: the exit leg removes close_qty from position.
         exit_signed_adj = -close_qty if exit_side == Side.SELL else close_qty
-        post_exit_positions = _PostExitPositionView(
+        post_exit_positions = PostExitPositionView(
             self._positions,
             intent.symbol,
             exit_signed_adj,
@@ -4443,33 +4210,16 @@ class Orchestrator:
                 seq_entry = self._seq.next()
                 entry_order_id = derive_order_id(f"{cid}:{seq_entry}:entry")
 
-                order_type = OrderType.MARKET
-                limit_price: Decimal | None = None
-                entry_is_moc = (
-                    intent.strategy_id in self._moc_strategy_ids and self._moc_bounds_configured
+                order_type, limit_price, entry_is_moc = self._resolve_order_route(
+                    strategy_id=intent.strategy_id,
+                    symbol=intent.symbol,
+                    side=entry_side,
+                    quantity=entry_qty,
+                    quote=quote,
+                    is_short=is_short,
+                    is_exit_or_stop=False,
+                    edge_bps=intent.signal.edge_estimate_bps,
                 )
-                if entry_is_moc:
-                    order_type = OrderType.MARKET
-                    limit_price = None
-                elif self._use_passive_entries:
-                    use_passive = True
-                    if self._min_cost_policy is not None:
-                        decision = self._min_cost_policy.decide(
-                            symbol=intent.symbol,
-                            side=entry_side,
-                            quantity=entry_qty,
-                            mid_price=(quote.bid + quote.ask) / Decimal("2"),
-                            half_spread=(quote.ask - quote.bid) / Decimal("2"),
-                            is_short=is_short,
-                            force_aggressive=False,
-                            bid_size=quote.bid_size,
-                            ask_size=quote.ask_size,
-                            edge_bps=intent.signal.edge_estimate_bps,
-                        )
-                        use_passive = decision == "passive"
-                    if use_passive:
-                        order_type = OrderType.LIMIT
-                        limit_price = quote.bid if entry_side == Side.BUY else quote.ask
 
                 entry_order = OrderRequest(
                     timestamp_ns=self._clock.now_ns(),
@@ -4529,16 +4279,8 @@ class Orchestrator:
             exit_order,
             trading_intent=intent.intent.name,
         )
-        self._transition_order(
-            exit_order.order_id,
-            OrderState.SUBMITTED,
-            "submitted",
-            correlation_id=cid,
-        )
-        try:
-            self._backend.order_router.submit(exit_order)
-        except Exception as exc:
-            self._reject_order_after_submit_failure(exit_order, exc)
+        exit_submit_error = self._submit_tracked_order(exit_order)
+        if exit_submit_error is not None:
             self._micro.transition(
                 MicroState.ORDER_ACK,
                 trigger="reverse_exit_submit_failed",
@@ -4570,17 +4312,7 @@ class Orchestrator:
                 entry_order,
                 trading_intent=entry_intent_name,
             )
-            self._transition_order(
-                entry_order.order_id,
-                OrderState.SUBMITTED,
-                "submitted",
-                correlation_id=cid,
-            )
-            try:
-                self._backend.order_router.submit(entry_order)
-            except Exception as exc:
-                self._reject_order_after_submit_failure(entry_order, exc)
-            else:
+            if self._submit_tracked_order(entry_order) is None:
                 self._bus.publish(entry_order)
                 entry_submitted_ok = True
 
@@ -4696,53 +4428,18 @@ class Orchestrator:
         ):
             return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
-        order_type = OrderType.MARKET
-        limit_price: Decimal | None = None
-        is_moc = (
-            intent.strategy_id in self._moc_strategy_ids
-            and self._moc_bounds_configured
-            and not is_exit_or_stop
+        order_type, limit_price, is_moc = self._resolve_order_route(
+            strategy_id=intent.strategy_id,
+            symbol=intent.symbol,
+            side=side,
+            quantity=quantity,
+            quote=quote,
+            is_short=is_short,
+            is_exit_or_stop=is_exit_or_stop,
+            edge_bps=intent.signal.edge_estimate_bps,
+            exec_style=exec_style,
+            forced_market=(intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES),
         )
-
-        if is_moc:
-            order_type = OrderType.MARKET
-            limit_price = None
-        elif (
-            exec_style is ExecStyle.PASSIVE
-            and quote is not None
-            and intent.signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
-        ):
-            # P4: planner-driven passive working leg (e.g. a discretionary
-            # TRIM) — post at the near BBO; a non-fill simply defers it.
-            order_type = OrderType.LIMIT
-            limit_price = quote.bid if side == Side.BUY else quote.ask
-        elif self._use_passive_entries and quote is not None:
-            is_stop_exit = intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
-            if not is_stop_exit:
-                # Default: post passive at the near BBO.  When the
-                # minimum-cost policy is wired, let it override on a
-                # per-order basis.  Stop-loss / forced-flatten always
-                # short-circuit to MARKET above (is_stop_exit branch),
-                # so the policy is consulted only on tradeable orders
-                # where either route is safe.
-                use_passive = True
-                if self._min_cost_policy is not None:
-                    decision = self._min_cost_policy.decide(
-                        symbol=intent.symbol,
-                        side=side,
-                        quantity=quantity,
-                        mid_price=(quote.bid + quote.ask) / Decimal("2"),
-                        half_spread=(quote.ask - quote.bid) / Decimal("2"),
-                        is_short=is_short,
-                        force_aggressive=is_exit_or_stop,
-                        bid_size=quote.bid_size,
-                        ask_size=quote.ask_size,
-                        edge_bps=intent.signal.edge_estimate_bps,
-                    )
-                    use_passive = decision == "passive"
-                if use_passive:
-                    order_type = OrderType.LIMIT
-                    limit_price = quote.bid if side == Side.BUY else quote.ask
 
         return (
             OrderRequest(
@@ -4771,6 +4468,61 @@ class Orchestrator:
             ),
             None,
         )
+
+    def _resolve_order_route(
+        self,
+        *,
+        strategy_id: str,
+        symbol: str,
+        side: Side,
+        quantity: int,
+        quote: NBBOQuote | None,
+        is_short: bool,
+        is_exit_or_stop: bool,
+        edge_bps: float,
+        exec_style: ExecStyle | None = None,
+        forced_market: bool = False,
+    ) -> tuple[OrderType, Decimal | None, bool]:
+        """Resolve order type, limit price, and MOC flag from execution policy."""
+        is_moc = (
+            strategy_id in self._moc_strategy_ids
+            and self._moc_bounds_configured
+            and not is_exit_or_stop
+        )
+        if is_moc:
+            return OrderType.MARKET, None, True
+
+        if exec_style is ExecStyle.PASSIVE and quote is not None and not forced_market:
+            limit_price = quote.bid if side == Side.BUY else quote.ask
+            return OrderType.LIMIT, limit_price, False
+
+        if not self._use_passive_entries or quote is None or forced_market:
+            return OrderType.MARKET, None, False
+
+        use_passive = True
+        if self._min_cost_policy is not None:
+            use_passive = (
+                self._min_cost_policy.decide(
+                    symbol=symbol,
+                    side=side,
+                    quantity=quantity,
+                    mid_price=(quote.bid + quote.ask) / Decimal("2"),
+                    half_spread=(quote.ask - quote.bid) / Decimal("2"),
+                    is_short=is_short,
+                    force_aggressive=is_exit_or_stop,
+                    bid_size=quote.bid_size,
+                    ask_size=quote.ask_size,
+                    edge_bps=edge_bps,
+                )
+                == "passive"
+            )
+        if use_passive:
+            return (
+                OrderType.LIMIT,
+                quote.bid if side == Side.BUY else quote.ask,
+                False,
+            )
+        return OrderType.MARKET, None, False
 
     @staticmethod
     def _compose_scaled_quantity(base_quantity: int, *factors: float) -> int:
@@ -5023,6 +4775,26 @@ class Orchestrator:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
 
+    def _submit_tracked_order(
+        self,
+        order: OrderRequest,
+        *,
+        trigger: str = "submitted",
+    ) -> Exception | None:
+        """Submit a tracked order and terminalize its state if routing fails."""
+        self._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            trigger,
+            correlation_id=order.correlation_id,
+        )
+        try:
+            self._backend.order_router.submit(order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(order, exc)
+            return exc
+        return None
+
     def _reject_order_after_submit_failure(
         self,
         order: OrderRequest,
@@ -5221,16 +4993,7 @@ class Orchestrator:
             reason="WORKING_EXIT_FALLBACK",
         )
         self._track_order(order.order_id, order.side, order, trading_intent="EXIT")
-        self._transition_order(
-            order.order_id,
-            OrderState.SUBMITTED,
-            "submitted",
-            correlation_id=correlation_id,
-        )
-        try:
-            self._backend.order_router.submit(order)
-        except Exception as exc:
-            self._reject_order_after_submit_failure(order, exc)
+        if self._submit_tracked_order(order) is not None:
             return
         self._bus.publish(order)
         self._bus.publish(
@@ -6293,16 +6056,9 @@ class Orchestrator:
                 )
             )
         self._track_order(event.order_id, event.side, event)
-        self._transition_order(
-            event.order_id,
-            OrderState.SUBMITTED,
-            event.reason,
-            correlation_id=event.correlation_id,
-        )
-        try:
-            self._backend.order_router.submit(event)
-        except Exception as exc:  # noqa: BLE001 — fail-safe: never raise from bus
-            logger.exception(
+        submit_error = self._submit_tracked_order(event, trigger=event.reason)
+        if submit_error is not None:
+            logger.error(
                 "Hazard exit order submission failed for %s "
                 "(strategy_id=%s, reason=%s, order_id=%s); position "
                 "remains open and will be retried on the next spike.",
@@ -6310,8 +6066,12 @@ class Orchestrator:
                 event.strategy_id,
                 event.reason,
                 event.order_id,
+                exc_info=(
+                    type(submit_error),
+                    submit_error,
+                    submit_error.__traceback__,
+                ),
             )
-            self._reject_order_after_submit_failure(event, exc)
             return
         acks = self._poll_order_router_acks({event.order_id})
         self._publish_and_apply_order_acks(acks)
