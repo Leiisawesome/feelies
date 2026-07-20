@@ -6,6 +6,11 @@ from decimal import Decimal
 
 from dataclasses import replace
 
+from feelies.alpha.arbitration import (
+    collision_is_harmless_flat_gate_close,
+    is_redundant_gate_close_flat,
+    standalone_signal_actionable_for_strategy,
+)
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
@@ -17,12 +22,7 @@ from feelies.core.events import (
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import ZeroCostModel
-from feelies.kernel.orchestrator import (
-    Orchestrator,
-    collision_is_harmless_flat_gate_close,
-    is_redundant_gate_close_flat,
-    standalone_signal_actionable_for_strategy,
-)
+from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog

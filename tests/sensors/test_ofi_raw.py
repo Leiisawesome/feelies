@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from feelies.core.events import HorizonTick, NBBOQuote
+from feelies.core.events import HorizonTick, NBBOQuote, SensorReading
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.sensors.impl.ofi_raw import OFIRawSensor
 
@@ -67,7 +67,26 @@ def test_sum_reducer_gives_integrated_flow() -> None:
         r = s.update(q, st, {})
         assert r is not None
         if r.warm:
-            feat.observe(r, fstate, {})
+            # Production routes SensorEmission through SensorRegistry, which
+            # stamps event time and provenance into a SensorReading before a
+            # horizon feature observes it. Reproduce that boundary here.
+            feat.observe(
+                SensorReading(
+                    timestamp_ns=q.timestamp_ns,
+                    correlation_id=q.correlation_id,
+                    sequence=q.sequence,
+                    source_layer="SENSOR",
+                    symbol=q.symbol,
+                    sensor_id=s.sensor_id,
+                    sensor_version=s.sensor_version,
+                    value=r.value,
+                    confidence=r.confidence,
+                    warm=r.warm,
+                    parent_correlation_id=q.correlation_id,
+                ),
+                fstate,
+                {},
+            )
             expected += float(r.value)
 
     tick = HorizonTick(

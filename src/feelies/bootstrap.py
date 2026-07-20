@@ -1622,7 +1622,7 @@ def _consumed_features_for_signal_registration(
 
 def _maybe_prune_unused_sensors(
     config: PlatformConfig,
-    registry: AlphaRegistry | object,
+    registry: AlphaRegistry,
 ) -> PlatformConfig:
     """Drop sensor specs not required by loaded SIGNAL alphas.
 
