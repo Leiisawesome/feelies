@@ -1410,10 +1410,6 @@ class Orchestrator:
         if router_on_trade is not None:
             router_on_trade(trade)
 
-<<<<<<< HEAD
-        # Trades may cross horizon boundaries without driving the micro state machine.
-        if self._horizon_scheduler is not None:
-=======
         # P2-α: drive the scheduler from the trade path too (C3).  No
         # micro-state walk; trade ticks just produce HorizonTicks if
         # they cross a boundary.  Sensor registry runs through the
@@ -1428,7 +1424,6 @@ class Orchestrator:
         if self._horizon_scheduler is not None and self._trade_path_may_emit_horizon_ticks(
             trade.symbol
         ):
->>>>>>> origin/main
             for tick in self._horizon_scheduler.on_event(trade):
                 self._bus.publish(tick)
 
@@ -2793,9 +2788,6 @@ class Orchestrator:
         return symbol in self._regime_bus_published_symbols
 
     def _reset_regime_session_state(self) -> None:
-<<<<<<< HEAD
-        """Reset session-local hazard history but retain calibrated HMM state."""
-=======
         """Clear hazard-detection state that must not span sessions.
 
         Called from every ``run_*`` entry point alongside ``_micro.reset``.
@@ -2820,7 +2812,6 @@ class Orchestrator:
         its per-symbol HMM posterior is the carry-over we want
         (boot-time calibration is the only place that wipes it).
         """
->>>>>>> origin/main
         self._last_regime_state.clear()
         self._regime_bus_published_symbols.clear()
         if self._regime_hazard_detector is not None:
