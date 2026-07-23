@@ -1,34 +1,14 @@
-"""NBBO-aggression rate — fraction of trades that touch or cross the NBBO.
+"""Fraction of trades that touch or cross the prevailing NBBO.
 
-Note on naming: Reg-NMS / standard microstructure reserves the term
-*trade-through* for prints **strictly outside** the NBBO (``price > ask``
-or ``price < bid``).  This sensor uses a broader definition — prints
-**at or beyond** the prevailing NBBO (``price >= ask`` for buys,
-``price <= bid`` for sells) — because the regime-shift signal we care
-about here is "did this print consume top-of-book liquidity?", which
-includes the touch case.  The metric is therefore an **NBBO-aggression
-rate**, kept under the legacy ``trade_through_rate`` sensor_id for
-locked-vector compatibility.  Consumers expecting strict Reg-NMS
-trade-through accounting should not use this signal as a proxy.
-
-A high aggression rate signals marketable order flow that consumes
-top-of-book liquidity, often a precursor to a regime shift in the
-Hawkes self-exciting family (see ``hawkes_intensity``).
-
-This sensor needs the prevailing NBBO at the time of each trade.
-We maintain the most-recent ``(bid, ask)`` from the upstream
-``NBBOQuote`` stream and consult it on every ``Trade``:
+Despite its compatibility name, ``trade_through_rate`` measures NBBO
+aggression rather than strict Reg NMS trade-throughs:
 
 - buy-side aggression if ``trade.price >= ask``;
 - sell-side aggression if ``trade.price <= bid``;
-- otherwise the trade prints inside the spread.
+- otherwise the trade is inside the spread.
 
-The sensor returns the rolling-window fraction of aggressive prints.
-
-Determinism: deque-based event-time eviction, integer counters.
-The NBBO snapshot is taken at the trade's exchange timestamp using
-the most recent quote, mirroring how a live MM would observe the
-book.
+The sensor retains the latest valid quote and reports the trailing event-time
+fraction of aggressive prints.
 """
 
 from __future__ import annotations
@@ -36,7 +16,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class TradeThroughRateSensor:
@@ -85,14 +66,12 @@ class TradeThroughRateSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if isinstance(event, NBBOQuote):
             bid = float(event.bid)
             ask = float(event.ask)
-            # A1: ignore degenerate quotes — a (bid=0, ask=0) snapshot would
-            # classify every positive-priced trade as ``price >= ask`` and
-            # poison the rolling fraction.  Preserve the prior valid NBBO.
-            if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
+            # Keep the prior NBBO when the new quote is invalid.
+            if bid <= 0.0 or ask <= 0.0 or bid > ask:
                 return None
             state["last_bid"] = bid
             state["last_ask"] = ask
@@ -126,13 +105,4 @@ class TradeThroughRateSensor:
         value = state["through_count"] / float(n) if n > 0 else 0.0
         warm = n >= self._min_trades
 
-        return SensorReading(
-            timestamp_ns=ts,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)

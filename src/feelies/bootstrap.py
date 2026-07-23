@@ -1,48 +1,9 @@
-"""Bootstrap — one-call system composition from configuration.
+"""Compose the platform from configuration.
 
-Reads a ``PlatformConfig`` (or YAML path), discovers alphas, creates
-a shared ``RegimeEngine``, composes all layers, and returns a
-ready-to-boot ``Orchestrator``.
-
-This is the only place where concrete implementations are selected
-and wired together.  The orchestrator and all downstream components
-interact only through protocols.
-
-Bus subscription order (Inv-D in the Phase-2 / Phase-3 plan)
-------------------------------------------------------------
-
-Subscriptions on the shared ``EventBus`` are dispatched in
-**registration order** (see :class:`feelies.bus.event_bus.EventBus`).
-For deterministic forensic ordering across runs we register handlers
-in this canonical order:
-
-1. ``BacktestOrderRouter`` (when present) — receives ``NBBOQuote``
-   first so resting-order fills are attributed to the quote that
-   triggered them, before any sensor sees the same quote.
-2. ``SensorRegistry`` — single subscriber per ``NBBOQuote`` /
-   ``Trade``; fans out to every registered sensor in spec order.
-3. ``HorizonAggregator`` — Phase-2-β subscriber; consumes
-   ``HorizonTick`` + ``SensorReading`` and emits
-   ``HorizonFeatureSnapshot`` (passive in P2-α).
-4. ``HorizonSignalEngine`` — Phase-3-α subscriber; consumes
-   ``HorizonFeatureSnapshot`` + ``RegimeState`` + ``SensorReading``
-   and emits ``Signal(layer='SIGNAL')`` events.  Subscribed *after*
-   the aggregator so the snapshot it receives is the canonical
-   per-boundary view.
-5. ``MetricEvent`` consumers — wired by the orchestrator
-   constructor (the ``MetricCollector``) so metrics drained later in
-   the tick are recorded after every functional handler ran.
-
-Phase-2 components (``SensorRegistry``, ``HorizonScheduler``,
-``HorizonAggregator``) are only constructed when
-``config.sensor_specs`` is non-empty *or* when
-``config.horizons_seconds`` is non-empty AND the operator opts in by
-mode (see ``_create_sensor_layer``).  Phase-3 components
-(``HorizonSignalEngine``) are only constructed when at least one
-``layer: SIGNAL`` alpha is registered (see
-``_create_signal_layer``).  Default ``PlatformConfig`` instances
-therefore wire **no Phase-2 / Phase-3 components**, preserving the
-legacy execution path bit-for-bit (Inv-A).
+This module selects concrete implementations and returns a ready-to-boot
+``Orchestrator``. Bus handlers register in causal order: router, sensors,
+horizon aggregation, signal generation, then metrics. Optional layers are
+omitted when their configuration is empty.
 """
 
 from __future__ import annotations
@@ -103,10 +64,6 @@ from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
 from feelies.execution.intent import SignalPositionTranslator
 from feelies.execution.position_manager import TargetPositionManager
-from feelies.execution.min_cost_policy import (
-    MinCostPolicyConfig,
-    MinimumCostExecutionPolicy,
-)
 from feelies.execution.moc_session import (
     MocSessionBounds,
     build_moc_bounds_from_platform,
@@ -190,7 +147,7 @@ class _BackendBundle:
 class StaleFactorLoadingsError(RuntimeError):
     """Raised when factor loadings are missing or stale at bootstrap.
 
-    Phase-4-finalize hard fail-stop: every symbol in any loaded
+    Fail-stop: every symbol in any loaded
     PORTFOLIO alpha's effective universe MUST have a fresh loadings
     row (within ``factor_loadings_max_age_seconds``) — otherwise the
     composition pipeline would silently neutralize against a stale
@@ -215,39 +172,17 @@ def build_platform(
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
     edge_calibration_factors: "Mapping[str, float] | None" = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
-    """Compose the full platform from configuration.
+    """Compose an orchestrator and resolved platform config.
 
-    Args:
-        config: A ``PlatformConfig`` instance, or a path to a YAML file.
-        event_log: Optional pre-populated event log (for backtest with
-            pre-ingested data).  If None, an empty in-memory log is created.
-        signal_order_trace_sink: When non-None, the orchestrator appends
-            :class:`~feelies.kernel.signal_order_trace.SignalOrderTraceRow`
-            records explaining why each bus :class:`~feelies.core.events.Signal`
-            did or did not yield a standalone ``OrderRequest`` on its quote tick.
-        normalizer: Optional live Massive normalizer for streaming feeds. When
-            wired, orchestrator enforces :class:`~feelies.ingestion.data_integrity.DataHealth`
-            gates on each market event (backtests normally omit this).
-        precomputed_ex_date_spans: Optional per-symbol ET date spans from a
-            fused pre-replay scan; skips rescanning the log for BT-18.
-        regime_calibration_quotes: Optional causal calibration prefix collected
-            during the same pre-replay scan; skips rescanning at boot.
-
-    Returns:
-        ``(orchestrator, config)`` — caller does
-        ``orchestrator.boot(config)`` then ``orchestrator.run_*()``.
+    Optional precomputed corporate-action spans and regime quotes avoid replay
+    rescans. A live normalizer enables per-event data-health gates.
     """
     if isinstance(config, (str, Path)):
         config = PlatformConfig.from_yaml(config)
 
     config.validate()
 
-    # BT-0: cost-gate honesty assertion (Inv-12).  ``0.0`` is the documented
-    # "gate explicitly disabled" sentinel (sub-cost research only); any other
-    # positive-but-sub-unity value is almost always a misconfiguration that
-    # understates round-trip cost (the historical 0.35 shipping default
-    # effectively disabled the gate while looking enabled), so reject it.  A
-    # ratio in [1.0, 1.5) is permitted but warned — Inv-12 targets >= 1.5.
+    # Zero explicitly disables the cost gate; any other ratio must cover cost.
     _edge_ratio = config.signal_min_edge_cost_ratio
     if _edge_ratio != 0.0 and _edge_ratio < 1.0:
         raise ConfigurationError(
@@ -281,12 +216,8 @@ def build_platform(
         )
 
     if event_log is None:
-        # Live/paper feeds append market events in *arrival* order at M1, which
-        # is not exchange-timestamp monotonic across symbols/exchanges.  Relax
-        # the replay-grade ordering guard for those logs so a benign out-of-order
-        # arrival does not crash the pipeline to DEGRADED (audit ING-01); the
-        # ingest/resequence path and ReplayFeed still enforce order where it is
-        # contractual.  Backtest/research logs keep the strict guard.
+        # Live feeds log arrival order, which need not be timestamp-monotonic.
+        # Replays retain strict ordering.
         enforce_market_order = config.mode not in (
             OperatingMode.PAPER,
             OperatingMode.LIVE,
@@ -315,22 +246,13 @@ def build_platform(
         if config.promotion_ledger_path is not None
         else None
     )
-    # Workstream F-5 layering: skill-pinned defaults sit at the bottom,
-    # platform-level YAML overrides on top.  Per-alpha
-    # ``promotion.gate_thresholds`` overrides are layered onto *this*
-    # result inside :py:meth:`AlphaRegistry.register` (lowest →
-    # highest: skill defaults < platform.yaml < alpha.yaml).  When the
-    # platform YAML carries no ``gate_thresholds:`` block we leave the
-    # registry's base as ``None`` — the lifecycle then falls through
-    # to the skill-pinned defaults at promotion time, preserving the
-    # F-2 / F-4 baseline bit-identically.
+    # Threshold precedence: defaults, platform overrides, then alpha overrides.
     gate_thresholds = _build_platform_gate_thresholds(config)
     registry = AlphaRegistry(
         clock=registry_clock,
         gate_thresholds=gate_thresholds,
         promotion_ledger=promotion_ledger,
-        # Audit P0-1: the explicitly operator-pinned fields become floors
-        # a per-alpha ``promotion.gate_thresholds`` override may not loosen.
+        # Alpha overrides may not loosen operator-pinned platform floors.
         platform_gate_threshold_overrides=config.gate_thresholds_overrides,
     )
     loader = AlphaLoader(
@@ -341,17 +263,7 @@ def build_platform(
     )
 
     _load_alphas(config, registry, loader)
-
-    # Workstream D.2 PR-2b-ii deleted the legacy per-tick alpha pipeline
-    # (CompositeFeatureEngine → CompositeSignalEngine →
-    # MultiAlphaEvaluator) and the FeatureEngine / SignalEngine
-    # Protocols; D.2 PR-2b-iv then deleted the surviving test
-    # scaffolding (FeatureVector, AlphaModule.evaluate, the
-    # orchestrator's feature_engine / signal_engine ctor params, and
-    # the gated single-alpha branch).  All surviving alphas are SIGNAL
-    # or PORTFOLIO layer and produce outputs via the bus-driven
-    # Phase-3 / Phase-4 pipeline (HorizonAggregator →
-    # HorizonSignalEngine → CompositionEngine) composed below.
+    config = _maybe_prune_unused_sensors(config, registry)
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
@@ -362,17 +274,9 @@ def build_platform(
         regime_compression_scale=config.risk_regime_compression_scale,
         regime_normal_scale=config.risk_regime_normal_scale,
     )
-    # Sanity-check: warn when ``risk_max_position_per_symbol`` is so
-    # large vs the gross-exposure cap that it is vacuously non-binding
-    # for the configured universe.  At AAPL $200/share, 50_000 shares
-    # is $10M — far above 200% of a $100k account — so the per-symbol
-    # cap silently does nothing.  Future operator edits to the gross
-    # cap could then surprise-promote the per-symbol cap to the binding
-    # constraint with no logical link between the two.
+    # Warn when the per-symbol cap cannot bind before the gross cap.
     _max_gross = config.account_equity * config.risk_max_gross_exposure_pct / 100.0
-    # Use $1 as a conservative price floor when the universe price is
-    # unknown at boot; operators on penny-stock universes are expected
-    # to set the cap explicitly.
+    # Use $1 as the boot-time price floor when marks are unavailable.
     _vacuous_threshold_shares = _max_gross / 1.0
     if config.risk_max_position_per_symbol > _vacuous_threshold_shares:
         logger.warning(
@@ -386,15 +290,10 @@ def build_platform(
             _max_gross,
             _vacuous_threshold_shares,
         )
-    # The dedicated alert sequence generator keeps risk-engine
-    # diagnostics (e.g. the per-leg PORTFOLIO veto Alert) on a
-    # separate sequence stream from the orchestrator's own ``_seq`` so
-    # neither can disturb the other's bit-identical replay (Inv-5).
-    risk_alert_seq = SequenceGenerator()
-    # BT-4: PDT round-trip tracking + $25k minimum-equity entry gate.
-    # Only the locked ``margin_25k`` (PDT-exempt) path is implemented; the
-    # enum's other members are accepted by config but refused here so an
-    # operator cannot silently run an unmodeled account type.
+    # Isolate risk alerts so they cannot shift orchestrator event IDs.
+    _seq_thread_safe = config.mode != OperatingMode.BACKTEST
+    risk_alert_seq = SequenceGenerator(thread_safe=_seq_thread_safe)
+    # Refuse account types whose PDT behavior is not modeled.
     account_type = AccountType(config.account_type)
     if account_type is not AccountType.MARGIN_25K:
         raise NotImplementedError(
@@ -423,8 +322,7 @@ def build_platform(
         buying_power_config=buying_power_config,
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
-        # Audit R-9: in PAPER/LIVE an unwired ENTRY gate fails open; surface
-        # a one-shot WARNING if any are missing so the omission is visible.
+        # Warn in PAPER/LIVE when an entry gate is not wired.
         warn_on_inert_entry_gates=config.mode in (OperatingMode.PAPER, OperatingMode.LIVE),
     )
 
@@ -453,16 +351,10 @@ def build_platform(
             spread_floor_taker_only=config.cost_spread_floor_taker_only,
         )
     )
-    # Wiring safety: every router path must receive an explicit cost model.
-    # ZeroCostModel was removed as a silent fallback (audit F-H-12); a None
-    # here is a wiring bug, not a benign zero-cost path.
+    # Every router requires an explicit cost model; None is a wiring bug.
     assert cost_model is not None, "cost_model construction returned None"
 
-    # PAPER / LIVE always need a normalizer (for DataHealth gating +
-    # WS frame decoding).  When the caller supplies one (tests,
-    # custom ingestors) we use it; otherwise we build the canonical
-    # one and thread the same instance into the live feed AND the
-    # orchestrator below (Inv-13 — single provenance source).
+    # PAPER/LIVE share one normalizer between the feed and orchestrator.
     if normalizer is None and config.mode in (
         OperatingMode.PAPER,
         OperatingMode.LIVE,
@@ -499,23 +391,12 @@ def build_platform(
     if backtest_router is not None:
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))
 
-    # ── Phase-2 sensor layer (additive, optional) ─────────────────
-    # Constructed *after* the backtest-router subscription so resting
-    # fills attribute to the quote that triggered them before any
-    # sensor sees the same quote (Inv-D / canonical bus ordering, see
-    # module docstring).  When ``config.sensor_specs`` is empty the
-    # registry is created but stays subscription-less and ``is_empty()``
-    # returns True, so the orchestrator transparently skips the new
-    # micro-states (Inv-A: legacy bit-identical path preserved).
+    # Subscribe the router before sensors so fills retain their triggering quote.
     position_store = MemoryPositionStore()
     strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
-    # Audit R-7: the position sizer scales *quantity* by regime while the
-    # risk engine scales *limits* by regime — a deliberate series, not a
-    # double-scale.  Source both from the same RiskConfig scale fields so the
-    # two can never silently drift (previously the sizer used its own
-    # hard-coded defaults that merely happened to match RiskConfig defaults).
+    # Size and limit scales are sequential controls sourced from one config.
     base_sizer = BudgetBasedSizer(
         regime_engine=regime_engine,
         regime_factors={
@@ -524,11 +405,7 @@ def build_platform(
             "normal": risk_config.regime_normal_scale,
         },
     )
-    # G-7: build the edge/vol/inventory tilt config from PlatformConfig.  The
-    # tilted sizer drives the live decision only when ``sizer_tilt_drive`` is
-    # set (audit P2.3: available opt-in, default OFF); otherwise it is used
-    # solely for the shadow measurement stream and the live size stays
-    # single-factor (byte-identical baseline).
+    # Keep tilted sizing shadow-only unless explicitly promoted to live decisions.
     sizer_tilt_config = SizerTiltConfig(
         edge_enabled=config.sizer_edge_weighting_enabled,
         edge_ref_bps=config.sizer_edge_ref_bps,
@@ -543,18 +420,25 @@ def build_platform(
         tilt_floor=config.sizer_tilt_floor,
         tilt_cap=config.sizer_tilt_cap,
     )
-    # S1 wires the edge + inventory factors; realized-vol provider is a
-    # deferred seam (the vol factor stays a no-op until it is supplied).
+    # Volatility tilt remains inactive until a realized-vol provider is supplied.
     tilted_sizer = EdgeWeightedSizer(
         base_sizer,
         sizer_tilt_config,
         inventory_provider=lambda symbol: position_store.get(symbol).quantity,
     )
     position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
+    # Live tilted sizing may exceed the base size, so surface it at startup.
+    if config.sizer_tilt_drive and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE):
+        logger.warning(
+            "bootstrap: sizer_tilt_drive=true in %s mode — the position "
+            "sizer can size SIGNAL-path orders above the single-factor "
+            "baseline (up to %.2fx combined). Verify this is an intended, "
+            "reviewed deployment choice for this run.",
+            config.mode.name,
+            config.sizer_tilt_cap,
+        )
     intent_translator = SignalPositionTranslator()
-    # G-1: the position-management decision layer.  ``drive`` routes the
-    # live decision through the planner; ``enable_trim`` turns on the
-    # cost-aware partial-reduce (TRIM).  Both default-on via PlatformConfig.
+    # The planner drives live intents and optionally emits partial reductions.
     position_manager = TargetPositionManager(
         trim_min_fraction=config.position_manager_trim_min_fraction,
     )
@@ -565,8 +449,7 @@ def build_platform(
     if config.mode == OperatingMode.BACKTEST:
         metric_collector._store_raw_events = False
 
-    # Compose the Phase-2 sensor layer *after* the metric collector
-    # exists so monitoring metrics (plan §4.5) wire automatically.
+    # Create metrics first so sensor monitoring subscribes during composition.
     (
         sensor_seq,
         horizon_seq,
@@ -574,22 +457,16 @@ def build_platform(
         sensor_registry,
         horizon_scheduler,
         _,  # horizon_aggregator — already bus-attached inside _create_sensor_layer
-    ) = _create_sensor_layer(config, bus, metric_collector=metric_collector)
-    # Keep a reference to the built feature list for the M2 coverage
-    # check in _create_signal_layer; the aggregator itself is already
-    # attached to the bus and does not need further orchestrator wiring.
+    ) = _create_sensor_layer(
+        config,
+        bus,
+        metric_collector=metric_collector,
+        thread_safe_sequences=_seq_thread_safe,
+    )
+    # The signal layer uses this list for dependency coverage checks.
     _built_horizon_features = _build_horizon_features(config)
 
-    # ── Phase-3 SIGNAL layer (additive, optional) ─────────────────
-    # Created *after* the aggregator so its bus subscription is
-    # registered after the aggregator's — the canonical handler-call
-    # order is therefore: BacktestRouter → SensorRegistry →
-    # HorizonAggregator → HorizonSignalEngine → MetricCollector
-    # (Inv-D / module docstring).
-    #
-    # Resolves SIGNAL-alpha sensor dependencies fail-fast against the
-    # constructed sensor registry, so any missing sensor surfaces at
-    # boot rather than as silent suppression at first snapshot.
+    # Subscribe signals after aggregation and fail fast on missing sensor inputs.
     signal_seq, horizon_signal_engine = _create_signal_layer(
         registry=registry,
         bus=bus,
@@ -598,22 +475,10 @@ def build_platform(
         horizon_features=_built_horizon_features,
         regime_min_discriminability=config.regime_min_discriminability,
         metric_collector=metric_collector,
+        thread_safe_sequences=_seq_thread_safe,
     )
 
-    # ── Phase-4 PORTFOLIO / composition layer (additive, optional) ──
-    #
-    # Constructed *after* the SIGNAL engine so the bus subscription
-    # ordering is: (existing handlers) → UniverseSynchronizer →
-    # CompositionEngine → CrossSectionalTracker → HorizonMetricsCollector.
-    # This keeps the snapshot/signal/tick handlers running BEFORE the
-    # synchronizer reads the cache, and the engine reads the context
-    # AFTER the synchronizer publishes it (single-threaded synchronous
-    # bus dispatch).
-    #
-    # When no PORTFOLIO alpha is registered the helper returns all
-    # ``None`` and the orchestrator's optional ctor args stay unset
-    # (Inv-A: SIGNAL-only deployments without portfolio layers take
-    # the short path through the orchestrator).
+    # Subscribe composition after SIGNAL so synchronization observes updated caches.
     (
         composition_engine,
         cross_sectional_tracker,
@@ -624,35 +489,27 @@ def build_platform(
         bus=bus,
         registry=registry,
         position_store=position_store,
+        strategy_positions=strategy_positions,
         clock=clock,
+        thread_safe_sequences=_seq_thread_safe,
     )
 
-    # Audit P0 H-1: hazard wiring scans ALL active alphas so SIGNAL-layer
-    # opt-ins (e.g. sig_hawkes_burst_v1, declared with hazard_exit.enabled:
-    # true) actually get a controller listening on the bus.  The detector
-    # was already wired registry-wide via ``_create_hazard_detector`` (see
-    # below); without this change the detector emitted RegimeHazardSpike
-    # events to a bus with no subscribers — a dead safety control.
+    # Scan every active alpha so SIGNAL-layer hazard exits receive a controller.
     hazard_exit_controller = _create_hazard_exit_controller(
         bus=bus,
         registry=registry,
         position_store=position_store,
         fallback_universe=config.symbols,
+        thread_safe_sequences=_seq_thread_safe,
     )
 
-    # Phase-3.1: hazard detector + dedicated _hazard_seq generator.
-    # Constructed only when at least one alpha declares
-    # ``hazard_exit.enabled: true`` so default deployments stay
-    # bit-identical to v0.2 (Inv-A).  When constructed but no
-    # regime engine is wired, the orchestrator silently skips
-    # publishing spikes — the detector still exists but never
-    # observes a RegimeState pair.
-    hazard_seq, regime_hazard_detector = _create_hazard_detector(registry)
+    # Build the detector only when an alpha enables hazard exits.
+    hazard_seq, regime_hazard_detector = _create_hazard_detector(
+        registry,
+        thread_safe_sequences=_seq_thread_safe,
+    )
 
-    # ── Multi-alpha execution components ──
-    # Audit R2: default-on wraps the risk engine so each alpha's
-    # risk_budget block is enforced alongside platform caps; operators
-    # opt out via platform.yaml: enforce_per_alpha_risk_budget: false.
+    # Apply per-alpha risk budgets in addition to platform caps.
     risk_wrapper = AlphaBudgetRiskWrapper(
         inner=risk_engine,
         registry=registry,
@@ -664,17 +521,8 @@ def build_platform(
         risk_wrapper if config.enforce_per_alpha_risk_budget else risk_engine
     )
     fill_ledger = FillAttributionLedger()
-    # Workstream D.2 PR-2b-ii: ``MultiAlphaEvaluator`` was deleted along
-    # with the per-tick composite engines and the
-    # ``FeatureEngine`` / ``SignalEngine`` Protocols.  The orchestrator
-    # no longer accepts a ``multi_alpha_evaluator`` ctor parameter; the
-    # bus-driven Phase-3 / Phase-4 composition pipeline owns multi-alpha
-    # arbitration end-to-end.
 
-    # Close-the-loop (gate): explicit ``edge_calibration_factors`` win;
-    # otherwise load from the versioned EdgeCalibrationStore when an
-    # ``edge_calibration_path`` is configured.  Absent both -> empty -> no
-    # haircut (parity-preserving).
+    # Explicit edge factors override the configured calibration store.
     if edge_calibration_factors is not None:
         resolved_edge_factors: dict[str, float] = dict(edge_calibration_factors)
     else:
@@ -726,6 +574,7 @@ def build_platform(
         size_shadow_sink=size_shadow_sink,
         normalizer=normalizer,
         regime_calibration_quotes=regime_calibration_quotes,
+        thread_safe_sequences=_seq_thread_safe,
         position_manager=position_manager,
         position_manager_drive=config.position_manager_drive,
         position_manager_enable_trim=config.position_manager_enable_trim,
@@ -823,15 +672,10 @@ def _ensure_session_open_ns_for_live_modes(
 def _build_platform_gate_thresholds(
     config: PlatformConfig,
 ) -> GateThresholds | None:
-    """Apply platform-level YAML overrides on top of skill-pinned defaults.
+    """Build platform promotion thresholds when overrides are configured.
 
-    Workstream **F-5** entry-point.  When the operator supplies a
-    ``gate_thresholds:`` block in ``platform.yaml`` we materialise a
-    :class:`~feelies.alpha.promotion_evidence.GateThresholds` carrying
-    the merged values; otherwise we return ``None`` so the
-    :class:`AlphaRegistry` keeps its "no platform overrides" identity
-    (and per-alpha overrides materialise a ``GateThresholds()``
-    on-demand inside the registry).
+    Return ``None`` when there are no overrides so the registry can retain
+    its distinct "no platform overrides" state.
 
     Re-validation is intentional even though
     :class:`PlatformConfig` already validated the keys at YAML parse
@@ -913,7 +757,7 @@ def _load_alphas(
 def _resolve_trading_session_bounds(
     config: PlatformConfig,
 ) -> TradingSessionBounds | None:
-    """BT-16: RTH open/close bounds for entry-fill suppression."""
+    """Resolve RTH bounds for entry-fill suppression."""
     cal_path = str(config.event_calendar_path) if config.event_calendar_path is not None else None
     session_date = config.rth_session_date or config.moc_session_date
     return build_trading_session_from_platform(
@@ -930,7 +774,7 @@ def _resolve_trading_session_bounds(
 
 
 def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:
-    """BT-8: session bounds for closing-auction fills (None ⇒ MOC inert)."""
+    """Resolve closing-auction bounds, or ``None`` when disabled."""
     if not config.moc_strategy_ids:
         return None
     cal_path = str(config.event_calendar_path) if config.event_calendar_path is not None else None
@@ -974,8 +818,7 @@ def _create_backend(
     trading_session_bounds: TradingSessionBounds | None = (
         _resolve_trading_session_bounds(config) if config is not None else None
     )
-    # Execution-realism knobs (audit 2026-06-19) — read straight off the
-    # config so they thread into both backtest routers.  All default-neutral.
+    # Thread identical execution-realism settings into both backtest routers.
     within_l1_impact_factor = config.cost_within_l1_impact_factor if config is not None else 0.0
     permanent_impact_coefficient = (
         config.cost_permanent_impact_coefficient if config is not None else 0.0
@@ -991,12 +834,7 @@ def _create_backend(
         config.passive_require_trade_for_level_fill if config is not None else False
     )
     if mode == OperatingMode.BACKTEST:
-        # ``minimum_cost`` runs through the passive-limit backend
-        # because the per-order policy must be able to post a LIMIT
-        # when it picks the passive route.  When the policy returns
-        # "aggressive", the orchestrator emits an ``OrderType.MARKET``
-        # which the passive router fills via its ``_fill_aggressive``
-        # path (same economics as ``BacktestOrderRouter``).
+        # Minimum-cost routing needs one backend that can fill limits and markets.
         if execution_mode in ("passive_limit", "minimum_cost"):
             backend, router = build_passive_limit_backend(
                 event_log,
@@ -1098,8 +936,7 @@ def _derive_session_id(config: PlatformConfig) -> str:
     """Build a deterministic session id from platform config.
 
     The session id is folded into every ``HorizonTick.session_id``
-    field; consumers use it for forensic grouping.  Format
-    (plan §3.2 / M5):
+    field; consumers use it for forensic grouping. Format:
 
         f"{market_id}_{session_kind}_{date}"
 
@@ -1119,35 +956,14 @@ def _derive_session_id(config: PlatformConfig) -> str:
     return f"{config.market_id}_{config.session_kind}_{date_str}"
 
 
-# ── Sensor → feature mapping (Phase 3.5) ─────────────────────────────────────
-# For each sensor_id that may appear in platform.yaml, declare which
-# HorizonFeature implementations to construct at each registered horizon.
-# Features for sensors that are NOT in config.sensor_specs are skipped.
-# Adding a new sensor is a single entry in the registry below — no edit
-# to the lookup function or its callers is needed.
-
-# sensor_id -> factory(horizon) -> the HorizonFeatures that sensor drives.
-# A sensor absent from this map contributes no Layer-2 features; the gate
-# DSL resolves it via the sensor_cache path in
-# HorizonSignalEngine._build_bindings.  (``spread_z_30d`` was historically
-# the cache-only example until audit P1-6 wired its passthrough below.)
+# Map each sensor to the horizon features it produces. Unlisted sensors remain
+# available to the gate DSL through the live sensor cache.
 _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
-    # Audit P1-6: ``spread_z_30d`` previously wired no Layer-2 feature, so it
-    # reached alphas only through the engine's event-time ``_sensor_cache`` —
-    # which has no horizon-staleness path and is invalidated only on a *cold*
-    # reading (and spread_z_30d never un-warms).  Wiring a passthrough puts it
-    # in the snapshot so (a) the aggregator's horizon-staleness override marks
-    # it stale when the sensor goes silent within the window, and (b) the gate
-    # binding resolves from the horizon-boundary value, unifying the gate/
-    # snapshot time-base (audit finding #8).  ``feature_id`` is the bare
-    # ``spread_z_30d`` so the regime-gate identifier resolves unchanged.
+    # Snapshot spread_z_30d so horizon staleness applies to gate evaluation.
     "spread_z_30d": lambda h: [
         SensorPassthroughFeature("spread_z_30d", h),
     ],
-    # Audit P1-1: the z-score baseline is now a genuine event-time window
-    # of width ``h`` (not a horizon-blind 200-sample count window), so a
-    # KYLE_INFO alpha at horizon ``h`` measures persistent OFI drift over
-    # *its own* horizon rather than deviation from the last few seconds.
+    # Normalize OFI within each alpha's event-time horizon.
     "ofi_ewma": lambda h: [
         SensorPassthroughFeature("ofi_ewma", h),
         HorizonWindowedFeature(
@@ -1157,14 +973,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="ofi_ewma_zscore",
         ),
     ],
-    # Audit 2P-2: the literature-correct Kyle input is integrated *raw* signed
-    # flow Σ ofi_t over the horizon — NOT a sum over the EWMA (which
-    # double-counts each event through the decay tail and scales with quote
-    # count).  ``ofi_raw`` emits the per-event OFI so this ``sum`` reducer
-    # computes the genuine windowed integral (each event counted once).  This
-    # replaces the earlier P1-A ``ofi_ewma_integrated``.  KYLE_INFO alphas
-    # should prefer ``ofi_integrated`` once an entry threshold is calibrated
-    # for its (share-flow) scale.
+    # Sum raw signed flow once per event; summing the EWMA double-counts decay tails.
     "ofi_raw": lambda h: [
         HorizonWindowedFeature(
             "ofi_raw",
@@ -1173,10 +982,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="ofi_integrated",
             min_samples=1,
         ),
-        # H12/H13 Phase A: Hazen percentile of the latest ofi_raw sample
-        # within the trailing-h event-time window (kyle_lambda_60s wiring
-        # precedent). Named ofi_integrated_percentile per formal-spec §1.2
-        # — H12 consumes h=900; H13 consumes h=1800 (same factory line).
+        # Hazen percentile of the latest raw OFI within the horizon.
         HorizonWindowedFeature(
             "ofi_raw",
             h,
@@ -1184,11 +990,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="ofi_integrated_percentile",
         ),
     ],
-    # Audit P1-B / P1-C: signed top-of-book size imbalance, the level-invariant
-    # L1 fingerprint that ``micro_price_zscore`` (a z of the ~$100 price level)
-    # destroys.  ``(micro - mid)/spread = book_imbalance / 2``, so the
-    # passthrough (last-of-horizon) carries the Stoikov imbalance directly; the
-    # windowed z gives a regime-relative view for gating.
+    # Book imbalance is level-invariant; expose its latest and normalized values.
     "book_imbalance": lambda h: [
         SensorPassthroughFeature("book_imbalance", h),
         HorizonWindowedFeature(
@@ -1197,11 +999,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             reducer="zscore",
             feature_id="book_imbalance_zscore",
         ),
-        # Audit 2P-3: a single last-of-horizon imbalance reading is a
-        # high-variance instantaneous snapshot.  The horizon-window *mean*
-        # captures the persistent queue imbalance over the decision horizon
-        # (the KYLE footprint) with far less noise — this is what the
-        # reference alpha confirms on.
+        # The horizon mean captures persistent imbalance with less point noise.
         HorizonWindowedFeature(
             "book_imbalance",
             h,
@@ -1209,9 +1007,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="book_imbalance_mean",
         ),
     ],
-    # Audit P1-7/P1-11: horizon-window these too so every rolling feature
-    # uses a consistent event-time window of width ``h`` rather than a
-    # mix of 200- / 2000-sample count windows.
+    # Keep Kyle features on the alpha's event-time horizon.
     "kyle_lambda_60s": lambda h: [
         HorizonWindowedFeature(
             "kyle_lambda_60s",
@@ -1234,11 +1030,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="quote_replenish_asymmetry_zscore",
         ),
     ],
-    # Audit P1-G: expose a regime-relative z (per-symbol, event-time window)
-    # alongside the raw rate so a hazard threshold is comparable across symbols
-    # and quote frequencies — the raw events/second is not (a fast name always
-    # reads high).  The bare passthrough is retained so gate identifiers that
-    # reference ``quote_hazard_rate`` directly still resolve.
+    # Normalize hazard rate across symbols while retaining the raw gate input.
     "quote_hazard_rate": lambda h: [
         SensorPassthroughFeature("quote_hazard_rate", h),
         HorizonWindowedFeature(
@@ -1248,22 +1040,12 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="quote_hazard_rate_zscore",
         ),
     ],
-    # Audit P1-F: INVENTORY is a fast, mean-reverting mechanism (half-life
-    # 5–60 s).  A z over a long horizon window (300–1800 s) smears that
-    # reversion, so we expose ONLY the last-of-horizon signed pressure — the
-    # already-normalised [-1,1] value is the right aggregation.  Task 7
-    # (sig_inventory_fade_v1 formal spec §1.2/§14.3) corrected the earlier
-    # claim that G16 admits only h=30 for this family: the horizon/half-life
-    # ratio envelope [0.5, 4.0] also admits h=120 across the G16 half-life
-    # envelope 5–60 s (e.g. hl=40 s → ratio 3.0), so the passthrough is wired
-    # at h ∈ {30, 120}.  Longer horizons (300–1800 s) stay unwired — they
-    # would dilute the signal.
+    # Inventory pressure is already normalized and fast-decaying; expose only
+    # the latest value at the two horizons allowed by its half-life envelope.
     "inventory_pressure": lambda h: (
         [SensorPassthroughFeature("inventory_pressure", h)] if h in (30, 120) else []
     ),
-    # P2-3 LIQUIDITY_STRESS fingerprints.  Both are already normalised
-    # ([0,1] alarm / [0,1] fraction), so passthrough (last-of-horizon) is the
-    # natural aggregation; quote_flicker also gets a regime-relative z.
+    # Liquidity-stress inputs are normalized; flicker also gets a relative z-score.
     "liquidity_stress_score": lambda h: [
         SensorPassthroughFeature("liquidity_stress_score", h),
     ],
@@ -1276,11 +1058,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="quote_flicker_rate_zscore",
         ),
     ],
-    # Sensor emits a 4-tuple (λ_buy, λ_sell, intensity_ratio, branching).
-    # ``hawkes_intensity_zscore`` is the *undirected* burst magnitude
-    # (z-score of λ_buy+λ_sell); ``hawkes_intensity_imbalance`` (audit
-    # P1-3) adds the *signed* buy/sell imbalance so a directional
-    # HAWKES_SELF_EXCITE alpha has a usable L1 fingerprint.
+    # Expose both total Hawkes burst magnitude and signed buy/sell imbalance.
     "hawkes_intensity": lambda h: [
         HorizonWindowedFeature(
             "hawkes_intensity",
@@ -1313,12 +1091,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             "seconds_to_window_close",
             h,
         ),
-        # Audit follow-up (2026-06-19 external review): expose the window
-        # identity (tuple index 2) so an alpha surface modelling multiple
-        # scheduled-flow event types (MOC vs earnings vs open) can tell them
-        # apart instead of collapsing them under one indistinguishable
-        # active/seconds/prior triple.  Name matches the engine's gate binding
-        # (`_TUPLE_SENSOR_COMPONENTS`).
+        # Preserve window identity so distinct scheduled events do not collapse.
         TupleComponentFeature(
             "scheduled_flow_window",
             2,
@@ -1340,10 +1113,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             reducer="zscore",
             feature_id="micro_price_zscore",
         ),
-        # Audit P1-9: a z-score of the raw micro-price *level* leaks the
-        # absolute price (momentum).  ``micro_price_drift`` is the signed
-        # change of the micro-price across the horizon — level-invariant,
-        # so it isolates the directional tilt an alpha actually wants.
+        # Drift captures directional change without leaking the absolute price level.
         HorizonWindowedFeature(
             "micro_price",
             h,
@@ -1353,12 +1123,7 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     ],
     "realized_vol_30s": lambda h: [
         SensorPassthroughFeature("realized_vol_30s", h),
-        # Audit P1-1 follow-up (IC run): horizon-windowing the vol z-score
-        # *regressed* (count-window RankIC 0.523 vs windowed 0.191 at 1800s;
-        # neutral at 300/900).  Volatility normalisation is better against a
-        # longer count baseline than the event-time horizon window, so this
-        # sensor keeps the count-window z (unlike ofi/micro/kyle which win
-        # windowed).
+        # Volatility uses a longer count baseline; horizon normalization is too noisy.
         RollingZscoreFeature(
             "realized_vol_30s",
             h,
@@ -1417,8 +1182,7 @@ def _feature_ids_for_sensor_at_horizon(
 def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str] | None:
     """Statically extract the ``snapshot.values`` keys a signal body reads.
 
-    Audit 2P-1: ``required_warm`` must gate an alpha only on the features it
-    *actually consumes*, not on every feature of every declared sensor.  We
+    ``required_warm`` gates only features the alpha actually consumes. We
     parse the compiled ``signal:`` source and collect the string-literal keys
     used in ``snapshot.values.get("…")`` and ``snapshot.values["…"]``.
 
@@ -1430,8 +1194,8 @@ def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str
     - ``None`` when the source is absent, unparseable, or contains any
       ``.values`` access we cannot resolve to a string literal (a dynamic key,
       ``.values.items()``, an aliased ``v = snapshot.values``, …).  ``None`` is
-      the **conservative** signal: the caller falls back to requiring every
-      feature of every depended sensor, preserving the pre-2P-1 (safe) gating.
+      the conservative signal: the caller requires every feature of every
+      depended sensor.
     """
     if not source:
         return None
@@ -1498,13 +1262,13 @@ def _required_warm_feature_ids_for_signal_alpha(
 ) -> frozenset[str]:
     """Snapshot ``warm`` / ``stale`` keys an alpha must satisfy to enter.
 
-    Audit 2P-1: when the consumed ``snapshot.values`` keys can be determined
-    statically from the ``signal:`` body, gate only on those (intersected with
+    When ``snapshot.values`` keys can be determined statically, gate only on
+    those keys intersected with
     the features registered at this horizon).  This stops an alpha from being
     suppressed on a feature it never reads — e.g. an auxiliary ``*_zscore`` /
     ``*_integrated`` view added to a sensor it depends on.  When the body's
     feature access cannot be resolved (``signal_source is None`` or it contains
-    a dynamic ``.values`` access), fall back to the pre-2P-1 conservative set
+    a dynamic ``.values`` access), fall back to the conservative set
     (every feature of every depended sensor).  Either way the regime-gate
     identifiers are added, since the gate must also resolve from warm features.
     """
@@ -1551,14 +1315,9 @@ def _warn_unread_sensor_dependencies(
 ) -> None:
     """Warn when a declared sensor dependency is never actually read.
 
-    sensor_audit_2026-07-02 P1: G16 rule 10 (``layer_validator.py``) only
-    checks that ``l1_signature_sensors`` is a subset of
-    ``depends_on_sensors`` — a purely structural, YAML-level check. It cannot
-    detect a "cosmetic fingerprint": a declared sensor whose features are
-    never referenced in ``evaluate()`` or the regime gate (the exact defect
-    a prior audit pass fixed once for ``kyle_lambda_60s`` in
-    ``sig_benign_midcap_v1`` — see that alpha's history — before recurring
-    there again through ``micro_price``). ``warm_ids`` (audit 2P-1) already
+    G16 only checks that ``l1_signature_sensors`` is a subset of
+    ``depends_on_sensors``. It cannot detect a declared sensor whose features
+    are never referenced by ``evaluate()`` or the regime gate. ``warm_ids``
     holds the union of every feature the body's statically-resolved
     ``snapshot.values`` accesses and the regime gate's bound identifiers
     require, so a declared sensor whose *entire* horizon feature set is
@@ -1611,11 +1370,57 @@ def _consumed_features_for_signal_registration(
     return tuple(declared_consumed_features)
 
 
+def _maybe_prune_unused_sensors(
+    config: PlatformConfig,
+    registry: AlphaRegistry,
+) -> PlatformConfig:
+    """Drop sensor specs not required by loaded SIGNAL alphas.
+
+    When ``prune_unused_sensors`` is True (or ``None`` in BACKTEST mode),
+    intersect ``config.sensor_specs`` with the union of every SIGNAL
+    alpha's ``depends_on_sensors``.  Missing required sensors fail closed.
+    Spec order is preserved (topological registration order).
+    """
+    # Opt-in only.  Research configs (e.g. bt_sig_benign_midcap) set
+    # ``prune_unused_sensors: true``; leaving the default ``None``/False
+    # preserves locked Inv-5 baselines that register the full reference
+    # sensor stack under BACKTEST.
+    prune = bool(config.prune_unused_sensors)
+    if not prune or not config.sensor_specs:
+        return config
+
+    required: set[str] = set()
+    for alpha in registry.signal_alphas():
+        required.update(getattr(alpha, "depends_on_sensors", ()))
+    if not required:
+        # No SIGNAL alphas declare sensor deps — leave the stack intact
+        # (PORTFOLIO-only / observational configs still need sensors).
+        return config
+
+    available = {spec.sensor_id for spec in config.sensor_specs}
+    missing = sorted(required - available)
+    if missing:
+        raise ConfigurationError(
+            "prune_unused_sensors: loaded SIGNAL alphas require sensors "
+            f"{missing} that are not present in platform sensor_specs"
+        )
+
+    pruned = tuple(spec for spec in config.sensor_specs if spec.sensor_id in required)
+    logger.info(
+        "prune_unused_sensors: %d → %d specs (kept %s)",
+        len(config.sensor_specs),
+        len(pruned),
+        sorted(required),
+    )
+    return replace(config, sensor_specs=pruned)
+
+
 def _create_sensor_layer(
     config: PlatformConfig,
     bus: EventBus,
     *,
     metric_collector: InMemoryMetricCollector | None = None,
+    thread_safe_sequences: bool = True,
 ) -> tuple[
     SequenceGenerator,
     SequenceGenerator,
@@ -1624,7 +1429,7 @@ def _create_sensor_layer(
     HorizonScheduler | None,
     HorizonAggregator | None,
 ]:
-    """Compose the Phase-2 sensor layer.
+    """Compose the sensor layer.
 
     Returns a 6-tuple ``(sensor_seq, horizon_seq, snapshot_seq,
     sensor_registry, horizon_scheduler, horizon_aggregator)``.
@@ -1640,9 +1445,9 @@ def _create_sensor_layer(
     Subscription order is governed by the module-level docstring and
     is the *single* place this is documented authoritatively.
     """
-    sensor_seq = SequenceGenerator()
-    horizon_seq = SequenceGenerator()
-    snapshot_seq = SequenceGenerator()
+    sensor_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    horizon_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    snapshot_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     sensor_registry: SensorRegistry | None = None
     if config.sensor_specs:
@@ -1653,12 +1458,7 @@ def _create_sensor_layer(
             metric_collector=metric_collector,
             emit_reading_metrics=config.mode != OperatingMode.BACKTEST,
         )
-        # ── Calendar injection for ScheduledFlowWindowSensor ──────────
-        # ScheduledFlowWindowSensor requires a live EventCalendar object
-        # that cannot be expressed as a plain YAML params value.  When
-        # event_calendar_path is set we load it once and splice it into
-        # every matching spec's params before handing off to the registry
-        # (which calls cls(**params) at registration time).
+        # Inject the runtime calendar object that YAML cannot represent.
         import dataclasses as _dc
         from feelies.sensors.impl.scheduled_flow_window import (
             ScheduledFlowWindowSensor as _SFWS,
@@ -1690,12 +1490,8 @@ def _create_sensor_layer(
     horizon_scheduler: HorizonScheduler | None = None
     horizon_aggregator: HorizonAggregator | None = None
     if config.horizons_seconds and (sensor_registry is not None or config.sensor_specs):
-        # H10: lazy-binding session_open_ns from the first event makes
-        # boundary indices depend on event-arrival ordering at the
-        # scheduler, which defeats bit-identical replay (B-PROV-01 /
-        # A-DET-02 in the audit protocol).  Require an explicit anchor
-        # for any non-backtest run; for backtests the replayed event log
-        # has a deterministic ordering so auto-bind is acceptable.
+        # Live boundary indices need an explicit anchor; deterministic replays may
+        # bind to their first ordered event.
         if config.session_open_ns is None:
             if config.mode != OperatingMode.BACKTEST:
                 raise ConfigurationError(
@@ -1711,15 +1507,8 @@ def _create_sensor_layer(
                 "event log is strictly ordered and never partially "
                 "replayed (acceptable for BACKTEST mode only)."
             )
-        # Only construct the scheduler when sensors exist; without
-        # downstream consumers the scheduler would emit ticks into
-        # the void and inflate the bus traffic for no benefit.  This
-        # also keeps the legacy demo (no sensors) free of any
-        # HorizonTick events.
-        # Audit P1-8: when session_open_ns is not pinned in config, anchor the
-        # horizon grid to the RTH open (09:30 ET) for RTH equity sessions
-        # rather than the raw first event — otherwise the first bucket of the
-        # day is truncated and boundaries drift off the session structure.
+        # Skip the scheduler without sensor consumers. For RTH equity replays,
+        # anchor an unpinned grid to the open so the first bucket is complete.
         _anchor_fn = (
             rth_open_ns
             if (
@@ -1746,9 +1535,7 @@ def _create_sensor_layer(
             else "<unknown>",
             config.session_open_ns,
         )
-        # Buffer 2 × max(horizon) per plan §4.3 so any feature whose
-        # window equals the longest registered horizon still has full
-        # history available at finalize time.
+        # Two horizon lengths preserve a full longest-window history.
         sensor_buffer_seconds = 2 * max(config.horizons_seconds)
         _active_features = _build_horizon_features(config)
         horizon_aggregator = HorizonAggregator(
@@ -1758,9 +1545,7 @@ def _create_sensor_layer(
             sensor_buffer_seconds=sensor_buffer_seconds,
             sequence_generator=snapshot_seq,
             metric_collector=metric_collector,
-            # S16: pass registered sensor IDs so the aggregator can warn
-            # at construction time about features that declare unknown
-            # input_sensor_ids (likely misconfiguration).
+            # Warn at construction when features declare unknown sensors.
             known_sensor_ids=frozenset(
                 spec.sensor_id
                 for spec in (sensor_registry.specs if sensor_registry is not None else ())
@@ -1788,22 +1573,23 @@ def _create_sensor_layer(
 
 def _create_hazard_detector(
     registry: AlphaRegistry,
+    *,
+    thread_safe_sequences: bool = True,
 ) -> tuple[SequenceGenerator, RegimeHazardDetector | None]:
     """Construct a :class:`RegimeHazardDetector` iff any alpha opts in.
 
     Returns ``(hazard_seq, detector_or_None)``.  The sequence generator
     is always returned so the orchestrator has a stable counter
     reference even when no alpha uses hazard exits — the empty counter
-    advances zero times in that case (Inv-A: bit-identical legacy
-    parity preserved).
+    advances zero times in that case, preserving parity.
 
     Activation rule (§20.7.1): the detector is only constructed when
     at least one registered alpha's manifest declares
-    ``hazard_exit.enabled: true``.  This keeps the default Phase-3-α
-    deployment free of any hazard-related cost and ensures Level-5
+    ``hazard_exit.enabled: true``. This keeps default deployments free of
+    hazard-related cost and ensures Level-5
     parity hash baselines are not generated by accident.
     """
-    hazard_seq = SequenceGenerator()
+    hazard_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     def _opts_in(manifest_block: dict[str, object] | None) -> bool:
         if not isinstance(manifest_block, dict):
@@ -1835,14 +1621,13 @@ def _create_signal_layer(
     horizon_features: list[HorizonFeature] | None = None,
     regime_min_discriminability: float = 0.0,
     metric_collector: InMemoryMetricCollector | None = None,
+    thread_safe_sequences: bool = True,
 ) -> tuple[SequenceGenerator, HorizonSignalEngine | None]:
-    """Compose the Phase-3 :class:`HorizonSignalEngine` if SIGNAL alphas exist.
+    """Compose :class:`HorizonSignalEngine` when SIGNAL alphas exist.
 
     Returns ``(signal_seq, engine_or_None)``.  The sequence generator
     is always returned (so the orchestrator has a stable counter
-    reference even when the engine is absent — Inv-A: legacy
-    deployments continue to use the empty counter and emit identical
-    bytes).
+    reference even when the engine is absent, preserving identical output).
 
     SIGNAL-alpha sensor dependencies are resolved against
     ``sensor_registry``'s declared spec ids before the engine is
@@ -1860,7 +1645,7 @@ def _create_signal_layer(
     surfaces the gap at boot rather than via silent ``None`` at
     runtime.
     """
-    signal_seq = SequenceGenerator()
+    signal_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     signal_alphas = registry.signal_alphas()
     if not signal_alphas:
@@ -1873,10 +1658,7 @@ def _create_signal_layer(
 
     registry.resolve_signal_dependencies(known_sensor_ids)
 
-    # H3 / M2: build the set of feature_ids that will be present in
-    # HorizonFeatureSnapshot.values so we can warn on any
-    # depends_on_sensors entry that neither maps to a feature nor
-    # lands in the sensor cache (= known_sensor_ids).
+    # Warn when a dependency maps to neither a feature nor a cached sensor.
     feature_ids: frozenset[str] = frozenset(f.feature_id for f in (horizon_features or []))
     covered = feature_ids | known_sensor_ids
     for alpha in signal_alphas:
@@ -1979,45 +1761,19 @@ def _create_composition_layer(
     bus: EventBus,
     registry: AlphaRegistry,
     position_store: MemoryPositionStore,
+    strategy_positions: StrategyPositionStore,
     clock: Clock,
+    thread_safe_sequences: bool = True,
 ) -> tuple[
     CompositionEngine | None,
     CrossSectionalTracker | None,
     HorizonMetricsCollector | None,
     HazardExitController | None,
 ]:
-    """Compose the Phase-4 PORTFOLIO / composition layer (additive).
+    """Compose the portfolio pipeline in deterministic bus order.
 
-    Returns ``(composition_engine, cross_sectional_tracker,
-    horizon_metrics_collector, hazard_exit_controller)``.  All four
-    are ``None`` when no PORTFOLIO alpha is registered — SIGNAL-only
-    deployments take the short path through the orchestrator and the
-    cross-sectional pipeline is never instantiated (Inv-A).
-
-    Subscription order on the shared bus (registration order is
-    dispatch order):
-
-        UniverseSynchronizer.attach()
-            → emits CrossSectionalContext after barrier close
-        CompositionEngine.attach()
-            → consumes CrossSectionalContext, publishes
-              SizedPositionIntent
-        CrossSectionalTracker.attach()
-            → records per-strategy gross/net/factor breakdown
-        HorizonMetricsCollector.attach()
-            → publishes 12 composition + hazard metrics
-        HazardExitController.attach()
-            → consumes RegimeHazardSpike + Trade, publishes
-              OrderRequest(reason="HAZARD_SPIKE" | "HARD_EXIT_AGE")
-
-    Fail-stop guards (Inv-11):
-
-    * ``UniverseScaleError`` when any PORTFOLIO universe exceeds
-      ``composition_max_universe_size``.
-    * ``StaleFactorLoadingsError`` when the configured loadings file
-      is older than ``factor_loadings_max_age_seconds``.  The check
-      is bypassed when ``factor_loadings_dir`` is ``None`` (which
-      makes the neutralizer a no-op anyway).
+    Returns four ``None`` values when no portfolio alpha exists. Oversized
+    universes and stale configured factor loadings fail stop before wiring.
     """
     portfolio_alphas = registry.portfolio_alphas()
     if not portfolio_alphas:
@@ -2051,9 +1807,9 @@ def _create_composition_layer(
 
     _enforce_factor_loadings_freshness(config, sorted(universe), clock=clock)
 
-    intent_seq = SequenceGenerator()
-    ctx_seq = SequenceGenerator()
-    metric_seq = SequenceGenerator()
+    intent_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    ctx_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    metric_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     upstream_ids = _union_portfolio_upstream_strategy_ids(portfolio_modules)
     signal_horizons = _composition_signal_horizons(
@@ -2087,11 +1843,12 @@ def _create_composition_layer(
     capital_usd = float(config.account_equity)
     optimizer = TurnoverOptimizer(
         capital_usd=capital_usd,
+        # In small universes, a tight per-name cap can collapse relative weights.
+        gross_cap_pct=config.composition_gross_cap_pct,
+        per_name_cap_pct=config.composition_per_name_cap_pct,
         lambda_tc=config.composition_lambda_tc,
         lambda_risk=config.composition_lambda_risk,
-        # Audit P1-1: the optimizer path is selected explicitly by config, not
-        # by whether cvxpy happens to be importable.  ``closed_form`` (default)
-        # ignores the lambda penalties; ``ecos`` engages the solver objective.
+        # Select ECOS explicitly; installed optional packages never change behavior.
         require_solver=(config.composition_optimizer_mode == "ecos"),
     )
 
@@ -2102,8 +1859,9 @@ def _create_composition_layer(
         decay_weighting_enabled=decay_enabled,
     )
 
-    def _position_lookup(symbol: str) -> float:
-        pos = position_store.get(symbol)
+    def _position_lookup(strategy_id: str, symbol: str) -> float:
+        # Turnover is strategy-scoped; market marks remain shared by symbol.
+        pos = strategy_positions.get(strategy_id, symbol)
         mark = position_store.latest_mark(symbol)
         if mark is None:
             mark = pos.avg_entry_price
@@ -2177,18 +1935,11 @@ def _create_hazard_exit_controller(
     registry: AlphaRegistry,
     position_store: MemoryPositionStore,
     fallback_universe: Iterable[str],
+    thread_safe_sequences: bool = True,
 ) -> HazardExitController | None:
     """Build a :class:`HazardExitController` from any active alpha's opt-in.
 
-    Audit P0 H-1: prior to this helper, the hazard wiring lived inside
-    :func:`_create_composition_layer` and scanned only PORTFOLIO modules.
-    The detector itself is wired from any active alpha (see
-    :func:`_create_hazard_detector`), so a SIGNAL alpha that declared
-    ``hazard_exit.enabled: true`` got spikes emitted on the bus with
-    nothing listening — a silently dead safety control.
-
-    Scanning the full registry here means the controller is wired
-    whenever any active alpha (SIGNAL **or** PORTFOLIO) opts in.
+    Scan all active alphas so SIGNAL and PORTFOLIO policies are both wired.
 
     The HM-1 default applies here: when an alpha omits
     ``hard_exit_age_seconds`` we derive ``2 × expected_half_life_seconds``
@@ -2211,7 +1962,7 @@ def _create_hazard_exit_controller(
     if not candidates:
         return None
 
-    seq = SequenceGenerator()
+    seq = SequenceGenerator(thread_safe=thread_safe_sequences)
     controller = HazardExitController(
         bus=bus,
         sequence_generator=seq,
@@ -2286,7 +2037,7 @@ def _enforce_ex_date_replay_guard(
     *,
     precomputed_spans: dict[str, tuple[date, date]] | None = None,
 ) -> None:
-    """BT-18: refuse backtests whose replay span crosses a known ex-date."""
+    """Refuse backtests whose replay span crosses a known ex-date."""
     if not config.backtest_enforce_ex_date_guard:
         return
     if config.mode != OperatingMode.BACKTEST:
@@ -2328,24 +2079,10 @@ def _enforce_factor_loadings_freshness(
     else we raise rather than silently neutralize against a stale or
     partial factor model (Inv-11).
 
-    Freshness reference (audit P1-4).  The file's "as of" timestamp is
-    taken from an optional ``"_meta": {"as_of_ns": <int>}`` block
-    embedded *in the file* when present — a content-addressable anchor
-    that yields a reproducible verdict regardless of when the artefact
-    was checked out.  Only when that block is absent do we fall back to
-    the filesystem mtime, whose drift forced downstream suites to pin a
-    ~century-long ``factor_loadings_max_age_seconds``.  The comparison
-    reference is ``session_open_ns`` when available (deterministic); when
-    absent, PAPER/LIVE fall back to the injected ``clock`` (``WallClock``
-    there, so this is genuinely "now" for a live deployment — routed
-    through Inv-10's sanctioned abstraction rather than a raw
-    ``time.time()`` call).  BACKTEST has no sensible wall-clock reference
-    for historical data, and ``SimulatedClock`` reads 0 at this
-    (pre-replay) point in boot, so silently comparing against either
-    would produce a meaningless verdict (audit kernel-P1: the previous
-    ``time.time()`` fallback either false-failed fresh backtest data or,
-    swapped naively for the boot-time clock, would have false-passed
-    stale data) — BACKTEST therefore refuses to boot rather than guess.
+    Prefer the file's ``_meta.as_of_ns`` because it is reproducible; use
+    filesystem mtime only when metadata is absent. Compare against
+    ``session_open_ns`` when available, otherwise the injected clock in
+    PAPER/LIVE. BACKTEST refuses to guess without a session anchor.
     """
     if config.factor_loadings_dir is None:
         return

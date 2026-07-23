@@ -19,11 +19,10 @@
       ADJUDICATION protocol sections, the two instrument scripts,
       and the artifact directory — all uncommitted at Task-11 report
       time, disclosed there)
-    worktree_clean: "at task start: the Task-11 outputs pending
-      commit (modified validation protocol; untracked
-      dislocation_lambda_validation_extract.py / _stats.py;
-      untracked artifacts/sig_dislocation_lambda_drift_v1/) — all
-      committed by this close-out"
+    worktree_clean: "at task start: Task-11 outputs pending commit — all
+      committed by this close-out. The step-0–8 validation protocol,
+      census JSON artifacts, and extract/stats scripts were later
+      removed from the repo; this closure record remains."
     pythonhashseed: "n/a — no scripted analysis run in this task
       (adjudication + close-out only; every number below is quoted
       from the committed protocol record). The five S.7 artifact
@@ -32,14 +31,9 @@
     normative_inputs:
       sig_dislocation_lambda_drift_v1_formal_spec.md (frozen spec
         §1–§16 incl. deviation rows 1–8),
-      sig_dislocation_lambda_drift_v1_validation_protocol.md (frozen
-        protocol + CENSUS RESULTS + EXPANDED CENSUS + AMENDMENTS
-        A-1/A-2 + STATISTICAL RESULTS S.1–S.7 + ADJUDICATION S.8),
-      docs/research/artifacts/sig_dislocation_lambda_drift_v1/
-        (boundaries_extract_2026-07-14.json sha256=80fdc56c…bf25,
-        validation_stats_2026-07-14.json sha256=21014b34…c418,
-        sensor_feature_ic_h8_2026-07-14.csv sha256=52fae36f…0130,
-        + stdout/stderr captures per S.7),
+      sig_dislocation_lambda_drift_v1_result.md (this document; the
+        validation protocol and Task-11 JSON artifacts were removed
+        from the repo in a later cleanup),
       prompt_pack_06_hypothesis_slate_b.md (H8 card, trial ledger,
         DISPOSITIONS 1–7).
 -->

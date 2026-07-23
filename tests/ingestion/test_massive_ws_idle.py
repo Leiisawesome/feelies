@@ -8,11 +8,9 @@ set, the iterator must terminate within one timeout cycle.
 
 from __future__ import annotations
 
-import queue
 import threading
 from collections.abc import Iterator
 
-import pytest
 
 from feelies.core.clock import Clock
 from feelies.ingestion.idle_tick import IdleTick

@@ -14,7 +14,7 @@ description: |
 # ── Hypothesis (causal mechanism) ─────────────────────────
 hypothesis: |
   Closing-auction MOC imbalance is structurally predictable in
-  sign during the imbalance window.  IMPORTANT (audit P1-6): the
+  sign during the imbalance window. The
   ``flow_direction_prior`` is NOT derived from L1 NBBO — it is an
   exogenous, statically-configured field on the ``MOC_IMBALANCE``
   CalendarWindow loaded from the reference
@@ -40,11 +40,9 @@ falsification_criteria:
   - |
     Sign-agreement rate between the calendar-configured
     flow_direction_prior and realised forward-120-s return drops below
-    0.55 over four consecutive earnings cycles. (Audit P1-6: this is the
-    operative falsifier — the directional edge lives entirely in the
-    exogenous prior, so if the prior stops predicting forward sign the
-    mechanism is dead regardless of OFI confirmation. Measure on cached
-    NBBO + the event_calendar prior; see audit appendix.)
+    0.55 over four consecutive earnings cycles. The directional edge lives in
+    the exogenous prior, so the mechanism fails when that prior stops predicting
+    forward sign regardless of OFI confirmation.
   - |
     Out-of-sample DSR < 1.0 across any single calendar quarter
     after promotion to LIVE.
@@ -94,17 +92,17 @@ parameters:
   cost_floor_bps:
     type: float
     default: 6.0
-    min: 0.0
+    min: 6.0
     max: 30.0
     description: |
-      One-way cost floor (bps). Audit P1-2: self-suppress entries whose
-      computed ``edge_bps`` does not exceed the disclosed one-way cost
+      One-way cost floor (bps). Suppress entries whose computed ``edge_bps``
+      does not exceed the disclosed one-way cost
       (half_spread + impact + fee = 2.5 + 2.5 + 1.0 = 6.0). With
       ``edge_per_remaining_minute_bps`` = 1.5 this requires > 4 minutes
       remaining in the window; entries in (min_seconds_to_close, 240s)
-      were previously emitted as low as 1.5 bps. The round-trip Inv-12
-      bar is enforced at runtime by the B4 gate. Keep aligned with
-      cost_arithmetic.
+      require this floor. The round-trip Inv-12 bar is enforced at runtime
+      by the B4 gate. Keep aligned with cost_arithmetic; ``min`` pins the
+      disclosed ``cost_total_bps``.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 120
@@ -116,21 +114,15 @@ risk_budget:
   max_drawdown_pct: 1.5
   capital_allocation_pct: 12.0
 
-# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
-# Audit P2 GC-2: this alpha is schedule-gated, not regime-gated.  The
-# on/off conditions reference no regime identifiers (no ``P(...)``, no
-# ``dominant``, no ``entropy``), so the regime engine is never
-# consulted and the hysteresis margins (which only matter when the
-# expressions explicitly reference them, see P1 GC-1) had no effect.
-# ``regime_engine:`` is retained as the engine the alpha would attach
-# to if regime conditions were added; ``hysteresis:`` removed to keep
-# load-time output clean.
+# ── Regime gate ───────────────────────────────────────────
+# This schedule gate does not consume regime state. A 0.5 threshold also
+# tolerates fractional activity values.
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
-    scheduled_flow_window_active == 1.0 and seconds_to_window_close > 60
+    scheduled_flow_window_active >= 0.5 and seconds_to_window_close > 60
   off_condition: |
-    scheduled_flow_window_active == 0.0 or seconds_to_window_close < 30 or realized_vol_30s_zscore > 3.5
+    scheduled_flow_window_active < 0.5 or seconds_to_window_close < 30 or realized_vol_30s_zscore > 3.5
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:
@@ -139,8 +131,7 @@ cost_arithmetic:
   impact_bps: 2.5
   fee_bps: 1.0
   margin_ratio: 2.0
-  # Audit P1-1: one-way components. Round-trip ≈ 12.0 bps; edge/round-trip
-  # ≈ 1.00. The runtime B4 gate enforces the round-trip Inv-12 bar.
+  # One-way disclosure; the runtime gate checks round-trip survival.
   cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
@@ -170,9 +161,7 @@ signal: |
           or ofi is None
       ):
           return None
-      # Active is an indicator float (0.0 / 1.0) emitted by the
-      # scheduled_flow_window sensor; use a tolerance so any future
-      # interpolation / fractional-active variant still gates correctly.
+      # Treat activity as an indicator with room for fractional values.
       if active < 0.5:
           return None
       if remaining < params["min_seconds_to_close"]:
@@ -197,8 +186,7 @@ signal: |
           params["edge_cap_bps"],
       )
 
-      # Audit P1-2: never emit an entry below the disclosed one-way cost
-      # (suppresses thin entries late in the window where edge < cost).
+      # Suppress late-window entries whose edge falls below cost.
       if edge_bps <= params["cost_floor_bps"]:
           return None
 

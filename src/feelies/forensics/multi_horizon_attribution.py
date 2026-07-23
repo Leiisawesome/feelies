@@ -1,48 +1,9 @@
-"""Multi-horizon, mechanism-aware PnL attribution — Phase-4-finalize.
+"""Read-only PnL attribution by horizon, fill-time regime, and mechanism.
 
-Decomposes realized PnL across three orthogonal axes:
-
-* **horizon**          — every PORTFOLIO alpha declares one
-                          ``decision_horizon_seconds``; trades booked
-                          against a Phase-4 intent inherit it from the
-                          intent's correlation-id prefix.  Used by the
-                          per-horizon edge / IC dashboards (§20.12.2).
-* **regime**           — the dominant regime state **recorded on each
-                          trade** at fill time (``TradeRecord.regime_state``).
-                          Causal by construction (Inv-6): the label is the
-                          regime in effect when the fill was booked, not
-                          whatever the live engine holds at audit time.
-* **per_mechanism**    — realized PnL grouped by the **provenance** carried
-                          on each trade (``TradeRecord.trend_mechanism``).
-                          When a trade carries no mechanism (e.g. a
-                          cross-sectional PORTFOLIO fill that mixes
-                          families), the module falls back to the
-                          gross-share-weighted decomposition of the
-                          strategy's most recent intent ``mechanism_breakdown``;
-                          any PnL it still cannot attribute is reported in
-                          :attr:`MultiHorizonReport.unattributed` so the axis
-                          conserves (Σ buckets + unattributed = total).
-
-The module is **read-only and pure**: it consumes trade records and
-(optional) intent snapshots and produces immutable
-:class:`MultiHorizonReport` objects.  No bus subscriptions, no time reads,
-**no live-engine lookups** — two audits over the same journal agree
-bit-for-bit (Inv-5).
-
-Usage
------
-
-.. code-block:: python
-
-    from feelies.forensics.multi_horizon_attribution import (
-        MultiHorizonAttributor,
-    )
-
-    attr = MultiHorizonAttributor(
-        intent_snapshots={"pro_xsect_v1": last_intent_snapshot},
-        horizon_by_strategy={"pro_xsect_v1": 300},
-    )
-    report = attr.attribute(trade_journal.query(strategy_id="pro_xsect_v1"))
+Trade provenance is authoritative. Missing mechanism provenance falls back to
+the latest intent's gross-share breakdown; any remainder is explicit in
+``unattributed`` so totals conserve. The attributor performs no live lookups or
+time reads and returns stable, immutable reports.
 """
 
 from __future__ import annotations

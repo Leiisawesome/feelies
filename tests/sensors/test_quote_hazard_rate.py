@@ -97,7 +97,7 @@ def test_warm_transitions_at_min_samples() -> None:
     assert r3 is not None and r3.warm
 
 
-# ── min_window_span_seconds (sensor_audit_2026-07-02 P1) ────────────────
+# Minimum window span.
 
 
 def test_burst_satisfies_count_but_not_elapsed_span() -> None:

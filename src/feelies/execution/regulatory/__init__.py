@@ -7,11 +7,10 @@ fills — never the reverse (Inv-11, fail-safe default).
 
 Current members:
 
-- :mod:`feelies.execution.regulatory.pdt_constraint` — Pattern Day
-  Trader (PDT) round-trip tracking + the $25k minimum-equity maintenance
-  gate (BT-4).
+- :mod:`feelies.execution.regulatory.pdt_constraint` — PDT round-trip tracking
+  and the $25k minimum-equity gate.
 - :mod:`feelies.execution.regulatory.borrow_availability` — static
-  per-symbol borrow tiers + short-sale intent classification (BT-7).
+  per-symbol borrow tiers and short-sale classification.
 """
 
 from feelies.execution.regulatory.borrow_availability import (

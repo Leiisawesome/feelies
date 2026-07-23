@@ -1,34 +1,4 @@
-"""Audit-prompt coverage-map staleness guard.
-
-Every module under ``src/feelies/`` must have exactly one owning audit
-prompt in ``docs/prompts/`` (the owner/touchpoint rule documented in
-``docs/prompts/README.md`` § Conventions).  The G-1…G-7
-position-management workstream (2026-06-08…10) demonstrated the failure
-mode this test exists to prevent: ~15 commits of capital-path code
-(``execution/portfolio_netter.py``, ``execution/position_manager.py``,
-``risk/edge_weighted_sizer.py``, ``portfolio/lot_ledger.py``, the G-6
-session flatten) landed with **no prompt owner** because nothing tied
-"new module" to "update the coverage map".
-
-Mechanism
----------
-* ``_PACKAGE_OWNERS`` maps each top-level package under ``src/feelies``
-  to its owning audit prompt.  A value of ``None`` marks a
-  **split-ownership package**: every module in it must be explicitly
-  listed in ``_FILE_OWNERS`` so that adding a new module forces a
-  conscious ownership decision (this is exactly where the 2026-06
-  drift happened).
-* Wholly-owned packages inherit their owner, so e.g. a new sensor in
-  ``sensors/impl/`` needs no edit here (the sensor prompt scopes the
-  package with a glob).
-* ``__init__.py`` files are exempt (no audit-relevant logic by
-  convention).
-
-When this test fails on your PR: add the new module to
-``_FILE_OWNERS`` (or ``_PACKAGE_OWNERS`` for a new package) **and** to
-the coverage map in ``docs/prompts/README.md``, assigning the audit
-prompt that should deep-dive the file.
-"""
+"""Require one audit-prompt owner for every source module."""
 
 from __future__ import annotations
 
@@ -91,7 +61,6 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/arbitration.py": "audit_signal_alpha",
     "alpha/aggregation.py": "audit_signal_alpha",
     "alpha/portfolio_layer_module.py": "audit_composition",
-    "alpha/intent_set.py": "audit_composition",
     "alpha/fill_attribution.py": "audit_forensics",
     "alpha/risk_wrapper.py": "audit_risk_engine",
     # ── portfolio/ ──────────────────────────────────────────────────

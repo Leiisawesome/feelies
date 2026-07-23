@@ -20,7 +20,7 @@ from tests.determinism.test_sized_intent_replay import (  # noqa: E501
 
 
 # Locked Level-3 baseline (decay ON).  Paired with decay-OFF in
-# ``test_sized_intent_replay``; both re-baselined together (BT-11).
+# ``test_sized_intent_replay``; both baselines move together.
 EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH = (
     "16c13f4f674dd2f3b89e43d782dbecde714791f757d93d0ccf71ca0110cbe901"
 )

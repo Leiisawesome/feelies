@@ -1,7 +1,6 @@
-"""Order-Flow Imbalance with exponential weighting.
+"""Exponentially weighted top-of-book order-flow imbalance.
 
-OFI captures the net pressure on the top-of-book between consecutive
-quotes:
+Each quote contributes:
 
     ofi_t = +bid_size_t              if bid_t  > bid_{t-1}
             -bid_size_{t-1}          if bid_t  < bid_{t-1}
@@ -10,11 +9,11 @@ quotes:
             +ask_size_{t-1}          if ask_t  > ask_{t-1}
             -(ask_size_t - ask_size_{t-1}) if ask_t == ask_{t-1}
 
-We then EWMA-smooth ``ofi_t`` with either fixed event-count decay ``alpha``:
+The sensor smooths ``ofi_t`` with fixed event-count decay:
 
     ewma_t = alpha * ofi_t + (1 - alpha) * ewma_{t-1}
 
-or, when ``decay_tau_seconds`` is configured, event-time decay:
+or configured event-time decay:
 
     alpha_t = 1 - exp(-dt / tau)
     ewma_t  = alpha_t * ofi_t + (1 - alpha_t) * ewma_{t-1}
@@ -60,37 +59,16 @@ import math
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class OFIEwmaSensor:
-    """OFI smoothed with an EWMA filter.
+    """Smooth order-flow imbalance with quote- or event-time EWMA.
 
-    Parameters (passed via ``SensorSpec.params``):
-
-    - ``alpha`` (float, default 0.1): EWMA smoothing factor in
-      (0, 1].  Used only when ``decay_tau_seconds`` is not set.
-      Higher α tracks short-horizon flow; lower α emphasises persistent
-      imbalance.
-    - ``decay_tau_seconds`` (float | None, default None): event-time
-      EWMA time constant.  When set, the per-update smoothing weight is
-      ``1 - exp(-dt / tau)`` where ``dt`` is the event-time gap since
-      the prior accepted quote.
-    - ``max_gap_seconds`` (int | None, default None): when set, an
-      inter-quote gap larger than this resets the OFI state before
-      processing the new quote, preventing stale pre-gap book levels
-      from producing a cross-gap OFI jump.
-    - ``normalize_by_depth`` (bool, default False): divide the raw OFI
-      by local displayed depth before smoothing so the output is a
-      scale-aware pressure measure instead of raw share units.
-    - ``depth_floor`` (float, default 1.0): denominator floor used only
-      when ``normalize_by_depth`` is true.
-    - ``warm_after`` (int, default 50): minimum number of quotes
-      within ``warm_window_seconds`` before ``warm=True``.
-    - ``warm_window_seconds`` (int, default 300): sliding event-time
-      window for the warm-up quote count.  Quotes older than this
-      boundary do not count toward ``warm_after``, so the sensor
-      reverts to cold after sustained data gaps.
+    Optional depth normalization makes output scale-aware. Large gaps can
+    reset state, and warmth requires enough recent quotes within the configured
+    event-time window.
     """
 
     sensor_id: str = "ofi_ewma"
@@ -143,7 +121,7 @@ class OFIEwmaSensor:
             "last_bid_size": 0,
             "last_ask_size": 0,
             "last_ts_ns": None,
-            "warm_ts": deque(),  # event-time timestamps of recent quotes (S3)
+            "warm_ts": deque(),  # Recent quote timestamps.
         }
 
     def update(
@@ -151,17 +129,17 @@ class OFIEwmaSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
         bid = float(event.bid)
         ask = float(event.ask)
-        # A1: uniform bid/ask positivity validation across price-consuming
+        # Validate positive prices consistently across price-consuming
         # sensors.  A degenerate book (halt / pre-open) provides no useful
         # OFI signal; drop the quote rather than poisoning state with
         # zero-price deltas.
-        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
             return None
         bid_sz = event.bid_size
         ask_sz = event.ask_size
@@ -230,23 +208,14 @@ class OFIEwmaSensor:
             state["last_ask_size"] = ask_sz
             state["last_ts_ns"] = ts_ns
 
-        # S3: sliding-window warm check — reverts to cold after data gaps
+        # Sliding-window warmth reverts after data gaps.
         warm_ts: deque[int] = state["warm_ts"]
         warm_ts.append(ts_ns)
         cutoff = ts_ns - self._warm_window_ns
         while warm_ts and warm_ts[0] < cutoff:
             warm_ts.popleft()
 
-        return SensorReading(
-            timestamp_ns=event.timestamp_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=new_ewma,
-            warm=len(warm_ts) >= self._warm_after,
-        )
+        return SensorEmission(value=new_ewma, warm=len(warm_ts) >= self._warm_after)
 
     def _effective_alpha(self, *, ts_ns: int, last_ts_ns: int | None) -> float:
         if self._decay_tau_ns is None:

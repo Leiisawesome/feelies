@@ -18,75 +18,21 @@ from feelies.core.state_machine import StateMachine
 
 
 class MicroState(Enum):
-    """Sequential tick-processing pipeline states.
+    """Sequential tick-processing states.
 
-    Phase 2 additions (sensor layer): three new states slot in
-    between ``STATE_UPDATE`` and ``FEATURE_COMPUTE``:
-
-    - ``SENSOR_UPDATE`` — registry fans the event out to every
-      registered sensor; each emits at most one ``SensorReading``.
-    - ``HORIZON_CHECK`` — scheduler inspects the event time and
-      emits any ``HorizonTick`` events for crossed boundaries.
-    - ``HORIZON_AGGREGATE`` — Phase-2-β aggregator drains the
-      sensor buffer for each emitted tick and publishes a
-      ``HorizonFeatureSnapshot`` (passive in P2-α).
-
-    These three states are **only entered when at least one sensor
-    is registered** (``sensor_specs`` non-empty in
-    :class:`feelies.core.platform_config.PlatformConfig`).  Without
-    sensors the orchestrator transitions
-    ``STATE_UPDATE → FEATURE_COMPUTE`` directly, preserving the
-    legacy bit-identical execution path (Inv-A in the plan).
-
-    Phase 3 addition (signal layer): one new state slots in between
-    ``HORIZON_AGGREGATE`` and ``FEATURE_COMPUTE``:
-
-    - ``SIGNAL_GATE`` — :class:`HorizonSignalEngine` evaluates each
-      registered SIGNAL alpha against the boundary's
-      ``HorizonFeatureSnapshot`` and the latest ``RegimeState``,
-      publishing zero or more ``Signal(layer='SIGNAL')`` events on the
-      bus.
-
-    ``SIGNAL_GATE`` is entered **only when at least one SIGNAL alpha
-    is registered** (``AlphaRegistry.has_signal_alphas()`` is true);
-    otherwise the orchestrator transitions
-    ``HORIZON_AGGREGATE → FEATURE_COMPUTE`` directly so deployments
-    without SIGNAL alphas remain bit-identical to the
-    Phase-2 execution path (Inv-A).
-
-    Phase 4 addition (composition layer): one new state slots in after
-    ``SIGNAL_GATE`` (or ``HORIZON_AGGREGATE`` when no SIGNAL alphas
-    are present) and before ``FEATURE_COMPUTE``:
-
-    - ``CROSS_SECTIONAL`` — :class:`UniverseSynchronizer` and
-      :class:`CompositionEngine` evaluate every registered PORTFOLIO
-      alpha against the barrier-synced
-      :class:`feelies.core.events.CrossSectionalContext`, publishing
-      one :class:`feelies.core.events.SizedPositionIntent` per alpha
-      per barrier.
-
-    ``CROSS_SECTIONAL`` is entered **only when at least one PORTFOLIO
-    alpha is registered** (``AlphaRegistry.has_portfolio_alphas()`` is
-    true) **and** the orchestrator has reached ``HORIZON_AGGREGATE``
-    or ``SIGNAL_GATE`` on the quote tick (the bus-driven composition
-    chain has run for any crossed boundary).  Otherwise the
-    orchestrator preserves the prior transition edges so SIGNAL-only
-    runs remain bit-identical to the Phase-3 execution path (Inv-A).
-
-    ``FEATURE_COMPUTE`` (M3) is a **bookkeeping** transition only: the
-    historical per-tick feature engine was removed in Workstream D.2;
-    the micro SM still visits M3 so ``FEATURE_COMPUTE → SIGNAL_EVALUATE
-    → …`` remains a legal spine for observability and parity tests.
+    Sensor, horizon, signal, and portfolio states are visited only when their
+    layers are configured. ``FEATURE_COMPUTE`` remains a bookkeeping state in
+    the legal transition spine.
     """
 
     WAITING_FOR_MARKET_EVENT = auto()
     MARKET_EVENT_RECEIVED = auto()
     STATE_UPDATE = auto()
-    SENSOR_UPDATE = auto()  # NEW (P2-α): Layer-1 sensor fan-out
-    HORIZON_CHECK = auto()  # NEW (P2-α): scheduler boundary check
-    HORIZON_AGGREGATE = auto()  # NEW (P2-α): aggregator snapshot emit
-    SIGNAL_GATE = auto()  # NEW (P3-α): HorizonSignalEngine emit
-    CROSS_SECTIONAL = auto()  # NEW (P4):   CompositionEngine emit
+    SENSOR_UPDATE = auto()  # Layer-1 sensor fan-out
+    HORIZON_CHECK = auto()  # scheduler boundary check
+    HORIZON_AGGREGATE = auto()  # aggregator snapshot emit
+    SIGNAL_GATE = auto()  # HorizonSignalEngine emit
+    CROSS_SECTIONAL = auto()  # CompositionEngine emit
     FEATURE_COMPUTE = auto()
     SIGNAL_EVALUATE = auto()
     RISK_CHECK = auto()
@@ -109,8 +55,7 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         }
     ),
     # STATE_UPDATE branches:
-    #   sensor-enabled config: → SENSOR_UPDATE (P2-α)
-    #   legacy / sensor-empty config: → FEATURE_COMPUTE (bit-identical Phase-1 path)
+    # Sensor-enabled configs visit SENSOR_UPDATE; sensor-empty configs skip it.
     MicroState.STATE_UPDATE: frozenset(
         {
             MicroState.SENSOR_UPDATE,  # sensor layer registered
@@ -132,9 +77,7 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         }
     ),
     # HORIZON_AGGREGATE branches (orchestrator picks exactly one per tick):
-    #   SIGNAL alpha(s) loaded → SIGNAL_GATE (P3-α)
-    #   else → FEATURE_COMPUTE (Phase-2 fast-path)  OR  via orchestrator bookend
-    #   ``CROSS_SECTIONAL`` → FEATURE_COMPUTE when PORTFOLIO alphas are registered
+    # SIGNAL alphas visit SIGNAL_GATE; otherwise proceed to FEATURE_COMPUTE.
     MicroState.HORIZON_AGGREGATE: frozenset(
         {
             MicroState.SIGNAL_GATE,
@@ -143,8 +86,7 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         }
     ),
     # SIGNAL_GATE branches:
-    #   PORTFOLIO alpha(s) loaded → CROSS_SECTIONAL (P4)
-    #   no PORTFOLIO alpha        → FEATURE_COMPUTE (Phase-3 bit-identical)
+    # PORTFOLIO alphas visit CROSS_SECTIONAL before FEATURE_COMPUTE.
     MicroState.SIGNAL_GATE: frozenset(
         {
             MicroState.CROSS_SECTIONAL,
@@ -217,6 +159,12 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
 }
 
 
+# Ring-buffer depth for micro-SM history.  ~8 transitions per quote × a
+# few recent ticks is enough for forensics; the bus still emits every
+# StateTransition (Inv-13).  Alpha-lifecycle SM keeps unbounded history.
+_MICRO_HISTORY_LIMIT = 256
+
+
 def create_micro_state_machine(clock: Clock) -> StateMachine[MicroState]:
     """Create the tick-processing pipeline, starting in WAITING."""
     return StateMachine(
@@ -224,4 +172,6 @@ def create_micro_state_machine(clock: Clock) -> StateMachine[MicroState]:
         initial_state=MicroState.WAITING_FOR_MARKET_EVENT,
         transitions=_MICRO_TRANSITIONS,
         clock=clock,
+        history_limit=_MICRO_HISTORY_LIMIT,
+        timing_key="sm_transition_ns",
     )

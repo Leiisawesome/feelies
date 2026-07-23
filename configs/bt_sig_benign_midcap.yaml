@@ -17,6 +17,9 @@ symbols:
 alpha_specs:
   - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
 
+# Hot-path: register only sensors required by loaded SIGNAL alphas.
+prune_unused_sensors: true
+
 # Inv-12 margin gate for APP research (G12-equivalent 1.5× round-trip floor).
 signal_min_edge_cost_ratio: 1.5
 

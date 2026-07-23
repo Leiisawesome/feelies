@@ -1,4 +1,4 @@
-"""Tests for the SIGNAL-layer load path of :class:`AlphaLoader` (Phase 3-α).
+"""Tests for the SIGNAL-layer load path of :class:`AlphaLoader`.
 
 Covers :py:meth:`AlphaLoader.load_from_dict` dispatch on
 ``layer: SIGNAL`` and the helper methods
@@ -6,8 +6,7 @@ Covers :py:meth:`AlphaLoader.load_from_dict` dispatch on
 :py:meth:`_parse_depends_on_sensors`, :py:meth:`_extract_trend_metadata`,
 and :py:meth:`_compile_signal_layer_evaluate`.
 
-The reference YAML at ``alphas/sig_benign_midcap_v1`` is used as the
-canonical happy-path fixture.
+The benign-midcap reference alpha is the canonical valid fixture.
 """
 
 from __future__ import annotations
@@ -210,7 +209,7 @@ def test_signal_code_evaluate_must_be_3_arg() -> None:
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
-# ── trend_mechanism extraction (Phase 3.1 metadata) ─────────────────────
+# ── trend_mechanism extraction ──────────────────────────────────────────
 
 
 def test_trend_mechanism_default_none() -> None:
@@ -222,7 +221,7 @@ def test_trend_mechanism_default_none() -> None:
 def test_trend_mechanism_extracts_enum_and_half_life() -> None:
     spec = _signal_spec()
     spec["horizon_seconds"] = 300
-    # G16 rule 10 (audit P1-4): signature sensors must be backed by deps.
+    # Signature sensors must also be declared dependencies.
     spec["depends_on_sensors"] = ["kyle_lambda_60s", "ofi_ewma", "spread_z_30d"]
     spec["trend_mechanism"] = {
         "family": "KYLE_INFO",
@@ -253,16 +252,11 @@ def test_trend_mechanism_negative_half_life_rejected() -> None:
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
-# ── Schema 1.1 acceptance / LEGACY_SIGNAL retirement (workstream D.2) ──
+# ── Schema 1.1 and retired LEGACY_SIGNAL handling ──────────────────────
 
 
 def test_layer_legacy_signal_is_rejected_post_d2() -> None:
-    """``layer: LEGACY_SIGNAL`` is hard-rejected by the loader.
-
-    Workstream D.2 retired the per-tick legacy path entirely.  Any
-    spec carrying the legacy layer must surface an :class:`AlphaLoadError`
-    with a migration pointer; there is no longer a fallback constructor.
-    """
+    """Reject ``LEGACY_SIGNAL`` with migration guidance."""
     spec = _signal_spec()
     spec["layer"] = "LEGACY_SIGNAL"
     with pytest.raises(_LOAD_REJECTED, match="LEGACY_SIGNAL"):
@@ -315,15 +309,11 @@ def test_alpha_loader_invalid_regime_engine_options_raise_alpha_load_error() -> 
         loader.load_from_dict(spec, source="<test>")
 
 
-# ── Audit P1-2: load-time P(<state>) name validation ────────────────────
+# ── Load-time P(<state>) name validation ───────────────────────────────
 
 
 def test_unknown_posterior_state_rejected_at_load() -> None:
-    """A typo'd ``P(<state>)`` is rejected at LOAD when an engine is wired.
-
-    Audit P1-2: previously this compiled cleanly and only failed at the
-    first runtime evaluation (and on the OFF path did not even unwind).
-    """
+    """Reject an unknown ``P(<state>)`` when an engine is available."""
     from feelies.services.regime_engine import HMM3StateFractional
 
     spec = _signal_spec()
@@ -354,7 +344,7 @@ def test_unknown_posterior_state_skipped_without_engine() -> None:
     assert m.manifest.alpha_id == "alpha_x"
 
 
-# ── Strict dead-hysteresis + param-reference gate (external report) ───────
+# Strict dead-hysteresis and parameter-reference gate.
 
 
 def test_dead_hysteresis_rejected_under_enforce_layer_gates() -> None:

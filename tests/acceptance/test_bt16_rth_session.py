@@ -1,11 +1,10 @@
-"""BT-16 acceptance: RTH session gating + overnight buying-power flip."""
+"""Test RTH gating and the overnight buying-power switch."""
 
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
 
-import pytest
 
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
@@ -20,7 +19,6 @@ from feelies.execution.cost_model import ZeroCostModel
 from feelies.execution.moc_session import (
     build_moc_bounds_from_platform,
     et_clock_to_ns,
-    resolve_moc_session_bounds,
 )
 from feelies.execution.moc_fill import MocFillController
 from feelies.execution.trading_session import (
@@ -34,7 +32,6 @@ from feelies.risk.buying_power import (
     BuyingPowerPhase,
     buying_power_limit,
 )
-from tests.fixtures.event_logs._generate import SESSION_OPEN_NS
 
 _SESSION = date(2026, 1, 15)
 

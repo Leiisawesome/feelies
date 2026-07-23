@@ -36,7 +36,7 @@ def test_inventory_pressure_unwired_at_longer_horizons() -> None:
 
 
 def test_ofi_raw_factory_emits_integrated_and_percentile_at_900() -> None:
-    """H12 P0-1: ofi_integrated_percentile present at h=900 (canonical set)."""
+    """The canonical 900-second set includes OFI integrated percentile."""
     features = _horizon_features_for("ofi_raw", 900)
     by_id = {f.feature_id: f for f in features}
     assert set(by_id) == {"ofi_integrated", "ofi_integrated_percentile"}
@@ -51,7 +51,7 @@ def test_ofi_raw_factory_emits_integrated_and_percentile_at_900() -> None:
 
 
 def test_ofi_raw_percentile_wired_across_canonical_horizons() -> None:
-    """Factory is horizon-generic; H12 consumes h=900; H13 consumes h=1800."""
+    """The factory supports every canonical horizon."""
     for h in (30, 120, 300, 900, 1800):
         ids = {f.feature_id for f in _horizon_features_for("ofi_raw", h)}
         assert "ofi_integrated" in ids
@@ -59,7 +59,7 @@ def test_ofi_raw_percentile_wired_across_canonical_horizons() -> None:
 
 
 def test_ofi_raw_factory_emits_integrated_and_percentile_at_1800() -> None:
-    """H13 P0-1: ofi_integrated_percentile present at h=1800 (no silent h=900 sub)."""
+    """The 1800-second set uses its own OFI integrated percentile."""
     features = _horizon_features_for("ofi_raw", 1800)
     by_id = {f.feature_id: f for f in features}
     assert set(by_id) == {"ofi_integrated", "ofi_integrated_percentile"}

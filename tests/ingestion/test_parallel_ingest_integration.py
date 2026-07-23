@@ -17,7 +17,6 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -474,8 +473,6 @@ class TestMultiDayCacheResequence:
         ing1.ingest_symbol_parallel(limited_client, "AAPL", trading_day, trading_day)
         day1_events: list[NBBOQuote | Trade] = list(log1.replay())  # type: ignore[arg-type]
         cache.save("AAPL", trading_day, day1_events)
-
-        day1_seqs = {e.sequence for e in day1_events}
 
         loaded_day1 = cache.load("AAPL", trading_day)
         assert loaded_day1 is not None

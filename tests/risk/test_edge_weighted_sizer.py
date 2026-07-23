@@ -1,4 +1,4 @@
-"""Tests for the G-7 EdgeWeightedSizer — edge / vol / inventory tilts.
+"""Tests for edge, volatility, and inventory sizing tilts.
 
 The load-bearing test is parity: with the default (all-off) config the
 wrapper must reproduce its base sizer byte-for-byte over a grid of inputs.

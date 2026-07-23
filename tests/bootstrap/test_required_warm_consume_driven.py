@@ -1,4 +1,4 @@
-"""Consume-driven required_warm derivation (audit 2P-1).
+"""Consume-driven ``required_warm`` derivation.
 
 The platform must gate a SIGNAL alpha's entry only on the features it actually
 reads (``snapshot.values.get("…")``), not on every feature of every declared
@@ -220,14 +220,14 @@ def test_inventory_revert_bootstrap_consumed_features_are_feature_ids() -> None:
     )
 
 
-# ── Unread sensor dependency warning (sensor_audit_2026-07-02 P1) ───────────
+# Unread sensor dependency warning.
 
 
 def test_warns_on_declared_sensor_whose_features_are_never_read(caplog) -> None:
     """A sensor whose full horizon feature set is disjoint from warm_ids —
     i.e. neither evaluate() nor the regime gate reads any feature it
     produces — must be flagged.  This is the shape of the ``micro_price``
-    defect this audit pass found (and fixed) in ``sig_benign_midcap_v1``."""
+    failure mode covered by ``sig_benign_midcap_v1``."""
     import logging
 
     h = 120
@@ -285,8 +285,7 @@ def test_no_warning_when_sensor_produces_no_features_at_this_horizon(caplog) -> 
 
 
 def test_sig_benign_midcap_v1_has_no_unread_sensor_dependency(caplog) -> None:
-    """Regression guard: the reference alpha's depends_on_sensors must stay
-    fully backed by evaluate()/gate usage after the P1 micro_price fix."""
+    """Every declared sensor dependency must be read by evaluation or a gate."""
     import logging
 
     module = AlphaLoader(enforce_trend_mechanism=True).load(

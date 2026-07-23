@@ -1,4 +1,4 @@
-"""BT-17 acceptance: market-data propagation latency vs fill latency."""
+"""Test market-data propagation latency independently of fill latency."""
 
 from __future__ import annotations
 

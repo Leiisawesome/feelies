@@ -1,10 +1,10 @@
-"""Phase P0/P1 — position-manager contracts, legacy adapter, equivalence.
+"""Position-manager contracts and translator equivalence.
 
 The critical guarantee: :class:`LegacyPositionManager` is byte-for-byte
 faithful to :class:`SignalPositionTranslator`'s decision outcomes, so the
-shadow harness can run it alongside the legacy path with zero divergence
-(parity-neutral).  ``test_legacy_manager_matches_translator_truth_table``
-is that proof.
+shadow harness can run it alongside the translator path with zero
+divergence (parity-neutral).
+``test_legacy_manager_matches_translator_truth_table`` is that proof.
 """
 
 from __future__ import annotations
@@ -188,7 +188,7 @@ class TestPlanClassification:
         assert plan.total_quantity == 50
 
     def test_over_target_is_no_action_no_trim(self) -> None:
-        # Legacy fidelity: a long already past target does NOT trim.
+        # Translator fidelity: a long already past target does NOT trim.
         plan = self._plan(SignalDirection.LONG, current=120, target=80)
         assert plan.orders == ()
         assert plan.primary_leg == PlanLeg.NO_ACTION
@@ -300,7 +300,7 @@ class TestCostGates:
         assert got == expected
 
 
-# ── P3: cost-aware TRIM ──────────────────────────────────────────────
+# Cost-aware trimming.
 
 
 class TestTargetPositionManagerTrim:
@@ -343,7 +343,7 @@ class TestTargetPositionManagerTrim:
         assert leg.leg == PlanLeg.TRIM
         assert leg.side == Side.SELL
         assert leg.quantity == 50  # 150 → 100
-        # legacy would have held (NO_ACTION).
+        # LegacyPositionManager (translator-equivalent) would hold (NO_ACTION).
         assert (
             LegacyPositionManager()
             .plan(

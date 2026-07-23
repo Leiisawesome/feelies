@@ -1,37 +1,10 @@
-"""Phase-4 ``layer: PORTFOLIO`` alpha module.
+"""Loaded representation of ``layer: PORTFOLIO`` alphas.
 
-A :class:`LoadedPortfolioLayerModule` is the loader-side artifact for a
-schema-1.1 ``layer: PORTFOLIO`` alpha.  Its surface mirrors
-:class:`feelies.alpha.signal_layer_module.LoadedSignalLayerModule` —
-the manifest plus a Phase-4 surface exposing the universe, decision
-horizon, mechanism-consumes whitelist, and ``construct`` callable
-consumed by :class:`feelies.composition.engine.CompositionEngine`.
-
-PR-2b-iv removed the legacy ``AlphaModule.evaluate`` method from the
-protocol entirely (it had degraded to a no-op shim after PR-2b-ii
-deleted the composite signal engine).  PORTFOLIO alphas now drive
-order flow exclusively via the bus-driven path:
-``CompositionEngine`` aggregates the upstream SIGNAL alphas they
-declare in ``depends_on_signals``, emits a ``SizedPositionIntent``
-for each tick, and ``Orchestrator._on_bus_sized_intent`` translates
-that intent into per-leg ``OrderRequest`` events through
-``RiskEngine.check_sized_intent``.
-
-PR-2b-iii first added ``depends_on_signals`` to the surface (it was
-parsed from the manifest by the loader but discarded earlier).  The
-orchestrator's ``_on_bus_signal`` subscriber reads this list across
-every registered PORTFOLIO at boot and uses it to **skip** translating
-those upstream SIGNAL alphas' ``Signal`` events into ``OrderRequest``
-events directly — they would otherwise be double-traded (Inv-11:
-prefer no order over duplicate orders).
-
-The default canonical implementation runs the engine's *default
-pipeline* (ranker → neutralizer → matcher → optimizer) with the
-alpha's declared parameters.  Custom alphas may override
-``construct`` by providing an inline ``construct(ctx, params)`` block
-in the YAML; the loader then wraps that callable in a
-:class:`_CompiledPortfolioConstructor` adapter to keep call-site
-semantics stable.
+The artifact exposes the manifest, universe, horizon, mechanisms, dependencies,
+and constructor consumed by ``CompositionEngine``. Signals listed in
+``depends_on_signals`` feed the portfolio only, preventing duplicate standalone
+orders. The default constructor runs ranking, neutralization, sector matching,
+and turnover optimization; YAML may supply a custom constructor.
 """
 
 from __future__ import annotations
@@ -149,12 +122,9 @@ class LoadedPortfolioLayerModule:
     def depends_on_signals(self) -> tuple[str, ...]:
         """SIGNAL alpha_ids whose ``Signal`` events feed this PORTFOLIO.
 
-        Consumed by the orchestrator's PR-2b-iii Signal-bus subscriber to
-        skip translating these alphas' Signals into ``OrderRequest`` events
-        — they are aggregated through ``CompositionEngine`` and emerge as
-        ``SizedPositionIntent`` events instead (PR-2b-iv will translate
-        intents into orders).  Translating them through both paths would
-        double-trade (Inv-11).
+        The orchestrator skips standalone orders for these signals. They are
+        aggregated by ``CompositionEngine`` and translated from the resulting
+        ``SizedPositionIntent`` instead, avoiding duplicate trades.
         """
         return self._depends_on_signals
 
@@ -219,12 +189,7 @@ class _DefaultPortfolioConstructor:
         engine = self._engine_thunk()
         if engine is None:  # pragma: no cover - bootstrap bug
             raise CompositionContextError("_DefaultPortfolioConstructor: engine not yet wired")
-        # Per-alpha decay override (audit P1-6): the shared ranker carries a
-        # global decay toggle, so without this an alpha that enables decay
-        # would flip it on for every PORTFOLIO sharing the engine.  Reading
-        # the alpha's own resolved param here keeps the toggle local.  When
-        # the alpha does not declare the param we pass ``None`` so the ranker
-        # instance flag still applies (back-compat).
+        # Keep this override local to the alpha; ``None`` uses the ranker default.
         raw_decay = params.get("decay_weighting_enabled")
         decay_override = bool(raw_decay) if isinstance(raw_decay, bool) else None
         intent: SizedPositionIntent = engine.run_default_pipeline(
@@ -297,9 +262,7 @@ def parse_mechanism_caps(raw: Any) -> dict[TrendMechanism, float]:
     """Map a YAML ``trend_mechanism.consumes:`` list to per-family caps.
 
     Returns ``{family: max_share_of_gross}`` for every ``consumes`` entry
-    that declares a ``max_share_of_gross`` (audit P0-4 — these caps were
-    previously parsed away by :func:`parse_consumes_mechanisms` and never
-    reached the runtime ranker).  Entries without an explicit cap are
+    that declares a ``max_share_of_gross``. Entries without an explicit cap are
     omitted (the global ``trend_mechanism.max_share_of_gross`` applies as
     the default).  ``None`` / list-of-strings → empty mapping.
     """

@@ -4,7 +4,7 @@ The entire system exists in one and only one of these macro states
 at any time.  States are mutually exclusive and deterministic.
 Transitions are event-triggered and logged.  No silent transitions.
 
-Policy notes (audit remediation):
+Policy notes:
 
 * **BACKTEST_MODE** cannot transition to **RISK_LOCKDOWN** — standalone-SIGNAL
   ``FORCE_FLATTEN`` is simulated during backtests so replay parity can continue
@@ -50,7 +50,7 @@ _MACRO_TRANSITIONS: dict[MacroState, frozenset[MacroState]] = {
     # ── DATA_SYNC ───────────────────────────────────────────────
     MacroState.DATA_SYNC: frozenset(
         {
-            MacroState.READY,  # historical data integrity verified
+            MacroState.READY,  # Replay data integrity verified.
             MacroState.DEGRADED,  # data gap / schema violation
         }
     ),
@@ -100,7 +100,7 @@ _MACRO_TRANSITIONS: dict[MacroState, frozenset[MacroState]] = {
     ),
     MacroState.RISK_LOCKDOWN: frozenset(
         {
-            MacroState.READY,  # forced flatten + audit pass (human authorized)
+            MacroState.READY,  # Human-authorized unlock after forced flatten.
             MacroState.SHUTDOWN,  # CMD_SHUTDOWN — operator teardown without unlock
         }
     ),
@@ -117,6 +117,11 @@ TRADING_MODES: frozenset[MacroState] = frozenset(
 )
 
 
+# Macro transitions are rare (session lifecycle); keep a small ring for
+# diagnostics without unbounded growth across long-lived processes.
+_MACRO_HISTORY_LIMIT = 64
+
+
 def create_macro_state_machine(clock: Clock) -> StateMachine[MacroState]:
     """Create the global stack state machine, starting in INIT."""
     return StateMachine(
@@ -124,4 +129,5 @@ def create_macro_state_machine(clock: Clock) -> StateMachine[MacroState]:
         initial_state=MacroState.INIT,
         transitions=_MACRO_TRANSITIONS,
         clock=clock,
+        history_limit=_MACRO_HISTORY_LIMIT,
     )

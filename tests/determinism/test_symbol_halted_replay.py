@@ -1,35 +1,8 @@
-"""``SymbolHalted`` / halt-gated fill-suppression baseline (audit-2026-07-02 P1 #3).
+"""Pin halt events and halt-gated fill suppression.
 
-``SymbolHalted`` (``core/events.py``) carries no control semantics itself —
-per its own docstring, fill suppression is enforced separately by the
-orchestrator's halt gate, and the event is purely a forensic marker so
-post-trade tooling can reconstruct which fills were suppressed and why.
-Nothing in ``tests/determinism/`` pinned either half of that contract: not
-the ``SymbolHalted`` emission stream, and not the resulting order/ack
-suppression it documents.
-
-This baseline drives the **real** :class:`~feelies.kernel.orchestrator.Orchestrator`
-halt gate (``_update_halt_state`` / ``_in_halt_blackout``) — the same
-machinery ``tests/causality/test_anti_lookahead.py``'s regulatory tests
-exercise — through a deterministic five-step walk that discriminates both
-suppression mechanisms:
-
-1.  A halt-on ``Trade`` (condition code 5) fires *before* any entry succeeds.
-2.  An entry attempt while halted is suppressed (``_halted_symbols`` gate,
-    ``orchestrator.py`` ~2323) — position stays flat.
-3.  A halt-off ``Trade`` (condition code 6) resumes the symbol and opens a
-    post-resume entry blackout window.
-4.  An entry attempt *inside* the blackout is suppressed by a *different*
-    gate (``_in_halt_blackout``, ~2685) — position still stays flat, proving
-    this step is not just accidentally re-hitting the halt-active gate.
-5.  An entry attempt *after* the blackout clears succeeds — the first and
-    only fill in the scenario, proving suppression is lifted rather than
-    permanent.
-
-Both the ``SymbolHalted`` forensic stream and the resulting
-``OrderRequest``/``OrderAck``/``PositionUpdate`` streams are hashed, so a
-regression that reordered the halt markers *or* let a fill slip through
-during halt/blackout would be caught.
+The replay enters a halt, suppresses an entry, resumes into a blackout,
+suppresses another entry, then fills after the blackout. Hashes cover halt,
+order, acknowledgement, and position streams.
 """
 
 from __future__ import annotations

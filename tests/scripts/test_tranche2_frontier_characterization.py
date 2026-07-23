@@ -127,8 +127,6 @@ def test_materialize_go_no_go() -> None:
         }
         for n in names
     }
-    out = materialize(
-        {"candidates": candidates, "samples": samples, "screen_summary": {}}
-    )
+    out = materialize({"candidates": candidates, "samples": samples, "screen_summary": {}})
     assert out["n_go_names"] >= 5
     assert out["verdict"] == "GO"

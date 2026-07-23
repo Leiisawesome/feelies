@@ -1,16 +1,9 @@
-"""Sensor layer (Phase 2 of the three-layer architecture).
+"""Sensor layer (Layer 1 of the three-layer architecture).
 
-Sensors are Layer-1 components: stateless-by-instance computations over
-raw L1 NBBO and trade events that emit typed ``SensorReading`` events
-on the bus.  They are platform-authored, deterministic, and entirely
-decoupled from the deleted per-tick feature path
-(see ``docs/three_layer_architecture.md`` §4.2 / §6.2).
-
-In Phase 2 the sensor layer is **observational only** — sensors emit
-to dead-end consumers (logs, monitoring, forensics, parity recorders)
-and never feed back into ``Signal`` or ``OrderIntent`` (Inv-E in the
-plan).  Phase 3 introduces the alpha-side ``depends_on_sensors:``
-binding.
+Sensors are incremental observers over raw L1 NBBO and trade events
+that emit typed ``SensorReading`` events on the bus.  They are
+platform-authored and deterministic.  SIGNAL alphas bind via
+``depends_on_sensors:``; readings also feed the horizon aggregator.
 
 Public surface:
 
@@ -33,7 +26,7 @@ from feelies.sensors.horizon_scheduler import (
     HorizonScheduler,
     SessionOpenAlreadyBoundError,
 )
-from feelies.sensors.protocol import Sensor
+from feelies.sensors.protocol import Sensor, SensorEmission
 from feelies.sensors.registry import SensorRegistry
 from feelies.sensors.spec import SensorSpec
 
@@ -41,6 +34,7 @@ __all__ = [
     "DuplicateSensorRegistrationError",
     "HorizonScheduler",
     "Sensor",
+    "SensorEmission",
     "SensorRegistry",
     "SensorRegistryError",
     "SensorSpec",

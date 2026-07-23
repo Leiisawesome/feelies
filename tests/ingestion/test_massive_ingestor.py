@@ -19,10 +19,7 @@ from feelies.ingestion.massive_ingestor import (
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.memory_event_log import InMemoryEventLog
 
-# Tests that ``patch("massive.RESTClient", ...)`` need the optional vendor SDK
-# to be importable (``mock.patch`` resolves the target module eagerly).  Skip
-# them cleanly when the ``massive`` extra is absent so a vanilla checkout is
-# green without the vendor dependency (audit ING-09).
+# ``mock.patch`` imports its target eagerly, so these tests require the SDK.
 _MASSIVE_ABSENT = importlib.util.find_spec("massive") is None
 _requires_massive = pytest.mark.skipif(
     _MASSIVE_ABSENT,
@@ -431,9 +428,7 @@ class TestParallelDownload:
         )
 
     def test_finalize_merge_preserves_preexisting_destination(self) -> None:
-        """ING-10 follow-up: the multi-symbol finalize must merge the *existing*
-        destination content with the scratch log — not replace it wholesale.
-        """
+        """Finalize merges scratch events with existing destination events."""
         from feelies.core.events import NBBOQuote, Trade
         from feelies.storage.event_resequence import event_merge_sort_key
 
@@ -451,9 +446,7 @@ class TestParallelDownload:
         assert keys == sorted(keys), "merged stream must be globally ordered"
 
     def test_finalize_merge_empty_scratch_does_not_wipe_destination(self) -> None:
-        """ING-10 follow-up: a checkpoint-skip-all run leaves the scratch empty;
-        the finalize must NOT clear the destination (no silent data loss).
-        """
+        """An empty scratch log leaves the destination unchanged."""
         from feelies.core.events import NBBOQuote, Trade
 
         dest = InMemoryEventLog()

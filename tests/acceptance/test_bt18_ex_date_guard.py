@@ -1,4 +1,4 @@
-"""BT-18 acceptance: raw L1 policy + ex-date replay integrity guard."""
+"""Test the raw-L1 policy and ex-date replay guard."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 
 from feelies.core.events import NBBOQuote
 from feelies.storage.memory_event_log import InMemoryEventLog

@@ -1,4 +1,4 @@
-"""Tests for the opt-in 2-D spread+vol regime engine (audit R-3).
+"""Tests for the opt-in 2-D spread-and-volatility regime engine.
 
 ``HMM3StateSpreadVol`` adds short-window realized volatility of the mid as a
 second observation so ``vol_breakout`` means *high volatility*, not merely the
@@ -194,7 +194,7 @@ def test_calibrated_engine_discriminates_vol_regimes() -> None:
     assert vpost[vb] > qpost[vb]
 
 
-# ── Discriminability (audit R-1 contract) ──────────────────────────────────
+# ── Discriminability ──────────────────────────────────────────────────────
 
 
 def test_discriminability_high_for_separated_emissions() -> None:

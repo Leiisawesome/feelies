@@ -1,4 +1,4 @@
-"""Closed-form ``TurnoverOptimizer`` behaviour (audit P2-4 + statuses).
+"""Closed-form ``TurnoverOptimizer`` behavior and statuses.
 
 These lock the deterministic closed-form path that runs by default
 (``require_solver=False``); the cvxpy/ECOS path parity is covered by
@@ -15,7 +15,7 @@ _CAPITAL = 100_000.0
 
 
 def test_round_cents_is_half_up() -> None:
-    """Target-dollar rounding is declared half-up, not binary-float banker's (P1-6)."""
+    """Target-dollar rounding is half-up, not banker's rounding."""
     # Half-cent cases where round-half-to-even (float ``round``) diverges from
     # the declared ROUND_HALF_UP mode used at the risk boundary.
     assert round_cents(2.675) == 2.68  # float round(2.675, 2) == 2.67
@@ -42,7 +42,7 @@ def test_zero_gross_status() -> None:
 
 def test_small_gross_reaches_target_gross() -> None:
     # gross(weights) = 0.6 < gross_cap (2.0) — the old min(..., capital)
-    # clamp under-levered this to gross ≈ 60k; post-P2-4 it scales up to
+    # clamping would under-lever this to about 60k; rescaling reaches
     # the full target 2.0 × capital = 200k (per-name cap 100% does not bind).
     opt = TurnoverOptimizer(capital_usd=_CAPITAL, gross_cap_pct=2.0, per_name_cap_pct=1.0)
     weights = {"AAPL": 0.2, "MSFT": 0.2, "TSLA": -0.2}
@@ -69,7 +69,7 @@ def test_gross_cap_enforced() -> None:
 
 
 def test_closed_form_ignores_lambda_penalties() -> None:
-    """The closed-form path is independent of lambda_tc / lambda_risk (P1-1).
+    """The closed-form path ignores lambda penalties.
 
     Documents that the turnover/risk penalties are inert outside the solver
     path, so an operator tuning them under ``composition_optimizer_mode:
@@ -91,3 +91,31 @@ def test_closed_form_is_deterministic() -> None:
     weights = {"AAPL": 0.3, "MSFT": -0.2, "TSLA": 0.1}
     universe = ("AAPL", "MSFT", "TSLA")
     assert opt.optimize(weights, universe).target_usd == opt.optimize(weights, universe).target_usd
+
+
+def test_small_universe_default_caps_collapse_conviction_to_equal_notional() -> None:
+    """Default per-name caps flatten conviction in a small universe.
+
+    Operators can raise ``composition_per_name_cap_pct`` when relative weights
+    must survive sizing.
+    """
+    capital = 150_000.0
+    weights = {"AAPL": 0.371, "MSFT": -1.367, "NVDA": 0.997}
+    universe = ("AAPL", "MSFT", "NVDA")
+
+    default_caps = TurnoverOptimizer(capital_usd=capital)
+    result = default_caps.optimize(weights, universe)
+    magnitudes = {abs(v) for v in result.target_usd.values()}
+    assert magnitudes == {0.05 * capital}, (
+        f"expected every name to collapse to the 5% per-name cap under "
+        f"default caps, got {result.target_usd}"
+    )
+
+    # Raising the per-name cap lets relative conviction carry through to sizing.
+    loose_caps = TurnoverOptimizer(capital_usd=capital, per_name_cap_pct=1.0)
+    loose_result = loose_caps.optimize(weights, universe)
+    loose_magnitudes = {abs(v) for v in loose_result.target_usd.values()}
+    assert len(loose_magnitudes) == 3, (
+        "raising per_name_cap_pct should preserve each name's distinct "
+        f"conviction, got {loose_result.target_usd}"
+    )

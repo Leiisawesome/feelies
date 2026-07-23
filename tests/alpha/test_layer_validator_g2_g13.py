@@ -1,9 +1,9 @@
-"""Tests for the Phase-3-α active gates G2-G13 in :mod:`feelies.alpha.layer_validator`.
+"""Tests for active gates G2–G13 in :mod:`feelies.alpha.layer_validator`.
 
 Each test uses a minimal valid SIGNAL spec template and mutates exactly
 the field under test so failure messages cite the specific gate.
 
-Gate matrix (post-D.2 — only SIGNAL/PORTFOLIO are loadable):
+Only SIGNAL and PORTFOLIO specs are loadable:
 
 * G2  — typed event contract  (signal: must be a non-empty string)
 * G4  — regime-gate purity     (DSL parse must succeed, whitelist only)
@@ -15,12 +15,6 @@ Gate matrix (post-D.2 — only SIGNAL/PORTFOLIO are loadable):
 * G13 — warm-up documentation  (no-op for SIGNAL — sensor warm-up is
         platform-owned via the SensorRegistry)
 
-Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
-accepted set, so the LEGACY_SIGNAL-specific validator branches (G6
-inline-feature DAG, G8 inline-feature lookahead, G13 inline-feature
-warm-up) are unreachable from the production load path; their dedicated
-tests have been removed.  PR-2 will delete the dead branches in
-:mod:`feelies.alpha.layer_validator` themselves.
 """
 
 from __future__ import annotations
@@ -271,15 +265,51 @@ def test_g12_rejects_low_margin_ratio() -> None:
         _validator().validate(spec, source="<test>")
 
 
-# ── G13 — warm-up documentation (no-op for SIGNAL post-D.2) ─────────────
+# ── G12 addendum — cost_floor_bps.min pinned to cost_total_bps ──────────
+# Overrides cannot lower the floor below disclosed costs.
+
+
+def test_g12_rejects_cost_floor_min_below_cost_total() -> None:
+    spec = _signal_spec()  # cost_arithmetic totals 2.0+2.0+1.0 = 5.0
+    spec["parameters"] = {
+        "cost_floor_bps": {"type": "float", "default": 5.0, "min": 0.0, "max": 30.0},
+    }
+    with pytest.raises(LayerValidationError, match="G12"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g12_accepts_cost_floor_min_at_cost_total() -> None:
+    spec = _signal_spec()  # cost_arithmetic totals 2.0+2.0+1.0 = 5.0
+    spec["parameters"] = {
+        "cost_floor_bps": {"type": "float", "default": 5.0, "min": 5.0, "max": 30.0},
+    }
+    _validator().validate(spec, source="<test>")  # no raise
+
+
+def test_g12_accepts_cost_floor_min_above_cost_total() -> None:
+    spec = _signal_spec()
+    spec["parameters"] = {
+        "cost_floor_bps": {"type": "float", "default": 6.0, "min": 6.0, "max": 30.0},
+    }
+    _validator().validate(spec, source="<test>")  # no raise
+
+
+def test_g12_ignores_alphas_without_a_cost_floor_bps_parameter() -> None:
+    spec = _signal_spec()
+    spec["parameters"] = {
+        "entry_threshold_z": {"type": "float", "default": 0.8, "min": 0.5, "max": 3.0},
+    }
+    _validator().validate(spec, source="<test>")  # no raise — no cost_floor_bps declared
+
+
+# G13 warm-up documentation.
 
 
 def test_g13_signal_layer_no_op() -> None:
     """SIGNAL alphas don't have inline features — G13 is skipped.
 
     Sensor warm-up is owned by the platform's :class:`SensorRegistry`,
-    not the alpha YAML, so G13 has nothing to enforce on the only
-    loadable layer family post-D.2.
+    not the alpha YAML, so G13 has nothing to enforce for signal alphas.
     """
     _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
         _signal_spec(),

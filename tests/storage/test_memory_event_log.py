@@ -111,7 +111,7 @@ class TestCausalityEnforcement:
         log.append(make_quote(seq=1, exchange_ts_ns=100))
         log.append(make_trade(seq=2, exchange_ts_ns=150))
         assert len(log) == 3
-        # Events are retained in arrival order (a faithful audit record).
+        # Preserve arrival order exactly.
         assert [e.exchange_timestamp_ns for e in log.replay()] == [200, 100, 150]
 
     def test_relaxed_append_record_is_forensically_resequencable(self) -> None:

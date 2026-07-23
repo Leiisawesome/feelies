@@ -54,8 +54,7 @@ class UnresolvedDependencyError(AlphaRegistryError):
     references a sensor not registered in the platform's
     :class:`feelies.sensors.registry.SensorRegistry`.
 
-    Plan §6.6 / §10 P3-α: the loader records the declared sensor IDs on
-    a SIGNAL alpha; bootstrap then calls
+    The loader records declared sensor IDs; bootstrap then calls
     :py:meth:`AlphaRegistry.resolve_signal_dependencies` to fail fast at
     boot rather than silently evaluating with missing sensors.
     """
@@ -87,13 +86,7 @@ class AlphaRegistry:
         self._clock = clock
         self._gate_requirements = gate_requirements
         self._gate_thresholds = gate_thresholds
-        # Audit P0-1: the set of gate-threshold fields the *operator*
-        # explicitly pinned in ``platform.yaml: gate_thresholds:``.  Only
-        # these are treated as floors a per-alpha override may not loosen
-        # (fields left at their skill default stay freely loosenable, so
-        # the documented F-5 "per-alpha wins over skill defaults" behavior
-        # is preserved).  ``gate_thresholds`` above is the *materialised*
-        # floor (skill defaults overlaid by these overrides).
+        # Only operator-pinned thresholds become floors for alpha overrides.
         self._platform_threshold_overrides: dict[str, object] = dict(
             platform_gate_threshold_overrides or {}
         )
@@ -119,11 +112,7 @@ class AlphaRegistry:
         if errors:
             raise AlphaRegistryError(f"Alpha '{alpha_id}' failed validation: " + "; ".join(errors))
 
-        # Audit P0-1: floor-check per-alpha overrides against operator
-        # policy in ALL modes (even BACKTEST, where no lifecycle is
-        # tracked) so a misconfiguration that loosens an operator-pinned
-        # floor fails fast.  Runs before any state mutation, so a rejected
-        # override leaves the registry unchanged (no half-registration).
+        # Reject loosened operator floors before mutating registry state.
         self._enforce_threshold_floor(manifest)
 
         lifecycle: AlphaLifecycle | None = None
@@ -147,26 +136,7 @@ class AlphaRegistry:
         self,
         manifest: object,
     ) -> GateThresholds | None:
-        """Merge per-alpha ``gate_thresholds_overrides`` into the
-        registry's base :class:`GateThresholds`.
-
-        Workstream **F-5** wiring:
-
-        * Returns the registry's base :attr:`_gate_thresholds`
-          unchanged (possibly ``None``) when the manifest carries no
-          overrides — the lifecycle then falls through to the
-          ``GateThresholds()`` skill-pinned defaults that
-          :class:`~feelies.alpha.lifecycle.AlphaLifecycle` constructs.
-        * When the manifest carries non-empty overrides, *materialises*
-          a :class:`GateThresholds` (using the registry's base or the
-          skill-pinned defaults when ``None``) and applies the
-          overrides via
-          :func:`feelies.alpha.promotion_evidence.apply_gate_thresholds_overrides`.
-
-        The merge happens at registration time so each
-        :class:`AlphaLifecycle` instance is born with its final
-        thresholds and never has to re-resolve at promotion time.
-        """
+        """Resolve final promotion thresholds at registration time."""
         overrides = getattr(manifest, "gate_thresholds_overrides", None)
         if not overrides:
             return self._gate_thresholds
@@ -174,20 +144,7 @@ class AlphaRegistry:
         return apply_gate_thresholds_overrides(base, overrides)
 
     def _enforce_threshold_floor(self, manifest: object) -> None:
-        """Reject a per-alpha override that loosens an operator-pinned floor.
-
-        Audit P0-1.  A per-alpha ``promotion.gate_thresholds`` override may
-        tighten any gate and may loosen a skill default the operator left
-        unpinned, but may NOT loosen below a floor the operator explicitly
-        pinned in ``platform.yaml`` (Inv-11 — loosening a safety control
-        requires operator re-authorization, not an alpha-bundle edit;
-        Inv-13 — operator policy is the audit substrate).
-
-        No-op when the operator pinned nothing (``platform.yaml`` carried
-        no ``gate_thresholds:``) or the alpha declares no overrides.  Runs
-        in every mode, independent of lifecycle tracking, so the check
-        also fires for BACKTEST registrations.
-        """
+        """Reject alpha overrides that loosen operator-pinned floors."""
         overrides = getattr(manifest, "gate_thresholds_overrides", None)
         if not overrides or not self._platform_threshold_overrides:
             return
@@ -245,45 +202,18 @@ class AlphaRegistry:
         """Set of all registered alpha IDs."""
         return frozenset(self._alphas.keys())
 
-    # ── SIGNAL-layer helpers (Phase 3-α) ──────────────────────────────
-
     def signal_alphas(self) -> list[AlphaModule]:
-        """SIGNAL-layer alphas in deterministic registration order.
-
-        A SIGNAL-layer alpha is identified by ``manifest.layer == "SIGNAL"``.
-        The returned list preserves registration order so any
-        downstream consumer (e.g. :class:`HorizonSignalEngine`) sees
-        alphas in the same sequence across runs (Inv-C).
-
-        Returns an empty list when no SIGNAL alphas are loaded — the
-        bootstrap layer treats this as a signal to skip the entire
-        Phase-3 wiring path (Inv-A).
-        """
+        """Return SIGNAL alphas in deterministic registration order."""
         return [alpha for alpha in self._alphas.values() if alpha.manifest.layer == "SIGNAL"]
 
     def has_signal_alphas(self) -> bool:
-        """True iff at least one ``layer: SIGNAL`` alpha is registered.
-
-        The orchestrator and bootstrap use this to gate the
-        :class:`SIGNAL_GATE` micro-state and the
-        :class:`HorizonSignalEngine` subscription respectively.  When
-        false, the bootstrap layer skips wiring the horizon signal
-        engine entirely (Inv-A: SIGNAL-only deployments without
-        portfolio layers take the short path).
-        """
+        """Return whether any SIGNAL alpha is registered."""
         return any(alpha.manifest.layer == "SIGNAL" for alpha in self._alphas.values())
 
-    # ── PORTFOLIO-layer helpers (Phase 4) ────────────────────────────
-
     def portfolio_alphas(self) -> list[AlphaModule]:
-        """PORTFOLIO-layer alphas in deterministic registration order.
+        """Return PORTFOLIO alphas in deterministic registration order.
 
-        A PORTFOLIO-layer alpha is identified by
-        ``manifest.layer == "PORTFOLIO"``.  Returns an empty list when
-        no PORTFOLIO alphas are loaded — the bootstrap layer treats this
-        as a signal to skip the entire Phase-4 composition wiring path
-        (Inv-A: SIGNAL-only deployments without portfolio layers do
-        not pay for the cross-sectional construction pipeline).
+        An empty list lets bootstrap skip composition wiring.
         """
         return [alpha for alpha in self._alphas.values() if alpha.manifest.layer == "PORTFOLIO"]
 
@@ -292,22 +222,7 @@ class AlphaRegistry:
         return any(alpha.manifest.layer == "PORTFOLIO" for alpha in self._alphas.values())
 
     def resolve_signal_dependencies(self, known_sensor_ids: frozenset[str]) -> None:
-        """Validate every SIGNAL alpha's ``depends_on_sensors`` block.
-
-        Called once at bootstrap, after all SIGNAL alphas are
-        registered and the :class:`SensorRegistry` is fully populated.
-        Raises :class:`UnresolvedDependencyError` listing every
-        unsatisfied ``(alpha_id, sensor_id)`` pair so the operator sees
-        all issues in a single error rather than fail-on-first.
-
-        Topological-order note: SIGNAL alphas declare a flat
-        ``depends_on_sensors`` list (no inter-alpha dependencies in
-        Phase 3-α), so no DAG construction is required here.  The
-        ordering invariant (Inv-C) is preserved because
-        :py:meth:`signal_alphas` returns alphas in registration order
-        and :py:meth:`AlphaLoader` enforces ``depends_on_sensors`` to
-        be sorted+deduplicated at load time.
-        """
+        """Report every unresolved SIGNAL sensor dependency in one error."""
         missing: list[tuple[str, str]] = []
         for alpha in self.signal_alphas():
             depends = getattr(alpha, "depends_on_sensors", ())
@@ -395,9 +310,8 @@ class AlphaRegistry:
         Automatically determines the correct gate based on current state.
         Returns gate check errors (empty = success).
 
-        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
-        path) *or* ``structured_evidence`` (Workstream **F-4**
-        sequence of typed evidence dataclasses).  Supplying both or
+        Provide either compatibility ``evidence`` or typed
+        ``structured_evidence``. Supplying both or
         neither raises :class:`ValueError`.  See
         :class:`~feelies.alpha.lifecycle.AlphaLifecycle` docstring for
         the contract.
@@ -442,15 +356,7 @@ class AlphaRegistry:
     ) -> list[str]:
         """Escalate a LIVE alpha from SMALL_CAPITAL to SCALED.
 
-        Workstream **F-6** capital-tier escalation: the lifecycle
-        state stays ``LIVE``; the alpha's capital-stage tier flips to
-        ``SCALED`` and is recorded as a metadata-only ledger entry
-        (a ``LIVE -> LIVE`` self-loop with the
-        :data:`feelies.alpha.lifecycle.PROMOTE_CAPITAL_TIER_TRIGGER`
-        trigger).  Returns the list of gate-check errors (empty =
-        success); see
-        :py:meth:`feelies.alpha.lifecycle.AlphaLifecycle.promote_capital_tier`
-        for the gate semantics and the validator threshold contract.
+        The lifecycle remains LIVE and records a ledger self-transition.
 
         Raises ``KeyError`` if alpha not registered.
         Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
@@ -521,14 +427,7 @@ class AlphaRegistry:
 
     @property
     def promotion_ledger(self) -> PromotionLedger | None:
-        """The :class:`PromotionLedger` shared across all registered
-        alphas, or ``None`` when forensic ledgering is disabled.
-
-        Workstream F-1: read-only accessor for downstream tooling
-        (operator CLI, audit reports, CPCV+DSR gate in workstream C)
-        that needs to inspect committed transitions without holding a
-        direct reference to the bootstrap-side ledger instance.
-        """
+        """Shared promotion ledger, or ``None`` when disabled."""
         return self._promotion_ledger
 
     # ── Dunder methods ────────────────────────────────────────

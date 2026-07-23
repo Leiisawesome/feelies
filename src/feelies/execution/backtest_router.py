@@ -1,79 +1,13 @@
-"""Backtest order router — simulated fills for backtest mode.
+"""Deterministic simulated fills for backtests.
 
-Implements the ``OrderRouter`` protocol with a deterministic
-cross-price + walk-the-book partial-fill model.  Despite the historical
-"v1 placeholder" framing, the implementation is the production
-backtest path: ACKNOWLEDGED + (optional) PARTIALLY_FILLED + FILLED
-with cost-model attribution and L1-depth-walk impact.  The
-backtest-engine skill's full queue-priority + adverse-selection
-fill model is implemented separately by
-:class:`feelies.execution.passive_limit_router.PassiveLimitOrderRouter`
-and is selected via ``execution_mode in {"passive_limit",
-"minimum_cost"}`` at bootstrap time.
+Orders are acknowledged before filling. Market orders cross the latest valid
+touch; the half-spread is embedded in the execution price rather than charged
+again as a fee. Quantity beyond L1 depth receives a capped, directional impact
+premium and may emit partial then final fill acknowledgements.
 
-Cost-accounting convention (audit R6, revised BT-3)
----------------------------------------------------
-
-Market orders fill at the **executed cross price** — the touch the
-taker crosses to (BUY lifts ``quote.ask``, SELL hits ``quote.bid``) —
-so :attr:`Position.avg_entry_price` records the price IB would report.
-The half-spread is embedded in that price, NOT debited as a separate
-``spread_cost`` fee (the cost model is called with ``half_spread=0``);
-see :mod:`feelies.execution.market_fill` for the single chokepoint.
-
-Because marks use the mid, a taker entry shows an immediate
-half-spread unrealized markdown rather than a fee.  NAV is unchanged —
-``BasicRiskEngine._compute_current_equity`` sums
-``account_equity + realized − fees + unrealized`` — only the
-attribution moved (out of :attr:`Position.cumulative_fees`, into the
-entry price / unrealized line).  Consumers that read
-:attr:`Position.cumulative_fees` as "total transaction cost" no longer
-see the spread there; the spread now lives in realized/unrealized PnL.
-See :class:`feelies.portfolio.position_store.Position` for the
-canonical statement; live deployments already cross at the touch.
-
-The ``walk-the-book`` excess-quantity branch stacks its impact premium
-on top of the cross (above the ask for buys, below the bid for sells)
-and that premium is likewise encoded into ``avg_entry_price``.  See the
-inline comment in :meth:`submit`.
-
-Fill semantics:
-  - Orders are acknowledged immediately on submit (ACKNOWLEDGED ack
-    emitted first, for parity with the live-mode state machine).
-  - Orders are then filled at the executed cross price of the most
-    recent quote for that symbol (BUY lifts the ask, SELL hits the
-    bid); the half-spread is embedded in the price (see convention
-    above), not attributed as a separate fee.
-  - If no quote has been seen for the symbol, the order is rejected.
-  - If the quote is crossed or locked (bid >= ask), the order is
-    rejected rather than silently filling at a dubious cross.
-  - If the relevant L1 depth is zero, the order is rejected rather
-    than silently filling against a vacuum.
-  - When the requested quantity exceeds the L1 available depth
-    (``bid_size`` for sells, ``ask_size`` for buys), the fill is
-    split into two acks (D14 partial fill model):
-      1. ``PARTIALLY_FILLED`` for the available depth at the cross.
-      2. ``FILLED`` for the remainder at a slippage-adjusted price
-         modelling walk-the-book impact (2d).
-    Slippage for the excess = market_impact_factor × (excess / depth)
-    × half-spread, capped at ``max_impact_half_spreads`` multiples
-    of the half-spread to avoid unbounded prices on very thin books.
-    Impact is directionally applied (buyer pays more, seller
-    receives less).  Minimum slippage is zero (price never inverts).
-
-Invariants preserved:
-  - Inv 9 (backtest/live parity): implements the same OrderRouter
-    protocol used by live and paper routers; emits ACKNOWLEDGED
-    before any fill so the order SM trace matches live.
-  - Inv 5 (deterministic replay): fill prices are derived from
-    deterministic market data, not random noise.
-  - Inv 11 (fail-safe): duplicate order_id submissions are rejected
-    rather than silently producing a second fill; deferred MARKET
-    fills (``latency_ns > 0``) are rejected after ``max_resting_ticks``
-    quotes for that symbol while still waiting for exchange-time
-    eligibility — mirroring :class:`~feelies.execution.passive_limit_router.PassiveLimitOrderRouter`
-    aggressive deferrals so thin data cannot leave an ACK-only order
-    stranded indefinitely.
+Missing, locked, crossed, or zero-depth quotes reject safely. Duplicate IDs and
+deferred orders that exceed their resting-tick limit also reject. Passive queue
+and adverse-selection behavior lives in ``PassiveLimitOrderRouter``.
 """
 
 from __future__ import annotations
@@ -107,11 +41,7 @@ from feelies.execution.trading_session import (
 )
 
 
-# MARKET orders deferred until exchange time reaches the latency deadline use
-# the shared :class:`~feelies.execution.market_fill.DeferredFill` record so the
-# backtest and passive routers cannot drift on the latency / monotonic-ack
-# contract (Inv 9).  Aliased to the historical name for readability at the
-# call sites below.
+# Share DeferredFill so both routers preserve latency and monotonic ack ordering.
 _DeferredMarketFill = DeferredFill
 
 
@@ -196,13 +126,13 @@ class BacktestOrderRouter:
         self._rth_gate = RthEntryFillGate(trading_session_bounds)
 
     def bind_position_qty(self, fn: Callable[[str], int]) -> None:
-        """Wire signed position qty for RTH entry/exit discrimination (BT-16)."""
+        """Provide signed position quantity for RTH entry classification."""
         self._rth_gate.bind_position_qty(fn)
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote and drain any mature pending orders.
 
-        Audit F-H-07: orders submitted with ``latency_ns > 0`` are
+        Orders submitted with ``latency_ns > 0`` are
         queued in ``_pending_submits`` and only fill against a quote
         whose ``timestamp_ns >= eligible_at_ns``.  This is the
         realistic behavior — a market order submitted at T sees
@@ -269,7 +199,7 @@ class BacktestOrderRouter:
         ):
             return
 
-        # Emit ACKNOWLEDGED first for live-mode SM parity (Inv 9).
+        # Emit ACKNOWLEDGED before terminal fill states.
         ack_ts = self._clock.now_ns() + self._latency_ns
         self._pending_acks.append(
             OrderAck(

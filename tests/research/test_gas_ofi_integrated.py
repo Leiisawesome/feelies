@@ -81,7 +81,9 @@ def _integrated_at_boundaries(bid_sizes: list[int]) -> list[float]:
         sensor_buffer_seconds=2 * _H,
         sequence_generator=SequenceGenerator(),
         horizon_features=[
-            HorizonWindowedFeature("ofi_raw", _H, reducer="sum", feature_id="ofi_integrated", min_samples=1)
+            HorizonWindowedFeature(
+                "ofi_raw", _H, reducer="sum", feature_id="ofi_integrated", min_samples=1
+            )
         ],
     )
     agg.attach()

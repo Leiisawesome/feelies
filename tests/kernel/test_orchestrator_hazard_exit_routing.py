@@ -1,4 +1,4 @@
-"""Audit R1: orchestrator must route bus-published hazard ``OrderRequest``
+"""The orchestrator must route bus-published hazard ``OrderRequest``
 events to ``backend.order_router.submit``.
 
 Pre-R1 ``HazardExitController._emit_exit`` only called
@@ -32,7 +32,6 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
     AlertSeverity,
-    NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
@@ -43,7 +42,6 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backend import ExecutionBackend
-from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -373,7 +371,7 @@ class TestIdempotency:
 
 
 class TestHazardSignatureSingleSourceOfTruth:
-    """Audit kernel-P1: the bridge filter and the controller share one
+    """The bridge filter and controller share one
     definition of the hazard-exit signature, so they cannot drift.
 
     ``Orchestrator._on_bus_hazard_order`` imports ``HAZARD_EXIT_REASONS`` and

@@ -1,21 +1,7 @@
-"""Level-3 baseline — ``SizedPositionIntent`` replay parity (decay OFF).
+"""Replay parity for sized intents with decay disabled.
 
-Phase-4-finalize locks a deterministic Level-3 fingerprint of the
-``SizedPositionIntent`` stream emitted by the canonical
-``CompositionEngine`` default pipeline (Ranker → FactorNeutralizer →
-SectorMatcher → TurnoverOptimizer) when driven through a synthetic
-``CrossSectionalContext`` event sequence.
-
-Determinism requires:
-
-* The ranker uses ``decay_weighting_enabled=False`` (this file).  See
-  :mod:`tests.determinism.test_sized_intent_with_decay_replay` for the
-  decay-ON variant.
-* Closed-form turnover-optimizer fallback is used (no CVXPY needed in
-  CI by design).  ``TurnoverOptimizer.optimize`` rounds to whole-cent
-  precision so the intent stream is bit-identical (Inv-5).
-* Iteration over ``intent.target_positions`` is lexicographically
-  sorted on symbol when serialised for the hash.
+The fixture uses the closed-form optimizer and pins whole-cent rounding and
+symbol ordering. Decay-enabled parity has a separate baseline.
 """
 
 from __future__ import annotations
@@ -202,7 +188,7 @@ def _hash_intent_stream(intents: list[SizedPositionIntent]) -> str:
 
 
 # Locked Level-3 baseline (decay OFF).  Re-baseline only in a batched
-# determinism pass (BT-11) with explicit justification in the commit.
+# determinism pass with explicit justification.
 EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH = (
     "eca21cb190b593ac388707e3246e3e4f7de784a2dc1bfc858faa0425a3918717"
 )

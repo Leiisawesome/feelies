@@ -167,14 +167,8 @@ class DecayDetector:
         hist_stdev = statistics.stdev(historical) if len(historical) > 1 else 0.0
         recent_mean = statistics.mean(recent)
 
-        # Positive Z means recent < historical (decay).  Scale the mean
-        # shift by the standard error of the recent-window mean
-        # (stdev / sqrt(n_recent)), NOT the raw per-trade stdev: the latter
-        # under-powered the test by a factor of sqrt(n_recent) (~7x at
-        # n_recent=50) and let a real partial decay pass undetected — the
-        # costly false negative under Inv-4.  The epsilon keeps a diverging
-        # recent mean against zero-variance history producing a large Z
-        # rather than a silent 0.
+        # Scale the mean shift by its standard error, not per-trade volatility.
+        # Epsilon keeps zero-variance divergence visible.
         recent_se = hist_stdev / math.sqrt(len(recent)) if recent else 0.0
         z_score = (hist_mean - recent_mean) / (recent_se + 1e-9)
 

@@ -1,4 +1,4 @@
-"""Tests for the composition solver-degradation alert (audit P1-8).
+"""Tests for composition solver-degradation alerts.
 
 ``HorizonMetricsCollector`` raises a ``composition.solver_degraded``
 WARNING when a ``SizedPositionIntent`` carries a degraded optimizer

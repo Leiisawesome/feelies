@@ -1,70 +1,13 @@
-"""Cost-arithmetic disclosure gate (G12).
+"""G12 validation for alpha cost disclosures.
 
-Every ``layer: SIGNAL`` (and ``layer: PORTFOLIO``) alpha must declare
-a ``cost_arithmetic:`` block:
+SIGNAL and PORTFOLIO specs disclose edge, half-spread, impact, fee, and margin
+ratio. Values must be finite with valid signs, the stated margin must match
+``edge / total_cost`` within ``MARGIN_RATIO_TOLERANCE``, and it must clear
+``MIN_MARGIN_RATIO``.
 
-    cost_arithmetic:
-      edge_estimate_bps: 8.0
-      half_spread_bps:    2.0
-      impact_bps:         1.0
-      fee_bps:            0.5
-      margin_ratio:       1.8
-
-The block is **disclosed** by the alpha author and **validated** by
-the platform.  Validation is purely arithmetic: there is no place for
-opinion in this gate.
-
-Rules (§9 / §12 of ``docs/three_layer_architecture.md`` and
-the canonical example in §6.5 of the legacy doc):
-
-1. All five fields must be present and finite (``int`` or ``float``).
-2. ``edge_estimate_bps`` and ``margin_ratio`` must be strictly
-   positive.  ``half_spread_bps``, ``impact_bps``, ``fee_bps`` must be
-   non-negative.
-3. ``cost_total_bps = half_spread_bps + impact_bps + fee_bps``.
-4. ``computed_margin_ratio = edge_estimate_bps / max(cost_total_bps, eps)``.
-5. The disclosed ``margin_ratio`` must satisfy
-   ``abs(computed - declared) <= 0.05`` (tolerance for rounding in
-   YAML literals).
-6. The declared ``margin_ratio`` must be ``>= 1.5`` per
-   §9 (canonical hypothesis-survival threshold) — alphas with
-   thinner margins are rejected at load time.
-
-Cost basis (audit P1-1)
------------------------
-
-``cost_total_bps`` sums a **single** crossing: ``half_spread`` is half
-the quoted spread (one side) and ``fee`` is one taker fee.  This is a
-**one-way** cost.  Inv-12 ("expected_edge > 1.5x round_trip_cost", and
-survive 1.5x cost / 2x latency) is stated on a **round-trip** basis,
-which crosses the spread and pays fees twice — roughly
-``2 x cost_total_bps`` (see
-:func:`feelies.execution.cost_model.estimate_round_trip_cost_bps`, which
-prices entry + exit legs).  Therefore the disclosed ``margin_ratio`` is a
-one-way figure and is ~2x more generous than the round-trip survival
-margin; a disclosed ``margin_ratio`` of 1.6 corresponds to an
-``edge / round_trip`` of ~0.8.
-
-The disclosed ``cost_basis`` field (default ``"one_way"``) records this
-explicitly so downstream consumers do not mistake the one-way disclosure
-for a round-trip survival margin.  The authoritative round-trip Inv-12
-check is the orchestrator's runtime **B4 gate**
-(``signal_min_edge_cost_ratio`` x round-trip cost,
-``kernel/orchestrator.py``); this load-time gate is a coarse disclosure
-floor, not the round-trip survival test.
-
-Failure raises :class:`CostArithmeticError` with a structured message
-naming the alpha, the offending field, and the computed numbers.
-The exception is a sub-class of ``ValueError`` so existing alpha
-loaders that wrap parse errors in ``ValueError`` continue to surface
-it without code changes.
-
-Runtime (Inv-12 complement): :class:`HorizonSignalEngine` stamps the
-validated totals onto each emitted ``Signal`` as ``disclosed_*`` fields.
-The orchestrator B4 gate uses :func:`feelies.execution.cost_model.estimate_round_trip_cost_bps`;
-fills whose modeled ``cost_bps`` exceed ``MIN_MARGIN_RATIO ×``
-``disclosed_cost_total_bps`` emit a forensic ``Alert`` (they do not
-block replay — Inv-11 prefers observability over speculative rejects).
+The default cost basis is one way: one spread crossing, impact, and fee. The
+runtime B4 gate separately tests edge against modeled round-trip cost. Validated
+totals are copied onto emitted signals for execution forensics.
 """
 
 from __future__ import annotations
@@ -83,10 +26,7 @@ _REQUIRED_FIELDS: tuple[str, ...] = (
 )
 
 
-# §9: minimum margin ratio.  An alpha whose disclosed (or computed)
-# margin is below 1.5 cannot survive cost shocks and is refused at
-# load time.  The constant is centralised here so tests and downstream
-# checks (Phase 4 trader-net-edge gate) can import the same number.
+# Shared load-time margin floor.
 MIN_MARGIN_RATIO: float = 1.5
 
 # Tolerance for the disclosed-vs-computed margin-ratio reconciliation.
@@ -94,8 +34,7 @@ MIN_MARGIN_RATIO: float = 1.5
 # enough to absorb that without letting an author understate cost.
 MARGIN_RATIO_TOLERANCE: float = 0.05
 
-# Accepted ``cost_basis`` declarations (audit P1-1).  ``one_way`` (the
-# default and the basis the component fields actually express) sums a
+# Accepted cost bases. one_way matches the component fields and sums a
 # single crossing; ``round_trip`` declares the author has already
 # doubled the crossing costs.  The round-trip approximation factor below
 # converts a one-way ``cost_total_bps`` into a round-trip estimate.
@@ -194,10 +133,7 @@ class CostArithmetic:
                 f"field(s) {missing}; required: {_REQUIRED_FIELDS}"
             )
 
-        # cost_basis (audit P1-1) — optional; defaults to one-way, the
-        # basis the component fields actually express.  Reject anything
-        # other than the two documented values so a typo can't silently
-        # disable the round-trip survival reconciliation downstream.
+        # Reject typos that could disable round-trip cost reconciliation.
         cost_basis = spec.get("cost_basis", DEFAULT_COST_BASIS)
         if not isinstance(cost_basis, str) or cost_basis not in _VALID_COST_BASES:
             raise CostArithmeticError(
@@ -291,7 +227,5 @@ __all__ = [
     "CostArithmeticError",
     "MIN_MARGIN_RATIO",
     "MARGIN_RATIO_TOLERANCE",
-    "DEFAULT_COST_BASIS",
-    "ROUND_TRIP_FACTOR",
     "compute_margin_ratio",
 ]

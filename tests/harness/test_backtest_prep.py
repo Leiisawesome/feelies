@@ -143,7 +143,6 @@ def test_prepare_reuses_log_when_not_filtering_rth() -> None:
 
 
 def test_prepare_rebuilds_log_when_filtering_rth() -> None:
-    rth_ns = int(datetime(2026, 3, 26, 10, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9)
     pre_market_ns = int(datetime(2026, 3, 26, 8, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9)
     log = InMemoryEventLog()
     log.append_batch([_quote(ts_ns=pre_market_ns, seq=1)])

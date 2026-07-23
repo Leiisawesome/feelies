@@ -1,4 +1,4 @@
-"""BT-13 acceptance: PORTFOLIO reference alphas are research-only at this scale.
+"""Portfolio reference alphas are research-only at this scale.
 
 * Production discovery excludes ``alphas/research/``.
 * ``lifecycle_state: RESEARCH`` blocks PAPER/LIVE promotion.

@@ -44,18 +44,8 @@ falsification_criteria:
     posterior P(vol_breakout) > 0.5 for > 30 trading days); the
     on-condition becomes unreachable and the strategy is inactive.
 
-# ── Layer-1 sensor dependencies (Phase 3) ─────────────────
-# All sensors ship with the platform and are wired via the
-# platform.yaml ``sensors:`` block.  G6 (feature/sensor dependency
-# DAG) verifies every entry resolves at boot.
-#
-# sensor_audit_2026-07-02 P1: ``micro_price`` dropped.  It was declared here
-# (and as an l1_signature_sensors fingerprint below) but evaluate() never
-# reads a micro_price-derived value — the exact "cosmetic fingerprint"
-# pattern the P1-5 fix below already removed for kyle_lambda_60s. The
-# mechanism this alpha actually reads is book_imbalance (the level-invariant
-# transform of the micro-price deviation; see its docstring), which is now
-# itself a recognised KYLE_INFO fingerprint (G16 rule 5).
+# ── Layer-1 sensor dependencies ───────────────────────────
+# Every dependency is resolved at boot and consumed below.
 depends_on_sensors:
   - ofi_ewma
   - book_imbalance
@@ -108,19 +98,16 @@ parameters:
     min: 0.0
     max: 0.5
     description: |
-      Audit 3P-3: minimum |book_imbalance_mean| required to count as a
-      same-side queue confirmation of the OFI footprint.  Replaces the dead
-      ``imb == 0.0`` exact-equality check — now that ``imb`` is a horizon mean
-      (a float that is essentially never exactly 0.0), an epsilon band is
-      needed so a near-zero mean (no real confirmation) does not pass.
+      Minimum |book_imbalance_mean| for same-side queue confirmation. The
+      epsilon band prevents a near-zero horizon mean from passing.
   cost_floor_bps:
     type: float
     default: 5.0
-    min: 0.0
+    min: 5.0
     max: 30.0
     description: |
-      One-way cost floor (bps). Audit P1-2: self-suppress entries whose
-      computed ``edge_bps`` does not exceed the disclosed one-way cost
+      One-way cost floor (bps). Suppress entries whose computed ``edge_bps``
+      does not exceed the disclosed one-way cost
       (half_spread + impact + fee = 2.0 + 2.0 + 1.0 = 5.0). Without it the
       alpha emits entries with edge as low as 3.2 bps (|z| at the default
       0.8 threshold). The round-trip Inv-12 bar (~1.5x round-trip) is
@@ -136,7 +123,7 @@ risk_budget:
   max_drawdown_pct: 1.0
   capital_allocation_pct: 25.0
 
-# ── Regime Gate (Phase 3 DSL — §8.4) ──────────────────────
+# ── Regime gate ───────────────────────────────────────────
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
@@ -151,27 +138,11 @@ cost_arithmetic:
   impact_bps: 2.0
   fee_bps: 1.0
   margin_ratio: 1.8
-  # Audit P1-1: one-way components. Round-trip ≈ 10.0 bps; edge/round-trip
-  # ≈ 0.90. The runtime B4 gate enforces the round-trip Inv-12 bar.
+  # One-way disclosure; the runtime gate checks round-trip survival.
   cost_basis: one_way
 
-# Audit P1-5: the prior block declared ``kyle_lambda_60s`` as the
-# KYLE_INFO fingerprint, but this alpha neither depends on nor reads it —
-# a cosmetic fingerprint. The mechanism it actually exploits is the
-# order-flow imbalance footprint: standardised ``ofi_ewma`` confirmed by
-# ``book_imbalance`` (the level-invariant L1 transform of micro-price vs
-# mid, platform.yaml: (micro - mid)/spread = book_imbalance / 2).
-#
-# sensor_audit_2026-07-02 P1: the fingerprint had been declared as
-# ``micro_price`` on the theory that reading ``book_imbalance`` counted as
-# reading it "via its transform" — but evaluate() never touches a
-# micro_price-derived value, so this was the same cosmetic-fingerprint
-# pattern the P1-5 note above already fixed once in this file, recurring
-# through a different sensor. ``book_imbalance`` is now itself a recognised
-# KYLE_INFO fingerprint (G16 rule 5, layer_validator._FAMILY_FINGERPRINT_SENSORS)
-# since it is an independently-computed L1 signature, not merely derived from
-# micro_price. All l1_signature_sensors are a subset of depends_on_sensors and
-# are each read in evaluate() or the regime gate (no cosmetic entries).
+# KYLE_INFO is represented by standardized OFI confirmed by book imbalance.
+# Each signature sensor is also a consumed dependency.
 trend_mechanism:
   family: KYLE_INFO
   expected_half_life_seconds: 120
@@ -192,13 +163,7 @@ signal: |
       str_cap = params["strength_cap"]
 
       z = snapshot.values.get("ofi_ewma_zscore")
-      # Audit P1-B / 2P-3: confirm with the signed top-of-book size imbalance
-      # rather than ``micro_price_zscore`` (which z-scored the ~$100 price
-      # level — dominated by drift, not the sub-cent Stoikov imbalance).
-      # ``book_imbalance_mean`` is the horizon-window mean of that imbalance
-      # ∈ [-1, 1] (level-invariant; positive ⇒ bid-heavy ⇒ upward micro-price
-      # pressure), averaged over the horizon so a single noisy instantaneous
-      # quote does not drive the confirmation.
+      # Confirm OFI with horizon-mean top-of-book imbalance.
       imb = snapshot.values.get("book_imbalance_mean")
       if z is None or imb is None:
           return None
@@ -207,11 +172,7 @@ signal: |
       if mag < threshold:
           return None
 
-      # Audit 3P-3: require a *meaningful* same-side queue imbalance.  ``imb``
-      # is a horizon mean, so the old ``imb == 0.0`` exact check was dead; an
-      # epsilon band rejects a near-zero (no-confirmation) mean.  Checked before
-      # the sign test so a tiny opposite-sign mean reads as "no evidence", not
-      # "contradiction".
+      # Treat near-zero mean imbalance as no confirmation.
       if abs(imb) < params["imbalance_floor"]:
           return None
       # Require book imbalance aligned with signed OFI (L1 footprint).
@@ -221,16 +182,13 @@ signal: |
       direction = LONG if z > 0 else SHORT
       edge_bps = min(mag * slope_bps, edge_cap)
 
-      # Audit P1-2: never emit an entry below the disclosed one-way cost.
+      # Do not emit entries below disclosed one-way cost.
       if edge_bps <= params["cost_floor_bps"]:
           return None
 
-      # Convex strength: superlinear above the old saturation point
-      # (mag == threshold*2 => norm==1.0 => same strength as before).
+      # Convex strength rewards signals beyond twice the threshold.
       norm = mag / (threshold * 2.0)
-      # Below saturation (norm <= 1.0): original linear scaling — no change
-      # to existing signal sizes.  Above saturation (norm > 1.0): convex
-      # upside capped at str_cap, rewarding high-conviction moments.
+      # Scale linearly below saturation and convexly above it, capped at str_cap.
       if norm <= 1.0:
           strength = norm
       else:

@@ -23,7 +23,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class MicroPriceSensor:
@@ -64,7 +65,7 @@ class MicroPriceSensor:
 
     def initial_state(self) -> dict[str, Any]:
         return {
-            "warm_ts": deque(),  # timestamps of valid (total > 0) quotes (S3)
+            "warm_ts": deque(),  # Valid quote timestamps.
         }
 
     def update(
@@ -72,16 +73,16 @@ class MicroPriceSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
         bid = float(event.bid)
         ask = float(event.ask)
-        # A1: uniform bid/ask positivity validation across price-consuming
+        # Validate positive prices consistently across price-consuming
         # sensors.  A zero/negative side is a halt / pre-open marker and
         # cannot produce a meaningful micro-price.
-        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
             return None
         bid_sz = event.bid_size
         ask_sz = event.ask_size
@@ -92,7 +93,7 @@ class MicroPriceSensor:
             warm = False
         else:
             value = (ask * bid_sz + bid * ask_sz) / float(total)
-            # S3: sliding-window warm check — reverts to cold after data gaps
+            # Sliding-window warmth reverts after data gaps
             ts_ns = event.timestamp_ns
             warm_ts: deque[int] = state["warm_ts"]
             warm_ts.append(ts_ns)
@@ -101,13 +102,4 @@ class MicroPriceSensor:
                 warm_ts.popleft()
             warm = len(warm_ts) >= self._warm_after
 
-        return SensorReading(
-            timestamp_ns=event.timestamp_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)

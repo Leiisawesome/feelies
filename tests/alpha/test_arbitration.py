@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from feelies.alpha.arbitration import EdgeWeightedArbitrator
 from feelies.core.events import Signal, SignalDirection

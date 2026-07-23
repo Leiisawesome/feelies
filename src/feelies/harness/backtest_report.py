@@ -8,7 +8,6 @@ import json
 import os
 import subprocess
 from collections.abc import Mapping
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, TypeVar
@@ -243,17 +242,7 @@ def generate_report(
     # not a per-unit edge.  Kept for backwards comparability of the report.
     pnl_per_share = float(realized_pnl) / total_shares if total_shares else 0.0
 
-    # ── Reversal analysis (B5) ───────────────────────────────────
-    # Exit (flatten) legs of REVERSE intents carry the REVERSE_* intent
-    # name; entry legs are stamped ENTRY_* and are not counted as
-    # separate reversal attempts here.  Both legs of a reversal share
-    # the same ``correlation_id`` because ``Orchestrator._execute_reverse``
-    # builds them in the same tick, so a paired ENTRY_* fill on that
-    # correlation_id is the only reliable signal that the flip actually
-    # completed.  Without it the entry leg was suppressed somewhere
-    # along the path (B5 reversal-edge guard, B4 entry edge/cost gate,
-    # post-exit risk rejection, SCALE_DOWN below ``min_order_shares``,
-    # or entry-leg submission failure) and only the exit leg traded.
+    # A reversal completes only when its correlation ID has both exit and entry fills.
     reversal_records = [r for r in records if getattr(r, "trading_intent", "") in _REVERSE_INTENTS]
     entry_correlation_ids = {
         r.correlation_id for r in records if getattr(r, "trading_intent", "") in _ENTRY_INTENTS
@@ -331,32 +320,25 @@ def generate_report(
         "ACTIVATED" if kill_switch is not None and kill_switch.is_active else "NOT ACTIVATED"
     )
 
-    # ── Performance metrics ──────────────────────────────────────
-    # NOTE (reproducibility): every value in the Latency section below is a
-    # wall-clock measurement and is therefore NOT bit-identical across runs or
-    # machines.  Inv-5's "identical report" contract holds for the Parity block
-    # (pnl_hash / config_hash / parity_hash / artifact_id), not for these
-    # timing lines.  Diff two runs on the Parity block, never on the full text.
+    # Wall-clock timings vary; compare runs using the deterministic hashes.
     mc = orchestrator.metric_collector
     if isinstance(mc, InMemoryMetricCollector):
         tick_summary = mc.get_summary("kernel", "tick_to_decision_latency_ns")
         feat_summary = mc.get_summary("kernel", "feature_compute_ns")
         sig_summary = mc.get_summary("kernel", "signal_evaluate_ns")
+        sensor_summary = mc.get_summary("kernel", "sensor_fanout_ns")
+        sm_summary = mc.get_summary("kernel", "sm_transition_ns")
     else:
-        tick_summary = feat_summary = sig_summary = None
+        tick_summary = feat_summary = sig_summary = sensor_summary = sm_summary = None
 
     avg_tick_ns = tick_summary.mean if tick_summary else 0.0
     max_tick_ns = tick_summary.max_value if tick_summary else 0.0
     avg_feat_ns = feat_summary.mean if feat_summary else 0.0
     avg_sig_ns = sig_summary.mean if sig_summary else 0.0
+    avg_sensor_ns = sensor_summary.mean if sensor_summary else 0.0
+    avg_sm_ns = sm_summary.mean if sm_summary else 0.0
 
-    # Locate the originating quote for the max tick-to-decision spike.
-    # Why this matters: a single 1.3-second outlier in a 974K-quote run is
-    # almost always (a) the first post-warmup tick, (b) a GC pause, or
-    # (c) a real microstructure event (auction/halt/cross). Knowing which
-    # quote caused it converts an "alarming number" into an actionable line
-    # in the data. Spike origin uses ``quote_trace`` (or BusRecorder NBBOQuote
-    # fallback); tick latencies use ``tick_latency_events`` when wired.
+    # Attach the originating quote to the slowest tick for diagnosis.
     max_tick_meta: dict[str, object] | None = None
     p95_tick_ns: float | None = None
     p99_tick_ns: float | None = None
@@ -545,6 +527,8 @@ def generate_report(
         )
     lines.append(_kv("Avg feature compute", _ns_to_ms(avg_feat_ns)))
     lines.append(_kv("Avg signal evaluate", _ns_to_ms(avg_sig_ns)))
+    lines.append(_kv("Avg sensor fan-out", _ns_to_ms(avg_sensor_ns)))
+    lines.append(_kv("Avg SM transition", _ns_to_ms(avg_sm_ns)))
 
     # TCA (transaction cost analysis)
     if records:
@@ -599,7 +583,7 @@ def generate_report(
             # already labels the block.
             lines.extend(format_cost_survival_report(survival_rows).splitlines()[1:])
 
-    # Three-hash parity contract — pnl_hash, config_hash, parity_hash (combined bind).
+    # Bind journal and config hashes into one run hash.
     pnl_hash = compute_parity_hash(orchestrator)
     config_hash = compute_config_hash(config)
     parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
@@ -633,7 +617,7 @@ def generate_report(
     return "\n".join(lines)
 
 
-# ── Parity hashes (three-hash contract — trade journal + config snapshot) ──
+# Deterministic trade-journal and config hashes.
 
 
 def live_data_version(symbols: list[str], date_range: str) -> str:
@@ -722,7 +706,7 @@ def _git_sha() -> str | None:
 
 @functools.lru_cache(maxsize=1)
 def _working_tree_dirty() -> bool | None:
-    """Best-effort "does the working tree differ from HEAD" (audit P2-6).
+    """Return whether the working tree differs from HEAD, when knowable.
 
     ``_git_sha()`` deliberately avoids a subprocess for the common case (just
     reads ``.git/HEAD`` / ref files), but there is no dependency-free way to
@@ -822,31 +806,7 @@ def compute_artifact_id(
     data_version: str,
     edge_calibration_version: str = "none",
 ) -> str:
-    """Deterministic artifact id for the run (audit B-PROMO-04).
-
-    Combines six orthogonal axes that together identify a backtest run:
-
-      - ``strategy_version``: ``alpha_id@manifest.version`` for every
-        active alpha, sorted. Picks up code-level alpha changes.
-      - ``config_version``: the resolved ``PlatformConfig.version``
-        (the ``version:`` field of ``platform.yaml``).
-      - ``data_version``: caller-supplied identifier of the input
-        dataset. Demo mode hashes the static tick payload; live mode
-        encodes ``symbols + date range``.
-      - ``engine_version``: the ``ENGINE_VERSION`` constant above.
-      - ``code_version``: ``ENGINE_VERSION`` paired with the HEAD git SHA
-        when a ``.git`` is present, so a fill-semantics change that forgot
-        to bump ``ENGINE_VERSION`` still shifts the id.
-      - ``edge_calibration_version``: :func:`edge_calibration_version` of the
-        close-the-loop ``--edge-calibration`` factors applied (``"none"`` when
-        the flag was not used) — this is a live trade-path input (it can
-        change which signals clear the B4 cost gate), so two runs that differ
-        only in which calibration factors were applied must not silently
-        collide on ``artifact_id``.
-
-    Same inputs produce the same id; any drift across consecutive
-    audits flags an unintentional change in the artifact contract.
-    """
+    """Hash strategy, config, data, engine, code, and calibration versions."""
     registry = orchestrator.alpha_registry
     strategy_payload: list[str] = []
     if registry is not None:

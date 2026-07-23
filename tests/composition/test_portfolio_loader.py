@@ -1,10 +1,10 @@
-"""Smoke tests for the Phase-4 PORTFOLIO layer load path."""
+"""Smoke tests for the PORTFOLIO-layer load path."""
 
 from __future__ import annotations
 
 import pytest
 
-from feelies.alpha.loader import AlphaLoader, AlphaLoadError
+from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.portfolio_layer_module import LoadedPortfolioLayerModule
 
 

@@ -1,39 +1,7 @@
-"""Wiring e2e for pro_burst_revert_v1 driven by its actual feeder alphas.
+"""End-to-end composition wiring for ``pro_burst_revert_v1``.
 
-Boots ``sig_hawkes_burst_v1`` + ``sig_inventory_revert_v1`` (SIGNAL
-feeders) and ``pro_burst_revert_v1`` (PORTFOLIO) through ``build_platform``
-over a 360-second deterministic multi-symbol synthetic stream.
-
-What this test guarantees
---------------------------
-
-* All three layers register through ``build_platform`` without
-  ``AlphaLoadError``, ``LayerValidationError``, or wiring failures.
-* The composition layer is fully wired (``CompositionEngine``,
-  ``CrossSectionalTracker``, ``HorizonMetricsCollector``).
-* At least one 300-second horizon boundary is crossed and at least one
-  ``SizedPositionIntent`` is emitted (the composition cycle fires).
-* A full backtest reaches ``MacroState.READY`` without exception.
-* Two replays of the exact same fixture produce a byte-identical
-  ``SizedPositionIntent`` stream (Inv-5 determinism).
-* Per-strategy fill attribution is independent across the three
-  alpha boundaries.
-
-Active-aggregator note
-----------------------
-
-``HorizonAggregator`` runs in passive mode (empty ``values``) in
-v0.2.  The SIGNAL evaluate functions (which gate on
-``hawkes_intensity_percentile``, ``ofi_ewma``, etc.) therefore return
-``None`` for every snapshot and the composition cycle fires with zero
-effective cross-sectional signals.  ``SizedPositionIntent`` events are
-still emitted but with empty ``target_positions`` (the degenerate
-intent path defined in ``CompositionEngine``).
-
-The determinism assertions are therefore meaningful regression guards:
-they verify that the degenerate intent stream is bit-stable across
-replays.  Once the Phase-3.5 active aggregator ships the intent stream
-will become non-degenerate without requiring test rewrite.
+The suite covers feeder registration, composition components, intent emission,
+ready state, replay determinism, and per-strategy fill attribution.
 """
 
 from __future__ import annotations
@@ -325,7 +293,7 @@ def test_xsect_v1_e2e_composition_layer_is_wired() -> None:
         orchestrator._composition_metrics_collector,
         HorizonMetricsCollector,
     )
-    # sig_hawkes_burst_v1 opts into hazard_exit.enabled=true (audit P0 H-1).
+    # The Hawkes alpha opts into hazard exits.
     assert isinstance(orchestrator._hazard_exit_controller, HazardExitController)
 
 

@@ -6,9 +6,7 @@ Usage:
     python scripts/run_backtest.py --symbol AAPL --date 2026-04-08 --trace-signal-orders
     python scripts/run_backtest.py --config platform.yaml  # uses symbols from config
 
-Workstream-D update — the ``--demo`` synthetic-tick mode was retired
-along with the ``trade_cluster_drift`` LEGACY reference alpha (D.2).
-For a no-API-key smoke test of the orchestration pipeline use the
+For a no-API-key smoke test of the orchestration pipeline, use the
 end-to-end suite directly: ``pytest tests/integration/test_phase4_e2e.py``.
 
 Offline replay from gzipped JSONL disk cache (no Massive API key)::
@@ -21,8 +19,6 @@ Offline replay from gzipped JSONL disk cache (no Massive API key)::
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import logging
 import os
 import sys
@@ -30,11 +26,9 @@ import time
 import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 _TZ_ET = ZoneInfo("America/New_York")
-from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence, TypeVar
 
@@ -66,9 +60,6 @@ from feelies.harness.backtest_prep import (
 )
 from feelies.harness.backtest_report import (
     cache_data_version,
-    compute_combined_parity_hash,
-    compute_config_hash,
-    compute_parity_hash,
     format_section,
     generate_report,
     live_data_version,
@@ -81,21 +72,14 @@ from feelies.kernel.signal_order_trace import (
 )
 from feelies.core.clock import SimulatedClock, WallClock
 from feelies.core.events import (
-    CrossSectionalContext,
     Event,
-    HorizonFeatureSnapshot,
-    HorizonTick,
     MetricEvent,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
-    PositionUpdate,
-    RegimeHazardSpike,
     SensorReading,
     Signal,
-    SignalDirection,
-    SizedPositionIntent,
     Trade,
 )
 from feelies.core.errors import ConfigurationError
@@ -198,7 +182,7 @@ def _ensure_backtest_session_anchor(
     *,
     first_event_ts_ns: int | None,
 ) -> PlatformConfig:
-    """Set ``session_open_ns`` when unset so bootstrap skips H10 (audit).
+    """Set ``session_open_ns`` when absent.
 
     *first_event_ts_ns* must be the first event in replay order — identical
     anchor to :class:`HorizonScheduler` auto-binding when ordering matches.
@@ -264,9 +248,7 @@ DaySource = IngestDayMeta
 def _load_backtest_config(args: argparse.Namespace) -> PlatformConfig | None:
     """Load platform YAML and apply CLI stress / symbol overrides."""
     try:
-        config = load_platform_config(
-            args.config, strict=getattr(args, "strict_config", False)
-        )
+        config = load_platform_config(args.config, strict=getattr(args, "strict_config", False))
     except ConfigNotFoundError as exc:
         print(f"ERROR: Config file not found: {exc.path}", file=sys.stderr)
         return None
@@ -324,12 +306,7 @@ def ingest_data(
     cache: DiskEventCache | None = None
     if not no_cache:
         resolved_dir = cache_dir or Path.home() / ".feelies" / "cache"
-        # Audit DI-07: DiskEventCache's manifest created_at is genuinely
-        # wall-clock provenance (when this cache file was written) — route
-        # it through the sanctioned WallClock abstraction instead of the
-        # bare time.gmtime() fallback (Inv-10).  Distinct from the
-        # per-(symbol, day) SimulatedClock below, which stamps the
-        # normalizer's received_ns and must stay fixed/non-advancing.
+        # Cache metadata uses wall time; market receive times below stay simulated.
         cache = DiskEventCache(resolved_dir, clock=WallClock())
 
     dates = iter_calendar_dates(start_date, end_date)
@@ -529,9 +506,9 @@ def _print_degraded_diagnostics(
     orchestrator: Orchestrator,
     n_quotes: int,
 ) -> None:
-    """Minimal, non-Parity triage counts for a run that ended DEGRADED (audit P2-8).
+    """Print safe event counts for a run that ended DEGRADED.
 
-    Phase 6 (``generate_report``) is never reached on this path, so an operator
+    ``generate_report`` is never reached on this path, so an operator
     otherwise gets only the one-line macro-state error.  P&L/position numbers
     are deliberately omitted here — a DEGRADED run's account state may be
     inconsistent — these are raw bus-event counts only, safe to print
@@ -693,23 +670,18 @@ def _run_backtest_phases_2_7(
     )
     n_quotes = prep.n_quotes
 
-    # ── Phase 2: Platform bootstrap ───────────────────────────
+    # Compose the platform.
     step_t = _step("Composing platform (alphas, engines, risk)")
     signal_trace_sink: list[SignalOrderTraceRow] | None = [] if args.trace_signal_orders else None
-    # G-5 measurement: cross-alpha net-shadow sink (parity-neutral; wiring it
-    # only records NetDivergence, it does not drive).  ``_cache_args`` and
-    # other lightweight callers may omit the flag, hence ``getattr``.
+    # The optional net-shadow sink records divergence without driving decisions.
     net_shadow_sink: "list[NetDivergence] | None" = (
         [] if getattr(args, "emit_net_divergence_jsonl", False) else None
     )
-    # G-7 measurement: edge/vol/inventory size-shadow sink (parity-neutral;
-    # wiring it only records SizeDivergence, it does not drive).
+    # The optional size-shadow sink records divergence without driving decisions.
     size_shadow_sink: "list[SizeDivergence] | None" = (
         [] if getattr(args, "emit_size_divergence_jsonl", False) else None
     )
-    # Close-the-loop (gate): apply per-alpha edge realization factors from a
-    # prior multi-session run's EdgeCalibrationStore (no flag -> None -> no
-    # haircut -> parity-preserving).
+    # Apply stored per-alpha edge realization factors when requested.
     _edge_factors = None
     _apply_edge_cal = getattr(args, "edge_calibration", None)
     if _apply_edge_cal:
@@ -739,7 +711,7 @@ def _run_backtest_phases_2_7(
     dt = time.monotonic() - step_t
     print(f"  OK - {alpha_count} alpha(s) registered [{dt:.1f}s]", flush=True)
 
-    # ── Phase 3: Attach recorder ──────────────────────────────
+    # Attach the recorder.
     # Skip storing SensorReadings unless the caller requested
     # --emit-sensor-readings-jsonl: those ~10 M entries cause the same
     # Windows VirtualAlloc realloc spike we eliminated from ``events``.
@@ -764,7 +736,7 @@ def _run_backtest_phases_2_7(
 
     orchestrator._bus.subscribe(MetricEvent, _on_metric_event)
 
-    # ── Phase 4: Boot ─────────────────────────────────────────
+    # Boot the orchestrator.
     step_t = _step("Booting orchestrator (integrity checks, warm-start)")
     orchestrator.boot(config_out)
     macro = orchestrator.macro_state
@@ -778,7 +750,7 @@ def _run_backtest_phases_2_7(
         )
         return BacktestRunOutcome(exit_code=1, orchestrator=orchestrator, config=config_out)
 
-    # ── Phase 5: Run pipeline ─────────────────────────────────
+    # Run the replay.
     quote_observer = QuoteReplayObserver(total_events=n_quotes, interval=100_000)
     orchestrator._bus.subscribe(NBBOQuote, quote_observer)
 
@@ -814,14 +786,28 @@ def _run_backtest_phases_2_7(
     except Exception:
         pass
     try:
-        orchestrator.run_backtest()
+        _profile_path = getattr(args, "profile", None)
+        if _profile_path:
+            import cProfile
+            import pstats
+            from pathlib import Path as _ProfilePath
+
+            _profiler = cProfile.Profile()
+            _profiler.enable()
+            try:
+                orchestrator.run_backtest()
+            finally:
+                _profiler.disable()
+                _out = _ProfilePath(_profile_path)
+                _out.parent.mkdir(parents=True, exist_ok=True)
+                _profiler.dump_stats(str(_out))
+                _stats = pstats.Stats(_profiler).sort_stats("cumulative")
+                print(f"\n  cProfile written to {_out} (top 30 by cumulative):", flush=True)
+                _stats.print_stats(30)
+        else:
+            orchestrator.run_backtest()
     except Exception as exc:
-        # A pipeline integrity failure transitions the orchestrator to
-        # DEGRADED and re-raises (see the backtest-engine skill's Backtest
-        # Lifecycle).  Previously this propagated as a bare traceback with no
-        # summary line; print one up front (the full traceback still follows,
-        # for diagnosis) and return a controlled nonzero exit code rather than
-        # relying on the interpreter's default uncaught-exception behavior.
+        # Print a concise failure before the diagnostic traceback.
         print(
             f"\n  ERROR: Backtest integrity failure: {type(exc).__name__}: {exc}",
             file=sys.stderr,
@@ -842,21 +828,21 @@ def _run_backtest_phases_2_7(
     dt = time.monotonic() - step_t
     print(f"  Pipeline complete - {quote_observer.summary()}", flush=True)
 
-    # Explicit post-run macro-state gate (do not rely solely on verification
-    # check #6).  ``run_backtest`` transitions to DEGRADED and re-raises on an
-    # integrity failure, but a future relaxation must still fail the run here.
+    # A completed run must return the orchestrator to READY.
     macro = orchestrator.macro_state
     if macro != MacroState.READY:
         print(
             f"  ERROR: Backtest ended in macro state {macro.name}, expected READY",
             file=sys.stderr,
         )
-        _print_degraded_diagnostics(recorder=recorder, orchestrator=orchestrator, n_quotes=n_quotes)
+        _print_degraded_diagnostics(
+            recorder=recorder, orchestrator=orchestrator, n_quotes=n_quotes
+        )
         return BacktestRunOutcome(
             exit_code=1, orchestrator=orchestrator, config=config_out, recorder=recorder
         )
 
-    # ── Phase 6: Report ───────────────────────────────────────
+    # Generate the report.
     step_t = _step("Generating report")
     report = generate_report(
         recorder=recorder,
@@ -886,7 +872,7 @@ def _run_backtest_phases_2_7(
     if args.trace_signal_orders and signal_trace_sink is not None:
         print_signal_order_trace(signal_trace_sink)
 
-    # ── Phase 7: Verification ─────────────────────────────────
+    # Verify the run.
     results = run_verification(
         recorder=recorder,
         ingest_result=ingest_result,
@@ -956,7 +942,7 @@ def run_backtest_api(args: argparse.Namespace) -> int:
     print(f"\n  Backtest: {symbol_str}  |  {date_range}", flush=True)
     print(f"  {_RULE_LIGHT}", flush=True)
 
-    # ── Phase 1: Data ingestion ───────────────────────────────
+    # Load market data.
     step_t = _step("Loading market data")
     print(flush=True)
 

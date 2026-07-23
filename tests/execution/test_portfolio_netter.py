@@ -1,4 +1,4 @@
-"""G-5 N0: cross-alpha netting contracts (pure)."""
+"""Pure cross-alpha netting contracts."""
 
 from __future__ import annotations
 

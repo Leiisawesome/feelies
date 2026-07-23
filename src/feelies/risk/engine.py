@@ -56,7 +56,7 @@ class RiskEngine(Protocol):
         decomposition in :func:`feelies.risk.sized_intent_orders.build_sized_intent_orders`
         passes the running total so the gross-exposure and buying-power caps
         are enforced *cumulatively* across legs rather than each leg seeing
-        only the pre-intent snapshot (audit R-1).  The standalone SIGNAL path
+        only the pre-intent snapshot. The standalone SIGNAL path
         leaves it at the default and is unchanged.
         """
         ...
@@ -66,7 +66,7 @@ class RiskEngine(Protocol):
         intent: SizedPositionIntent,
         positions: PositionStore,
     ) -> SizedIntentRiskResult:
-        """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
+        """Translate a ``SizedPositionIntent`` to per-leg orders.
 
         Each non-zero ``TargetPosition`` delta vs the current position
         is converted into one :class:`OrderRequest`.  Symbol iteration
@@ -87,7 +87,6 @@ class RiskEngine(Protocol):
         Implementations MUST NOT raise.  Empty ``orders`` with the flag
         false means the intent reduced to no trades after vetoes.
 
-        The legacy :meth:`check_signal` and :meth:`check_order` paths
-        are unchanged; this method is purely additive.
+        :meth:`check_signal` and :meth:`check_order` remain separate paths.
         """
         ...

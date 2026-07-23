@@ -1,31 +1,12 @@
-"""Audit kernel-P1: lock the canonical bus-subscriber order after wiring.
+"""Lock relative order for determinism-critical bus subscribers.
 
-``EventBus.publish`` dispatches handlers in *registration order*
-(``src/feelies/bus/event_bus.py``), and ``bootstrap.build_platform`` relies on
-this by constructing components in a documented sequence so the synchronous
-composition chain runs in the right order (see the canonical-order comments in
-``src/feelies/bootstrap.py``).  That contract was previously encoded only in the
-*statement order* of ``build_platform`` with nothing asserting it — a refactor
-that reordered construction would silently change delivery order and could break
-replay parity.
-
-These tests pin the relative handler order for the determinism-critical event
-families, identifying each subscriber by its owning component class.  They
-assert *relative* order (sub-sequence), not exact lists, so adding an unrelated
-subscriber does not make them brittle — only a reordering of the locked pairs
-fails.
-
-The ``NBBOQuote`` router-vs-sensor ordering is intentionally not covered here:
-the backtest router subscribes via a ``lambda`` (no bound ``__self__`` to
-identify), and the orchestrator additionally enforces "drain resting fills
-before sensors observe the quote" explicitly via ``_reconcile_resting_fills``
-after ``bus.publish(quote)`` — so that ordering is a behavioural contract tested
-elsewhere, not a pure subscription-order one.
+The synchronous bus dispatches in registration order. Tests use subsequences so
+unrelated subscribers may be added. Quote-router ordering is covered by behavior
+tests because its lambda subscriber has no owning component to inspect.
 """
 
 from __future__ import annotations
 
-from typing import Callable
 
 from feelies.bootstrap import build_platform
 from feelies.bus.event_bus import EventBus
@@ -72,8 +53,7 @@ def _assert_before(names: list[str], first: str, second: str) -> None:
     assert first in names, f"{first} not subscribed (got {names})"
     assert second in names, f"{second} not subscribed (got {names})"
     assert names.index(first) < names.index(second), (
-        f"canonical bus order violated: expected {first!r} before {second!r}, "
-        f"got {names}"
+        f"canonical bus order violated: expected {first!r} before {second!r}, got {names}"
     )
 
 

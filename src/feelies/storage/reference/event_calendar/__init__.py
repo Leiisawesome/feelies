@@ -1,45 +1,9 @@
-"""Event-calendar adapter — scheduled-flow window registry (v0.3).
+"""Load deterministic scheduled-flow calendars from per-session YAML.
 
-Loads, validates, and exposes the per-session list of *scheduled-flow
-windows* consumed by ``feelies.sensors.impl.scheduled_flow_window``
-(see ``docs/three_layer_architecture.md`` §20.4.2).
-
-Calendar files live next to this module as ``<date>.yaml`` (typically under
-``src/feelies/storage/reference/event_calendar/`` in a source checkout), where
-``<date>`` is an ISO-8601 ``YYYY-MM-DD`` session date.  The format
-intentionally mirrors a YAML serialisation of :class:`CalendarWindow`
-fields and is read once at bootstrap; downstream sensors index into the
-:class:`EventCalendar` via ``windows_active_at(ts_ns)`` for O(log N)
-event-time membership queries.
-
-Determinism contract (Inv-5, Inv-13):
-
-- Calendar contents are content-addressed: :meth:`EventCalendar.hash`
-  returns a SHA-256 over the canonicalised window list.  This hash is
-  surfaced into the bootstrap provenance bundle so replays can verify
-  they used the same calendar snapshot.
-- Window timestamps are pre-computed to integer nanoseconds at load
-  time.  ``ZoneInfo("America/New_York")`` resolves the ET clock-time
-  windows defined in the YAML; lookups are then pure integer
-  comparisons.
-- Window ordering is deterministic — ``windows`` is sorted by
-  ``(start_ns, kind, window_id)`` after parse so two YAML files that
-  differ only in row order produce the same hash.
-
-This module is intentionally small in v0.3:
-
-- ``WindowKind`` enum captures the six canonical window types
-  (incl. ``ALGO_CLOCK`` — H12 half-hour institutional slice marks).
-- ``CalendarWindow`` is the immutable per-window record.
-- ``EventCalendar`` aggregates the per-session window list, exposes
-  the active-windows-at-ns lookup, and computes the canonical hash.
-- ``load_event_calendar(path)`` is the YAML loader.
-
-The downstream sensor (``scheduled_flow_window``) and any future
-calendar consumers go through the public API only.  The on-disk YAML
-schema is *part* of the public contract and any backwards-incompatible
-change requires a versioned migration alongside a fresh
-``EventCalendar.hash`` baseline.
+ET clock times are resolved to integer nanoseconds at load time. Windows are
+sorted by start, kind, and ID, and their canonical content is SHA-256 hashed for
+replay provenance. Consumers query half-open active windows through the public
+``EventCalendar`` API.
 """
 
 from __future__ import annotations

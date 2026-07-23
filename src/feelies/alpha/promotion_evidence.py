@@ -1,58 +1,8 @@
-"""Structured promotion-evidence schemas + gate matrix for Workstream F.
+"""Typed promotion evidence, gate requirements, and threshold validators.
 
-Defines the typed evidence dataclasses that promotion gates read, the
-declarative ``GATE_EVIDENCE_REQUIREMENTS`` matrix wiring each gate to
-its required evidence types, the ``GateThresholds`` configuration block
-holding the platform's default acceptance thresholds, and the pure
-validator functions that produce a ``list[str]`` of human-readable
-errors when an evidence package falls short of its threshold.
-
-Scope (Workstream F-2):
-
-- **Definitions only.**  This PR does *not* mutate the
-  :class:`feelies.alpha.lifecycle.AlphaLifecycle` state machine or its
-  existing ``check_paper_gate`` / ``check_live_gate`` /
-  ``check_revalidation_gate`` callers.  Workstream **F-4** will swap
-  those legacy gate-checks for the structured validators introduced
-  here once Workstream **C** (CPCV + DSR computation) and the
-  post-trade-forensics quarantine pipeline are wired.
-
-- **Forensic-only writer contract preserved.**  The
-  :func:`evidence_to_metadata` helper produces a JSON-safe ``dict``
-  suitable for direct insertion into
-  :attr:`feelies.alpha.promotion_ledger.PromotionLedgerEntry.metadata`.
-  No production code path will *read* the resulting metadata to make
-  per-tick decisions (that would re-introduce a non-deterministic
-  feedback loop with the durable ledger), so replay determinism
-  (audit A-DET-02) is not perturbed.
-
-- **No state-machine changes.**  Capital-stage tiers (SMALL_CAPITAL vs.
-  SCALED) are modelled as *evidence* attached to a ``LIVE`` lifecycle
-  rather than as separate states, so the existing five-state machine
-  (``RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED``) is
-  unchanged.  The capital tier is captured on
-  :class:`CapitalStageEvidence` and travels with the
-  promotion-ledger entry that recorded the LIVE-side promotion.
-
-Schema sources (so reviewers can double-check the field choices):
-
-- :doc:`testing-validation skill <.cursor/skills/testing-validation/SKILL.md>`
-  §"Acceptance Criteria & Promotion Pipeline" — the four-stage ladder
-  (Research → Paper → Small Capital → Scaled), the per-stage exit
-  criteria, and the demotion triggers.
-- :doc:`post-trade-forensics skill <.cursor/skills/post-trade-forensics/SKILL.md>`
-  §"Strategy Quarantine" — the quarantine evidence list (net alpha,
-  hit-rate residual, microstructure metrics, crowding symptoms, PnL
-  compression).
-- :doc:`schema 1.1 migration <docs/migration/schema_1_0_to_1_1.md>` —
-  notes that ``OOS DSR < 1.0 across any single calendar quarter after
-  LIVE`` is one of the falsification criteria, hence the Bailey &
-  López de Prado *Deflated Sharpe Ratio* threshold defaults.
-- :doc:`microstructure-alpha research-protocol
-  <.cursor/skills/microstructure-alpha/research-protocol.md>` — the
-  walk-forward / cross-validation / cost-hurdle cadence that
-  Workstream C will compute via Combinatorial Purged Cross-Validation
-  (CPCV).
+Evidence metadata is JSON-safe and used only for offline lifecycle decisions.
+It never feeds the per-tick trading path. Capital tiers are evidence attached
+to LIVE rather than additional lifecycle states.
 """
 
 from __future__ import annotations
@@ -67,17 +17,7 @@ from typing import Any, cast
 EVIDENCE_SCHEMA_VERSION = "1.0.0"
 
 PROMOTE_CAPITAL_TIER_TRIGGER = "promote_capital_tier"
-"""Stable trigger string for the F-6 LIVE @ SMALL_CAPITAL ->
-LIVE @ SCALED escalation.  Persisted on the
-:class:`feelies.core.state_machine.TransitionRecord` and on the
-resulting :class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`,
-so the operator CLI and forensic readers can distinguish capital-tier
-escalations from LIVE -> QUARANTINED demotions even though both share
-``from_state == "LIVE"``.  Defined here (next to :class:`GateId` and
-:class:`CapitalStageEvidence`) rather than in
-:mod:`feelies.alpha.lifecycle` so the wire-format symbol is shared
-between writer (lifecycle) and reader (CLI / forensics) without
-re-introducing a layering edge."""
+"""Stable trigger that distinguishes LIVE capital-tier escalations."""
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -86,16 +26,7 @@ re-introducing a layering edge."""
 
 
 class CapitalStageTier(Enum):
-    """Capital-allocation tiers applied to a ``LIVE`` alpha.
-
-    Modelled as evidence (not as separate ``AlphaLifecycleState``
-    members) so the existing 5-state lifecycle is unchanged.  The tier
-    travels with :class:`CapitalStageEvidence` on the promotion-ledger
-    entry that recorded the LIVE-side promotion, so the audit trail
-    can answer "what fraction of target was deployed when ALPHA-X
-    quarantined?" by reading the most recent ``CapitalStageEvidence``
-    for that alpha.
-    """
+    """Capital-allocation tiers recorded as evidence for a LIVE alpha."""
 
     SMALL_CAPITAL = "SMALL_CAPITAL"
     """Initial live deployment at ≤ 1% of target allocation, ≥ 10
@@ -115,15 +46,13 @@ class CapitalStageTier(Enum):
 
 
 class GateId(Enum):
-    """Stable identifiers for the F-2 gate matrix.
+    """Stable identifiers for lifecycle evidence gates.
 
     Each gate covers exactly one ``(from_state, to_state)`` lifecycle
     transition (or, for ``LIVE_PROMOTE_CAPITAL_TIER``, the
     capital-tier escalation that does not change the lifecycle state).
 
-    The matrix is the source of truth that Workstream **F-4** will
-    consult to look up which structured evidence types must be
-    supplied for a given transition.
+    The gate matrix defines the evidence required for each transition.
     """
 
     RESEARCH_TO_PAPER = "research_to_paper"
@@ -137,10 +66,7 @@ class GateId(Enum):
     evidence *plus* DSR evidence."""
 
     LIVE_PROMOTE_CAPITAL_TIER = "live_promote_capital_tier"
-    """LIVE @ SMALL_CAPITAL → LIVE @ SCALED (capital-tier escalation
-    that does not change the lifecycle state).  Wired by Workstream
-    **F-6** as a state-machine self-loop with trigger
-    :data:`PROMOTE_CAPITAL_TIER_TRIGGER`."""
+    """LIVE @ SMALL_CAPITAL → LIVE @ SCALED self-transition."""
 
     LIVE_TO_QUARANTINED = "live_to_quarantined"
     """LIVE → QUARANTINED.  Quarantine is normally auto-triggered by
@@ -187,33 +113,11 @@ class ResearchAcceptanceEvidence:
 
 @dataclass(frozen=True, kw_only=True)
 class CPCVEvidence:
-    """Combinatorial Purged Cross-Validation evidence.
+    """Combinatorial purged cross-validation evidence.
 
-    Workstream **C** will compute this; F-2 only defines the schema.
-    ``fold_sharpes`` is a tuple (immutable) so the evidence can be
-    safely embedded in a frozen dataclass and round-tripped through
-    JSON.
-
-    Fields:
-      fold_count           -- number of reconstructed CPCV **paths**
-                              (``C(N-1, k-1)``), NOT the combination
-                              count ``C(N, k)``; "fold" is kept for
-                              schema back-compat but each fold_sharpes
-                              entry is one full-length path
-      embargo_bars         -- purge/embargo bars between train and test
-      fold_sharpes         -- per-path OOS Sharpe ratios (one per path)
-      mean_sharpe          -- arithmetic mean of fold_sharpes
-      median_sharpe        -- median of fold_sharpes
-      mean_pnl             -- arithmetic mean of per-path realised PnL
-      p_value              -- two-sided block-bootstrap p-value for
-                              ``H0: mean return = 0`` on the per-bar
-                              pooled OOS return (block_bootstrap_p_value)
-      fold_pnl_curves_hash -- pointer (sha256) to the artefact carrying
-                              the per-path return series; persisted in
-                              the research-artefact store.  Optional —
-                              evidence may travel without the heavy
-                              artefact when the validator only needs
-                              the summary stats.
+    ``fold_count`` and ``fold_sharpes`` describe reconstructed full paths, not
+    split combinations. The optional hash points to the heavier path-return
+    artifact while this immutable record carries validation statistics.
     """
 
     fold_count: int = 0
@@ -228,28 +132,10 @@ class CPCVEvidence:
 
 @dataclass(frozen=True, kw_only=True)
 class DSREvidence:
-    """Deflated Sharpe Ratio (Bailey & López de Prado, 2014).
+    """Deflated Sharpe evidence adjusted for trials and higher moments.
 
-    DSR adjusts the observed Sharpe ratio for the number of trials
-    explored during research and the higher moments of the return
-    distribution.  ``OOS DSR < 1.0 across any single calendar quarter
-    after LIVE`` is one of the documented falsification criteria
-    (schema 1.1 migration §"falsification_criteria").
-
-    Fields:
-      observed_sharpe -- raw OOS Sharpe of the candidate
-      trials_count   -- number of variants explored before this one
-      skewness       -- 3rd standardised moment of returns
-      kurtosis       -- 4th standardised moment of returns
-      dsr            -- deflated Sharpe **excess** (``observed − E[max]``,
-                        in Sharpe units), gated by ``dsr_min``.  NOTE:
-                        this is the platform's redefinition, NOT the
-                        canonical Bailey-LdP DSR — the paper's DSR is a
-                        probability and equals ``1 − dsr_p_value`` here.
-      dsr_p_value    -- ``1 − PSR(E[max])``; the right-tail p-value for
-                        "observed Sharpe exceeds the deflated benchmark".
-                        ``dsr_p_value ≤ 0.05`` ⇔ canonical Bailey-LdP
-                        DSR ≥ 0.95.
+    Platform ``dsr`` is Sharpe excess ``observed - E[max]``. The canonical
+    Bailey–López de Prado probability is ``1 - dsr_p_value``.
     """
 
     observed_sharpe: float = 0.0
@@ -363,7 +249,7 @@ class RevalidationEvidence:
 
 @dataclass(frozen=True, kw_only=True)
 class GateThresholds:
-    """Default acceptance thresholds for every F-2 validator.
+    """Default acceptance thresholds for evidence validators.
 
     Defaults are derived from the testing-validation and
     post-trade-forensics skills.  Operators may override per-platform
@@ -399,7 +285,7 @@ class GateThresholds:
     """Skill upper alert threshold (PnL > 1.2x backtest also flagged)."""
     paper_max_anomalous_events: int = 0
 
-    # ── CPCV (Workstream C will compute) ──────────────────────────
+    # CPCV thresholds.
     cpcv_min_folds: int = 8
     """Minimum number of reconstructed CPCV **paths** (``C(N-1, k-1)``).
     Despite the field name, ``CPCVEvidence.fold_count`` carries the path
@@ -849,41 +735,20 @@ GATE_EVIDENCE_REQUIREMENTS: Mapping[GateId, tuple[_EvidenceType, ...]] = {
 }
 """Declarative gate matrix.
 
-Maps each :class:`GateId` to the tuple of evidence dataclasses that
-the gate requires.  Workstream **F-4** will look up the requirement
-list at promotion time and refuse to commit a transition unless every
-required type is present in the supplied evidence package.
+Maps each gate to the evidence dataclasses required for its transition.
 
 Empty tuples mean the gate has no structured-evidence requirement
 (e.g. :attr:`GateId.QUARANTINED_TO_DECOMMISSIONED` records only a
 free-form reason; the operator is the audit substrate)."""
 
 
-_VALIDATOR_BY_TYPE: Mapping[
-    _EvidenceType,
-    Any,
-] = {
-    ResearchAcceptanceEvidence: validate_research_acceptance,
-    CPCVEvidence: validate_cpcv,
-    DSREvidence: validate_dsr,
-    PaperWindowEvidence: validate_paper_window,
-    CapitalStageEvidence: validate_capital_stage,
-    QuarantineTriggerEvidence: validate_quarantine_trigger,
-    RevalidationEvidence: validate_revalidation,
-}
+@dataclass(frozen=True)
+class _EvidenceRegistration:
+    """Validation and metadata codecs registered for one evidence type."""
 
-
-_KIND_BY_TYPE: Mapping[_EvidenceType, str] = {
-    ResearchAcceptanceEvidence: "research_acceptance",
-    CPCVEvidence: "cpcv",
-    DSREvidence: "dsr",
-    PaperWindowEvidence: "paper_window",
-    CapitalStageEvidence: "capital_stage",
-    QuarantineTriggerEvidence: "quarantine_trigger",
-    RevalidationEvidence: "revalidation",
-}
-"""Stable string keys used in the JSON metadata payload — never
-rename without bumping :data:`EVIDENCE_SCHEMA_VERSION`."""
+    kind: str
+    validator: Any
+    reconstructor: Any
 
 
 def required_evidence_types(gate_id: GateId) -> tuple[_EvidenceType, ...]:
@@ -906,7 +771,7 @@ def validate_gate(
 
     ``evidences`` is an arbitrary-order list of evidence dataclasses
     (each must be one of the supported types in
-    :data:`_KIND_BY_TYPE`).  The dispatcher:
+    :data:`_EVIDENCE_REGISTRY`).  The dispatcher:
 
       1. Looks up the required evidence types for ``gate_id``.
       2. Indexes the supplied evidences by their type.
@@ -921,9 +786,7 @@ def validate_gate(
     list signals "all required evidence supplied and within
     thresholds".
 
-    The validator does *not* mutate any state, write to the ledger,
-    or commit a lifecycle transition — that is Workstream **F-4**'s
-    job.
+    The validator does not mutate lifecycle state or write the ledger.
     """
     required = required_evidence_types(gate_id)
     errors: list[str] = []
@@ -931,11 +794,11 @@ def validate_gate(
     by_type: dict[_EvidenceType, object] = {}
     for ev in evidences:
         ev_type = type(ev)
-        if ev_type not in _VALIDATOR_BY_TYPE:
+        if ev_type not in _EVIDENCE_REGISTRY:
             errors.append(
                 f"unsupported evidence type {ev_type.__name__!r}; "
                 f"supported types: "
-                f"{sorted(t.__name__ for t in _VALIDATOR_BY_TYPE)}"
+                f"{sorted(t.__name__ for t in _EVIDENCE_REGISTRY)}"
             )
             continue
         if ev_type in by_type:
@@ -957,7 +820,7 @@ def validate_gate(
         ev = by_type.get(req_type)
         if ev is None:
             continue
-        validator = _VALIDATOR_BY_TYPE[req_type]
+        validator = _EVIDENCE_REGISTRY[req_type].validator
         sub_errors: list[str] = validator(ev, thresholds)
         errors.extend(sub_errors)
 
@@ -978,7 +841,7 @@ def evidence_to_metadata(*evidences: object) -> dict[str, Any]:
 
       * ``"schema_version"`` — :data:`EVIDENCE_SCHEMA_VERSION`
       * one entry per supplied evidence, keyed by its stable ``kind``
-        string from :data:`_KIND_BY_TYPE`
+        string from :data:`_EVIDENCE_REGISTRY`
       * any nested :class:`tuple` is serialised as a list (round-trips
         via JSON), :class:`Decimal` is left in place — the ledger's
         :func:`feelies.alpha.promotion_ledger._json_default` hook
@@ -993,13 +856,14 @@ def evidence_to_metadata(*evidences: object) -> dict[str, Any]:
 
     for ev in evidences:
         ev_type = type(ev)
-        kind = _KIND_BY_TYPE.get(ev_type)
-        if kind is None:
+        registration = _EVIDENCE_REGISTRY.get(ev_type)
+        if registration is None:
             raise TypeError(
                 f"unsupported evidence type {ev_type.__name__!r}; "
                 f"supported types: "
-                f"{sorted(t.__name__ for t in _KIND_BY_TYPE)}"
+                f"{sorted(t.__name__ for t in _EVIDENCE_REGISTRY)}"
             )
+        kind = registration.kind
         if kind in seen:
             raise ValueError(
                 f"duplicate evidence kind {kind!r} — each kind may "
@@ -1022,7 +886,7 @@ def _evidence_to_jsonable(ev: object) -> dict[str, Any]:
         that serialises it to a canonical string).
 
     Non-recursive top-level conversion is sufficient because every
-    F-2 evidence dataclass uses only flat scalars / tuples — no nested
+    evidence dataclass uses only flat scalars and tuples, with no nested
     dataclasses, no nested mappings.
     """
     if not is_dataclass(ev) or isinstance(ev, type):
@@ -1044,18 +908,6 @@ def _evidence_to_jsonable(ev: object) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────
 #   Inverse projection (metadata dict → evidence dataclasses)
 # ─────────────────────────────────────────────────────────────────────
-
-
-KIND_TO_TYPE: Mapping[str, _EvidenceType] = {
-    kind: ev_type for ev_type, kind in _KIND_BY_TYPE.items()
-}
-"""Public reverse mapping of :data:`_KIND_BY_TYPE`.
-
-Stable ``"kind"`` string → evidence dataclass type.  Used by
-:func:`metadata_to_evidence` (and by Workstream **F-3**'s
-``feelies promote replay-evidence`` CLI subcommand) to reconstruct
-typed evidence dataclasses from the JSON metadata persisted on a
-:class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`."""
 
 
 RESERVED_METADATA_KEYS: frozenset[str] = frozenset({"schema_version", "reason"})
@@ -1126,31 +978,57 @@ def _reconstruct_revalidation(
     return RevalidationEvidence(**payload)
 
 
-_RECONSTRUCTOR_BY_TYPE: Mapping[_EvidenceType, Any] = {
-    ResearchAcceptanceEvidence: _reconstruct_research_acceptance,
-    CPCVEvidence: _reconstruct_cpcv,
-    DSREvidence: _reconstruct_dsr,
-    PaperWindowEvidence: _reconstruct_paper_window,
-    CapitalStageEvidence: _reconstruct_capital_stage,
-    QuarantineTriggerEvidence: _reconstruct_quarantine_trigger,
-    RevalidationEvidence: _reconstruct_revalidation,
+_EVIDENCE_REGISTRY: Mapping[_EvidenceType, _EvidenceRegistration] = {
+    ResearchAcceptanceEvidence: _EvidenceRegistration(
+        "research_acceptance",
+        validate_research_acceptance,
+        _reconstruct_research_acceptance,
+    ),
+    CPCVEvidence: _EvidenceRegistration("cpcv", validate_cpcv, _reconstruct_cpcv),
+    DSREvidence: _EvidenceRegistration("dsr", validate_dsr, _reconstruct_dsr),
+    PaperWindowEvidence: _EvidenceRegistration(
+        "paper_window", validate_paper_window, _reconstruct_paper_window
+    ),
+    CapitalStageEvidence: _EvidenceRegistration(
+        "capital_stage", validate_capital_stage, _reconstruct_capital_stage
+    ),
+    QuarantineTriggerEvidence: _EvidenceRegistration(
+        "quarantine_trigger",
+        validate_quarantine_trigger,
+        _reconstruct_quarantine_trigger,
+    ),
+    RevalidationEvidence: _EvidenceRegistration(
+        "revalidation", validate_revalidation, _reconstruct_revalidation
+    ),
 }
+"""Single registration source for validation and metadata round-tripping.
+
+The stable ``kind`` strings must not change without bumping
+:data:`EVIDENCE_SCHEMA_VERSION`."""
+
+
+KIND_TO_TYPE: Mapping[str, _EvidenceType] = {
+    registration.kind: evidence_type for evidence_type, registration in _EVIDENCE_REGISTRY.items()
+}
+"""Public reverse mapping of :data:`_EVIDENCE_REGISTRY`.
+
+Stable ``"kind"`` string → evidence dataclass type.  Used by
+:func:`metadata_to_evidence` and the replay-evidence CLI to reconstruct
+typed evidence dataclasses from the JSON metadata persisted on a
+:class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`."""
 
 
 def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
     """Reverse :func:`evidence_to_metadata`.
 
-    Reconstructs typed evidence dataclasses from a metadata payload
-    previously produced by :func:`evidence_to_metadata` (i.e. a dict
+    Reconstructs typed evidence dataclasses from an
+    :func:`evidence_to_metadata` payload (a dict
     carrying ``"schema_version"`` plus zero or more
     ``"kind": {field: value, ...}`` entries).
 
     Returns the list of reconstructed evidence dataclass instances in
-    the canonical kind-iteration order of :data:`_KIND_BY_TYPE`.  An
-    empty list signals "the metadata has no F-2 evidence sections"
-    (e.g. a quarantine/decommission entry that only carries a free-form
-    ``reason``, or a legacy pre-F-2 entry with the loose
-    :class:`feelies.alpha.lifecycle.PromotionEvidence` shape).
+    the canonical kind-iteration order of :data:`_EVIDENCE_REGISTRY`.  An
+    empty list signals that the metadata has no structured evidence sections.
 
     Raises:
       ValueError -- if ``schema_version`` is present but does not
@@ -1158,9 +1036,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
                     recognised ``"kind"`` key carries a non-mapping
                     payload, or if a kind is unknown.
 
-    Used by Workstream **F-3**'s ``feelies promote replay-evidence``
-    CLI subcommand to re-run :func:`validate_gate` against the
-    historical evidence with today's :class:`GateThresholds`.
+    The replay-evidence CLI validates reconstructed evidence against current thresholds.
     """
     if not isinstance(metadata, Mapping):
         raise ValueError(
@@ -1177,7 +1053,8 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
         )
 
     evidences: list[object] = []
-    for ev_type, kind in _KIND_BY_TYPE.items():
+    for registration in _EVIDENCE_REGISTRY.values():
+        kind = registration.kind
         if kind not in metadata:
             continue
         payload = metadata[kind]
@@ -1185,8 +1062,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
             raise ValueError(
                 f"metadata[{kind!r}] must be an object, got {type(payload).__name__!r}"
             )
-        reconstruct = _RECONSTRUCTOR_BY_TYPE[ev_type]
-        evidences.append(reconstruct(payload))
+        evidences.append(registration.reconstructor(payload))
 
     unknown = sorted(
         k for k in metadata.keys() if k not in RESERVED_METADATA_KEYS and k not in KIND_TO_TYPE
@@ -1201,9 +1077,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
     return evidences
 
 
-# ─────────────────────────────────────────────────────────────────────
-#   GateThresholds override parsing + merging (Workstream F-5)
-# ─────────────────────────────────────────────────────────────────────
+# Gate-threshold override parsing and merging.
 
 
 def _gate_threshold_field_types() -> dict[str, type]:
@@ -1242,33 +1116,11 @@ _GATE_THRESHOLD_FIELD_TYPES: dict[str, type] = _gate_threshold_field_types()
 def parse_gate_thresholds_overrides(
     raw: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Validate + coerce a raw ``gate_thresholds`` override mapping.
+    """Validate and coerce gate-threshold overrides without mutation.
 
-    Used by both the alpha YAML loader (per-alpha overrides) and
-    :class:`feelies.core.platform_config.PlatformConfig` (platform-wide
-    overrides) so the override surface is identical regardless of
-    where the keys are sourced from.
-
-    Validation rules:
-
-    * ``raw`` must be a :class:`~collections.abc.Mapping` (or ``None``,
-      which yields an empty dict — the "no overrides" identity).
-    * Every key must be the name of a :class:`GateThresholds` field.
-      Unknown keys raise :class:`ValueError` listing the offending
-      keys and the closest known fields.
-    * Every value must be coercible into the field's declared scalar
-      type (``int`` / ``float`` / ``bool``).  Booleans are *not*
-      treated as ``int`` (passing ``True`` for an ``int`` field
-      raises).  Strings are *not* coerced (operators must supply
-      actual numbers in YAML).
-
-    Returns a new ``dict`` carrying the type-coerced values; the
-    original mapping is not mutated.
-
-    Numeric invariant checks (e.g. ``min ≤ max`` between two paired
-    fields) are deferred to consumers of the resulting
-    :class:`GateThresholds` instance — the override layer is purely
-    structural validation.
+    Keys must name ``GateThresholds`` fields and values must already be scalar,
+    non-string inputs of the declared type. Cross-field numeric invariants are
+    checked when the resulting thresholds are consumed.
     """
     if raw is None:
         return {}
@@ -1338,9 +1190,7 @@ def apply_gate_thresholds_overrides(
     return replace(base, **parsed)
 
 
-# ─────────────────────────────────────────────────────────────────────
-#   Per-alpha floor enforcement (audit P0-1)
-# ─────────────────────────────────────────────────────────────────────
+# Per-alpha threshold-floor enforcement.
 
 
 class _FloorDirection(Enum):
@@ -1438,8 +1288,7 @@ def assert_per_alpha_overrides_respect_floor(
     ``platform.yaml`` (i.e. the keys of
     :attr:`PlatformConfig.gate_thresholds_overrides`) — only those are
     treated as operator floors; fields left at their skill default remain
-    freely loosenable per-alpha (preserving the documented F-5
-    "per-alpha wins over skill defaults" behavior).
+    freely loosenable per alpha.
 
     Raises :class:`GateThresholdFloorError` listing every offending field
     if any per-alpha override loosens a pinned floor in its
@@ -1499,12 +1348,13 @@ def _check_validator_coverage() -> None:
     """
     for gate, types in GATE_EVIDENCE_REQUIREMENTS.items():
         for t in types:
-            if t not in _VALIDATOR_BY_TYPE:
+            registration = _EVIDENCE_REGISTRY.get(t)
+            if registration is None:
                 raise RuntimeError(
                     f"Gate {gate.value!r} requires evidence type "
                     f"{t.__name__!r} but no validator is registered"
                 )
-            if t not in _KIND_BY_TYPE:
+            if not registration.kind:
                 raise RuntimeError(
                     f"Gate {gate.value!r} requires evidence type "
                     f"{t.__name__!r} but no metadata kind is registered"
@@ -1518,8 +1368,8 @@ def _check_reconstructor_coverage() -> None:
     """
     missing = sorted(
         ev_type.__name__
-        for ev_type in _KIND_BY_TYPE.keys()
-        if ev_type not in _RECONSTRUCTOR_BY_TYPE
+        for ev_type, registration in _EVIDENCE_REGISTRY.items()
+        if not callable(registration.reconstructor)
     )
     if missing:
         raise RuntimeError(
@@ -1531,10 +1381,7 @@ def _check_threshold_direction_coverage() -> None:
     """Enforce that every :class:`GateThresholds` field is classified in
     :data:`_GATE_THRESHOLD_DIRECTIONS`.
 
-    A contributor adding a new threshold without a floor direction would
-    otherwise let a per-alpha override silently loosen it past an
-    operator-pinned platform floor (audit P0-1).  Failing at import keeps
-    the floor rule total over the schema.
+    Import-time validation keeps the floor rule total over the schema.
     """
     classified = set(_GATE_THRESHOLD_DIRECTIONS)
     actual = {f.name for f in fields(GateThresholds)}

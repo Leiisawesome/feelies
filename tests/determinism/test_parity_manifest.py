@@ -1,4 +1,4 @@
-"""Verify locked parity manifest matches live replay outputs (BT-11)."""
+"""Verify the locked parity manifest against live replay outputs."""
 
 from __future__ import annotations
 
@@ -121,14 +121,7 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # self-test must run without cvxpy).  Locked + guarded locally in
     # tests/determinism/test_sized_intent_solver_replay.py.
     "EXPECTED_LEVEL3_SOLVER_HASH": "cvxpy-conditional baseline (test_sized_intent_solver_replay.py)",
-    # Audit-2026-07-02 P1 #2: orchestrator-level replay baselines (flat +
-    # smoke scenarios) are intentionally kept out of LOCKED_PARITY_BASELINES
-    # so the manifest cross-check stays decoupled from the regime engine's
-    # transcendental sensitivity until a canonical host fingerprint is
-    # recorded for full-orchestrator replay (see the module docstring in
-    # test_orchestrator_replay.py).  Each is still individually locked and
-    # re-baselined the same way as any other parity hash — only the central
-    # registry cross-check is deliberately skipped.
+    # Orchestrator hashes stay local because regime math is host-sensitive.
     "EXPECTED_ORCHESTRATOR_SIGNAL_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
     "EXPECTED_ORCHESTRATOR_INTENT_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
     "EXPECTED_ORCHESTRATOR_ORDER_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
@@ -163,10 +156,7 @@ def test_replay_map_matches_manifest_keys() -> None:
 def test_every_locked_hash_is_registered_or_exempt() -> None:
     """No locked ``EXPECTED_*_HASH`` may escape the manifest unnoticed.
 
-    Audit P1: the old self-test only iterated the manifest, so a new
-    ``EXPECTED_*_HASH`` added to a determinism module but never registered
-    in LOCKED_PARITY_BASELINES was silently uncovered (how the market-fill
-    and solver baselines started out).  Scan the determinism package for
+    Scan the determinism package for
     locked-hash constants and assert each is either referenced by the
     manifest or explicitly exempted above.
     """
@@ -189,7 +179,7 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
     )
 
 
-# ── Manifest fingerprint (audit-2026-07-02 P2 #15) ──────────────────────
+# ── Manifest fingerprint ─────────────────────────────────────────────────
 
 # A single SHA-256 over the sorted manifest.  Any re-pin — one baseline or
 # several at once — changes this one line, so a coordinated re-pin is a

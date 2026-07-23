@@ -98,11 +98,7 @@ class TestPassiveLimitRouter:
     """Core passive limit order router tests."""
 
     def test_market_order_fills_at_cross(self):
-        """MARKET orders: ACKNOWLEDGED then immediate FILLED at the cross (BT-3).
-
-        A taker BUY lifts the ask (151.00), not the mid — the half-spread
-        is embedded in the fill price.
-        """
+        """A market buy fills immediately at the ask, not the midpoint."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel())
 
@@ -271,7 +267,7 @@ class TestThroughFill:
 
 
 class TestThroughFillPriceImprovement:
-    """Audit fix E7: through-fills get the better price (limit-or-better).
+    """Through-fills receive the better price under limit-or-better.
 
     IBKR (and Reg-NMS) requires limit orders to fill at the limit
     price OR BETTER, never worse.  When the opposite-side BBO has
@@ -481,7 +477,7 @@ class TestTimeout:
     """Test order cancellation after max_resting_ticks."""
 
     def test_limit_expired_after_timeout(self):
-        """Audit F-L-31: passive timeouts now emit EXPIRED (was CANCELLED)."""
+        """Passive timeouts emit EXPIRED."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -543,12 +539,7 @@ class TestCostModel:
         assert fill.fees < Decimal("1.00")
 
     def test_aggressive_fill_crosses_spread_in_price(self):
-        """MARKET fills cross the spread in the PRICE, not as a fee (BT-3).
-
-        A taker BUY lifts the ask (150.10); the half-spread is embedded in
-        the fill price, so fees carry only commission + exchange (no
-        separate spread_cost component).
-        """
+        """Embed the crossed spread in fill price, not fees."""
         clock = SimulatedClock(start_ns=5000)
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         router = PassiveLimitOrderRouter(clock, cost_model=cost_model)
@@ -761,12 +752,7 @@ class TestVolumeBasedQueueDrain:
         assert router.poll_acks() == []
 
     def test_pre_eligibility_trade_does_not_count_toward_queue_drain(self):
-        """Trades printed before the order is live at the exchange (order-
-        entry ``latency_ns`` not yet elapsed) must not count toward
-        ``shares_traded_at_level`` — mirrors the quote-side gate in
-        ``_check_resting_orders`` (audit execution_fills_audit_2026-07-02
-        finding #14; fixed for ``on_trade`` in commit bca1efd, previously
-        untested)."""
+        """Trades before exchange eligibility do not drain queue position."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -857,11 +843,7 @@ class TestVolumeBasedQueueDrain:
         assert fill_ack.reason == "FILLED_BY_DRAIN"
 
     def test_shares_traded_at_level_resets_on_price_away_buy(self):
-        """F6: BUY — accumulated volume resets when BBO moves away from limit price.
-
-        Without the fix, volume accumulated before price-away persists and can
-        trigger an early fill when the price returns to the level.
-        """
+        """Reset accumulated buy volume when the BBO leaves the limit price."""
         from feelies.core.events import Trade
 
         clock = SimulatedClock(start_ns=5000)
@@ -1032,10 +1014,7 @@ class TestLatency:
     """Test fill timestamp latency injection."""
 
     def test_passive_fill_latency(self):
-        """A resting LIMIT order must not become fill-eligible until
-        ``latency_ns`` has elapsed in exchange time past its post (audit
-        execution_fills_audit_2026-06-20 P0: the passive path previously
-        skipped this gate entirely, unlike the aggressive/market path)."""
+        """A resting limit becomes fill-eligible only after exchange latency."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -1057,14 +1036,11 @@ class TestLatency:
         clock.set_time(7000)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
         acks = router.poll_acks()
-        # The order is already live at the exchange (gated above), so the
-        # drain fill pays no *second* latency_ns leg on top of ack_timestamp_ns
-        # (audit execution_fills_audit_2026-07-02 finding #3: fixed 2026-07-02).
+        # An exchange-live order pays no second latency leg on drain.
         assert acks[0].timestamp_ns == 7000
 
     def test_market_fill_latency(self):
-        """Audit F-H-07: under non-zero latency the market fill is
-        deferred until a quote arrives past the eligibility window."""
+        """Defer market fills until a quote reaches the latency deadline."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
@@ -1175,7 +1151,7 @@ class TestLatency:
             OrderAckStatus.PARTIALLY_FILLED,
             OrderAckStatus.FILLED,
         ]
-        # BT-3: the L1 leg fills at the cross (ask=101), the excess walks
+        # The L1 leg crosses at ask=101; the excess walks
         # the book above the cross.
         cross = Decimal("101")
         half_spread = Decimal("1")
@@ -1212,7 +1188,7 @@ class TestLatency:
             OrderAckStatus.PARTIALLY_FILLED,
             OrderAckStatus.FILLED,
         ]
-        # BT-3: the L1 leg fills at the cross (ask=100.50), which equals
+        # The L1 leg crosses at ask=100.50, which equals
         # the limit here; the excess would walk above the limit but is
         # capped at it.
         assert acks[1].fill_price == lim
@@ -1437,7 +1413,7 @@ class TestDeterminism:
 
 
 class TestPassiveFillOutcomes:
-    """BT-2: PassiveFillOutcome classification + passive_fill_stats()."""
+    """Classify passive fills and aggregate their statistics."""
 
     def _trade(self, symbol: str, price: str, size: int, ts: int) -> "Trade":
         from feelies.core.events import Trade

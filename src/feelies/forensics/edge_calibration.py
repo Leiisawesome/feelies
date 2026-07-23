@@ -1,10 +1,6 @@
-"""Edge realization calibration (close-the-loop: *calibrate* + *gate*).
+"""Calibrate disclosed edge estimates against realized fills.
 
-The disclosed ``edge_estimate_bps`` is an author estimate; realized edge is
-typically lower (audit central finding).  This module reconciles the two
-from a window of fills and produces a per-alpha **calibration factor** in
-``[0, 1]`` that shrinks the estimate the gates trade on toward what the alpha
-actually realizes — Inv-4 (edge decays when exploited).
+Each alpha receives two factors in ``[0, 1]``:
 
 Two factors per alpha:
 
@@ -12,17 +8,10 @@ Two factors per alpha:
 * ``lcb_factor``     = clamp(realized_LCB  / disclosed, 0, 1) — the *gate*
   factor: uses the **lower confidence bound** of realized edge
   (``mean - z·std/√n``), so the gate trades on a conservative estimate, not
-  an optimistic point.  This is the audit's "gate on the lower bound, not the
-  point estimate".
+  an optimistic point.
 
-Insufficient evidence (``n < min_fills`` or no/zero disclosed edge) yields a
-factor of **1.0** — no haircut until there is enough realized data, so an
-uncalibrated fleet is unchanged (parity-preserving).
-
-Determinism (Inv-5): factors are a **versioned, durable** input.
-:func:`build_edge_calibrations` is pure; the store is written at a
-session/epoch boundary and read at the next run's construction, so within a
-replay the factors are fixed and replay stays bit-identical.
+Insufficient evidence yields ``1.0``. Calibration building is pure; durable
+factors are written at a boundary and loaded before the next run.
 """
 
 from __future__ import annotations

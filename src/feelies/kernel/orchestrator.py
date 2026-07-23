@@ -1,33 +1,9 @@
-"""System orchestrator — the operating system of the quant platform.
+"""Coordinate deterministic platform state and tick processing.
 
-Owns the macro state machine and coordinates all layers through the
-deterministic micro-state pipeline.  Enforces the single-threaded,
-sequential tick processing loop.
-
-The orchestrator contains NO business logic.  It is a coordinator
-that calls each layer in the deterministic order defined by the
-micro-state machine.
-
-System invariants enforced here (Section V):
-  Inv-1: No order submission outside G5/G6.
-         (Structurally guaranteed — micro loop only runs in TRADING_MODES,
-          and ExecutionBackend determines what "submit" means per mode.)
-  Inv-2: Micro loop must not advance past M0 outside {G4, G5, G6}.
-         (Enforced by _run_pipeline gating on TRADING_MODES.)
-  Inv-3: R4 (LOCKED) forbids transitions to G6 without passing G2.
-         (Structurally guaranteed — G8 → G2 → G6.  run_live() also
-          asserts risk level is NORMAL.)
-  Inv-4: Every order terminally resolved before shutdown.
-         (Enforced via OrderState SM tracking in _active_orders.)
-  Inv-5: Replay in G4 reproduces identical state transitions.
-         (order_id derived deterministically, not from uuid4.)
-
-Key architectural invariants:
-  - Backtest/live parity (platform inv 9): same _process_tick() in all modes
-  - Deterministic replay (platform inv 5): micro-state transitions identical
-  - No silent transitions: every state change logged via the bus
-  - Fail-safe default (platform inv 11): risk breach → lockdown,
-    mid-tick exception → DEGRADED
+Domain calculations remain in their owning layers. The orchestrator enforces
+trading-mode gates, deterministic order IDs and replay transitions, terminal
+order resolution before shutdown, and fail-safe degradation or lockdown. All
+modes share the same tick pipeline and publish every state transition.
 """
 
 from __future__ import annotations
@@ -38,7 +14,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
@@ -55,8 +31,14 @@ if TYPE_CHECKING:
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
     from feelies.risk.hazard_exit import HazardExitController
 
-from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
-from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
+from feelies.alpha.arbitration import (
+    EdgeWeightedArbitrator,
+    SignalArbitrator,
+    StandaloneArbitrationCollision,
+    collision_is_harmless_flat_gate_close,
+    is_redundant_gate_close_flat,
+    standalone_signal_actionable_for_strategy,
+)
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
@@ -116,7 +98,6 @@ from feelies.execution.portfolio_netter import (
 from feelies.execution.position_manager import (
     DesiredPosition,
     ExecStyle,
-    LegacyPositionManager,
     MarketContext,
     PlanDivergence,
     PlanLeg,
@@ -167,6 +148,7 @@ from feelies.risk.edge_weighted_sizer import (
     apply_tilt,
 )
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
+from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine, regime_posterior_entropy_nats
@@ -176,105 +158,13 @@ from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal, TradeRecord
 
-# Avoid a hard execution-layer import at module level: imported lazily in boot()
-# or via TYPE_CHECKING to preserve the layer boundary.
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
     from feelies.portfolio.position_store import Position
 
-# Stable correlation id for boot-time macro transitions (audit replay).
+# Stable correlation IDs for lifecycle transitions.
 _PLATFORM_BOOT_CORRELATION_ID = "platform_boot"
 _ORCHESTRATOR_SHUTDOWN_CORRELATION_ID = "orchestrator_shutdown"
-
-
-class _PostExitPositionView:
-    """Position view that simulates a pending exit fill for risk checking.
-
-    Used by ``_execute_reverse()`` so the entry leg's ``check_order()``
-    sees the post-exit position rather than the stale pre-exit snapshot.
-    Without this, the risk engine computes an incorrectly favorable
-    ``post_fill_qty`` for the entry leg (e.g. 0 instead of the actual
-    new-entry quantity), allowing entries that should be rejected.
-
-    Only ``get``, ``all_positions``, and ``total_exposure`` are needed
-    by the risk engine — mutating methods raise ``RuntimeError``.
-    """
-
-    __slots__ = ("_inner", "_symbol", "_adj")
-
-    def __init__(
-        self,
-        inner: PositionStore,
-        symbol: str,
-        quantity_adjustment: int,
-    ) -> None:
-        self._inner = inner
-        self._symbol = symbol
-        self._adj = quantity_adjustment
-
-    def _adjusted(self, pos: "Position") -> "Position":
-        from feelies.portfolio.position_store import Position
-
-        new_qty = pos.quantity + self._adj
-        mark = self.latest_mark(pos.symbol)
-        unrealized = Decimal("0")
-        if new_qty != 0:
-            if mark is not None and mark > 0:
-                unrealized = (mark - pos.avg_entry_price) * new_qty
-            else:
-                unrealized = pos.unrealized_pnl
-        return Position(
-            symbol=pos.symbol,
-            quantity=new_qty,
-            avg_entry_price=pos.avg_entry_price,
-            realized_pnl=pos.realized_pnl,
-            unrealized_pnl=unrealized,
-            cumulative_fees=pos.cumulative_fees,
-        )
-
-    def get(self, symbol: str) -> "Position":
-        pos = self._inner.get(symbol)
-        if symbol == self._symbol:
-            return self._adjusted(pos)
-        return pos
-
-    def all_positions(self) -> "dict[str, Position]":
-        result = dict(self._inner.all_positions())
-        if self._symbol in result:
-            result[self._symbol] = self._adjusted(result[self._symbol])
-        return result
-
-    def total_exposure(self) -> Decimal:
-        total = self._inner.total_exposure()
-        pos = self._inner.get(self._symbol)
-        mark = self.latest_mark(self._symbol)
-        if mark is None or mark <= 0:
-            mark = pos.avg_entry_price
-        old_contrib = abs(pos.quantity) * mark
-        new_contrib = abs(pos.quantity + self._adj) * mark
-        return total - old_contrib + new_contrib
-
-    def update(self, *args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("_PostExitPositionView is read-only")
-
-    def debit_fees(self, *args: Any, **kwargs: Any) -> None:
-        raise RuntimeError("_PostExitPositionView is read-only")
-
-    def update_mark(self, *args: Any, **kwargs: Any) -> None:
-        raise RuntimeError("_PostExitPositionView is read-only")
-
-    # ----- Phase-4 PositionStore Protocol shims --------------------------
-    # These delegate to the inner store unmodified.  The post-exit view
-    # only adjusts ``quantity`` for the in-flight reverse leg; the mark
-    # price and open-timestamp shadow maps are unaffected by the simulated
-    # exit and must therefore reflect the underlying store.
-    def latest_mark(self, symbol: str) -> Decimal | None:
-        return self._inner.latest_mark(symbol)
-
-    def opened_at_ns(self, symbol: str) -> int | None:
-        return self._inner.opened_at_ns(symbol)
 
 
 _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
@@ -286,9 +176,7 @@ _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
     }
 )
 
-# BT-5: intents that open or increase exposure (a "new entry").  These are
-# suppressed during the post-halt resolution blackout; EXIT and NO_ACTION
-# are always permitted (existing positions may always be unwound).
+# Exposure-increasing intents are blocked after a halt; exits remain allowed.
 _ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset(
     {
         TradingIntent.ENTRY_LONG,
@@ -309,13 +197,7 @@ _FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset(
     }
 )
 
-# Panic-fill reason tag stamped on a forced-market-exit order built through
-# the intent pipeline so the backtest fill model prices it as a stop — extra
-# half-spread slippage / depleted L1 depth (see
-# ``execution/_fill_helpers.STOP_EXIT_REASONS``, which classifies on
-# ``OrderRequest.reason``, not ``strategy_id``).  ``__session_flat__`` is
-# intentionally absent: a scheduled EOD flatten is not a panic exit and fills
-# at ordinary liquidity (``SESSION_FLAT`` is not in the panic set).
+# Stop exits receive panic-fill pricing; scheduled session flats do not.
 _FORCED_EXIT_PANIC_REASON: Mapping[str, str] = MappingProxyType(
     {
         "__stop_exit__": "STOP_EXIT",
@@ -332,154 +214,18 @@ def _int_to_direction(sign: int) -> SignalDirection:
     return SignalDirection.FLAT
 
 
-def _signal_reduces_book(current_qty: int, direction: SignalDirection) -> bool:
-    """True when *direction* would close or offset a non-flat *current_qty*."""
-    if current_qty == 0:
-        return False
-    if direction == SignalDirection.FLAT:
-        return True
-    if current_qty > 0 and direction == SignalDirection.SHORT:
-        return True
-    if current_qty < 0 and direction == SignalDirection.LONG:
-        return True
-    return False
-
-
-def standalone_signal_actionable_for_strategy(
-    signal: Signal,
-    *,
-    strategy_qty: int,
-    aggregate_qty: int,
-    alpha_has_prior_fill: bool,
-) -> bool:
-    """Whether a standalone SIGNAL may participate in per-tick arbitration.
-
-    Gate-close FLAT (``regime_gate_state == "OFF"``) from an alpha that
-    has never filled on this symbol is suppressed while the aggregate
-    book is open, so passive alphas cannot hijack another alpha's exit
-    tick.  Directional exits require matching strategy exposure; entries
-    always pass.
-    """
-    if (
-        signal.direction == SignalDirection.FLAT
-        and signal.regime_gate_state == "OFF"
-        and strategy_qty == 0
-        and aggregate_qty != 0
-        and not alpha_has_prior_fill
-    ):
-        return False
-    if signal.direction == SignalDirection.FLAT:
-        return True
-    if _signal_reduces_book(aggregate_qty, signal.direction):
-        return _signal_reduces_book(strategy_qty, signal.direction)
-    return True
-
-
-def is_redundant_gate_close_flat(
-    signal: Signal,
-    *,
-    aggregate_qty: int,
-    alpha_has_prior_fill: bool,
-) -> bool:
-    """True when a gate-close FLAT is a no-op (never traded, flat book)."""
-    return (
-        signal.direction == SignalDirection.FLAT
-        and signal.regime_gate_state == "OFF"
-        and aggregate_qty == 0
-        and not alpha_has_prior_fill
-    )
-
-
-def collision_is_harmless_flat_gate_close(
-    candidates: Sequence[Signal],
-    aggregate_qty: int,
-) -> bool:
-    """True when every arbitration candidate is inert gate-close on a flat book."""
-    if aggregate_qty != 0:
-        return False
-    return all(
-        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF" for s in candidates
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class StandaloneArbitrationCollision:
-    """One post-filter standalone-SIGNAL arbitration tick (forensics)."""
-
-    candidate_count: int
-    strategy_ids: tuple[str, ...]
-    kinds: tuple[tuple[str, str, str], ...]
-    harmless: bool
-
-
 class Orchestrator:
     """Central coordinator for the deterministic tick-processing pipeline.
 
-    Lifecycle:
-      1. __init__   — wire up all components
-      2. boot()     — G0 → G1 → G2
-      3. run_*()    — G2 → {G3|G4|G5|G6} → pipeline → G2
-      4. shutdown() — → G9
+    ``boot`` wires configuration, ``run_*`` drives the one shared tick path,
+    and ``shutdown`` drains outstanding acknowledgements before G9. Execution
+    mode differences remain confined to :class:`ExecutionBackend`.
 
-    The orchestrator never inspects ``backend.mode`` to branch logic.
-    Mode-specific behavior is confined to ExecutionBackend (platform inv 9).
-
-    Workstream D.2 has retired the per-tick legacy alpha pipeline:
-
-      * PR-2b-ii deleted :class:`CompositeFeatureEngine`,
-        :class:`CompositeSignalEngine`, :class:`MultiAlphaEvaluator`,
-        and the :class:`feelies.features.engine.FeatureEngine` /
-        :class:`feelies.signals.engine.SignalEngine` Protocols.
-      * PR-2b-iii added the bus-driven ``Signal`` subscriber
-        (``_on_bus_signal``) — the first production-reachable
-        Signal → Order path in the platform.
-      * PR-2b-iv (this commit) (1) added the bus-driven
-        ``SizedPositionIntent`` subscriber (``_on_bus_sized_intent``) so
-        PORTFOLIO alphas finally submit orders end-to-end via
-        ``RiskEngine.check_sized_intent``, and (2) deleted the surviving
-        scaffolding: ``feature_engine`` / ``signal_engine`` ctor params,
-        the per-tick :class:`feelies.core.events.FeatureVector` event,
-        :meth:`AlphaModule.evaluate`, the legacy gated single-alpha
-        branch in :py:meth:`_process_tick_inner`, and the orphan
-        multi-alpha helpers ``_build_net_order`` / ``_compute_contributions``.
-
-    Two production Signal / Intent → Order paths now coexist on the bus:
-
-      * **Standalone SIGNAL alphas** (``_on_bus_signal``).  Buffer
-        ``Signal(layer="SIGNAL")`` events per tick after filtering out
-        SIGNAL alphas referenced by any registered PORTFOLIO's
-        ``depends_on_signals`` (those flow through CompositionEngine and
-        emerge as SizedPositionIntent, not OrderRequest).  Drain the
-        first buffered signal at M4 ``SIGNAL_EVALUATE`` and run it
-        through the per-tick risk → order → fill walk.
-      * **PORTFOLIO alphas** (``_on_bus_sized_intent`` + ``_flush_pending_sized_intents``).
-        Each ``SizedPositionIntent`` is buffered on the bus, then drained after the
-        ``CROSS_SECTIONAL`` bookend: ``RiskEngine.check_sized_intent`` runs under
-        micro ``RISK_CHECK`` through ``LOG_AND_METRICS`` (M5–M10) before ``FEATURE_COMPUTE``,
-        preserving position updates before the standalone-SIGNAL M4 drain.  Multiple intents
-        on the same quote walk ``LOG_AND_METRICS → RISK_CHECK`` between legs.
-
-    Concurrency / coexistence rules:
-
-      * The micro-SM permits at most one Signal → Order walk per tick.
-        When more than one standalone SIGNAL alpha fires on the same
-        tick the orchestrator picks the first arrival
-        (HorizonSignalEngine's deterministic registration-order
-        dispatch) and emits a once-per-process WARNING hinting that
-        the operator should aggregate via a PORTFOLIO alpha.
-      * Standalone SIGNAL and PORTFOLIO can coexist on the same tick:
-        the SIGNAL-bus subscriber's ``depends_on_signals`` skip-rule
-        prevents double-trading when the same Signal feeds both paths.
-      * Stop-loss exits computed inline by ``_check_stop_exit`` always
-        override (Inv-11: position safety beats alpha conviction).
-
-    The micro-state transitions ``FEATURE_COMPUTE`` (M3) and
-    ``SIGNAL_EVALUATE`` (M4) still fire unconditionally so the SM stays
-    on its legal path; M3's body is now empty (Phase-3 SIGNAL/PORTFOLIO
-    outputs are produced via the bus-driven HorizonAggregator →
-    HorizonSignalEngine → CompositionEngine chain attached upstream of
-    the orchestrator); M4's body either dispatches a buffered Signal or
-    finalises with no order.
+    Standalone ``Signal`` and portfolio ``SizedPositionIntent`` events arrive
+    on the bus. Portfolio intents are drained first; one arbitrated standalone
+    signal may then walk M4–M10. Signals consumed by a portfolio are filtered
+    from the standalone path to prevent double trading. Forced exits override
+    alpha conviction and always retain fail-safe priority.
     """
 
     def __init__(
@@ -532,6 +278,7 @@ class Orchestrator:
         net_shadow_portfolio_max_abs_qty: int | None = None,
         size_shadow_sizer: "EdgeWeightedSizer | None" = None,
         size_shadow_sink: "list[SizeDivergence] | None" = None,
+        thread_safe_sequences: bool = True,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -546,10 +293,7 @@ class Orchestrator:
         self._trade_journal = trade_journal
         self._feature_snapshots = feature_snapshots
         self._regime_engine = regime_engine
-        # Bus-visible name must match alpha YAML ``regime_gate.regime_engine``
-        # (registry key, e.g. ``hmm_3state_fractional``), not the Python class
-        # name — otherwise HorizonSignalEngine's regime cache lookup misses and
-        # every ``P(...)`` gate raises UnknownIdentifierError.
+        # Signal gates use the alpha-YAML registry key, not the Python class name.
         self._regime_engine_registry_name = regime_engine_registry_name
         self._intent_translator: IntentTranslator = (
             intent_translator if intent_translator is not None else SignalPositionTranslator()
@@ -559,36 +303,20 @@ class Orchestrator:
             if position_sizer is not None
             else BudgetBasedSizer(regime_engine=regime_engine)
         )
-        # G-1 Phase P1: optional shadow position-manager.  When both the
-        # manager and the sink are wired, the orchestrator runs the planner
-        # alongside the legacy translator on every signal and records any
-        # decision divergence — without affecting orders, the bus, the
-        # journal, or parity hashes (default-off when either is None).
+        # Shadow the planner without affecting orders, events, or journals.
         self._position_manager = position_manager
         self._position_manager_shadow_sink = position_manager_shadow_sink
-        # G-1 "the flip": when True (and a manager is wired), the live
-        # decision is driven by the planner — plan -> OrderIntent -> the
-        # existing execution machinery — instead of the legacy translator.
-        # Default-off; byte-identical to legacy while ``enable_trim`` is off
-        # (proven by the order_intent_from_plan equivalence test).
+        # When enabled, the planner supplies the live OrderIntent.
         self._position_manager_drive = position_manager_drive
-        # G-2 / P3: emit a cost-aware TRIM (partial reduce) when a same-
-        # direction target shrinks below the current position.  Default-off
-        # → byte-identical to legacy even when driving.
+        # Allow cost-aware partial reductions when a same-direction target shrinks.
         self._position_manager_enable_trim = position_manager_enable_trim
-        # P3b: hold the excess (suppress the trim) while the forward edge
-        # still clears this multiple of its round-trip cost.  0 = gate off.
+        # Suppress trims while forward edge clears this cost multiple; 0 disables.
         self._position_manager_trim_edge_gate_multiplier = (
             position_manager_trim_edge_gate_multiplier
         )
-        # P4: urgency-driven execution style (discretionary trims work
-        # passive).  Default-off — passive reductions defer on a non-fill.
+        # Post discretionary trims passively; unfilled residuals later cross at MARKET.
         self._position_manager_urgency_exec = position_manager_urgency_exec
-        # G-5 N1: per-alpha standing-target book + portfolio netter, run in
-        # SHADOW.  When a sink is wired the orchestrator records each alpha's
-        # standing desired target and logs where the budget-weighted net
-        # disagrees with the winner-take-all decision — pure measurement,
-        # nothing driven (parity-neutral, no-op when the sink is None).
+        # Shadow the budget-weighted portfolio target against the arbitrated winner.
         self._desired_target_book = DesiredTargetBook()
         self._net_portfolio_max_abs_qty: int | None = net_shadow_portfolio_max_abs_qty
         self._portfolio_netter = PortfolioNetter(
@@ -596,86 +324,41 @@ class Orchestrator:
             portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
         )
         self._net_shadow_sink = net_shadow_sink
-        # G-7 S1: edge/vol/inventory sizing shadow.  When a sink is wired the
-        # orchestrator records, per sized signal, how the tilted target would
-        # differ from the live single-factor base target — pure measurement,
-        # no order/bus/journal effect, no-op unless wired.
+        # Shadow edge/vol/inventory sizing without affecting live orders.
         self._size_shadow_sizer = size_shadow_sizer
         self._size_shadow_sink = size_shadow_sink
-        # Aligned with the pre-tick signal-buffer staleness policy in
-        # ``_process_tick_inner``: a horizon-gated signal is evicted from
-        # the buffer once ``(now - timestamp) > horizon_seconds × 1e9``.
-        # Using ``k = 1.0`` keeps the standing-target book and the trade
-        # path in lock-step, so ``DesiredTargetBook`` never carries an
-        # alpha past the point where the live SIGNAL path would drop it
-        # (avoids spurious ``NetDivergence`` from a stale shadow desire).
+        # Expire shadow targets at the same horizon as the live signal buffer.
         self._net_staleness_k: float = 1.0
-        # G-5 N1: horizon-zero signals are one-tick-only by buffer
-        # policy (see ``_process_tick``'s pre-tick stale-eviction
-        # block).  Their standing targets must not persist into the
-        # shadow net on later ticks, otherwise the book accumulates
-        # stale per-alpha desires and ``NetDivergence`` inflates.  We
-        # track the keys we wrote for horizon=0 signals and evict them
-        # at the next call so they live for exactly the tick that
-        # produced them.
+        # Horizon-zero targets last one tick; evict these keys on the next update.
         self._net_shadow_transient_keys: set[tuple[str, str]] = set()
-        # G-5 N2: drive the decision from the net target.  Default-off →
-        # byte-identical to the pre-N2 winner-take-all path.  boot() reads it
-        # (and the portfolio cap + staleness) from PlatformConfig.
+        # Drive from the portfolio net target when enabled.
         self._enable_portfolio_netting: bool = False
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
         self._strategy_positions = strategy_positions
         self._cost_model: "CostModel | None" = cost_model
-        self._seq = SequenceGenerator()
+        self._market_context = MarketContext()
+        # BACKTEST bootstrap passes thread_safe_sequences=False (single-
+        # threaded replay); paper/live keep the lock.
+        _seq_kw = {"thread_safe": thread_safe_sequences}
+        self._seq = SequenceGenerator(**_seq_kw)
 
-        # ── Phase-2 (three-layer architecture) ─────────────────────────
-        # Sensor / scheduler / aggregator are optional; when None the
-        # orchestrator takes the legacy bit-identical path through the
-        # micro-state machine (Inv-A in the implementation plan).
+        # Optional sensor and horizon components; None keeps the short tick path.
         self._sensor_registry = sensor_registry
         self._horizon_scheduler = horizon_scheduler
         self._horizon_signal_engine = horizon_signal_engine
-        # Per-event-family sequence generators (C1).  These are
-        # *separate* from ``self._seq`` (kernel-owned) so adding
-        # sensors / signals cannot perturb existing event sequence
-        # numbers.  Each generator is owned by exactly one event family:
-        #
-        #   _seq          → kernel-emitted bus events (RiskVerdict,
-        #                   PositionUpdate, MetricEvent, OrderRequest
-        #                   for the per-tick walk, etc.)
-        #   _sensor_seq   → SensorReading
-        #   _horizon_seq  → HorizonTick
-        #   _snapshot_seq → HorizonFeatureSnapshot (P2-β)
-        #   _signal_seq   → Signal(layer='SIGNAL') (P3-α)
-        #
-        # The bootstrap layer constructs the registry/scheduler/
-        # horizon_signal_engine with the same SequenceGenerator
-        # instances it passes here, so tests that verify Inv-A (legacy
-        # parity) can introspect a single canonical reference.  When
-        # sensors / SIGNAL alphas are disabled these counters simply
-        # never advance.
-        self._sensor_seq = sensor_sequence_generator or SequenceGenerator()
-        self._horizon_seq = horizon_sequence_generator or SequenceGenerator()
-        self._snapshot_seq = snapshot_sequence_generator or SequenceGenerator()
-        self._signal_seq = signal_sequence_generator or SequenceGenerator()
-        # P3.1: optional hazard detector + dedicated _hazard_seq
-        # generator (Inv-A / C1 isolation: enabling hazard exits must
-        # not perturb pre-existing event sequence numbers).  Caller
-        # passes None when no alpha declares hazard_exit.enabled, in
-        # which case the orchestrator never publishes
-        # RegimeHazardSpike events and the counter stays at zero.
+        # Separate sequence families prevent optional stages from shifting kernel
+        # event IDs. Bootstrap shares these exact generators with each producer.
+        self._sensor_seq = sensor_sequence_generator or SequenceGenerator(**_seq_kw)
+        self._horizon_seq = horizon_sequence_generator or SequenceGenerator(**_seq_kw)
+        self._snapshot_seq = snapshot_sequence_generator or SequenceGenerator(**_seq_kw)
+        self._signal_seq = signal_sequence_generator or SequenceGenerator(**_seq_kw)
+        # Hazard events use an isolated sequence so exits cannot shift other IDs.
         self._regime_hazard_detector = regime_hazard_detector
-        self._hazard_seq = hazard_sequence_generator or SequenceGenerator()
-        # ── Phase-4 PORTFOLIO / composition layer (optional) ─────────
-        # All four are ``None`` for default deployments — Inv-A:
-        # SIGNAL-only deployments without a PORTFOLIO alpha take the
-        # short path and the composition pipeline is never wired up.
-        # When wired by bootstrap, the
-        # subscriptions are already installed; the orchestrator holds
-        # references purely for introspection (tests, forensics,
-        # operator ``stats()`` queries).
+        self._hazard_seq = hazard_sequence_generator or SequenceGenerator(**_seq_kw)
+        # Bootstrap wires optional composition components to the bus; these
+        # references support orchestration and inspection.
         self._composition_engine = composition_engine
         self._cross_sectional_tracker = cross_sectional_tracker
         self._composition_metrics_collector = composition_metrics_collector
@@ -687,31 +370,25 @@ class Orchestrator:
         self._paper_session_recorder: PaperSessionRecorder | None = None
         self._quote_tick_in_flight: bool = False
         self._tick_quote_for_trace: NBBOQuote | None = None
-        # Last quote that completed M1 with tracing enabled — survives the
-        # per-tick ``_tick_quote_for_trace = None`` reset so Trade-driven
-        # horizon ticks (which can publish Signals between quotes) still have
-        # an anchor row for ``SignalOrderTraceRow`` and so buffer evictions
-        # can attribute ``signal_buffer_cleared_unprocessed_at_tick_boundary``.
+        # Preserve the last quote so inter-quote signals can produce trace rows.
         self._last_quote_context_for_signal_trace: NBBOQuote | None = None
         self._signal_order_trace_seen_sequences: set[int] = set()
-        # Signal sequences first observed while no quote tick is in-flight.
-        # These are the only buffered Signals eligible to carry across the
-        # next quote boundary (trade-driven/inter-quote HorizonTicks).  Once
-        # they reach M4, eligibility is retired so they cannot be processed
-        # again on later ticks.
+        # Only inter-quote signals may cross one quote boundary; M4 consumes them.
         self._carryover_signal_sequences: set[int] = set()
-        # Per-(symbol, engine_name) cache of the most recently
-        # observed RegimeState; used as ``prev`` argument to the
-        # detector on the next tick.  Cleared by
-        # ``_reset_regime_session_state`` at every session_start (along
-        # with the hazard detector's suppression set) so a stale prev
-        # from a previous session never pairs with a fresh curr — that
-        # pairing would otherwise compute a "decay" across the session
-        # gap and leak a spurious RegimeHazardSpike (see §20.3.1).
-        # The regime engine itself is intentionally NOT reset: its
-        # per-symbol HMM posterior is the very state we want to carry
-        # across sessions (calibration is done once at boot).
+        # Reset session-local hazard history while retaining the regime engine's
+        # calibrated posterior across sessions.
         self._last_regime_state: dict[tuple[str, str], RegimeState] = {}
+        # Symbols for which ``_update_regime`` has published at least one
+        # ``RegimeState`` on the bus this session.  The trade path drives
+        # the horizon scheduler without a micro-SM walk and without calling
+        # ``_update_regime`` (regime engines require NBBO quotes).  Emitting
+        # ``HorizonTick``s before the first quote-driven publish leaves
+        # ``HorizonSignalEngine`` with an empty regime cache, so ``P(...)``
+        # gates fail safe with a cold-start WARNING.  Trade-path ticks are
+        # deferred until this set contains the symbol (see
+        # ``_process_trade_inner``); quote-path ticks are unaffected because
+        # M2 publishes RegimeState before the scheduler runs.
+        self._regime_bus_published_symbols: set[str] = set()
 
         self._stop_loss_per_share: float = 0.0
         self._trail_activate_per_share: float = 0.0
@@ -719,41 +396,23 @@ class Orchestrator:
         self._trail_activate_pct: float = 0.0
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
-        # G-6: session/EOD flatten.  When enabled and an RTH session is
-        # configured, open positions are flattened (and new entries blocked)
-        # once the quote crosses ``rth_close - session_flatten_seconds_before
-        # _close``.  Default-off at the instance level; boot() enables it
-        # from PlatformConfig.
+        # Optional EOD flatten blocks entries and closes positions near RTH close.
         self._session_flatten_enabled: bool = False
         self._session_flatten_seconds_before_close: int = 0
         self._min_order_shares: int = 1
-        # Audit F-H-14: default 1.0 (round-trip breakeven) matches
-        # ``PlatformConfig.signal_min_edge_cost_ratio``.  0 = gate disabled.
+        # Minimum edge-to-round-trip-cost ratio; 0 disables the gate.
         self._signal_min_edge_cost_ratio: float = 1.0
-        # Audit F-H-13: ``"one_way"`` keeps the legacy edge-vs-RT-cost
-        # comparison; ``"round_trip"`` (the new default) multiplies the
-        # disclosed one-way edge by 2 inside the gate so both sides
-        # share the round-trip basis explicitly.
+        # Convert disclosed one-way edge to a round-trip basis when configured.
         self._signal_edge_cost_basis: str = "round_trip"
-        # Close-the-loop (calibrate/gate): per-alpha realization factor in
-        # [0, 1] that shrinks the disclosed ``edge_estimate_bps`` the B4 gate
-        # trades on toward realized edge (Inv-4).  Empty -> factor 1.0 for
-        # every alpha -> identical behaviour (parity-preserving).  Sourced
-        # from a versioned ``EdgeCalibrationStore`` at construction, so it is
-        # a fixed input within a replay (Inv-5).
+        # Fixed per-alpha realization factors shrink disclosed edge toward observed edge.
         self._edge_calibration_factors: dict[str, float] = (
             dict(edge_calibration_factors) if edge_calibration_factors else {}
         )
-        # B5: reversal edge guard multiplier.  The entry leg of a REVERSE
-        # intent is suppressed (flatten-only) unless the signal edge clears
-        # this multiple of the combined exit+entry round-trip cost.  0.0
-        # disables the guard (legacy flip-on-every-signal behaviour).
+        # Require reversal entry edge to clear combined exit and entry cost.
         self._reversal_min_edge_cost_multiplier: float = 1.5
-        # Audit F-M-22: dedicated threshold for the realized-vs-disclosed
-        # cost alert, decoupled from MIN_MARGIN_RATIO.
+        # Alert when realized cost exceeds disclosed cost by this ratio.
         self._realized_cost_alert_ratio: float = 1.5
-        # Audit P2.10: optional escalation when realized cost persistently
-        # exceeds the disclosed G12 cost.  Default-off → alert-only (legacy).
+        # Optional lockdown after repeated realized-cost overruns.
         self._realized_cost_escalation_enabled: bool = False
         self._realized_cost_escalation_streak: int = 3
         # Per-strategy consecutive realized-cost-overrun streak counter.
@@ -765,38 +424,18 @@ class Orchestrator:
 
         self._config: Configuration | None = None
 
-        # Per-order lifecycle tracking for Inv-4 enforcement.
-        # Maps order_id -> (OrderState SM, Side, OrderRequest).
+        # Active order state machines keyed by order ID.
         self._active_orders: dict[str, tuple[StateMachine[OrderState], Side, OrderRequest]] = {}
-        # Maps order_id -> TradingIntent.name at submission time so fill
-        # reconciliation can stamp each ``TradeRecord.trading_intent``
-        # without re-deriving the intent from fill order (Task 4).  Pruned
-        # alongside ``_active_orders``.
+        # Submission-time intent used to stamp TradeRecord attribution.
         self._order_trading_intent: dict[str, str] = {}
-        # Maps (strategy_id, symbol) -> (trend_mechanism, expected_half_life)
-        # captured from the most recent SIGNAL-layer Signal so fill
-        # reconciliation can stamp the causal mechanism onto each
-        # ``TradeRecord`` (Inv-1 per-trade forensic attribution).  Pure side
-        # table — never read on the per-tick decision path.
-        self._last_signal_mechanism: dict[
-            tuple[str, str], tuple[TrendMechanism | None, int]
-        ] = {}
-        # P4b: passive working-reduction orders awaiting a MARKET fallback.
-        # order_id -> (symbol, side, original_qty).  When such an order
-        # terminates unfilled (the router's resting timeout → CANCELLED /
-        # EXPIRED), the residual is escalated to MARKET so the reduction is
-        # still guaranteed.  ``_order_filled_qty`` tracks cumulative fills
-        # per order for the residual computation.  Both empty by default
-        # (no passive reductions unless ``urgency_exec`` is on).
+        # Latest signal mechanism per strategy and symbol, used only for fills.
+        self._last_signal_mechanism: dict[tuple[str, str], tuple[TrendMechanism | None, int]] = {}
+        # Passive reductions that require MARKET fallback on unfilled residuals.
         self._working_exit_fallback: dict[str, tuple[str, Side, int]] = {}
         self._order_filled_qty: dict[str, int] = {}
-        # G-4: per-symbol FIFO open-lot ledger, maintained beside the
-        # average-cost position store for per-lot age / provenance / FIFO
-        # realized PnL.  Pure observability — never feeds orders or parity.
+        # FIFO lot attribution; never feeds decisions.
         self._lot_ledger = LotLedger()
-        # Router acks that were drained while waiting for a different
-        # order family.  The order-router queue is global, so targeted
-        # pollers must buffer unrelated acks instead of stealing them.
+        # Acks buffered by targeted pollers so unrelated order families are not lost.
         self._deferred_router_acks: list[OrderAck] = []
 
         # When True, market events arriving from the data source are
@@ -808,48 +447,28 @@ class Orchestrator:
         # unknown macro/micro pairing).
         self._pipeline_abort_requested = False
 
-        # ── BT-5: LULD halt modeling ─────────────────────────────────
-        # Symbols currently halted (no fills, entry or exit).  Driven from
-        # the Trade tape's halt-on / halt-off condition codes.  The blackout
-        # map records, per symbol, the event-time ns until which new ENTRY
-        # fills remain suppressed after a resume.  Codes / blackout cached
-        # from config in boot(); empty codes ⇒ halt modeling is inert.
+        # LULD state and post-resume entry blackout; empty codes disable modeling.
         self._halted_symbols: set[str] = set()
         self._halt_blackout_until_ns: dict[str, int] = {}
         self._halt_on_codes: frozenset[int] = frozenset()
         self._halt_off_codes: frozenset[int] = frozenset()
         self._halt_blackout_ns: int = 0
 
-        # ── BT-6: Reg-SHO / SSR short-sale restriction ───────────────
-        # Symbols currently SSR-active (sticky for the session): seeded from
-        # the daily SSR list at boot, then added to when the Trade tape's
-        # SSR-trigger condition codes fire intraday.  Under SSR (refuse_short
-        # mode) a short ENTRY fill is refused.  Empty codes + list ⇒ inert.
+        # Session-sticky SSR symbols; empty inputs disable the restriction.
         self._ssr_active: set[str] = set()
         self._ssr_codes: frozenset[int] = frozenset()
         self._ssr_mode: str = "refuse_short"
 
-        # ── BT-7: static borrow-availability table ────────────────────
-        # Per-symbol locate tier (available / hard / unavailable).  Omitted
-        # symbols fall back to ``self._borrow_default_tier``.  Cached from
-        # config in boot().
+        # Static locate tiers; omitted symbols use the configured default.
         self._borrow_tier: dict[str, BorrowTier] = {}
-        # Audit P1.7: tier assumed for symbols absent from the table.
-        # AVAILABLE (optimistic) preserves prior behaviour; operators set
-        # ``borrow_default_tier`` to "hard"/"unavailable" for a conservative
-        # short-locate assumption on non-large-cap universes.
+        # AVAILABLE is optimistic; use hard or unavailable for conservative universes.
         self._borrow_default_tier: BorrowTier = BorrowTier.AVAILABLE
 
-        # ── BT-8: MOC strategy routing ────────────────────────────────
-        # Set of strategy_ids whose entries route as MOC orders, and a
-        # flag indicating whether MOC session bounds were successfully
-        # resolved at boot().  Defaulted to empty/False here so configs
-        # without ``moc_strategy_ids`` (and tests using minimal configs)
-        # do not raise AttributeError on the entry-order path.
+        # Strategies routed to MOC once session bounds resolve.
         self._moc_strategy_ids: frozenset[str] = frozenset()
         self._moc_bounds_configured: bool = False
 
-        # BT-16: RTH entry-fill suppression + close buying-power phase flip.
+        # RTH entry suppression and close buying-power transition.
         self._trading_session_bounds: TradingSessionBounds | None = None
         self._rth_close_bp_flipped: bool = False
         # NY session date the BP flip is currently armed for.  Tracked so a
@@ -857,15 +476,9 @@ class Orchestrator:
         # at each new session date instead of latching OVERNIGHT after day 1.
         self._rth_bp_session_date: date | None = None
 
-        # When True, entry/exit orders use LIMIT at BBO instead of
-        # MARKET.  Stop-loss exits always use MARKET (fail-safe).
-        # Set from config via boot().
+        # Static passive routing; forced exits always use MARKET.
         self._use_passive_entries = False
-        # Optional per-order routing policy (set in boot() when
-        # config.execution_mode == "minimum_cost").  When non-None,
-        # the order constructor consults the policy for each candidate
-        # order and picks LIMIT or MARKET accordingly; otherwise the
-        # static ``_use_passive_entries`` flag governs.
+        # Optional per-order policy overrides the static route in minimum-cost mode.
         self._min_cost_policy: MinimumCostExecutionPolicy | None = None
 
         self._macro = create_macro_state_machine(clock)
@@ -883,20 +496,8 @@ class Orchestrator:
         if self._alert_manager is not None:
             self._bus.subscribe(Alert, self._on_alert_event)
 
-        # ── PR-2b-iii: bus-driven Signal subscriber ────────────────────
-        # Phase-3 ``HorizonSignalEngine`` publishes ``Signal(layer="SIGNAL")``
-        # events on the bus when an alpha's regime gate is ON at a horizon
-        # boundary.  ``_on_bus_signal`` buffers SIGNAL-layer Signals per
-        # tick (after filtering out alphas that any registered PORTFOLIO
-        # consumes via ``depends_on_signals``); the M4 ``SIGNAL_EVALUATE``
-        # drain consumes the buffer and walks the existing risk → order →
-        # fill pipeline once per tick (the micro SM only supports one
-        # Signal → Order walk per tick; multiple standalone candidates on
-        # the same tick are filtered by ``EdgeWeightedArbitrator`` before
-        # this walk — full cross-alpha aggregation belongs in a PORTFOLIO
-        # alpha).  PR-2b-iv (this commit) deleted the
-        # legacy ``signal_engine`` ctor scaffolding, so this is now the
-        # sole standalone-SIGNAL → Order path.
+        # Buffer standalone signals for one arbitrated M4 order walk. Signals
+        # consumed by a PORTFOLIO alpha are excluded to prevent double trading.
         self._signal_buffer: list[Signal] = []
         self._alpha_symbols_with_fills: set[tuple[str, str]] = set()
         self._arbitration_collisions: list[StandaloneArbitrationCollision] = []
@@ -906,58 +507,15 @@ class Orchestrator:
         self._logged_harmless_arbitration_collision: bool = False
         self._bus.subscribe(Signal, self._on_bus_signal)
 
-        # ── PR-2b-iv: bus-driven SizedPositionIntent subscriber ─────────
-        # Phase-4 ``CompositionEngine`` publishes one
-        # ``SizedPositionIntent`` per registered PORTFOLIO alpha at every
-        # horizon boundary (a synchronous side-effect of scheduler-driven
-        # ``bus.publish(HorizonTick)`` during ``_dispatch_sensor_layer``).
-        # Pre-PR-2b-iv nothing
-        # translated those intents into ``OrderRequest`` events: PORTFOLIO
-        # alphas were hooked into the bus end-to-end for SizedPositionIntent
-        # but the production order pipeline simply ignored them.
-        #
-        # ``_on_bus_sized_intent`` **buffers** each
-        # ``SizedPositionIntent``; :meth:`_flush_pending_sized_intents`
-        # drains the queue after the ``CROSS_SECTIONAL`` bookend (still
-        # before ``FEATURE_COMPUTE``) so M5 → M10 transitions record
-        # PORTFOLIO execution on the same micro SM.  This preserves the
-        # causal order vs standalone SIGNAL alphas (positions updated before
-        # M4).  PR-2b-iii ``depends_on_signals`` skip-rule still prevents
-        # double-trading.
+        # Drain PORTFOLIO intents after CROSS_SECTIONAL and before the standalone
+        # M4 walk, so portfolio fills update positions first.
         self._bus.subscribe(SizedPositionIntent, self._on_bus_sized_intent)
 
-        # ── Audit R1: hazard-exit submission dedup ────────────────────
-        # ``_active_orders`` is pruned on FILLED (so memory doesn't
-        # grow unboundedly in long-running live sessions), but that
-        # also means it cannot serve as a long-lived idempotency set
-        # for the hazard handler — a duplicate publish AFTER the fill
-        # would re-submit.  Track every hazard ``order_id`` we have
-        # ever forwarded to the router in this run; the controller's
-        # SHA-256 ``order_id`` derivation is collision-free per
-        # ``(correlation_id, trigger_ts_ns, symbol, reason)`` so this
-        # set never grows past one entry per (episode, symbol, reason).
+        # Hazard IDs remain deduplicated after terminal orders leave _active_orders.
         self._hazard_submitted_order_ids: set[str] = set()
 
-        # ── Audit R1: bus-driven hazard-exit OrderRequest subscriber ──
-        # ``HazardExitController`` publishes ``OrderRequest`` events
-        # with ``source_layer="RISK"`` and ``reason in {"HAZARD_SPIKE",
-        # "HARD_EXIT_AGE"}`` directly on the bus (no router call —
-        # see risk/hazard_exit.py:_emit_exit).  Pre-fix, no production
-        # subscriber routed those orders to ``backend.order_router``,
-        # so the entire hazard-exit subsystem was effectively inert
-        # in any orchestrator-composed deployment (the only subscriber
-        # was the metrics collector).  ``_on_bus_hazard_order`` filters
-        # to *exactly* the controller's signature and runs the same
-        # submit → poll_acks → reconcile_fills flow used by
-        # ``_emergency_flatten_all`` (which also bypasses ``check_order``
-        # by design — Inv-11 fail-safe: an exit-direction order may
-        # never *increase* exposure, so the per-symbol cap and gross
-        # exposure cap cannot be breached by it).  Per-leg attribution
-        # lands in ``_reconcile_fills`` exactly as for SIGNAL-driven
-        # exits.  The subscriber is registered unconditionally; in
-        # deployments without a hazard detector the bus simply never
-        # sees a hazard-tagged ``OrderRequest`` so this handler is a
-        # no-op (Inv-A: pre-R1 baselines bit-identical).
+        # Route only controller-authored hazard exits. The handler submits,
+        # acknowledges, and reconciles without republishing the bus order.
         self._bus.subscribe(OrderRequest, self._on_bus_hazard_order)
 
     # ── Optional SIGNAL → order diagnostic sink ─────────────────────
@@ -1061,7 +619,7 @@ class Orchestrator:
 
     @property
     def lot_ledger(self) -> LotLedger:
-        """G-4: FIFO open-lot ledger (per-lot age / provenance / FIFO PnL)."""
+        """FIFO open-lot ledger for age, provenance, and realized PnL."""
         return self._lot_ledger
 
     @property
@@ -1105,7 +663,7 @@ class Orchestrator:
             )
 
     def _bind_router_position_qty_for_rth(self) -> None:
-        """BT-16: wire signed live position qty into the router's RTH gate.
+        """Provide live signed positions to the router's RTH gate.
 
         The router-side :class:`RthEntryFillGate` defaults ``current_qty``
         to 0 when unbound, which would mis-classify exit fills as new
@@ -1124,7 +682,7 @@ class Orchestrator:
         bind(lambda sym: self._positions.get(sym).quantity)
 
     def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
-        """BT-16: flip risk-engine buying-power phase at RTH close.
+        """Switch risk buying-power limits at RTH close.
 
         Once-per-session-date: the first quote with
         ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
@@ -1175,7 +733,7 @@ class Orchestrator:
         self._rth_close_bp_flipped = True
 
     def _reset_buying_power_phase_for_session(self) -> None:
-        """BT-16: reset the RTH-close BP flip state at session start.
+        """Reset the RTH-close buying-power state at session start.
 
         Clears the latch (and the armed session date) that gate
         :meth:`_maybe_flip_buying_power_at_rth_close` and forces the risk
@@ -1203,6 +761,22 @@ class Orchestrator:
         try:
             config.validate()
             self._config = config
+            market_impact_factor = Decimal(str(getattr(config, "cost_market_impact_factor", 0.5)))
+            max_impact_half_spreads = Decimal(
+                str(getattr(config, "cost_max_impact_half_spreads", 10.0))
+            )
+            within_l1_impact_factor = Decimal(
+                str(getattr(config, "cost_within_l1_impact_factor", 0.0))
+            )
+            permanent_impact_coefficient = Decimal(
+                str(getattr(config, "cost_permanent_impact_coefficient", 0.0))
+            )
+            self._market_context = MarketContext(
+                market_impact_factor=market_impact_factor,
+                max_impact_half_spreads=max_impact_half_spreads,
+                within_l1_impact_factor=within_l1_impact_factor,
+                permanent_impact_coefficient=permanent_impact_coefficient,
+            )
             if hasattr(config, "stop_loss_per_share"):
                 self._stop_loss_per_share = config.stop_loss_per_share
             if hasattr(config, "trail_activate_per_share"):
@@ -1217,15 +791,14 @@ class Orchestrator:
                 self._trail_activate_pct = config.trail_activate_pct
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
-            # G-6: session/EOD flatten configuration.
+            # Session-flatten configuration.
             if hasattr(config, "session_flatten_enabled"):
                 self._session_flatten_enabled = config.session_flatten_enabled
             if hasattr(config, "session_flatten_seconds_before_close"):
                 self._session_flatten_seconds_before_close = int(
                     config.session_flatten_seconds_before_close
                 )
-            # G-5 N2: cross-alpha netting config.  The portfolio cap reuses the
-            # platform per-symbol position cap.
+            # Cross-alpha netting reuses the platform per-symbol cap.
             if hasattr(config, "enable_portfolio_netting"):
                 self._enable_portfolio_netting = config.enable_portfolio_netting
             if hasattr(config, "net_staleness_k"):
@@ -1237,7 +810,7 @@ class Orchestrator:
                     self._desired_target_book,
                     portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
                 )
-            # BT-5: cache halt-detection config (empty codes ⇒ inert).
+            # Empty condition-code sets disable halt detection.
             if hasattr(config, "halt_on_condition_codes"):
                 self._halt_on_codes = frozenset(config.halt_on_condition_codes)
             if hasattr(config, "halt_off_condition_codes"):
@@ -1246,7 +819,7 @@ class Orchestrator:
                 self._halt_blackout_ns = (
                     int(config.halt_resolution_blackout_seconds) * 1_000_000_000
                 )
-            # BT-6: seed the daily SSR list + cache the intraday trigger codes.
+            # Seed daily SSR state and intraday trigger codes.
             if hasattr(config, "ssr_active_symbols"):
                 self._ssr_active = {s.upper() for s in config.ssr_active_symbols}
             if hasattr(config, "ssr_trigger_condition_codes"):
@@ -1346,13 +919,7 @@ class Orchestrator:
                     ),
                 )
             if hasattr(config, "execution_mode"):
-                # passive_limit and minimum_cost both wire through the
-                # passive-limit backend.  The static flag tells the
-                # rest of the orchestrator (resting-fill reconciliation,
-                # duplicate-passive-order guard) to expect resting
-                # orders.  ``minimum_cost`` additionally constructs a
-                # per-order policy that may override the choice on a
-                # per-order basis.
+                # Both modes use the passive backend; minimum_cost may override per order.
                 self._use_passive_entries = config.execution_mode in (
                     "passive_limit",
                     "minimum_cost",
@@ -1393,42 +960,10 @@ class Orchestrator:
                                     True,
                                 )
                             ),
-                            market_impact_factor=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_market_impact_factor",
-                                        0.5,
-                                    )
-                                )
-                            ),
-                            max_impact_half_spreads=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_max_impact_half_spreads",
-                                        10.0,
-                                    )
-                                )
-                            ),
-                            within_l1_impact_factor=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_within_l1_impact_factor",
-                                        0.0,
-                                    )
-                                )
-                            ),
-                            permanent_impact_coefficient=Decimal(
-                                str(
-                                    getattr(
-                                        config,
-                                        "cost_permanent_impact_coefficient",
-                                        0.0,
-                                    )
-                                )
-                            ),
+                            market_impact_factor=market_impact_factor,
+                            max_impact_half_spreads=max_impact_half_spreads,
+                            within_l1_impact_factor=within_l1_impact_factor,
+                            permanent_impact_coefficient=permanent_impact_coefficient,
                             passive_non_fill_probability=Decimal(
                                 str(
                                     getattr(
@@ -1528,65 +1063,61 @@ class Orchestrator:
         Exceptions during the pipeline transition to **DEGRADED** and
         re-raise.
         """
-        self._macro.assert_state(MacroState.READY)
-        self._require_safe_session_entry()
-        self._pipeline_abort_requested = False
-        self._micro.reset(trigger="session_start:paper")
-        self._reset_buying_power_phase_for_session()
-        self._bind_router_position_qty_for_rth()
-        self._pending_sized_intents.clear()
-        self._consumed_by_portfolio_ids = None
-        self._reset_regime_session_state()
-        self._macro.transition(
-            MacroState.PAPER_TRADING_MODE,
-            trigger="CMD_PAPER_DEPLOY",
+        self._run_deployment_session(
+            mode=MacroState.PAPER_TRADING_MODE,
+            session_name="paper",
+            command_trigger="CMD_PAPER_DEPLOY",
+            failure_trigger_prefix="PAPER_PIPELINE_FAIL",
+            reset_portfolio_consumption=True,
         )
-        try:
-            self._run_pipeline()
-        except Exception as exc:
-            if self._macro.state == MacroState.PAPER_TRADING_MODE:
-                self._macro.transition(
-                    MacroState.DEGRADED,
-                    trigger=f"PAPER_PIPELINE_FAIL:{type(exc).__name__}",
-                )
-            raise
-        if self._macro.state == MacroState.PAPER_TRADING_MODE:
-            self._macro.transition(
-                MacroState.READY,
-                trigger="SESSION_FEED_COMPLETE",
-            )
 
     def run_live(self) -> None:
         """G2 → G6 → pipeline.
 
-        Guard: human approval + risk audit pass; kill switch inactive.
+        Guard: human approval and risk review; kill switch inactive.
         Inv-3: R4 (LOCKED) forbids this — must pass through G2 first,
         which is structurally guaranteed (G8 → G2 → G6).
         Normal completion (feed iterator exhausted without exception)
         returns macro to **READY**. Exceptions transition to **DEGRADED**.
         """
+        self._run_deployment_session(
+            mode=MacroState.LIVE_TRADING_MODE,
+            session_name="live",
+            command_trigger="CMD_LIVE_DEPLOY",
+            failure_trigger_prefix="LIVE_PIPELINE_FAIL",
+            reset_portfolio_consumption=False,
+        )
+
+    def _run_deployment_session(
+        self,
+        *,
+        mode: MacroState,
+        session_name: str,
+        command_trigger: str,
+        failure_trigger_prefix: str,
+        reset_portfolio_consumption: bool,
+    ) -> None:
         self._macro.assert_state(MacroState.READY)
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
-        self._micro.reset(trigger="session_start:live")
+        self._micro.reset(trigger=f"session_start:{session_name}")
         self._reset_buying_power_phase_for_session()
         self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
+        if reset_portfolio_consumption:
+            self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
-        self._macro.transition(
-            MacroState.LIVE_TRADING_MODE,
-            trigger="CMD_LIVE_DEPLOY",
-        )
+        self._macro.transition(mode, trigger=command_trigger)
         try:
             self._run_pipeline()
         except Exception as exc:
-            if self._macro.state == MacroState.LIVE_TRADING_MODE:
+            if self._macro.state == mode:
                 self._macro.transition(
                     MacroState.DEGRADED,
-                    trigger=f"LIVE_PIPELINE_FAIL:{type(exc).__name__}",
+                    trigger=f"{failure_trigger_prefix}:{type(exc).__name__}",
                 )
             raise
-        if self._macro.state == MacroState.LIVE_TRADING_MODE:
+        if self._macro.state == mode:
             self._macro.transition(
                 MacroState.READY,
                 trigger="SESSION_FEED_COMPLETE",
@@ -1622,8 +1153,7 @@ class Orchestrator:
         """CMD_STOP: any trading mode → G2.
 
         Resets the micro state machine so the next session starts from a
-        defined WAITING baseline (audit remediation — avoids stranded
-        mid-pipeline micro states after an operator halt).
+        defined WAITING baseline instead of a stranded pipeline state.
         """
         if self._macro.state in TRADING_MODES:
             self._macro.transition(MacroState.READY, trigger="CMD_STOP")
@@ -1691,14 +1221,10 @@ class Orchestrator:
             )
 
     def reset_risk_escalation(self, *, audit_token: str) -> None:
-        """Human-authorized reset of risk escalation from any intermediate level.
+        """Reset interrupted risk escalation with human authorization.
 
-        Used when _escalate_risk() was interrupted (callback exception)
-        and the risk SM is stranded at WARNING, BREACH_DETECTED, or
-        FORCED_FLATTEN while macro has recovered to DEGRADED or READY.
-
-        Invariant 11: loosening safety controls requires human
-        re-authorization — enforced via mandatory audit_token.
+        ``audit_token`` is mandatory. Resetting from ``FORCED_FLATTEN`` also
+        requires a flat book; earlier escalation levels do not.
         """
         if self._risk_escalation.state == RiskLevel.NORMAL:
             return
@@ -1706,6 +1232,15 @@ class Orchestrator:
             raise RuntimeError("Risk is LOCKED — use unlock_from_lockdown() instead")
         if self._macro.state in TRADING_MODES:
             raise RuntimeError("Cannot reset risk during active trading — halt first")
+        if self._risk_escalation.state == RiskLevel.FORCED_FLATTEN:
+            exposure = self._positions.total_exposure()
+            if exposure != Decimal("0"):
+                raise RuntimeError(
+                    f"Cannot reset risk from FORCED_FLATTEN: total exposure is "
+                    f"{exposure}, must be 0 — the emergency flatten this level "
+                    f"implies may not have completed. Close positions first, or "
+                    f"drive the SM to LOCKED and use unlock_from_lockdown() instead."
+                )
         self._risk_escalation.reset(
             trigger=f"human_risk_reset:{audit_token}",
         )
@@ -1725,16 +1260,9 @@ class Orchestrator:
         Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
         can tear down the process without a prior unlock when needed.
         """
-        # Final fill drain (Inv-9 paper/live) — picks up any broker
-        # ack that landed between the last quote and the operator's
-        # halt() so the CANCEL_REQUESTED resolution + pending-orders
-        # scan below act on the freshest order state.  Defensive
-        # ``_backend is not None`` for partially-constructed test
-        # orchestrators; production paths always have a backend.
+        # Drain late broker acknowledgements before resolving pending orders.
         if self._backend is not None:
-            # BT-8: terminate MOC orders that never received a
-            # closing-auction print so they don't survive shutdown
-            # as ACKNOWLEDGED-but-never-filled (Inv-4 hygiene).
+            # Expire MOC orders that received no closing-auction print.
             expire_moc = getattr(
                 self._backend.order_router,
                 "expire_pending_moc",
@@ -1839,7 +1367,7 @@ class Orchestrator:
         self._process_trade_inner(trade)
 
     def _process_trade_inner(self, trade: Trade) -> None:
-        """Trade-path body (split out for Phase-2 sensor wiring, C3).
+        """Process one trade through the sensor-aware path.
 
         The trade path does *not* drive the micro-state machine
         (trades are out-of-band w.r.t. the quote-driven pipeline), so
@@ -1849,24 +1377,15 @@ class Orchestrator:
         sensors and any time-bucket boundaries crossed by the trade
         timestamp are observed.
         """
-        # BT-5: detect halt-on / resume from the trade tape before the
-        # data-health gate so a halt is registered even when the symbol's
-        # quote feed is otherwise quiet.
+        # Update halt state before applying the data-health gate.
         self._update_halt_state(trade)
-        # BT-6: detect an intraday SSR trigger from the same tape.
+        # Update intraday SSR state from the trade tape.
         self._update_ssr_state(trade)
 
-        trade_block_reason = self._data_health_blocks_trading(
-            trade.symbol, trade.correlation_id
-        )
+        trade_block_reason = self._data_health_blocks_trading(trade.symbol, trade.correlation_id)
         if trade_block_reason is not None:
-            # CORRUPTED / GAP_DETECTED drop the trade entirely (bad data
-            # must not pollute sensors or the EventLog).  HALTED is a
-            # real market event: the print that triggered the halt (and
-            # any subsequent in-halt prints) must remain visible in the
-            # EventLog and on the bus for forensic provenance.  Router
-            # and scheduler forwarding are still skipped so the halted
-            # symbol generates no fills.
+            # Drop corrupt or gapped data. Halt prints remain observable, but
+            # never reach the router or scheduler.
             if (
                 self._normalizer is not None
                 and self._normalizer.health(trade.symbol) == DataHealth.HALTED
@@ -1875,9 +1394,7 @@ class Orchestrator:
                     self._event_log.append(trade)
                 self._bus.publish(trade)
             elif self._normalizer is not None:
-                # Audit DI-03: this trade never reaches EventLog, so publish
-                # enough of it to reconstruct forensically what the
-                # normalizer saw at the moment trading was blocked.
+                # Report rejected data that never reaches the event log.
                 self._publish_rejected_event_alert(
                     trade,
                     trade.correlation_id,
@@ -1897,26 +1414,21 @@ class Orchestrator:
         # micro-state walk; trade ticks just produce HorizonTicks if
         # they cross a boundary.  Sensor registry runs through the
         # bus subscription on ``self._bus.publish(trade)`` above.
-        if self._horizon_scheduler is not None:
+        #
+        # Defer until a quote has published RegimeState for this symbol
+        # (Inv-11): regime engines update only on NBBO, so a trade at
+        # RTH open that crosses boundary 0 would otherwise emit snapshots
+        # into an empty HorizonSignalEngine regime cache.  Skipping
+        # ``on_event`` (not discarding its ticks) keeps the scheduler's
+        # last-boundary cursor unadvanced so the first quote still emits.
+        if self._horizon_scheduler is not None and self._trade_path_may_emit_horizon_ticks(
+            trade.symbol
+        ):
             for tick in self._horizon_scheduler.on_event(trade):
                 self._bus.publish(tick)
 
     def _dispatch_sensor_layer(self, event: NBBOQuote, cid: str) -> None:
-        """Quote-path Phase-2 dispatch: sensors + scheduler + aggregator.
-
-        Walks the new micro-states (SENSOR_UPDATE → HORIZON_CHECK
-        → HORIZON_AGGREGATE) only when the sensor stack is wired.  The
-        sensor registry has already received the quote via its bus
-        subscription on ``self._bus.publish(quote)`` in the caller, so
-        SENSOR_UPDATE here is a bookkeeping transition; the
-        observability gain is that the micro SM exposes the explicit
-        Phase-2 stage to forensics consumers.
-
-        When the registry is empty *and* no scheduler is configured,
-        this method returns immediately and the caller transitions
-        STATE_UPDATE → FEATURE_COMPUTE directly — preserving the
-        legacy execution path bit-for-bit (Inv-A).
-        """
+        """Record sensor stages and publish horizon ticks for a quote."""
         registry_active = (
             self._sensor_registry is not None and not self._sensor_registry.is_empty()
         )
@@ -1924,9 +1436,7 @@ class Orchestrator:
         if not registry_active and not scheduler_active:
             return
 
-        # M2 → SENSOR_UPDATE.  Sensors already ran via the bus
-        # subscription; this transition is the authoritative record
-        # in the micro SM that the sensor stage completed.
+        # Sensors already ran synchronously through the bus subscription.
         self._micro.transition(
             MicroState.SENSOR_UPDATE,
             trigger="state_updated",
@@ -1947,28 +1457,13 @@ class Orchestrator:
                 self._bus.publish(tick)
 
         if ticks:
-            # HORIZON_CHECK → HORIZON_AGGREGATE.  In P2-α the
-            # aggregator does not yet exist; the transition is purely
-            # bookkeeping.  P2-β wires a real aggregator on the bus
-            # (subscribed to HorizonTick + SensorReading), so this
-            # transition window is where ``HorizonFeatureSnapshot``
-            # events will materialise.
+            # Aggregation already ran synchronously when the tick was published.
             self._micro.transition(
                 MicroState.HORIZON_AGGREGATE,
                 trigger="horizon_tick_emitted",
                 correlation_id=cid,
             )
-            # HORIZON_AGGREGATE → SIGNAL_GATE (P3-α).  Only fires when
-            # at least one SIGNAL alpha is registered with the
-            # :class:`HorizonSignalEngine`.  Without it we transition
-            # straight to FEATURE_COMPUTE through the caller's per-tick
-            # path, preserving the Phase-2 bit-identical sequence (Inv-A).
-            #
-            # The signal engine has already executed via its
-            # :class:`HorizonFeatureSnapshot` bus subscription by the
-            # time this transition fires; the SM transition is the
-            # authoritative record that the SIGNAL stage completed
-            # (mirrors the SENSOR_UPDATE bookkeeping pattern).
+            # Record SIGNAL_GATE only when a signal engine consumed the snapshot.
             if (
                 self._horizon_signal_engine is not None
                 and not self._horizon_signal_engine.is_empty
@@ -2111,9 +1606,7 @@ class Orchestrator:
             )
             expected_order_ids = {o.order_id for o in orders}
             acks = self._poll_order_router_acks(expected_order_ids)
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
 
             self._micro.transition(
                 MicroState.POSITION_UPDATE,
@@ -2158,9 +1651,7 @@ class Orchestrator:
             self._backend.order_router.submit(order)
             self._bus.publish(order)
         acks = self._poll_order_router_acks({o.order_id for o in orders})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
         self._reconcile_fills(acks, correlation_id)
 
     def _process_tick(self, quote: NBBOQuote) -> None:
@@ -2191,6 +1682,7 @@ class Orchestrator:
             self._handle_tick_failure(cid, exc)
         finally:
             self._quote_tick_in_flight = False
+            self._micro.bind_timing_sink(None)
 
     def _handle_tick_failure(self, cid: str, original: Exception) -> None:
         """Recover micro SM and degrade macro after a tick-processing failure.
@@ -2255,24 +1747,10 @@ class Orchestrator:
         cid = quote.correlation_id
         t_wall_start = time.perf_counter_ns()
         self._tick_timings: dict[str, int] = {}
+        self._micro.bind_timing_sink(self._tick_timings)
 
-        # PR-2b-iii (H1 fix): partition the inter-tick Signal buffer into
-        # *fresh* and *stale* before ``bus.publish(quote)`` triggers
-        # HorizonSignalEngine subscribers for this tick.
-        #
-        # Prior policy (unconditional clear) silently dropped trade-path
-        # Signals whose triggering horizon boundary was first crossed by a
-        # Trade event rather than a quote.  Those Signals are valid and must
-        # reach M4 on the next quote tick, provided the alpha's
-        # ``horizon_seconds`` window has not yet elapsed.
-        #
-        # Staleness rules (evaluated against this quote's timestamp_ns):
-        #   • sequence not marked carry-over          → STALE (quote-path
-        #     leftovers / M4 republish rows must never leak forward)
-        #   • horizon_seconds > 0 and age > horizon  → STALE (evict + trace)
-        #   • horizon_seconds == 0 (non-horizon)      → STALE (no carry-over
-        #     guarantee; preserves historical behaviour for legacy producers)
-        #   • carry-over + horizon_seconds > 0 and age ≤ horizon  → FRESH
+        # Carry inter-quote signals to the next quote only while their horizon is
+        # live. Quote-path leftovers and horizon-zero signals expire immediately.
         if self._signal_buffer:
             _now_ns = quote.timestamp_ns
             fresh: list[Signal] = []
@@ -2303,7 +1781,7 @@ class Orchestrator:
             self._signal_buffer.extend(fresh)
         self._tick_quote_for_trace = None
 
-        # ── Kill switch gate (W-2) ─────────────────────────────
+        # Kill switch gate.
         if self._kill_switch is not None and self._kill_switch.is_active:
             if self._macro.state in TRADING_MODES:
                 if self._macro.can_transition(MacroState.DEGRADED):
@@ -2325,23 +1803,15 @@ class Orchestrator:
             )
             return
 
-        # ── Runtime data integrity check (W-6) ─────────────────
+        # Runtime data integrity check.
         quote_block_reason = self._data_health_blocks_trading(quote.symbol, cid)
         if quote_block_reason is not None:
-            # Audit DI-03: unlike the trade path, quotes have no HALTED
-            # carve-out — every block reason drops the quote before M1/
-            # EventLog.append, so publish enough of it to reconstruct
-            # forensically what the normalizer saw.
+            # Report rejected quotes because none reach the event log.
             if self._normalizer is not None:
                 self._publish_rejected_event_alert(quote, cid, quote_block_reason)
             return
 
-        # ── BT-5: LULD halt gate ───────────────────────────────
-        # While a symbol is halted there are no fills (entry or exit):
-        # skip the quote entirely so the router never sees ``on_quote``
-        # (no resting/deferred fills) and the mark freezes at its last
-        # value (existing positions are held).  Resting passive orders
-        # were cancelled at halt-on (see ``_update_halt_state``).
+        # Halted symbols neither mark nor fill.
         if quote.symbol in self._halted_symbols:
             return
 
@@ -2356,34 +1826,23 @@ class Orchestrator:
         if self._signal_order_trace_sink is not None:
             self._tick_quote_for_trace = quote
             self._last_quote_context_for_signal_trace = quote
+        # Sensor fan-out (+ router on_quote) runs synchronously inside
+        # publish; time the call for hot-path attribution.
+        t_pub = time.perf_counter_ns()
         self._bus.publish(quote)
+        self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
 
-        # ── Mark-to-market feed ─────────────────────────────────
-        # Push the latest mid to both the aggregate and per-strategy
-        # position books so ``total_exposure`` and ``unrealized_pnl``
-        # reflect live prices, not cost basis.  The risk engine uses
-        # these for the gross-exposure cap and drawdown guard.
+        # Mark aggregate and strategy books for exposure and drawdown checks.
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
-            # Audit F-H-03: pass BBO so unrealized PnL marks at the
-            # realistic liquidation price (bid for longs, ask for
-            # shorts) rather than mid.  The drawdown guard reads
-            # unrealized PnL, so this removes a half-spread × |qty|
-            # optimistic bias that delayed the gate.
+            # Mark liquidation at bid for longs and ask for shorts.
             self._positions.update_mark(
                 quote.symbol,
                 mid,
                 bid=quote.bid,
                 ask=quote.ask,
             )
-            # Advance the risk engine's drawdown high-water mark from
-            # the freshly updated marks so peak equity reflects open
-            # appreciation between order checks.  Without this, the HWM
-            # only ratchets when ``check_signal`` / ``check_order`` run,
-            # which biases drawdown verdicts to be order-arrival
-            # dependent (BasicRiskEngine.refresh_high_water_mark).  The
-            # capability is optional on the ``RiskEngine`` protocol so
-            # legacy stubs without the hook are silently skipped.
+            # Refresh peak equity on every mark; minimal test doubles may omit the hook.
             refresh_hwm = getattr(
                 self._risk_engine,
                 "refresh_high_water_mark",
@@ -2398,20 +1857,10 @@ class Orchestrator:
                     bid=quote.bid,
                     ask=quote.ask,
                 )
-        # BT-16: drive the RTH-close buying-power flip purely from the
-        # quote's exchange timestamp so it always aligns with router-side
-        # entry gating, even on ticks that fail the mid guard (zeroed or
-        # invalid BBO).  Otherwise the engine could remain on intraday
-        # buying power past the close while the router already treats
-        # the session as closed — inconsistent risk vs execution.
+        # Use exchange time so risk and routing cross the RTH close together.
         self._maybe_flip_buying_power_at_rth_close(quote)
 
-        # ── Quote-driven router ack drain ────────────────────────
-        # bus.publish(quote) triggered on_quote() on the router, which
-        # may emit fills/cancels for resting limits (passive entries)
-        # or deferred aggressive / MARKET acks when ``latency_ns > 0``
-        # (market-mode BacktestOrderRouter).  Drain pending router acks
-        # before evaluating signals so the position store is current.
+        # Reconcile quote-triggered fills and cancels before evaluating signals.
         self._reconcile_resting_fills(cid)
 
         # ── M1 → M2: STATE_UPDATE ──────────────────────────────
@@ -2422,25 +1871,12 @@ class Orchestrator:
         )
         self._update_regime(quote, cid)
 
-        # ── (P2-α) Optional sensor + scheduler pass ────────────
-        # ``_dispatch_sensor_layer`` is a no-op when no sensor
-        # registry / scheduler is configured (Inv-A: legacy path is
-        # bit-identical).  When configured it walks the new
-        # SENSOR_UPDATE → HORIZON_CHECK [ → HORIZON_AGGREGATE ]
-        # micro-states and publishes any HorizonTick events emitted
-        # by the scheduler.
+        # Optional sensor and horizon stages.
         self._dispatch_sensor_layer(quote, cid)
         self._maybe_transition_cross_sectional_bookend(cid)
         self._flush_pending_sized_intents(correlation_id=cid)
 
-        # ── M2 (or HORIZON_*) → M3: FEATURE_COMPUTE ────────────
-        # Workstream D.2 PR-2b-iv: legacy ``feature_engine`` is gone.
-        # The micro-SM still visits M3 to preserve the legal path
-        # FEATURE_COMPUTE → SIGNAL_EVALUATE → LOG_AND_METRICS, but the
-        # body is now empty — Phase-3 SIGNAL/PORTFOLIO outputs are
-        # produced via the bus-driven ``HorizonAggregator`` →
-        # ``HorizonSignalEngine`` → ``CompositionEngine`` chain attached
-        # upstream of the orchestrator (see ``_dispatch_sensor_layer``).
+        # FEATURE_COMPUTE is a state-machine bookend; bus subscribers did the work.
         self._micro.transition(
             MicroState.FEATURE_COMPUTE,
             trigger="state_updated",
@@ -2454,22 +1890,8 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        # Workstream D.2 PR-2b-iv: the legacy ``signal_engine`` ctor
-        # scaffolding is gone; the per-tick risk → order → fill walk is
-        # now driven exclusively by the PR-2b-iii bus-driven Signal
-        # subscriber.  ``HorizonSignalEngine`` publishes
-        # ``Signal(layer="SIGNAL")`` events as a side-effect of
-        # ``bus.publish(quote)`` at M1 (synchronous bus dispatch);
-        # ``_on_bus_signal`` buffers them after filtering out
-        # PORTFOLIO-consumed alphas (those flow through
-        # ``CompositionEngine`` and emerge as ``SizedPositionIntent``,
-        # not ``OrderRequest``, handled by ``_on_bus_sized_intent``).
-        #
-        # The micro SM only supports one Signal-driven walk per tick;
-        # the standalone-SIGNAL case resolves multiple buffered Signals
-        # via :class:`~feelies.alpha.arbitration.EdgeWeightedArbitrator`
-        # (injectable ``signal_arbitrator`` ctor param).  Stop-loss exits
-        # computed inline by ``_check_stop_exit`` always override (Inv-11:
+        # Select one standalone signal for the single M4 order walk. PORTFOLIO
+        # inputs execute through SizedPositionIntent, while forced exits override.
         # position safety beats alpha conviction).
         buf_snapshot = list(self._signal_buffer)
         signal: Signal | None = None
@@ -2485,17 +1907,14 @@ class Orchestrator:
             signal,
             stop_signal,
         )
-        # G-5 N1: maintain the standing-target book from this tick's alpha
-        # signals and shadow-record where the net disagrees with the winner.
+        # Update standing targets and record winner-versus-net divergence.
         self._record_net_shadow(buf_snapshot, signal, quote)
         if buf_snapshot:
             for buffered in buf_snapshot:
                 self._carryover_signal_sequences.discard(buffered.sequence)
             self._signal_buffer.clear()
 
-        # G-6: flat-by-close overrides alpha conviction (an open book is
-        # unwound at the session boundary); an inline stop still wins the
-        # tie — both flatten, so the order is immaterial.
+        # Flat-by-close overrides alpha conviction; a simultaneous stop also flattens.
         session_flat_signal = self._check_session_flat(quote)
         if session_flat_signal is not None:
             signal = session_flat_signal
@@ -2504,21 +1923,10 @@ class Orchestrator:
             signal = stop_signal
 
         if signal is None:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="no_signal_this_tick",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "no_signal_this_tick")
             return
 
-        # Inv-7 single-writer: only synthetic forced-exit signals are first
-        # published here.  ``_check_stop_exit`` / ``_check_session_flat`` compute
-        # ``__stop_exit__`` / ``__session_flat__`` Signals inline and never reach
-        # the bus otherwise.  A bus-arbitrated standalone winner was already
-        # published by ``HorizonSignalEngine`` (the sole writer of alpha
-        # Signals); re-publishing it here would double-count it on the Signal
-        # stream for every subscriber (UniverseSynchronizer, forensics).
+        # Alpha signals are already published upstream; publish only synthetic exits here.
         if signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
             self._bus.publish(signal)
 
@@ -2527,24 +1935,14 @@ class Orchestrator:
         self._record_size_shadow(signal, quote)
 
         # ── Decision: Signal × Position → OrderIntent ──────────────────
-        # Legacy path: the intent translator.  G-1 flip: when driving, the
-        # planner decides and the plan is projected back onto an OrderIntent
-        # so the existing execution machinery runs unchanged.
+        # Use the planner when driving; otherwise translate the signal directly.
         current_position = self._positions.get(signal.symbol)
-        # P4: the planner's execution style for a single-leg reduce (TRIM)
-        # overrides the builder's default routing when driving.  Only the
-        # discretionary TRIM is honored here; every other leg keeps the
-        # existing passive/market logic (None == no override).
+        # Only discretionary trims override the builder's execution style.
         exec_style_override: ExecStyle | None = None
         if self._position_manager is not None and self._position_manager_drive:
-            # G-5 N2: when portfolio netting is enabled, the budget-weighted
-            # net target for the symbol drives the decision (the winner only
-            # selects which symbol to act on); otherwise the winner's own
-            # target drives it (byte-identical to the pre-N2 flip).
-            # Inv-11: synthetic forced-market-exit signals (stop-loss,
-            # session flatten) must always unwind to FLAT regardless of
-            # the standing alpha net — position safety beats alpha
-            # conviction, so netting is bypassed for those strategies.
+            # With portfolio netting, the winner selects the symbol and the
+            # budget-weighted net target selects its position.
+            # Forced exits bypass alpha netting and always target flat.
             decision_signal = signal
             if (
                 self._enable_portfolio_netting
@@ -2585,9 +1983,7 @@ class Orchestrator:
                 current_position,
                 target_qty,
             )
-            # Phase P1: shadow the legacy decision and record divergence.
-            # Pure observation — never touches orders/bus/journal/parity
-            # (no-op unless both manager + sink are wired).
+            # Shadow planning is observational and does not affect execution.
             self._record_position_manager_shadow(
                 signal,
                 current_position,
@@ -2611,12 +2007,7 @@ class Orchestrator:
                 reasons=tuple(reasons_no),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="intent_no_action",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "intent_no_action")
             return
 
         # ── M4 → M5: RISK_CHECK ────────────────────────────────
@@ -2630,10 +2021,17 @@ class Orchestrator:
         self._tick_timings["risk_check_ns"] = time.perf_counter_ns() - t0
         self._bus.publish(verdict)
 
+        # Shared exposure and drawdown checks cannot block reductions. Preserve a
+        # reachable FORCE_FLATTEN because lockdown performs the uniform close.
+        is_reducing_intent = intent.intent == TradingIntent.EXIT
+        preserves_escalation = verdict.action == RiskAction.FORCE_FLATTEN and (
+            self._macro.can_transition(MacroState.RISK_LOCKDOWN)
+        )
+        if is_reducing_intent and verdict.action != RiskAction.ALLOW and not preserves_escalation:
+            verdict = replace(verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
+
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
-        # Macro RISK_LOCKDOWN exists only from PAPER/LIVE (`macro.py`).
-        # BACKTEST_MODE cannot transition there — `can_transition` is false
-        # and we simulate flatten without global lockdown (replay parity).
+        # Backtests simulate flatten because RISK_LOCKDOWN exists only in PAPER/LIVE.
         if verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
                 self._append_signal_order_trace(
@@ -2662,12 +2060,7 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="risk_force_flatten_simulated",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "risk_force_flatten_simulated")
             return
 
         # ── M5 branch: risk rejected → M10 ─────────────────────
@@ -2679,12 +2072,7 @@ class Orchestrator:
                 reasons=("risk_check_signal_reject", verdict.reason),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="risk_reject_no_order",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "risk_reject_no_order")
             return
 
         # ── M5 → M6: risk pass, order warranted ────────────────
@@ -2700,10 +2088,7 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        # BT-5: post-halt resolution blackout — suppress new ENTRY-opening
-        # orders for ``halt_resolution_blackout_seconds`` after a resume so
-        # the reopening-auction print can stabilize.  Exits (and NO_ACTION)
-        # are always permitted — an existing position may always unwind.
+        # Block new entries after a halt; exits remain available.
         if intent.intent in _ENTRY_OPENING_INTENTS and self._in_halt_blackout(
             intent.symbol, quote.timestamp_ns
         ):
@@ -2717,17 +2102,10 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="halt_resolution_blackout",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "halt_resolution_blackout")
             return
 
-        # G-6: inside the session-flatten window, refuse any new ENTRY-
-        # opening order so the book stays flat into the close.  Exits and
-        # the flat-by-close unwind itself are unaffected (Inv-11).
+        # Refuse new entries inside the session-flatten window.
         if intent.intent in _ENTRY_OPENING_INTENTS and self._in_session_flatten_window(quote):
             self._append_signal_order_trace(
                 quote,
@@ -2739,18 +2117,10 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="session_flatten_window",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "session_flatten_window")
             return
 
-        # BT-6: Reg-SHO / SSR conservative refuse-short.  Under an active
-        # short-sale restriction, an order that opens or increases SHORT
-        # exposure (a short sale) is refused; the entry retries next horizon
-        # boundary.  Buys, covers, and long-side exits are unaffected.
+        # Under SSR, refuse new short exposure but permit buys and covers.
         if self._ssr_blocks_intent(intent):
             self._emit_ssr_suppression_alert(intent, cid)
             self._append_signal_order_trace(
@@ -2760,17 +2130,10 @@ class Orchestrator:
                 reasons=("ssr_suppressed", f"symbol={intent.symbol}"),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="ssr_suppressed",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "ssr_suppressed")
             return
 
-        # BT-7: short-locate gate — refuse short sales when borrow is
-        # unavailable.  ``hard`` tier still fills but routes HTB fees via
-        # ``OrderRequest.is_short``; ``available`` short entries omit HTB.
+        # Reject unavailable locates; hard-to-borrow entries carry fees.
         if self._borrow_blocks_intent(intent):
             self._emit_locate_unavailable_alert(intent, cid)
             self._append_signal_order_trace(
@@ -2780,17 +2143,10 @@ class Orchestrator:
                 reasons=("locate_unavailable", f"symbol={intent.symbol}"),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="locate_unavailable",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "locate_unavailable")
             return
 
-        # H2/H3/H7: REVERSE intents decompose into EXIT(MARKET) +
-        # ENTRY(LIMIT) — aggressive close guarantees fill, passive
-        # entry saves spread.
+        # Reversals close at market before opening through the entry policy.
         if intent.intent in (
             TradingIntent.REVERSE_LONG_TO_SHORT,
             TradingIntent.REVERSE_SHORT_TO_LONG,
@@ -2816,17 +2172,23 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="risk_scale_down_to_zero",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "risk_scale_down_to_zero")
             return
 
         # ── M6: Pre-submission risk check on concrete order ─────
         order_verdict = self._risk_engine.check_order(order, self._positions)
         self._bus.publish(order_verdict)
+
+        # Apply the same reduction carve-out to the concrete-order check.
+        order_preserves_escalation = order_verdict.action == RiskAction.FORCE_FLATTEN and (
+            self._macro.can_transition(MacroState.RISK_LOCKDOWN)
+        )
+        if (
+            intent.intent == TradingIntent.EXIT
+            and order_verdict.action != RiskAction.ALLOW
+            and not order_preserves_escalation
+        ):
+            order_verdict = replace(order_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
 
         if order_verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
@@ -2856,12 +2218,7 @@ class Orchestrator:
                 ),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="check_order_force_flatten_simulated",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "check_order_force_flatten_simulated")
             return
 
         if order_verdict.action == RiskAction.REJECT:
@@ -2872,19 +2229,15 @@ class Orchestrator:
                 reasons=("risk_check_order_reject", order_verdict.reason),
                 trading_intent=intent.intent.name,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger=f"check_order_rejected:{order_verdict.reason}",
-                correlation_id=cid,
+            self._finalize_tick(
+                t_wall_start,
+                cid,
+                f"check_order_rejected:{order_verdict.reason}",
             )
-            self._finalize_tick(t_wall_start, cid)
             return
 
         if order_verdict.action == RiskAction.SCALE_DOWN:
-            # H2: ``check_signal`` and ``check_order`` can both emit
-            # ``SCALE_DOWN``.  Compose them as the tightest cap on the
-            # original target quantity, rather than multiplying an
-            # already-scaled order and shrinking it twice.
+            # Compose both scale decisions against the original target.
             scaled_qty = self._compose_scaled_quantity(
                 intent.target_quantity,
                 verdict.scaling_factor,
@@ -2901,12 +2254,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="check_order_scale_down_to_zero",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
+                self._finalize_tick(t_wall_start, cid, "check_order_scale_down_to_zero")
                 return
             if scaled_qty != order.quantity:
                 order = replace(order, quantity=scaled_qty)
@@ -2921,29 +2269,11 @@ class Orchestrator:
                 f"Fail-safe: aborting order path."
             )
 
-        # ── Guard: suppress duplicate orders while a resting order
-        #    exists.  EXIT is allowed to race in only when no identical
-        #    exit is already pending, which prevents stop-exit pile-ups
-        #    from overshooting the book.  REVERSE intents handled by
-        #    _execute_reverse() and never reach this guard.
-        #
-        # The ``_use_passive_entries`` clause was removed because
-        # broker fills in PAPER / LIVE mode arrive asynchronously
-        # regardless of execution_mode.  A pending IB ack on the
-        # same symbol must block a duplicate SIGNAL submit; the
-        # ``__stop_exit__`` / ``TradingIntent.EXIT`` carve-out
-        # preserves Inv-11 (exits always race in).
+        # Suppress duplicates while an order is pending. Forced exits may
+        # supersede passive orders; reversals use their own path.
         if self._has_pending_order_for_symbol(order.symbol):
-            # Inv-11: a forced MARKET exit (hard stop / session flatten) must
-            # never be subordinated to a stale passive order.  A gate-OFF FLAT
-            # cover posted as a resting LIMIT can sit unfilled while the market
-            # runs through the stop; the old guard treated that resting cover
-            # as a "pending exit" and suppressed the stop until the passive
-            # order expired (docs/audits/app_backtest_sig_benign_2026-06-01_investigation.md).
-            # Mirror the REVERSE path: cancel the resting orders so the
-            # aggressive close can cross immediately.  A forced exit already
-            # in flight is left untouched so we never pile a second aggressive
-            # leg on the book (overshoot guard).
+            # A forced market exit supersedes resting passive orders. Keep an
+            # existing forced exit to avoid sending a second aggressive leg.
             if intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
                 if self._has_pending_forced_exit_for_symbol(order.symbol):
                     self._append_signal_order_trace(
@@ -2956,12 +2286,7 @@ class Orchestrator:
                         ),
                         trading_intent=intent.intent.name,
                     )
-                    self._micro.transition(
-                        MicroState.LOG_AND_METRICS,
-                        trigger="resting_order_pending",
-                        correlation_id=cid,
-                    )
-                    self._finalize_tick(t_wall_start, cid)
+                    self._finalize_tick(t_wall_start, cid, "resting_order_pending")
                     return
                 self._emit_forced_exit_supersedes_pending_alert(order, cid)
                 self._cancel_resting_for_symbol(order.symbol, cid)
@@ -2978,12 +2303,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="resting_order_pending",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
+                self._finalize_tick(t_wall_start, cid, "resting_order_pending")
                 return
 
         # ── Track order lifecycle (Inv-4) ───────────────────────
@@ -2993,8 +2313,7 @@ class Orchestrator:
             order,
             trading_intent=intent.intent.name,
         )
-        # P4b: a passive working reduction (e.g. an urgency-driven TRIM)
-        # gets a MARKET fallback if its resting order terminates unfilled.
+        # Passive reductions fall back to market if they terminate unfilled.
         if exec_style_override is ExecStyle.PASSIVE and order.order_type is OrderType.LIMIT:
             self._working_exit_fallback[order.order_id] = (
                 order.symbol,
@@ -3008,24 +2327,16 @@ class Orchestrator:
             trigger="order_constructed",
             correlation_id=cid,
         )
-        self._transition_order(
-            order.order_id,
-            OrderState.SUBMITTED,
-            "submitted",
-            correlation_id=cid,
-        )
-        try:
-            self._backend.order_router.submit(order)
-        except Exception as exc:
-            self._reject_order_after_submit_failure(order, exc)
+        submit_error = self._submit_tracked_order(order)
+        if submit_error is not None:
             self._append_signal_order_trace(
                 quote,
                 signal,
                 outcome="NO_ORDER",
                 reasons=(
                     "order_router_submit_raised",
-                    type(exc).__name__,
-                    repr(exc),
+                    type(submit_error).__name__,
+                    repr(submit_error),
                 ),
                 trading_intent=intent.intent.name,
             )
@@ -3039,12 +2350,7 @@ class Orchestrator:
                 trigger="order_submit_failed_no_fills",
                 correlation_id=cid,
             )
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="order_submit_failed",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "order_submit_failed")
             return
 
         self._bus.publish(order)
@@ -3067,9 +2373,7 @@ class Orchestrator:
             correlation_id=cid,
         )
         acks = self._poll_order_router_acks({order.order_id})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
 
         # ── M8 → M9: POSITION_UPDATE ───────────────────────────
         self._micro.transition(
@@ -3080,17 +2384,22 @@ class Orchestrator:
         self._reconcile_fills(acks, cid)
 
         # ── M9 → M10: LOG_AND_METRICS ──────────────────────────
-        self._micro.transition(
-            MicroState.LOG_AND_METRICS,
-            trigger="position_updated",
-            correlation_id=cid,
-        )
-        self._finalize_tick(t_wall_start, cid)
+        self._finalize_tick(t_wall_start, cid, "position_updated")
 
     # ── Helpers ─────────────────────────────────────────────────────
 
-    def _finalize_tick(self, t_wall_start_ns: int, correlation_id: str) -> None:
-        """Emit tick latency and per-segment timing metrics, then M10 → M0."""
+    def _finalize_tick(
+        self,
+        t_wall_start_ns: int,
+        correlation_id: str,
+        trigger: str,
+    ) -> None:
+        """Enter M10, emit tick timing metrics, then transition to M0."""
+        self._micro.transition(
+            MicroState.LOG_AND_METRICS,
+            trigger=trigger,
+            correlation_id=correlation_id,
+        )
         latency_ns = time.perf_counter_ns() - t_wall_start_ns
         now_ns = self._clock.now_ns()
 
@@ -3113,8 +2422,23 @@ class Orchestrator:
             )
         )
 
+        # Record always-on timers directly so they cannot shift kernel event IDs.
+        _attribution_timing_keys = frozenset({"sensor_fanout_ns", "sm_transition_ns"})
         timings = getattr(self, "_tick_timings", {})
         for name, value in timings.items():
+            if name in _attribution_timing_keys:
+                self._metrics.record(
+                    MetricEvent(
+                        timestamp_ns=now_ns,
+                        correlation_id=correlation_id,
+                        sequence=0,
+                        layer="kernel",
+                        name=name,
+                        value=float(value),
+                        metric_type=MetricType.HISTOGRAM,
+                    )
+                )
+                continue
             self._bus.publish(
                 MetricEvent(
                     timestamp_ns=now_ns,
@@ -3178,12 +2502,7 @@ class Orchestrator:
         correlation_id: str,
         detail: str,
     ) -> bool:
-        """Return True when B4 edge estimate clears model round-trip cost.
-
-        Delegates the edge-vs-cost arithmetic to the planner module's
-        ``entry_edge_clears_cost`` (G-1 P2 single source of truth); this
-        method owns only the no-op fast path and the suppression alert.
-        """
+        """Return whether calibrated edge clears modeled round-trip cost."""
         if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
             return True
         rt_cost_bps = self._round_trip_cost_bps(
@@ -3194,9 +2513,7 @@ class Orchestrator:
             is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
         )
-        # Close-the-loop (gate): trade on the realization-calibrated edge,
-        # not the raw disclosed estimate.  factor defaults to 1.0 (no
-        # calibration -> unchanged, parity-preserving).
+        # Gate on realization-calibrated edge; missing factors default to one.
         factor = self._edge_calibration_factors.get(signal.strategy_id, 1.0)
         effective_edge_bps = signal.edge_estimate_bps * factor
         if entry_edge_clears_cost(
@@ -3230,13 +2547,7 @@ class Orchestrator:
         is_taker_entry: bool,
         is_short_entry: bool,
     ) -> float:
-        """Model round-trip (entry + taker exit) cost in bps for one leg.
-
-        Thin wrapper over the planner module's ``round_trip_cost_bps``
-        (G-1 P2 single source of truth): resolves the quote → mid/spread
-        and the impact knobs from config.  Callers guarantee
-        ``self._cost_model is not None`` before invoking.
-        """
+        """Model entry plus taker-exit cost using current quote and impact settings."""
         assert self._cost_model is not None
         return round_trip_cost_bps(
             self._cost_model,
@@ -3249,50 +2560,10 @@ class Orchestrator:
             is_short_entry=is_short_entry,
             bid_size=quote.bid_size,
             ask_size=quote.ask_size,
-            market_impact_factor=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_market_impact_factor",
-                        0.5,
-                    )
-                )
-            )
-            if self._config
-            else None,
-            max_impact_half_spreads=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_max_impact_half_spreads",
-                        10.0,
-                    )
-                )
-            )
-            if self._config
-            else None,
-            within_l1_impact_factor=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_within_l1_impact_factor",
-                        0.0,
-                    )
-                )
-            )
-            if self._config
-            else Decimal("0"),
-            permanent_impact_coefficient=Decimal(
-                str(
-                    getattr(
-                        self._config,
-                        "cost_permanent_impact_coefficient",
-                        0.0,
-                    )
-                )
-            )
-            if self._config
-            else Decimal("0"),
+            market_impact_factor=self._market_context.market_impact_factor,
+            max_impact_half_spreads=self._market_context.max_impact_half_spreads,
+            within_l1_impact_factor=self._market_context.within_l1_impact_factor,
+            permanent_impact_coefficient=(self._market_context.permanent_impact_coefficient),
         )
 
     def _reversal_passes_combined_edge_gate(
@@ -3307,29 +2578,10 @@ class Orchestrator:
         quote: NBBOQuote,
         is_short_entry: bool,
     ) -> tuple[float, float, bool]:
-        """B5 reversal edge guard — price the cost of flipping the book.
-
-        A reversal first *crystallises* the existing opposite position
-        (exit leg) before re-establishing the new direction (entry leg).
-        That zero-crossing cost is paid immediately and is independent of
-        the new signal's edge.  The guard asks whether the raw signal edge
-        on the new direction clears the combined round-trip cost of both
-        legs::
-
-            edge_estimate_bps
-                > (exit_roundtrip_cost_bps + entry_roundtrip_cost_bps)
-                  * reversal_min_edge_cost_multiplier
-
-        Returns ``(combined_cost_bps, required_bps, passes)``.  The guard is
-        a no-op (returns ``(0.0, 0.0, True)``) when the multiplier is 0 or
-        when no cost model is wired — fail-safe: an unknown cost model
-        disables the guard rather than crashing or blocking the flip.
-        """
+        """Return whether reversal edge clears the combined exit and entry cost."""
         if self._reversal_min_edge_cost_multiplier <= 0 or self._cost_model is None:
             return 0.0, 0.0, True
-        # Exit leg: aggressive MARKET close of the existing position (taker,
-        # never a short — closing a long is a plain sell, covering a short
-        # is a plain buy).
+        # The aggressive close is a taker but never a new short.
         exit_roundtrip_cost_bps = self._round_trip_cost_bps(
             symbol=symbol,
             entry_side=exit_side,
@@ -3338,8 +2590,7 @@ class Orchestrator:
             is_taker_entry=True,
             is_short_entry=False,
         )
-        # Entry leg: same side as the exit (both close-then-open in the new
-        # direction); taker assumption mirrors the B4 entry gate.
+        # Price the new-direction entry on the same basis as the entry gate.
         entry_roundtrip_cost_bps = self._round_trip_cost_bps(
             symbol=symbol,
             entry_side=entry_side,
@@ -3348,7 +2599,6 @@ class Orchestrator:
             is_taker_entry=(not self._use_passive_entries or self._min_cost_policy is not None),
             is_short_entry=is_short_entry,
         )
-        # G-1 P2: combine via the planner module's single-source-of-truth gate.
         return reversal_edge_gate(
             edge_bps=edge_estimate_bps,
             exit_cost_bps=exit_roundtrip_cost_bps,
@@ -3357,24 +2607,11 @@ class Orchestrator:
         )
 
     def _calibrate_regime_engine(self) -> None:
-        """Calibrate regime emission parameters from a *prefix* of the log.
+        """Calibrate emissions from a bounded replay prefix.
 
-        Full-event-log calibration leaks future spread statistics into
-        boot-time parameters.  When ``regime_calibration_max_quotes`` is
-        ``None`` (platform default), calibration from the trading log is
-        skipped entirely — use explicit positive integers for a causal
-        warmup prefix only.
-
-        Audit P2-4 — residual within-prefix lookahead: emissions are fit
-        once from the first ``max_q`` quotes, then the live run *re-replays*
-        that same prefix.  Posteriors for ticks early in the prefix are
-        therefore computed with emission moments estimated from later (but
-        still prefix-bounded) ticks — a soft Inv-6 wrinkle confined to the
-        warm-up window.  It does not affect Inv-5 (the fit is a pure,
-        deterministic function of the prefix, so replay is bit-identical),
-        and emission moments are slowly varying so the effect on the warm-up
-        posteriors is small.  Strict causal calibration would fit on a
-        held-out prior session and is left as a follow-up (audit P2-5).
+        The run replays its calibration prefix, so early prefix posteriors use
+        moments estimated from later prefix quotes. A prior-session fit is needed
+        when strict causal warm-up behavior matters.
         """
         if self._regime_engine is None:
             return
@@ -3386,12 +2623,7 @@ class Orchestrator:
 
         max_q = self._regime_calibration_max_quotes
         if max_q is None:
-            # Uncalibrated regime engines fall through to placeholder
-            # emission params that barely discriminate ``compression``
-            # vs ``normal`` vs ``vol_breakout``, silently making every
-            # ``P(<state>)`` gate near-equal.  Emit a CRITICAL alert so
-            # operators see this on the bus instead of buried in a log
-            # line (matches the calibrate-fail path below).
+            # Placeholder emissions cannot support regime-gated entries.
             logger.warning(
                 "Regime calibration skipped — regime_calibration_max_quotes "
                 "is unset.  Engine will run with placeholder emission "
@@ -3406,11 +2638,7 @@ class Orchestrator:
                     timestamp_ns=self._clock.now_ns(),
                     correlation_id="regime_calibration",
                     sequence=self._seq.next(),
-                    # Audit P0-1: escalated WARNING -> CRITICAL.  Running on
-                    # placeholder emissions silently disables the entire
-                    # regime-gated SIGNAL book (gates fail safe to OFF), which
-                    # is an availability incident operators must see, not a
-                    # soft warning buried in the log.
+                    # Uncalibrated emissions disable the regime-gated book.
                     severity=AlertSeverity.CRITICAL,
                     layer="kernel",
                     alert_name="regime_calibration_unset",
@@ -3517,11 +2745,7 @@ class Orchestrator:
             if self._regime_engine_registry_name is not None
             else type(self._regime_engine).__name__
         )
-        # Audit R-1: prefer the per-symbol min pairwise emission separation
-        # when the engine exposes it (per-symbol calibrated emissions can
-        # collapse independently of the pooled fit, so a global ``d`` would
-        # falsely keep gates ON for a tight symbol).  Fall back to the pooled
-        # property for legacy / custom engines that only expose that.
+        # Prefer per-symbol separation because one symbol can collapse independently.
         discriminability_for_symbol = getattr(
             self._regime_engine, "discriminability_for_symbol", None
         )
@@ -3542,25 +2766,32 @@ class Orchestrator:
             if dominant_idx < len(state_names)
             else "unknown",
             posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
-            # Audit P0-1: surface calibration status so the regime gate can
-            # fail safe to OFF on placeholder emissions (Inv-11).  Engines
-            # that do not expose ``calibrated`` are assumed calibrated
-            # (legacy / custom engines opt out of the disable behavior).
+            # Engines without a calibration flag opt out of the fail-closed gate.
             calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
-            # Audit R-1: surface the engine's calibration-time emission
-            # separation so the gate can fail safe to OFF when the states are
-            # indiscriminate (degenerate calibration).  +inf for engines that
-            # do not expose it (always treated as fully discriminative).
+            # Missing separation defaults to fully discriminative.
             discriminability=d_value,
         )
         self._bus.publish(regime_state)
+        self._regime_bus_published_symbols.add(quote.symbol)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)
+
+    def _trade_path_may_emit_horizon_ticks(self, symbol: str) -> bool:
+        """Whether trade-path HorizonTicks are safe to emit for *symbol*.
+
+        When no regime engine is configured, ticks are always allowed
+        (gates that need ``P(...)`` are not wired).  Otherwise require
+        at least one bus-published :class:`RegimeState` for *symbol*
+        this session so ``HorizonSignalEngine`` can bind posteriors.
+        """
+        if self._regime_engine is None:
+            return True
+        return symbol in self._regime_bus_published_symbols
 
     def _reset_regime_session_state(self) -> None:
         """Clear hazard-detection state that must not span sessions.
 
         Called from every ``run_*`` entry point alongside ``_micro.reset``.
-        Two structures are cleared:
+        Three structures are cleared:
 
         * ``self._last_regime_state`` — the prev-pointer dict feeding
           :class:`RegimeHazardDetector`.  Without this clear, a
@@ -3573,12 +2804,16 @@ class Orchestrator:
           session N-1 would silence legitimate spikes early in
           session N for the same ``(symbol, engine_name,
           departing_state)`` triple.
+        * ``self._regime_bus_published_symbols`` — forces trade-path
+          HorizonTicks to wait for a fresh quote-driven ``RegimeState``
+          publish in the new session (see ``_process_trade_inner``).
 
         The :class:`RegimeEngine` itself is intentionally NOT reset:
         its per-symbol HMM posterior is the carry-over we want
         (boot-time calibration is the only place that wipes it).
         """
         self._last_regime_state.clear()
+        self._regime_bus_published_symbols.clear()
         if self._regime_hazard_detector is not None:
             self._regime_hazard_detector.reset()
 
@@ -3587,14 +2822,7 @@ class Orchestrator:
         regime_state: RegimeState,
         correlation_id: str,
     ) -> None:
-        """Detect and publish a RegimeHazardSpike if the detector is wired.
-
-        Pure function of two consecutive RegimeState events from the
-        same (symbol, engine_name) channel (§20.3.1, §20.7.3).
-        Sequence numbers are drawn from the dedicated _hazard_seq
-        generator so enabling hazard exits never perturbs LEGACY or
-        SIGNAL parity hashes (Inv-A / C1).
-        """
+        """Publish a hazard spike from consecutive states on one channel."""
         if self._regime_hazard_detector is None:
             return
         key = (regime_state.symbol, regime_state.engine_name)
@@ -3734,32 +2962,23 @@ class Orchestrator:
                 order_type=OrderType.MARKET,
                 quantity=qty,
                 strategy_id="emergency_flatten",
-                # P1 (position-mgmt audit 2026-06-20): classify the lockdown
-                # flatten for panic slippage / depth depletion in the fill
-                # model (``STOP_EXIT_REASONS``).
+                # Price lockdown fills with panic slippage and depleted depth.
                 reason="FORCE_FLATTEN",
             )
 
             try:
                 self._track_order(order_id, side, order)
-                self._transition_order(
-                    order_id,
-                    OrderState.SUBMITTED,
-                    "emergency_flatten",
-                    correlation_id=correlation_id,
+                submit_exc = self._submit_tracked_order(
+                    order,
+                    trigger="emergency_flatten",
                 )
-                try:
-                    self._backend.order_router.submit(order)
-                except Exception as submit_exc:
+                if submit_exc is not None:
                     failures[symbol] = f"submit_exception: {submit_exc!r}"
-                    self._reject_order_after_submit_failure(order, submit_exc)
                     continue
 
                 self._bus.publish(order)
                 acks = self._poll_order_router_acks({order_id})
-                for ack in acks:
-                    self._bus.publish(ack)
-                    self._apply_ack_to_order(ack)
+                self._publish_and_apply_order_acks(acks)
                 self._reconcile_fills(acks, correlation_id)
                 # A reject / zero-fill ack still leaves the position open.
                 # Surface it as a failure so the residual alert sees it.
@@ -3920,7 +3139,7 @@ class Orchestrator:
         return deadline is not None and quote.exchange_timestamp_ns >= deadline
 
     def _check_session_flat(self, quote: NBBOQuote) -> Signal | None:
-        """G-6: flat-by-close.  Synthetic FLAT signal for an open position.
+        """Return a synthetic flat signal for an open position at close.
 
         Independent of alpha behaviour: once the quote crosses the
         session-flatten deadline, any non-zero position for the symbol is
@@ -3974,25 +3193,19 @@ class Orchestrator:
             account_equity=self._account_equity,
         )
 
-        # H1: Clamp up to min_order_shares to avoid the dead zone where
-        # the sizer produces a positive quantity below the gate threshold.
-        # "Trade the minimum viable size, or don't trade at all."
-        # The risk engine will reject or scale down if the clamped size
-        # exceeds the alpha's budget.
+        # Clamp nonzero targets to the minimum viable order; risk may scale them down.
         if 0 < target < self._min_order_shares:
             target = self._min_order_shares
 
         return target
 
     def _record_size_shadow(self, signal: Signal, quote: NBBOQuote) -> None:
-        """G-7 S1: shadow the edge/vol/inventory-tilted target vs the base.
+        """Compare the edge/vol/inventory-tilted target with the base.
 
-        For each real (non-synthetic) sized signal, compute the tilted
-        target the G-7 sizer *would* produce and append a
+        For each real sized signal, compute the tilted target and append a
         :class:`SizeDivergence` when it differs from the live single-factor
-        base target.  Pure measurement at the sizer level (before the H1
-        min-order clamp and the risk engine, which apply equally to both) —
-        no orders, bus, journal, or parity effects; no-op unless a sink is
+        base target. It runs before the minimum-order clamp and risk engine and
+        has no order, bus, journal, or parity effects. It is a no-op unless a sink is
         wired and at least one tilt factor is enabled.
         """
         sizer = self._size_shadow_sizer
@@ -4054,10 +3267,10 @@ class Orchestrator:
     ) -> PositionPlan:
         """Build the planner's ``PositionPlan`` for a signal.
 
-        Shared by the shadow harness (P1) and the drive path (the flip).
+        Shared by shadow comparison and the active planner path.
         Resolves the ``None`` sizer target via the translator default so
-        the planner sees the same effective magnitude as the legacy path.
-        ``desired`` overrides the per-signal target (G-5 N2: the net target).
+        the planner sees the translator's effective magnitude.
+        ``desired`` overrides the per-signal target with a net target.
         """
         assert self._position_manager is not None
         if desired is None:
@@ -4074,53 +3287,10 @@ class Orchestrator:
         return self._position_manager.plan(
             desired=desired,
             current=current_position,
-            market=MarketContext(
+            market=replace(
+                self._market_context,
                 quote=quote,
                 cost_model=self._cost_model,
-                market_impact_factor=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_market_impact_factor",
-                            0.5,
-                        )
-                    )
-                )
-                if self._config
-                else None,
-                max_impact_half_spreads=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_max_impact_half_spreads",
-                            10.0,
-                        )
-                    )
-                )
-                if self._config
-                else None,
-                within_l1_impact_factor=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_within_l1_impact_factor",
-                            0.0,
-                        )
-                    )
-                )
-                if self._config
-                else Decimal("0"),
-                permanent_impact_coefficient=Decimal(
-                    str(
-                        getattr(
-                            self._config,
-                            "cost_permanent_impact_coefficient",
-                            0.0,
-                        )
-                    )
-                )
-                if self._config
-                else Decimal("0"),
             ),
             config=PositionManagerConfig(
                 shadow=not self._position_manager_drive,
@@ -4132,7 +3302,7 @@ class Orchestrator:
         )
 
     def _record_portfolio_net_shadow(self, intent: SizedPositionIntent) -> None:
-        """G-5 N3: bridge PORTFOLIO targets into the net SHADOW measurement.
+        """Feed portfolio targets into the net shadow measurement.
 
         Records each ``TargetPosition`` (``target_usd → shares`` via the
         latest mark) as a standing target so the cross-alpha ``NetDivergence``
@@ -4140,9 +3310,8 @@ class Orchestrator:
 
         Measurement-only: active when a net-shadow sink is wired **and**
         netting is not driving — feeding PORTFOLIO targets while the PORTFOLIO
-        path also self-drives (``check_sized_intent``) would double-count, so
-        the live drive-bridge (retiring ``check_sized_intent``) is deferred to
-        N3b.  Parity-neutral here (no orders/bus/journal effects).
+        path also self-drives would double-count. This method has no order, bus,
+        or journal effects.
         """
         if self._net_shadow_sink is None or self._enable_portfolio_netting:
             return
@@ -4173,11 +3342,7 @@ class Orchestrator:
                     staleness_k=self._net_staleness_k,
                 )
             )
-            # Mirror the SIGNAL-path policy: horizon-zero targets cannot
-            # be assigned a ``k×horizon`` expiry, so register them as
-            # one-tick-only and let ``_record_net_shadow`` evict on the
-            # next tick — otherwise PORTFOLIO desires would linger in
-            # the book and skew cross-path ``NetDivergence`` shadows.
+            # Horizon-zero targets are one-tick-only.
             if intent.horizon_seconds <= 0:
                 self._net_shadow_transient_keys.add((intent.strategy_id, symbol))
 
@@ -4187,7 +3352,7 @@ class Orchestrator:
         winner: Signal | None,
         quote: NBBOQuote,
     ) -> None:
-        """G-5 N1: maintain the standing-target book + shadow the net target.
+        """Maintain standing targets and compare the net target with the winner.
 
         For every real (non-synthetic) alpha signal buffered this tick, record
         its standing desired target (budget-capped by the sizer, ``k×horizon``
@@ -4197,9 +3362,7 @@ class Orchestrator:
         orders, bus, journal, or parity effects; no-op unless a sink is wired.
         """
         sink = self._net_shadow_sink
-        # Maintain the standing-target book when netting drives the decision
-        # (N2) or when shadowing (N1); skip entirely otherwise (no overhead,
-        # parity-neutral default path).
+        # Maintain targets only for live netting or shadow comparison.
         if sink is None and not self._enable_portfolio_netting:
             return
         default_target = getattr(
@@ -4216,12 +3379,7 @@ class Orchestrator:
                 default_target_quantity=default_target,
             ).target_qty
 
-        # Evict standing targets we wrote from horizon-zero signals on
-        # prior ticks: ``standing_target_from_desired`` cannot set a
-        # ``k×horizon`` expiry when ``horizon_seconds == 0``, so the
-        # netter would otherwise carry them forward indefinitely and
-        # disagree with the live buffer policy (which treats horizon=0
-        # signals as one-tick-only).
+        # Remove the prior tick's horizon-zero targets.
         for prev_strategy_id, prev_symbol in self._net_shadow_transient_keys:
             self._desired_target_book.clear(prev_strategy_id, prev_symbol)
         self._net_shadow_transient_keys.clear()
@@ -4246,7 +3404,7 @@ class Orchestrator:
             if sig.horizon_seconds <= 0:
                 self._net_shadow_transient_keys.add((sig.strategy_id, sig.symbol))
 
-        # Divergence recording is shadow-only (N1).
+        # Divergence recording is shadow-only.
         if sink is None or winner is None or winner.strategy_id.startswith("__"):
             return
         now_ns = int(quote.timestamp_ns)
@@ -4276,13 +3434,12 @@ class Orchestrator:
         intent: OrderIntent,
         quote: NBBOQuote,
     ) -> None:
-        """G-1 P1: run the shadow planner and record decision divergence.
+        """Run the shadow planner and record decision divergence.
 
         No-op unless both a position manager and a divergence sink are
         wired.  Strictly observational — it builds no orders, publishes
         nothing on the bus, and writes no journal records, so it cannot
-        move a parity hash (Inv-5).  The legacy ``OrderIntent`` continues
-        to drive execution unchanged.
+        move a parity hash. ``OrderIntent`` continues to drive shadow-mode execution.
         """
         manager = self._position_manager
         sink = self._position_manager_shadow_sink
@@ -4348,7 +3505,7 @@ class Orchestrator:
             is_short=False,
         )
 
-        # Risk check exit (should always pass — reduces exposure).
+        # Shared exposure and drawdown checks cannot block or resize a full close.
         exit_verdict = self._risk_engine.check_order(
             exit_order,
             self._positions,
@@ -4356,60 +3513,31 @@ class Orchestrator:
         self._bus.publish(exit_verdict)
         if exit_verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                # Same global halt as standalone SIGNAL/order gates — drawdown
-                # breach must not strand the book without emergency flatten.
+                # Same global halt as standalone SIGNAL/order gates —
+                # _emergency_flatten_all() closes this leg (and every other
+                # open position) directly with a properly-tagged flatten,
+                # so defer to it here rather than also submitting this leg.
                 self._escalate_risk(cid)
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="reverse_exit_force_flatten_escalation",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
+                self._finalize_tick(t_wall_start, cid, "reverse_exit_force_flatten_escalation")
                 return
-            # BACKTEST_MODE: simulate without global lockdown (replay parity).
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="reverse_exit_force_flatten_simulated",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        if exit_verdict.action == RiskAction.REJECT:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="reverse_exit_rejected",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        # SCALE_DOWN on the exit verdict is intentionally a no-op here:
-        # the exit OrderRequest was built above with the full
-        # ``close_qty`` and that's what submits.  The scaling factor only
-        # governs the entry leg (computed from the outer signal-level
-        # ``verdict`` below).  Exits must always close the entire
-        # existing position; a partial close would leave the wrong-
-        # direction residual on the book during a reverse.
+            # BACKTEST_MODE has no reachable lockdown transition, so there
+            # is no compensating flatten to rely on — normalize to ALLOW so
+            # this reduce still submits instead of stranding the position.
+            exit_verdict = replace(exit_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
+        elif exit_verdict.action != RiskAction.ALLOW:
+            exit_verdict = replace(exit_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
 
         # ── ENTRY leg: passive LIMIT (or MARKET if passive disabled) ─
         #
-        # Risk-check the entry leg against a POST-EXIT position view.
-        # The exit hasn't filled yet (both legs submit in the same tick),
-        # so self._positions still reflects the pre-exit state.  Without
-        # the adjustment, check_order computes post_fill_qty from the
-        # stale position, producing an incorrectly favorable result
-        # (e.g. 0 instead of the actual new-entry quantity).
+        # Risk-check entry against the position expected after the exit leg.
         entry_order: OrderRequest | None = None
         entry_qty = round(entry_qty_raw * verdict.scaling_factor)
-        # B5: replaced signal carrying the combined reversal cost estimate
-        # (Task 3).  Stays at the original signal (cost 0.0) when no entry
-        # leg is warranted or the guard is disabled.
+        # Attach combined reversal cost only when the entry leg is evaluated.
         reverse_signal: Signal = intent.signal
 
         # Signed adjustment: the exit leg removes close_qty from position.
         exit_signed_adj = -close_qty if exit_side == Side.SELL else close_qty
-        post_exit_positions = _PostExitPositionView(
+        post_exit_positions = PostExitPositionView(
             self._positions,
             intent.symbol,
             exit_signed_adj,
@@ -4421,18 +3549,18 @@ class Orchestrator:
             tier = self._borrow_tier_for(intent.symbol)
             is_short = htb_fee_applies(tier, short_sale)
 
-            # B5: reversal combined-edge guard.  Flipping the book first
-            # crystallises the existing opposite position (exit leg); the
-            # round-trip cost of *both* legs is paid immediately and is
-            # independent of the new signal's edge.  Suppress the entry
-            # (flatten-only) unless the raw edge clears the combined cost.
-            # Inv-11: the exit leg below still always submits.
+            # The reversal entry must cover both legs using the same calibrated
+            # edge as the ordinary entry gate. The exit always submits.
+            edge_calibration_factor = self._edge_calibration_factors.get(
+                intent.signal.strategy_id, 1.0
+            )
+            effective_edge_bps = intent.signal.edge_estimate_bps * edge_calibration_factor
             (
                 reversal_cost_bps,
                 reversal_required_bps,
                 reversal_edge_passes,
             ) = self._reversal_passes_combined_edge_gate(
-                edge_estimate_bps=intent.signal.edge_estimate_bps,
+                edge_estimate_bps=effective_edge_bps,
                 symbol=intent.symbol,
                 exit_side=exit_side,
                 exit_qty=close_qty,
@@ -4441,16 +3569,21 @@ class Orchestrator:
                 quote=quote,
                 is_short_entry=is_short,
             )
-            # Task 3: expose the combined estimate on the signal so trace
-            # sinks / alerts can read it without recomputing.
+            # Expose combined cost to traces and alerts.
             reverse_signal = replace(
                 intent.signal,
                 reversal_cost_estimate_bps=reversal_cost_bps,
             )
 
             if not reversal_edge_passes:
-                edge_bps = intent.signal.edge_estimate_bps
-                deficit_bps = reversal_required_bps - edge_bps
+                deficit_bps = reversal_required_bps - effective_edge_bps
+                calibration_note = (
+                    ""
+                    if edge_calibration_factor >= 1.0
+                    else f"; realization factor={edge_calibration_factor:.3f} "
+                    f"(disclosed {intent.signal.edge_estimate_bps:.2f} -> "
+                    f"{effective_edge_bps:.2f} bps)"
+                )
                 self._bus.publish(
                     Alert(
                         timestamp_ns=self._clock.now_ns(),
@@ -4461,16 +3594,17 @@ class Orchestrator:
                         alert_name="reversal_edge_insufficient",
                         message=(
                             f"Reversal entry suppressed (flatten-only): "
-                            f"edge_bps={edge_bps:.4f} below required "
+                            f"edge_bps={effective_edge_bps:.4f} below required "
                             f"{reversal_required_bps:.4f} "
                             f"({self._reversal_min_edge_cost_multiplier}× combined "
                             f"round-trip cost {reversal_cost_bps:.4f}); "
                             f"deficit={deficit_bps:.4f} bps "
                             f"(symbol={intent.symbol!r}, "
-                            f"strategy_id={intent.strategy_id!r})."
+                            f"strategy_id={intent.strategy_id!r})"
+                            f"{calibration_note}."
                         ),
                         context={
-                            "edge_bps": edge_bps,
+                            "edge_bps": effective_edge_bps,
                             "required_bps": reversal_required_bps,
                             "deficit_bps": deficit_bps,
                             "symbol": intent.symbol,
@@ -4480,8 +3614,8 @@ class Orchestrator:
                     )
                 )
 
-            # B4: edge vs cost gate for the entry leg.  Short-circuited when
-            # the B5 reversal guard already suppressed the flip.
+            # Check entry edge against cost unless the reversal guard already
+            # suppressed the flip.
             entry_passes_edge_gate = reversal_edge_passes and self._signal_passes_edge_cost_gate(
                 intent.signal,
                 symbol=intent.symbol,
@@ -4500,33 +3634,16 @@ class Orchestrator:
                 seq_entry = self._seq.next()
                 entry_order_id = derive_order_id(f"{cid}:{seq_entry}:entry")
 
-                order_type = OrderType.MARKET
-                limit_price: Decimal | None = None
-                entry_is_moc = (
-                    intent.strategy_id in self._moc_strategy_ids and self._moc_bounds_configured
+                order_type, limit_price, entry_is_moc = self._resolve_order_route(
+                    strategy_id=intent.strategy_id,
+                    symbol=intent.symbol,
+                    side=entry_side,
+                    quantity=entry_qty,
+                    quote=quote,
+                    is_short=is_short,
+                    is_exit_or_stop=False,
+                    edge_bps=intent.signal.edge_estimate_bps,
                 )
-                if entry_is_moc:
-                    order_type = OrderType.MARKET
-                    limit_price = None
-                elif self._use_passive_entries:
-                    use_passive = True
-                    if self._min_cost_policy is not None:
-                        decision = self._min_cost_policy.decide(
-                            symbol=intent.symbol,
-                            side=entry_side,
-                            quantity=entry_qty,
-                            mid_price=(quote.bid + quote.ask) / Decimal("2"),
-                            half_spread=(quote.ask - quote.bid) / Decimal("2"),
-                            is_short=is_short,
-                            force_aggressive=False,
-                            bid_size=quote.bid_size,
-                            ask_size=quote.ask_size,
-                            edge_bps=intent.signal.edge_estimate_bps,
-                        )
-                        use_passive = decision == "passive"
-                    if use_passive:
-                        order_type = OrderType.LIMIT
-                        limit_price = quote.bid if entry_side == Side.BUY else quote.ask
 
                 entry_order = OrderRequest(
                     timestamp_ns=self._clock.now_ns(),
@@ -4576,47 +3693,29 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        # Submit EXIT leg.  The exit (flatten) leg carries the REVERSE_*
-        # intent — it is the leg the reversal report keys on (Task 5).  The
-        # entry leg below is stamped with its resulting ENTRY_* intent so it
-        # is not double-counted as a separate reversal attempt.
+        # Attribute the reversal to its exit leg; stamp the new entry separately.
         self._track_order(
             exit_order.order_id,
             exit_order.side,
             exit_order,
             trading_intent=intent.intent.name,
         )
-        self._transition_order(
-            exit_order.order_id,
-            OrderState.SUBMITTED,
-            "submitted",
-            correlation_id=cid,
-        )
-        try:
-            self._backend.order_router.submit(exit_order)
-        except Exception as exc:
-            self._reject_order_after_submit_failure(exit_order, exc)
+        exit_submit_error = self._submit_tracked_order(exit_order)
+        if exit_submit_error is not None:
             self._micro.transition(
                 MicroState.ORDER_ACK,
                 trigger="reverse_exit_submit_failed",
                 correlation_id=cid,
             )
             acks = self._poll_order_router_acks({exit_order.order_id})
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
             self._micro.transition(
                 MicroState.POSITION_UPDATE,
                 trigger="reverse_acks_after_failed_exit_submit",
                 correlation_id=cid,
             )
             self._reconcile_fills(acks, cid)
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="reverse_aborted_exit_submit_failed",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
+            self._finalize_tick(t_wall_start, cid, "reverse_aborted_exit_submit_failed")
             return
 
         self._bus.publish(exit_order)
@@ -4634,17 +3733,7 @@ class Orchestrator:
                 entry_order,
                 trading_intent=entry_intent_name,
             )
-            self._transition_order(
-                entry_order.order_id,
-                OrderState.SUBMITTED,
-                "submitted",
-                correlation_id=cid,
-            )
-            try:
-                self._backend.order_router.submit(entry_order)
-            except Exception as exc:
-                self._reject_order_after_submit_failure(entry_order, exc)
-            else:
+            if self._submit_tracked_order(entry_order) is None:
                 self._bus.publish(entry_order)
                 entry_submitted_ok = True
 
@@ -4658,9 +3747,7 @@ class Orchestrator:
         if entry_order is not None and entry_submitted_ok:
             expected_order_ids.add(entry_order.order_id)
         acks = self._poll_order_router_acks(expected_order_ids)
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
 
         # ── M8 → M9: POSITION_UPDATE ──────────────────────────────
         self._micro.transition(
@@ -4688,12 +3775,7 @@ class Orchestrator:
             )
 
         # ── M9 → M10: LOG_AND_METRICS ─────────────────────────────
-        self._micro.transition(
-            MicroState.LOG_AND_METRICS,
-            trigger="reverse_position_updated",
-            correlation_id=cid,
-        )
-        self._finalize_tick(t_wall_start, cid)
+        self._finalize_tick(t_wall_start, cid, "reverse_position_updated")
 
     def _try_build_order_from_intent(
         self,
@@ -4704,12 +3786,11 @@ class Orchestrator:
         *,
         exec_style: ExecStyle | None = None,
     ) -> tuple[OrderRequest | None, str | None]:
-        """Like :meth:`_build_order_from_intent` but returns a failure token.
+        """Construct an order and return a stable failure token on suppression.
 
-        ``exec_style`` (P4): when ``ExecStyle.PASSIVE`` is supplied by the
-        planner (a discretionary working leg, e.g. an urgency-driven TRIM),
-        the order is posted as a near-BBO LIMIT regardless of the static
-        ``_use_passive_entries`` flag.  ``None`` keeps the legacy routing.
+        When ``exec_style`` is ``ExecStyle.PASSIVE``, a discretionary working
+        leg posts near the BBO regardless of the static
+        ``_use_passive_entries`` flag. ``None`` uses default routing.
         Stop-exits and MOC orders always short-circuit to MARKET and ignore
         the hint (Inv-11).
         """
@@ -4717,19 +3798,21 @@ class Orchestrator:
         seq = self._seq.next()
         order_id = derive_order_id(f"{correlation_id}:{seq}")
 
-        quantity = round(intent.target_quantity * verdict.scaling_factor)
-        if quantity <= 0:
-            return None, "rounded_quantity_after_risk_scaling_le_zero"
-
-        # F2: Exits and stop-losses bypass min_order_shares — you must be
-        # able to close any position regardless of size (Inv-11 fail-safe).
+        # Exits bypass minimum size and risk scaling so any position can close.
         is_exit_or_stop = (
             intent.intent == TradingIntent.EXIT or intent.signal.strategy_id == "__stop_exit__"
         )
+        quantity = (
+            intent.target_quantity
+            if is_exit_or_stop
+            else round(intent.target_quantity * verdict.scaling_factor)
+        )
+        if quantity <= 0:
+            return None, "rounded_quantity_after_risk_scaling_le_zero"
         if not is_exit_or_stop and quantity < self._min_order_shares:
             return None, "quantity_below_platform_min_order_shares"
 
-        # BT-7: HTB fee flag — only ``hard``-tier short sales carry
+        # Only hard-tier short sales carry the HTB fee flag;
         # ``OrderRequest.is_short``; ``available`` omits HTB even when
         # cost_htb_borrow_annual_bps is configured.
         short_sale = is_short_sale_intent(intent)
@@ -4755,53 +3838,18 @@ class Orchestrator:
         ):
             return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
-        order_type = OrderType.MARKET
-        limit_price: Decimal | None = None
-        is_moc = (
-            intent.strategy_id in self._moc_strategy_ids
-            and self._moc_bounds_configured
-            and not is_exit_or_stop
+        order_type, limit_price, is_moc = self._resolve_order_route(
+            strategy_id=intent.strategy_id,
+            symbol=intent.symbol,
+            side=side,
+            quantity=quantity,
+            quote=quote,
+            is_short=is_short,
+            is_exit_or_stop=is_exit_or_stop,
+            edge_bps=intent.signal.edge_estimate_bps,
+            exec_style=exec_style,
+            forced_market=(intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES),
         )
-
-        if is_moc:
-            order_type = OrderType.MARKET
-            limit_price = None
-        elif (
-            exec_style is ExecStyle.PASSIVE
-            and quote is not None
-            and intent.signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
-        ):
-            # P4: planner-driven passive working leg (e.g. a discretionary
-            # TRIM) — post at the near BBO; a non-fill simply defers it.
-            order_type = OrderType.LIMIT
-            limit_price = quote.bid if side == Side.BUY else quote.ask
-        elif self._use_passive_entries and quote is not None:
-            is_stop_exit = intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
-            if not is_stop_exit:
-                # Default: post passive at the near BBO.  When the
-                # minimum-cost policy is wired, let it override on a
-                # per-order basis.  Stop-loss / forced-flatten always
-                # short-circuit to MARKET above (is_stop_exit branch),
-                # so the policy is consulted only on tradeable orders
-                # where either route is safe.
-                use_passive = True
-                if self._min_cost_policy is not None:
-                    decision = self._min_cost_policy.decide(
-                        symbol=intent.symbol,
-                        side=side,
-                        quantity=quantity,
-                        mid_price=(quote.bid + quote.ask) / Decimal("2"),
-                        half_spread=(quote.ask - quote.bid) / Decimal("2"),
-                        is_short=is_short,
-                        force_aggressive=is_exit_or_stop,
-                        bid_size=quote.bid_size,
-                        ask_size=quote.ask_size,
-                        edge_bps=intent.signal.edge_estimate_bps,
-                    )
-                    use_passive = decision == "passive"
-                if use_passive:
-                    order_type = OrderType.LIMIT
-                    limit_price = quote.bid if side == Side.BUY else quote.ask
 
         return (
             OrderRequest(
@@ -4817,45 +3865,67 @@ class Orchestrator:
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
                 is_moc=is_moc,
-                # Stamp the panic-fill reason for forced exits (e.g.
-                # ``__stop_exit__`` → ``STOP_EXIT``) so the fill model prices
-                # the stop with slippage / depleted depth; "" for ordinary
-                # entries and discretionary exits leaves the fill unchanged.
+                # Forced-exit reasons activate panic slippage and depleted depth.
                 reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,
         )
 
-    def _build_order_from_intent(
+    def _resolve_order_route(
         self,
-        intent: OrderIntent,
-        verdict: RiskVerdict,
-        correlation_id: str,
-        quote: NBBOQuote | None = None,
-    ) -> OrderRequest | None:
-        """Construct an OrderRequest from an OrderIntent.
-
-        order_id is derived from correlation_id + sequence via SHA-256
-        so that replay of identical events produces identical order IDs
-        (invariant 5).  uuid4 is forbidden here.
-
-        The intent's ``target_quantity`` is the pre-computed quantity
-        from the IntentTranslator (which may include position sizer
-        output).  ``verdict.scaling_factor`` is applied on top for
-        risk-driven scaling.
-
-        When ``_use_passive_entries`` is set and ``quote`` is provided,
-        entry/exit orders use LIMIT at the near BBO.  Stop-loss exits
-        always use MARKET (invariant 11: fail-safe).
-        """
-        order, _reason = self._try_build_order_from_intent(
-            intent,
-            verdict,
-            correlation_id,
-            quote,
+        *,
+        strategy_id: str,
+        symbol: str,
+        side: Side,
+        quantity: int,
+        quote: NBBOQuote | None,
+        is_short: bool,
+        is_exit_or_stop: bool,
+        edge_bps: float,
+        exec_style: ExecStyle | None = None,
+        forced_market: bool = False,
+    ) -> tuple[OrderType, Decimal | None, bool]:
+        """Resolve order type, limit price, and MOC flag from execution policy."""
+        is_moc = (
+            strategy_id in self._moc_strategy_ids
+            and self._moc_bounds_configured
+            and not is_exit_or_stop
         )
-        return order
+        if is_moc:
+            return OrderType.MARKET, None, True
+
+        if exec_style is ExecStyle.PASSIVE and quote is not None and not forced_market:
+            limit_price = quote.bid if side == Side.BUY else quote.ask
+            return OrderType.LIMIT, limit_price, False
+
+        if not self._use_passive_entries or quote is None or forced_market:
+            return OrderType.MARKET, None, False
+
+        use_passive = True
+        if self._min_cost_policy is not None:
+            use_passive = (
+                self._min_cost_policy.decide(
+                    symbol=symbol,
+                    side=side,
+                    quantity=quantity,
+                    mid_price=(quote.bid + quote.ask) / Decimal("2"),
+                    half_spread=(quote.ask - quote.bid) / Decimal("2"),
+                    is_short=is_short,
+                    force_aggressive=is_exit_or_stop,
+                    bid_size=quote.bid_size,
+                    ask_size=quote.ask_size,
+                    edge_bps=edge_bps,
+                )
+                == "passive"
+            )
+        if use_passive:
+            return (
+                OrderType.LIMIT,
+                quote.bid if side == Side.BUY else quote.ask,
+                False,
+            )
+        return OrderType.MARKET, None, False
 
     @staticmethod
     def _compose_scaled_quantity(base_quantity: int, *factors: float) -> int:
@@ -4947,16 +4017,9 @@ class Orchestrator:
             return True
         accepted = cancel_fn(order_id)
         acks = self._poll_order_router_acks({order_id})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
         self._reconcile_fills(acks, order.correlation_id)
-        # Only resolve locally when the router rejected the cancel
-        # (e.g. unknown id, or backtest non-MOC paths with no resting
-        # interest).  When the router accepted the cancel (True), the
-        # terminal ack may arrive asynchronously on a later poll — for
-        # IB the cancel is fire-and-forget — so forcing CANCELLED here
-        # would desync kernel state from a still-live broker order.
+        # Accepted broker cancels resolve asynchronously; rejected ones resolve locally.
         if not accepted and order_id in self._active_orders:
             sm_post = self._active_orders[order_id][0]
             if sm_post.state == OrderState.CANCEL_REQUESTED:
@@ -5069,9 +4132,7 @@ class Orchestrator:
         }
         cancel_acks = self._poll_order_router_acks(cancel_order_ids)
         if cancel_acks:
-            for ack in cancel_acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(cancel_acks)
             self._reconcile_fills(cancel_acks, cid)
 
     def _poll_order_router_acks(
@@ -5105,6 +4166,32 @@ class Orchestrator:
                 deferred.append(ack)
         self._deferred_router_acks.extend(deferred)
         return matched
+
+    def _publish_and_apply_order_acks(self, acks: list[OrderAck]) -> None:
+        """Publish router acks in order, then advance their order state machines."""
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+
+    def _submit_tracked_order(
+        self,
+        order: OrderRequest,
+        *,
+        trigger: str = "submitted",
+    ) -> Exception | None:
+        """Submit a tracked order and terminalize its state if routing fails."""
+        self._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            trigger,
+            correlation_id=order.correlation_id,
+        )
+        try:
+            self._backend.order_router.submit(order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(order, exc)
+            return exc
+        return None
 
     def _reject_order_after_submit_failure(
         self,
@@ -5228,11 +4315,9 @@ class Orchestrator:
         t0 = time.perf_counter_ns()
         acks = self._poll_order_router_acks()
         if acks:
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
             self._reconcile_fills(acks, correlation_id)
-            # P4b: escalate any working-exit reduction that terminated
+            # Escalate an unfilled working exit to a market fallback
             # unfilled to a guaranteed MARKET fallback (after reconcile, so
             # the residual reflects this drain's fills).
             self._escalate_unfilled_working_exits(acks, correlation_id)
@@ -5249,14 +4334,7 @@ class Orchestrator:
         acks: list[OrderAck],
         correlation_id: str,
     ) -> None:
-        """P4b: MARKET-fallback any passive working reduction that didn't fill.
-
-        When a tagged passive reduction order terminates ``CANCELLED`` /
-        ``EXPIRED`` (the router's resting timeout elapsed without a fill),
-        the unfilled residual is re-submitted as MARKET so the reduction is
-        still guaranteed — the safety net that makes passive working
-        reductions viable.  No-op when nothing is tagged (the default).
-        """
+        """Send unfilled residuals from terminated passive reductions to market."""
         if not self._working_exit_fallback:
             return
         for ack in acks:
@@ -5306,16 +4384,7 @@ class Orchestrator:
             reason="WORKING_EXIT_FALLBACK",
         )
         self._track_order(order.order_id, order.side, order, trading_intent="EXIT")
-        self._transition_order(
-            order.order_id,
-            OrderState.SUBMITTED,
-            "submitted",
-            correlation_id=correlation_id,
-        )
-        try:
-            self._backend.order_router.submit(order)
-        except Exception as exc:
-            self._reject_order_after_submit_failure(order, exc)
+        if self._submit_tracked_order(order) is not None:
             return
         self._bus.publish(order)
         self._bus.publish(
@@ -5361,8 +4430,7 @@ class Orchestrator:
     ) -> None:
         """Create an OrderState SM for a new order.
 
-        ``trading_intent`` (``TradingIntent.name``) is recorded so the fill
-        reconciliation path can stamp ``TradeRecord.trading_intent`` (Task 4).
+        ``trading_intent`` is recorded for fill reconciliation and attribution.
         """
         sm = create_order_state_machine(order_id, self._clock)
         sm.on_transition(self._emit_state_transition)
@@ -5550,7 +4618,7 @@ class Orchestrator:
         with positive ``filled_quantity`` and a non-null ``fill_price``.
         """
         for ack in acks:
-            # F7: debit cancel/expiry fees even when there is no fill.
+            # Debit cancel or expiry fees even without a fill.
             if (
                 ack.status
                 in (
@@ -5670,8 +4738,7 @@ class Orchestrator:
             if side == Side.SELL:
                 signed_qty = -signed_qty
 
-            # P4b: accumulate per-order fills so a working-exit fallback can
-            # escalate only the *residual* if the passive leg partly filled.
+            # Track fills so a working-exit fallback submits only the residual.
             if ack.order_id in self._working_exit_fallback:
                 self._order_filled_qty[ack.order_id] = (
                     self._order_filled_qty.get(ack.order_id, 0) + ack.filled_quantity
@@ -5687,8 +4754,7 @@ class Orchestrator:
                 fees=ack.fees,
                 timestamp_ns=ack.timestamp_ns,
             )
-            # G-4: mirror the fill into the FIFO lot ledger (observability;
-            # does not affect the avg-cost realized PnL above).
+            # Mirror the fill into the observational FIFO lot ledger.
             self._lot_ledger.apply_fill(
                 ack.symbol,
                 signed_qty,
@@ -5701,9 +4767,7 @@ class Orchestrator:
             if position.quantity == 0:
                 self._peak_pnl_per_share.pop(ack.symbol, None)
 
-            # BT-4: feed the PDT round-trip counter (duck-typed; no-op
-            # when the risk engine carries no PDT constraint).  Pure
-            # bookkeeping — emits nothing, so replay stays bit-identical.
+            # Feed the PDT counter when the risk engine supports it.
             record_fill = getattr(self._risk_engine, "record_fill", None)
             if callable(record_fill):
                 record_fill(
@@ -5742,21 +4806,8 @@ class Orchestrator:
                             timestamp_ns=ack.timestamp_ns,
                         )
                 else:
-                    # No attribution record (emergency flatten, stop
-                    # exit, or attribution failure).  Distribute the
-                    # fill proportionally across all strategy positions
-                    # for this symbol to keep strategy and global stores
-                    # in sync.
-                    #
-                    # Forensic-approximate (audit P1, 2026-06-18): the
-                    # proportional split keeps the *aggregate* realized
-                    # PnL exact, but on a shared symbol it can mis-
-                    # attribute realized PnL across alphas relative to
-                    # the alpha that actually held the risk.  Per-alpha
-                    # attribution from this path is therefore an estimate,
-                    # not a ledger of record; consumers needing exact per-
-                    # alpha cost basis must use the FillLedger attribution
-                    # branch above (driven by allocate_fill).
+                    # Without attribution, split proportionally to keep stores in
+                    # sync. Aggregate PnL stays exact; per-alpha PnL is estimated.
                     self._distribute_fill_to_strategies(
                         ack.symbol,
                         signed_qty,
@@ -5789,10 +4840,7 @@ class Orchestrator:
                 else:
                     streak = self._realized_cost_breach_streak.get(order.strategy_id, 0) + 1
                     self._realized_cost_breach_streak[order.strategy_id] = streak
-                    # P2.10: when enabled, a persistent overrun (the cost
-                    # model under-predicting fill cost across several fills)
-                    # is fail-safe-escalated — suppress further trading via
-                    # the kill switch rather than only logging — Inv-11.
+                    # Repeated cost overruns can trigger the kill switch.
                     escalate = (
                         self._realized_cost_escalation_enabled
                         and streak >= self._realized_cost_escalation_streak
@@ -5864,10 +4912,7 @@ class Orchestrator:
                         trend_mechanism=_trade_mech,
                         expected_half_life_seconds=_trade_hl,
                         regime_state=self._regime_label_for(ack.symbol),
-                        # P1 (position-mgmt audit 2026-06-20): propagate
-                        # order lineage so post-trade forensics (Inv-13) can
-                        # split fills by forced-exit class / producing layer
-                        # without re-deriving it from the order stream.
+                        # Preserve forced-exit class and producing layer on the trade.
                         metadata={
                             "order_reason": order.reason,
                             "order_source_layer": order.source_layer,
@@ -6026,18 +5071,15 @@ class Orchestrator:
         if isinstance(event, Alert) and self._alert_manager is not None:
             self._alert_manager.emit(event)
 
-    # ── PR-2b-iii: bus-driven Signal handler ────────────────────────
+    # ── Bus-driven signal handler ───────────────────────────────────
 
     def _on_bus_signal(self, event: Event) -> None:
         """Buffer a SIGNAL-layer ``Signal`` for the current tick's M4 drain.
 
         Filtered for safety / correctness:
 
-        * ``layer != "SIGNAL"`` — Phase-4 PORTFOLIO emits
-          ``SizedPositionIntent`` events, not Signals; if a future PR
-          starts publishing ``Signal(layer="PORTFOLIO")`` it should not
-          enter the per-tick legacy order pipeline (PR-2b-iv will wire
-          PORTFOLIO intents through ``RiskEngine.check_sized_intent``).
+        * ``layer != "SIGNAL"`` — PORTFOLIO order flow uses
+          ``SizedPositionIntent``, not this handler.
         * ``strategy_id == "__stop_exit__"`` — synthetic stop-loss signals
           are computed inline at M4 by ``_check_stop_exit`` and merged
           there; routing them through the bus would require the producer
@@ -6104,9 +5146,7 @@ class Orchestrator:
                 )
             return
         self._signal_buffer.append(event)
-        # Forensic provenance: remember this alpha/symbol's mechanism so the
-        # eventual fill's ``TradeRecord`` carries it (Inv-1).  Side table only,
-        # never read on the decision path.
+        # Cache mechanism metadata for fill attribution, never for decisions.
         if event.trend_mechanism is not None or event.expected_half_life_seconds:
             self._last_signal_mechanism[(event.strategy_id, event.symbol)] = (
                 event.trend_mechanism,
@@ -6240,7 +5280,7 @@ class Orchestrator:
                 )
         return self._signal_arbitrator.arbitrate(buf)
 
-    # ── PR-2b-iv: bus-driven SizedPositionIntent handler ────────────
+    # Bus-driven sized-intent handler.
 
     def _on_bus_sized_intent(self, event: Event) -> None:
         """Buffer or immediately execute ``SizedPositionIntent`` (Inv-9 parity).
@@ -6253,49 +5293,20 @@ class Orchestrator:
         """
         if not isinstance(event, SizedPositionIntent):
             return
-        # G-5 N3: feed PORTFOLIO targets into the net SHADOW measurement.
+        # Feed portfolio targets into the net shadow measurement.
         self._record_portfolio_net_shadow(event)
         if self._quote_tick_in_flight:
             self._pending_sized_intents.append(event)
         else:
             self._submit_portfolio_leg_without_micro_walk(event, event.correlation_id)
 
-    # ── Audit R1: bus-driven hazard-exit OrderRequest handler ────────
-    # The accepted signature (``HAZARD_EXIT_SOURCE_LAYER`` +
-    # ``HAZARD_EXIT_REASONS``) is imported from ``feelies.risk.hazard_exit`` —
-    # the sole writer — so the bridge filter cannot drift from what the
-    # controller actually emits (audit kernel-P1).
+    # Import the controller's signature so hazard filtering cannot drift.
 
     def _on_bus_hazard_order(self, event: Event) -> None:
-        """Route hazard-exit ``OrderRequest`` events to the execution backend.
+        """Route reducing hazard-exit orders to the execution backend.
 
-        ``HazardExitController._emit_exit`` publishes an
-        ``OrderRequest`` (with ``source_layer="RISK"`` and ``reason in
-        {"HAZARD_SPIKE", "HARD_EXIT_AGE"}``) but does NOT call any
-        router itself.  Pre-R1 there was no production subscriber that
-        bridged these orders to ``backend.order_router.submit``, so
-        every hazard exit was silently inert in any composed
-        deployment.  This handler closes that gap.
-
-        Filtering is intentionally tight: only orders matching the
-        controller's exact signature are submitted from here.  Orders
-        published by ``_on_bus_sized_intent`` (PORTFOLIO leg fan-out),
-        ``_emergency_flatten_all``, ``_execute_reverse``, and the
-        normal SIGNAL walk all reach the router via their direct
-        ``self._backend.order_router.submit`` calls upstream of their
-        ``self._bus.publish(order)``; this handler must NOT
-        double-submit them when their published copy reaches the bus.
-
-        Inv-11 (fail-safe): hazard exits are exit-direction-only by
-        construction in ``HazardExitController`` (the order side is
-        always opposite the position sign) so they cannot increase
-        exposure.  A defensive ``check_order`` runs for audit parity.
-        The exit fail-safe is honored only for orders that verifiably
-        reduce the live position: a ``REJECT`` on a reducing order is
-        logged and the order is still submitted (mirroring emergency
-        flatten), but a ``REJECT`` on a non-reducing order is
-        authoritative and blocks submission.  See ``risk/engine.py`` for
-        the formal sole-gatekeeper carve-outs.
+        Tight source and reason filters prevent double submission of orders
+        already routed by the normal signal, portfolio, or emergency paths.
         """
         if not isinstance(event, OrderRequest):
             return
@@ -6303,31 +5314,16 @@ class Orchestrator:
             return
         if event.reason not in HAZARD_EXIT_REASONS:
             return
-        # Idempotency guard against a duplicate publish of the same
-        # hazard order_id (e.g. a misconfigured second subscriber
-        # echoing onto the bus, or a controller bug bypassing its
-        # own episode-suppression).  ``_active_orders`` is pruned on
-        # terminal states so it can't serve as a long-lived dedup
-        # set; ``_hazard_submitted_order_ids`` is hazard-only and
-        # never pruned (one entry per episode-symbol-reason —
-        # bounded by trading volume per session).
+        # Hazard IDs remain in a dedicated set after active orders are pruned.
         if event.order_id in self._hazard_submitted_order_ids:
             return
         self._hazard_submitted_order_ids.add(event.order_id)
         hv = self._risk_engine.check_order(event, self._positions)
-        # Verify the order actually de-risks before honoring the Inv-11 exit
-        # fail-safe below.  HazardExitController emits full-position exits by
-        # construction (side opposite the position sign, qty == |position|), so
-        # a legitimate hazard order always reduces |position|.  An order that
-        # does NOT reduce the live position has no exit fail-safe claim, so a
-        # formal REJECT on it is authoritative and must block submission — the
-        # submit decision must not rest on trusting the reason tag alone.
+        # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(event.symbol).quantity
         signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
         order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
-        # Do not broadcast FORCE_FLATTEN: downstream subscribers may treat it as
-        # a global lockdown trigger while this handler still submits the exit
-        # (Inv-11 fail-safe).  REJECT / ALLOW are fine for audit parity.
+        # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
         if hv.action == RiskAction.REJECT and not order_reduces:
@@ -6378,16 +5374,9 @@ class Orchestrator:
                 )
             )
         self._track_order(event.order_id, event.side, event)
-        self._transition_order(
-            event.order_id,
-            OrderState.SUBMITTED,
-            event.reason,
-            correlation_id=event.correlation_id,
-        )
-        try:
-            self._backend.order_router.submit(event)
-        except Exception as exc:  # noqa: BLE001 — fail-safe: never raise from bus
-            logger.exception(
+        submit_error = self._submit_tracked_order(event, trigger=event.reason)
+        if submit_error is not None:
+            logger.error(
                 "Hazard exit order submission failed for %s "
                 "(strategy_id=%s, reason=%s, order_id=%s); position "
                 "remains open and will be retried on the next spike.",
@@ -6395,21 +5384,23 @@ class Orchestrator:
                 event.strategy_id,
                 event.reason,
                 event.order_id,
+                exc_info=(
+                    type(submit_error),
+                    submit_error,
+                    submit_error.__traceback__,
+                ),
             )
-            self._reject_order_after_submit_failure(event, exc)
             return
         acks = self._poll_order_router_acks({event.order_id})
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+        self._publish_and_apply_order_acks(acks)
         self._reconcile_fills(acks, event.correlation_id)
 
     # ── Configuration and data integrity ────────────────────────────
 
-    # ── BT-5: LULD halt modeling ────────────────────────────────────
+    # LULD halt modeling.
 
     def _update_halt_state(self, trade: Trade) -> None:
-        """Register halt-on / resume edges from the Trade tape (BT-5).
+        """Register halt and resume edges from the trade tape.
 
         On halt-on for a symbol not already halted: mark it halted, cancel
         any resting orders (Inv-11), and emit ``SymbolHalted``.  On resume:
@@ -6481,14 +5472,10 @@ class Orchestrator:
             )
         )
 
-    # ── BT-6: Reg-SHO / SSR short-sale restriction ──────────────────
+    # ── Reg-SHO / SSR short-sale restriction ────────────────────────
 
     def _update_ssr_state(self, trade: Trade) -> None:
-        """Flip a symbol SSR-active when the tape's trigger codes fire (BT-6).
-
-        SSR is sticky for the session — once active it never clears intraday —
-        so this only ever adds.  Inert when no trigger codes are configured.
-        """
+        """Activate sticky session SSR state from trade condition codes."""
         if not self._ssr_codes:
             return
         if not (set(trade.conditions) & self._ssr_codes):
@@ -6510,7 +5497,7 @@ class Orchestrator:
             )
         )
 
-    # ── BT-7: static borrow-availability ────────────────────────────
+    # ── Static borrow availability ───────────────────────────────────
 
     def _borrow_tier_for(self, symbol: str) -> BorrowTier:
         """Locate tier for ``symbol``; omitted symbols use the default tier."""
@@ -6613,7 +5600,7 @@ class Orchestrator:
         correlation_id: str,
         data_health_reason: str,
     ) -> None:
-        """Audit DI-03: publish a rejected market event's fields as an Alert.
+        """Publish a rejected market event's fields as an alert.
 
         A quote or trade blocked by :meth:`_data_health_blocks_trading` never
         reaches ``EventLog.append`` (fail-safe for trading), so without this
@@ -6659,20 +5646,20 @@ class Orchestrator:
     def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> str | None:
         """Return the block reason when the normalizer forbids this symbol, else None.
 
-        The returned string is the gate reason suitable for DI-03 rejection
-        alerts (``SYMBOL_UNTRACKED`` for the strict-coverage path, otherwise
-        the ``DataHealth`` name).  ``None`` means the symbol may be consumed.
+        The returned string is suitable for rejection alerts:
+        ``SYMBOL_UNTRACKED`` for strict coverage, otherwise the ``DataHealth``
+        name. ``None`` means the symbol may be consumed.
 
         CORRUPTED always halts trading for the symbol when a normalizer is wired.
         GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
         is enabled (strict paper/live policy).
 
-        HALTED (BT-5) blocks the tick without escalating macro — LULD halts
+        ``HALTED`` blocks the tick without escalating macro state; LULD halts
         are recoverable and ``DataHealth.HALTED → HEALTHY`` is the resume
         path.  This sits alongside the orchestrator-side ``_halted_symbols``
         edge tracker (which retains the cancel-resting + post-halt blackout
         side effects) so the normalizer's view is *also* load-bearing here:
-        if the two ever drift, the more conservative gate wins (audit M1).
+        if the two drift, the more conservative gate wins.
         """
         if self._normalizer is None:
             return None
@@ -6687,8 +5674,8 @@ class Orchestrator:
                     if self._macro.can_transition(MacroState.DEGRADED):
                         self._macro.transition(
                             MacroState.DEGRADED,
-                        trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
-                        correlation_id=correlation_id,
+                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
+                            correlation_id=correlation_id,
                         )
                     return "SYMBOL_UNTRACKED"
         if health == DataHealth.CORRUPTED:
@@ -6708,12 +5695,7 @@ class Orchestrator:
                 )
             return health.name
         if health == DataHealth.HALTED:
-            # Recoverable halt — block fills for this symbol but do NOT
-            # escalate macro (a real LULD pause is expected to resume).
-            # Side effects (cancel resting, blackout window) live in the
-            # orchestrator's ``_update_halt_state`` edge detector; this
-            # gate provides defense-in-depth in case that detector and
-            # the normalizer ever disagree.
+            # A recoverable LULD halt blocks the symbol without degrading macro state.
             return health.name
         degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
         if degrade_gap and health == DataHealth.GAP_DETECTED:
@@ -6780,9 +5762,7 @@ class Orchestrator:
             self._backend.order_router.submit(order)
             self._bus.publish(order)
             acks = self._poll_order_router_acks({order_id})
-            for ack in acks:
-                self._bus.publish(ack)
-                self._apply_ack_to_order(ack)
+            self._publish_and_apply_order_acks(acks)
             self._reconcile_fills(acks, correlation_id)
         except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
             logger.exception(
@@ -6864,11 +5844,6 @@ class Orchestrator:
         incompatible, the regime engine cold-starts.  Snapshot failures
         never block boot.
 
-        Workstream D.2 PR-2b-iv: the legacy per-tick ``feature_engine``
-        plumbing was deleted; the feature-snapshot store now persists
-        only the regime-engine slot.  Phase-3 deployments rely on
-        deterministic cold-start replay for everything else (Inv-5,
-        separate ``_seq`` generators per event family).
         """
         if self._feature_snapshots is None:
             return
@@ -6894,15 +5869,7 @@ class Orchestrator:
             )
 
     def _checkpoint_feature_snapshots(self) -> None:
-        """Checkpoint regime-engine state.
-
-        Best-effort: snapshot failures do not block shutdown.
-
-        Workstream D.2 PR-2b-iv: with the legacy ``feature_engine``
-        deleted, the only writer to the feature-snapshot store is the
-        regime engine.  See :meth:`_restore_feature_snapshots` for the
-        symmetric warm-start guard.
-        """
+        """Checkpoint regime state without blocking shutdown on failure."""
         if self._feature_snapshots is None:
             return
         self._checkpoint_regime_snapshot()

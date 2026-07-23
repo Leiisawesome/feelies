@@ -1,61 +1,14 @@
-"""SNR drift-diffusion sensor (v0.3 §20.4.3).
+"""Per-horizon drift-to-diffusion signal-to-noise ratio.
 
-Per-horizon rolling estimator of the signal-to-noise ratio
+For each horizon ``h`` the sensor reports::
 
-    SNR(h) = |μ_t(h)| / (σ_t(h) / √h)
+    SNR(h) = abs(EWMA(log_return)) / (sqrt(EWMA(log_return**2)) / sqrt(h))
 
-where ``μ_t(h)`` is the EWMA of **log** mid-price returns at horizon
-``h`` (seconds) and ``σ_t(h)`` is the EWMA RMSE proxy from squared
-log returns at the same horizon.  This is the essay's §4.2 *exploitability gate* — alphas are
-required by the regime DSL to consult ``snr(h)`` against a configured
-floor before opening positions, where ``h`` matches the alpha's
-``horizon_seconds``.
-
-Output (length ``len(horizons_seconds)`` tuple, *sorted ascending*):
-
-    SensorReading.value = tuple(snr_at_horizon[h] for h in sorted(...))
-
-Algorithm (per horizon ``h``):
-
-- Sample mid-prices on a fixed integer-nanosecond grid **anchored to a
-  shared reference time** (``grid_anchor_ns``, default 0 = Unix epoch).
-  Grid points are at ``grid_anchor_ns + k * h * 1e9`` for integer k, so
-  *all symbols share the same grid boundaries* — cross-symbol
-  horizon-aligned analyses are well-defined.  The first quote per
-  symbol seeds ``mid_bar_open`` and aligns ``next_sample_ns`` to the
-  next grid point after its timestamp.  Quotes between grid points
-  only update the most-recent mid (no leakage of intra-bar
-  information).
-- When the event time reaches or passes a grid deadline, compute a
-  single **log-return** over the elapsed bar:
-  ``r = log(mid_now) - log(mid_open)`` where ``mid_open`` is the NBBO
-  mid carried from the previous grid boundary (bootstrap seeds the
-  first open).  When a quote arrives after ``N`` missed grid
-  deadlines (N ≥ 1), the cumulative log-return ``r`` is split into
-  ``N`` equal per-bar increments ``r/N`` and the EWMA is advanced by
-  ``N`` updates in closed form (see below).  This keeps both ``μ`` and
-  ``σ²`` unbiased after gaps — feeding ``r`` as a single sample would
-  inflate ``σ²`` by O(N) and ``μ`` by O(N).
-- Update incrementally per missed bar:
-      μ_h  ← (1 - λ)·μ_h  + λ·(r/N)
-      σ²_h ← (1 - λ)·σ²_h + λ·(r/N)²
-  with default decay λ = 2 / (1 + N_eff), N_eff = 16 effective samples
-  per horizon (≈ Welford-equivalent half-life).  ``N`` such updates
-  collapse into a closed-form weight ``(1-λ)^N`` on the prior state
-  plus ``1 - (1-λ)^N`` on the per-bar value — O(1) regardless of gap
-  size.
-- ``SNR(h) = |μ_h| / (max(σ_h, ε) / √h)``.
-
-Determinism: pure float arithmetic; integer grid crossings.
-
-Warm-up: ``warm = True`` once *every* registered horizon has
-accumulated ≥ ``warm_samples_per_horizon`` (default 4) *returns*
-contributing to the EWMA accumulators (matching the §20.4.3
-requirement of "four horizon samples minimum").  The bootstrap quote
-sets ``mid_bar_open`` without producing a return and so does **not**
-count toward this gate.  A multi-bar consolidated update increments
-the counter by ``N`` (the number of missed bars it stands in for), so
-the gate tracks elapsed grid time rather than callback count.
+Symbols share integer grid boundaries anchored by ``grid_anchor_ns``. After a
+gap, the cumulative return is split evenly across missed bars and the EWMA is
+advanced in closed form, avoiding gap-driven inflation. Output horizons are
+sorted. Warm-up requires enough returns at every horizon; the seed quote does
+not count. Processing is deterministic.
 """
 
 from __future__ import annotations
@@ -63,7 +16,8 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 _NS_PER_SECOND: int = 1_000_000_000
 _EPS: float = 1e-12
@@ -184,13 +138,13 @@ class SNRDriftDiffusionSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
         bid = float(event.bid)
         ask = float(event.ask)
-        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
-            # 3P-5: harmonise gap handling with realized_vol / structural_break
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
+            # Match gap handling in realized-vol and structural-break sensors.
             # — invalidate the carry-forward mid so the next good quote does not
             # compute a per-horizon return spanning the bad-data gap.
             state["last_mid"] = None
@@ -213,13 +167,4 @@ class SNRDriftDiffusionSensor:
             if slot["samples"] < self._warm_samples:
                 warm = False
 
-        return SensorReading(
-            timestamp_ns=ts_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=tuple(snrs),
-            warm=warm,
-        )
+        return SensorEmission(value=tuple(snrs), warm=warm)

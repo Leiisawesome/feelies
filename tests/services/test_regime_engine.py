@@ -244,7 +244,7 @@ class TestCalibrate:
 
         blob = engine.checkpoint()
         payload = json.loads(blob)
-        # Audit P1 E-1: schema v2 adds ``flags_fingerprint``.
+        # Schema 2 carries the flags fingerprint.
         assert payload.get("checkpoint_schema_version") == 2
         assert "flags_fingerprint" in payload
         assert "emission" in payload
@@ -414,7 +414,7 @@ class TestMultiSymbolIsolation:
         q_msft = _make_quote(symbol="MSFT", bid="299.90", ask="300.10", sequence=1)
 
         post_aapl = engine.posterior(q_aapl)
-        post_msft = engine.posterior(q_msft)
+        engine.posterior(q_msft)
 
         # AAPL posteriors should not have changed after MSFT update
         assert engine.current_state("AAPL") == post_aapl
@@ -498,7 +498,7 @@ class TestRestoreValidation:
 
 
 class TestCheckpointFlagsFingerprint:
-    """Audit P1 E-1: restore rejects blobs from differently-configured engines."""
+    """Restore rejects checkpoints from differently configured engines."""
 
     def test_round_trip_with_matching_flags_succeeds(self) -> None:
         engine = HMM3StateFractional(
@@ -641,21 +641,11 @@ class TestEmissionSeparationDiagnostic:
         )
 
 
-# ── Audit P0-1: uncalibrated defaults pin to an extreme on real spreads ──
+# ── Uncalibrated defaults on realistic spreads ──────────────────────────
 
 
 def test_uncalibrated_posterior_pins_to_vol_breakout_on_realistic_spread() -> None:
-    """Quantifies why uncalibrated gating is unsafe (audit P0-1, appendix #1).
-
-    A default-constructed engine carries placeholder emission means at
-    log-relative-spread −4.5/−3.5/−2.5 (≈1.1%/3.0%/8.2%), far above a real
-    US-equity ~1.3 bps spread (log ≈ −8.9).  Every real quote lands deep in
-    the left tail of all three Gaussians, where the widest-σ state
-    (vol_breakout) has the slowest-decaying likelihood, so the posterior
-    collapses toward vol_breakout rather than being merely "near-uniform".
-    The engine reports ``calibrated == False`` so the regime gate fails
-    P(<state>) safe to OFF instead of trading on this artefact.
-    """
+    """Uncalibrated placeholder emissions must not drive trading gates."""
     engine = HMM3StateFractional()
     assert engine.calibrated is False  # default deployments must opt in
 
@@ -672,7 +662,7 @@ def test_uncalibrated_posterior_pins_to_vol_breakout_on_realistic_spread() -> No
     assert post[normal_idx] < 0.5
 
 
-# ── Audit R-1: discriminability property (min pairwise emission separation) ──
+# ── Minimum pairwise emission separation ─────────────────────────────────
 
 
 def test_discriminability_high_for_well_separated_emissions() -> None:

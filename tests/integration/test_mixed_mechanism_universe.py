@@ -1,22 +1,7 @@
-"""Mixed-mechanism universe — Phase 4.1 ranker breakdown integration test.
+"""Integration tests for mechanism-aware cross-sectional ranking.
 
-Drives :class:`feelies.composition.engine.CompositionEngine` with
-hand-crafted ``CrossSectionalContext`` events whose signals span three
-distinct ``TrendMechanism`` families (KYLE_INFO, INVENTORY,
-HAWKES_SELF_EXCITE), then asserts:
-
-* the resulting ``SizedPositionIntent`` carries a non-empty
-  ``mechanism_breakdown`` dict;
-* every reported family share is ≤ the engine's configured per-family
-  cap (Phase 4.1 §20.4);
-* two replays of the same fixture produce a bit-identical intent
-  stream (Inv-5 — mechanism-cap arithmetic must be deterministic).
-
-This is intentionally narrower than ``test_phase4_e2e.py``: we
-exercise the *mechanism-aware path* of the ranker without taking on
-the per-symbol sensor wiring overhead of three real SIGNAL alphas.
-The reference YAML ``alphas/pro_xsect_mixed_mechanism_v1`` documents
-the consumes-block layout this test pins down at the engine level.
+The fixture spans three mechanism families and pins breakdown fields, family
+caps, and replay determinism without sensor-pipeline overhead.
 """
 
 from __future__ import annotations

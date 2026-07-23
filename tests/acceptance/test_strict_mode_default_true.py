@@ -1,48 +1,7 @@
-"""Closes acceptance row 84 — Workstream **E**'s default flip.
+"""Acceptance tests for strict trend-mechanism validation by default.
 
-Row 84 of ``docs/acceptance/v02_v03_matrix.md``::
-
-    | enforce_trend_mechanism: true flip | Held until ≥3 reference
-    | alphas (one per non-stress family) have shipped under strict
-    | mode in research/paper trading per §20.12.1.  Workstream **E**.
-
-This module locks the *default-True* contract from four angles:
-
-1. **Dataclass default** —
-   :class:`feelies.core.platform_config.PlatformConfig` constructed
-   with no ``enforce_trend_mechanism`` keyword resolves to ``True``.
-   This is the primary surface for production bootstrap and any
-   in-process consumer.
-
-2. **YAML parser default** — :meth:`PlatformConfig.from_yaml` against
-   a YAML file that *omits* the ``enforce_trend_mechanism:`` key
-   resolves to ``True`` (the dataclass and YAML defaults must agree
-   bit-for-bit so a YAML omission and a Python construction land in
-   the same place).
-
-3. **End-to-end refusal under default** — feeding a schema-1.1
-   SIGNAL spec missing its ``trend_mechanism:`` block through
-   :class:`feelies.alpha.loader.AlphaLoader` configured with the
-   *new* default raises
-   :class:`feelies.alpha.layer_validator.MissingTrendMechanismError`
-   from gate G16.
-
-4. **v0.2 parity preserved on explicit opt-out** — the §20.12.3 #2
-   reference alpha ``sig_benign_midcap_v1`` still loads under
-   :class:`AlphaLoader` when the operator pins
-   ``enforce_trend_mechanism=False`` (the documented escape hatch
-   for v0.2-baseline alphas pre-dating the mechanism taxonomy).
-
-Why this acceptance suite exists separately
-===========================================
-
-The pre-flip parity contract (§20.12.3 #2) is locked by
-:mod:`tests.acceptance.test_v02_no_trend_mechanism_parity`.  The
-post-flip default contract (§20.12.1, row 84) needs its own
-locked-in suite because flipping the default is **the** definition
-of "Workstream E complete" and a future contributor reverting the
-flip (intentionally or not) must trip a clearly-named test that
-points back at this acceptance row.
+Python and YAML defaults must agree, missing mechanism blocks must fail G16,
+and the explicit compatibility opt-out must remain available.
 """
 
 from __future__ import annotations
@@ -58,7 +17,7 @@ from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.core.platform_config import PlatformConfig
 
 
-# ── §20.12.3 #2 v0.2 reference alpha ────────────────────────────────────
+# Reference alpha used by the compatibility check.
 
 
 _V02_BASELINE_ALPHA = Path("alphas") / "sig_benign_midcap_v1" / "sig_benign_midcap_v1.alpha.yaml"
@@ -162,7 +121,7 @@ class TestYAMLParserDefaultIsTrue:
 
         A divergence would silently shift behaviour depending on
         whether a config is constructed in Python or loaded from
-        YAML — the kind of seam Workstream E was specifically
+        YAML — a configuration seam that must stay covered.
         avoiding.
         """
         dataclass_default = PlatformConfig(
@@ -190,11 +149,7 @@ class TestLoaderRefusesMissingMechanismUnderDefault:
     """
 
     def test_loader_refuses_no_mechanism_under_platform_default(self) -> None:
-        # We thread the *PlatformConfig* default through the loader
-        # explicitly (mirroring bootstrap.py) — this guards the
-        # specific seam Workstream E was tightening: default flip ⇒
-        # production load behaviour flips ⇒ G16 fires for missing
-        # mechanism blocks at boot time without any operator action.
+        # Mirror bootstrap by passing the platform default into the loader.
         platform_default = _base_config().enforce_trend_mechanism
         loader = AlphaLoader(enforce_trend_mechanism=platform_default)
         with pytest.raises(MissingTrendMechanismError, match="strict-mode"):

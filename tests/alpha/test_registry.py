@@ -6,14 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import AlphaLifecycleState, GateRequirements, PromotionEvidence
-from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
+from feelies.alpha.lifecycle import GateRequirements, PromotionEvidence
 from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.core.clock import SimulatedClock
 from feelies.features.definition import FeatureDefinition, WarmUpSpec
 
-from tests.alpha.conftest import MockAlpha, _make_spread_feature, mock_alpha
+from tests.alpha.conftest import MockAlpha, _make_spread_feature
 
 
 class TestAlphaRegistry:
@@ -352,7 +351,7 @@ class TestAlphaRegistryLifecycle:
 
 
 class TestAlphaRegistryWithPromotionLedger:
-    """Workstream F-1: registry passes the promotion ledger through to
+    """Registry passes the promotion ledger through to
     every constructed lifecycle, so transitions made via the registry
     surface in the durable JSONL audit trail."""
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from feelies.alpha.validation import validate_alpha_set
 from feelies.features.definition import FeatureDefinition, WarmUpSpec
@@ -115,34 +114,7 @@ class TestValidateAlphaSet:
 
     def test_dependency_cycle(self) -> None:
         f = _make_spread_feature()
-        base = FeatureDefinition(
-            feature_id="base",
-            version="1.0",
-            description="base",
-            depends_on=frozenset(),
-            warm_up=WarmUpSpec(),
-            compute=f.compute,
-        )
-        derived = FeatureDefinition(
-            feature_id="derived",
-            version="1.0",
-            description="derived",
-            depends_on=frozenset({"base"}),
-            warm_up=WarmUpSpec(),
-            compute=f.compute,
-        )
-        cycle = FeatureDefinition(
-            feature_id="base",
-            version="1.0",
-            description="cycle",
-            depends_on=frozenset({"derived"}),
-            warm_up=WarmUpSpec(),
-            compute=f.compute,
-        )
-        # We need base -> derived -> base cycle. So base depends on derived, derived depends on base.
-        # In _collect_feature_defs, first-seen wins. So we need one alpha with base (depends on derived)
-        # and one with derived (depends on base). The merged graph: base.depends_on = {derived},
-        # derived.depends_on = {base}. That's a cycle.
+        # base -> derived -> base cycle in one alpha's feature_defs.
         a1 = MockAlpha(
             alpha_id="a1",
             feature_defs=[

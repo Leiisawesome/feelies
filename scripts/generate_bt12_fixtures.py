@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate ``tests/fixtures/bt12/*_daily_returns.json`` for BT-12."""
+"""Regenerate reference-alpha daily-return fixtures."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def main() -> None:
     out = _REPO_ROOT / "tests" / "fixtures" / "bt12"
     out.mkdir(parents=True, exist_ok=True)
 
-    # Guardrail: this script overwrites committed BT-12 acceptance fixtures.
+    # Guardrail: this script overwrites committed acceptance fixtures.
     # Refuse to clobber them unless --force (or --dry-run) is given, so an
     # accidental invocation cannot silently re-baseline the fixtures.
     existing = [out / f"{aid}_daily_returns.json" for aid in _ALPHAS]

@@ -1,18 +1,4 @@
-"""Phase-1 event-contract tests (three-layer architecture v0.2).
-
-Covers the five new event types added in §5.1-5.7 of
-``docs/three_layer_architecture.md`` plus the additive fields
-on ``RegimeState`` and ``Signal`` and the ``source_layer`` provenance
-tag on the ``Event`` base class.
-
-These tests exercise:
-  - Instantiation with required and default fields.
-  - Frozenness (immutability) per Inv-7.
-  - Default equivalence with legacy producers (no behavior change).
-  - Round-trip via ``dataclasses.replace`` — the closest stand-in for
-    bus serialization given that ``core/serialization.py`` is currently
-    a Protocol with no concrete implementation.
-"""
+"""Event-contract tests for construction, defaults, immutability, and replacement."""
 
 from __future__ import annotations
 
@@ -136,16 +122,7 @@ def test_regime_state_horizon_anchored() -> None:
 
 
 def test_signal_default_layer_is_signal_post_d2() -> None:
-    """A bare-fields Signal defaults to layer="SIGNAL" with horizon=0.
-
-    Workstream D.2 PR-2b-ii narrowed ``Signal.layer`` to
-    ``Literal["SIGNAL", "PORTFOLIO"]`` and changed the default from the
-    historical ``"LEGACY_SIGNAL"`` to ``"SIGNAL"``.  Horizon-agnostic
-    additive fields (``horizon_seconds``, ``regime_gate_state``,
-    ``consumed_features``) keep their original neutral defaults so that
-    pre-Phase-3 callers continue to construct ``Signal`` without
-    specifying horizon or gate metadata.
-    """
+    """Bare signals use the SIGNAL layer and neutral horizon metadata."""
     sig = Signal(
         timestamp_ns=1,
         correlation_id="c",
@@ -446,14 +423,7 @@ def test_frozenness(event: Event, attr: str, new_value: object) -> None:
 
 
 def test_signal_replace_round_trip() -> None:
-    """``dataclasses.replace`` produces an equal-by-value copy.
-
-    Stand-in for bus serialization until ``core/serialization.py`` is
-    implemented (Phase 2+).  Replace is the closest equivalent to
-    "construct from same field values" without relying on JSON or
-    pickle round-trips that the platform's serialization layer will
-    eventually formalize.
-    """
+    """``dataclasses.replace`` produces an equal-by-value copy."""
     sig = Signal(
         timestamp_ns=1,
         correlation_id="c",

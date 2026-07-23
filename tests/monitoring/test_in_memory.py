@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 
 from feelies.core.events import Alert, AlertSeverity, MetricEvent, MetricType
 from feelies.monitoring.in_memory import (
     InMemoryAlertManager,
     InMemoryKillSwitch,
     InMemoryMetricCollector,
-    MetricSummary,
 )
 
 
@@ -95,7 +93,6 @@ class TestInMemoryMetricCollector:
         assert mc.get_summary("x", "y") is None
 
     def test_satisfies_protocol(self) -> None:
-        from feelies.monitoring.telemetry import MetricCollector
 
         mc = InMemoryMetricCollector()
         assert hasattr(mc, "record")
@@ -148,7 +145,6 @@ class TestInMemoryAlertManager:
         assert len(am.active_alerts()) == 0
 
     def test_satisfies_protocol(self) -> None:
-        from feelies.monitoring.alerting import AlertManager
 
         am = InMemoryAlertManager()
         assert hasattr(am, "emit")
@@ -192,7 +188,6 @@ class TestInMemoryKillSwitch:
         assert ks.history[1].audit_token == "TOK-1"
 
     def test_satisfies_protocol(self) -> None:
-        from feelies.monitoring.kill_switch import KillSwitch
 
         ks = InMemoryKillSwitch()
         assert hasattr(ks, "is_active")

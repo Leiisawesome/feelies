@@ -18,9 +18,8 @@ class DuplicateSensorRegistrationError(SensorRegistryError):
 
     Versions of the same ``sensor_id`` are intentionally distinct
     sensors (they may have different params and produce different
-    values).  Re-registering an exact ``(id, version)`` pair is always
-    a configuration error per the plan §3.1 ("version-pin conflict
-    detection").
+    values). Re-registering an exact ``(id, version)`` pair is a
+    configuration error.
     """
 
 

@@ -1,4 +1,4 @@
-"""Tests for the F-2 promotion-evidence schemas, gate matrix, and validators.
+"""Tests for promotion-evidence schemas, gates, and validators.
 
 Covers:
 
@@ -331,11 +331,10 @@ class TestValidateCPCV:
         errors = validate_cpcv(ev)
         assert any("p-value" in e for e in errors)
 
-    # ── P1-2: integrity (not trust-on-submit) ────────────────────────
+    # ── Integrity checks ─────────────────────────────────────────────
 
     def test_audit_fabricated_evidence_now_rejected(self) -> None:
-        # Regression guard for the audit's confirmed trust-on-submit
-        # finding: this exact package PASSED validate_cpcv before P1-2.
+        # Internally inconsistent evidence must not be trusted as submitted.
         ev = CPCVEvidence(
             fold_count=8,
             embargo_bars=0,
@@ -466,7 +465,7 @@ class TestValidateDSR:
         errors = validate_dsr(ev)
         assert any("trials_count" in e for e in errors)
 
-    # ── P1-2 / P1-5: integrity + canonical-DSR surfacing ─────────────
+    # Integrity and canonical DSR errors.
 
     def test_non_finite_dsr_rejected(self) -> None:
         ev = DSREvidence(
@@ -487,7 +486,7 @@ class TestValidateDSR:
         assert any("outside [0, 1]" in e for e in validate_dsr(ev))
 
     def test_p_value_error_surfaces_canonical_dsr(self) -> None:
-        # P1-5: the error text states the canonical Bailey-LdP DSR
+        # Error text states the canonical Bailey-LdP DSR
         # (= 1 - dsr_p_value) so reviewers are not misled by the
         # Sharpe-excess `dsr` field.
         ev = DSREvidence(
@@ -849,7 +848,7 @@ class TestEvidenceToMetadata:
             evidence_to_metadata(Bogus(x=1))
 
     def test_non_dataclass_input_rejected(self) -> None:
-        # Anything that is registered in _KIND_BY_TYPE is by construction a
+        # Anything that is registered in _EVIDENCE_REGISTRY is by construction a
         # dataclass (we control the registration), so the only way to hit
         # the non-dataclass branch is to spoof a registered type via a
         # subclass.  We exercise the safe path: the unsupported-type
@@ -995,14 +994,7 @@ class TestKindToType:
 
 
 class TestMetadataToEvidence:
-    """Tests for the F-3-introduced reverse helper.
-
-    The forward direction (:func:`evidence_to_metadata`) is exhaustively
-    covered by :class:`TestEvidenceToMetadata`; here we focus on the
-    *inverse*: a metadata payload reconstructs into the same evidence
-    instance(s) the writer produced, schema-version mismatches are
-    refused, and unsupported kinds are surfaced.
-    """
+    """Reconstruct evidence and reject incompatible metadata."""
 
     def test_round_trip_preserves_research_acceptance(self) -> None:
         original = _full_research_pass()
@@ -1070,8 +1062,7 @@ class TestMetadataToEvidence:
         assert rebuilt_cs.tier is CapitalStageTier.SCALED
 
     def test_no_schema_version_returns_empty_list(self) -> None:
-        # Legacy / non-evidence metadata (e.g. F-1-era quarantine
-        # entries that just carry {"reason": "..."}).
+        # Reason-only metadata contains no reconstructable evidence.
         assert metadata_to_evidence({}) == []
         assert metadata_to_evidence({"reason": "edge decay"}) == []
         assert metadata_to_evidence({"evidence": {"paper_days": 30, "paper_sharpe": 1.5}}) == []
@@ -1124,9 +1115,7 @@ class TestMetadataToEvidence:
         assert validate_gate(GateId.PAPER_TO_LIVE, rebuilt) == []
 
     def test_replay_with_tightened_threshold_fails(self) -> None:
-        """Tightening the platform's threshold causes previously-OK
-        evidence to fail re-validation — this is the audit value of
-        the CLI's ``replay-evidence`` subcommand."""
+        """Tighter thresholds can reject evidence that passed when recorded."""
         evidences = [
             _full_paper_window_pass(),
             _full_cpcv_pass(),
@@ -1139,13 +1128,11 @@ class TestMetadataToEvidence:
         assert any("DSR" in e for e in errors)
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Workstream F-5: GateThresholds override parsing + merging
-# ─────────────────────────────────────────────────────────────────────
+# ── Gate-threshold override parsing and merging ───────────────────────
 
 
 class TestParseGateThresholdsOverrides:
-    """Structural + per-key validation for the F-5 override surface."""
+    """Validate the structure and values of gate-threshold overrides."""
 
     def test_none_returns_empty_dict(self) -> None:
         assert parse_gate_thresholds_overrides(None) == {}
@@ -1258,7 +1245,7 @@ class TestApplyGateThresholdsOverrides:
             apply_gate_thresholds_overrides(base, {"bogus": 1})
 
     def test_can_be_chained_for_multi_layer_overrides(self) -> None:
-        # Models the F-5 layering: skill defaults → platform override →
+        # Models the layering: skill defaults → platform override →
         # per-alpha override.  Each layer wins over the previous one
         # for keys it sets.
         skill_defaults = GateThresholds()
@@ -1272,7 +1259,7 @@ class TestApplyGateThresholdsOverrides:
 
 
 class TestMetadataToEvidenceReservedCoKeys:
-    """Audit P1-1: ``metadata_to_evidence`` must ignore non-evidence
+    """``metadata_to_evidence`` must ignore non-evidence
     co-keys (``reason``) that lifecycle writers merge alongside evidence.
     """
 
@@ -1290,7 +1277,7 @@ class TestMetadataToEvidenceReservedCoKeys:
         assert ev.net_alpha_negative_days == 12
 
     def test_reason_only_metadata_is_treated_as_legacy(self) -> None:
-        # No schema_version → nothing to reconstruct (legacy/decommission).
+        # Without a schema version, there is no evidence to reconstruct.
         assert metadata_to_evidence({"reason": "manual retire"}) == []
 
     def test_genuinely_unknown_kind_still_rejected(self) -> None:
@@ -1307,7 +1294,7 @@ class TestMetadataToEvidenceReservedCoKeys:
 
 
 class TestPerAlphaFloorHelper:
-    """Audit P0-1: ``assert_per_alpha_overrides_respect_floor`` rejects a
+    """``assert_per_alpha_overrides_respect_floor`` rejects a
     per-alpha override that loosens an operator-pinned platform floor.
     """
 

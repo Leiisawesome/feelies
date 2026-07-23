@@ -1,11 +1,9 @@
-"""Session-clock helpers — deterministic RTH-open anchoring (audit P1-8).
+"""Deterministic session-clock helpers anchored to the RTH open.
 
 Pure functions of an event timestamp (no wall-clock reads), so they keep
 the ``HorizonScheduler``'s determinism contract (Inv-5) while letting the
-horizon grid anchor to the **RTH open** (09:30 America/New_York) instead
-of the first event's raw timestamp.  Anchoring to the first event left the
-first bucket of the day truncated and the boundaries misaligned to the
-session structure.
+horizon grid anchor to 09:30 America/New_York instead of the first event,
+avoiding a truncated first bucket.
 """
 
 from __future__ import annotations

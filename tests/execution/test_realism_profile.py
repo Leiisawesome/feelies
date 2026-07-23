@@ -1,5 +1,4 @@
-"""Tests for the live-like execution-realism profile check (audit
-execution_fills_audit_2026-07-02, P1 #6)."""
+"""Tests for live-like execution-realism profile checks."""
 
 from __future__ import annotations
 

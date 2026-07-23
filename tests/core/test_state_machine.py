@@ -147,6 +147,26 @@ class TestStateMachine:
         with pytest.raises(AssertionError, match="Expected state A"):
             sm.assert_state(SimpleState.A)
 
+    def test_history_limit_rings(self) -> None:
+        sm = StateMachine(
+            name="ring",
+            initial_state=SimpleState.A,
+            transitions={
+                SimpleState.A: frozenset({SimpleState.B}),
+                SimpleState.B: frozenset({SimpleState.A, SimpleState.C}),
+                SimpleState.C: frozenset({SimpleState.A}),
+            },
+            clock=SimulatedClock(0),
+            history_limit=2,
+        )
+        sm.transition(SimpleState.B, trigger="1")
+        sm.transition(SimpleState.A, trigger="2")
+        sm.transition(SimpleState.B, trigger="3")
+        hist = sm.history
+        assert len(hist) == 2
+        assert hist[0].trigger == "2"
+        assert hist[1].trigger == "3"
+
     def test_incomplete_transition_table_raises(self) -> None:
         clock = SimulatedClock(0)
         with pytest.raises(ValueError, match="incomplete"):

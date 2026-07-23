@@ -175,17 +175,20 @@ def _snapshot(
     horizon_seconds: int = 120,
     boundary_index: int = 1,
     sequence: int = 10,
+    timestamp_ns: int = 2_000,
+    boundary_ts_ns: int = 0,
     values: dict[str, float] | None = None,
     warm: dict[str, bool] | None = None,
     stale: dict[str, bool] | None = None,
 ) -> HorizonFeatureSnapshot:
     return HorizonFeatureSnapshot(
-        timestamp_ns=2_000,
+        timestamp_ns=timestamp_ns,
         correlation_id="corr",
         sequence=sequence,
         symbol=symbol,
         horizon_seconds=horizon_seconds,
         boundary_index=boundary_index,
+        boundary_ts_ns=boundary_ts_ns,
         values=values or {},
         warm=warm or {},
         stale=stale or {},
@@ -351,7 +354,7 @@ def test_flat_close_signal_carries_alpha_metadata() -> None:
 
 
 def test_stale_required_feature_still_permits_gate_close() -> None:
-    """Audit P1-7: a stale required feature must NOT block the ON->OFF
+    """A stale required feature must not block the ON-to-OFF
     FLAT exit.
 
     A position is opened while the gate is ON; on the next boundary a
@@ -397,7 +400,7 @@ def test_stale_required_feature_still_permits_gate_close() -> None:
 
 
 def test_stale_required_feature_suppresses_new_entry() -> None:
-    """Audit P1-7: while the gate stays ON, a stale required feature must
+    """While the gate stays ON, a stale required feature must
     still suppress a *new* entry (entry-suppression contract intact)."""
     engine, bus, captured = _engine()
     gate = _gate()
@@ -530,6 +533,103 @@ def test_sensor_cache_overlay_makes_value_available_to_gate() -> None:
     assert len(captured) == 1
 
 
+def test_sensor_cache_rejects_reading_after_snapshot_boundary() -> None:
+    """Reject cached readings newer than the snapshot boundary."""
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(
+        SensorReading(
+            timestamp_ns=2_001,  # one ns after the snapshot's boundary below
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
+    bus.publish(_snapshot(boundary_ts_ns=2_000))
+
+    assert captured == []
+
+
+def test_sensor_cache_accepts_reading_at_snapshot_boundary() -> None:
+    """Companion to the rejection test above: a reading stamped exactly at
+    (not just before) the nominal boundary is still valid as-of it —
+    the filter is ``reading_ts_ns > asof_ns``, an exclusive upper bound."""
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(
+        SensorReading(
+            timestamp_ns=2_000,  # exactly at the snapshot's boundary below
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
+    bus.publish(_snapshot(boundary_ts_ns=2_000))
+
+    assert len(captured) == 1
+
+
+def test_sensor_cache_serves_pre_boundary_value_after_post_boundary_overwrite() -> None:
+    """Retain the latest valid reading when a newer value crosses the boundary."""
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    # Valid pre-boundary reading (at or before the 2_000 boundary).
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
+    # Boundary-crossing quote's reading, stamped after the boundary; this
+    # overwrites the slot but must not shadow the pre-boundary value.
+    bus.publish(
+        SensorReading(
+            timestamp_ns=2_050,
+            correlation_id="corr",
+            sequence=4,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=0.1,
+        )
+    )
+    bus.publish(_snapshot(boundary_ts_ns=2_000))
+
+    assert len(captured) == 1
+
+
 def test_sensor_cache_skips_non_warm_readings() -> None:
     engine, bus, captured = _engine()
     gate = _gate(
@@ -584,16 +684,7 @@ def test_sensor_cache_skips_tuple_value() -> None:
 
 
 def test_cold_reading_invalidates_warm_cache_entry() -> None:
-    """A previously-warm sensor that goes cold (sliding-window warm-up
-    revert after a data gap) MUST drop its cached value.
-
-    Without invalidation the gate would silently fire on the stale
-    warm value forever — a real bug for sensors like ``ofi_ewma`` that
-    lazily revert to ``warm=False`` after >300 s without quotes.  The
-    expected fail-safe is that the next snapshot evaluation hits an
-    ``UnknownIdentifierError`` (caught by the H8 / M6 path) which
-    resets the gate latch to OFF (Inv-11 fail-safe default).
-    """
+    """A cold reading removes its cached warm value and closes the gate."""
     engine, bus, captured = _engine()
     gate = _gate(
         on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
@@ -645,12 +736,7 @@ def test_cold_reading_invalidates_warm_cache_entry() -> None:
 
 
 def test_cold_tuple_reading_invalidates_warm_components() -> None:
-    """Same invalidation semantics as the scalar case, for tuple sensors.
-
-    A previously-warm tuple sensor that goes cold MUST drop every
-    fanned-out component cache entry — otherwise downstream gate
-    evaluation could fire on stale component values.
-    """
+    """A cold tuple reading removes every cached component."""
     engine, _bus, _ = _engine()
     engine.register(_registered())
     engine.attach()
@@ -696,15 +782,7 @@ def test_cold_tuple_reading_invalidates_warm_components() -> None:
 
 
 def test_cold_reading_with_open_position_emits_flat_close() -> None:
-    """Sensor reverting to cold while gate is ON unwinds the position.
-
-    H8 / M6 fail-safe: a previously-ON gate that loses its binding
-    (sensor reverted to ``warm=False`` after a data gap) is reset to
-    OFF and a FLAT signal is emitted so the open position is unwound
-    rather than orphaned.  Without this, ``ofi_ewma`` (and any sensor
-    with a sliding-window warm criterion) would leave positions
-    behind whenever their sliding window emptied between snapshots.
-    """
+    """A gate that loses a warm binding emits FLAT for any open position."""
     engine, bus, captured = _engine()
     gate = _gate(
         # Both conditions reference ``ofi_ewma`` so once the cache
@@ -762,7 +840,7 @@ def test_cold_reading_with_open_position_emits_flat_close() -> None:
     assert close.direction is SignalDirection.FLAT
     assert close.regime_gate_state == "OFF"
     assert close.strategy_id == "alpha_x"
-    # Forensic provenance propagates onto the FLAT close.
+    # The close retains its decision provenance.
     assert close.consumed_features == ("ofi_ewma",)
     assert close.trend_mechanism is TrendMechanism.KYLE_INFO
     assert close.expected_half_life_seconds == 600
@@ -813,7 +891,7 @@ def test_attach_is_idempotent() -> None:
     assert len(captured) == 1
 
 
-# ── Phase-3.1 trend_mechanism propagation (§20.6) ──────────────────────
+# ── trend_mechanism propagation (§20.6) ────────────────────────────────
 
 
 def test_default_metadata_preserves_v02_behavior() -> None:
@@ -873,9 +951,21 @@ def test_engine_stamps_g12_disclosure_fields() -> None:
     assert sig.disclosed_margin_ratio == pytest.approx(1.8)
 
 
-def test_alpha_supplied_mechanism_overrides_registered_default() -> None:
+def test_alpha_supplied_trend_mechanism_overrides_but_half_life_is_registry_authoritative() -> (
+    None
+):
     """If the alpha returns a ``Signal`` that already carries its own
     ``trend_mechanism``, the engine does NOT overwrite it — alpha wins.
+
+    ``expected_half_life_seconds`` is the opposite:
+    the engine always stamps the G16-validated ``registered`` value,
+    regardless of what the alpha returned.  ``trend_mechanism`` override is
+    structurally unreachable from a compiled YAML ``signal:`` body (the
+    loader's sandbox namespace never binds ``TrendMechanism``), so it is
+    left as alpha-wins defense-in-depth for hand-rolled ``HorizonSignal``
+    implementations; ``expected_half_life_seconds`` is a bare ``int`` any
+    inline body could set with no special import and feeds composition-layer
+    decay weighting, so the engine is made authoritative for it instead.
     """
 
     class _MechanismAwareSignal:
@@ -916,18 +1006,14 @@ def test_alpha_supplied_mechanism_overrides_registered_default() -> None:
 
     assert len(captured) == 1
     assert captured[0].trend_mechanism is TrendMechanism.HAWKES_SELF_EXCITE
-    assert captured[0].expected_half_life_seconds == 30
+    assert captured[0].expected_half_life_seconds == 600
 
 
-# ── Audit P1 G-1: arithmetic / type errors in gate evaluation ───────
+# ── Arithmetic and type errors in gate evaluation ────────────────────
 
 
 def test_gate_zero_division_fails_safe_off(caplog) -> None:
-    """A whitelisted DSL expression can divide by a sensor value that
-    is zero at evaluation time.  This raises ZeroDivisionError — neither
-    UnknownIdentifierError nor RegimeGateError — and before audit P1
-    G-1 it escaped the fail-safe path.  Verify it now forces the
-    latch to OFF and continues the per-tick walk."""
+    """A zero division forces the gate OFF without stopping the tick walk."""
     import logging
 
     boom_gate = _gate(
@@ -967,8 +1053,7 @@ def test_gate_zero_division_fails_safe_off(caplog) -> None:
 
 
 def test_gate_type_error_on_string_comparison_fails_safe_off(caplog) -> None:
-    """``dominant < 1`` compares a string to a number — TypeError on
-    Python 3 — and must be caught by the P1 G-1 fail-safe."""
+    """A type error in a gate comparison must fail closed."""
     import logging
 
     boom_gate = _gate(
@@ -992,7 +1077,7 @@ def test_gate_type_error_on_string_comparison_fails_safe_off(caplog) -> None:
 
 
 def test_off_condition_regime_error_unwinds_latched_gate() -> None:
-    """Audit P1-1: a RegimeGateError on the OFF path (e.g. a typo'd
+    """A ``RegimeGateError`` on the OFF path
     ``P(<state>)`` in off_condition) must force the gate OFF and emit a FLAT
     close when the gate was latched ON — never silently strand the position
     in the regime-ON state (Inv-11)."""

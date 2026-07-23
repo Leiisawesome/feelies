@@ -1,4 +1,4 @@
-"""Unit tests for feelies.harness.backtest_runner (audit P2-7, P2-8)."""
+"""Unit tests for ``feelies.harness.backtest_runner``."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def test_run_backtest_phases_prints_clean_message_and_exits_nonzero_on_integrity
     monkeypatch,
     capsys,
 ) -> None:
-    """Audit P2-7: a pipeline integrity exception must produce a clean, clearly
+    """A pipeline integrity exception must produce a clear
     labeled error line (in addition to the traceback) and a controlled nonzero
     exit code, rather than only an uncaught traceback."""
     mod = _load_smoke()
@@ -131,7 +131,7 @@ def test_run_backtest_phases_prints_partial_diagnostics_when_degraded_without_ex
     monkeypatch,
     capsys,
 ) -> None:
-    """Audit P2-8: a run that ends DEGRADED without raising (Phase 6's
+    """A run that ends DEGRADED without raising
     ``generate_report`` is never reached on this path) must still surface
     basic triage counts, not just a one-line macro-state error."""
     from feelies.kernel.macro import MacroState
@@ -144,7 +144,7 @@ def test_run_backtest_phases_prints_partial_diagnostics_when_degraded_without_ex
     def _run_then_degrade(self: Orchestrator) -> None:
         # Run the real pipeline (so signals/orders/fills actually occur),
         # then simulate an integrity gap that leaves macro non-READY without
-        # raising — a different failure shape than the P2-7 exception path.
+        # raising, which is a distinct failure shape.
         real_run_backtest(self)
         self._macro._state = MacroState.DEGRADED
 

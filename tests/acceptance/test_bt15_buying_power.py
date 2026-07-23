@@ -1,10 +1,9 @@
-"""BT-15 acceptance: Reg-T buying power on margin_25k accounts."""
+"""Test Reg-T buying power on ``margin_25k`` accounts."""
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 
 from feelies.core.events import OrderRequest, OrderType, RiskAction, Side
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -55,6 +54,7 @@ def test_entry_within_intraday_buying_power_allowed() -> None:
         BuyingPowerPhase.INTRADAY,
         BuyingPowerConfig(account_type="margin_25k"),
     )
+    assert limit == Decimal("200000")  # 4× equity
     # 1500 sh × $100 = $150k gross < $200k (4× $50k)
     verdict = engine.check_order(_order("AAPL", 1500), store)
     assert verdict.action == RiskAction.ALLOW

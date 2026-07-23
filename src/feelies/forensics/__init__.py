@@ -1,9 +1,10 @@
-"""Post-trade forensics — edge decay detection and execution quality audit.
+"""Post-trade edge-decay and execution-quality analysis.
 
-Protocol definitions; concrete analyzers are future work.
-See post-trade-forensics skill for specification.
+:class:`~feelies.forensics.decay_detector.DecayDetector` implements TCA
+and edge-decay analysis. See post-trade-forensics skill for specification.
 """
 
 from feelies.forensics.analyzer import ForensicAnalyzer
+from feelies.forensics.decay_detector import DecayDetector
 
-__all__ = ["ForensicAnalyzer"]
+__all__ = ["DecayDetector", "ForensicAnalyzer"]

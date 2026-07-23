@@ -1,8 +1,6 @@
 """End-to-end: a regime hazard spike actually closes an open position.
 
-Audit follow-up #3: every test we shipped for the regime / hazard
-stack so far is unit-level.  This integration locks the *behavior* the
-audit identified as silently broken before the fix series:
+This integration locks the full regime-to-hazard behavior:
 
     regime-flip RegimeState pair
       → RegimeHazardDetector.detect()
@@ -25,13 +23,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    NBBOQuote,
     OrderRequest,
-    RegimeHazardSpike,
     RegimeState,
     Side,
 )

@@ -20,6 +20,7 @@ from feelies.core.events import (
 )
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.services.regime_engine import HMM3StateFractional
 
 
@@ -253,9 +254,7 @@ class TestMarkToMarketExposureAndDrawdown:
     ) -> None:
         """Open losses must be visible to the drawdown guard.
 
-        Realized PnL is zero; only unrealized moves.  Pre-fix this
-        would have silently passed because ``_is_drawdown_breached``
-        used realized-only equity.
+        Realized PnL stays zero; the unrealized loss alone must trigger.
         """
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
@@ -341,7 +340,7 @@ class TestSizedIntentMarkSelection:
 
 
 class TestSizedIntentDroppedLegAlert:
-    """Audit R4: per-leg PORTFOLIO veto must surface a diagnostic Alert.
+    """A per-leg PORTFOLIO veto must emit a diagnostic alert.
 
     Without the Alert, a partial portfolio-construction execution
     silently executes the surviving legs without re-validating any
@@ -456,13 +455,7 @@ class TestSizedIntentDrawdownAbortsWholeIntent:
 
 
 class TestPortfolioOrderG12Disclosure:
-    """Audit R3: PORTFOLIO orders must carry the per-symbol disclosed cost.
-
-    Without the stamp, the post-fill cost-vs-disclosure stress alert
-    in the orchestrator (only fires when ``g12_disclosed_cost_total_bps
-    > 0``) is silently disabled for every PORTFOLIO leg — and PORTFOLIO
-    is the only production-reachable order path post-D.2.
-    """
+    """Portfolio orders carry per-symbol disclosed cost."""
 
     def test_portfolio_order_carries_disclosed_cost_per_symbol(
         self, config: RiskConfig, store: MemoryPositionStore
@@ -510,13 +503,7 @@ class TestPortfolioOrderG12Disclosure:
 
 
 class TestSizedIntentCumulativeGrossCap:
-    """Audit R-1: the gross cap must bind across legs of one intent.
-
-    Each leg's ``check_order`` previously saw only the pre-intent
-    ``positions`` snapshot, so K legs each individually under the cap
-    could collectively breach it.  ``build_sized_intent_orders`` now
-    threads the running admitted gross into ``additional_exposure``.
-    """
+    """The gross cap binds cumulatively across every admitted intent leg."""
 
     def test_second_leg_dropped_when_aggregate_breaches_cap(
         self, store: MemoryPositionStore
@@ -563,7 +550,7 @@ class TestSizedIntentCumulativeGrossCap:
 
 
 class TestSizedIntentRaisingCheckContained:
-    """Audit R-2: a raising per-leg check_order must not propagate."""
+    """A raising per-leg ``check_order`` must not propagate."""
 
     def test_raising_leg_is_veto_dropped(self, config: RiskConfig) -> None:
         engine = BasicRiskEngine(config)
@@ -602,7 +589,7 @@ class TestSizedIntentRaisingCheckContained:
 
 
 class TestNonPositiveEquityForceFlattens:
-    """Audit R-6: a wiped-out book must force-flatten, never size against
+    """A wiped-out book must force-flatten, never size against
     initial capital it no longer has — independent of drawdown config."""
 
     def test_negative_equity_force_flattens_even_with_loose_drawdown(
@@ -624,9 +611,32 @@ class TestNonPositiveEquityForceFlattens:
         assert verdict.action == RiskAction.FORCE_FLATTEN
         assert "non-positive equity" in verdict.reason
 
+    def test_negative_equity_force_flattens_entry_with_buying_power_wired(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """Force-flatten nonpositive equity before buying-power checks."""
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=1000.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(
+            cfg,
+            buying_power_config=BuyingPowerConfig(account_type="margin_25k"),
+        )
+        # Unrealized loss of $120k drives live equity to -$20k.
+        store.update("AAPL", 2000, Decimal("100"))
+        store.update_mark("AAPL", Decimal("40"))
+
+        order = _make_order(symbol="MSFT", side=Side.BUY, quantity=10)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.FORCE_FLATTEN
+        assert "non-positive equity" in verdict.reason
+
 
 class TestRegimeMissingDataFailsSafe:
-    """Audit R-3: a configured engine with no committed posterior for the
+    """A configured engine with no committed posterior for the
     symbol tightens to min(scales), not the 1.0 baseline."""
 
     def test_missing_posterior_uses_min_scale(self, store: MemoryPositionStore) -> None:
@@ -659,6 +669,23 @@ class TestRegimeMissingDataFailsSafe:
         # at 1.0 so the limit never exceeds the unscaled baseline.
         engine._regime_scale_map["normal"] = 2.0
         assert engine._regime_scaling("AAPL") <= 1.0
+
+    def test_nan_posterior_fails_safe_to_min_scale_not_baseline(self) -> None:
+        """Missing regime data tightens limits fail-safe.
+
+        A third-party ``RegimeEngine`` that fails to sanitize its own
+        posterior (the shipped ``HMM3StateFractional`` always does) could
+        produce a NaN EV.  ``min(1.0, float("nan"))`` evaluates to ``1.0``
+        under Python's comparison semantics — the *unscaled baseline*, not
+        the intended fail-safe minimum.  Directly seeding ``_posteriors``
+        bypasses ``posterior()``'s own sanitization to simulate exactly
+        that unsanitized-engine scenario.
+        """
+        regime = HMM3StateFractional()
+        regime._posteriors["AAPL"] = [float("nan"), 0.0, 0.0]
+        cfg = RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
+        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        assert engine._regime_scaling("AAPL") == engine._regime_scale_default
 
 
 class TestSizedIntentScaleDownDecimal:
@@ -699,3 +726,39 @@ class TestSizedIntentScaleDownDecimal:
             ).orders
         assert len(orders) == 1
         assert orders[0].quantity == 5
+
+    def test_scale_down_to_zero_drops_the_leg(
+        self,
+        config: RiskConfig,
+        store: MemoryPositionStore,
+    ) -> None:
+        """Drop a sized-intent leg when risk scaling rounds it to zero."""
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        def fake_check_order(
+            self: BasicRiskEngine,
+            order: OrderRequest,
+            positions: MemoryPositionStore,
+            *,
+            additional_exposure: Decimal = Decimal("0"),
+        ) -> RiskVerdict:
+            if order.symbol == "AAPL" and order.quantity == 2:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.SCALE_DOWN,
+                    reason="test_scale_down_to_zero",
+                    scaling_factor=0.1,
+                )
+            return BasicRiskEngine.check_order(self, order, positions)
+
+        with patch.object(BasicRiskEngine, "check_order", fake_check_order):
+            result = engine.check_sized_intent(
+                _make_sized_intent(targets={"AAPL": 200.0}),
+                store,
+            )
+        assert result.orders == ()

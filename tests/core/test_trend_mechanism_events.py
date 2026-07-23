@@ -1,10 +1,4 @@
-"""Phase-1.1 (v0.3) event-contract tests.
-
-Covers the closed ``TrendMechanism`` enum, ``RegimeHazardSpike`` event,
-the v0.3 additive fields on ``Signal``, and the ``mechanism_breakdown``
-field on ``SizedPositionIntent`` per
-``docs/three_layer_architecture.md`` §20.3.
-"""
+"""Event-contract tests for trend mechanisms and regime hazards."""
 
 from __future__ import annotations
 
@@ -21,7 +15,7 @@ from feelies.core.events import (
 )
 
 
-# ── TrendMechanism enum is closed at exactly 5 members (§20.2) ──────────
+# ``TrendMechanism`` is closed at five members.
 
 
 def test_trend_mechanism_has_exactly_five_members() -> None:
@@ -44,7 +38,7 @@ def test_trend_mechanism_members_are_distinct() -> None:
     assert len(values) == 5
 
 
-# ── Signal v0.3 additive fields (§20.3.2) ───────────────────────────────
+# Signal mechanism fields.
 
 
 def test_signal_v03_defaults_match_v02_behavior() -> None:

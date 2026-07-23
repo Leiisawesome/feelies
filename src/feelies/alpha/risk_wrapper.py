@@ -187,12 +187,7 @@ class AlphaBudgetRiskWrapper:
             try:
                 alpha = self._registry.get(strategy_id)
             except KeyError:
-                # Unregistered strategy_id (e.g. "multi_alpha_net",
-                # "emergency_flatten", "__stop_exit__").  Per-alpha
-                # budget checks are skipped — only aggregate-level
-                # checks via the inner engine apply.  For multi-alpha
-                # net orders this is by design: per-alpha budgets were
-                # already enforced at signal time in the evaluator.
+                # Synthetic and net strategies use aggregate risk checks only.
                 pass
             else:
                 budget = alpha.manifest.risk_budget
@@ -221,13 +216,7 @@ class AlphaBudgetRiskWrapper:
                         ),
                     )
 
-                # 2. Per-alpha exposure limit.  Exempt reducing orders (a
-                # strict drop in |position| for this symbol lowers the alpha's
-                # gross exposure, since get_strategy_exposure sums |qty|*mark
-                # across symbols) so an alpha already at/over its cap can still
-                # unwind — mirrors check_signal's reducing exemption.  A full
-                # close and a reversal-to-smaller are exempt; a reversal that
-                # ends up larger gross is not.
+                # Exposure limits never block orders that reduce absolute position.
                 order_reduces = post_fill < abs(strategy_pos.quantity)
                 _, alpha_max_exposure, alpha_exposure = self._alpha_equity_and_exposure(
                     strategy_id, budget
@@ -245,8 +234,7 @@ class AlphaBudgetRiskWrapper:
                         ),
                     )
 
-        # Forward the cumulative intent exposure so the inner engine enforces
-        # the platform gross / buying-power caps across legs (audit R-1).
+        # Include prior legs when enforcing gross and buying-power caps.
         return self._inner.check_order(order, positions, additional_exposure=additional_exposure)
 
     def check_sized_intent(
@@ -262,17 +250,14 @@ class AlphaBudgetRiskWrapper:
         budget gates run against the wrapper's
         :class:`StrategyPositionStore`.  Without this override, the
         inner engine's ``check_sized_intent`` would call
-        ``self._inner.check_order`` directly and silently skip
-        per-alpha enforcement on the only production-reachable order
-        path post-D.2 (audit R2 / R1.4).
+        ``self._inner.check_order`` directly and skip per-alpha enforcement.
 
         Inv-5: lexicographic symbol order keeps the emitted tuple
         bit-identical across replays.  Inv-11: per-leg veto drops only
         the offending leg for ordinary rejects; aggregate
         ``FORCE_FLATTEN`` aborts the intent and requests global
-        orchestrator escalation.  The inner engine's diagnostic Alert
-        path (audit R4) still fires for ordinary veto drops via
-        ``_emit_dropped_legs_alert``.
+        orchestrator escalation. The inner engine emits ordinary veto-drop
+        diagnostics through ``_emit_dropped_legs_alert``.
         """
         emit_alert = getattr(self._inner, "_emit_dropped_legs_alert", None)
         return build_sized_intent_orders(
@@ -352,7 +337,7 @@ class AlphaBudgetRiskWrapper:
         new_qty: int,
         timestamp_ns: int,
     ) -> None:
-        """Delegate PDT round-trip bookkeeping to the inner engine (BT-4).
+        """Delegate PDT round-trip bookkeeping to the inner engine.
 
         The orchestrator calls this after each applied fill; the inner
         ``BasicRiskEngine`` owns the ``PDTConstraint``.
@@ -364,13 +349,13 @@ class AlphaBudgetRiskWrapper:
     def set_buying_power_phase(self, phase: BuyingPowerPhase) -> None:
         """Delegate intraday/overnight buying-power flip to the inner engine.
 
-        BT-15/BT-16: the orchestrator calls this on the engine it holds
+        The orchestrator calls this on the engine it holds
         (which is *this* wrapper when per-alpha budgets are enforced)
         when exchange time crosses the RTH close.  Without this
         forwarder, ``getattr(self._risk_engine, "set_buying_power_phase",
         None)`` would return ``None`` on the wrapper and the inner
         ``BasicRiskEngine`` would stay on the 4× intraday cap past the
-        close — the opposite of the BT-16 acceptance intent.
+        close.
         """
         set_phase = getattr(self._inner, "set_buying_power_phase", None)
         if callable(set_phase):

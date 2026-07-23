@@ -1,4 +1,4 @@
-"""G-4: FIFO open-lot ledger (observability beside the avg-cost store)."""
+"""FIFO open-lot ledger beside the average-cost position store."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ _RECON_TOLERANCE = Decimal("0.01")
 
 
 class TestStoreVsLotReconciliation:
-    """Audit P1 (2026-06-18): the avg-cost store and the FIFO lot ledger
+    """The average-cost store and FIFO lot ledger
     legitimately diverge on partial reduces, but they MUST agree on total
     realized PnL (to within avg-cost division rounding) once the symbol
     returns to flat — both have then closed the identical set of shares at

@@ -1,4 +1,4 @@
-"""Per-symbol open-lot ledger — G-4 lot accounting (observability layer).
+"""Per-symbol FIFO open-lot ledger for observability.
 
 The position store (`MemoryPositionStore`) keeps a single **average-cost**
 ``avg_entry_price`` and realizes PnL against it.  That is the parity-bearing

@@ -1,12 +1,11 @@
-"""BT-16: RTH session bounds and entry-suppression helpers."""
+"""RTH session bounds and entry-suppression helpers."""
 
 from __future__ import annotations
 
 from datetime import date
 
-import pytest
 
-from feelies.core.events import OrderRequest, OrderType, Side
+from feelies.core.events import Side
 from feelies.execution.moc_session import et_clock_to_ns
 from feelies.execution.trading_session import (
     MARKET_HOLIDAY,

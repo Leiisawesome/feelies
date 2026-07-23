@@ -1,4 +1,4 @@
-"""Inv-12 joint cost + latency stress harness (BT-9).
+"""Joint cost and latency stress harness for invariant 12.
 
 Invariant 12 requires every edge to survive **1.5× variable cost** and
 **2× fill latency** relative to the operator's baseline backtest config.
@@ -16,12 +16,10 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO, CostArithmetic
-
 if TYPE_CHECKING:
     from feelies.core.platform_config import PlatformConfig
 
-# Locked Inv-12 stress factors (remediation plan BT-9).
+# Locked stress factors for invariant 12.
 INV12_COST_STRESS_MULTIPLIER: float = 1.5
 INV12_LATENCY_STRESS_MULTIPLIER: int = 2
 
@@ -39,8 +37,7 @@ def stressed_cost_multiplier(baseline_multiplier: float) -> float:
 
 
 def apply_inv12_stress(config: PlatformConfig) -> PlatformConfig:
-    """Return a copy with joint 1.5× cost-stress and 2× fill +
-    market-data latency (BT-17: both latency legs scale together)."""
+    """Return a copy with 1.5× cost stress and 2× both latency legs."""
     return replace(
         config,
         cost_stress_multiplier=stressed_cost_multiplier(
@@ -53,18 +50,3 @@ def apply_inv12_stress(config: PlatformConfig) -> PlatformConfig:
             config.market_data_latency_ns,
         ),
     )
-
-
-def disclosure_margin_after_cost_stress(margin_ratio: float) -> float:
-    """Effective disclosed margin if one-way costs scale by 1.5×."""
-    return margin_ratio / INV12_COST_STRESS_MULTIPLIER
-
-
-def disclosure_survives_inv12_cost_stress(cost: CostArithmetic) -> bool:
-    """Whether the alpha's disclosed edge still clears G12 after 1.5× cost.
-
-    Linear scaling of ``cost_total_bps`` divides ``margin_ratio`` by 1.5.
-    BT-12 re-validates each alpha under full backtest; this is the cheap
-    load-time survival check wired by BT-9 acceptance.
-    """
-    return disclosure_margin_after_cost_stress(cost.margin_ratio) >= MIN_MARGIN_RATIO

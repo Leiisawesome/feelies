@@ -34,6 +34,7 @@ _SIG_ALLOWED_DELTA_KEYS = frozenset(
         "extends",
         "symbols",
         "alpha_specs",
+        "prune_unused_sensors",
         "signal_min_edge_cost_ratio",
         "parameter_overrides",
     }
@@ -82,6 +83,7 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
             "alpha_specs": [
                 "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml",
             ],
+            "prune_unused_sensors": True,
             "signal_min_edge_cost_ratio": 1.5,
             "parameter_overrides": {
                 "sig_benign_midcap_v1": {
@@ -93,6 +95,7 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
     )
     assert merged["symbols"] == expected["symbols"]
     assert merged["alpha_specs"] == expected["alpha_specs"]
+    assert merged["prune_unused_sensors"] is expected["prune_unused_sensors"]
     assert merged["signal_min_edge_cost_ratio"] == expected["signal_min_edge_cost_ratio"]
     assert merged["parameter_overrides"] == expected["parameter_overrides"]
 
@@ -100,6 +103,7 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
     assert sorted(cfg.symbols) == ["APP"]
     assert len(cfg.alpha_specs) == 1
     assert cfg.alpha_specs[0].name == "sig_benign_midcap_v1.alpha.yaml"
+    assert cfg.prune_unused_sensors
     assert cfg.signal_min_edge_cost_ratio == 1.5
     assert cfg.parameter_overrides["sig_benign_midcap_v1"] == {
         "entry_threshold_z": 1.5,
@@ -119,13 +123,8 @@ def test_sig_backtest_configs_load_with_single_alpha(
     assert cfg.alpha_specs[0].as_posix().endswith(f"{alpha_id}/{alpha_id}.alpha.yaml")
 
 
-# DI-04 (data ingestion audit 2026-07-02): PlatformConfig's dataclass defaults
-# for backtest_enforce_ingest_terminal_health / backtest_reject_zero_ingest_events
-# stay fail-open, because flipping them would break every PAPER config and the
-# ~95 direct PlatformConfig(...) constructions across the test suite that never
-# populate ingest_terminal_symbol_health. The fail-closed default lives at the
-# shipped-config layer via platform.yaml + extends instead — pin it here so a
-# future edit cannot silently regress the ingest-health gate back to fail-open.
+# Shipped backtest configs opt into fail-closed ingest checks; dataclass defaults
+# remain compatible with direct construction and PAPER mode.
 _ALL_BACKTEST_CONFIGS: tuple[Path, ...] = (
     _PLATFORM_YAML,
     _BACKTEST_APP_YAML,

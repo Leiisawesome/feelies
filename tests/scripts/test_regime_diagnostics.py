@@ -1,4 +1,4 @@
-"""Tests for ``scripts/regime_diagnostics.py`` (audit second-pass R-2).
+"""Tests for ``scripts/regime_diagnostics.py``.
 
 Locks the empirical claim behind the #123 regression: on a tight, stable
 spread the calibrated 3-state engine is *not discriminative* — separation
@@ -131,7 +131,7 @@ def test_latch_simulation_catches_aggressive_off_condition(mod) -> None:
     NOTE: this is a *general* property of the metric, not the APP regression
     mechanism — on APP the regime-isolated latch retained 97% of baseline
     ON-time, so the real cause is regime×sensor coupling, not the regime terms
-    alone (audit 2026-06-13 §2.5).  Here, with regime terms constructed to
+    alone. Here, with regime terms constructed to
     differ, a lenient off keeps the latch ON across vol excursions while a
     `P(vol_breakout) > 0.40` off knocks it OFF every other boundary.
     """

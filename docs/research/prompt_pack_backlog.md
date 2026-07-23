@@ -14,6 +14,9 @@
           the handoff inventory (see prompt_pack_12_final_retrospective.md).
           + CAPITAL-FORK-CLOSED stamp (2026-07-18): pack-13 NO-GO;
           standing state PAUSE-AND-HARVEST; harvest inventory owned.
+          + entries 21–25 (2026-07-20): pack-15 §8 machinery gaps
+          (grammar × machine universe doctrine); additive/core class
+          carried; PAUSE-AND-HARVEST unchanged.
   Owner:  cross-cutting; prompt-pack Phase A bookkeeping.
 -->
 
@@ -375,3 +378,43 @@ handed-off external dependencies. Entries **1–20 above are
 unedited** by this stamp except entry 11's append-only T2-C
 ratification note. Living trial ledger **N = 12** (no increment —
 disposition only). No new backlog entry number is opened.
+
+---
+
+## 21. IC harness mid-return dependent variable only — CANDIDATE (Additive harness extension)
+
+IC / RankIC evidence paths score features against forward *mid
+returns* only, blocking spread-state / quote-behavior dependent
+variables (pack-15 §5.2 lowest-mirage grammar). Spec pointer:
+`prompt_pack_15_grammar_machine_universe_doctrine.md` §8 row 1.
+
+## 22. Cross-sectional IC (rank-vs-rank) evidence path — CANDIDATE (Additive harness extension)
+
+No rank-vs-rank / cross-sectional IC harness for Layer-3 PORTFOLIO
+grammar validation (pack-15 §5.1). Spec pointer:
+`prompt_pack_15_grammar_machine_universe_doctrine.md` §8 row 2; related
+runtime gap remains backlog 1 (OQ-3 mechanism-cap closure).
+
+## 23. Boundary-clocked evaluation only — CANDIDATE (Core change — scheduler; backlog only)
+
+Episode = conditioned horizon boundary; event-anchored / rare-event
+grammar is ungenerable without a scheduler change. Spec pointer:
+`prompt_pack_15_grammar_machine_universe_doctrine.md` §8 row 3 / §5.4.
+Never assumed as available for a reopened round.
+
+## 24. Flat 2.0 bps passive adverse-selection charge — CANDIDATE (Calibration study)
+
+Universe-dependent execution realism: names with worse true AS are
+flattered by the flat `passive_adverse_selection_bps = 2.0` pin.
+Calibration study once any card reaches fills. Spec pointer:
+`prompt_pack_15_grammar_machine_universe_doctrine.md` §8 row 4;
+`src/feelies/execution/cost_model.py`.
+
+## 25. L1-visibility proxies in characterization — CANDIDATE (New census-legal measurement)
+
+No L1-visibility proxies (primary-venue share, displayed-to-effective
+spread, odd-lot share, ISO/trade-through intensity, quote-to-trade
+ratio) in any characterization screen — the pack-15 §3/§4 M-axis.
+New census-legal measurement on the pack-13 pattern; cutoffs frozen
+at first characterization. Spec pointer:
+`prompt_pack_15_grammar_machine_universe_doctrine.md` §8 row 5.

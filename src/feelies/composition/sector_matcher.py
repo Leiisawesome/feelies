@@ -1,35 +1,9 @@
-"""``SectorMatcher`` — optional GICS-sector-neutral pairing.
+"""Optionally neutralize weights within each GICS sector.
 
-Reduces idiosyncratic-sector exposure by pairing positive-weight
-symbols with negative-weight symbols *within the same GICS sector*.
-Each long is offset against the largest available short in the same
-sector, and the surplus is removed (equivalently: the long and short
-weights are scaled down so within-sector net exposure is zero).
-
-When ``sector_map_path`` is ``None`` the matcher is a no-op (returns
-weights unchanged).
-
-Algorithm
----------
-
-For each sector:
-
-1. Collect ``(symbol, weight)`` pairs in the sector.
-2. Compute net exposure ``net = sum(weights)``.  When ``|net|`` is
-   below ``tolerance`` no action is taken.
-3. Otherwise scale **only the dominant side** down so the two sides
-   match and the within-sector net becomes zero: if longs dominate
-   (``net > 0``) every long is multiplied by ``short_sum / long_sum``;
-   if shorts dominate every short is multiplied by
-   ``long_sum / short_sum``.  This drives ``net → 0`` exactly while
-   preserving the cross-sectional ranking *within* each side (audit
-   P1-3).  When the offsetting side is empty the dominant side is
-   scaled to zero (a one-sided sector cannot be made neutral except by
-   flattening it).
-
-Uniformly scaling *both* sides — the prior implementation — leaves the
-net/gross ratio invariant and so never reaches ``net = 0``; it only
-shrinks gross.  Iteration order is deterministic (sorted by symbol).
+When sector net exposure exceeds tolerance, only the dominant side is scaled
+until long and short gross match. A one-sided sector is flattened. Scaling both
+sides would preserve the net-to-gross ratio. Missing configuration is a no-op,
+and symbols are processed deterministically.
 """
 
 from __future__ import annotations
@@ -76,7 +50,7 @@ class SectorMatcher:
         return self._active
 
     def provenance_digest(self) -> str:
-        """Stable digest of the sector map and tolerance (audit P0-2).
+        """Stable digest of the sector map and tolerance.
 
         Folded into the composition-layer ``decision_basis_hash`` so the
         digest changes when the sector taxonomy or tolerance changes.  An
@@ -135,7 +109,8 @@ class SectorMatcher:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError(f"SectorMatcher: {path} must contain a JSON object")
-        return {str(k): str(v) for k, v in data.items()}
+        # _meta is provenance, not a symbol row.
+        return {str(k): str(v) for k, v in data.items() if k != "_meta"}
 
 
 __all__ = ["SectorMatcher"]

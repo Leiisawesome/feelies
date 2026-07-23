@@ -1,11 +1,10 @@
-"""BT-8: MOC session bounds and closing-auction fill controller."""
+"""MOC session bounds and closing-auction fill controller."""
 
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
 
-import pytest
 
 from feelies.core.clock import SimulatedClock
 from feelies.core.identifiers import SequenceGenerator

@@ -13,7 +13,6 @@ from feelies.composition.engine import (
 from feelies.composition.factor_neutralizer import FactorNeutralizer
 from feelies.composition.protocol import (
     CompositionContextError,
-    PortfolioAlpha,
 )
 from feelies.composition.sector_matcher import SectorMatcher
 from feelies.composition.turnover_optimizer import TurnoverOptimizer
@@ -139,8 +138,7 @@ def test_low_completeness_emits_degenerate_intent():
 
 
 def test_per_alpha_completeness_threshold_overrides_engine_default():
-    # Engine default 0.0 (accept everything); alpha declares a stricter
-    # threshold via params (audit P1-5) → low-completeness ctx is degenerate.
+    # The alpha's stricter threshold overrides the permissive engine default.
     bus = EventBus()
     captured: list[SizedPositionIntent] = []
     bus.subscribe(SizedPositionIntent, lambda e: captured.append(e))

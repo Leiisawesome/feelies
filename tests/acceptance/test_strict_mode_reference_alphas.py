@@ -1,37 +1,7 @@
-"""Closes G-E — §20.12.2 #4 strict-mode reference alphas.
+"""Strict-mode loading and replay checks for reference signal alphas.
 
-§20.12.2 #4 of ``docs/three_layer_architecture.md`` requires
-that "at least one reference alpha per mechanism family (KYLE_INFO,
-INVENTORY, HAWKES_SELF_EXCITE, SCHEDULED_FLOW) loads under strict
-mode and produces a deterministic signal stream".
-
-Strict mode means ``AlphaLoader(enforce_trend_mechanism=True)``: the
-loader refuses any schema-1.1 SIGNAL/PORTFOLIO alpha missing a
-``trend_mechanism:`` block.  The four reference alphas listed below
-are the canonical one-per-family baselines that must clear this gate.
-
-The acceptance criterion has two parts:
-
-1. **Loadable under strict** — ``AlphaLoader.load()`` returns a
-   :class:`LoadedSignalLayerModule` without raising.  This implicitly
-   exercises every G16 binding rule (Rules 1–9) for the alpha's
-   declared family + half-life + horizon + sensors.
-2. **Deterministic signal stream** — the alpha must produce a stable
-   Level-2 fingerprint when re-run on the canonical synthetic event-
-   log fixture.  We hash the per-alpha stream and assert it equals a
-   second invocation's hash.  We do *not* pin a specific value here
-   (that is what ``test_signal_replay.py``'s locked baselines do
-   per-alpha); the redundant determinism cross-check guarantees that
-   the strict-mode loader does not introduce non-determinism — which
-   the existing locked baselines would not detect on their own
-   because they run with ``enforce_trend_mechanism=False``.
-
-The ``LIQUIDITY_STRESS`` family is intentionally absent from this
-matrix row: the design doc forbids stress-family entry signals (G16
-rule 7), so there is no production reference SIGNAL alpha for that
-family.  Stress mechanics are exercised through hazard-exit policies
-on top of other-family alphas, and that path is locked by Level-5
-parity (``tests/determinism/test_regime_hazard_replay.py`` etc.).
+One alpha per non-stress mechanism family must pass G16 and produce the same
+signal stream across identical runs. Liquidity stress is exit-only.
 """
 
 from __future__ import annotations
@@ -48,9 +18,7 @@ from feelies.core.events import TrendMechanism
 _ALPHAS_ROOT = Path("alphas")
 
 
-# §20.12.2 #4 — one reference SIGNAL alpha per non-stress family.
-# Tuple form so pytest.mark.parametrize generates one test id per
-# family for clear matrix traceability in CI logs.
+# One reference signal alpha per non-stress family.
 _REFERENCE_BY_FAMILY: tuple[tuple[TrendMechanism, str], ...] = (
     (TrendMechanism.KYLE_INFO, "sig_kyle_drift_v1"),
     (TrendMechanism.INVENTORY, "sig_inventory_revert_v1"),
@@ -109,17 +77,7 @@ def test_reference_alpha_signal_stream_is_deterministic(
     family: TrendMechanism,
     alpha_id: str,
 ) -> None:
-    """Re-running the alpha on the canonical fixture produces the same hash.
-
-    Delegates to the existing Phase-3 Level-2 replay helper.  The
-    helper internally uses ``enforce_trend_mechanism=False`` (so the
-    locked baselines remain comparable to v0.2 alphas) — the
-    determinism guarantee tested here is independent of the loader
-    flag, so this is a safe delegation.  If a future PR makes the
-    loader flag affect signal emission, this test will catch the
-    discrepancy because the hashes for two invocations must still
-    agree.
-    """
+    """The canonical fixture produces the same hash on both runs."""
     from tests.determinism.test_signal_replay import _replay
 
     path = str(_alpha_path(alpha_id))

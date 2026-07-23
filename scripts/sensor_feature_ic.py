@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Sensor / feature IC harness — does horizon-windowing lift SNR? (audit P1-1).
+"""Compare sensor-feature IC across horizon-window variants.
 
-Read-only offline validation.  For one or more ``(symbol, date)`` pairs of
-**cached NBBO + trades** (the platform's ``DiskEventCache``), this script:
+For cached quote and trade sessions, the script:
 
 1. Replays the events through the real Layer-1 → Layer-1.5 pipeline
    (``SensorRegistry`` → ``HorizonScheduler`` → ``HorizonAggregator``),
@@ -12,16 +11,8 @@ Read-only offline validation.  For one or more ``(symbol, date)`` pairs of
 3. Reports the Spearman **RankIC** and Pearson **IC** (with a naive
    t-stat and sample count) per ``(feature, horizon, variant)``.
 
-The headline comparison is, for each z-scored sensor, the **old
-count-window** feature (``RollingZscoreFeature``) versus the **new
-horizon-windowed** feature (``HorizonWindowedFeature``).  If P1-1 helped,
-the windowed variant's |RankIC| should rise toward the longer horizons
-while the count-window variant stays roughly flat in ``h`` (because its
-baseline never depended on ``h``).
-
-This script computes **no point estimate of edge** and makes no trading
-claim — it is a falsification tool: it tells you whether the new feature
-is *more* monotonically related to forward returns than the old one.
+The comparison is ``RollingZscoreFeature`` versus ``HorizonWindowedFeature``.
+It measures association with forward returns and makes no trading claim.
 
 Usage
 -----
@@ -163,7 +154,7 @@ def _window_builder(sensor_id: str) -> _FeatureBuilder:
     return build
 
 
-# Production used max_samples=200 for ofi_ewma, default 2000 elsewhere.
+# OFI uses 200 samples; other sensors use 2,000.
 _TARGETS: dict[str, int] = {
     "ofi_ewma": 200,
     "micro_price": 2000,
@@ -331,11 +322,8 @@ def _collect_pairs(
         v = s.values.get(feature_id)  # present only when warm
         if v is None:
             continue
-        # sensor_audit_2026-07-02 P1: pair from boundary_ts_ns (the nominal
-        # grid anchor `core/events.py` documents "for IC labels / forensics"),
-        # not timestamp_ns (the trigger time of the event that crossed the
-        # boundary). On a sparse tape these diverge, silently shifting every
-        # RankIC this script reports.
+        # Use the nominal boundary, not the event that crossed it. Sparse tapes
+        # can separate those timestamps enough to shift RankIC labels.
         r = _forward_return(mids, s.boundary_ts_ns, horizon)
         if r is None:
             continue
@@ -387,10 +375,7 @@ def _run_one(
         print(f"  ! no cached events for {symbol}/{date} (skipping)", file=sys.stderr)
         return []
     events = sorted(events, key=lambda e: (e.timestamp_ns, e.sequence))
-    # Audit P1-8 parity: production bootstrap anchors the horizon grid to the
-    # 09:30 ET RTH open when ``session_open_ns`` is unset for RTH US equity,
-    # not the raw first cached event.  Mirror that here so IC boundaries and
-    # snapshot pairing match a live replay of the same tape.
+    # Match production's 09:30 ET horizon-grid anchor.
     session_open_ns = rth_open_ns(events[0].timestamp_ns)
     mids = _MidSeries.from_events(events)
     if len(mids.ts) < 10:
@@ -433,11 +418,7 @@ def _run_one(
                     )
                 )
 
-    # Audit P1-5: A/B the Kyle *alignment* (legacy 1.2.0 vs causal 2.0.0),
-    # both under the horizon-window feature, isolating the alignment change
-    # from the windowing change.  The main loop above already tests windowing
-    # on whatever kyle version sits in _SENSOR_SPECS (currently causal);
-    # this answers the distinct question "did the causal re-alignment help?".
+    # Compare Kyle alignments under the same horizon-window feature.
     rows.extend(
         _kyle_alignment_ab(
             events,
@@ -462,24 +443,13 @@ def _run_one(
             session_open_ns,
         )
     )
-    # Protocol §2.2 H8 row (sig_dislocation_lambda_drift_v1) — pinned to
-    # h=300; skipped when the invocation does not request that horizon.
-    if _H8_HORIZON in horizons:
-        rows.extend(_h8_dislocation_lambda(events, mids, symbol, date, session_open_ns))
-    # Protocol §2.2 H10 row (sig_sweep_kyle_drift_h900_v1) — pinned to
-    # h=900; SFI-stratified contrast; additive only; no outcome contact in
-    # Phase A (instrument land only).
+    # H10: 900-second SFI-stratified contrast.
     if _H10_HORIZON in horizons:
         rows.extend(_h10_sweep_kyle(events, mids, symbol, date, session_open_ns))
-    # Protocol §2.2 H12 row (sig_halfhour_clock_drift_h900_v1) — pinned to
-    # h=900; clock-stratified in-window / out-window extreme-OFI contrast;
-    # additive only; no outcome contact in Phase A (instrument land only).
+    # H12: 900-second in-window/out-window extreme-OFI contrast.
     if _H12_HORIZON in horizons:
         rows.extend(_h12_halfhour_clock(events, mids, symbol, date, session_open_ns))
-    # Protocol §2.2 H13 row (sig_hour_checkpoint_drift_h1800_v1) — pinned to
-    # h=1800; hour-stratified in-hour / :30 extreme-OFI contrast under
-    # hour-only calendar injection; additive only; no outcome contact in
-    # Phase A (instrument land only). N = 12 unchanged.
+    # H13: 1800-second hourly versus half-hour extreme-OFI contrast.
     if _H13_HORIZON in horizons:
         rows.extend(_h13_hour_checkpoint(events, mids, symbol, date, session_open_ns))
     return rows
@@ -570,12 +540,7 @@ def _kyle_alignment_ab(
     horizons: frozenset[int],
     session_open_ns: int,
 ) -> list[_Row]:
-    """Replay legacy- and causal-aligned Kyle (each horizon-windowed) and
-    report RankIC per horizon, so the P1-5 alignment can be settled directly.
-
-    Different sensor versions share a sensor_id and cannot co-register in one
-    registry (features are version-blind), so each runs under its own spec set.
-    """
+    """Compare horizon RankIC for legacy and causal Kyle alignment."""
     feature_id = "kyle_lambda_60s_zscore"
     base = tuple(s for s in _SENSOR_SPECS if s.sensor_id != "kyle_lambda_60s")
     legacy_kyle = SensorSpec(
@@ -628,238 +593,8 @@ def _kyle_alignment_ab(
     return rows
 
 
-# ── H8 row — sig_dislocation_lambda_drift_v1 (protocol §2.2; Task 9) ──────
-#
-# Measurement plumbing for the pre-registered H8 primary trial, not a new
-# trial: x = micro_price_drift / micro_price (signed dislocation fraction)
-# at h=300 warm boundaries vs y = signed forward 300 s mid log-return,
-# stratified by the λ median split (kyle_lambda_60s_percentile ≥ 0.5).
-# Contamination per protocol §1.3 (JC-1 RULED): three counts per stratum —
-# (a) including-flagged, (b) intensity-excluded PRIMARY (window flagged-print
-# share ≥ 2.0× the session tape base rate, COUNT basis; zero-flag windows
-# never excluded), (c) binary any-flag (the H2 convention; saturates on H8).
-# Flag-set logic transplanted from scripts/research/dislocation_lambda_census.py
-# (itself verbatim from the Appendix-A read @ 8c69d49).  Pooled gate
-# statistics (protocol §2.2 numeric gate) are computed at Task-8 execution
-# from per-cell pairs; the pooled table below keeps the harness's existing
-# sample-weighted convention (pairs are retained on rows carrying edge_bps).
-# OLN cells are evidence-only §2.4 tick-artifact inputs — reported to stderr,
-# never contributing an IC row (protocol preamble: OLN never in D).
-
-_H8_HORIZON = 300  # pinned by the card; independent of --horizons selection
-_H8_SENSOR_IDS = ("kyle_lambda_60s", "micro_price", "realized_vol_30s")
-_H8_CONSUMED_IDS = (
-    "micro_price",
-    "micro_price_drift",
-    "kyle_lambda_60s_percentile",
-    "realized_vol_30s_zscore",
-)
-_H8_LAMBDA_SPLIT = 0.5
-_H8_EVIDENCE_ONLY_SYMBOLS = frozenset({"OLN"})
-# §1.3 contamination sets (03b §3.3 Class B / §4.4 corrections; frozen):
-_H8_CLASS_B_CONDITIONS = frozenset({2, 7, 8, 9, 10, 13, 15, 16, 17, 22, 29, 32, 35, 52, 53})
-_H8_CORRECTION_RECORDS = frozenset({10, 11, 12})
-_H8_CONTAM_WINDOW_NS = 60 * _NS_PER_SECOND  # the kyle_lambda_60s trailing window
-_H8_INTENSITY_RATIO = 2.0  # frozen §2 materiality bar at boundary granularity
-
-
-def _h8_flag_tape(events: Sequence[NBBOQuote | Trade]) -> tuple[list[int], list[bool]]:
-    """(timestamp, Class-B-or-correction flagged) for every trade print."""
-    ts: list[int] = []
-    flagged: list[bool] = []
-    for t in events:
-        if not isinstance(t, Trade):
-            continue
-        ts.append(t.timestamp_ns)
-        flagged.append(
-            bool(_H8_CLASS_B_CONDITIONS.intersection(t.conditions))
-            or (t.correction is not None and t.correction in _H8_CORRECTION_RECORDS)
-        )
-    return ts, flagged
-
-
-def _h8_rank_row(symbol: str, date: str, variant: str, p: _Pairs, *, with_edge: bool) -> _Row:
-    n = len(p.values)
-    rank_ic = ic = p_value = None
-    if n >= 3:
-        res = spearman_ic(p.values, p.fwd)
-        rank_ic, p_value = res.rho, res.p_value
-        ic = _pearson(p.values, p.fwd)
-    edge = long_short_edge_bps(p.values, p.fwd) if with_edge and n >= 5 else None
-    return _Row(
-        symbol=symbol,
-        date=date,
-        feature="h8_disloc_lambda",
-        horizon=_H8_HORIZON,
-        variant=variant,
-        n=n,
-        rank_ic=rank_ic,
-        ic=ic,
-        edge_bps=edge,
-        pairs=p if edge is not None else None,
-        p_value=p_value,
-    )
-
-
-def _h8_oln_tick_artifact_report(
-    events: Sequence[NBBOQuote | Trade],
-    mids: "_MidSeries",
-    symbol: str,
-    date: str,
-    boundaries: list[tuple[int, float]],
-) -> None:
-    """§2.4 evidence-only hooks for OLN: spread-in-ticks at warm boundaries
-    and the ±1 half-tick quantum mass of the 300 s forward move."""
-    quote_ts = [e.timestamp_ns for e in events if isinstance(e, NBBOQuote)]
-    quote_spread = [float(e.ask) - float(e.bid) for e in events if isinstance(e, NBBOQuote)]
-    tick = 0.01
-    spreads: list[int] = []
-    within_quantum = 0
-    n_moves = 0
-    for asof_ns, _x in boundaries:
-        qi = bisect.bisect_right(quote_ts, asof_ns) - 1
-        if qi >= 0:
-            spreads.append(round(quote_spread[qi] / tick))
-        m0 = mids.at(asof_ns)
-        m1 = mids.at(asof_ns + _H8_HORIZON * _NS_PER_SECOND)
-        if (
-            m0 is not None
-            and m1 is not None
-            and asof_ns + _H8_HORIZON * _NS_PER_SECOND <= mids.last_ts
-        ):
-            n_moves += 1
-            if abs(m1 - m0) <= tick / 2.0:
-                within_quantum += 1
-    med = sorted(spreads)[len(spreads) // 2] if spreads else None
-    mass = within_quantum / n_moves if n_moves else None
-    print(
-        f"  # H8 §2.4 OLN tick-artifact {symbol}/{date}: warm boundaries={len(boundaries)}, "
-        f"median spread_ticks={med}, half-tick quantum mass="
-        f"{'n/a' if mass is None else f'{mass:.3f}'} (n={n_moves})",
-        file=sys.stderr,
-    )
-
-
-def _h8_dislocation_lambda(
-    events: Sequence[NBBOQuote | Trade],
-    mids: "_MidSeries",
-    symbol: str,
-    date: str,
-    session_open_ns: int,
-) -> list[_Row]:
-    """Protocol §2.2 H8 rows for one (symbol, date) cell — see the section
-    comment above for the design pins."""
-    specs = tuple(s for s in _SENSOR_SPECS if s.sensor_id in _H8_SENSOR_IDS)
-    feats = [f for sid in _H8_SENSOR_IDS for f in _horizon_features_for(sid, _H8_HORIZON)]
-    snaps = _replay_snapshots(
-        events,
-        symbol=symbol,
-        horizon_features=feats,
-        horizons=frozenset({_H8_HORIZON}),
-        session_open_ns=session_open_ns,
-        sensor_specs=specs,
-    )
-    trade_ts, trade_flagged = _h8_flag_tape(events)
-    n_flagged = sum(trade_flagged)
-    count_base = n_flagged / len(trade_ts) if trade_ts else 0.0
-
-    # (stratum, way) → pairs.  "incl" = (a); "primary" = (b); "binary" = (c).
-    strata = ("lambda_elevated", "lambda_baseline")
-    ways = ("incl", "primary", "binary")
-    pairs = {(s, w): _Pairs(values=[], fwd=[]) for s in strata for w in ways}
-    oln_boundaries: list[tuple[int, float]] = []
-    for s in snaps:
-        if s.horizon_seconds != _H8_HORIZON:
-            continue
-        if not all(
-            s.warm.get(fid, False) and not s.stale.get(fid, True) for fid in _H8_CONSUMED_IDS
-        ):
-            continue
-        mp = s.values["micro_price"]
-        if mp <= 0.0:
-            continue
-        x = s.values["micro_price_drift"] / mp
-        asof_ns = s.boundary_ts_ns
-        if symbol in _H8_EVIDENCE_ONLY_SYMBOLS:
-            oln_boundaries.append((asof_ns, x))
-            continue
-        y = _forward_return(mids, asof_ns, _H8_HORIZON)
-        if y is None:
-            continue
-        stratum = (
-            "lambda_elevated"
-            if s.values["kyle_lambda_60s_percentile"] >= _H8_LAMBDA_SPLIT
-            else "lambda_baseline"
-        )
-        lo = bisect.bisect_left(trade_ts, asof_ns - _H8_CONTAM_WINDOW_NS + 1)
-        hi = bisect.bisect_right(trade_ts, asof_ns)
-        window_flagged = sum(trade_flagged[lo:hi])
-        share = window_flagged / (hi - lo) if hi > lo else 0.0
-        # Zero-flag windows carry no intensity evidence and are never excluded.
-        excluded_primary = window_flagged > 0 and share >= _H8_INTENSITY_RATIO * count_base
-        keep = {"incl": True, "primary": not excluded_primary, "binary": window_flagged == 0}
-        for way in ways:
-            if keep[way]:
-                pairs[(stratum, way)].values.append(x)
-                pairs[(stratum, way)].fwd.append(y)
-
-    if symbol in _H8_EVIDENCE_ONLY_SYMBOLS:
-        _h8_oln_tick_artifact_report(events, mids, symbol, date, oln_boundaries)
-        return []
-
-    rows: list[_Row] = []
-    for way in ways:
-        for stratum in strata:
-            rows.append(
-                _h8_rank_row(
-                    symbol,
-                    date,
-                    f"{stratum}|{way}",
-                    pairs[(stratum, way)],
-                    with_edge=stratum == "lambda_elevated",
-                )
-            )
-    # λ-contrast (F2 anchor): elevated-stratum RankIC minus baseline-stratum
-    # RankIC on the PRIMARY contamination basis.
-    by_variant = {r.variant: r for r in rows}
-    e = by_variant["lambda_elevated|primary"]
-    b = by_variant["lambda_baseline|primary"]
-    contrast = e.rank_ic - b.rank_ic if e.rank_ic is not None and b.rank_ic is not None else None
-    rows.append(
-        _Row(
-            symbol=symbol,
-            date=date,
-            feature="h8_disloc_lambda",
-            horizon=_H8_HORIZON,
-            variant="lambda_contrast|primary",
-            n=min(e.n, b.n),
-            rank_ic=contrast,
-            ic=None,
-        )
-    )
-    # §2.2 bucket monotonicity input (5 equal-count buckets, elevated/primary).
-    ep = pairs[("lambda_elevated", "primary")]
-    if len(ep.values) >= 5:
-        buckets = bucketed_forward_return(ep.values, ep.fwd, n_buckets=5)
-        means = ", ".join(f"{b_.mean_forward_return * 1e4:+.2f}" for b_ in buckets)
-        print(
-            f"  # H8 buckets(elevated|primary) {symbol}/{date}: [{means}] bps",
-            file=sys.stderr,
-        )
-    return rows
-
-
-# ── H10 row — sig_sweep_kyle_drift_h900_v1 (protocol §2.2; Task 9-A Phase A)
-#
-# Measurement plumbing for the pre-registered H10 primary trial, not a new
-# trial: x = sweep_flow_imbalance (signed) vs y = signed forward 900 s mid
-# log-return, stratified by the extreme-SFI decile
-# (percentile ≥ 0.90 OR ≤ 0.10 with sign agreement) vs the interior
-# (0.10, 0.90).  Primary contamination posture = filter-clean by SFI
-# construction (JC-1); no intensity exclusion on the IC row.  OLN cells are
-# evidence-only §2.4 tick-artifact inputs — reported to stderr, never
-# contributing an IC row.  Phase A lands the instrument only — no cached-
-# data IC run executes here (N = 11 unchanged).
+# H10: compare signed 900-second returns for extreme SFI deciles versus the
+# interior. OLN supplies tick-artifact evidence only and produces no IC row.
 
 _H10_HORIZON = 900
 _H10_SFI_PCTL_HI = 0.90
@@ -1063,17 +798,9 @@ def _h10_sweep_kyle(
     return rows
 
 
-# ── H12 row — sig_halfhour_clock_drift_h900_v1 (protocol §2.2; Task 9-A)
-#
-# Measurement plumbing for the pre-registered H12 primary trial, not a new
-# trial: x = ofi_integrated (signed) vs y = signed forward 900 s mid
-# log-return, stratified by the census-pinned extreme-OFI quintile
-# (percentile ≥ 0.80 OR ≤ 0.20 with sign agreement) into:
-#   * in_window_extreme  (W_hh = 1 — ALGO_CLOCK membership)
-#   * out_window_extreme (W_hh = 0 — matched OFI, F2 arm)
-#   * clock_contrast     (in RankIC − out RankIC)
-# OLN cells are evidence-only §2.4 tick-artifact inputs — empty IC rows.
-# Phase A lands the instrument only — no cached-data IC run (N = 12).
+# H12: compare signed 900-second returns for extreme OFI inside and outside
+# half-hour clock windows. The contrast is in-window RankIC minus out-window
+# RankIC. OLN supplies evidence only and produces empty IC rows.
 
 _H12_HORIZON = 900
 _H12_OFI_PCTL_HI = 0.80
@@ -1232,18 +959,9 @@ def _h12_halfhour_clock(
     return rows
 
 
-# ── H13 row — sig_hour_checkpoint_drift_h1800_v1 (protocol §2.2; Task 9-A)
-#
-# Measurement plumbing for the pre-registered H13 primary trial, not a new
-# trial: x = ofi_integrated (signed) vs y = signed forward 1800 s mid
-# log-return, stratified by the census-pinned extreme-OFI quintile
-# (percentile ≥ 0.80 OR ≤ 0.20 with sign agreement) into:
-#   * in_hour_extreme     (W_hr = 1 — hour-only ALGO_CLOCK membership)
-#   * halfhour_extreme    (W_hr = 0 — matched OFI at :30, F2 arm)
-#   * hour_contrast       (in RankIC − halfhour RankIC)
-# Eight-symbol evidence pool (incl. ENSG/MLI) produces IC rows — JC-12.
-# Calendar injection = hour-only derived view (:30 excluded).
-# Phase A lands the instrument only — no cached-data IC run (N = 12).
+# H13: compare signed 1800-second returns for extreme OFI at hourly and
+# half-hour checkpoints. The contrast is hourly RankIC minus half-hour RankIC;
+# the derived calendar excludes :30 windows.
 
 _H13_HORIZON = 1800
 _H13_OFI_PCTL_HI = 0.80

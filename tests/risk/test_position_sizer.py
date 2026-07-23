@@ -88,7 +88,7 @@ class TestRegimeFactor:
     def test_factor_clamped_at_one_when_config_supplies_amplifier(
         self, budget: AlphaRiskBudget
     ) -> None:
-        """Audit P1 R-1: Inv-11 (regime state never amplifies exposure
+        """Regime state must never amplify exposure
         beyond 1.0) is enforced at the value level — an operator-
         supplied factor > 1.0 must NOT increase quantity above the
         un-scaled baseline."""
@@ -109,6 +109,29 @@ class TestRegimeFactor:
         # Without the clamp this would be 200; with the clamp it's 100.
         # 100000 * 10% (capital_allocation_pct) = 10000; 10000 * 1.0 / 100 = 100.
         assert qty == 100
+
+    def test_nan_posterior_fails_safe_to_min_factor_not_baseline(
+        self, budget: AlphaRiskBudget
+    ) -> None:
+        """Missing regime data tightens sizing fail-safe.
+
+        Mirrors ``test_basic_risk.py``'s
+        ``test_nan_posterior_fails_safe_to_min_scale_not_baseline``: a
+        NaN EV must fail to the minimum configured factor, not to ``1.0``
+        (which is what ``min(1.0, float("nan"))`` evaluates to).
+        """
+        regime = HMM3StateFractional()
+        regime._posteriors["AAPL"] = [float("nan"), 0.0, 0.0]
+        sizer = BudgetBasedSizer(regime_engine=regime)
+        qty = sizer.compute_target_quantity(
+            _make_signal(strength=1.0),
+            budget,
+            symbol_price=Decimal("100"),
+            account_equity=Decimal("100000"),
+        )
+        # min(vol_breakout=0.5, compression_clustering=0.75, normal=1.0) = 0.5
+        # 100000 * 10% = 10000; 10000 * 0.5 / 100 = 50.
+        assert qty == 50
 
 
 class TestEdgeCases:
@@ -161,7 +184,7 @@ class TestEdgeCases:
 
 
 class TestStrengthClamp:
-    """Audit R-8: conviction is clamped to [0, 1] so a stray strength > 1.0
+    """Conviction is clamped to [0, 1] so strength above 1.0
     cannot size above the alpha's allocated capital."""
 
     def test_strength_above_one_is_clamped(self, budget: AlphaRiskBudget) -> None:
@@ -183,7 +206,7 @@ class TestStrengthClamp:
 
 
 class TestRegimeMissingDataFailsSafe:
-    """Audit R-3: a configured engine with no posterior for the symbol
+    """A configured engine with no posterior for the symbol
     tightens quantity to min(factors), not the 1.0 baseline."""
 
     def test_missing_posterior_uses_min_factor(self, budget: AlphaRiskBudget) -> None:

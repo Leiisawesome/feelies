@@ -1,13 +1,7 @@
-"""Tests for spread-aware liquidation marks on the position store.
+"""Tests for spread-aware liquidation marks on position stores.
 
-Audit F-H-03 (4th pass): unrealized PnL was previously computed against
-mid, overstating liquidation value by half-spread × |quantity| on every
-open position.  The drawdown guard consumes unrealized PnL — the bias
-made the gate fire late.
-
-With the fix, ``update_mark(..., bid=..., ask=...)`` records the BBO and
-``_recompute_unrealized`` uses bid for longs / ask for shorts.  Callers
-that don't supply BBO retain legacy mid-mark behavior (backward compat).
+Use the bid for longs and ask for shorts. Calls without a BBO retain
+midpoint marking for compatibility.
 """
 
 from __future__ import annotations
@@ -85,7 +79,7 @@ class TestMemoryPositionStoreBidAskMarks:
             bid=Decimal("100.95"),
             ask=Decimal("101.05"),
         )
-        # Legacy (mid): $100 unrealized.  New (bid): $95 unrealized.
+        # Mid mark: $100 unrealized. Bid liquidation mark: $95.
         assert store_a.get("AAPL").unrealized_pnl > store_b.get("AAPL").unrealized_pnl
 
     def test_short_unrealized_less_with_ask_than_with_mid(self) -> None:
@@ -103,7 +97,7 @@ class TestMemoryPositionStoreBidAskMarks:
             bid=Decimal("98.95"),
             ask=Decimal("99.05"),
         )
-        # Legacy (mid): (99 - 100) * -100 = $100.  New (ask): $95.
+        # Mid mark: $100 unrealized. Ask liquidation mark: $95.
         assert store_a.get("AAPL").unrealized_pnl > store_b.get("AAPL").unrealized_pnl
 
 

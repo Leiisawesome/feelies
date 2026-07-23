@@ -17,7 +17,6 @@ test exists alongside the existing Level-3 determinism baselines.
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 from feelies.bus.event_bus import EventBus
 from feelies.composition.cross_sectional import CrossSectionalRanker
@@ -167,16 +166,7 @@ def _build(*, decay: bool) -> tuple[EventBus, list[SizedPositionIntent]]:
         ranker=CrossSectionalRanker(decay_weighting_enabled=decay),
         neutralizer=FactorNeutralizer(loadings_dir=None),
         sector_matcher=SectorMatcher(sector_map_path=None),
-        # Non-saturating caps so decay weighting shows through in the
-        # *emitted book* (target_positions), not only in the reported
-        # mechanism_breakdown.  Audit P0-5 made mechanism_breakdown reflect
-        # the realised post-optimization weights; with the previous default
-        # 5%-of-$1M per-name cap every name saturated to +/-$50k, so the
-        # books were identical and decay divergence was visible only via the
-        # (now-corrected) pre-construction breakdown.  per_name_cap=gross_cap
-        # =1.0 keeps the closed-form rescale below the per-name clip (since
-        # max|z| < sum|z| for >=2 active symbols), so decay genuinely
-        # re-weights the dollar targets.
+        # Non-saturating caps keep decay weighting visible in emitted targets.
         optimizer=TurnoverOptimizer(
             capital_usd=1_000_000.0,
             gross_cap_pct=1.0,

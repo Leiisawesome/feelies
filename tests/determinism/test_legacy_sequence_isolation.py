@@ -1,20 +1,7 @@
-"""Inv-A / C1 — sequence-generator isolation between event families.
+"""Sequence generators for separate event families must not interact.
 
-Phase-2 introduces three new sequence generators on the orchestrator
-(``_sensor_seq``, ``_horizon_seq``, ``_snapshot_seq``) that must be
-*completely* isolated from the legacy ``_seq`` generator (Inv-A).
-Without isolation, registering even a single sensor would shift the
-sequence numbers of every legacy event downstream — the exact failure
-mode that would cause Level-1 hash drift.
-
-These tests assert isolation at two levels:
-
-1.  **Independent counters** — each generator advances independently
-    and starts at zero, regardless of how often any other one is
-    called.
-2.  **Orchestrator wiring** — when an orchestrator is constructed
-    with explicit generators (or defaults), advancing the sensor
-    counter does not advance the legacy counter and vice versa.
+Tests cover independent counters and orchestrator wiring. Sharing counters
+would shift downstream replay sequences.
 """
 
 from __future__ import annotations

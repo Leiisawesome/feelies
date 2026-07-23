@@ -4,24 +4,15 @@ layer: SIGNAL
 alpha_id: sig_inventory_revert_v1
 version: "1.1.0"
 
-# ── Lifecycle: QUARANTINED (audit P2-1) ───────────────────
+# ── Lifecycle: QUARANTINED ────────────────────────────────
 # Blocks PAPER/LIVE promotion (backtest/replay still permitted).
 lifecycle_state: RESEARCH
 notes: |
-  QUARANTINED 2026-06-15 by the audit P2-1 forward-return study
-  (docs/audits/signal_alpha_audit_2026-06-14.md; harness: feelies.research.forward_ic).
-  Across 6 sessions / 3 symbols (AAPL 2026-03-20/23/26, APP 2026-06-01/05,
-  AGNC 2026-04-21) the Spearman IC of quote_replenish_asymmetry_zscore vs the
-  forward 30 s micro-price return is indistinguishable from zero (pooled
-  rho ~= -0.007, per-day sign unstable, no session significant at p<0.05) and
-  the conditional forward returns are ~0.1-1.4 bps — far below the disclosed
-  8.8 bps edge and ~11 bps round-trip cost. The SHORT leg (very negative
-  asym_z) shows POSITIVE forward returns in 5/6 sessions, contradicting the
-  fade premise. The directional sign convention below (LONG if asym_z > 0)
-  is therefore UNCONFIRMED and weakly contra-indicated at the 30 s horizon.
-  Do not promote to PAPER/LIVE until a regime-gated, by-leg, multi-day
-  re-study establishes a cost-survivable edge. See the audit doc
-  docs/audits/signal_alpha_audit_2026-06-14.md.
+  QUARANTINED: six sessions across AAPL, APP, and AGNC show near-zero pooled
+  Spearman IC, unstable daily signs, and conditional returns far below costs.
+  The SHORT leg rises in five of six sessions, contradicting the fade premise.
+  Do not promote until a regime-gated, by-leg, multi-day study establishes a
+  cost-survivable edge.
 description: |
   Inventory mean-reversion — short-horizon (30 s) alpha that
   fades transient asymmetric quote replenishment.  A sharp,
@@ -149,7 +140,7 @@ parameters:
   cost_floor_bps:
     type: float
     default: 5.5
-    min: 0.0
+    min: 5.5
     max: 30.0
     description: |
       One-way cost floor (bps): edge_bps must strictly exceed this to
@@ -157,6 +148,8 @@ parameters:
       (one-way convention): half_spread_bps + impact_bps + fee_bps =
       2.5 + 2.0 + 1.0 = 5.5. Authors changing this away from the
       disclosure should also update cost_arithmetic to keep G12 coherent.
+      ``min`` is pinned to the disclosed ``cost_total_bps`` so config
+      overrides cannot weaken the alpha's own cost floor.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30
@@ -168,15 +161,14 @@ risk_budget:
   max_drawdown_pct: 1.0
   capital_allocation_pct: 15.0
 
-# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+# ── Regime gate ───────────────────────────────────────────
 # The gate references declared numeric ``parameters:`` by name so parameter
 # sweeps keep evaluate() and gate thresholds in lockstep. Defaults preserve the
 # locked replay behavior: asymmetry_z_threshold=2.0, hazard_floor=4.0, and
 # vol_taper_z_scale=3.5.
 regime_gate:
   regime_engine: hmm_3state_fractional
-  # BT-12: inventory-dominant only — require normal dominant state, higher
-  # P(normal), and suppress when vol-breakout mass rises (informed-flow proxy).
+  # Trade only in normal, inventory-dominant regimes.
   on_condition: |
     abs(quote_replenish_asymmetry_zscore) > asymmetry_z_threshold and dominant == "normal" and P(normal) > 0.65 and P(vol_breakout) < 0.20
   off_condition: |
@@ -192,10 +184,7 @@ cost_arithmetic:
   impact_bps: 2.0
   fee_bps: 1.0
   margin_ratio: 1.6
-  # Audit P1-1: one-way components (the ``cost_floor_bps`` parameter is
-  # aligned to this 5.5 bps one-way total). Round-trip ≈ 11.0 bps;
-  # edge/round-trip ≈ 0.80. The runtime B4 gate enforces the round-trip
-  # Inv-12 bar.
+  # ``cost_floor_bps`` matches this one-way total; runtime checks round trip.
   cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
@@ -224,12 +213,7 @@ signal: |
       if abs(asym_z) < thr:
           return None
 
-      # Direction mapping: sensor convention is positive asym_z ⇒ bid-side
-      # replenishment is faster (architecture §2.1). Under the inventory
-      # hypothesis the affected side was previously drawn, so faster
-      # replenishment marks the displaced side and we fade with LONG.
-      # This sign assumption is empirical and must be re-confirmed against
-      # forward 30 s micro-price returns before relying on this alpha live.
+      # Positive asymmetry means faster bid replenishment; fade it with LONG.
       direction = LONG if asym_z > 0.0 else SHORT
       excess = abs(asym_z) - thr
       peak_edge_bps = min(excess * params["edge_per_z_bps"], params["edge_cap_bps"])

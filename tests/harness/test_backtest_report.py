@@ -178,7 +178,7 @@ def test_generate_report_defaults_edge_calibration_to_none() -> None:
 
 
 def test_generate_report_artifact_id_changes_with_edge_calibration() -> None:
-    """Audit R-1: --edge-calibration is a live trade-path input; two otherwise-identical
+    """``--edge-calibration`` is a live trade-path input; otherwise identical
     runs that differ only in the calibration factors applied must not collide on
     artifact_id, and the report must state which (if any) calibration was applied."""
     uncalibrated = _generate_report()
@@ -207,7 +207,7 @@ def test_code_version_clean_tree_has_no_dirty_suffix(
 def test_code_version_dirty_tree_appends_dirty_suffix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Audit P2-6: a locally modified engine must not silently masquerade as
+    """A locally modified engine must not masquerade as
     the last-committed SHA."""
     monkeypatch.setattr(backtest_report_mod, "_git_sha", lambda: "abc123def456")
     monkeypatch.setattr(backtest_report_mod, "_working_tree_dirty", lambda: True)

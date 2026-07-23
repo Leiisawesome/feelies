@@ -1,8 +1,7 @@
-"""Economic-sign positive-control goldens (audit P0-2 / TG-1).
+"""Economic-sign positive-control goldens.
 
 The most expensive class of microstructure bug is a *sign inversion* — a
-sensor whose magnitude is right but whose direction is backwards (the audit
-found exactly this in the legacy Kyle alignment).  The per-sensor unit suites
+sensor whose magnitude is right but direction is reversed. The unit suites
 lock numerics, bounds, and warm transitions but almost none lock the *economic
 sign*: "monotone one-sided pressure ⇒ value of the documented sign."
 
@@ -85,7 +84,7 @@ def test_ofi_ewma_sign_negative_on_falling_book() -> None:
 def test_kyle_causal_sign_positive_on_buy_pressure() -> None:
     """Rising mids driven by rising (buy) trades ⇒ positive impact λ.
 
-    This is the property the legacy alignment got backwards (audit P0-1);
+    This is the property the compatibility alignment reverses;
     the causal default must report a positive slope here.
     """
     s = KyleLambda60sSensor(window_seconds=60, min_samples=3)  # default alignment=causal

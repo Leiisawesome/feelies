@@ -12,7 +12,6 @@ import pytest
 
 from feelies.core.events import Side
 from feelies.execution.cost_model import (
-    CostBreakdown,
     DefaultCostModel,
     DefaultCostModelConfig,
     ZeroCostModel,
@@ -279,7 +278,7 @@ class TestHTBBorrowFee:
         )
 
     def test_htb_uses_360_day_year(self) -> None:
-        """Audit fix P6: HTB accrual uses 360-day broker convention.
+        """HTB accrual uses the 360-day broker convention.
 
         With ``htb_borrow_annual_bps=252`` (one 252-trading-day year's
         worth in bps), the daily accrual is $10 000 * 252 / 360 / 10 000
@@ -334,7 +333,7 @@ class TestHTBBorrowFee:
 
 
 class TestThroughFillAdverseSelection:
-    """Audit F-H-09: through-fills carry higher adverse-selection bps."""
+    """Through-fills carry higher adverse-selection bps."""
 
     def test_through_fill_adverse_higher_than_level(self) -> None:
         cfg = DefaultCostModelConfig(
@@ -441,7 +440,7 @@ class TestThroughFillAdverseSelection:
 
 
 class TestConservativeDefaults:
-    """Audit PR-2: conservative IBKR-style defaults at the cost-model level."""
+    """Cost-model defaults are conservative and IBKR-like."""
 
     def test_default_maker_exchange_is_zero(self) -> None:
         """SmartRouter venue blend → 0 average rebate for retail."""
@@ -453,7 +452,7 @@ class TestConservativeDefaults:
 
 
 class TestSellSideRegulatoryFees:
-    """Audit fix P2: SEC Section 31 + FINRA TAF on sell-side fills."""
+    """Sell-side fills include SEC Section 31 and FINRA TAF fees."""
 
     def test_finra_taf_applied_on_sell(self) -> None:
         """1000 shares SELL → TAF = 1000 * $0.000166 = $0.166 → $0.17 quantized."""
@@ -513,7 +512,7 @@ class TestSellSideRegulatoryFees:
 
 
 class TestStressDoesNotInflateBrokerThresholds:
-    """Audit fix P4/P5: stress multiplier only scales variable costs."""
+    """The stress multiplier scales variable costs only."""
 
     def test_min_commission_floor_not_stressed(self) -> None:
         """The $0.35 floor is a published IBKR threshold and should
@@ -558,7 +557,7 @@ class TestStressDoesNotInflateBrokerThresholds:
 
 
 class TestSmallOrderTieredFloor:
-    """Audit fix F1: IBKR Tiered min_commission applies to per-share only."""
+    """IBKR Tiered minimum commission applies to the per-share fee only."""
 
     def test_taker_small_order_floor_plus_exchange(self) -> None:
         """Default config: floor on per-share IB fee; exchange on top.
@@ -612,7 +611,7 @@ class TestSmallOrderTieredFloor:
 
 
 class TestAdverseSelectionSplit:
-    """BT-1: through-fill vs queue-drain adverse-selection split."""
+    """Distinguish through-fill and queue-drain adverse selection."""
 
     def test_through_fill_costs_more_than_drain(self) -> None:
         """A through-fill carries strictly higher adverse-selection cost
@@ -661,7 +660,7 @@ class TestAdverseSelectionSplit:
 
 
 class TestSpreadFloorTakerOnly:
-    """Audit fix F7: ``min_spread_cost_bps`` floor only applies on taker fills."""
+    """``min_spread_cost_bps`` applies only to taker fills."""
 
     def test_floor_applies_on_taker(self) -> None:
         cfg = DefaultCostModelConfig(min_spread_cost_bps=Decimal("2"))
@@ -710,7 +709,7 @@ class TestSpreadFloorTakerOnly:
 
 
 class TestRoundTripAsymmetricLegs:
-    """Audit fix F3: estimate_round_trip_cost_bps supports asymmetric legs."""
+    """``estimate_round_trip_cost_bps`` supports asymmetric legs."""
 
     def test_taker_exit_costs_more_than_maker_exit(self) -> None:
         """When the entry leg is passive but the exit is taker, the

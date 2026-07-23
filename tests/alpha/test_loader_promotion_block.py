@@ -1,10 +1,10 @@
-"""Workstream F-5 loader tests for the optional ``promotion:`` block.
+"""Loader tests for the optional ``promotion:`` block.
 
 Pins the loader-side contract for per-alpha gate-threshold overrides
 declared inline in ``.alpha.yaml``:
 
   * **Absent block** — manifest's ``gate_thresholds_overrides`` field
-    is ``None`` (backwards-compat with every alpha that pre-dates F-5).
+    is ``None`` for backward compatibility.
   * **Empty / missing ``gate_thresholds:`` sub-block** — same
     semantics as absent.  The platform-level defaults (and skill
     defaults beneath them) flow through unchanged.

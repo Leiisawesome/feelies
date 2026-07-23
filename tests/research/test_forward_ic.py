@@ -1,4 +1,4 @@
-"""Unit tests for the forward-return / Spearman-IC core (audit P2-1)."""
+"""Unit tests for forward-return and Spearman-IC calculations."""
 
 from __future__ import annotations
 

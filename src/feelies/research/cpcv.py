@@ -1,91 +1,13 @@
-"""Combinatorial Purged Cross-Validation (CPCV) — Workstream **C-1**.
+"""Deterministic Combinatorial Purged Cross-Validation evidence.
 
-CPCV is the statistical-significance procedure the platform uses to
-compute :class:`feelies.alpha.promotion_evidence.CPCVEvidence` for the
-``RESEARCH → PAPER`` and ``PAPER → LIVE`` promotion gates.  This
-module implements the algorithm in pure Python (stdlib only, no
-numpy / scipy) so it is bit-identical across hosts and replays
-deterministically (Inv-5).
+The algorithm partitions time into contiguous groups, enumerates test-group
+combinations, purges overlapping labels, applies a post-test embargo, and
+reconstructs full-length out-of-sample paths. It organizes caller-supplied OOS
+returns; it does not train models.
 
-Reference
-=========
-
-López de Prado, *Advances in Financial Machine Learning* (2018), §12
-("Cross-Validation in Finance") and §7 ("Cross-Validation in
-Finance").  The algorithm partitions the time series into ``N``
-contiguous groups, generates every ``k``-out-of-``N`` test
-combination (``φ = C(N, k)`` total), purges any training-set bar
-whose label window overlaps a test-set bar (here implemented as a
-straightforward index-overlap purge), embargoes the ``e`` bars
-immediately following each test region from training, and then
-reconstructs ``C(N-1, k-1)`` distinct full-length backtest paths
-from the resulting predictions — each path covering every bar
-exactly once but each bar's prediction sourced from a different
-combination, giving a *distribution* of full-length backtest
-results rather than a single point estimate.
-
-Public API
-==========
-
-- :class:`CPCVConfig`            — immutable hyperparameters.
-- :class:`CPCVSplit`             — one (combination, test-groups,
-  purged train-indices) tuple.
-- :func:`assign_groups`          — partition ``[0, n_bars)`` into
-  ``N`` contiguous groups (uneven splits land the remainder in the
-  early groups, as is conventional).
-- :func:`generate_cpcv_splits`   — produce all ``φ`` splits with
-  purging + embargo applied to the train indices.
-- :func:`reconstruct_paths`      — build the
-  ``C(N-1, k-1)`` full-length backtest paths.
-- :func:`assemble_path_returns`  — stitch per-split test returns
-  into the ``n_bars``-long return series for each path.
-- :func:`sharpe_ratio`           — population-style Sharpe (mean /
-  stddev), 0.0 on degenerate inputs.
-- :func:`lo_bootstrap_p_value`   — two-sided bootstrap p-value for
-  ``H0: mean Sharpe = 0`` over the per-path Sharpes.
-- :func:`fold_pnl_curves_sha256` — content-addressable hash of the
-  per-path PnL curves.
-- :func:`build_cpcv_evidence`    — top-level entry-point: emit
-  :class:`feelies.alpha.promotion_evidence.CPCVEvidence`.
-
-Determinism
-===========
-
-Every public function in this module is a pure function of its
-arguments.  The only stochastic element is the bootstrap p-value,
-which uses :class:`random.Random` seeded by the caller — so repeated
-calls with the same ``seed`` and the same fold-Sharpe sequence
-produce a bit-identical p-value (Inv-5).  The
-``fold_pnl_curves_hash`` is computed via :mod:`hashlib.sha256` over
-a canonical floating-point textualisation of the path returns and
-is therefore stable across operating systems and Python builds
-(the canonical formatter is :func:`_canonical_float_repr`).
-
-Caveats
-=======
-
-This module *organises* per-split OOS test returns into paths and
-computes the resulting Sharpe distribution; it does **not** retrain
-models.  The caller is expected to have run a CPCV-style backtest
-(a separate training run per combination) and to pass the
-per-split realised OOS test returns in the order matching
-:attr:`CPCVSplit.test_indices`.  See :func:`build_cpcv_evidence`'s
-docstring for the contract.
-
-:func:`build_cpcv_evidence` computes ``p_value`` with
-:func:`block_bootstrap_p_value` — a *circular moving-block* bootstrap
-(Politis & Romano 1992) of ``H0: mean return = 0`` on the per-bar
-mean-across-paths OOS return series.  The block structure preserves
-the serial correlation the embargo guards against, and operating on
-the per-bar returns (rather than the per-path Sharpes) avoids the
-degeneracy of the path-level bootstrap: when every reconstructed path
-shares the same bars (e.g. an identity-model OOS projection) the
-per-path Sharpes are identical and a bootstrap over *them* collapses
-to the ``1/(B+1)`` floor regardless of signal — anti-conservative, not
-conservative.  The legacy :func:`lo_bootstrap_p_value` (a plain iid
-bootstrap of the per-path Sharpes) is retained for backward
-compatibility and reference, but is **not** used to populate the
-gate evidence; see its docstring for the correlation caveat.
+Gate evidence uses a seeded circular block bootstrap over mean per-bar OOS
+returns, preserving serial dependence and avoiding degenerate path-level Sharpe
+bootstrap results. Canonical float serialization keeps PnL hashes stable.
 """
 
 from __future__ import annotations
@@ -122,37 +44,11 @@ __all__ = [
 
 @dataclass(frozen=True, kw_only=True)
 class CPCVConfig:
-    """Immutable hyperparameters for a single CPCV run.
+    """Immutable CPCV hyperparameters.
 
-    Attributes
-    ----------
-    n_groups
-        Number of contiguous time groups (``N`` in López de Prado's
-        notation).  Must satisfy ``n_groups >= 2``.
-    k_test_groups
-        Number of groups held out as the test set per combination
-        (``k`` in the notation).  Must satisfy
-        ``1 <= k_test_groups < n_groups``.
-    label_horizon_bars
-        The forward span (in bars) of the alpha's label/holding
-        window — a label realised at bar ``j`` consumes information
-        over ``[j, j + label_horizon_bars]``.  Used by the purge step
-        (López de Prado, *AFML* 2018, §7.4.1): a training observation
-        whose label window overlaps a test observation's label window
-        is removed from training.  Two length-``h`` label windows at
-        bars ``j`` and ``t`` overlap iff ``|j - t| <= h``, so the
-        purge excises the ``h`` bars on **both** sides of every test
-        region (not just the post-test side the embargo covers).
-        Default ``0`` reproduces the historical "labels realised at
-        the bar boundary" behaviour (no purge beyond the test bars).
-        Must be ``>= 0``.
-    embargo_bars
-        Number of bars immediately following each test region
-        excluded from training *in addition to* the forward
-        ``label_horizon_bars`` purge, to guard against
-        serial-correlation leakage from the immediate post-test bars
-        (López de Prado, *AFML* 2018, §7.4.2).  One-sided (post-test)
-        by convention.  Must be ``>= 0``.
+    ``label_horizon_bars`` purges overlapping label windows on both sides of
+    each test region. ``embargo_bars`` additionally removes bars immediately
+    after the region. Both must be nonnegative.
     """
 
     n_groups: int
@@ -331,9 +227,8 @@ def generate_cpcv_splits(n_bars: int, config: CPCVConfig) -> tuple[CPCVSplit, ..
     ``itertools.combinations(range(n_groups), k_test_groups)``.  The
     enumeration is deterministic so repeated calls with identical
     ``(n_bars, config)`` produce the *same* sequence of
-    :class:`CPCVSplit` records — replay determinism (Inv-5) holds
-    by construction, and the F-3 ``feelies promote replay-evidence``
-    CLI re-derives bit-identical fold sharpes.
+    :class:`CPCVSplit` records, allowing the evidence-replay CLI to
+    re-derive identical fold Sharpes.
     """
     groups = assign_groups(n_bars, config.n_groups)
 
@@ -377,31 +272,10 @@ def reconstruct_paths(
     k_test_groups: int,
     splits: Sequence[CPCVSplit],
 ) -> tuple[tuple[int, ...], ...]:
-    """Reconstruct ``C(N-1, k-1)`` full-length backtest paths.
+    """Reconstruct ``C(N-1, k-1)`` replay-stable full-length paths.
 
-    Each returned path is a length-``n_groups`` tuple of split
-    indices: ``path[g]`` is the index into ``splits`` whose test
-    set contributed group ``g``'s OOS predictions for that path.
-    The same combination may appear multiple times in a single
-    path — this is correct: a combination that tests ``k`` groups
-    contributes the predictions for all ``k`` of those groups in
-    every path it participates in.
-
-    The algorithm is the standard López de Prado §12.5 procedure:
-
-    1. For each group ``g``, list the splits whose ``test_group_ids``
-       contains ``g``, in the canonical order produced by
-       :func:`generate_cpcv_splits` (which is itself the lex order of
-       ``itertools.combinations``).  This list has exactly
-       ``C(N-1, k-1)`` entries.
-    2. Path ``p`` for ``p ∈ [0, C(N-1, k-1))`` is the tuple of
-       ``splits_by_group[g][p]`` for ``g`` in ``[0, n_groups)``.
-
-    Paths are returned in lex order over their split-index tuples,
-    so the enumeration is replay-stable.
-
-    Raises ``ValueError`` if the supplied ``splits`` are missing or
-    duplicated (e.g. came from a different :class:`CPCVConfig`).
+    ``path[g]`` names the split supplying group ``g``. Missing or duplicate
+    split combinations raise ``ValueError``.
     """
     expected_per_group = math.comb(n_groups - 1, k_test_groups - 1)
 
@@ -531,31 +405,10 @@ def assemble_path_returns(
 
 
 def sharpe_ratio(returns: Sequence[float]) -> float:
-    """Sample Sharpe ratio = mean(returns) / stddev(returns).
+    """Return unannualized population ``mean / stddev``.
 
-    Uses the *population* standard deviation (``ddof=0``) — the same
-    convention as the F-2 ``CPCVEvidence`` defaults and the
-    testing-validation skill's worked examples.  Returns ``0.0``
-    when fewer than two observations are available or when the
-    standard deviation is exactly zero (degenerate cases that should
-    contribute zero "edge" in the bootstrap distribution).
-
-    The mean and standard deviation are evaluated on the series
-    after dividing by ``max_i |r_i|`` when that scale is non-zero.
-    This is algebraically identical to ``mean/sd`` but avoids
-    spurious ``std == 0`` / ``mean == 0`` artifacts from IEEE-754
-    underflow when returns span extremely small magnitudes yet are
-    not strictly constant — preserving positive-scale invariance for
-    :func:`statistics.fmean` / :func:`statistics.pstdev`.
-
-    No annualisation is applied: the returned number has the units
-    of the *input series* (i.e. per-bar).  The caller is expected
-    to know whether the input is per-bar / per-day / per-period and
-    annualise externally if needed; the F-2 threshold defaults
-    (``cpcv_min_mean_sharpe = 1.0``) are stated in *whatever unit
-    the alpha hands in*, so the contract here is simply "compute
-    Sharpe over the supplied series and we'll check it against the
-    threshold the alpha author chose."
+    Scaling by the largest absolute return prevents underflow without changing
+    the ratio. Fewer than two or constant observations return ``0.0``.
     """
     if len(returns) < 2:
         return 0.0
@@ -585,51 +438,11 @@ def lo_bootstrap_p_value(
     n_bootstrap: int = 10_000,
     seed: int = 0,
 ) -> float:
-    """Two-sided bootstrap p-value for ``H0: mean Sharpe = 0``.
+    """Bootstrap ``H0: mean Sharpe = 0`` with a deterministic seed.
 
-    Algorithm
-    ---------
-    1. Compute the observed mean Sharpe ``μ̂``.
-    2. Centre: ``c_i = sharpes[i] - μ̂``.  These have mean exactly
-       ``0`` and are an empirical sample under H0.
-    3. For ``n_bootstrap`` iterations: draw ``len(sharpes)`` samples
-       from the centred sequence with replacement and compute the
-       resampled mean.
-    4. Two-sided p-value: ``P(|resampled_mean| >= |μ̂|)``.  Following
-       the standard convention, the count is ``+1`` in both
-       numerator and denominator to avoid a zero p-value when the
-       observation is more extreme than every bootstrap draw — see
-       Davison & Hinkley (1997) §4.2.
-
-    Determinism
-    -----------
-    Uses a :class:`random.Random` instance seeded by ``seed``.  Two
-    invocations with the same ``(sharpes, n_bootstrap, seed)``
-    return a bit-identical p-value (Inv-5).
-
-    Caveats
-    -------
-    **Legacy — not used to populate gate evidence.**  The per-path
-    Sharpes from CPCV are strongly *positively* correlated (paths
-    share most bars), so an iid bootstrap over them understates the
-    standard error of their mean and the resulting p-value is biased
-    *small* (anti-conservative).  In the extreme — every path
-    identical, as under an identity-model OOS projection — the centred
-    sample is all-zero and this returns the ``1/(B+1)`` floor for any
-    non-zero observed mean, i.e. maximal (false) significance.
-    :func:`build_cpcv_evidence` therefore uses
-    :func:`block_bootstrap_p_value` on the per-bar returns instead;
-    this function is retained only for backward compatibility and the
-    pinned reference vector.
-
-    Edge cases
-    ----------
-    - ``len(sharpes) < 2``: returns ``1.0`` (no evidence).
-    - All-zero ``sharpes``: returns ``1.0`` (the centred sequence
-      is identically zero, every resample is zero, so the
-      observation is exactly the bootstrap mean).
-    - ``n_bootstrap <= 0``: ``ValueError`` (zero iterations is a
-      configuration mistake, not a degenerate case).
+    This compatibility helper resamples centered path Sharpes. Gate evidence
+    uses :func:`block_bootstrap_p_value` because CPCV paths are correlated.
+    Fewer than two or all-zero Sharpes return ``1.0``.
     """
     if n_bootstrap <= 0:
         raise ValueError(f"n_bootstrap must be >= 1 (got {n_bootstrap})")
@@ -682,42 +495,11 @@ def block_bootstrap_p_value(
     n_bootstrap: int = 10_000,
     seed: int = 0,
 ) -> float:
-    """Two-sided circular moving-block bootstrap p-value for
-    ``H0: mean return = 0`` (equivalently ``Sharpe = 0``).
+    """Circular-block bootstrap for ``H0: mean return = 0``.
 
-    Algorithm (Politis & Romano 1992)
-    ---------------------------------
-    1. Observed statistic ``ŜR = sharpe_ratio(returns)``.
-    2. Centre under H0: ``c_i = returns[i] - mean(returns)``.
-    3. For ``n_bootstrap`` iterations: assemble a length-``n`` series
-       by drawing ``ceil(n / L)`` blocks of ``L`` consecutive centred
-       observations from uniformly-random start positions, **wrapping
-       around** the series (circular), then truncating to ``n``.
-       Record ``sharpe_ratio`` of the resample.
-    4. Two-sided p-value with the Davison-Hinkley ``+1/+1`` floor:
-       ``(#{|ŜR_b| >= |ŜR|} + 1) / (n_bootstrap + 1)``.
-
-    Why blocks
-    ----------
-    Operating on the per-bar returns (not the per-path Sharpes) keeps
-    the estimate non-degenerate, and the block length ``L`` preserves
-    the serial correlation the embargo guards against — resampling iid
-    would understate the variance and bias the p-value small.  Pass
-    ``block_size`` equal to the configured ``embargo_bars`` (the
-    declared serial-correlation length); ``block_size = 1`` recovers an
-    iid bootstrap of the per-bar returns.
-
-    Determinism
-    -----------
-    Uses a :class:`random.Random` seeded by ``seed``; same
-    ``(returns, block_size, n_bootstrap, seed)`` ⇒ bit-identical
-    p-value (Inv-5).
-
-    Edge cases
-    ----------
-    - ``len(returns) < 2`` or all-equal returns (``ŜR == 0``):
-      returns ``1.0`` (no evidence).
-    - ``n_bootstrap <= 0`` or ``block_size <= 0``: ``ValueError``.
+    Centered blocks wrap around the series, preserving serial dependence.
+    ``block_size=1`` gives an iid bootstrap. The seeded result is deterministic;
+    fewer than two or all-equal returns yield ``1.0``.
     """
     if n_bootstrap <= 0:
         raise ValueError(f"n_bootstrap must be >= 1 (got {n_bootstrap})")
@@ -764,7 +546,7 @@ def _canonical_float_repr(x: float) -> str:
 
     NaN and ±inf are explicitly mapped to fixed strings so the
     hash is stable even when the caller's per-path returns
-    happen to include them; the F-2 validators independently
+    happen to include them; validators independently
     reject finite-value violations elsewhere in the pipeline.
     """
     if math.isnan(x):
@@ -789,7 +571,7 @@ def fold_pnl_curves_sha256(
 
     where each ``r_i_j`` is :func:`_canonical_float_repr`-formatted.
     Cumulative PnL curves are derived from the per-bar returns at
-    review time (the F-2 ``CPCVEvidence`` only stores the hash, not
+    review time (``CPCVEvidence`` stores only the hash, not
     the heavy artefact); pinning the hash on the *return series*
     rather than a derived cumulative curve keeps the hash stable
     against future PnL-derivation conventions.
@@ -817,67 +599,12 @@ def build_cpcv_evidence(
     n_bootstrap: int = 10_000,
     seed: int = 0,
 ) -> CPCVEvidence:
-    """End-to-end CPCV evidence builder.
+    """Build deterministic CPCV evidence from per-split OOS returns.
 
-    Workflow
-    --------
-    1. Generate ``φ = C(N, k)`` splits with purging + embargo
-       applied to the train indices (the caller is responsible for
-       having retrained their model on each split's
-       ``train_indices`` and produced OOS test predictions in the
-       order matching ``splits[s].test_indices``).
-    2. Reconstruct ``C(N-1, k-1)`` full-length backtest paths.
-    3. Assemble per-path return series.
-    4. Compute per-path Sharpes (scaled by ``annualization_factor``),
-       summary stats, the block-bootstrap p-value, and the
-       content-addressable hash.
-    5. Emit a :class:`CPCVEvidence` ready for
-       :func:`feelies.alpha.promotion_evidence.validate_gate` against
-       :data:`feelies.alpha.promotion_evidence.GateId.PAPER_TO_LIVE`.
-
-    Units
-    -----
-    ``sharpe_ratio`` is computed per bar; ``annualization_factor``
-    (default ``1.0`` = no scaling) multiplies every ``fold_sharpe``
-    and hence ``mean_sharpe`` / ``median_sharpe`` onto the caller's
-    target frequency — pass ``sqrt(periods_per_year)`` (e.g.
-    ``sqrt(252)`` for daily bars) so the emitted Sharpes are in the
-    **same annualised unit** the ``GateThresholds.cpcv_min_mean_sharpe``
-    default is anchored against, and commensurate with the annualised
-    :class:`feelies.alpha.promotion_evidence.DSREvidence`.  The
-    p-value is frequency-invariant and is left unscaled.
-
-    Inputs
-    ------
-    config
-        Hyperparameters.  See :class:`CPCVConfig`.
-    n_bars
-        Length of the original return series.  Must satisfy
-        ``n_bars >= config.n_groups`` (so each group has at least
-        one bar).
-    test_returns_by_split
-        Per-split realised OOS test returns: a sequence whose
-        ``s``-th element is the sequence of returns produced by the
-        caller's model — trained on ``splits[s].train_indices`` —
-        for the bars listed in ``splits[s].test_indices`` (in that
-        same order).  The contract is checked at runtime by
-        :func:`assemble_path_returns`.
-    annualization_factor
-        Multiplies every emitted Sharpe onto the caller's target
-        frequency (default ``1.0`` = per-bar).  See *Units* above.
-        Must be ``> 0``.
-    n_bootstrap
-        Block-bootstrap iterations for the p-value.  Default
-        ``10_000`` matches the testing-validation skill's stated
-        floor for promotion-gate evidence.
-    seed
-        Bootstrap seed.  Two builds with the same ``seed`` and the
-        same ``test_returns_by_split`` produce a bit-identical
-        evidence package (Inv-5).
-
-    Determinism
-    -----------
-    Pure function.  No I/O, no clock reads, no global state.
+    Generates purged splits, reconstructs full paths, then computes path
+    Sharpes, a block-bootstrap p-value, and the artifact hash. Returns for each
+    split must follow that split's ``test_indices`` order. The positive
+    ``annualization_factor`` scales Sharpes only; the p-value is unchanged.
     """
     if annualization_factor <= 0.0:
         raise ValueError(

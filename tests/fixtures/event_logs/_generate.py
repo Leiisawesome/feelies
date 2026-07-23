@@ -1,34 +1,7 @@
-"""Deterministic synthesizer for the Phase-2 multi-boundary fixture.
+"""Generate a deterministic five-minute quote and trade fixture.
 
-Produces a JSONL log of ``NBBOQuote`` and ``Trade`` events for a
-single symbol (AAPL by default) spanning a 5-minute window.  The
-window is **deliberately long enough** to cross at least:
-
-- 10 boundaries of the 30-second horizon,
-- 2 boundaries of the 120-second horizon,
-- 1 boundary of the 300-second horizon,
-
-so the determinism tests can lock baselines for every sensor + tick
-emission for the canonical horizon set.
-
-Determinism contract:
-
-- All randomness flows through ``random.Random`` seeded with the
-  ``seed`` argument (default 42); ``PYTHONHASHSEED=0`` is also
-  required at the process level for stable dict iteration in
-  consumers, but the synthesizer itself relies only on the seeded
-  RNG.
-- Quote / trade timestamps are pure integer arithmetic
-  (``session_open_ns + i * 100_000_000`` for 100ms cadence), no
-  floats, so cross-platform reproducibility holds.
-- The output JSONL is sorted by ``timestamp_ns`` (each record's
-  ``timestamp_ns`` is monotonically increasing).
-
-To regenerate the fixture::
-
-    PYTHONHASHSEED=0 python -m tests.fixtures.event_logs._generate
-
-This will overwrite ``synth_5min_aapl.jsonl`` in this package.
+Seeded randomness, integer timestamps, and timestamp-sorted JSONL make the
+fixture reproducible. It crosses the 30-, 120-, and 300-second horizons.
 """
 
 from __future__ import annotations

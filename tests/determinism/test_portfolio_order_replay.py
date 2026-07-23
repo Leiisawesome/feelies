@@ -1,25 +1,7 @@
-"""Level-4 baseline — PORTFOLIO ``OrderRequest`` replay parity.
+"""Replay parity for PORTFOLIO order requests.
 
-Locks the deterministic fingerprint of the per-leg ``OrderRequest``
-tuple emitted by
-:meth:`feelies.risk.basic_risk.BasicRiskEngine.check_sized_intent`
-when fed the canonical Phase-4-finalize Level-3 fixture
-(:mod:`tests.determinism.test_sized_intent_replay`).
-
-Determinism (Inv-5)
--------------------
-
-* Iteration over ``intent.target_positions`` is sorted on symbol.
-* ``order_id`` is SHA-256 of
-  ``(intent.correlation_id, intent.sequence, symbol)`` truncated to 16
-  hex chars.
-* Marks are seeded with deterministic constants; the position store
-  starts empty so every leg appears as a flat→non-zero open.
-
-Per-leg veto (Inv-11) is exercised by configuring a
-``max_position_per_symbol`` low enough that some legs would breach the
-cap; those legs are silently dropped from the order stream and the
-remaining legs proceed.
+The baseline pins symbol order, deterministic order IDs, seeded marks, and
+per-leg position-cap vetoes.
 """
 
 from __future__ import annotations
@@ -94,15 +76,7 @@ def _hash_order_stream(orders: list[OrderRequest]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-# Locked Level-4 PORTFOLIO order baseline (per-leg OrderRequest stream).
-#
-# Re-baselined 2026-06-18 (audit R-1): the per-leg gross-exposure cap is now
-# enforced *cumulatively* across legs of a single intent.  With the replay's
-# 20%-of-$1M = $200k gross cap, the final lexicographic leg of the boundary-300
-# intent (MSFT @ $370) now correctly breaches the running aggregate and is
-# veto-dropped, taking the stream from 16 → 15 orders.  The prior baseline
-# captured the pre-fix behavior where a multi-leg intent could collectively
-# blow through the gross cap because each leg saw only the pre-intent snapshot.
+# Locked per-leg orders after cumulative gross-exposure checks.
 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH = (
     "7db2425d84f3313a394a8b7a88ea26f663b6800d435d2fba1dcb4195b2061ad7"
 )

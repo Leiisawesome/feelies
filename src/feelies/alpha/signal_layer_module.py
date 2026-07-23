@@ -1,49 +1,22 @@
-"""Phase-3 ``layer: SIGNAL`` alpha module.
+"""Loader artifact for ``layer: SIGNAL`` alphas.
 
-A :class:`LoadedSignalLayerModule` is the loader-side artifact for a
-schema-1.1 ``layer: SIGNAL`` alpha.  Workstream D.2 PR-1 retired
-``layer: LEGACY_SIGNAL`` and PR-2a deleted the per-tick
-``LoadedAlphaModule`` class itself; PR-2b-i unwired the per-tick
-engines from bootstrap, PR-2b-ii deleted the engine classes
-themselves (``CompositeFeatureEngine``, ``CompositeSignalEngine``,
-``MultiAlphaEvaluator``), and PR-2b-iv removed the surviving
-``AlphaModule.evaluate``/``FeatureVector`` protocol surface entirely.
-This is therefore one of only two surviving loaded-module types
-(the other being
-:class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
+Loader-side artifact for schema-1.1 ``layer: SIGNAL`` alphas (peer:
+:class:`~feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
 
-PR-2b-iii wired the **first production-reachable Signal → Order
-pipeline** by adding a bus-driven ``Signal`` subscriber on the
-``Orchestrator`` (``_on_bus_signal``) that buffers
-``Signal(layer="SIGNAL")`` events emitted by
-:class:`feelies.signals.horizon_engine.HorizonSignalEngine` and feeds
-the M4 ``SIGNAL_EVALUATE`` drain — turning every
-``LoadedSignalLayerModule`` that fires a Signal at a horizon boundary
-into an actual ``OrderRequest`` (subject to risk / intent
-translation), unless the alpha is referenced by some PORTFOLIO's
-``depends_on_signals`` (in which case ``CompositionEngine`` aggregates
-it into a ``SizedPositionIntent`` and PR-2b-iv's
-``_on_bus_sized_intent`` translates that intent into per-leg orders
-through ``RiskEngine.check_sized_intent``).
+Horizon signals reach orders via orchestrator ``_on_bus_signal``, unless a
+PORTFOLIO alpha lists the signal in ``depends_on_signals`` (then
+``_on_bus_sized_intent`` + ``check_sized_intent``).
 
 This module:
 
-* Declares **no inline features** — Layer-2 alphas consume Layer-1
-  ``SensorReading`` events via ``depends_on_sensors:``.
-  ``feature_definitions()`` therefore returns an empty sequence.
-* Exposes the SIGNAL-specific surface (the compiled
-  :class:`feelies.signals.horizon_protocol.HorizonSignal` callable, the
-  :class:`feelies.signals.regime_gate.RegimeGate` instance, the
-  validated :class:`feelies.alpha.cost_arithmetic.CostArithmetic`
-  block, ``horizon_seconds``, and the declared ``depends_on_sensors``)
-  via dedicated attributes so the bootstrap layer can construct
-  :class:`feelies.signals.horizon_engine.RegisteredSignal` records
-  without touching the loader internals.
+* Declares **no inline features** — consumes Layer-1 ``SensorReading``
+  via ``depends_on_sensors:``; ``feature_definitions()`` is empty.
+* Exposes the SIGNAL surface (compiled ``HorizonSignal``, ``RegimeGate``,
+  ``CostArithmetic``, ``horizon_seconds``, ``depends_on_sensors``) for
+  bootstrap ``RegisteredSignal`` construction.
 
-By satisfying the :class:`feelies.alpha.module.AlphaModule` protocol
-*and* the SIGNAL-layer surface, the module remains register-able
-through :class:`feelies.alpha.registry.AlphaRegistry` without forking
-the registry.
+Satisfies :class:`~feelies.alpha.module.AlphaModule` so it registers
+through :class:`~feelies.alpha.registry.AlphaRegistry` without a fork.
 """
 
 from __future__ import annotations
@@ -65,15 +38,7 @@ from feelies.signals.regime_gate import RegimeGate
 
 
 class LoadedSignalLayerModule:
-    """Concrete ``AlphaModule`` for a schema-1.1 ``layer: SIGNAL`` alpha.
-
-    The class exposes the standard :class:`AlphaModule` surface so it
-    can be registered with the existing :class:`AlphaRegistry`.
-    Phase-3 wiring then introspects each registered module: those whose
-    ``manifest.layer == "SIGNAL"`` are constructed into a
-    :class:`feelies.signals.horizon_engine.RegisteredSignal` and handed
-    to the :class:`HorizonSignalEngine`.
-    """
+    """Concrete ``AlphaModule`` for a schema-1.1 SIGNAL alpha."""
 
     __slots__ = (
         "_manifest",
@@ -125,10 +90,8 @@ class LoadedSignalLayerModule:
     def feature_definitions(self) -> Sequence[FeatureDefinition]:
         """SIGNAL-layer alphas declare no inline features.
 
-        They consume Layer-1 sensors directly via ``depends_on_sensors``;
-        the per-tick composite feature engine was deleted by D.2 PR-2b-ii.
-        Returning ``()`` keeps the registry's dedup / version-conflict
-        logic free of corner cases.
+        They consume Layer-1 sensors through ``depends_on_sensors``. Returning
+        ``()`` keeps registry deduplication and version checks simple.
         """
         return ()
 
@@ -137,11 +100,7 @@ class LoadedSignalLayerModule:
 
         Mirrors
         :py:meth:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule.validate`
-        so registry-side per-alpha validation has consistent behavior
-        across the two surviving loaded-module types (SIGNAL and
-        PORTFOLIO).  The historical per-tick ``LoadedAlphaModule.validate``
-        was deleted by D.2 PR-2 along with the rest of the legacy
-        per-tick contract.
+        so SIGNAL and PORTFOLIO modules validate consistently.
         """
         errors: list[str] = []
         for pdef in self._manifest.parameter_schema:
@@ -160,10 +119,9 @@ class LoadedSignalLayerModule:
     def signal_source(self) -> str | None:
         """Raw ``signal:`` source the alpha was compiled from.
 
-        Retained so the platform can statically determine which
-        ``snapshot.values`` keys the body actually reads (audit 2P-1:
-        consume-driven ``required_warm`` derivation).  ``None`` for
-        modules constructed without the source (legacy / synthetic).
+        Retained so the platform can derive ``required_warm`` from the
+        ``snapshot.values`` keys the body reads. ``None`` for modules built
+        without source.
         """
         return self._signal_source
 
@@ -189,19 +147,17 @@ class LoadedSignalLayerModule:
 
     @property
     def trend_mechanism_enum(self) -> TrendMechanism | None:
-        """Mapped :class:`TrendMechanism` enum (Phase-3.1 propagation).
+        """Mapped :class:`TrendMechanism` enum.
 
-        ``None`` when the YAML omits ``trend_mechanism:`` (v0.2 SIGNAL
-        behavior preserved bit-identically).
+        ``None`` when YAML omits ``trend_mechanism:``.
         """
         return self._trend_mechanism_enum
 
     @property
     def expected_half_life_seconds(self) -> int:
-        """Declared expected half-life (Phase-3.1 propagation).
+        """Declared expected half-life.
 
-        ``0`` when unspecified (v0.2 SIGNAL behavior preserved
-        bit-identically).
+        ``0`` when unspecified.
         """
         return self._expected_half_life_seconds
 

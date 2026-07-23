@@ -1,9 +1,8 @@
 """Shared knobs for PORTFOLIO integration tests.
 
-Reference ``src/feelies/storage/reference/factor_loadings/loadings.json`` now
-embeds a deterministic ``_meta.as_of_ns`` (audit P1-3), so the bootstrap
-staleness verdict is reproducible across checkouts (it no longer depends on
-the committed file's mtime).  The reference end-to-end session
+Reference ``src/feelies/storage/reference/factor_loadings/loadings.json``
+embeds deterministic ``_meta.as_of_ns``, so staleness is reproducible across
+checkouts. The reference end-to-end session
 (``SESSION_OPEN_NS`` = 2026-01-15) is one trading day after that anchor, so a
 realistic operator window covers it — the suites no longer need a
 century-long ceiling to dodge mtime drift.

@@ -1,4 +1,4 @@
-"""Depth-aware aggressive cost estimator (audit F-H-04, F-H-18).
+"""Depth-aware aggressive cost estimator tests.
 
 The estimator splits an order into L1 + excess legs (mirroring
 ``BacktestOrderRouter.submit``) and returns the realistic blended
@@ -15,7 +15,6 @@ import pytest
 from feelies.core.events import Side
 from feelies.execution.cost_model import (
     DefaultCostModel,
-    DefaultCostModelConfig,
     estimate_aggressive_taker_cost_bps,
     estimate_round_trip_cost_bps,
 )

@@ -1,4 +1,4 @@
-"""Locked APP 2026-03-26 backtest regression baseline (Phase 0).
+"""Locked APP 2026-03-26 backtest regression baseline.
 
 Requires a populated disk cache for ``APP/2026-03-26`` (run once with
 ``run_backtest.py`` and ``--cache-dir``).  Uses ``configs/bt_app.yaml``
@@ -31,16 +31,8 @@ from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_d
 _BASELINE_SYMBOL = "APP"
 _BASELINE_DATE = "2026-03-26"
 _BASELINE_CONFIG = Path("configs/bt_app.yaml")
-# NOTE (G-1 / 2026-06-08, refreshed 2026-06-13): the position-manager
-# decision layer is driven by default with cost-aware TRIM enabled
-# (PlatformConfig.position_manager_*).  This intentionally changed BOTH
-# config_hash (new snapshot keys) and the trade path (partial reduces).
-# The constants below WERE regenerated against the disk-cache dataset to
-# the trim-on / current-pipeline output in commit d101f30 (2026-06-13,
-# "refresh APP 2026-03-26 backtest net-PnL baseline to $71.56"); they are
-# the live trim-on baseline, NOT the pre-G-1 values.  To re-pin after a
-# future intentional trade-path change, run against the cache and update
-# the constants in one commit:
+# The functional test skips without cached data; config wiring has separate
+# data-free coverage. Re-pin these values from the cached run with:
 #   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
 #       --symbol APP --date 2026-03-26
 #
@@ -144,14 +136,7 @@ def _load_runner():
 
 
 def _net_pnl_from_orchestrator(orchestrator: Orchestrator, recorder) -> Decimal:
-    """Mirror ``generate_report`` net PnL exactly: gross − ``sum(ack.fees)``.
-
-    ``generate_report`` subtracts fees summed over **all** ``OrderAck``s
-    (``backtest_report.py``), which includes cancel/expiry fees that the trade
-    journal has no record for.  Reconciling against journal fees (the old
-    formula) silently diverged from the printed number whenever a non-fill ack
-    carried a fee, so this now uses the same ack-fee population the report does.
-    """
+    """Match report PnL by subtracting fees from every acknowledgement."""
     from feelies.core.events import OrderAck
 
     all_pos = orchestrator.position_store.all_positions()
@@ -274,14 +259,7 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
 
 
 def test_app_baseline_config_contract_hash() -> None:
-    """Re-baked G-7 config-contract lock — runs without the dataset.
-
-    ``compute_config_hash`` of the *raw* config (no per-run ingest-health
-    provenance, which is data-derived) pins the YAML + PlatformConfig defaults
-    contract.  The G-7 sizing-tilt keys are all default-off and shifted this
-    snapshot; the value below is the re-baked hash.  Catches any unintended
-    config-contract drift in CI, independent of the cached dataset.
-    """
+    """Pin the raw config hash independently of cached market data."""
     if not _BASELINE_CONFIG.exists():
         pytest.fail(f"Missing baseline config: {_BASELINE_CONFIG}")
     config = PlatformConfig.from_yaml(_BASELINE_CONFIG)

@@ -1,8 +1,8 @@
-"""Audit P1.4 (2026-06-18): reducing-leg invariants in one discoverable place.
+"""Reducing-leg invariants in one discoverable place.
 
 Decision-path exit coverage is otherwise scattered across
 ``tests/kernel/test_orchestrator*.py``.  This module concentrates the
-structural contract that the audit relied on — *reducing legs are never
+structural contract: reducing legs are never
 cost-gated and route through the never-min-lot-filtered EXIT path* — so the
 guarantee is greppable and a regression is obvious.
 

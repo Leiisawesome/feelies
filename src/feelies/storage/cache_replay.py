@@ -20,7 +20,6 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 
 __all__ = [
     "CacheReplayError",
-    "DiskCacheDayMeta",
     "IngestDayMeta",
     "iter_calendar_dates",
     "load_event_log_from_disk_cache",
@@ -40,10 +39,6 @@ class IngestDayMeta:
     source: Literal["cache", "api"] | str
     event_count: int
     ingestion_health: str | None = None
-
-
-# Backward-compatible alias for callers that predated ``IngestDayMeta``.
-DiskCacheDayMeta = IngestDayMeta
 
 
 def iter_calendar_dates(start_date: str, end_date: str) -> list[str]:

@@ -1,12 +1,6 @@
-"""Live-like execution-realism profile check (audit execution_fills_audit_2026-07-02, P1 #6).
+"""Validate live-like passive-fill and impact settings.
 
-``PlatformConfig`` code defaults leave several passive-fill and impact-realism
-knobs off/zero for backward compatibility (``passive_through_fill_size_cap_enabled``,
-``passive_require_trade_for_level_fill``, ``cost_within_l1_impact_factor`` /
-``cost_permanent_impact_coefficient``); the reference ``platform.yaml`` opts them
-all on, but nothing previously asserted that a config claiming to be cost-realistic
-actually carries them forward. This is a config lint, not a loader-level gate —
-call it explicitly against any config meant to represent a live-like backtest.
+This is an explicit config lint for live-like backtests, not a loader gate.
 """
 
 from __future__ import annotations

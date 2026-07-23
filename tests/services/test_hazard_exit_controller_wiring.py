@@ -1,4 +1,4 @@
-"""Audit P0 H-1 / P1 HM-1 / P1 H-2: hazard-exit controller wiring tests.
+"""Hazard-exit controller wiring tests.
 
 The controller used to live exclusively inside
 ``_create_composition_layer`` and was only built when at least one
@@ -81,7 +81,7 @@ def test_no_opt_in_returns_none() -> None:
 
 
 def test_signal_layer_opt_in_constructs_controller() -> None:
-    """Audit P0 H-1: SIGNAL-layer hazard_exit.enabled MUST wire."""
+    """SIGNAL-layer ``hazard_exit.enabled`` must wire the controller."""
     module = _StubSignalModule(
         manifest=_manifest(
             alpha_id="sig_hazard_v1",

@@ -1,6 +1,6 @@
 """Threaded IB Gateway connection (EClient + EWrapper subclass).
 
-Threading model (see plan §3.1):
+Threading model:
 
 * **EReader** — ibapi-owned background thread spawned by
   ``EClient.connect()``.  Reads raw bytes off the TWS socket and

@@ -1,68 +1,13 @@
-"""``UniverseSynchronizer`` — barrier-sync for cross-sectional contexts.
+"""Barrier synchronization for cross-sectional contexts.
 
-Subscribes to :class:`HorizonFeatureSnapshot`, :class:`Signal`, and
-:class:`HorizonTick` events and emits exactly one
-:class:`CrossSectionalContext` per ``(horizon_seconds, boundary_index)``
-when a UNIVERSE-scope :class:`HorizonTick` fires (§5.6, §6.5, §7.5).
+A universe-scope horizon tick emits at most one context per boundary. Missing
+or stale symbol data is represented as ``None`` rather than dropping the
+context. Sorted symbols and a dedicated sequence generator preserve replay
+determinism.
 
-Design invariants (§7.5)
-------------------------
-
-1. **At-most-one-per-boundary** — for any
-   ``(horizon_seconds, boundary_index)`` exactly one
-   :class:`CrossSectionalContext` is published, and never twice
-   (idempotent via ``_emitted`` set).
-2. **No silent drops** — when ``completeness`` is below the configured
-   threshold the synchronizer still emits the context (with
-   ``signals_by_symbol`` mapping absent symbols to ``None``).  The
-   downstream :class:`feelies.composition.engine.CompositionEngine`
-   chooses whether to act, gate, or noop.
-3. **Isolated sequence stream** — every emitted
-   :class:`CrossSectionalContext` draws its sequence number from the
-   dedicated ``_ctx_seq`` generator owned by the synchronizer.  This
-   guarantees the upstream signal/event sequencer's main ``_seq`` is
-   never perturbed (Inv-A / C1).
-4. **Determinism** — iteration over the universe is sorted lex-by-
-   symbol; the snapshot/signal cache is replaced (not mutated in-
-   place) so stale references do not leak across boundaries.
-
-Stale-snapshot handling (§5.6)
-------------------------------
-
-A snapshot is considered "missing" for a symbol if **any** of the
-following hold at barrier time:
-
-  * No :class:`HorizonFeatureSnapshot` for the symbol at this
-    ``(horizon_seconds, boundary_index)``.
-  * The most recent snapshot is for a *prior* ``boundary_index``
-    (lagged by at least one barrier).
-  * The snapshot's ``stale`` map flags **any** of the alpha's
-    declared ``signature_sensors``.  (We don't know the alphas at
-    this layer, so we flag the entire snapshot as suspicious only
-    when its top-level boundary index is stale; per-feature
-    staleness is propagated to the consumer untouched.)
-
-Symbols whose latest signal is from a prior boundary are similarly
-mapped to ``None`` in ``signals_by_symbol``.
-
-Cross-horizon feeder fan-in (Phase 4.1)
----------------------------------------
-
-When ``upstream_strategy_ids`` is non-empty, ``Signal`` events are
-cached for every horizon in ``signal_horizons`` (typically the union of
-the PORTFOLIO decision horizon and each upstream SIGNAL alpha's
-``horizon_seconds``).  At a PORTFOLIO barrier the synchronizer fills
-``CrossSectionalContext.signals_by_strategy_by_symbol`` with the latest
-causal ``Signal`` per ``(symbol, strategy_id)``, applying snapshot
-timestamp alignment only when the feeder shares the portfolio horizon.
-
-Completeness
-------------
-
-``completeness`` is computed as
-``len(symbols_with_any_feeder_signal) / len(universe)`` — a float in ``[0, 1]``
-that the consumer can compare against
-:class:`feelies.core.platform_config.PlatformConfig.composition_completeness_threshold`.
+Cross-horizon feeders cache the latest causal signal per symbol and strategy.
+``completeness`` is the share of universe symbols with any feeder signal; the
+composition engine decides whether that share is sufficient.
 """
 
 from __future__ import annotations
@@ -83,28 +28,11 @@ _logger = logging.getLogger(__name__)
 
 
 class UniverseSynchronizer:
-    """Barrier-sync for cross-sectional context emission.
+    """Barrier-sync signals into cross-sectional contexts.
 
-    Construction parameters:
-
-    - ``bus`` — the platform :class:`EventBus`.  Subscriptions are
-      installed lazily on :meth:`attach` so tests may construct the
-      object without leaking handlers.
-    - ``universe`` — the lex-sorted symbol tuple participating in the
-      cross-section.  Empty universe makes :meth:`attach` a no-op
-      (zero overhead — the LEGACY fast-path stays bit-stable).
-    - ``horizons`` — the registered **portfolio decision** horizons.
-      Only UNIVERSE-scope :class:`HorizonTick` events whose
-      ``horizon_seconds`` is in this set trigger context emission.
-    - ``signal_horizons`` — horizons for which Layer-2 ``Signal`` events
-      are cached (defaults to ``horizons``).  Pass the union of portfolio
-      horizons and every upstream SIGNAL ``horizon_seconds`` referenced
-      by ``depends_on_signals`` when feeders operate on shorter horizons.
-    - ``upstream_strategy_ids`` — sorted union of SIGNAL ``strategy_id``
-      values (alpha_ids) declared across PORTFOLIO ``depends_on_signals``.
-      When empty, behaviour matches the pre–fan-in synchronizer.
-    - ``ctx_sequence_generator`` — *dedicated*
-      :class:`SequenceGenerator`; never shared with any other emitter.
+    Universe ticks at portfolio horizons trigger emission. Signal horizons may
+    include shorter feeder horizons, and context sequences use a dedicated
+    generator for deterministic replay.
     """
 
     __slots__ = (
@@ -160,9 +88,7 @@ class UniverseSynchronizer:
                 "UniverseSynchronizer.signal_max_age_seconds must be positive, "
                 f"got {signal_max_age_seconds}"
             )
-        # Stale-feeder window (audit P0-5).  ``None`` → use the context's own
-        # decision horizon per emit, so one fully-missed barrier drops a
-        # carried-over signal before it is counted toward completeness.
+        # None uses the decision horizon as the feeder-signal age limit.
         self._signal_max_age_seconds: int | None = signal_max_age_seconds
         self._ctx_seq = ctx_sequence_generator
         # Latest snapshot per (horizon_seconds, symbol).
@@ -247,7 +173,9 @@ class UniverseSynchronizer:
     def _max_age_ns(self, portfolio_h: int) -> int:
         """Stale-feeder window in nanos for a context at horizon *portfolio_h*."""
         window_s = (
-            self._signal_max_age_seconds if self._signal_max_age_seconds is not None else portfolio_h
+            self._signal_max_age_seconds
+            if self._signal_max_age_seconds is not None
+            else portfolio_h
         )
         return window_s * 1_000_000_000
 
@@ -271,7 +199,7 @@ class UniverseSynchronizer:
         if not candidates:
             return None
         # Causal (ts ≤ barrier) AND non-stale (age ≤ window): a signal carried
-        # over from a much earlier boundary is dropped, not counted (P0-5).
+        # Signals from an earlier boundary are dropped, not counted.
         candidates = [
             (kh, s)
             for kh, s in candidates
@@ -321,7 +249,7 @@ class UniverseSynchronizer:
 
         signals: dict[str, Signal | None] = {}
         non_none = 0
-        # Stale-feeder window for the legacy single-slot path (P0-5).
+        # Feeder-signal age limit for the single-slot path.
         legacy_max_age_ns = self._max_age_ns(h)
 
         # Hoisted out of the per-symbol loop below: the cache sort is
@@ -352,16 +280,10 @@ class UniverseSynchronizer:
             for (kh, ksym, _strategy_id), s in sorted_signal_cache:
                 if kh != h or ksym != symbol:
                     continue
-                # Causality guard (Inv-6, audit P1-7): never select a
-                # signal stamped after the barrier.  In-order replay keeps
-                # such signals out of the cache, but the explicit filter
-                # makes the legacy path symmetric with the multi-feeder
-                # selector (``_pick_feeder_signal``) so an out-of-order
-                # injection cannot leak a future signal into the context.
+                # Never admit a signal stamped after the barrier.
                 if s.timestamp_ns > tick.timestamp_ns:
                     continue
-                # Stale-signal gate (audit P0-5): drop a signal carried over
-                # from a much earlier boundary so it cannot inflate completeness.
+                # Stale signals cannot inflate completeness.
                 if tick.timestamp_ns - s.timestamp_ns > legacy_max_age_ns:
                     continue
                 if snap is not None and s.timestamp_ns < snap.timestamp_ns:
@@ -372,13 +294,7 @@ class UniverseSynchronizer:
             if chosen is not None:
                 non_none += 1
 
-        # Completeness semantics (audit P0-5).  This counts symbols with a
-        # *present, causal, and non-stale* signal: selection above applies the
-        # ``ts <= barrier`` causality guard, the ``ts >= snapshot`` freshness
-        # floor, AND the stale-feeder window (``signal_max_age_seconds``, or
-        # the decision horizon when unset).  A signal carried over from a much
-        # earlier boundary is dropped before it is counted, so aged data can
-        # only reduce completeness, never inflate it (Inv-11 fail-safe).
+        # Completeness counts signals that pass barrier, snapshot, and age filters.
         completeness = non_none / len(self._universe_sorted) if self._universe_sorted else 0.0
 
         ctx = CrossSectionalContext(

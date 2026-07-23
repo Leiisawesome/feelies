@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import pytest
 
 from feelies.core.identifiers import SequenceGenerator, derive_order_id, make_correlation_id
 
@@ -80,4 +78,7 @@ class TestSequenceGenerator:
 
         assert len(results) == 100
         assert len(set(results)) == 100
-        assert sorted(results) == list(range(100))
+
+    def test_lock_free_path_is_monotonic(self) -> None:
+        gen = SequenceGenerator(thread_safe=False)
+        assert [gen.next() for _ in range(5)] == list(range(5))

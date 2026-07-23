@@ -1,4 +1,4 @@
-"""PR-12 cleanup roll-up tests (audit F-L-30, F-L-31, F-L-32, F-M-21, F-M-26, F-M-27)."""
+"""Execution cleanup regression tests."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.cost_model import DefaultCostModel, ZeroCostModel
+from feelies.execution.cost_model import ZeroCostModel
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.storage.trade_journal import TradeRecord
 
@@ -64,7 +64,7 @@ def _market_order(qty: int = 50) -> OrderRequest:
 
 
 class TestLockedQuoteMetric:
-    """Audit F-M-26: reject counters expose router-side telemetry."""
+    """Reject counters expose router-side telemetry."""
 
     def test_backtest_router_increments_locked_quote_counter(self) -> None:
         router = BacktestOrderRouter(
@@ -86,7 +86,7 @@ class TestLockedQuoteMetric:
 
 
 class TestPartialFillDistinctTimestamps:
-    """Audit F-M-27: partial vs final fill timestamps differ by ≥ 1 ns."""
+    """Partial and final fill timestamps differ by at least 1 ns."""
 
     def test_partial_and_final_fill_have_distinct_timestamps(self) -> None:
         router = BacktestOrderRouter(
@@ -102,7 +102,7 @@ class TestPartialFillDistinctTimestamps:
 
 
 class TestExpiredTimeoutStatus:
-    """Audit F-L-31: passive timeouts emit OrderAckStatus.EXPIRED."""
+    """Passive timeouts emit ``OrderAckStatus.EXPIRED``."""
 
     def test_passive_timeout_emits_expired_not_cancelled(self) -> None:
         clock = SimulatedClock(start_ns=0)
@@ -160,7 +160,7 @@ class TestExpiredTimeoutStatus:
 
 
 class TestTradeRecordNetPnl:
-    """Audit F-M-21: TradeRecord.net_pnl property."""
+    """``TradeRecord.net_pnl`` subtracts explicit fees."""
 
     def test_net_pnl_subtracts_fees(self) -> None:
         tr = TradeRecord(

@@ -1,4 +1,4 @@
-"""Tests for Phase-2 fields on PlatformConfig (validation + YAML)."""
+"""Validation and YAML tests for sensor and session platform settings."""
 
 from __future__ import annotations
 
@@ -197,11 +197,11 @@ class TestYamlLoader:
         assert cfg.market_id == "US_EQUITY"
 
     def test_yaml_plumbs_stateful_flag(self, tmp_path: Path) -> None:
-        """Audit P1-2: ``stateful`` is reachable from YAML (was dropped).
+        """``stateful`` is reachable from YAML.
 
         Without plumbing, a throttled accumulator silently advances its
         estimator only on emissions.  The loader must round-trip the
-        flag and the snapshot must serialize it for audit/replay.
+        flag, and snapshots must serialize it for replay.
         """
         yaml_text = dedent("""
             version: "0.2.0"
@@ -232,7 +232,7 @@ class TestYamlLoader:
         assert by_id["ofi_ewma"].throttled_ms == 100
         # Omitted ⇒ backward-compatible default.
         assert by_id["micro_price"].stateful is False
-        # Audit/replay provenance: the snapshot serializes the flag.
+        # The snapshot preserves the statefulness contract.
         serialized = {row["sensor_id"]: row for row in cfg.snapshot().data["sensor_specs"]}
         assert serialized["ofi_ewma"]["stateful"] is True
         assert serialized["micro_price"]["stateful"] is False

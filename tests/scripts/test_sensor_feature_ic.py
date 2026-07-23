@@ -116,22 +116,7 @@ def test_replay_produces_snapshots_and_pairs() -> None:
 
 
 def test_collect_pairs_anchors_on_boundary_ts_ns_not_timestamp_ns() -> None:
-    """sensor_audit_2026-07-02 P1: on a sparse tape the event that *triggers*
-    a HorizonTick can arrive well after the nominal grid boundary.
-    ``HorizonFeatureSnapshot.boundary_ts_ns`` is documented as "the regular-
-    grid anchor for IC labels / forensics" (core/events.py) specifically so
-    forward-return pairing is not skewed by that trigger-time lag; this locks
-    ``_collect_pairs`` to that field.
-
-    Constructed so the two anchors give an unambiguous, opposite-verdict
-    contrast: from the nominal boundary (30s) the 30s-forward window is
-    *realised* (data exists through 60s); from the late trigger time (90s,
-    simulating a long gap before the triggering event) the same 30s horizon
-    would require data through 120s, which does not exist yet — the wrong
-    anchor would silently drop this pair as unrealised instead of just
-    computing a different value, making the bug unambiguous rather than a
-    matter of degree.
-    """
+    """Anchor forward returns to the grid boundary, not the trigger event."""
     from feelies.core.events import HorizonFeatureSnapshot
 
     NS = ic._NS_PER_SECOND
@@ -168,8 +153,7 @@ def test_collect_pairs_anchors_on_boundary_ts_ns_not_timestamp_ns() -> None:
 
 
 def test_kyle_alignment_ab_registers_both_versions_and_runs() -> None:
-    """P1-5 A/B must register legacy 1.2.0 and causal 2.0.0 kyle (version-match
-    via params) and produce both variant rows."""
+    """The Kyle alignment comparison emits rows for both sensor versions."""
     NS = ic._NS_PER_SECOND
     from decimal import Decimal
 
@@ -205,7 +189,7 @@ def test_kyle_alignment_ab_registers_both_versions_and_runs() -> None:
     assert all(r.feature == "kyle_alignment" for r in rows)
 
 
-# ── H10 row smoke (protocol §2.2; Task 9-A Phase A) — synthetic only ─────
+# H10 synthetic row smoke test.
 
 
 def _h10_smoke_tape(sym: str = "APP"):
@@ -221,9 +205,7 @@ def _h10_smoke_tape(sym: str = "APP"):
     mid = 100.0
     for t in range(0, 2100):
         mid += 0.00005
-        events.append(
-            _quote(t * NS, f"{mid:.4f}", f"{mid + 0.02:.4f}", 100, 100)
-        )
+        events.append(_quote(t * NS, f"{mid:.4f}", f"{mid + 0.02:.4f}", 100, 100))
         # Rising ISO prints ⇒ buy-side SFI pressure.
         events.append(
             Trade(
@@ -274,7 +256,7 @@ def test_harness_h10_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
     assert ic._h10_sweep_kyle(tape, mids, "OLN", "2026-01-01", 0) == []
 
 
-# ── H12 row smoke (protocol §2.2; Task 9-A Phase A) — synthetic only ─────
+# H12 synthetic row smoke test.
 
 
 def _h12_smoke_tape_and_calendar(sym: str = "APP"):
@@ -340,7 +322,7 @@ def test_harness_h12_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
     assert ic._h12_halfhour_clock(tape, mids, "OLN", "2026-01-15", 0, calendar=cal) == []
 
 
-# ── H13 row smoke (protocol §2.2; Task 9-A-H13 Phase A) — synthetic only ─
+# H13 synthetic row smoke test.
 
 
 def _h13_smoke_tape_and_calendar(sym: str = "APP"):

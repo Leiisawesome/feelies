@@ -1,17 +1,4 @@
-"""Harness sign-goldens for ``sig_sweep_kyle_drift_h900_v1`` — protocol §2.1
-under Ordering B (slate-C SEQUENCING RULING).
-
-Phase B YAML / ``evaluate`` is gated on step-2 PASS, so these goldens
-certify the *extraction path* (real ``SensorRegistry → HorizonScheduler
-→ HorizonAggregator`` + the census-pinned §1.1 predicate) — the
-harness-sign-golden mitigation for the 2a/2b inversion.  Full
-loader-compiled ``evaluate`` goldens remain a Phase-B proof obligation
-after a PASS (protocol §2.1 / spec §15).
-
-No cached data, no forward returns, no outcome statistic — correctness
-certification only (protocol §2.1: assertion failure ⇒ REJECTED
-sign/wiring defect; fix is implementation-correction, N unchanged).
-"""
+"""Sign goldens for the sweep-Kyle extraction path."""
 
 from __future__ import annotations
 
@@ -194,9 +181,7 @@ def test_2a_3_interior_null_golden() -> None:
     assert cell.episodes == 0
     snap = _in_window_boundary(_replay_snapshots(_synth_tape(mix_interior=True)))
     assert snap is not None
-    if snap.warm.get("sweep_flow_imbalance") and snap.warm.get(
-        "sweep_flow_imbalance_percentile"
-    ):
+    if snap.warm.get("sweep_flow_imbalance") and snap.warm.get("sweep_flow_imbalance_percentile"):
         pctl = snap.values["sweep_flow_imbalance_percentile"]
         sfi = snap.values["sweep_flow_imbalance"]
         assert 0.10 < pctl < 0.90

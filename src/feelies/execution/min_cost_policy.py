@@ -1,36 +1,8 @@
-"""Minimum-cost execution strategy (per-order passive vs aggressive).
+"""Choose passive or aggressive execution from modeled per-order cost.
 
-Configuration-driven per-order decision policy.  Given a candidate
-order's symbol / side / quantity / current quote, the policy compares
-the model-computed ``cost_bps`` of a passive (maker) fill against an
-aggressive (taker) fill and picks the cheaper one.  Stop-loss exits,
-forced-flatten escalation, and other "must-trade" paths are forced to
-aggressive regardless of cost — guaranteed-fill safety beats spread
-savings (Inv-11 fail-safe).
-
-Conservative defaults (IBKR-style, U.S. equities):
-
-* The cost comparison uses the *same* ``DefaultCostModel`` as the
-  router so backtest routing decisions cannot become more optimistic
-  than the cost the simulator actually charges.
-* On passive fills, the model includes the configured adverse-selection
-  penalty (the queue-drain regime, ``adverse_selection_drain_bps``, since
-  the policy estimates a benign level fill) *and* the maker rebate.
-  Passive routing is therefore not a free lunch: the policy will refuse
-  to go passive on tight-spread / small-order regimes where the
-  commission floor + adverse-selection penalty dominates the would-be
-  spread saving.
-* A configurable ``prefer_passive_bias_bps`` lets operators bias the
-  decision (negative = require passive to beat aggressive by a margin
-  before posting a limit, the more conservative direction).
-* Below ``small_order_aggressive_threshold_shares`` the policy forces
-  aggressive — at small sizes the $0.35 IBKR commission floor swamps
-  the spread saving and a missed passive fill that times out is more
-  expensive than just crossing.
-
-Determinism: the policy is a pure function of its inputs (cost model,
-quote, order spec, config) and contains no clocks, no randomness, and
-no I/O.  Replays produce identical decisions.
+The policy uses the router's cost model, including rebates, adverse selection,
+commission floors, and non-fill risk. Must-trade orders always use aggressive
+execution. Decisions depend only on the supplied order, quote, and config.
 """
 
 from __future__ import annotations
@@ -47,59 +19,25 @@ from feelies.execution.cost_model import (
 
 @dataclass(frozen=True, kw_only=True)
 class MinCostPolicyConfig:
-    """Tunable knobs for :class:`MinimumCostExecutionPolicy`.
+    """Configuration for :class:`MinimumCostExecutionPolicy`.
 
-    ``prefer_passive_bias_bps``: subtracted from the passive-leg
-        ``cost_bps`` before comparing against the aggressive leg.
-        Positive values bias toward passive (operator prefers to
-        chase the spread); negative values require passive to beat
-        aggressive by ``|bias|`` bps before being chosen (the more
-        conservative direction).  Default 0 (pure model comparison).
-    ``small_order_aggressive_threshold_shares``: orders with quantity
-        strictly below this threshold are forced to aggressive.
-        Default 0 (disabled).  Set to e.g. 50 for a $0.35-floor IB
-        Tiered profile to skip passive on noise-sized orders where
-        the commission floor + adverse-selection penalty exceeds the
-        spread saving.
-    ``min_half_spread_for_passive``: passive routing is skipped (in
-        favor of aggressive) when the current quoted half-spread is
-        strictly below this threshold (in price units).  Tight
-        spreads make the spread saving negligible relative to the
-        adverse-selection cost.  Default 0 (disabled).  Setting this
-        to e.g. ``0.005`` (one tick on a sub-$5 stock) is reasonable
-        for U.S. equities.
-    ``allow_passive_short_entry``: when False, short-entry orders
-        always go aggressive — getting filled fast on the borrow side
-        matters more than spread savings when HTB fees accrue daily.
-        Default True (passive shorts allowed; HTB is modeled in the
-        cost comparison so the policy can decide).
+    Positive ``prefer_passive_bias_bps`` favors passive orders; negative values
+    require passive execution to win by that margin. Share and spread thresholds
+    can force aggressive execution. ``allow_passive_short_entry`` controls short
+    entries independently.
     """
 
     prefer_passive_bias_bps: Decimal = Decimal("0")
     small_order_aggressive_threshold_shares: int = 0
     min_half_spread_for_passive: Decimal = Decimal("0")
     allow_passive_short_entry: bool = True
-    # Audit F-H-04: depth-aware aggressive cost estimation.  When the
-    # impact knobs are non-zero, decide() will price the aggressive
-    # route through estimate_aggressive_taker_cost_bps (walks the book
-    # on excess qty) instead of assuming a flat L1 fill.  Defaults
-    # mirror the routers' defaults so the policy and the router agree
-    # on realised aggressive cost.
+    # Match the router's depth-aware aggressive cost.
     market_impact_factor: Decimal = Decimal("0.5")
     max_impact_half_spreads: Decimal = Decimal("10")
-    # Audit P1.3 / P2.11: within-L1 participation premium + permanent
-    # square-root impact.  Mirror the router's ``append_market_fill_acks``
-    # so the policy does not under-price aggressive fills once those
-    # knobs are enabled in ``platform.yaml``.  Defaults are zero so the
-    # legacy "impact only on excess-over-L1" comparison is preserved.
+    # Mirror the router's within-L1 and permanent-impact charges.
     within_l1_impact_factor: Decimal = Decimal("0")
     permanent_impact_coefficient: Decimal = Decimal("0")
-    # Audit F-M-19: opportunity cost of a passive non-fill.  When the
-    # caller supplies an ``edge_bps`` to ``decide()``, the passive
-    # route's effective cost is inflated by
-    # ``passive_non_fill_probability × edge_bps``.  Default 0.30
-    # corresponds to ~70% expected fill within ``max_resting_ticks``
-    # — a conservative starting point.
+    # Price non-fill risk as probability × forgone edge.
     passive_non_fill_probability: Decimal = Decimal("0.30")
 
 
@@ -187,15 +125,7 @@ class MinimumCostExecutionPolicy:
         if is_short and side == Side.SELL and not self._cfg.allow_passive_short_entry:
             return "aggressive"
 
-        # Cost comparison.  The two sides are evaluated against the
-        # same notional and same model — passive uses ``half_spread=0``
-        # because a maker fill rests at the BBO without crossing the
-        # spread (matching the passive router's
-        # ``_emit_passive_fill`` semantics).  Aggressive crosses to
-        # the opposite-side BBO and pays ``half_spread``.
-        # Audit F-M-20: use raw (un-quantized) cost_bps inside the
-        # comparison so the routing decision doesn't flip on the
-        # 0.01-bps quantization grain.
+        # Compare raw costs on one notional; makers do not cross the spread.
         passive_breakdown = self._cost_model.compute(
             symbol=symbol,
             side=side,
@@ -206,11 +136,7 @@ class MinimumCostExecutionPolicy:
             is_short=is_short,
         )
 
-        # Audit F-H-04: when BBO depth is supplied, the aggressive
-        # route is priced via the walk-the-book estimator (matches the
-        # router's actual fill).  Without depth we fall back to the
-        # flat-L1 estimate (legacy behaviour preserved for callers
-        # that don't pass bid_size / ask_size).
+        # Use walk-the-book pricing when both BBO depths are available.
         if bid_size is not None and ask_size is not None:
             depth = ask_size if side == Side.BUY else bid_size
             aggressive_cost_bps = Decimal(
@@ -243,11 +169,7 @@ class MinimumCostExecutionPolicy:
             )
             aggressive_cost_bps = aggressive_breakdown.raw_cost_bps
 
-        # Audit F-M-19: penalise the passive route by the expected
-        # opportunity cost of a non-fill (probability of cancel × edge
-        # forgone).  Without this, the policy picks passive even when
-        # the spread saving is dwarfed by the chance of missing the
-        # trade entirely.
+        # Add expected forgone edge to the passive route.
         passive_raw = passive_breakdown.raw_cost_bps
         opportunity_cost = self._cfg.passive_non_fill_probability * Decimal(str(edge_bps))
         passive_cost_bps = passive_raw - self._cfg.prefer_passive_bias_bps + opportunity_cost

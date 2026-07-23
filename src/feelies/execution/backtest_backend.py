@@ -33,7 +33,7 @@ def _warn_on_zero_latency(
     market_data_latency_ns: int,
     builder: str,
 ) -> None:
-    """Flag optimistic zero-latency backtest builds (audit P1.6).
+    """Warn when a backtest omits feed or submission latency.
 
     A backtest with ``latency_ns == 0`` lets an order fill against the very
     quote that triggered it (no submission delay), and

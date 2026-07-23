@@ -158,13 +158,7 @@ class MassiveHistoricalIngestor:
         self._event_log = event_log
         self._clock = clock
         self._checkpoint = checkpoint or InMemoryCheckpoint()
-        # Lazy cache of (source_client, client_q, client_t) used by all
-        # ``ingest_symbol_parallel`` invocations sharing the same source
-        # ``client``.  Avoids constructing 2N urllib3 pools for an N-symbol
-        # backfill (audit B3-MINOR).  Keyed on the source ``client`` identity
-        # so a reused ingestor or a later call with a different client (test
-        # doubles, wrappers) rebuilds the pair instead of silently reusing
-        # the stale one.
+        # Share one quote/trade client pair per source client.
         self._parallel_clients: tuple[Any, Any, Any] | None = None
 
     def ingest(
@@ -205,14 +199,8 @@ class MassiveHistoricalIngestor:
         total_pages = 0
         completed_symbols: set[str] = set()
 
-        # Multi-symbol ingest accumulates each symbol's full-session batches into
-        # an order-tolerant scratch log: consecutive symbols carry overlapping
-        # exchange-timestamp ranges, so appending them straight into the strict
-        # destination log would raise ``CausalityViolation`` on the second symbol
-        # before the global resequence below ever ran (audit ING-10).  Order is
-        # imposed once, at the end, via ``resequence_event_list`` +
-        # ``replace_events``.  Single-symbol ingest writes straight to the
-        # destination and keeps the strict guard.
+        # Multi-symbol arrival is not globally causal, so collect in a permissive
+        # scratch log and impose order once. Single-symbol ingest remains strict.
         multi_symbol = len(symbols) > 1
         from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -275,7 +263,7 @@ class MassiveHistoricalIngestor:
         Reads market events from **both** the existing destination
         ``self._event_log`` *and* the order-tolerant ``scratch`` log, then
         ``resequence_event_list`` + ``replace_events`` once.  Reading the
-        destination too is load-bearing (audit ING-10 follow-up):
+        Reading the destination is required because:
 
         * a non-empty destination prior to a multi-symbol ingest must not be
           silently dropped, and
@@ -317,7 +305,7 @@ class MassiveHistoricalIngestor:
         (each a full session, whose timestamps overlap the previous symbol's)
         can accumulate without tripping the shared log's cross-symbol
         monotonicity guard; final order is imposed once by
-        ``resequence_event_list`` + ``replace_events`` (audit ING-10).
+        ``resequence_event_list`` and ``replace_events``.
         """
         dest = target_log if target_log is not None else self._event_log
         _lock: threading.Lock = threading.Lock()
@@ -333,14 +321,8 @@ class MassiveHistoricalIngestor:
                 with _lock:
                     on_page("trades", page_num, total, time.monotonic() - _t0)
 
-        # Real Massive clients get distinct per-thread instances so their
-        # urllib3 pools never collide.  Mocks and test wrappers fall back to
-        # the configured client object unless we can safely clone and re-wrap
-        # an inner Massive client.  Cached on ``self`` keyed by the source
-        # ``client`` identity so a multi-symbol backfill reuses the same pair
-        # across calls (audit B3-MINOR), while a reused ingestor or a later
-        # call with a different client rebuilds the pair instead of silently
-        # routing through the stale one.
+        # Real clients get per-thread pools; mocks fall back to the configured object.
+        # Cache the pair by source identity.
         if self._parallel_clients is None or self._parallel_clients[0] is not client:
             client_q, client_t = _clone_parallel_clients(client, self._api_key)
             self._parallel_clients = (client, client_q, client_t)
@@ -404,16 +386,7 @@ class MassiveHistoricalIngestor:
 
         merged = raw_quotes + raw_trades
         del raw_quotes, raw_trades  # free the two intermediate copies before processing
-        # Sort key MUST mirror the canonical ``event_merge_sort_key``
-        # ``(exchange_timestamp_ns, symbol, type_rank, sequence)`` — within a
-        # single-symbol ingest ``symbol`` is constant, so the alignment reduces
-        # to ``(sip_timestamp, type_rank, sequence_number)``: quotes (rank 0)
-        # sort before trades (rank 1) at equal timestamps, *then* by vendor
-        # sequence.  Earlier code ordered ``sequence_number`` ahead of
-        # ``type_rank``, which disagreed with the per-chunk stabilization in
-        # ``InMemoryEventLog`` and could raise a spurious ``CausalityViolation``
-        # when a run of same-ns quote/trade rows straddled a 5 000-row chunk
-        # boundary (audit ING-02).
+        # Mirror the canonical merge key; type rank stabilizes same-time rows.
         merged.sort(
             key=lambda d: (
                 d.get("sip_timestamp", 0),
@@ -532,8 +505,8 @@ def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:
     Defense-in-depth: when the upstream returns a ``ticker`` that does
     not match the requested ``symbol`` (Massive bug, proxy misconfig,
     cache poisoning), drop the record with a warning so the wrong-symbol
-    data never pollutes the normalizer's state machines (audit
-    r3-INGEST-05).  Empty / missing ``ticker`` is back-filled to the
+        data never pollutes the normalizer's state machines. Empty or missing
+        ``ticker`` is back-filled to the
     requested symbol — that is the documented contract.
     """
     cls = type(record)

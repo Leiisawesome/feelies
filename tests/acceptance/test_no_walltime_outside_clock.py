@@ -1,21 +1,7 @@
-"""Inv-10 lint guard — no raw wall-clock reads outside the sanctioned set.
+"""Reject raw wall-clock reads outside explicitly replay-neutral files.
 
-Ruff's ``DTZ`` rule flags ``datetime.now()`` / ``datetime.utcnow()`` but is
-**blind** to ``time.time()`` / ``time.monotonic()`` / ``time.perf_counter()``
-(determinism-audit P1 #10).  CLAUDE.md and Inv-10 nonetheless ban *all* raw
-wall-clock reads in production logic — "all timestamps via the injectable
-clock".  This AST-based acceptance test closes the half of that ban the
-linter cannot see: every ``time.*`` / ``datetime.*`` / ``date.*`` wall-clock
-call under ``src/feelies`` must live in one of the explicitly-justified files
-in ``_WALL_CLOCK_ALLOWLIST``.  A new wall-clock read anywhere else fails
-loudly, so a contributor cannot slip a non-deterministic timestamp into the
-replay path unnoticed.
-
-This is a *scope* guard, not a determinism proof: the allowlisted uses below
-were each verified to be replay-neutral (telemetry, live-only paths, or
-provenance fields excluded from the hashed/parity surface).  The point is
-that any *new* use becomes a deliberate, reviewed allowlist edit instead of a
-silent regression.
+This AST check covers APIs such as ``time.time`` and ``perf_counter`` that
+Ruff's datetime rules do not detect.
 """
 
 from __future__ import annotations
@@ -25,10 +11,7 @@ from pathlib import Path
 
 _SRC = Path(__file__).resolve().parents[2] / "src" / "feelies"
 
-# Absolute wall-clock readers (``time.time``/``time_ns``) and process-clock
-# readers (``monotonic``/``perf_counter``); the latter cannot be a logical
-# timestamp but are still raw wall-clock reads Inv-10 wants funnelled through
-# the injected clock or explicitly justified.
+# Wall-clock and process-clock readers require explicit justification.
 _BANNED_ATTRS = frozenset(
     {
         "now",
@@ -45,13 +28,19 @@ _BANNED_ATTRS = frozenset(
 _BANNED_ROOTS = frozenset({"time", "datetime", "date"})
 
 # file (relative to src/feelies) -> why a raw wall-clock read is justified.
-# Each entry was confirmed replay-neutral during the determinism audit.
 _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
     "core/clock.py": "canonical clock adapter — the only sanctioned wall-clock source (Inv-10)",
+    "core/state_machine.py": (
+        "perf_counter_ns transition-duration telemetry accumulated only when "
+        "a timing sink is bound; transition records use the injected clock"
+    ),
     "kernel/orchestrator.py": (
         "perf_counter_ns latency telemetry into _tick_timings (MetricEvent "
         "side-channel); all event timestamps use the injected clock, not this"
     ),
+    # "bootstrap.py" is intentionally absent: factor-loadings freshness uses
+    # session_open_ns (BACKTEST) or the injected Clock (PAPER/LIVE), never a
+    # raw wall-clock read (Inv-5 / Inv-10).
     "harness/backtest_runner.py": "backtest run wall-time / progress reporting (not in the event stream)",
     "harness/backtest_prep.py": "backtest-prep progress timing (not in the event stream)",
     "broker/ib/connection.py": "live IB Gateway connection-ready timeout (live-only path)",

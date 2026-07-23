@@ -1,32 +1,7 @@
-"""Closes G-C — §20.12.3 #2 v0.2-without-``trend_mechanism`` parity.
+"""Parity checks for the baseline alpha named by the companion text file.
 
-§20.12.3 #2 of ``docs/three_layer_architecture.md`` requires
-that a v0.2 SIGNAL alpha that does **not** declare a
-``trend_mechanism:`` block continues to load and run with bit-
-identical Level-1–4 parity hashes under v0.3 code, with the loader
-running in its v0.3 default mode (``enforce_trend_mechanism=False``).
-
-The companion file ``_chosen_v02_baseline_alpha.txt`` records the
-single alpha id this acceptance test uses as its v0.2-without-TM
-baseline.  This indirection is deliberate: if a future PR renames
-the alpha or moves it under a different directory, only that one
-plain-text file changes — no Python edit needed — and the bond
-between matrix row §20.12.3 #2 and the asserting test stays in
-exactly one place.
-
-This test is intentionally redundant with the locked hashes already
-asserted by the Phase-3 / 4 / 4.1 determinism suite; the redundancy
-is load-bearing because:
-
-* The existing replay tests assert the *hash* without asserting the
-  *absence* of ``trend_mechanism:`` in the underlying YAML.  A
-  contributor who silently adds a ``trend_mechanism:`` block to the
-  baseline alpha (and updates the hash) would not break those tests
-  but would break the §20.12.3 #2 contract.
-* The existing tests assert each level independently; this file
-  asserts the *conjunction* (all four levels green for the chosen
-  baseline) so the acceptance matrix's #2 row maps to one unambiguous
-  green dot.
+The suite binds that alpha's YAML shape to its Level 1–4 replay hashes so a
+schema or output change cannot be rebaselined independently.
 """
 
 from __future__ import annotations
@@ -60,12 +35,6 @@ def _baseline_alpha_id() -> str:
 def _baseline_alpha_path() -> Path:
     alpha_id = _baseline_alpha_id()
     return Path("alphas") / alpha_id / f"{alpha_id}.alpha.yaml"
-
-
-# Workstream D.2 retired the loader's once-per-process LEGACY_SIGNAL
-# sunset banner along with the per-tick legacy code-path.  The
-# previous autouse fixture cleared that dedup set; with the set gone
-# there is nothing to reset between tests.
 
 
 def test_baseline_alpha_yaml_declares_trend_mechanism_block() -> None:
@@ -133,16 +102,7 @@ def test_baseline_alpha_loads_under_explicit_strict_opt_out(
 
 
 def test_baseline_alpha_level2_signal_hash_unchanged() -> None:
-    """Re-run the Level-2 replay on the baseline; assert locked hash.
-
-    This is a delegation: it imports the existing Level-2 replay
-    helper, calls it with the chosen baseline path, and compares the
-    resulting hash + count against the constants the Phase-3 lock-down
-    pinned.  If a future PR moves the baseline alpha to a different id
-    *and* that id has a non-empty Level-2 stream, the assertion fails
-    loudly and the matrix row must be updated together with the
-    baseline file.
-    """
+    """The chosen baseline must match its locked signal hash and count."""
     from tests.determinism.test_signal_replay import (
         EXPECTED_LEVEL2_SIGNAL_COUNT,
         EXPECTED_LEVEL2_SIGNAL_HASH,
@@ -183,14 +143,4 @@ def test_baseline_alpha_level3_snapshot_hash_unchanged() -> None:
     level3.test_snapshot_stream_matches_locked_baseline()
 
 
-# ── Workstream-D note ────────────────────────────────────────────────────
-# The Level-1 LEGACY-fill assertion that previously lived here delegated
-# into ``tests/determinism/test_legacy_alpha_parity.py`` and the
-# ``trade_cluster_drift`` reference alpha.  Both were retired in
-# Workstream D.2 with explicit user sign-off (Path C); §20.12.3 #2 now
-# asserts on Levels 2–3 only.  Level-4 (sized intent stream) is anchored
-# by the Phase-4 e2e determinism tests (``tests/integration/
-# test_phase4_e2e.py``) which the matrix row already cross-references.
-# Restoring a Level-1 assertion requires (a) a new SIGNAL- or PORTFOLIO-
-# layer Level-1 fill replay and (b) a matrix-row update; do not silently
-# re-add a LEGACY-anchored delegation.
+# Level-4 intent parity is covered by end-to-end tests.

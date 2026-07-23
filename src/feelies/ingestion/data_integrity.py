@@ -21,7 +21,7 @@ class DataHealth(Enum):
     corrupted, the only recovery path is a manual restart.  The operator
     runbook should restart the normalizer for affected symbols.
 
-    ``HALTED`` (BT-5) is a *recoverable* trading suspension surfaced from
+    ``HALTED`` is a recoverable trading suspension surfaced from
     the tape (LULD / regulatory halt condition codes).  Unlike CORRUPTED
     it does not escalate the macro state machine to DEGRADED — the symbol
     resumes to HEALTHY when the halt-off marker arrives.  Consumers treat

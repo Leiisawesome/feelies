@@ -1,32 +1,8 @@
-"""Closes G-A and G-B from the Acceptance Sweep gap inventory.
+"""Pin load-time invariants for reference alphas.
 
-Two acceptance lines from §18.2 are mechanically asserted here:
-
-* **G-A** — §18.2 #6: "Reference SIGNAL alpha (`sig_benign_midcap_v1`)
-  runs end-to-end with `margin_ratio ≥ 1.5` verified at load."
-  Generalised to **all five** v0.2/v0.3 reference SIGNAL alphas to
-  catch silent regressions across the family rather than a single
-  baseline.  Each YAML is loaded through :class:`AlphaLoader`; the
-  resulting :class:`LoadedSignalLayerModule` exposes a validated
-  :class:`CostArithmetic` instance whose ``margin_ratio`` is the
-  number this test guards.
-
-* **G-B** — §18.2 #7: "Reference PORTFOLIO alpha runs end-to-end with
-  factor exposures within tolerance."  Loads
-  ``pro_xsect_v1`` (the canonical PORTFOLIO reference) and runs the
-  declared factor model through :class:`FactorNeutralizer`, primed
-  from bundled ``feelies.storage.reference`` factor loadings.  Asserts
-  every post-neutralization residual factor exposure is within
-  ``1e-9`` of zero on a non-trivial weight vector across the symbols
-  for which loadings exist.
-
-The cost-arithmetic loader (``CostArithmetic.from_spec``) already
-rejects any ``margin_ratio < 1.5`` at load time, so a regression
-where someone lowers the floor in the YAML would be caught
-immediately on import.  Asserting at this layer is therefore
-*defence-in-depth* against accidental relaxations of the validator
-itself — if a future PR weakens ``CostArithmetic.from_spec``, the
-test still pins the >= 1.5 contract per reference alpha.
+Every reference signal alpha must expose a validated cost margin of at least
+1.5. The reference portfolio alpha must neutralize bundled factor exposures to
+within ``1e-9``. These checks also protect against validator relaxation.
 """
 
 from __future__ import annotations
@@ -45,9 +21,7 @@ from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR as _FACTOR_LOADI
 _ALPHAS_ROOT = Path("alphas")
 
 
-# G-A — every reference SIGNAL alpha must clear the 1.5 floor at load
-# time.  Adding a new reference SIGNAL alpha?  Add it here so the
-# acceptance matrix's #6 row stays accurate.
+# Every reference signal alpha must clear the 1.5 load-time floor.
 _REFERENCE_SIGNAL_ALPHAS: tuple[str, ...] = (
     "sig_benign_midcap_v1",
     "sig_moc_imbalance_v1",

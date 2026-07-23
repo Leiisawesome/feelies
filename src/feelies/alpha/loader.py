@@ -1,7 +1,6 @@
-"""Alpha loader — parse .alpha.yaml specs into layer-specialised modules.
+"""Parse ``.alpha.yaml`` specs into typed layer modules.
 
-The AlphaLoader is the bridge between the external quant lab's YAML
-deliverables and the platform's typed protocol system.  It:
+``AlphaLoader``:
 
   1. Parses a single ``.alpha.yaml`` file
   2. Validates schema structure and parameter types/ranges
@@ -11,21 +10,8 @@ deliverables and the platform's typed protocol system.  It:
   6. Produces a :class:`LoadedSignalLayerModule` (``layer: SIGNAL``)
      or :class:`LoadedPortfolioLayerModule` (``layer: PORTFOLIO``)
 
-Workstream D.2 retired the per-tick ``LoadedAlphaModule`` produced by
-the historical ``layer: LEGACY_SIGNAL`` path; PR-2 of D.2 then deleted
-the class itself.  Every accepted layer now resolves to a dedicated
-loaded-module type with a deterministic dispatch branch in
-:meth:`AlphaLoader.load_from_dict` — there is no longer a generic
-fall-through path.
-
-Security: inline code is compiled via ``compile()`` + ``exec()`` in a
-restricted namespace.  No ``import``, ``open``, ``eval``, ``exec``,
-``__import__``, or filesystem access is available to inline code.
-
-Invariants preserved:
-  - Inv 5 (deterministic replay): compiled code is pure functions
-  - Inv 7 (typed schemas): output is standard AlphaModule protocol
-  - Inv 13 (provenance): manifest carries full hypothesis + version
+Only ``SIGNAL`` and ``PORTFOLIO`` layers are accepted. Inline code runs in a
+restricted namespace without imports, file access, or dynamic evaluation.
 """
 
 from __future__ import annotations
@@ -71,29 +57,9 @@ from feelies.signals.regime_gate import RegimeGate, RegimeGateError
 
 logger = logging.getLogger(__name__)
 
-# §8.5 parameter surface cap — at most this many parameters may declare a
-# ``range:`` (free for optimization).  ``min``/``max`` validation bounds
-# do not count against this cap (audit P1-8).
+# At most three parameters may declare an optimization range. Validation bounds
+# do not count toward this limit.
 _MAX_FREE_OPTIMIZATION_PARAMS: int = 3
-
-# Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
-# accepted set; the once-per-process sunset banner and the per-tick
-# :class:`LoadedAlphaModule` class were both deleted by D.2 PR-2.  Any
-# LEGACY_SIGNAL manifest is now hard-rejected at parse time with a
-# migration pointer (see :meth:`AlphaLoader._validate_schema`).
-# ``_REQUIRED_TOP_KEYS`` is retained as a frozen historical record of
-# the legacy schema-1.0 contract so the early-validation messages can
-# point at exactly which field a copy-pasted-from-1.0 fixture is
-# missing — the keys themselves are no longer accepted.
-_REQUIRED_TOP_KEYS = {
-    "alpha_id",
-    "version",
-    "description",
-    "hypothesis",
-    "falsification_criteria",
-    "features",
-    "signal",
-}
 
 _REQUIRED_SIGNAL_LAYER_KEYS = {
     "alpha_id",
@@ -108,10 +74,7 @@ _REQUIRED_SIGNAL_LAYER_KEYS = {
     "cost_arithmetic",
 }
 
-# PORTFOLIO-layer required keys (§6.6 / Phase 4).
-# A PORTFOLIO alpha replaces ``signal`` / ``depends_on_sensors`` with
-# ``universe`` and ``depends_on_signals``; the optimization weights are
-# carried in ``risk_budget`` and the (optional) ``construct:`` block.
+# PORTFOLIO alphas use universe and signal dependencies instead of inline signals.
 _REQUIRED_PORTFOLIO_LAYER_KEYS = {
     "alpha_id",
     "version",
@@ -126,20 +89,9 @@ _REQUIRED_PORTFOLIO_LAYER_KEYS = {
 
 _SUPPORTED_SCHEMA_VERSIONS = {"1.1"}
 
-# Schema 1.1 layer values per §6.6.  Workstream D.2 retired
-# ``LEGACY_SIGNAL`` from both the "valid" and "accepted" sets; it is
-# now handled as a dedicated *retired* category with its own migration
-# message.  ``SIGNAL`` and ``PORTFOLIO`` are accepted; ``SENSOR``
-# remains reserved (sensor specs live under platform.yaml, not alpha
-# YAML).  See docs/three_layer_architecture.md §10.
+# SENSOR is reserved for platform config. Retired layers receive migration help.
 _VALID_1_1_LAYERS = {"SIGNAL", "PORTFOLIO", "SENSOR"}
 _ACCEPTED_LAYERS = {"SIGNAL", "PORTFOLIO"}
-
-# Layers that were once accepted but have been removed from the
-# loader's dispatch table.  Membership in this set triggers a dedicated
-# rejection path with a migration pointer (rather than the generic
-# "unknown layer" message), so authors who copy old fixtures get a
-# stable, actionable error instead of a typo-shaped one.
 _RETIRED_LAYERS = {"LEGACY_SIGNAL"}
 _LAYER_PHASE_MAP = {
     "SENSOR": "Phase 2 (sensor framework — declared in platform.yaml, not alpha YAML)",
@@ -147,11 +99,7 @@ _LAYER_PHASE_MAP = {
     "PORTFOLIO": "Phase 4 (composition layer)",
 }
 
-# v0.3 closed taxonomy of trend-formation mechanisms (§20.2).  When the
-# optional ``trend_mechanism:`` block is present in a schema-1.1 spec,
-# its ``family:`` field must be one of these names.  Enforcement of the
-# rest of the block is deferred to Phase 3.1 (gate G16); in Phase 1.1
-# only the family-name closedness is checked.
+# Closed taxonomy for declared trend-formation mechanisms.
 _TREND_MECHANISM_FAMILIES = {
     "KYLE_INFO",
     "INVENTORY",
@@ -160,14 +108,8 @@ _TREND_MECHANISM_FAMILIES = {
     "SCHEDULED_FLOW",
 }
 
-# Phase-3 minimum allowed value for ``horizon_seconds:`` in a SIGNAL
-# spec.  Below 30s the platform's L1 NBBO sampling rate (and the
-# associated session boundaries scheduled by
-# :class:`feelies.sensors.horizon_scheduler.HorizonScheduler`) cannot
-# carry a meaningful horizon-anchored snapshot.  The platform-level
-# horizon registry (``PlatformConfig.horizons_seconds``) is the
-# authoritative whitelist; this floor is a defensive sanity check
-# applied before the registry membership check (G7).
+# Below 30 seconds, L1 sampling cannot support a meaningful horizon snapshot.
+# PlatformConfig remains the authoritative horizon whitelist.
 _SIGNAL_MIN_HORIZON_SECONDS = 30
 _ALPHA_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -248,16 +190,13 @@ class AlphaLoader:
     loader must instantiate a standalone regime engine (no shared
     ``regime_engine`` instance was supplied at construction).
 
-    Each accepted ``layer:`` value resolves to a dedicated loaded-module
-    class via a deterministic dispatch branch in :meth:`load_from_dict`:
+    Dispatch in :meth:`load_from_dict`:
 
     * ``layer: SIGNAL``     → :class:`LoadedSignalLayerModule`
     * ``layer: PORTFOLIO``  → :class:`LoadedPortfolioLayerModule`
 
-    ``layer: LEGACY_SIGNAL`` was retired by workstream D.2; the per-tick
-    ``LoadedAlphaModule`` class that historically backed it was deleted
-    in D.2 PR-2.  Any LEGACY_SIGNAL manifest is hard-rejected by
-    :meth:`_validate_schema` with a migration-cookbook pointer.
+    Other layers (including retired ``LEGACY_SIGNAL``) are rejected by
+    :meth:`_validate_schema`.
     """
 
     def __init__(
@@ -281,10 +220,8 @@ class AlphaLoader:
         """Load an alpha specification from a YAML file.
 
         Raises ``AlphaLoadError`` on any validation or compilation failure.
-        Returns one of the two layer-specialised module types depending
-        on the parsed ``layer:`` field (SIGNAL → ``LoadedSignalLayerModule``,
-        PORTFOLIO → ``LoadedPortfolioLayerModule``).  ``layer: LEGACY_SIGNAL``
-        was retired by workstream D.2 and is hard-rejected at parse time.
+        Returns ``LoadedSignalLayerModule`` or ``LoadedPortfolioLayerModule``
+        based on ``layer:``.
         """
         path = Path(path)
         try:
@@ -305,15 +242,8 @@ class AlphaLoader:
 
         Dispatches on ``layer:`` (schema 1.1):
 
-        - ``SIGNAL``                       → :class:`LoadedSignalLayerModule`
-          (Phase-3 horizon-anchored, regime-gated contract).
-        - ``PORTFOLIO``                    → :class:`LoadedPortfolioLayerModule`
-          (Phase-4 cross-sectional construction).
-
-        ``LEGACY_SIGNAL`` was retired by workstream D.2 and is rejected
-        in :meth:`_validate_schema`; the per-tick ``LoadedAlphaModule``
-        class that historically backed it was deleted in D.2 PR-2 and
-        no longer exists in the codebase.
+        - ``SIGNAL``    → :class:`LoadedSignalLayerModule`
+        - ``PORTFOLIO`` → :class:`LoadedPortfolioLayerModule`
         """
         self._validate_schema(spec, source)
 
@@ -331,19 +261,12 @@ class AlphaLoader:
                 source=source,
             )
 
-        # _validate_schema rejects every layer that does not have a
-        # dispatch branch above.  Reaching here means a layer slipped
-        # through `_ACCEPTED_LAYERS` without a corresponding branch in
-        # this method — a programmer error.  Keep the assertion in
-        # place so the failure surfaces loudly rather than producing
-        # ``None`` or hanging on a missing ``features`` key.
+        # Every accepted layer must have an explicit dispatch branch.
         raise AssertionError(  # pragma: no cover
             f"{source}: layer '{layer_value}' passed _validate_schema "
             f"but has no dispatch branch in load_from_dict. "
             f"This is a loader bug — please file an issue."
         )
-
-    # ── SIGNAL-layer load path (Phase 3) ──────────────────────
 
     def _load_signal_layer(
         self,
@@ -354,22 +277,10 @@ class AlphaLoader:
     ) -> LoadedSignalLayerModule:
         """Load a schema-1.1 ``layer: SIGNAL`` alpha.
 
-        Defining characteristics of the SIGNAL layer (vs. the retired
-        per-tick path that workstream D.2 removed):
-
-        1. **No inline features.**  ``depends_on_sensors`` declares the
-           Layer-1 sensors the alpha consumes; the platform provides
-           those via :class:`feelies.sensors.registry.SensorRegistry`.
-        2. **3-arg evaluate.**  The compiled inline ``signal:`` code
-           must define ``evaluate(snapshot, regime, params)``.  The
-           snapshot type is :class:`HorizonFeatureSnapshot`; ``regime``
-           is the latest :class:`RegimeState` (or ``None`` at cold
-           start); ``params`` is the resolved parameter mapping.
-        3. **Mandatory ``cost_arithmetic`` and ``regime_gate`` blocks**,
-           parsed up-front into :class:`CostArithmetic` and
-           :class:`RegimeGate` instances respectively.  Failure of
-           either parser surfaces as :class:`AlphaLoadError` so the
-           operator sees a single error class.
+        1. **No inline features** — ``depends_on_sensors`` + SensorRegistry.
+        2. **3-arg evaluate** — ``evaluate(snapshot, regime, params)`` on
+           :class:`HorizonFeatureSnapshot`.
+        3. **Mandatory** ``cost_arithmetic`` and ``regime_gate`` blocks.
         """
         alpha_id = spec["alpha_id"]
         param_defs = self._parse_parameters(spec.get("parameters", {}), source)
@@ -386,10 +297,7 @@ class AlphaLoader:
         except CostArithmeticError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
-        # Inject declared numeric param defaults as named gate constants so a
-        # gate threshold can reference the param instead of duplicating its
-        # literal (external report §5.5).  bool is excluded (it is an int
-        # subclass but not a numeric threshold).
+        # Expose numeric parameters to gates; exclude bool despite its int subclass.
         gate_params = {
             name: float(value)
             for name, value in params.items()
@@ -406,14 +314,7 @@ class AlphaLoader:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
         regime_engine = self._resolve_regime_engine(spec.get("regimes"), source)
-        # Audit P1-2: validate every ``P(<state>)`` in the gate against the
-        # engine's published ``state_names`` at LOAD time.  Previously a typo
-        # (``P(noraml)``) compiled cleanly and only failed at the first
-        # runtime evaluation as an ``UnknownRegimeStateError`` — and on the
-        # OFF path that error did not even unwind a latched-ON gate (see
-        # P1-1).  Failing loud at boot turns a latent production hazard into
-        # a config error.  Skipped only when no engine is resolvable (the
-        # gate then cannot be name-checked against a taxonomy).
+        # Validate posterior state names at load time when an engine is available.
         self._validate_gate_posterior_states(regime_gate, regime_engine, source)
         namespace = self._build_namespace(alpha_id, regime_engine)
         namespace["HorizonFeatureSnapshot"] = HorizonFeatureSnapshot
@@ -433,9 +334,7 @@ class AlphaLoader:
         trend_mechanism_block = self._parse_trend_mechanism_block(
             spec.get("trend_mechanism"), source
         )
-        # Audit (external report): validate hazard_exit.applies_to_regimes state
-        # names against the resolved engine taxonomy so a typo cannot silently
-        # disable an exit filter.
+        # Validate hazard regime names against the resolved engine taxonomy.
         hazard_known_states = (
             frozenset(regime_engine.state_names) if regime_engine is not None else None
         )
@@ -448,11 +347,6 @@ class AlphaLoader:
             trend_mechanism_block,
             source,
         )
-        # Audit P1-4: cosmetic-fingerprint enforcement (l1_signature_sensors
-        # must be a subset of depends_on_sensors) is now a hard G16 rule 10
-        # in ``LayerValidator._check_g16_signal_rules`` — applied during the
-        # load-time validation pass.
-
         symbols_raw = spec.get("symbols")
         symbols = frozenset(symbols_raw) if symbols_raw is not None else None
 
@@ -494,12 +388,9 @@ class AlphaLoader:
             expected_half_life_seconds=expected_half_life,
             consumed_features=depends_on_sensors,
             params=params,
-            # 2P-1: retain the raw body so the platform can statically derive
-            # which snapshot.values keys the alpha actually reads.
+            # Retain source so required_warm can follow actual value reads.
             signal_source=str(spec["signal"]),
         )
-
-    # ── PORTFOLIO-layer load path (Phase 4) ───────────────────────
 
     def _load_portfolio_layer(
         self,
@@ -508,7 +399,7 @@ class AlphaLoader:
         param_overrides: dict[str, Any] | None,
         source: str,
     ) -> LoadedPortfolioLayerModule:
-        """Load a schema-1.1 ``layer: PORTFOLIO`` alpha (§6.6 / Phase 4).
+        """Load a schema-1.1 ``layer: PORTFOLIO`` alpha.
 
         Differs from the SIGNAL path in three places:
 
@@ -533,7 +424,8 @@ class AlphaLoader:
         depends_on_signals = self._parse_depends_on_signals(spec, source)
 
         try:
-            cost_arith = CostArithmetic.from_spec(
+            # G12 validation only — PORTFOLIO modules do not retain cost_arith.
+            CostArithmetic.from_spec(
                 alpha_id=alpha_id,
                 spec=spec.get("cost_arithmetic"),
             )
@@ -756,9 +648,7 @@ class AlphaLoader:
 
         Returns ``(enum_or_None, half_life_seconds)`` so the
         :class:`HorizonSignalEngine` can stamp every emitted ``Signal``
-        with deterministic metadata.  Phase 3.1 will activate the
-        full G16 binding rules; here we only need the family enum and
-        the disclosed half-life.
+        with deterministic metadata.
         """
         if block is None:
             return None, 0
@@ -796,10 +686,7 @@ class AlphaLoader:
     ) -> Callable[..., Signal | None]:
         """Compile the SIGNAL-layer inline ``signal:`` evaluate function.
 
-        Expects the 3-arg ``evaluate(snapshot, regime, params)`` signature
-        introduced in schema 1.1.  The legacy 2-arg
-        ``evaluate(features, params)`` signature was deleted with the
-        ``LoadedAlphaModule`` per-tick path in D.2 PR-2.
+        Expects ``evaluate(snapshot, regime, params)`` from schema 1.1.
         """
         if not isinstance(signal_code, str):
             raise AlphaLoadError(
@@ -826,19 +713,16 @@ class AlphaLoader:
     # ── Schema validation ─────────────────────────────────────
 
     def _validate_schema(self, spec: dict[str, Any], source: str) -> None:
-        """Validate top-level schema, dispatching on ``layer``.
+        """Validate the top-level schema and dispatch by ``layer``.
 
-        Per docs/three_layer_architecture.md §6.6 + §8.7 the
-        validation ordering (post-workstream-D.2) is:
+        Validation order:
 
           1. ``spec`` is a dict.
           2. Read ``schema_version``; reject if missing or unsupported.
-             Schema 1.0 was removed in workstream D.1; the only
-             supported value is ``"1.1"``.
+             Only ``"1.1"`` is supported.
           3. Read ``layer`` (mandatory in 1.1).
           4. Dispatch on layer:
-             - LEGACY_SIGNAL → hard-reject with migration pointer
-               (workstream D.2 retired the per-tick legacy path).
+             - LEGACY_SIGNAL → reject with a migration pointer.
              - SENSOR / unknown layer → reject.
              - SIGNAL → enforce ``_REQUIRED_SIGNAL_LAYER_KEYS`` and
                run the LayerValidator.
@@ -884,12 +768,7 @@ class AlphaLoader:
             )
         layer_str = str(layer)
 
-        # Workstream D.2: ``layer: LEGACY_SIGNAL`` was retired in PR-1
-        # and the per-tick ``LoadedAlphaModule`` class itself was
-        # deleted in PR-2.  The only survivors are SIGNAL/PORTFOLIO.
-        # Surface a dedicated rejection (rather than a generic
-        # "unknown layer" typo message) so authors copying old
-        # fixtures get a stable migration pointer.
+        # Retired layers get specific migration guidance.
         if layer_str in _RETIRED_LAYERS:
             raise AlphaLoadError(
                 f"{source}: layer '{layer_str}' was retired by "
@@ -992,17 +871,14 @@ class AlphaLoader:
         block: Any,
         source: str,
     ) -> dict[str, Any] | None:
-        """Parse the optional v0.3 ``trend_mechanism:`` block (§20.5).
+        """Parse the optional ``trend_mechanism:`` block.
 
-        Phase 1.1 only enforces:
+        Enforces:
           - block is a mapping if present.
           - if ``family:`` is set, it is one of the 5 closed
             ``TrendMechanism`` names.
 
-        The remainder of the block (e.g. parameter constraints,
-        decay-curve specifications) is captured verbatim for
-        consumption by the gate G16 in Phase 3.1.  Absent block ⇒
-        opt-in not exercised; returns ``None``.
+        Remaining fields are retained for G16. An absent block returns ``None``.
         """
         if block is None:
             return None
@@ -1030,13 +906,7 @@ class AlphaLoader:
         }
     )
 
-    # Legacy / mis-named keys we accept with a translation, to fail loudly
-    # when authors copy the design-doc spelling.  ``posterior_drop_threshold``
-    # was used by ``sig_hawkes_burst_v1`` in the field — silently ignored by
-    # bootstrap which only reads ``hazard_score_threshold`` — until audit
-    # P1 H-2.  The detector's ``hazard_score`` IS clip01((p_prev − p_now) /
-    # max(p_prev, ε)), i.e. a normalized posterior drop — same semantic
-    # field, mis-named, rename in place with a WARN.
+    # Translate known aliases with a warning instead of silently ignoring them.
     _HAZARD_EXIT_LEGACY_KEYS: dict[str, str] = {
         "posterior_drop_threshold": "hazard_score_threshold",
     }
@@ -1047,15 +917,10 @@ class AlphaLoader:
         source: str,
         known_state_names: frozenset[str] | None = None,
     ) -> dict[str, Any] | None:
-        """Parse the optional v0.3 ``hazard_exit:`` block (§20.5).
+        """Parse the optional ``hazard_exit:`` block.
 
-        Audit P1 H-2: strict schema.  Unknown keys raise
-        :class:`AlphaLoadError` (matching the discipline already used
-        by :meth:`_parse_promotion_block`).  Legacy / mis-named keys
-        listed in ``_HAZARD_EXIT_LEGACY_KEYS`` are renamed in place
-        with a WARNING — the field author's intent (e.g.
-        ``posterior_drop_threshold``) was silently dropped before this
-        fix.
+        Unknown keys raise :class:`AlphaLoadError`. Known aliases are
+        renamed with a warning.
 
         Value types are coerced and range-checked so bootstrap can
         trust the parsed block:
@@ -1219,7 +1084,7 @@ class AlphaLoader:
         block: Any,
         source: str,
     ) -> dict[str, Any] | None:
-        """Parse the optional Workstream F-5 ``promotion:`` block.
+        """Parse the optional ``promotion:`` block.
 
         Schema::
 
@@ -1273,7 +1138,7 @@ class AlphaLoader:
 
     @staticmethod
     def _parse_lifecycle_state(raw: Any, source: str) -> str | None:
-        """Parse optional ``lifecycle_state`` (BT-13 research-only cap).
+        """Parse an optional research-only ``lifecycle_state``.
 
         Only ``RESEARCH`` is supported today: it blocks PAPER/LIVE promotion
         while still allowing the alpha to load for integration tests.
@@ -1325,10 +1190,7 @@ class AlphaLoader:
             )
             if param_range is not None:
                 free_optimization_params.append(name)
-            # Audit P1-8: ``min``/``max`` were parsed into nothing and
-            # silently ignored.  Map them to an enforced validation
-            # envelope (``bounds``) — distinct from ``range`` so they do
-            # not count as free-optimization knobs against the §8.5 cap.
+            # Bounds validate values; ranges also mark optimization knobs.
             min_raw = pspec.get("min")
             max_raw = pspec.get("max")
             param_bounds: tuple[float, float] | None = None
@@ -1406,11 +1268,7 @@ class AlphaLoader:
         regime_engine: RegimeEngine | None,
         source: str,
     ) -> None:
-        """Reject ``P(<state>)`` references to names the engine cannot emit.
-
-        Audit P1-2.  No-op when no engine is resolvable (the gate's state
-        names cannot be checked against any taxonomy in that case).
-        """
+        """Reject ``P(<state>)`` names the resolved engine cannot emit."""
         if regime_engine is None:
             return
         referenced = regime_gate.referenced_posterior_states()

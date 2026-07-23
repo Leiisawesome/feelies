@@ -316,7 +316,7 @@ def materialize(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# ── Network phase ────────────────────────────────────────────────────────
+# Network-backed run.
 
 
 def _client() -> Any:

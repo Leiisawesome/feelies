@@ -1,62 +1,10 @@
 #!/usr/bin/env python3
-"""Task FQ-9 / FQ-8 — horizon-feasibility map over the OPERATIVE grid.
+"""Build a deterministic horizon-feasibility map over the operative grid.
 
-Reuses the census machinery of
-``scripts/research/inventory_fade_census.py`` (Task 8-C, commit
-642d12d) under the same legality: **NO forward returns, NO IC, NO
-signal evaluation** — the only return-like quantity is the
-unconditional session sigma_H (Bessel-corrected sample std of
-non-overlapping H-second mid log returns on the 09:30-ET-anchored
-horizon-boundary grid, in bps), computed at every registered horizon
-H in {30, 120, 300, 900, 1800} (``platform.yaml horizons_seconds``).
-
-OPERATIVE grid (03c AMENDMENT 1): 20 sessions for {APP, RMBS}
-(original 10 + 10 Lei-ratified expansion dates); 10 original sessions
-for the other six (their expansion cells remain DRAWN-NOT-INGESTED).
-FQ-8 ran the frozen 80-cell (10×8) subset; FQ-9 refreshes on this
-map.
-
-Scope note (recorded, not hidden): unconditional sigma_H reads only
-the RTH mid series — no sensor output enters any number below, so the
-SensorRegistry/HorizonScheduler/HorizonAggregator stack is not
-constructed.  What IS reused from the census is every replay
-convention that defines the estimator: direct ``DiskEventCache`` read,
-RTH filter on ``exchange_timestamp_ns`` (09:30 <= t < 16:00 ET,
-mirroring ``prepare_backtest_event_log``), ``(timestamp_ns, sequence)``
-sort, ``rth_open_ns`` session anchor (audit P1-8 parity — the
-identical nominal boundary grid the HorizonScheduler emits), positive
-two-sided mid extraction, last-mid-at-or-before boundary sampling,
-Bessel std.  The sigma_120 column reproduces the census values by
-construction on the shared original dates.
-
-Per (symbol, horizon) this script reports:
-
-- the unconditional session sigma_H distribution over that symbol's
-  operative sessions: median / p75 / p90 (Hyndman-Fan type 7 linear
-  interpolation, the numpy default);
-- the spec-4.2-style stressed cost floors, fee-in-bps RECOMPUTED per
-  symbol from the full operative-grid cache (grid-session median RTH
-  bid, median-of-per-session-medians), in two side-by-side variants:
-    passive (maker):  C_ow = 2.0 + fee_passive          (00c pins)
-    taker:            C_ow = half_spread + impact + fee_taker
-                      (adjudication D.1 method; impact 1.0 bps when
-                      half-spread < 8 bps else 2.0 bps)
-  floor = 1.5 x C_ow,stressed = 1.5 x 1.5 x C_ow = 2.25 x C_ow
-  (cost_stress_multiplier 1.5 on variable costs, then the Inv-12
-  1.5x margin — spec 4.2 / adjudication D.2 arithmetic);
-- the implied minimum capture coefficient
-  kappa_req(q) = floor / sigma_H(q) at each quantile, flagged
-  FEASIBLE where kappa_req <= 0.30 (the H2 spec 4.1 honest-band
-  ceiling — the derivation ceiling, spec
-  ``sig_inventory_fade_v1_formal_spec.md``);
-- the mechanism-class x horizon legality map from the G16 half-life
-  envelopes and the [0.5, 4.0] horizon ratio
-  (``alpha/layer_validator.py``): horizon H is legal for family F iff
-  H in [0.5 x hl_min(F), 4.0 x hl_max(F)].
-
-Determinism: run under PYTHONHASHSEED=0; no RNG, no wall-clock reads;
-events sorted by (timestamp_ns, sequence); JSON artifact has sorted
-keys and fixed float rounding, so reruns are bit-identical.
+For each symbol and horizon, the script reports RTH mid-price volatility
+quantiles, passive and taker stressed-cost floors, the required capture ratio,
+and mechanism-family horizon legality. It computes no forward returns, IC, or
+signals. Sorted inputs and fixed rounding make reruns identical.
 
 Usage
 -----
@@ -99,10 +47,7 @@ _RTH_SECONDS = 6 * 3600 + 30 * 60  # 09:30-16:00 ET
 # Registered horizons (platform.yaml horizons_seconds; G7 set).
 HORIZONS = (30, 120, 300, 900, 1800)
 
-# ── Operative evidence set (03c §5.1 + AMENDMENT 1) ───────────────────────
-# Original 10 shared dates for all 8 symbols; +10 expansion dates ingested
-# only for {APP, RMBS}. The six others' expansion cells are
-# DRAWN-NOT-INGESTED (03c A1.5).
+# Evidence dates: ten shared dates plus ten APP/RMBS-only dates.
 
 SYMBOLS = ("APP", "RMBS", "OLN", "ENSG", "DIOD", "PCTY", "MLI", "CROX")
 EXPANDED_SYMBOLS = frozenset({"APP", "RMBS"})
@@ -112,7 +57,7 @@ DATES_CALM = ("2025-12-22", "2026-01-05", "2026-01-15", "2026-01-26", "2026-01-2
 DATES_ELEVATED_B = ("2026-04-01", "2026-04-10", "2026-04-22")
 DATES = DATES_ELEVATED_A + DATES_CALM + DATES_ELEVATED_B
 
-# 03c AMENDMENT 1 expansion dates (Lei-ratified 2026-07-13).
+# Expansion dates.
 DATES_ELEVATED_A_EXP = ("2025-12-01", "2025-12-02")
 DATES_CALM_EXP = ("2025-12-26", "2025-12-30", "2026-01-12", "2026-01-20", "2026-01-22")
 DATES_ELEVATED_B_EXP = ("2026-04-02", "2026-04-07", "2026-04-16")

@@ -1,35 +1,9 @@
-"""Non-empty SIGNAL baseline for a real reference alpha (audit-2026-07-02 P1 #6).
+"""Pin a non-empty signal stream from a real reference alpha.
 
-``test_signal_replay.py`` locks the *empty* Level-2 ``Signal`` stream for the
-actual reference alpha ``sig_benign_midcap_v1`` (and all four v0.3 alphas) —
-on the canonical synthetic fixture none of them ever cross their entry gate,
-so that baseline pins absence, not the ordering/sequence/content of a real
-production alpha's own decision logic.  ``test_signal_fires_replay.py``
-proved the *hash mechanism* can pin non-empty content, but only for a
-hand-written synthetic probe signal + a trivial hand-built gate — not for an
-actual `*.alpha.yaml` reference strategy.
-
-This module closes that gap by driving the **real** ``sig_benign_midcap_v1``
-module — loaded through :class:`feelies.alpha.loader.AlphaLoader` exactly as
-``test_signal_replay.py`` does, no shortcuts on the alpha's own ``evaluate()``
-or its ``regime_gate`` DSL — with hand-built ``RegimeState`` and
-``HorizonFeatureSnapshot`` events.  This mirrors ``test_signal_fires_replay``'s
-technique (already an established, precedented pattern in this suite for
-regime-gated alphas — ``test_regime_hazard_replay.py`` and
-``test_cross_sectional_context_replay.py`` also hand-build their upstream
-events rather than deriving them through a full sensor/regime-calibration
-pipeline) rather than trying to reverse-engineer the raw quote sequence that
-would make the real ``OFIEwmaSensor`` + ``HMM3StateFractional`` converge to
-the same values — the alpha's *decision* logic is exercised for real; only
-its *sensing* inputs are synthesized directly.
-
-The fixture drives two boundaries with ``ofi_ewma_zscore`` at 2.0 and 1.5
-(both above the alpha's default ``entry_threshold_z=0.8``), confirming
-``book_imbalance_mean`` same-signed and above the ``imbalance_floor=0.05``,
-``spread_z_30d`` inside the ON band, and a ``RegimeState`` with
-``P(normal)=0.90`` (above the ``on_condition``'s ``P(normal) > 0.5``) — both
-boundaries emit a real ``Signal(direction=LONG)`` with the alpha's actual
-convex strength scaling and disclosed cost-arithmetic fields.
+The test loads ``sig_benign_midcap_v1`` through ``AlphaLoader`` and supplies
+synthetic regime and horizon-feature inputs that clear its real gate. Two
+boundaries emit long signals, locking ordering, strength, and cost fields
+without reproducing the upstream sensor-calibration pipeline.
 """
 
 from __future__ import annotations
@@ -49,11 +23,7 @@ _BASE_TS = 1_700_000_000_000_000_000
 _ENGINE = "hmm_3state_fractional"
 _STATE_NAMES: tuple[str, ...] = ("compression", "normal", "vol_breakout")
 
-# Two boundaries, both comfortably past every gate in sig_benign_midcap_v1's
-# regime_gate / evaluate(): P(normal)=0.90 > 0.5, spread_z_30d=0.1 < 1.5,
-# |ofi_ewma_zscore| in {2.0, 1.5} > entry_threshold_z=0.8, book_imbalance_mean
-# same-signed and > imbalance_floor=0.05, realized_vol_30s_zscore=0.2 keeps
-# off_condition closed.
+# Both values clear the reference alpha's entry gate.
 _OFI_Z_BY_BOUNDARY: tuple[float, ...] = (2.0, 1.5)
 
 

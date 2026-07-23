@@ -1,16 +1,4 @@
-"""Unit tests for ``scripts/run_backtest.py::_emit_signals_jsonl``.
-
-Verifies the canonical JSON shape emitted under
-``--emit-signals-jsonl`` (Phase-3 Level-2 SIGNAL parity stream,
-docs/three_layer_architecture.md §11.2):
-
-* prefix ``SIGNAL_JSONL`` on every line,
-* keys sorted (stable across Python versions),
-* every Phase-3 provenance field present (layer, horizon_seconds,
-  regime_gate_state, consumed_features, trend_mechanism,
-  expected_half_life_seconds), and
-* arrival order preserved.
-"""
+"""Tests for the canonical signal JSONL shape and ordering."""
 
 from __future__ import annotations
 
@@ -24,9 +12,7 @@ import pytest
 from feelies.core.events import Signal, SignalDirection, TrendMechanism
 
 
-# Load ``scripts/run_backtest.py`` as a module without executing main()
-# (the script's top-level ``sys.path.insert(0, .../src)`` happens at
-# import time, which is exactly what we want).
+# Load the script as a module without calling ``main``.
 def _load_runner():
     spec = importlib.util.spec_from_file_location(
         "_runner_emit_signals_test",
@@ -47,12 +33,8 @@ def runner():
 def _legacy_signal(seq: int) -> Signal:
     """Construct a Signal with bare-minimum fields.
 
-    Workstream D.2 PR-2b-ii: the historical ``LEGACY_SIGNAL`` layer was
-    retired together with the per-tick composite engines; the default
-    ``layer`` is now ``"SIGNAL"``.  The function name is preserved so the
-    parity-stream tests (``test_emit_signals_jsonl_preserves_arrival_order``
-    et al.) continue to read naturally as a mix of "bare-defaults" and
-    "fully-populated Phase-3" rows.
+    The default layer is ``SIGNAL``. The helper contrasts bare defaults with
+    fully populated rows.
     """
     return Signal(
         timestamp_ns=1_000 * seq,
@@ -92,7 +74,7 @@ def _make_recorder(runner, signals: list[Signal]):
     return rec
 
 
-# ── Shape and prefix ────────────────────────────────────────────────────
+# Shape and prefix.
 
 
 def test_emit_signals_jsonl_prefix_and_count(runner, capsys) -> None:
@@ -111,13 +93,7 @@ def test_emit_signals_jsonl_prefix_and_count(runner, capsys) -> None:
 
 
 def test_emit_signals_jsonl_default_row_shape(runner, capsys) -> None:
-    """Bare-defaults row shape post-D.2 PR-2b-ii.
-
-    Defaults: ``layer="SIGNAL"`` (was ``"LEGACY_SIGNAL"`` pre-D.2),
-    horizon=0, ``regime_gate_state="N/A"``, no consumed features and
-    no trend mechanism.  Other Phase-3 provenance keys remain present
-    in the canonical sorted-keys serialization.
-    """
+    """Bare signals retain every canonical JSON key and neutral defaults."""
     runner._emit_signals_jsonl(_make_recorder(runner, [_legacy_signal(7)]))
     line = capsys.readouterr().out.splitlines()[0]
     payload = json.loads(line[len("SIGNAL_JSONL ") :])
@@ -177,7 +153,7 @@ def test_emit_signals_jsonl_empty(runner, capsys) -> None:
 
 
 def test_emit_phase2_jsonl_dispatches_to_signals_emitter(runner, capsys) -> None:
-    """Verify the new flag is wired into the composable phase-2 wrapper."""
+    """The combined JSONL dispatcher includes signals when enabled."""
     import argparse
 
     args = argparse.Namespace(

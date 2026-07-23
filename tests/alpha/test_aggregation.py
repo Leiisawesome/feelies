@@ -7,13 +7,9 @@ splitting, and net order sides are all correct.
 
 from __future__ import annotations
 
-from decimal import Decimal
-
-import pytest
 
 from feelies.alpha.aggregation import aggregate_intents
 from feelies.core.events import (
-    NBBOQuote,
     Side,
     Signal,
     SignalDirection,

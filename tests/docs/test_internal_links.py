@@ -1,26 +1,7 @@
-"""Verify internal repo paths cited from documentation actually exist.
+"""Verify that repository paths cited by maintained documentation exist.
 
-The Phase-5 documentation rewrite (README, alphas/SCHEMA.md, audit prompts,
-the migration cookbook, Cursor skill docs under ``.cursor/skills/``, and
-the source-code comments in ``layer_validator.py`` /
-``regime_gate.py``) carries dozens of
-cross-references to other repository paths.  When a file is renamed or
-moved without updating those references, the operator hits a 404 inside
-their own checkout — exactly the kind of silent doc rot Phase 5 was
-meant to eliminate.
-
-This test enumerates the *whitelist* of canonical doc files we
-shipped in Phase 5, scrapes the path tokens they cite, and asserts
-each cited path resolves on disk.
-
-Scope:
-* only repo-relative path tokens are checked (URLs, scheme://… and
-  any token starting with ``http`` are ignored);
-* tokens are extracted from explicit Markdown patterns (backticks,
-  bare ``foo/bar`` paths inside lines) and from inline code in
-  ``.py`` source comments via simple regex;
-* obvious noise tokens are filtered (e.g. ``schema_version``,
-  ``alpha_id``).
+The scanner checks repo-relative Markdown and source-comment paths, while
+ignoring URLs, placeholders, and known non-path tokens.
 """
 
 from __future__ import annotations
@@ -62,10 +43,7 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset(
         # SCHEMA.md flat-vs-nested layout illustration:
         "alphas/my_alpha.alpha.yaml",
         "alphas/my_alpha/my_alpha.alpha.yaml",
-        # Workstream F-5 migration cookbook §11.5 worked example —
-        # forward-looking placeholder filename for an operator's
-        # research-grade alpha YAML carrying a stricter ``promotion:``
-        # block.
+        # Example research alpha with a stricter promotion block.
         "alphas/my_research_alpha.alpha.yaml",
         # Prompt-7 mutation example (forward-looking
         # successor file the operator would create on a real mutation):
@@ -75,10 +53,7 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset(
         # design pointer for the hypothesis status taxonomy.  Not yet
         # implemented; tracked separately:
         "src/feelies/research/hypothesis_status.py",
-        # Workstream-D.2 retired this parity test alongside the
-        # ``alphas/trade_cluster_drift/`` reference alpha.  The path is
-        # intentionally cited from SCHEMA.md so operators reading those
-        # docs can grep their own forks for the now-defunct anchor.
+        # Retired path kept in migration documentation for fork searches.
         "tests/determinism/test_legacy_alpha_parity.py",
     }
 )

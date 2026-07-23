@@ -106,7 +106,7 @@ Signal (per symbol, per alpha)
 - `src/feelies/portfolio/position_store.py`, `memory_position_store.py`,
   `strategy_position_store.py` (*touchpoints* — position-state reads only; PnL math is
   owned by `audit_position_management.md`)
-- `src/feelies/alpha/portfolio_layer_module.py`, `intent_set.py`
+- `src/feelies/alpha/portfolio_layer_module.py`
 - `src/feelies/core/events.py` — `CrossSectionalContext`, `SizedPositionIntent` fields
 
 ### Reference-data inputs

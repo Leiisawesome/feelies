@@ -369,8 +369,7 @@ pick a set post-outcome. Cross-link: microstructure-alpha
 Incident: H8 A-1 expansion was silent on §4.1/JC-4 spread-tercile
 cutpoints; the expanded census disclosed both candidate sets and
 stopped for the A-2.2 ruling (original terciles refrozen). Spec:
-`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`
-E.5, AMENDMENT A-2.2;
+`docs/research/sig_dislocation_lambda_drift_v1_formal_spec.md` E.5, AMENDMENT A-2.2;
 `docs/research/prompt_pack_03c_universe_and_cache.md` AMENDMENT 1.
 
 ---

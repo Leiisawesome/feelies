@@ -1,4 +1,4 @@
-"""Workstream F-6: capital-tier escalation tests for AlphaLifecycle.
+"""Capital-tier escalation tests for ``AlphaLifecycle``.
 
 These tests exercise the new ``promote_capital_tier`` method, the
 ``current_capital_tier`` property, and the LIVE -> LIVE self-loop
@@ -534,24 +534,11 @@ class TestRegistryPromoteCapitalTier:
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
 
 
-# ── F-6 P1: capital tier survives checkpoint/restore ───────────────
+# Capital tier survives checkpoint and restore.
 
 
 class TestCapitalTierCheckpointRestore:
-    """The Codex-bot P1 review issue on PR #23.
-
-    ``AlphaLifecycle.checkpoint()`` historically persisted only the
-    state name, so restoring a ``LIVE @ SCALED`` alpha would silently
-    revert the in-memory tier to ``SMALL_CAPITAL`` (because
-    ``current_capital_tier`` reads ``StateMachine.history``, which is
-    empty after restore).  A subsequent ``promote_capital_tier()``
-    would then commit a duplicate SCALED escalation to the ledger.
-
-    These tests pin the corrected behavior: the checkpoint blob now
-    carries ``capital_tier`` whenever ``state == LIVE``, and
-    ``restore()`` rehydrates it onto a private fallback consulted by
-    ``current_capital_tier`` when in-memory history is silent.
-    """
+    """Restore the capital tier when lifecycle history is unavailable."""
 
     @pytest.fixture
     def clock(self) -> SimulatedClock:
@@ -584,7 +571,7 @@ class TestCapitalTierCheckpointRestore:
     def test_legacy_blob_without_capital_tier_restores_as_small(
         self, clock: SimulatedClock
     ) -> None:
-        # Pre-F-6 checkpoint format: no ``capital_tier`` field.
+        # Older checkpoints have no ``capital_tier`` field.
         legacy_blob = b'{"alpha_id": "kyle", "state": "LIVE"}'
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         lc.restore(legacy_blob)
@@ -693,19 +680,11 @@ class TestCapitalTierCheckpointRestore:
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
 
 
-# ── F-6 P2: CLI gate inference is trigger-aware ────────────────────
+# CLI gate inference is trigger-aware.
 
 
 class TestCapitalTierTriggerSentinel:
-    """The Codex-bot P2 review issue on PR #23.
-
-    The wire-format trigger ``promote_capital_tier`` is the **only**
-    string that distinguishes a capital-tier escalation from any
-    future ``LIVE -> LIVE`` self-loop the platform might gain.  This
-    test pins the symbol to a stable value so a refactor cannot
-    silently rename it (which would simultaneously break ``feelies
-    promote replay-evidence`` gate inference and ledger archeology).
-    """
+    """Keep the capital-tier trigger stable for replay and gate inference."""
 
     def test_trigger_sentinel_is_stable(self) -> None:
         assert PROMOTE_CAPITAL_TIER_TRIGGER == "promote_capital_tier"

@@ -41,7 +41,7 @@ class _FakeOrchestratorForRecorder:
 
 
 def test_session_start_and_end_ns_are_int(tmp_path: Path) -> None:
-    """Audit P2-5: session_start_ns/session_end_ns must be int nanoseconds —
+    """Session bounds must be integer nanoseconds;
     a float loses precision at current epoch magnitudes (~1.8e18 ns exceeds
     float64's ~2**53 exact-integer range)."""
     from feelies.core.platform_config import OperatingMode, PlatformConfig
@@ -131,14 +131,11 @@ class TestRunPaperGuards:
         capsys: pytest.CaptureFixture[str],
         tmp_path: Path,
     ) -> None:
-        # Audit R-2: --strict-config was wired into the backtest CLI but not
-        # into run_paper.py, leaving PAPER mode (real IB Gateway orders) with
-        # no way to fail closed on a misspelled config key.
+        # PAPER mode must fail closed on misspelled configuration keys.
         monkeypatch.setenv("MASSIVE_API_KEY", "fake")
         cfg = tmp_path / "platform.yaml"
         cfg.write_text(
-            "symbols: [AAPL]\nmode: PAPER\nalpha_specs: [alpha.yaml]\n"
-            "cost_stress_multipler: 2.0\n"
+            "symbols: [AAPL]\nmode: PAPER\nalpha_specs: [alpha.yaml]\ncost_stress_multipler: 2.0\n"
         )
         mod = _load_module()
         rc = mod.main(["--config", str(cfg), "--strict-config"])  # type: ignore[attr-defined]

@@ -40,8 +40,7 @@ _NORMALIZER_VERSION = "1"
 # altering the dataclass schema.  Forces re-ingestion from the API.
 _CACHE_SEMANTIC_VERSION = "2"
 
-# Shared concrete serializer — single source of truth for the on-disk
-# NBBOQuote / Trade JSONL encoding (audit ING-05).
+# Shared serializer for cached quote and trade JSONL.
 _SERIALIZER = JsonLineEventSerializer()
 
 
@@ -72,11 +71,7 @@ class DiskEventCache:
     def __init__(self, cache_dir: Path, *, clock: Clock | None = None) -> None:
         self._cache_dir = Path(cache_dir)
         self._schema_hash = _compute_schema_hash()
-        # ``created_at`` is informational provenance only — it is never read
-        # by replay and never folded into the schema hash or checksum.  When a
-        # ``Clock`` is injected the stamp derives from it (no hidden wall-clock
-        # read, Inv-10); otherwise it falls back to UTC wall time for
-        # human-readable provenance (audit ING-04).
+        # created_at is metadata only; use the injected clock or UTC wall time.
         self._clock = clock
 
     def _created_at_utc(self) -> str:
@@ -135,12 +130,7 @@ class DiskEventCache:
             logger.warning("disk_cache: schema mismatch for %s/%s, invalidating", symbol, date)
             return None
 
-        # Audit DI-06: normalizer_version is intentionally NOT part of the
-        # schema-hash invalidation path (a version bump does not always mean
-        # already-cached values are wrong), but a mismatch was previously
-        # invisible — nothing compared it.  Warn so operators can judge
-        # whether to re-ingest, without forcing every version bump into an
-        # unconditional cache wipe.
+        # A normalizer mismatch warns but does not invalidate the schema cache.
         manifest_normalizer_version = manifest.get("normalizer_version")
         if (
             manifest_normalizer_version is not None
@@ -233,9 +223,7 @@ class DiskEventCache:
         data_path = self._data_path(symbol, date)
         manifest_path = self._manifest_path(symbol, date)
 
-        # Keep the encoding in bytes end-to-end: each serialized line is already
-        # UTF-8, so joining with ``b"\n"`` avoids a per-event decode/re-encode
-        # round-trip and yields byte-identical output to the old str path.
+        # Serialized lines are already UTF-8; keep them as bytes end to end.
         lines: list[bytes] = []
         quotes_count = 0
         trades_count = 0

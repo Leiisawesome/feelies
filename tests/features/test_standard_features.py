@@ -13,7 +13,7 @@ Covers:
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Mapping
+from typing import Any
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
@@ -320,7 +320,7 @@ class TestRollingPercentileFeature:
         for v in [1.0, 2.0, 3.0, 4.0, 5.0]:
             f.observe(_reading(ts_ns=1, sensor_id="kyle_lambda_60s", value=v), state, {})
         value, warm, _ = f.finalize(_DUMMY_TICK, state, {})
-        # Audit #9: Hazen plotting position — rank=5, n=5 → (5-0.5)/5 = 0.9
+        # Hazen position: (5 - 0.5) / 5 = 0.9.
         assert abs(value - 0.9) < 1e-9
         assert warm is True
 
@@ -331,13 +331,12 @@ class TestRollingPercentileFeature:
             f.observe(_reading(ts_ns=1, sensor_id="kyle_lambda_60s", value=v), state, {})
         # Reload latest with the 1.0 we just appended (already last)
         value, warm, _ = f.finalize(_DUMMY_TICK, state, {})
-        # Audit #9: Hazen plotting position — rank=1, n=5 → (1-0.5)/5 = 0.1
+        # Hazen position: (1 - 0.5) / 5 = 0.1.
         assert abs(value - 0.1) < 1e-9
         assert warm is True
 
     def test_hazen_is_symmetric_around_half(self) -> None:
-        """The Hazen formula (rank - 0.5) / n is symmetric: percentile(max) +
-        percentile(min) == 1.0 (audit #9 regression guard)."""
+        """Hazen percentiles for the minimum and maximum sum to one."""
         f_high = RollingPercentileFeature("s", 300, min_samples=5)
         state_h = f_high.initial_state()
         for v in [1.0, 2.0, 3.0, 4.0, 5.0]:

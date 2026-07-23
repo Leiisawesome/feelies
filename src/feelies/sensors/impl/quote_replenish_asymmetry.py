@@ -1,60 +1,15 @@
-"""Quote replenishment asymmetry — bid-vs-ask depth recovery rate.
+"""Bid-versus-ask depth replenishment asymmetry.
 
-After a one-sided liquidity sweep, market makers replenish on the
-side that was hit.  The *speed* of replenishment is asymmetric:
-inventory-stressed MMs delay refilling the heavy side, whereas
-informed-trader-anchored MMs refill quickly to maintain spread.
-This sensor estimates the asymmetry as the difference between the
-trailing average rate of bid-side and ask-side depth additions.
+At unchanged prices, positive size changes count as replenishment. Trailing
+bid and ask additions produce a bounded score::
 
-Algorithm:
+    (bid_adds - ask_adds) / max(bid_adds + ask_adds, epsilon)
 
-- On every quote, compute ``Δbid_size`` and ``Δask_size`` versus the
-  previous quote.  Positive deltas are *additions* (replenishment);
-  negative deltas are *withdrawals*.  A delta is only counted as
-  replenishment when the side's price is **unchanged** — a new
-  best price represents a *different* price level (a tighter
-  quote or a price step), not a deepening of the prior level.
-  Without this guard, a best-bid move from 100.00 / 100 lots up to
-  100.01 / 200 lots would be miscounted as +100 lots of bid-side
-  replenishment.
-- Maintain two trailing-window sums of additions per side over
-  ``window_seconds`` of event time.
-- Sensor value:
-      asymmetry = (bid_adds - ask_adds) /
-                  max(bid_adds + ask_adds, ε)
-  Bounded in ``[-1, 1]``; positive ⇒ bid replenishes faster.  The
-  per-second normalisation cancels in the ratio so we use the raw
-  trailing-window sums directly.
-
-Returns the asymmetry score.  ``warm`` is true once
-``min_observations`` quotes have been seen and at least one
-addition on each side has been recorded.
-
-Sign convention — UNCONFIRMED at the 30s horizon (sensor_audit_2026-07-02 P1):
-the "faster-replenishing side marks the recently-displaced side, which then
-mean-reverts" framing above is the mechanism *hypothesis*, not a validated
-fact. ``sig_inventory_revert_v1``, the one alpha built on
-``quote_replenish_asymmetry_zscore``, was QUARANTINED after a 6-session study
-(``docs/audits/signal_alpha_audit_2026-06-14.md``) found the pooled Spearman
-IC against forward 30s micro-price return indistinguishable from zero
-(≈ -0.007) and the short leg *positive* in 5 of 6 sessions — the opposite of
-what the fade hypothesis predicts. The estimator computed here is correct and
-deterministic; whether its sign carries genuine forward-return information at
-any horizon is, on the evidence gathered so far, unconfirmed-to-contradicted.
-Re-derive and re-test before relying on the sign of this sensor.
-
-sensor_audit_2026-07-02 P1: optional ``min_window_span_seconds`` additionally
-requires those ``min_observations`` quotes to span at least this many seconds
-of event time before ``warm=True`` — without it, a quote burst can satisfy
-``min_observations`` in a fraction of the window's duration, and once
-``count`` (a lifetime, never-reset counter) clears the threshold once, warm
-depends only on both sides' addition deques being non-empty, with no floor on
-how much history backs that. ``None`` (default) preserves the legacy
-behaviour and the locked golden vector.
-
-Determinism: deque-based event-time eviction; no floating-point
-state other than the additions.
+Positive means faster bid replenishment. Warm-up requires enough quotes and an
+addition on both sides; ``min_window_span_seconds`` can also require elapsed
+history. The estimator is deterministic, but its forward-return sign is not
+validated: the reference inventory alpha remains quarantined after weak and
+contradictory 30-second evidence.
 """
 
 from __future__ import annotations
@@ -62,7 +17,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 _EPS = 1e-12
@@ -78,8 +34,7 @@ class QuoteReplenishAsymmetrySensor:
       ``warm=True``.
     - ``min_window_span_seconds`` (int | None, default None): when set,
       ``warm`` additionally requires the trailing ``min_observations``
-      quotes to span at least this many seconds (sensor_audit_2026-07-02
-      P1). ``None`` preserves the legacy behaviour.
+      quotes to span at least this many seconds. ``None`` disables the floor.
     """
 
     sensor_id: str = "quote_replenish_asymmetry"
@@ -123,9 +78,7 @@ class QuoteReplenishAsymmetrySensor:
             "last_bid_price": None,
             "last_ask_price": None,
             "count": 0,
-            # sensor_audit_2026-07-02 P1: trailing window of ALL valid quote
-            # timestamps (not just additions), used only for the optional
-            # min_window_span_seconds elapsed check below.
+            # All quote times are needed for the optional elapsed-span gate.
             "quote_ts": deque(),
         }
 
@@ -134,7 +87,7 @@ class QuoteReplenishAsymmetrySensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
@@ -226,13 +179,4 @@ class QuoteReplenishAsymmetrySensor:
         else:
             warm = state["count"] >= self._min_observations and bool(bid_adds) and bool(ask_adds)
 
-        return SensorReading(
-            timestamp_ns=ts,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)

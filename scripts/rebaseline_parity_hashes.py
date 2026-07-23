@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print current SHA-256 parity fingerprints for BT-11 re-baselining.
+"""Print current SHA-256 parity fingerprints for rebaselining.
 
 Run from the repo root::
 

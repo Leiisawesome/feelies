@@ -8,13 +8,8 @@ import json
 import sys
 from pathlib import Path
 
-# Audit P2-3: kept in sync with every prefix `backtest_jsonl._emit_jsonl_line`
-# actually writes (see `tests/scripts/test_split_backtest_emit.py::
-# test_prefix_map_covers_every_backtest_jsonl_prefix`).  `ORDER_ACK_JSONL` /
-# `TIMING_JSONL` are intentionally absent: `run_paper.py`'s
-# `PaperSessionRecorder` writes `order_acks.jsonl` / `timing.jsonl` directly
-# to disk and never goes through `_emit_jsonl_line`/stdout, so no real code
-# path emits those two prefixes for this splitter to consume.
+# Keep this map aligned with ``backtest_jsonl._emit_jsonl_line`` prefixes.
+# Order acknowledgements and timing data are written directly to disk.
 _PREFIX_MAP = {
     "SIGNAL_JSONL": "signals.jsonl",
     "FILL_JSONL": "fills.jsonl",
@@ -31,15 +26,7 @@ _PREFIX_MAP = {
 
 
 def _parse_line(line: str) -> tuple[str, dict] | None:
-    """Parse one ``PREFIX {json}`` emitter line into ``(prefix, obj)``.
-
-    The backtest emitters (``backtest_jsonl._emit_jsonl_line``) write
-    ``f"{prefix} " + json.dumps(...)`` — a single space separates the prefix
-    from the JSON, which itself contains ``": "``.  Splitting on the first
-    space (not the first ``": "``) is therefore required; the old ``": "``
-    split landed inside the JSON and silently dropped every real line.  A
-    trailing colon on the prefix (legacy ``PREFIX: {json}`` form) is tolerated.
-    """
+    """Parse one ``PREFIX {json}`` line into ``(prefix, object)``."""
     line = line.strip()
     if not line:
         return None

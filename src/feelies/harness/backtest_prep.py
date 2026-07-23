@@ -1,8 +1,7 @@
-"""Single-pass backtest event-log preparation (Phase 4 perf).
+"""Single-pass backtest event-log preparation.
 
-Fuses RTH filtering, ingest-mix counts, session anchor metadata,
-BT-18 calendar spans, and regime-calibration prefix collection into one
-replay scan so ``run_backtest.py`` does not walk the log repeatedly.
+Combines RTH filtering, ingest counts, session metadata, corporate-action
+spans, and regime-calibration quotes in one replay scan.
 """
 
 from __future__ import annotations

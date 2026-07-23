@@ -41,28 +41,10 @@ _MS_TO_NS = 1_000_000
 
 
 def _safe_price(value: object, *, allow_zero: bool = False) -> Decimal:
-    """Parse a wire price into a finite, non-negative ``Decimal``.
+    """Parse a finite, nonnegative wire price.
 
-    Raises ``ValueError`` on every failure mode the upstream catch tuple
-    already understands:
-
-    * ``decimal.InvalidOperation`` from malformed numerics (``"1.2.3"``,
-      empty string) — wrapped so the parser thread does not die.
-    * ``NaN`` / ``Infinity`` — silently propagating these into
-      ``NBBOQuote.bid`` poisons ``bid > ask`` checks (NaN comparisons
-      always return False) and ``(bid + ask) / 2`` mid-price math.
-    * Negative prices — always invalid for both trade prints and NBBO
-      sides.
-    * Zero prices when ``allow_zero=False`` (the default, used for trade
-      prints — equities never trade at zero and downstream cost / sizing
-      math assumes ``price > 0``).  Callers parsing NBBO bid/ask must
-      pass ``allow_zero=True``: auction snapshots and indicator quotes
-      legitimately carry ``bid=0`` / ``ask=0`` on the wire.
-
-    Wire fields are JSON-decoded as ``float`` / ``int`` / ``str``;
-    ``str(...)`` round-trips int/Decimal cleanly but loses precision on
-    floats.  We accept that float-round-trip is the caller's choice; this
-    helper only enforces *value* validity, not encoding.
+    Malformed, infinite, NaN, and negative values raise ``ValueError``. Zero is
+    allowed only for quote fields that explicitly opt in.
     """
     try:
         result = Decimal(str(value))
@@ -111,18 +93,26 @@ def _optional_wire_ts_ns(raw: object) -> int | None:
     return n * _MS_TO_NS
 
 
+def _int_tuple(raw: object, *, allow_scalar: bool = False) -> tuple[int, ...]:
+    if isinstance(raw, list):
+        return tuple(int(value) for value in raw)
+    if allow_scalar and raw is not None:
+        return (int(raw),)  # type: ignore[call-overload]
+    return ()
+
+
+def _first_wire_ts_ns(record: dict, keys: Sequence[str]) -> int | None:  # type: ignore[type-arg]
+    for key in keys:
+        timestamp_ns = _optional_wire_ts_ns(record.get(key))
+        if timestamp_ns is not None:
+            return timestamp_ns
+    return None
+
+
 def _fingerprint_ws_quote(msg: dict) -> str:  # type: ignore[type-arg]
     """Stable hash of WS quote payload fields (sequence reuse detection)."""
-    raw_c = msg.get("c")
-    conditions: tuple[int, ...]
-    if raw_c is not None and not isinstance(raw_c, list):
-        conditions = (int(raw_c),)
-    elif isinstance(raw_c, list):
-        conditions = tuple(int(x) for x in raw_c)
-    else:
-        conditions = ()
-    raw_i = msg.get("i")
-    indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
+    conditions = _int_tuple(msg.get("c"), allow_scalar=True)
+    indicators = _int_tuple(msg.get("i"))
     parts = (
         str(msg["bp"]),
         str(msg["ap"]),
@@ -142,8 +132,7 @@ def _fingerprint_ws_quote(msg: dict) -> str:  # type: ignore[type-arg]
 
 
 def _fingerprint_ws_trade(msg: dict) -> str:  # type: ignore[type-arg]
-    raw_c = msg.get("c")
-    conditions = tuple(int(x) for x in raw_c) if isinstance(raw_c, list) else ()
+    conditions = _int_tuple(msg.get("c"))
     parts = (
         str(msg["p"]),
         str(msg["s"]),
@@ -161,15 +150,11 @@ def _fingerprint_ws_trade(msg: dict) -> str:  # type: ignore[type-arg]
 
 
 def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
-    raw_cond = rec.get("conditions")
-    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
-    raw_ind = rec.get("indicators")
-    indicators = tuple(int(x) for x in raw_ind) if isinstance(raw_ind, list) else ()
+    conditions = _int_tuple(rec.get("conditions"))
+    indicators = _int_tuple(rec.get("indicators"))
     # ``participant_timestamp`` and ``trf_timestamp`` are intentionally part
     # of the fingerprint so that a REST retransmission carrying the same
-    # ``sequence_number`` but a corrected participant timestamp is treated
-    # as a payload mismatch (CORRUPTED) rather than as an exact-duplicate
-    # silent drop.  Mirrors the WS quote fingerprint (audit A4-MINOR).
+    # A corrected participant timestamp changes the payload fingerprint.
     parts = (
         str(rec["bid_price"]),
         str(rec["ask_price"]),
@@ -187,8 +172,7 @@ def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
 
 
 def _fingerprint_rest_trade(rec: dict) -> str:  # type: ignore[type-arg]
-    raw_cond = rec.get("conditions")
-    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+    conditions = _int_tuple(rec.get("conditions"))
     parts = (
         str(rec["price"]),
         str(rec["size"]),
@@ -220,8 +204,7 @@ class MassiveNormalizer:
     (``register_symbols`` / ``on_health_transition`` /
     ``notify_feed_interrupted``) from a single thread.  The two existing
     call sites — :class:`MassiveLiveFeed`'s asyncio thread and the
-    historical ingestor's main thread — each own their normalizer
-    instance.  (Audit r4-NEW-04.)
+    historical ingestor's main thread — each own their normalizer instance.
     """
 
     __slots__ = (
@@ -247,16 +230,10 @@ class MassiveNormalizer:
     _FEED_QUOTE = "quote"
     _FEED_TRADE = "trade"
 
-    # Cap raw frame size before ``json.loads`` to bound parser memory and
-    # rule out RecursionError from pathologically-nested upstream payloads
-    # (audit r3-INGEST-01).  16 MB easily covers Massive's largest legitimate
-    # WS batches; anything larger is treated as a feed bug.
+    # Bound parser memory; 16 MB covers legitimate Massive WebSocket batches.
     _DEFAULT_MAX_RAW_FRAME_BYTES = 16 * 1024 * 1024
 
-    # Bound exchange timestamps to a window around the clock so a wire bug
-    # producing ``t = 1e15`` (ms vs ns confusion) cannot inject events
-    # 30,000 years in the future (audit r3-INGEST-02).  Defaults: 30 days
-    # in the past, 1 hour in the future.
+    # Reject live timestamps outside a 30-day lookback and one-hour lookahead.
     _DEFAULT_TS_LOOKBACK_NS = 30 * 24 * 3600 * 1_000_000_000
     _DEFAULT_TS_LOOKAHEAD_NS = 3600 * 1_000_000_000
 
@@ -272,9 +249,8 @@ class MassiveNormalizer:
     ) -> None:
         self._clock = clock
         self._seq = SequenceGenerator(start=1)
-        # BT-5: tape condition codes that mark an LULD / regulatory halt
-        # on (``halt_on_codes``) and resume (``halt_off_codes``).  Empty ⇒
-        # halt detection is inert (no DataHealth.HALTED transitions).
+        # Tape condition codes mark halt and resume events. Empty sets disable
+        # halt detection.
         self._halt_on_codes: frozenset[int] = halt_on_codes or frozenset()
         self._halt_off_codes: frozenset[int] = halt_off_codes or frozenset()
         self._health_machines: dict[tuple[str, str], StateMachine[DataHealth]] = {}
@@ -289,9 +265,7 @@ class MassiveNormalizer:
         self._unparseable_elements: int = 0
         self._oversized_frames: int = 0
         self._anonymous_malformed_frames: int = 0
-        # Historical REST rows are usually *thinned* (non-contiguous vendor
-        # sequence_number).  Default False keeps ingest usable; set True only when
-        # the REST stream is full-tick contiguous (or for experiments).
+        # Ordinary REST data is thinned; enable gap checks only for full-tick data.
         self._enable_rest_sequence_gap_detection = enable_rest_sequence_gap_detection
         self._max_raw_frame_bytes = max_raw_frame_bytes
         # Live timestamp window — computed lazily against the injected
@@ -309,9 +283,7 @@ class MassiveNormalizer:
         received_ns: int,
         source: str,
     ) -> Sequence[NBBOQuote | Trade]:
-        # Cap raw payload size and catch ``RecursionError`` from
-        # pathologically-nested JSON so a single bad frame never kills
-        # the parser thread (audit r3-INGEST-01, M2/M3 follow-on).
+        # Reject oversized or deeply nested frames without killing the parser thread.
         if len(raw) > self._max_raw_frame_bytes:
             self._oversized_frames += 1
             logger.warning(
@@ -341,7 +313,7 @@ class MassiveNormalizer:
 
         Returns ``HEALTHY`` for symbols that have **never been seen** —
         unseen and "data flowing fine" are indistinguishable through this
-        accessor (audit r3-INGEST-04).  Use :meth:`all_health` plus
+        accessor. Use :meth:`all_health` plus
         :meth:`register_symbols` to distinguish "subscribed but not yet
         receiving data" from "actively healthy" — registered symbols
         appear in ``all_health()`` even before their first message, while
@@ -384,10 +356,7 @@ class MassiveNormalizer:
 
         for msg in messages:
             if not isinstance(msg, dict):
-                # Non-dict elements in a status/data array are wire-bug-
-                # like (e.g. a stray string).  Count them so operators can
-                # tell a clean-but-empty stream from a buggy one (audit
-                # r3-INGEST-07).
+                # Count malformed array elements separately from empty frames.
                 self._unparseable_elements += 1
                 continue
             ev = msg.get("ev")
@@ -419,28 +388,10 @@ class MassiveNormalizer:
             if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
 
-            raw_c = msg.get("c")
-            conditions: tuple[int, ...]
-            if raw_c is not None and not isinstance(raw_c, list):
-                conditions = (int(raw_c),)
-            elif isinstance(raw_c, list):
-                conditions = tuple(int(x) for x in raw_c)
-            else:
-                conditions = ()
-
-            raw_i = msg.get("i")
-            indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
-
-            part_ns: int | None = None
-            for key in ("participant_timestamp", "ft"):
-                part_ns = _optional_wire_ts_ns(msg.get(key))
-                if part_ns is not None:
-                    break
-            trf_quote_ns: int | None = None
-            for key in ("trf_timestamp", "y"):
-                trf_quote_ns = _optional_wire_ts_ns(msg.get(key))
-                if trf_quote_ns is not None:
-                    break
+            conditions = _int_tuple(msg.get("c"), allow_scalar=True)
+            indicators = _int_tuple(msg.get("i"))
+            part_ns = _first_wire_ts_ns(msg, ("participant_timestamp", "ft"))
+            trf_quote_ns = _first_wire_ts_ns(msg, ("trf_timestamp", "y"))
 
             # Price / size validation — raises on NaN, Infinity, negative
             # price, or unparseable Decimal.  ``allow_zero=True`` because
@@ -489,8 +440,7 @@ class MassiveNormalizer:
             return None
 
     def _ws_trade(self, msg: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
-        # See ``_ws_quote`` for the field-parsing-before-state-mutation
-        # rationale (M3 / M4 / R4-NEW-05 from the cumulative audit).
+        # Parse all fields before mutating per-symbol state; see _ws_quote.
         try:
             symbol = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
@@ -501,17 +451,12 @@ class MassiveNormalizer:
             if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
 
-            raw_c = msg.get("c")
-            conditions = tuple(int(x) for x in raw_c) if isinstance(raw_c, list) else ()
+            conditions = _int_tuple(msg.get("c"))
 
             raw_trft = msg.get("trft")
             trf_ts = int(raw_trft) * _MS_TO_NS if raw_trft is not None else None
 
-            part_trade: int | None = None
-            for key in ("participant_timestamp", "ft"):
-                part_trade = _optional_wire_ts_ns(msg.get(key))
-                if part_trade is not None:
-                    break
+            part_trade = _first_wire_ts_ns(msg, ("participant_timestamp", "ft"))
             corr_raw = msg.get("correction")
             correction = int(corr_raw) if corr_raw is not None else None
 
@@ -567,10 +512,7 @@ class MassiveNormalizer:
             return []
 
         # REST records are passed individually by the ingestor.
-        # Detect type by field presence.  An ambiguous record carrying
-        # *both* quote and trade fields is classified as a quote (the
-        # historical default) but flagged at WARN level so diagnostic
-        # tooling can pick it up (audit r3-INGEST-03).
+        # Ambiguous quote/trade records resolve to quotes and emit a warning.
         event: NBBOQuote | Trade | None
         has_quote_keys = "bid_price" in data or "ask_price" in data
         has_trade_keys = "price" in data
@@ -597,31 +539,19 @@ class MassiveNormalizer:
         return []
 
     def _rest_quote(self, rec: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]
-        # See ``_ws_quote`` for the field-parsing-before-state-mutation
-        # rationale (M3 / M4 / R4-NEW-05 from the cumulative audit).
+        # Parse all fields before mutating per-symbol state; see _ws_quote.
         try:
             symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
-            # NOTE: ``_check_exchange_ts_in_range`` deliberately not invoked
-            # on REST paths.  Historical REST rows carry exchange timestamps
-            # for the requested session, which has no relationship to
-            # ``clock.now_ns()`` for either a wall clock or a wall-like
-            # ``SimulatedClock``.  Enforcing the 30-day past / 1-hour
-            # future window here would reject every legitimate backfill
-            # row outside that window.  The ms-vs-ns confusion guard
-            # (r3-INGEST-02) remains active on the WS parse paths, which
-            # is the regime where the heuristic applies.
+            # REST backfills need not fall within the live clock window.
             seq_num = int(rec.get("sequence_number", 0))
             fp = _fingerprint_rest_quote(rec)
 
             if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
 
-            raw_cond = rec.get("conditions")
-            conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
-
-            raw_ind = rec.get("indicators")
-            indicators = tuple(int(x) for x in raw_ind) if isinstance(raw_ind, list) else ()
+            conditions = _int_tuple(rec.get("conditions"))
+            indicators = _int_tuple(rec.get("indicators"))
 
             raw_part = rec.get("participant_timestamp")
             part_ts = int(raw_part) if raw_part is not None else None
@@ -671,8 +601,7 @@ class MassiveNormalizer:
             return None
 
     def _rest_trade(self, rec: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
-        # See ``_ws_quote`` for the field-parsing-before-state-mutation
-        # rationale (M3 / M4 / R4-NEW-05 from the cumulative audit).
+        # Parse all fields before mutating per-symbol state; see _ws_quote.
         try:
             symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
@@ -684,8 +613,7 @@ class MassiveNormalizer:
             if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
 
-            raw_cond = rec.get("conditions")
-            conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+            conditions = _int_tuple(rec.get("conditions"))
 
             raw_part = rec.get("participant_timestamp")
             part_ts = int(raw_part) if raw_part is not None else None
@@ -744,8 +672,7 @@ class MassiveNormalizer:
         """Raise ``ValueError`` when a wire timestamp is outside the
         plausible window around the current clock.
 
-        Implements audit r3-INGEST-02 — a wire payload producing
-        ``t = 1e15`` (ms-vs-ns confusion) would otherwise inject events
+        A wire payload producing ``t = 1e15`` from ms/ns confusion would inject events
         ~30,000 years in the future, silently breaking any consumer that
         compares event time to wall time.  The window is generous on
         purpose: ``_DEFAULT_TS_LOOKBACK_NS`` (30 days) past +
@@ -815,7 +742,7 @@ class MassiveNormalizer:
 
     @property
     def unparseable_elements(self) -> int:
-        """Non-dict elements seen inside WS batches (audit r3-INGEST-07).
+        """Non-dict elements seen inside WS batches.
 
         Distinguishes a clean-but-empty stream from a buggy one without
         scraping logs.
@@ -826,15 +753,15 @@ class MassiveNormalizer:
     def oversized_frames(self) -> int:
         """Raw WS / REST frames exceeding ``max_raw_frame_bytes``.
 
-        Counts payloads rejected before ``json.loads`` is called (audit
-        r3-INGEST-01).  A non-zero value indicates either a feed bug or
+        Counts payloads rejected before ``json.loads`` is called. A non-zero
+        value indicates either a feed bug or
         an upstream-side configuration mismatch.
         """
         return self._oversized_frames
 
     @property
     def anonymous_malformed_frames(self) -> int:
-        """Malformed frames with no usable symbol (audit DI-05).
+        """Malformed frames with no usable symbol.
 
         Counts JSON-decode failures and parse errors where no ticker/``sym``
         could be recovered, so no per-symbol :class:`DataHealth` machine
@@ -935,7 +862,7 @@ class MassiveNormalizer:
         symbol: str,
         conditions: tuple[int, ...],
     ) -> None:
-        """Transition the trade-feed DataHealth machine on halt-on / off (BT-5).
+        """Transition trade-feed health on halt and resume markers.
 
         Halts arrive on the trade tape, so only the trade-feed machine is
         driven; ``health(symbol)`` reports HALTED via ``merge_worst_health``
@@ -962,9 +889,7 @@ class MassiveNormalizer:
 
     def _mark_corrupted(self, symbol: str, trigger: str = "parse_error") -> None:
         if not symbol or symbol == "UNKNOWN":
-            # Audit DI-05: no per-symbol DataHealth machine can absorb this —
-            # count it globally so an operator can distinguish a clean feed
-            # from one emitting a burst of anonymous garbage frames.
+            # Count anonymous corruption globally because no symbol state can own it.
             self._anonymous_malformed_frames += 1
             logger.warning(
                 "massive_normalizer: parse error for indeterminate symbol — "

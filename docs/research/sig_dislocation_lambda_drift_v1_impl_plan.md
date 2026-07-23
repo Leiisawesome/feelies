@@ -20,9 +20,9 @@
     normative_inputs (read this session):
       sig_dislocation_lambda_drift_v1_formal_spec.md (frozen spec incl.
         §16 deviations + the §6.2 clamped strength form),
-      sig_dislocation_lambda_drift_v1_validation_protocol.md (frozen
-        protocol as amended through A-2: PROCEED — D = {APP}; RMBS
-        evidence-only, step-2 scope only; step 3 blocked on RF-1/RF-2),
+      sig_dislocation_lambda_drift_v1_result.md (closure record; the
+        step-0–8 validation protocol and census JSON artifacts were
+        removed from the repo),
       prompt_pack_00_architecture_verification.md (guard inventory §(d),
         PARITY-GAP register §(e)),
       prompt_pack_03_data_contract.md (§7 L2 loss ledger, sensor
@@ -183,7 +183,7 @@ trial; N-impact 0 until an IC run executes under Task 8 step 2):
   statistics via the existing `research/forward_ic.py` primitives;
 - contamination handling hooks per protocol §1.3 (intensity-primary,
   all three ways reported) reusing the flag-set logic already
-  transplanted into `scripts/research/dislocation_lambda_census.py`;
+  transplanted into the removed census instrument (historical note only);
 - OLN cells accepted as evidence-only inputs for the §2.4 tick-artifact
   reporting (spread-in-ticks at eligible boundaries; quantum-mass
   reporting hooks), never contributing to any pooled IC statistic
@@ -308,7 +308,7 @@ Modeled on `test_sig_kyle_drift_v1.py`, extended per amendment D:
   loads whatever discovery finds under both strict modes, which the new
   YAML must simply pass (covered by the load tests above).
 
-### 2.5 Census-consistency smoke — `tests/research/test_dislocation_lambda_census_consistency.py`
+### 2.5 Census-consistency smoke — removed with validation protocol artifacts
 
 Amendment D item, cache-gated (`@pytest.mark.functional`, skip on cache
 miss with the populate command — the `test_backtest_app_baseline.py`

@@ -1,49 +1,10 @@
-"""SensorRegistry — owns per-symbol sensor state and routes raw events.
+"""Own per-symbol sensor state and publish stamped readings.
 
-Architectural decisions (plan §3.1):
-
-1. **Registry-as-single-subscriber (C4).**  The registry registers one
-   handler per ``(event_type)`` on the bus and fans out to every
-   sensor instance.  This keeps bus-handler count O(event_types)
-   regardless of how many sensors are configured (capacity ⇒ S6).
-
-2. **Pre-baked SensorProvenance (S4).**  Each ``(sensor_id, sensor_version)``
-   gets one immutable :class:`feelies.core.events.SensorProvenance`
-   instance built at registration time from ``subscribes_to`` +
-   ``input_sensor_ids``.  The registry's ``_stamp`` helper builds a
-   fresh :class:`feelies.core.events.SensorReading` wrapper around the
-   sensor-returned value on every emission, overriding audit fields
-   (``sequence``, ``correlation_id``, ``source_layer``, ``provenance``)
-   so producers cannot diverge from the platform's determinism contract.
-   The ``SensorProvenance`` itself is shared (no per-event allocation),
-   but ``SensorReading`` is re-allocated once per emission (H5 / audit).
-
-3. **Throttle gate at registry level (S5).**  When a spec sets
-   ``throttled_ms``, the registry tracks last-emit timestamps per
-   ``(sensor_id, symbol)`` and short-circuits *emission* inside the
-   throttle window.  For stateless sensors (``spec.stateful=False``,
-   the default) the ``update()`` call is also skipped.  For stateful
-   (accumulator) sensors (``spec.stateful=True``) ``update()`` is
-   called on every event so the estimator remains unbiased; only the
-   resulting ``SensorReading`` is suppressed until the window expires
-   (H4 / M4 audit).
-
-4. **Topological registration order.**  A spec with
-   ``input_sensor_ids`` can only be registered after every input has
-   been registered.  Violations raise
-   :class:`feelies.sensors.errors.UnresolvedSensorDependencyError` at
-   ``register()`` time, so misconfiguration fails loudly at boot, not
-   silently at first event.
-
-5. **Version-pin conflict detection.**  Re-registering the same
-   ``(sensor_id, sensor_version)`` raises
-   :class:`feelies.sensors.errors.DuplicateSensorRegistrationError`.
-   Two sensors with the same ``sensor_id`` but different
-   ``sensor_version`` are intentionally allowed (and treated as
-   independent registrations).
-
-The registry never publishes ``Signal``, ``OrderIntent``, or
-``OrderAck`` (Inv-E).  It only publishes ``SensorReading`` events.
+The registry subscribes once per raw event type, fans out in registration order,
+and precomputes immutable provenance. Dependencies must be registered first;
+duplicate ID-version pairs fail at startup. Throttling skips stateless updates
+but still advances stateful estimators, suppressing only their emission. The
+registry publishes ``SensorReading`` events only.
 """
 
 from __future__ import annotations
@@ -68,7 +29,7 @@ from feelies.sensors.errors import (
     DuplicateSensorRegistrationError,
     UnresolvedSensorDependencyError,
 )
-from feelies.sensors.protocol import Sensor
+from feelies.sensors.protocol import Sensor, SensorEmission
 from feelies.sensors.spec import SensorSpec
 
 _logger = logging.getLogger(__name__)
@@ -82,7 +43,7 @@ _ThrottleKey = tuple[str, str]
 def _is_finite_value(value: Any) -> bool:
     """True iff every numeric component of a sensor value is finite.
 
-    Audit 3P-1: a non-finite (``NaN`` / ``±Inf``) sensor value must never reach
+    A non-finite (``NaN`` or ``±Inf``) sensor value must never reach
     the bus — it permanently poisons downstream rolling accumulators (a NaN
     folded into a Welford mean stays NaN forever), silently flips regime-gate
     comparisons (``NaN < x`` is ``False``), and propagates into signal edge and
@@ -147,15 +108,7 @@ class SensorRegistry:
         self._throttle_last_ns: dict[_ThrottleKey, int] = {}
         self._subscribed_types: set[type[Event]] = set()
         self._publish_target: list[SensorReading] | None = None
-        # Plan §4.5: ``feelies.sensor.reading.count`` (counter) is emitted
-        # on every successful sensor update when a metric collector is wired.
-        # A-CLOCK-01: latency timing via time.perf_counter_ns() is prohibited
-        # in the deterministic dispatch path (sensor/ layer); latency monitoring
-        # should be done via a dedicated monitoring subscriber outside this hot
-        # path.  The latency histogram has been removed accordingly (S6).
-        # A *dedicated* sequence generator keeps MetricEvent sequence numbers
-        # separate from SensorReading sequences so adding metrics never perturbs
-        # the locked Level-2 hash (Inv-A / C1).
+        # Metrics use a separate sequence so observability cannot perturb readings.
         self._metric_collector = metric_collector
         self._emit_reading_metrics_enabled = emit_reading_metrics
         self._metrics_seq: SequenceGenerator | None = (
@@ -220,9 +173,7 @@ class SensorRegistry:
                 self._bus.subscribe(event_type, self._on_event)
                 self._subscribed_types.add(event_type)
 
-        # Pre-allocate per-symbol state so the first event has zero
-        # surprises (matters for parity tests against fixtures where
-        # the first event triggers state allocation).
+        # Pre-allocate symbol state so the first event performs no allocation.
         for symbol in self._symbols:
             self._state[(spec.sensor_id, spec.sensor_version, symbol)] = sensor.initial_state()
 
@@ -231,9 +182,8 @@ class SensorRegistry:
     def is_empty(self) -> bool:
         """True iff no sensors have been registered.
 
-        The orchestrator uses this to skip the new micro-state
-        transitions entirely, preserving the legacy execution path
-        bit-for-bit (Inv-A).
+        The orchestrator uses this to skip sensor micro-states and preserve
+        parity when no sensors are registered.
         """
         return not self._specs
 
@@ -248,7 +198,7 @@ class SensorRegistry:
         """Bus handler — fans event out to every interested sensor.
 
         Iteration order: ``self._specs`` is preserved insertion order,
-        which after Phase 2 bootstrap is also topological order across
+        which after bootstrap is also topological order across
         sensors.  Determinism (Inv-C) is therefore guaranteed without
         additional sorting on the hot path.
         """
@@ -257,8 +207,7 @@ class SensorRegistry:
 
         symbol = event.symbol
         if symbol not in self._symbols:
-            # M13: log at DEBUG so universe-drift (config out of sync with
-            # replay file) is observable without flooding production logs.
+            # Log config/feed universe drift without flooding production logs.
             _logger.debug(
                 "SensorRegistry: dropping event for unknown symbol %r "
                 "(known symbols: %s); check that the replay/live feed "
@@ -283,12 +232,11 @@ class SensorRegistry:
                     and (event.timestamp_ns - last_ns) < spec.throttled_ms * 1_000_000
                 ):
                     if not spec.stateful:
-                        # H4 / M4: stateless sensors are skipped entirely
+                        # Stateless sensors are skipped entirely
                         # inside the throttle window (original behaviour).
                         continue
-                    # H4 / M4: stateful (accumulator) sensors must still
-                    # advance their internal state on every event; only
-                    # *emission* is suppressed by the throttle window.
+                    # Stateful sensors advance on every event; only emission
+                    # is suppressed inside the throttle window.
                     inside_throttle_window = True
 
             sensor = self._sensors[spec.key]
@@ -307,13 +255,7 @@ class SensorRegistry:
             if raw is None:
                 continue
 
-            # 3P-1: fail-safe containment of non-finite values.  State has
-            # already advanced (the sensor's accumulators are its own concern);
-            # we simply refuse to PUBLISH a NaN/Inf so it cannot poison the
-            # aggregator's Welford state, the regime gate, or position sizing.
-            # The emission is suppressed, a warning logged, and a metric
-            # counter incremented — the throttle clock is intentionally NOT
-            # advanced (a suppressed-poison reading is not a real emission).
+            # Suppress non-finite readings without advancing the emission throttle.
             if not _is_finite_value(raw.value):
                 _logger.warning(
                     "sensor %s/%s produced a non-finite value %r for symbol "
@@ -329,7 +271,7 @@ class SensorRegistry:
                 continue
 
             # Suppress emission (but not state advance) when inside the
-            # throttle window for stateful sensors (H4 / M4).
+            # throttle window for stateful sensors.
             if inside_throttle_window:
                 continue
 
@@ -349,32 +291,31 @@ class SensorRegistry:
 
     def _stamp(
         self,
-        reading: SensorReading,
+        emission: SensorEmission | SensorReading,
         *,
         spec: SensorSpec,
         event: Event,
         symbol: str,
     ) -> SensorReading:
-        """Re-emit ``reading`` with registry-controlled provenance fields.
+        """Build a registry-stamped ``SensorReading`` from a sensor emission.
 
-        The sensor produces a ``SensorReading`` with the *value* and
-        *warmth* it computed.  The registry overrides the audit
-        fields — ``sequence``, ``correlation_id``, ``source_layer``,
-        ``provenance`` — so producers cannot accidentally diverge from
-        the platform's determinism contract.
+        Sensors preferably return :class:`SensorEmission` (value/warm/
+        confidence only).  Returning a full ``SensorReading`` remains
+        supported; the registry overrides platform fields — ``sequence``,
+        ``correlation_id``, ``source_layer``, ``provenance`` — so
+        producers cannot diverge from the determinism contract.
 
         ``parent_correlation_id`` is set to the originating market-data
-        event's ``correlation_id`` to restore the audit-spine chain
-        required by A-DATA-04 (S4).
+        event's ``correlation_id`` to preserve the parent-child trace.
         """
-        if reading.correlation_id != "placeholder":
-            # S15: sensors should leave correlation_id as "placeholder";
+        if isinstance(emission, SensorReading) and emission.correlation_id != "placeholder":
+            # Sensors should leave correlation_id as "placeholder";
             # the registry is the sole authority that sets real IDs.
             _logger.debug(
                 "sensor %s returned SensorReading with non-placeholder "
                 "correlation_id %r; registry will override",
                 spec.sensor_id,
-                reading.correlation_id,
+                emission.correlation_id,
             )
         seq = self._sequence_generator.next()
         correlation_id = make_correlation_id(
@@ -391,14 +332,14 @@ class SensorRegistry:
             symbol=symbol,
             sensor_id=spec.sensor_id,
             sensor_version=spec.sensor_version,
-            value=reading.value,
-            confidence=reading.confidence,
-            warm=reading.warm,
+            value=emission.value,
+            confidence=emission.confidence,
+            warm=emission.warm,
             provenance=provenance,
-            parent_correlation_id=event.correlation_id,  # S4: audit-spine chain
+            parent_correlation_id=event.correlation_id,  # Preserve event lineage.
         )
 
-    # ── Monitoring (plan §4.5) ───────────────────────────────────────
+    # Monitoring.
 
     def _emit_reading_metrics(
         self,
@@ -409,16 +350,14 @@ class SensorRegistry:
     ) -> None:
         """Emit per-reading monitoring metrics.
 
-        One metric per published ``SensorReading`` (plan §4.5):
+        One metric is emitted per published ``SensorReading``:
 
         - ``feelies.sensor.reading.count`` — counter (``value=1.0``).
 
-        The latency histogram previously emitted here violated A-CLOCK-01
-        (``time.perf_counter_ns()`` in the deterministic dispatch path).
-        Latency monitoring should be done via a dedicated monitoring
-        subscriber outside the sensor hot path (S6).
+        Latency monitoring belongs in a dedicated subscriber outside the
+        deterministic sensor path.
 
-        Both metrics share the ``layer="sensor"`` namespace so the
+        The metric uses the ``layer="sensor"`` namespace so the
         :class:`InMemoryMetricCollector` summary key resolves to
         ``sensor.feelies.sensor.reading.count``.
         """
@@ -455,12 +394,12 @@ class SensorRegistry:
         symbol: str,
         ts_ns: int,
     ) -> None:
-        """Emit ``feelies.sensor.nonfinite.count`` for one suppressed value (3P-1).
+        """Emit ``feelies.sensor.nonfinite.count`` for one suppressed value.
 
         Counter (``value=1.0``), one per suppressed non-finite emission, so the
         fail-safe is observable in monitoring rather than silent.  Uses the same
         dedicated metrics sequence generator as the per-reading counter so it
-        cannot perturb the locked SensorReading sequence (Inv-A / C1).
+        cannot perturb the sensor-reading sequence.
         """
         assert self._metric_collector is not None
         assert self._metrics_seq is not None
@@ -484,7 +423,7 @@ class SensorRegistry:
             )
         )
 
-    # ── Test / forensic helpers ──────────────────────────────────────
+    # Inspection helpers.
 
     def collect_into(self, target: list[SensorReading] | None) -> None:
         """Mirror every published ``SensorReading`` into ``target``.

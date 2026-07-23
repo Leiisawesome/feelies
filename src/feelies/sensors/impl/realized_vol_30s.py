@@ -49,7 +49,8 @@ import math
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 class RealizedVol30sSensor:
@@ -112,14 +113,14 @@ class RealizedVol30sSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
         bid = float(event.bid)
         ask = float(event.ask)
-        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
-            # A2: a bad quote invalidates the carry-forward mid so the next
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
+            # A bad quote invalidates the carried mid so the next
             # good quote bootstraps fresh.  Preserving ``last_mid`` would
             # cause the next good quote to compute a log-return spanning
             # the bad-data gap, inflating the realized-vol estimate.
@@ -171,13 +172,4 @@ class RealizedVol30sSensor:
 
         state["last_mid"] = mid
 
-        return SensorReading(
-            timestamp_ns=event.timestamp_ns,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=len(history) >= self._warm_after,  # S3: window-bounded len un-warms after gaps
-        )
+        return SensorEmission(value=value, warm=len(history) >= self._warm_after)

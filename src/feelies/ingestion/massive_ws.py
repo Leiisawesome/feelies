@@ -40,29 +40,11 @@ _BACKOFF_MULTIPLIER = 2.0
 
 
 class MassiveLiveFeed:
-    """Real-time market data source via Massive WebSocket.
+    """Real-time Massive WebSocket event source.
 
-    Lifecycle:
-      1. Construct with API key, symbols, normalizer, clock
-      2. Call ``start()`` to begin the background WS connection
-      3. Iterate ``events()`` in the main thread (orchestrator pipeline)
-      4. Call ``stop()`` for graceful shutdown
-
-    **Subscription degraded-mode policy.** ``_subscribe`` reads up to
-    ``len(channels)`` confirmation frames with a 5 s inter-frame timeout
-    and counts the ``status=="success"`` confirmations.  It raises
-    ``ConnectionError`` **only when zero are received** (treated as a
-    full subscription failure that the reconnect loop should handle).
-    Receiving fewer than the expected count is logged at WARNING and
-    the feed runs in degraded mode — a temporarily-unavailable channel
-    must not block the whole feed (audit r4-NEW-02).  Since individual
-    success frames are not attributable to a specific channel (audit
-    DI-02), a partial result also transitions every requested symbol to
-    ``DataHealth.GAP_DETECTED`` via ``notify_feed_interrupted`` — coarser
-    than per-channel, but no longer silently HEALTHY-by-registration for
-    a symbol whose subscription may not have gone through.  Operators
-    monitoring the WARN line are still responsible for deciding whether
-    to restart or accept the partial coverage.
+    Zero subscription confirmations trigger reconnect. Partial confirmation
+    logs a warning, continues in degraded mode, and marks all requested symbols
+    with a data gap because confirmations cannot be attributed by channel.
     """
 
     __slots__ = (
@@ -87,8 +69,7 @@ class MassiveLiveFeed:
         ws_url: str = _DEFAULT_WS_URL,
     ) -> None:
         self._api_key = api_key
-        # Dedup so a caller's repeated ``["AAPL", "AAPL", "MSFT"]`` does
-        # not produce a doubled subscribe (audit r3-INGEST-10).
+        # Deduplicate symbols before subscribing.
         self._symbols = list(dict.fromkeys(symbols))
         self._normalizer = normalizer
         self._clock = clock
@@ -133,7 +114,7 @@ class MassiveLiveFeed:
 
     @property
     def events_dropped(self) -> int:
-        """Total events the bounded queue refused since startup (audit E2-MINOR).
+        """Total events the bounded queue refused since startup.
 
         A non-zero value means the downstream consumer fell behind hard
         enough to overflow the 100 k-entry queue.  Surface this on the
@@ -344,11 +325,7 @@ class MassiveLiveFeed:
                 successes,
                 n_expected,
             )
-            # Audit DI-02: register_symbols() already marked every requested
-            # symbol HEALTHY-by-presence at bootstrap, before any channel was
-            # confirmed.  A partial subscribe result means at least one
-            # channel may never have gone through, so surface it as a data
-            # gap rather than leave the symbol silently HEALTHY.
+            # Partial confirmation means requested coverage may be incomplete.
             self._normalizer.notify_feed_interrupted(self._symbols)
 
     @staticmethod
@@ -405,8 +382,5 @@ class MassiveLiveFeed:
                         "massive_ws: queue full, dropping event for %s",
                         event.symbol,
                     )
-                    # Audit DI-01: a dropped event is a real data gap for this
-                    # symbol — surface it through the same DataHealth path used
-                    # for connection loss so downstream consumers (Inv-11) see
-                    # degraded coverage instead of silent loss.
+                    # A dropped event is a real gap; report degraded coverage.
                     self._normalizer.notify_feed_interrupted((event.symbol,))

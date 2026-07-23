@@ -1,17 +1,4 @@
-"""Tests for the Phase-5 layer-specific alpha templates.
-
-The two surviving templates under ``alphas/_template/`` are part of the
-external-facing documentation contract.  When they drift from the
-loader's accepted shape, every operator who copies them gets a stale
-starting point — so we lock them to the live loader by attempting a
-fresh ``AlphaLoader.load`` on each template.
-
-Workstream D.2 retired ``alphas/_template/template_legacy_signal.alpha.yaml``
-and the ``layer: LEGACY_SIGNAL`` loader path along with it.  The only
-canonical templates left are ``template_signal.alpha.yaml`` (Layer-2,
-horizon-anchored, regime-gated) and ``template_portfolio.alpha.yaml``
-(Layer-3, cross-sectional construction).
-"""
+"""Keep the public SIGNAL and PORTFOLIO templates loadable."""
 
 from __future__ import annotations
 

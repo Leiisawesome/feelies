@@ -1,4 +1,4 @@
-"""Workstream F-4: structured-evidence path tests for AlphaLifecycle.
+"""Structured-evidence tests for ``AlphaLifecycle``.
 
 These tests exercise the new ``structured_evidence=...`` keyword on
 every promote/revalidate/quarantine method.  The legacy
@@ -536,15 +536,7 @@ class TestGateThresholds:
 
 
 class TestCapitalStageEvidenceValidatorOnly:
-    """Workstream F-4 wires *state-changing* gates only; the
-    LIVE@SMALL→LIVE@SCALED capital-tier escalation is deferred to
-    F-6 (LIVE→LIVE self-loop is a separate architectural change).
-
-    Until then, callers can exercise the validator directly through
-    :func:`feelies.alpha.promotion_evidence.validate_gate` — that
-    surface is already covered by ``test_promotion_evidence.py``,
-    so this test only documents the placeholder.
-    """
+    """Exercise capital-stage evidence without a lifecycle transition."""
 
     def test_capital_stage_validator_remains_callable(self) -> None:
         from feelies.alpha.promotion_evidence import GateId, validate_gate
@@ -708,7 +700,7 @@ class TestAlphaRegistryStructuredEvidence:
         assert registry.lifecycle_states()["kyle"] == AlphaLifecycleState.RESEARCH
 
 
-# ── Mixed-path workflow (legacy + structured can coexist per alpha) ─
+# ── Unstructured and structured evidence may coexist per alpha ──────
 
 
 class TestMixedPathWorkflow:
@@ -729,7 +721,7 @@ class TestMixedPathWorkflow:
         assert errors == []
         assert lc.state == AlphaLifecycleState.PAPER
 
-        # Legacy PAPER→LIVE (using the loose PromotionEvidence path)
+        # PAPER→LIVE using unstructured PromotionEvidence.
         live_legacy = PromotionEvidence(
             paper_days=10,
             paper_sharpe=1.0,

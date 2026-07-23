@@ -1,6 +1,6 @@
 """Unit tests for :class:`feelies.composition.sector_matcher.SectorMatcher`.
 
-Focus: the audit P1-3 fix — within-sector net exposure must be driven to
+Within-sector net exposure must be driven to
 zero (not merely shrunk) by scaling only the dominant side, while the
 offsetting side and within-side ranking are preserved.
 """

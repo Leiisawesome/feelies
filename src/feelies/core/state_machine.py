@@ -13,6 +13,8 @@ changes at runtime are forbidden to preserve determinism.
 
 from __future__ import annotations
 
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Generic, TypeVar
@@ -22,7 +24,7 @@ from feelies.core.clock import Clock
 S = TypeVar("S", bound=Enum)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TransitionRecord:
     """Immutable record of a state transition for audit trail (invariant 13)."""
 
@@ -81,6 +83,8 @@ class StateMachine(Generic[S]):
         "_clock",
         "_history",
         "_on_transition_callbacks",
+        "_timing_sink",
+        "_timing_key",
     )
 
     def __init__(
@@ -89,14 +93,28 @@ class StateMachine(Generic[S]):
         initial_state: S,
         transitions: dict[S, frozenset[S]],
         clock: Clock,
+        *,
+        history_limit: int | None = None,
+        timing_key: str | None = None,
     ) -> None:
         self._name = name
         self._initial_state = initial_state
         self._state = initial_state
         self._transitions: dict[S, frozenset[S]] = dict(transitions)
         self._clock = clock
-        self._history: list[TransitionRecord] = []
+        # Unbounded by default (alpha-lifecycle SM reads full history).
+        # Micro/macro tick SMs pass a ring-buffer limit to bound memory
+        # on long backtest replays (~8 transitions × 80k quotes).
+        if history_limit is None:
+            self._history: list[TransitionRecord] | deque[TransitionRecord] = []
+        else:
+            if history_limit < 1:
+                raise ValueError(f"[{name}] history_limit must be >= 1, got {history_limit}")
+            self._history = deque(maxlen=history_limit)
         self._on_transition_callbacks: list[Callable[[TransitionRecord], None]] = []
+        # Optional wall-time sink for hot-path attribution (micro SM).
+        self._timing_sink: dict[str, int] | None = None
+        self._timing_key = timing_key
 
         # Validate completeness: every member of the enum must have
         # an entry in the transition table.  A missing entry would
@@ -110,6 +128,10 @@ class StateMachine(Generic[S]):
                 f"for: {names}. Every state must be explicitly listed, "
                 f"even if its allowed targets are empty (terminal)."
             )
+
+    def bind_timing_sink(self, sink: dict[str, int] | None) -> None:
+        """Bind a per-tick timing dict; ``None`` disables accumulation."""
+        self._timing_sink = sink
 
     @property
     def name(self) -> str:
@@ -144,31 +166,18 @@ class StateMachine(Generic[S]):
         correlation_id: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> TransitionRecord:
-        """Execute a state transition.  Raises ``IllegalTransition`` if forbidden.
+        """Validate, notify callbacks, then atomically commit a transition.
 
-        Atomic sequence:
-          1. validate  — reject illegal transitions
-          2. build     — create immutable record
-          3. notify    — fire callbacks (may veto by raising)
-          4. commit    — append to history + update state pointer
-
-        The SM's own state and history are updated ONLY after all callbacks
-        succeed: if any callback raises, this machine's state pointer and
-        history are left unchanged and the record is not appended (verified
-        by ``test_callback_raises_prevents_transition``).
-
-        Caveat for multiple callbacks: callbacks run in registration order
-        and the rollback covers only *this machine's* state.  If callback N
-        raises after callbacks 1..N-1 already executed, those earlier
-        callbacks' **external** side effects (e.g. a ledger row already
-        written to disk) are NOT undone — the SM cannot reverse effects it
-        does not own.  The promotion-ledger wiring relies on this guarantee
-        with a single callback, where it is exact; consumers that register
-        several side-effecting callbacks must make each one individually
-        idempotent/reversible.
+        A callback exception leaves this machine unchanged. Earlier callbacks'
+        external side effects cannot be rolled back, so they must be idempotent
+        or reversible.
         """
         if not self.can_transition(target):
             raise IllegalTransition(self._name, self._state, target, trigger)
+
+        sink = self._timing_sink
+        key = self._timing_key
+        t0 = time.perf_counter_ns() if sink is not None and key is not None else 0
 
         record = TransitionRecord(
             machine_name=self._name,
@@ -185,6 +194,8 @@ class StateMachine(Generic[S]):
 
         self._history.append(record)
         self._state = target
+        if sink is not None and key is not None:
+            sink[key] = sink.get(key, 0) + (time.perf_counter_ns() - t0)
         return record
 
     def reset(

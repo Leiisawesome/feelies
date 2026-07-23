@@ -1,23 +1,4 @@
-"""Tests for the Orchestrator tick-processing pipeline.
-
-Workstream D.2 PR-2b-iv migrated this file off the legacy
-``feature_engine`` / ``signal_engine`` ctor stubs.  Tests that used to
-inject ``_StubSignalEngine(signal=signal)`` now publish ``Signal``
-events on the platform bus through ``_publish_signal_on_quote``;
-``_on_bus_signal`` buffers them and the M4 ``SIGNAL_EVALUATE`` drain
-walks the existing risk → order → fill pipeline.
-
-Tests for behaviours that no longer exist were dropped:
-
-* ``TestOrchestratorTickFailure`` (legacy signal-engine error → DEGRADED)
-  — the bus subscriber cannot raise; the analogous failure mode is now
-  exercised via a raising ``RiskEngine``.
-* ``TestMultiAlphaB4Gate`` (``_build_net_order`` direct calls) — the
-  helper was orphaned together with ``MultiAlphaEvaluator`` (PR-2b-ii)
-  and deleted by PR-2b-iv.  The B4 gate still fires through
-  ``_check_b4_gate`` on the per-tick walk and is covered by
-  ``TestEdgeCostGate``.
-"""
+"""Tests for the orchestrator tick-processing pipeline."""
 
 from __future__ import annotations
 
@@ -250,16 +231,7 @@ class _NonCallableHwmRiskEngine(_StubRiskEngine):
 
 
 class _RaisingRiskEngine:
-    """Risk engine that always raises to test orchestrator error handling.
-
-    Replaces the pre-PR-2b-iv ``_RaisingSignalEngine`` (which exercised
-    the now-deleted legacy ``signal_engine`` ctor stub).  The bus-driven
-    ``_on_bus_signal`` subscriber cannot raise, but the per-tick risk
-    check inside ``_process_tick_inner`` still runs ``check_signal`` —
-    making the risk engine the surviving choke-point for "tick raises →
-    DEGRADED" coverage (Inv-11: fail-safe degradation rather than
-    silent corruption).
-    """
+    """Always raise to test fail-safe orchestrator degradation."""
 
     def check_signal(self, signal: Signal, positions: PositionStore) -> RiskVerdict:
         raise RuntimeError("risk engine failure")
@@ -272,7 +244,7 @@ class _ScaleDownToZeroRiskEngine:
     """Risk engine: ALLOW at signal, SCALE_DOWN with near-zero factor at order.
 
     Used to verify that scale-down to zero suppresses the order
-    rather than forcing a min-lot of 1 (Finding 3).
+    rather than forcing a minimum order.
     """
 
     def check_signal(self, signal: Signal, positions: PositionStore) -> RiskVerdict:
@@ -308,6 +280,13 @@ class _MinimalConfig:
 
     def snapshot(self):
         return None
+
+
+class _ExecutionCostConfig(_MinimalConfig):
+    cost_market_impact_factor = 0.73
+    cost_max_impact_half_spreads = 8.5
+    cost_within_l1_impact_factor = 0.21
+    cost_permanent_impact_coefficient = 0.04
 
 
 class _FailingConfig:
@@ -568,6 +547,71 @@ class TestOrchestratorFullPipeline:
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE
 
+    @pytest.mark.parametrize(
+        ("publish_signal", "risk_action", "terminal_trigger"),
+        [
+            (False, RiskAction.ALLOW, "no_signal_this_tick"),
+            (True, RiskAction.REJECT, "risk_reject_no_order"),
+        ],
+    )
+    def test_tick_completion_preserves_transition_and_metric_order(
+        self,
+        publish_signal: bool,
+        risk_action: RiskAction,
+        terminal_trigger: str,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[Event] = []
+        bus.subscribe_all(events.append)
+        quote = _make_quote()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(action=risk_action),
+        )
+        if publish_signal:
+            _publish_signal_on_quote(bus, _make_signal(quote))
+        _boot_to_backtest(orch)
+        events.clear()
+
+        orch._process_tick(quote)
+
+        transitions = [
+            event
+            for event in events
+            if isinstance(event, StateTransition) and event.machine_name == "tick_pipeline"
+        ]
+        expected = [
+            ("WAITING_FOR_MARKET_EVENT", "MARKET_EVENT_RECEIVED", "tick_arrived"),
+            ("MARKET_EVENT_RECEIVED", "STATE_UPDATE", "event_logged"),
+            ("STATE_UPDATE", "FEATURE_COMPUTE", "state_updated"),
+            ("FEATURE_COMPUTE", "SIGNAL_EVALUATE", "features_computed"),
+        ]
+        if publish_signal:
+            expected.append(("SIGNAL_EVALUATE", "RISK_CHECK", "signal_evaluated"))
+            terminal_from = "RISK_CHECK"
+        else:
+            terminal_from = "SIGNAL_EVALUATE"
+        expected.extend(
+            [
+                (terminal_from, "LOG_AND_METRICS", terminal_trigger),
+                ("LOG_AND_METRICS", "WAITING_FOR_MARKET_EVENT", "tick_complete"),
+            ]
+        )
+        assert [
+            (event.from_state, event.to_state, event.trigger) for event in transitions
+        ] == expected
+
+        log_index = events.index(transitions[-2])
+        latency_index = next(
+            index
+            for index, event in enumerate(events)
+            if isinstance(event, MetricEvent) and event.name == "tick_to_decision_latency_ns"
+        )
+        waiting_index = events.index(transitions[-1])
+        assert log_index < latency_index < waiting_index
+
     def test_mark_only_tick_refreshes_risk_high_water_mark(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         rally_quote = _make_quote(ts=1000, bid="119.50", ask="120.50", seq=1)
@@ -736,6 +780,92 @@ class TestOrchestratorFullPipeline:
 
         assert len(updates) == 1
         assert updates[0].timestamp_ns == 2000
+
+
+class TestOrchestratorAckProcessing:
+    def test_async_acks_preserve_exact_event_order_and_reconciliation_lineage(
+        self,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[Event] = []
+        bus.subscribe_all(events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=1000,
+            correlation_id="order-cid",
+            sequence=20,
+            order_id="ack-order",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        events.clear()
+        acks = [
+            OrderAck(
+                timestamp_ns=1100,
+                correlation_id="ack-cid",
+                sequence=40,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.ACKNOWLEDGED,
+            ),
+            OrderAck(
+                timestamp_ns=1200,
+                correlation_id="ack-cid",
+                sequence=41,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.FILLED,
+                filled_quantity=10,
+                fill_price=Decimal("150.00"),
+                fees=Decimal("0.10"),
+            ),
+        ]
+        orch._poll_order_router_acks = lambda _expected=None: acks  # type: ignore[method-assign]
+
+        orch._drain_async_fills("reconcile-cid")
+
+        assert [type(event) for event in events] == [
+            OrderAck,
+            StateTransition,
+            OrderAck,
+            StateTransition,
+            PositionUpdate,
+        ]
+        assert [event.timestamp_ns for event in events] == [1100, 1000, 1200, 1000, 1200]
+        assert [event.sequence for event in events] == [40, 1, 41, 2, 3]
+        assert [event.correlation_id for event in events] == [
+            "ack-cid",
+            "ack-cid",
+            "ack-cid",
+            "ack-cid",
+            "reconcile-cid",
+        ]
+        transitions = [event for event in events if isinstance(event, StateTransition)]
+        assert [
+            (event.machine_name, event.from_state, event.to_state, event.trigger)
+            for event in transitions
+        ] == [
+            ("order:ack-order", "SUBMITTED", "ACKNOWLEDGED", "broker_ack"),
+            ("order:ack-order", "ACKNOWLEDGED", "FILLED", "fill_complete"),
+        ]
+        update = events[-1]
+        assert isinstance(update, PositionUpdate)
+        assert update.quantity == 10
+        position = orch._positions.get("AAPL")
+        assert position.quantity == 10
+        assert position.avg_entry_price == Decimal("150.00")
+        assert position.cumulative_fees == Decimal("0.10")
 
 
 class TestOrchestratorFillReconcileGuards:
@@ -1089,10 +1219,7 @@ class TestOrchestratorFlatSignalExit:
 
 
 class TestOrchestratorTickFailure:
-    """A raising RiskEngine (the surviving M5 choke-point post PR-2b-iv)
-    must degrade the macro state, mirroring the pre-PR-2b-iv test that
-    used a raising signal-engine stub.
-    """
+    """A risk-engine failure degrades the orchestrator's macro state."""
 
     def _build(self) -> Orchestrator:
         clock = SimulatedClock(start_ns=1000)
@@ -1174,7 +1301,7 @@ class TestStopExitSignalMetadata:
 
 
 class TestForcedExitReasonClassification:
-    """Audit P1 (2026-06-20): forced MARKET exits must carry the canonical
+    """Forced MARKET exits must carry the canonical
     ``OrderRequest.reason`` so the fill model classifies them for panic
     slippage / depth depletion (``STOP_EXIT_REASONS``).  A *scheduled*
     session flatten is an orderly unwind, not an adverse-move panic, and
@@ -1215,13 +1342,13 @@ class TestForcedExitReasonClassification:
             reason="ok",
         )
 
-        stop_order = orch._build_order_from_intent(
+        stop_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("__stop_exit__"), verdict, "AAPL:2000:1"
         )
-        session_order = orch._build_order_from_intent(
+        session_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("__session_flat__"), verdict, "AAPL:2000:1"
         )
-        alpha_order = orch._build_order_from_intent(
+        alpha_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
         )
 
@@ -1393,13 +1520,7 @@ class TestStrategyFillDistribution:
         assert strategy_positions.get("alpha_d", "AAPL").cumulative_fees == Decimal("0")
 
     def test_distribution_iterates_strategies_in_sorted_order(self) -> None:
-        # Audit kernel-P0: ``StrategyPositionStore.strategy_ids()`` returns a
-        # ``frozenset`` whose iteration order is hash-seed dependent.  The
-        # distribution now sorts the ids, so the largest-remainder tie-break is
-        # deterministic.  Two equal-weight strategies registered in
-        # reverse-sorted order tie on the remainder; the odd share must always
-        # land on the lexicographically-first id ("a_alpha"), never on hash
-        # order.
+        # Sorted IDs make largest-remainder ties independent of hash order.
         clock = SimulatedClock(start_ns=1000)
         strategy_positions = StrategyPositionStore()
         # Insertion order deliberately != sorted order.
@@ -1491,7 +1612,219 @@ class TestOrchestratorHalt:
         assert orch.macro_state == MacroState.READY
 
 
-# ── Macro lifecycle remediation (global stack audit) ──────────────────
+# ── Tests: Trading session lifecycle ──────────────────────────────────
+
+
+class TestOrchestratorTradingSessionLifecycle:
+    @pytest.mark.parametrize(
+        (
+            "method_name",
+            "mode",
+            "session_trigger",
+            "start_trigger",
+            "completion_trigger",
+            "expected_prelogged",
+            "clears_consumed",
+        ),
+        [
+            (
+                "run_backtest",
+                MacroState.BACKTEST_MODE,
+                "session_start:backtest",
+                "CMD_BACKTEST",
+                "BACKTEST_COMPLETE",
+                True,
+                True,
+            ),
+            (
+                "run_paper",
+                MacroState.PAPER_TRADING_MODE,
+                "session_start:paper",
+                "CMD_PAPER_DEPLOY",
+                "SESSION_FEED_COMPLETE",
+                False,
+                True,
+            ),
+            (
+                "run_live",
+                MacroState.LIVE_TRADING_MODE,
+                "session_start:live",
+                "CMD_LIVE_DEPLOY",
+                "SESSION_FEED_COMPLETE",
+                False,
+                False,
+            ),
+        ],
+    )
+    def test_success_preserves_exact_events_and_pipeline_entry_state(
+        self,
+        method_name: str,
+        mode: MacroState,
+        session_trigger: str,
+        start_trigger: str,
+        completion_trigger: str,
+        expected_prelogged: bool,
+        clears_consumed: bool,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[StateTransition] = []
+        bus.subscribe(StateTransition, events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        events.clear()
+        seeded_consumed = frozenset({"seeded-alpha"})
+        orch._consumed_by_portfolio_ids = seeded_consumed
+        pipeline_entry: list[tuple[bool, frozenset[str] | None]] = []
+
+        def capture_pipeline_entry() -> None:
+            pipeline_entry.append((orch._events_prelogged, orch._consumed_by_portfolio_ids))
+
+        orch._run_pipeline = capture_pipeline_entry  # type: ignore[method-assign]
+        getattr(orch, method_name)()
+
+        expected_consumed = None if clears_consumed else seeded_consumed
+        assert pipeline_entry == [(expected_prelogged, expected_consumed)]
+        assert orch._events_prelogged is False
+        assert [
+            (
+                event.timestamp_ns,
+                event.correlation_id,
+                event.sequence,
+                event.machine_name,
+                event.from_state,
+                event.to_state,
+                event.trigger,
+                event.metadata,
+            )
+            for event in events
+        ] == [
+            (
+                1000,
+                "",
+                2,
+                "tick_pipeline",
+                "WAITING_FOR_MARKET_EVENT",
+                "WAITING_FOR_MARKET_EVENT",
+                session_trigger,
+                {"type": "reset"},
+            ),
+            (1000, "", 3, "global_stack", "READY", mode.name, start_trigger, {}),
+            (
+                1000,
+                "",
+                4,
+                "global_stack",
+                mode.name,
+                "READY",
+                completion_trigger,
+                {},
+            ),
+        ]
+
+    @pytest.mark.parametrize(
+        ("method_name", "mode", "session_trigger", "start_trigger", "failure_trigger"),
+        [
+            (
+                "run_backtest",
+                MacroState.BACKTEST_MODE,
+                "session_start:backtest",
+                "CMD_BACKTEST",
+                "BACKTEST_INTEGRITY_FAIL:RuntimeError",
+            ),
+            (
+                "run_paper",
+                MacroState.PAPER_TRADING_MODE,
+                "session_start:paper",
+                "CMD_PAPER_DEPLOY",
+                "PAPER_PIPELINE_FAIL:RuntimeError",
+            ),
+            (
+                "run_live",
+                MacroState.LIVE_TRADING_MODE,
+                "session_start:live",
+                "CMD_LIVE_DEPLOY",
+                "LIVE_PIPELINE_FAIL:RuntimeError",
+            ),
+        ],
+    )
+    def test_pipeline_failure_preserves_exact_events(
+        self,
+        method_name: str,
+        mode: MacroState,
+        session_trigger: str,
+        start_trigger: str,
+        failure_trigger: str,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        events: list[StateTransition] = []
+        bus.subscribe(StateTransition, events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        events.clear()
+
+        def fail_pipeline() -> None:
+            raise RuntimeError("pipeline boom")
+
+        orch._run_pipeline = fail_pipeline  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="pipeline boom"):
+            getattr(orch, method_name)()
+
+        assert orch.macro_state == MacroState.DEGRADED
+        assert orch._events_prelogged is False
+        assert [
+            (
+                event.sequence,
+                event.machine_name,
+                event.from_state,
+                event.to_state,
+                event.trigger,
+            )
+            for event in events
+        ] == [
+            (
+                2,
+                "tick_pipeline",
+                "WAITING_FOR_MARKET_EVENT",
+                "WAITING_FOR_MARKET_EVENT",
+                session_trigger,
+            ),
+            (3, "global_stack", "READY", mode.name, start_trigger),
+            (4, "global_stack", mode.name, "DEGRADED", failure_trigger),
+        ]
+
+    @pytest.mark.parametrize(
+        ("method_name", "completion_trigger", "expected_state"),
+        [
+            ("run_backtest", "BACKTEST_COMPLETE", MacroState.DEGRADED),
+            ("run_paper", "SESSION_FEED_COMPLETE", MacroState.PAPER_TRADING_MODE),
+            ("run_live", "SESSION_FEED_COMPLETE", MacroState.LIVE_TRADING_MODE),
+        ],
+    )
+    def test_completion_veto_preserves_mode_specific_exception_boundary(
+        self,
+        method_name: str,
+        completion_trigger: str,
+        expected_state: MacroState,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+
+        def veto_completion(record: TransitionRecord) -> None:
+            if record.trigger == completion_trigger:
+                raise RuntimeError("completion veto")
+
+        orch._macro.on_transition(veto_completion)
+        with pytest.raises(RuntimeError, match="completion veto"):
+            getattr(orch, method_name)()
+
+        assert orch.macro_state == expected_state
+        assert orch._events_prelogged is False
+
+
+# Macro lifecycle.
 
 
 class TestOrchestratorMacroLifecycleRemediation:
@@ -1704,11 +2037,85 @@ class TestOrchestratorMacroLifecycleRemediation:
         assert orch.macro_state == MacroState.DEGRADED
 
 
+class TestResetRiskEscalation:
+    """Reset from WARNING or BREACH_DETECTED permits open exposure.
+    ``reset_risk_escalation`` had zero test coverage anywhere in the suite.
+    """
+
+    def _orch_at(self, level: RiskLevel, *, position_store: Any = None) -> Orchestrator:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock, position_store=position_store)
+        _boot_to_ready(orch)
+        re = orch._risk_escalation
+        for target in (
+            RiskLevel.WARNING,
+            RiskLevel.BREACH_DETECTED,
+            RiskLevel.FORCED_FLATTEN,
+        ):
+            re.transition(target, trigger="t")
+            if target == level:
+                break
+        return orch
+
+    def test_noop_when_already_normal(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_raises_when_locked(self) -> None:
+        orch = self._orch_at(RiskLevel.FORCED_FLATTEN)
+        orch._risk_escalation.transition(RiskLevel.LOCKED, trigger="t")
+        with pytest.raises(RuntimeError, match="LOCKED"):
+            orch.reset_risk_escalation(audit_token="tok")
+
+    def test_raises_during_active_trading(self) -> None:
+        orch = self._orch_at(RiskLevel.WARNING)
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        with pytest.raises(RuntimeError, match="active trading"):
+            orch.reset_risk_escalation(audit_token="tok")
+
+    def test_warning_resets_with_open_exposure(self) -> None:
+        """No flatten was ever attempted at WARNING, so non-zero exposure
+        there is normal and must not block a human-authorized reset."""
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("50"))
+        orch = self._orch_at(RiskLevel.WARNING, position_store=store)
+        assert store.total_exposure() != Decimal("0")
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_breach_detected_resets_with_open_exposure(self) -> None:
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("50"))
+        orch = self._orch_at(RiskLevel.BREACH_DETECTED, position_store=store)
+        assert store.total_exposure() != Decimal("0")
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_forced_flatten_with_open_exposure_raises(self) -> None:
+        """A stranding at FORCED_FLATTEN implies the emergency flatten may
+        not have completed — resetting with positions still open must be
+        refused, mirroring unlock_from_lockdown's guard on LOCKED."""
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("50"))
+        orch = self._orch_at(RiskLevel.FORCED_FLATTEN, position_store=store)
+        with pytest.raises(RuntimeError, match="FORCED_FLATTEN"):
+            orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.FORCED_FLATTEN
+
+    def test_forced_flatten_with_flat_book_resets(self) -> None:
+        """The intended use case: the flatten completed (or nothing was
+        ever opened) and only the SM pointer is stranded."""
+        orch = self._orch_at(RiskLevel.FORCED_FLATTEN)
+        assert orch._positions.total_exposure() == Decimal("0")
+        orch.reset_risk_escalation(audit_token="tok")
+        assert orch.risk_level == RiskLevel.NORMAL
+
+
 class TestRealizedCostEscalation:
-    """Backtest-level coverage for the realized-cost-overrun kill-switch
-    escalation (P2.10). Previously only exercised by a ``paper_rth``-gated
-    integration test requiring a live IB Gateway connection (audit
-    execution_fills_audit_2026-07-02 finding #11 / backlog)."""
+    """Backtest coverage for realized-cost kill-switch escalation."""
 
     def _order(self, order_id: str, *, strategy_id: str = "alpha_1") -> OrderRequest:
         return OrderRequest(
@@ -1803,15 +2210,11 @@ class TestOrchestratorMultipleTicks:
         assert orch.macro_state == MacroState.BACKTEST_MODE
 
 
-# ── Tests: Scale-down to zero suppression (Finding 3) ────────────────
+# Scale-down-to-zero suppression.
 
 
 class TestScaleDownToZeroSuppression:
-    """When SCALE_DOWN yields quantity 0, the order must be suppressed.
-
-    Before the fix, max(1, round(...)) forced a min-lot of 1 share,
-    violating Inv-11 (fail-safe: safety controls only tighten).
-    """
+    """Suppress an order when scaling rounds its quantity to zero."""
 
     def test_m6_scale_down_to_zero_suppresses_order(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -1942,7 +2345,73 @@ class TestEdgeCostGate:
         assert pos.quantity != 0  # gate disabled, order allowed
 
 
-# ── G-1 Phase P1: position-manager shadow harness ─────────────────────
+class TestExecutionCostContext:
+    def test_cost_inputs_are_shared_by_gate_and_position_planner(self) -> None:
+        from feelies.execution.position_manager import PositionPlan, round_trip_cost_bps
+
+        class _RecordingPositionManager:
+            market = None
+
+            def plan(self, *, desired, current, market=None, config=None):
+                del desired, current, config
+                self.market = market
+                return PositionPlan()
+
+        clock = SimulatedClock(start_ns=1000)
+        manager = _RecordingPositionManager()
+        orch = _build_orchestrator(clock)
+        orch._position_manager = manager
+        orch._cost_model = DefaultCostModel(DefaultCostModelConfig())
+        orch.boot(_ExecutionCostConfig())
+
+        replacement_cost_model = DefaultCostModel(DefaultCostModelConfig())
+        orch._cost_model = replacement_cost_model
+        quote = _make_quote(bid="99.80", ask="100.20")
+        signal = _make_signal(quote)
+        orch._plan_for_signal(
+            signal,
+            Position(symbol="AAPL"),
+            target_qty=100,
+            quote=quote,
+        )
+
+        market = manager.market
+        assert market is not None
+        assert market.quote == quote
+        assert market.cost_model is replacement_cost_model
+        assert market.market_impact_factor == Decimal("0.73")
+        assert market.max_impact_half_spreads == Decimal("8.5")
+        assert market.within_l1_impact_factor == Decimal("0.21")
+        assert market.permanent_impact_coefficient == Decimal("0.04")
+
+        actual_cost_bps = orch._round_trip_cost_bps(
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=100,
+            quote=quote,
+            is_taker_entry=True,
+            is_short_entry=False,
+        )
+        expected_cost_bps = round_trip_cost_bps(
+            replacement_cost_model,
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=100,
+            mid_price=Decimal("100.00"),
+            half_spread=Decimal("0.20"),
+            is_taker_entry=True,
+            is_short_entry=False,
+            bid_size=quote.bid_size,
+            ask_size=quote.ask_size,
+            market_impact_factor=Decimal("0.73"),
+            max_impact_half_spreads=Decimal("8.5"),
+            within_l1_impact_factor=Decimal("0.21"),
+            permanent_impact_coefficient=Decimal("0.04"),
+        )
+        assert actual_cost_bps == expected_cost_bps
+
+
+# Position-manager shadow harness.
 
 
 class _EmptyPlanManager:
@@ -1955,7 +2424,7 @@ class _EmptyPlanManager:
 
 
 class TestPositionManagerShadow:
-    """The legacy planner runs alongside the legacy path with zero
+    """The shadow planner runs alongside the translator path with zero
     divergence, drives nothing, and the harness genuinely detects a
     mismatch when one exists."""
 
@@ -2027,7 +2496,7 @@ class TestPositionManagerShadow:
             orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
             orch._process_tick(q)
 
-        # Legacy path drove the book through entry → reverse → exit …
+        # Translator path drove the book through entry → reverse → exit …
         assert pos_store.get("AAPL").quantity == 0
         # … and the shadow planner never disagreed.
         assert sink == [], f"unexpected divergence: {sink}"
@@ -2138,8 +2607,7 @@ class TestPositionManagerDrive:
 
 
 class TestPositionManagerTrim:
-    """P3: a cost-aware TRIM partially reduces a same-direction position
-    that legacy would hold — default-off (byte-identical when disabled)."""
+    """A cost-aware trim can reduce a same-direction position."""
 
     @staticmethod
     def _run(*, enable_trim: bool) -> tuple[int, list[tuple[str, int]]]:
@@ -2189,12 +2657,12 @@ class TestPositionManagerTrim:
 
     def test_trim_disabled_holds_position(self) -> None:
         qty, orders = self._run(enable_trim=False)
-        assert qty == 150  # legacy hold — no trim
+        assert qty == 150  # translator hold — no trim
         assert orders == []
 
     @staticmethod
     def _run_edge_gate(*, edge_bps: float) -> int:
-        # P3b end-to-end: edge gate on, real cost model, tight spread.
+        # Use the real edge gate and cost model with a tight spread.
         from feelies.execution.cost_model import (
             DefaultCostModel,
             DefaultCostModelConfig,
@@ -2286,7 +2754,7 @@ class TestPositionManagerTrim:
         assert self._run_urgency(urgency_exec=False) == [("SELL", "MARKET", 50)]
 
 
-# ── G-6: session / end-of-day flatten ─────────────────────────────────
+# Session and end-of-day flattening.
 
 
 class TestSessionFlatten:
@@ -2394,30 +2862,21 @@ class TestSessionFlatten:
         assert pos.get("AAPL").quantity == 0  # entry suppressed in the window
         assert orders == []
 
-    # ── Per-day rebinding for multi-day backtest ranges ───────────────
-    #
-    # A CLI date *range* (``--date D1 --end-date D2``) leaves
-    # ``rth_session_date`` unset (``apply_backtest_session_dates_from_cli``
-    # only rebinds single-day runs), so ``_trading_session_bounds`` is booted
-    # anchored to a single — often stale ``event_calendar_path`` — date.  The
-    # session-flatten window must therefore resolve the close *per replayed
-    # day* (``TradingSessionBounds.resolve_for_timestamp``); otherwise every
-    # quote past the booted day's close reads as past-close and all entries
-    # are blocked with ``session_flatten_window`` (0 orders for the range).
+    # Date ranges have no fixed RTH session date, so the flatten window must
+    # resolve the close from each replayed timestamp. Reusing the boot date
+    # would classify later days as already closed.
 
     def test_session_flatten_window_rebinds_per_replayed_day(self) -> None:
         day1, day2 = date(2026, 6, 1), date(2026, 6, 2)
-        # Bounds booted anchored to DAY 1 (the stale-anchor range scenario).
+        # Boot with day 1 to reproduce a range run's stale anchor.
         orch, _bus, _orders, _pos = self._orch(
             position=0,
             anchor=day1,
             flatten_buffer_s=300,
         )
 
-        # Day-2 mid-session must NOT be in the flatten window — the regression:
-        # the stale day-1 16:00 close made every day-2 quote read as past-close.
+        # Day 2 must use its own close.
         assert not orch._in_session_flatten_window(self._quote_at(day2, "10:45"))
-        # Day-2 within 5 min of its OWN 16:00 close still flattens.
         assert orch._in_session_flatten_window(self._quote_at(day2, "15:58"))
         # Day-1 behaviour is preserved (mid-session open, near-close flat).
         assert not orch._in_session_flatten_window(self._quote_at(day1, "10:45"))
@@ -2456,7 +2915,7 @@ class TestSessionFlatten:
         assert orders == []
 
 
-# ── P4b: working-exit MARKET fallback ─────────────────────────────────
+# Market fallback for working exits.
 
 
 class TestWorkingExitFallback:
@@ -2580,7 +3039,7 @@ class TestWorkingExitFallback:
         assert limit_orders[0].order_id in orch._working_exit_fallback
 
 
-# ── G-5 N1: cross-alpha net shadow ────────────────────────────────────
+# Cross-alpha net shadow.
 
 
 class TestNetShadow:
@@ -2695,13 +3154,11 @@ class TestNetShadow:
         q = _make_quote()
         orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
         orch._process_tick(q)  # must not raise; nothing recorded
-        assert orch._positions.get("AAPL").quantity != 0  # legacy path drove
+        assert orch._positions.get("AAPL").quantity != 0  # translator path drove
 
 
 class TestSizeShadow:
-    """G-7 S1: the size shadow records, per sized signal, how the
-    edge/vol/inventory-tilted target would differ from the live single-factor
-    base target (pure measurement; live size untouched)."""
+    """Record tilted target sizes without changing live sizing."""
 
     @staticmethod
     def _budget():
@@ -2789,7 +3246,7 @@ class TestSizeShadow:
         assert sink == []
 
 
-# ── G-5 N2: net-driven decision ───────────────────────────────────────
+# Net-driven decisions.
 
 
 class TestNetDrive:
@@ -2849,7 +3306,7 @@ class TestNetDrive:
         assert qty == 0  # the two desires cancel → no trade
 
 
-# ── G-5 N3: PORTFOLIO → net shadow bridge ─────────────────────────────
+# Portfolio-to-net-shadow bridge.
 
 
 class TestPortfolioNetBridge:
@@ -2936,7 +3393,7 @@ class TestPortfolioNetBridge:
         assert net.target_qty == 160  # 100 (portfolio) + 60 (signal)
 
 
-# ── G-4: lot ledger integration ───────────────────────────────────────
+# Lot-ledger integration.
 
 
 class TestLotLedgerIntegration:
@@ -3138,7 +3595,7 @@ class TestReversalEdgeGuard:
         assert orch._positions.get("AAPL").quantity == 0
 
 
-# ── F1: Resting-order guard placed AFTER signal/risk evaluation ───────────
+# Resting-order guard runs after signal and risk evaluation.
 
 
 class _CancelRecordingBacktestRouter(BacktestOrderRouter):
@@ -3307,17 +3764,7 @@ class TestRestingOrderGuardAfterRisk:
         assert new_orders == []
 
     def test_stop_exit_supersedes_resting_passive_cover(self) -> None:
-        """Inv-11: a hard-stop MARKET exit cancels a stale passive cover and crosses.
-
-        Regression for ``docs/audits/app_backtest_sig_benign_2026-06-01_investigation.md``: a
-        gate-OFF FLAT passive LIMIT cover left resting must not subordinate a
-        breached hard stop.  Previously the resting-order guard treated the
-        pending cover as a pending exit and suppressed every ``__stop_exit__``
-        MARKET attempt until the passive order expired (~57 minutes later),
-        turning a configured 1.0% stop into a 1.49% realized loss.  The stop
-        must now cancel the resting cover and fill a MARKET close in the same
-        tick.
-        """
+        """A hard stop cancels a resting passive cover and crosses immediately."""
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
 
@@ -3375,11 +3822,11 @@ class TestRestingOrderGuardAfterRisk:
         assert any(a.alert_name == "forced_exit_supersedes_pending_order" for a in alerts)
 
 
-# ── P1: forced-exit panic-fill reason classification ─────────────────────
+# Forced-exit panic-fill reason classification.
 
 
 class TestForcedExitPanicReason:
-    """Audit P1 (2026-06-20): forced exits must populate ``OrderRequest.reason``
+    """Forced exits must populate ``OrderRequest.reason``
     so the backtest fill model classifies them for panic slippage.  The fill
     model keys on ``reason in STOP_EXIT_REASONS`` (``market_fill.py``), not on
     ``strategy_id`` — an empty ``reason`` silently underprices stops and forced
@@ -3435,12 +3882,7 @@ class TestForcedExitPanicReason:
         assert flatten_orders[0].order_type == OrderType.MARKET
 
     def test_stop_exit_fill_pays_panic_slippage_end_to_end(self) -> None:
-        """End-to-end: an orchestrator-driven stop fill carries the panic
-        half-spread fee.  Every other cost component is zeroed, so a non-zero
-        fee can only be the forced-exit slippage — which requires ``reason`` to
-        reach the fill model.  Before the fix (empty ``reason``) the fill is
-        priced as an ordinary market order and ``cumulative_fees`` stays 0.
-        """
+        """An orchestrator-driven stop fill pays panic slippage."""
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
 
@@ -3474,16 +3916,15 @@ class TestForcedExitPanicReason:
 
         closed = position_store.get("AAPL")
         assert closed.quantity == 0  # stop closed the long
-        # raw half-spread = (148.50 - 147.50)/2 = 0.50; panic fee for 50 sh =
-        # 0.50 x (2.0 - 1) x 50 = 25.00.  Without the reason fix this is 0.
+        # Panic fee: 0.50 half-spread × (2.0 - 1) × 50 shares = 25.00.
         assert closed.cumulative_fees == Decimal("25.00")
 
 
-# ── P2: fill-journal provenance (Inv-13) ─────────────────────────────────
+# Fill-journal provenance.
 
 
 class TestTradeJournalProvenance:
-    """Audit P2 (2026-06-20): fill-journal records carry order provenance
+    """Fill-journal records carry order provenance
     (reason + source_layer) so forced exits are distinguishable post-trade.
     """
 
@@ -3510,11 +3951,11 @@ class TestTradeJournalProvenance:
         assert "order_source_layer" in records[0].metadata
 
 
-# ── P1: RTH-close buying-power phase re-arms per session date ─────────────
+# RTH-close buying power re-arms per session date.
 
 
 class TestRthBuyingPowerPhaseMultiDay:
-    """Audit P1 (2026-06-20): the RTH-close buying-power flip must re-arm per
+    """The RTH-close buying-power flip must re-arm per
     NY session date.  A single booted bounds anchor replayed across multiple
     days must flip to OVERNIGHT at each day's close and reopen the next day on
     the intraday cap — not latch OVERNIGHT for the whole run after day 1.
@@ -3578,7 +4019,7 @@ class TestRthBuyingPowerPhaseMultiDay:
         ]
 
 
-# ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────
+# Exits bypass the minimum-order-size gate.
 
 
 class TestExitBypassesMinOrderShares:
@@ -3618,7 +4059,7 @@ class TestExitBypassesMinOrderShares:
         assert position_store.get("AAPL").quantity == 0
 
 
-# ── F3: EXIT bypasses B4 edge-cost gate ──────────────────────────────────
+# Exits bypass the edge-cost gate.
 
 
 class TestExitBypassesEdgeCostGate:
@@ -3677,7 +4118,7 @@ class TestExitBypassesEdgeCostGate:
 
 
 class TestHaltModeling:
-    """BT-5: LULD halt suppression + post-resolution entry blackout."""
+    """Suppress entries during LULD halts and the post-halt blackout."""
 
     _HALT_ON = (5,)
     _HALT_OFF = (6,)
@@ -3821,14 +4262,11 @@ class TestHaltModeling:
         assert position_store.get("AAPL").quantity == 0
 
     def test_halt_suppresses_passive_router_fill_paths(self) -> None:
-        """Task 12-P (AXIS-1): halt suppression covers BOTH passive-router
-        fill paths.  At halt-on the resting passive order is cancelled
-        (Inv-11) and, while halted, quotes never reach the router — so
-        neither a through-fill of the resting order nor a deferred-
-        aggressive fill can occur, even though the in-halt quote is past
-        both orders' latency-eligibility deadlines.  After resume, the
-        surviving deferred MARKET order fills off the post-resume quote
-        at that quote's own price (no lookahead into the halt window)."""
+        """Halt suppression covers passive and deferred-aggressive fills.
+
+        Halt-on cancels resting passive orders and withholds quotes from both
+        paths. After resume, a surviving market order uses the new quote.
+        """
         from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 
         clock = SimulatedClock(start_ns=1000)
@@ -3957,7 +4395,7 @@ def _ssr_intent(
 
 
 class TestSSRBlocksIntent:
-    """BT-6: _ssr_blocks_intent only refuses short-opening orders."""
+    """SSR blocks only orders that open or increase a short."""
 
     def _orch(self) -> Orchestrator:
         orch = _build_orchestrator(SimulatedClock(start_ns=1000))
@@ -4029,7 +4467,7 @@ class TestSSRBlocksIntent:
 
 
 class TestSSRRefuseShort:
-    """BT-6: end-to-end short-entry suppression under SSR."""
+    """Suppress short entries end to end while SSR is active."""
 
     @staticmethod
     def _trade(ts: int, seq: int, conditions: tuple[int, ...]) -> Trade:
@@ -4148,7 +4586,7 @@ class TestSSRRefuseShort:
 
 
 class TestBorrowAvailability:
-    """BT-7: locate-unavailable suppression + hard-tier HTB flag."""
+    """Suppress unavailable locates and flag hard-to-borrow symbols."""
 
     @staticmethod
     def _build(

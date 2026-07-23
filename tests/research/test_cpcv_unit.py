@@ -1,20 +1,4 @@
-"""Unit tests for :mod:`feelies.research.cpcv` (Workstream C-1).
-
-Covers:
-- ``CPCVConfig`` validation.
-- ``assign_groups`` partitioning (even and uneven).
-- ``generate_cpcv_splits`` count, lex order, purge correctness,
-  embargo correctness.
-- ``reconstruct_paths`` count and shape.
-- ``assemble_path_returns`` chronological stitching.
-- ``sharpe_ratio`` standard cases and degenerate inputs.
-- ``lo_bootstrap_p_value`` determinism, edge cases, and
-  significant-vs-noise discrimination.
-- ``fold_pnl_curves_sha256`` stability.
-- ``build_cpcv_evidence`` end-to-end happy path producing an
-  evidence package that passes the F-2 ``cpcv_min_folds`` and
-  ``cpcv_max_p_value`` validators.
-"""
+"""Unit tests for CPCV splitting, path reconstruction, and evidence."""
 
 from __future__ import annotations
 
@@ -270,12 +254,9 @@ class TestReconstructPaths:
         assert len(set(paths)) == len(paths)
 
     def test_lopezdeprado_n4_k2_reference(self) -> None:
-        # Reference example from the C-1 design notes:
-        # N=4, k=2 -> 6 combinations, 3 paths.
+        # N=4, k=2 gives six combinations and three paths.
         cfg = CPCVConfig(n_groups=4, k_test_groups=2)
         splits = generate_cpcv_splits(n_bars=8, config=cfg)
-        # combinations enumerated lex: (0,1), (0,2), (0,3), (1,2),
-        # (1,3), (2,3) -> indices 0..5.
         assert [s.test_group_ids for s in splits] == [
             (0, 1),
             (0, 2),
@@ -285,15 +266,6 @@ class TestReconstructPaths:
             (2, 3),
         ]
         paths = reconstruct_paths(cfg.n_groups, cfg.k_test_groups, splits)
-        # Per design-doc derivation:
-        #   group 0 testing splits: [0, 1, 2]
-        #   group 1 testing splits: [0, 3, 4]
-        #   group 2 testing splits: [1, 3, 5]
-        #   group 3 testing splits: [2, 4, 5]
-        # path p (zip-by-position):
-        #   p=0 -> (0, 0, 1, 2)
-        #   p=1 -> (1, 3, 3, 4)
-        #   p=2 -> (2, 4, 5, 5)
         assert paths == ((0, 0, 1, 2), (1, 3, 3, 4), (2, 4, 5, 5))
 
     def test_mismatched_splits_raises(self) -> None:
@@ -334,21 +306,16 @@ class TestAssemblePathReturns:
             assert list(path_returns) == [float(i) for i in range(n_bars)]
 
     def test_chronological_order(self) -> None:
-        # Per-split returns differ across splits (each split's test
-        # bars get a distinctive multiplier).  Verify the path
-        # stitches in chronological bar-index order.
+        # Distinct split multipliers expose chronological stitching errors.
         cfg = CPCVConfig(n_groups=3, k_test_groups=1)
         n_bars = 9
         splits = generate_cpcv_splits(n_bars=n_bars, config=cfg)
-        # Splits: group {0}, group {1}, group {2}, with bar ranges
-        # 0..2, 3..5, 6..8 respectively.
-        # Each split's "OOS prediction" is bar_idx + 100 * split_idx.
+        # Each split's return is ``bar_index + 100 * split_index``.
         test_returns_by_split: list[tuple[float, ...]] = [
             tuple(float(bi + 100 * sidx) for bi in s.test_indices) for sidx, s in enumerate(splits)
         ]
         paths = reconstruct_paths(cfg.n_groups, cfg.k_test_groups, splits)
-        # k=1 means each path uses one split per group, with
-        # exactly C(2, 0) = 1 path: path = (0, 1, 2).
+        # k=1 yields one path with one split per group.
         assert paths == ((0, 1, 2),)
         out = assemble_path_returns(
             n_bars=n_bars,
@@ -357,15 +324,6 @@ class TestAssemblePathReturns:
             test_returns_by_split=test_returns_by_split,
             paths=paths,
         )
-        # Bar 0 (group 0, split 0) -> 0 + 0 = 0
-        # Bar 1 (group 0, split 0) -> 1 + 0 = 1
-        # Bar 2 (group 0, split 0) -> 2 + 0 = 2
-        # Bar 3 (group 1, split 1) -> 3 + 100 = 103
-        # Bar 4 (group 1, split 1) -> 4 + 100 = 104
-        # Bar 5 (group 1, split 1) -> 5 + 100 = 105
-        # Bar 6 (group 2, split 2) -> 6 + 200 = 206
-        # Bar 7 (group 2, split 2) -> 7 + 200 = 207
-        # Bar 8 (group 2, split 2) -> 8 + 200 = 208
         assert out[0] == (0.0, 1.0, 2.0, 103.0, 104.0, 105.0, 206.0, 207.0, 208.0)
 
     def test_mismatched_returns_length_raises(self) -> None:
@@ -554,7 +512,7 @@ class TestFoldPnLCurvesSha256:
         assert h1 != h2
 
     def test_handles_nan_and_inf_stably(self) -> None:
-        # The hash mustn't raise on degenerate floats; F-2 validators
+        # The hash must not raise on degenerate floats; validators
         # reject NaN/inf elsewhere, but the hasher itself should be
         # robust so we don't crash in the diagnostic path.
         h = fold_pnl_curves_sha256(((0.0, float("nan"), float("inf"), -float("inf")),))
@@ -753,7 +711,7 @@ class TestBuildCPCVEvidence:
         assert ev.fold_count == math.comb(3, 2)  # 3
 
     def test_annualization_factor_scales_sharpes(self) -> None:
-        # P1-4: annualization_factor multiplies every fold Sharpe (and
+        # ``annualization_factor`` multiplies every fold Sharpe and
         # hence mean/median), leaving the p-value and mean_pnl untouched
         # so cpcv_min_mean_sharpe can share units with the annualised
         # dsr_min.
@@ -794,7 +752,7 @@ class TestBuildCPCVEvidence:
 
 
 # ─────────────────────────────────────────────────────────────────────
-#   P0-1: label-horizon purge (two-sided, López de Prado §7.4.1)
+# Label-horizon purge (two-sided, López de Prado §7.4.1).
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -846,13 +804,13 @@ class TestLabelHorizonPurge:
 
 
 # ─────────────────────────────────────────────────────────────────────
-#   H8 protocol configuration (sig_dislocation_lambda_drift_v1 A-2.3)
+#   H8 formal-spec configuration (sig_dislocation_lambda_drift_v1 A-2.3)
 # ─────────────────────────────────────────────────────────────────────
 
 
 class TestH8ProtocolConfiguration:
     """Targeted fixture for the exact A-2.3 ruled configuration
-    (`sig_dislocation_lambda_drift_v1` validation protocol, step 3):
+    (`sig_dislocation_lambda_drift_v1` formal spec A-2.3):
     n_groups=20 (one per session), k=2, label_horizon_bars=1,
     embargo_bars=3, n_bars=1560 (78 h=300 boundaries/session x 20).
     Existing tests cover the purge/embargo mechanics at other
@@ -870,7 +828,7 @@ class TestH8ProtocolConfiguration:
         assert cfg.n_paths == 19  # C(19, 1)
 
         # Group boundaries must coincide with session boundaries
-        # (RF-1: 78 bars per session, exactly).
+        # Each session contains exactly 78 bars.
         groups = assign_groups(n_bars=n_bars, n_groups=20)
         assert all(len(g) == 78 for g in groups)
         assert groups[0][0] == 0 and groups[19][-1] == 1559
@@ -909,7 +867,7 @@ class TestH8ProtocolConfiguration:
 
 
 # ─────────────────────────────────────────────────────────────────────
-#   P0-2: functional leakage probe (purge collapses spurious Sharpe)
+# Functional leakage probe: purging collapses spurious Sharpe.
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -971,7 +929,7 @@ class TestPurgeFunctionalLeakageProbe:
 
 
 # ─────────────────────────────────────────────────────────────────────
-#   P1-3: block-bootstrap p-value (non-degenerate, discriminating)
+# Non-degenerate block-bootstrap p-value.
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -1014,11 +972,7 @@ class TestBlockBootstrapPValue:
             block_bootstrap_p_value([0.1, 0.2], block_size=1, n_bootstrap=0, seed=0)
 
     def test_identity_model_noise_does_not_floor_p_value(self) -> None:
-        # The audit's confirmed degeneracy: an identity-model OOS
-        # projection makes every reconstructed path byte-identical, so the
-        # per-path Sharpes are equal and the OLD per-path bootstrap floored
-        # p_value=1/(B+1) even for pure noise.  build_cpcv_evidence now
-        # block-bootstraps the per-bar returns, so noise gets a HIGH p.
+        # Block-bootstrap returns so an identity projection does not floor p-values.
         cfg = CPCVConfig(n_groups=10, k_test_groups=2, embargo_bars=5)
         splits = generate_cpcv_splits(n_bars=240, config=cfg)
         rng = random.Random(7)

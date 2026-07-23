@@ -16,7 +16,6 @@ from feelies.services.regime_hazard_detector import (
     DEFAULT_HYSTERESIS_THRESHOLD,
     HazardDetectorContractError,
     RegimeHazardDetector,
-    detect as detect_hazard_spike,
 )
 
 __all__ = [
@@ -25,7 +24,6 @@ __all__ = [
     "HazardDetectorContractError",
     "RegimeEngine",
     "RegimeHazardDetector",
-    "detect_hazard_spike",
     "get_regime_engine",
     "regime_posterior_entropy_nats",
 ]

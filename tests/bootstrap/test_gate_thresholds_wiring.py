@@ -1,4 +1,4 @@
-"""Workstream F-5: bootstrap-time wiring of platform-level gate thresholds.
+"""Bootstrap wiring of platform-level gate thresholds.
 
 Pins how :func:`feelies.bootstrap.build_platform` plumbs
 ``PlatformConfig.gate_thresholds_overrides`` through to
@@ -103,12 +103,7 @@ def _make_config(
         gate_thresholds_overrides=(
             dict(gate_thresholds_overrides) if gate_thresholds_overrides is not None else {}
         ),
-        # Workstream E flipped the platform default to ``true``.  This
-        # F-5 wiring test is orthogonal to G16 — its concern is the
-        # ``gate_thresholds_overrides`` plumbing through bootstrap into
-        # ``AlphaRegistry``.  Pinning the opt-out keeps the fixture
-        # minimal and avoids dragging the mechanism taxonomy into a
-        # promotion-thresholds wiring test.
+        # Keep this fixture focused on threshold wiring, not mechanism validation.
         enforce_trend_mechanism=False,
     )
 
@@ -189,8 +184,7 @@ class TestBuildPlatformGateThresholdsWiring:
         assert thresholds.cpcv_min_folds == GateThresholds().cpcv_min_folds
 
     def test_pinned_fields_propagate_as_floors(self, tmp_path: Path) -> None:
-        # Audit P0-1: the operator-pinned field set is plumbed through so
-        # the registry can refuse a per-alpha override that loosens it.
+        # The registry needs pinned fields to reject looser alpha overrides.
         _write_alpha(tmp_path, "f5.alpha.yaml", _SIGNAL_ALPHA_YAML)
         config = _make_config(tmp_path, gate_thresholds_overrides={"dsr_min": 1.5})
         orchestrator, _ = build_platform(config)
@@ -202,10 +196,7 @@ class TestBuildPlatformGateThresholdsWiring:
     def test_per_alpha_loosening_below_platform_floor_refused_at_boot(
         self, tmp_path: Path
     ) -> None:
-        # Audit P0-1, end-to-end: an alpha whose promotion.gate_thresholds
-        # loosens below an operator-pinned floor is refused at
-        # registration; with it as the only alpha, the platform refuses to
-        # boot an empty system (fail-safe — the alpha never reaches capital).
+        # Reject an alpha that loosens an operator-pinned threshold floor.
         loosening_yaml = _SIGNAL_ALPHA_YAML + textwrap.dedent(
             """\
             promotion:

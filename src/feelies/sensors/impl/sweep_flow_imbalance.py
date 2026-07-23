@@ -1,32 +1,19 @@
-"""Sweep-flow imbalance sensor (KYLE_INFO ISO-urgency fingerprint).
+"""Measure signed intermarket-sweep aggression over event time.
 
-Incremental L1 proxy for net signed *intermarket sweep* aggression over a
-trailing event-time window. Only exchange-stamped ISO prints that survive
-the Class-A ∩ id-14 print-eligibility filter enter state
-(``docs/research/sig_sweep_kyle_drift_h900_v1_formal_spec.md`` §1.1.1;
-03b §3.3 / §4.3 / §4.4).
-
-Filter set (versioned constructor / ``SensorSpec.params`` — load-bearing):
+Only exchange-stamped ISO prints passing this filter enter state:
 
 - eligible iff sale condition **14 (ISO)** AND Class-A core after stripping
   the 41 (TTE) overlay — core ⊆ ``{14, 37}`` and contains 14;
 - ``drop_correction_records = {10, 11, 12}`` (follow-on bookkeeping);
-- **no** conditioning on retroactive ``correction ∈ {1, 7, 8}`` (Inv-6);
-- unknown condition ids never silently include (fail Class-A ∩ id-14).
+- retroactive corrections do not affect causal eligibility;
+- unknown condition IDs are excluded.
 
 Value::
 
     SFI = Σ(side · size) / (Σ size + ε)   ∈ [-1, 1]
 
-Tick-rule aggressor (platform convention): price > prior → +1; < prior → −1;
-equal → inherit; first eligible default +1. Positive ⇒ net aggressive buy
-sweeps ⇒ continuation LONG.
-
-Warm: ``len(window) ≥ min_eligible_prints``. Gap > ``max_gap_seconds``
-between successive *eligible* prints flushes the window (halt → cold).
-
-Determinism: integer volume accounting + one float division; event-time
-deque eviction; no RNG, no wall-clock reads (DTZ-clean).
+Tick rule assigns direction; positive values indicate buy aggression. Warmth
+requires enough eligible prints, and long eligible-print gaps flush the window.
 """
 
 from __future__ import annotations
@@ -35,19 +22,18 @@ from collections import deque
 from collections.abc import Iterable, Sequence
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 _EPS = 1e-12
 
-# 03b §3.3 Class-A core after stripping overlay 41; id-14 required.
+# Class-A core after stripping overlay 41; ISO ID 14 is required.
 DEFAULT_CLASS_A_CORE_IDS: frozenset[int] = frozenset({14, 37})
 DEFAULT_OVERLAY_IDS: frozenset[int] = frozenset({41})
 DEFAULT_ISO_ID: int = 14
 DEFAULT_DROP_CORRECTION_RECORDS: frozenset[int] = frozenset({10, 11, 12})
 
-# Offline §6(a) INTERPRETED TABLE — trade sale-condition ids cited in 03b
-# §3.2/§3.3 (Class A ∪ Class B ∪ overlay). Session pre-registration uses
-# this set; the tick path never silent-includes unknowns (eligibility fails).
+# Known sale-condition IDs used for session pre-registration.
 INTERPRETED_TRADE_CONDITION_IDS: frozenset[int] = frozenset(
     {
         2,
@@ -71,9 +57,7 @@ INTERPRETED_TRADE_CONDITION_IDS: frozenset[int] = frozenset(
         53,
     }
 )
-INTERPRETED_CORRECTION_VALUES: frozenset[int | None] = frozenset(
-    {None, 0, 1, 7, 8, 10, 11, 12}
-)
+INTERPRETED_CORRECTION_VALUES: frozenset[int | None] = frozenset({None, 0, 1, 7, 8, 10, 11, 12})
 
 
 def _freeze_ints(values: Iterable[int] | None, default: frozenset[int]) -> frozenset[int]:
@@ -136,9 +120,7 @@ class SweepFlowImbalanceSensor:
         if window_seconds <= 0:
             raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_eligible_prints < 0:
-            raise ValueError(
-                f"min_eligible_prints must be >= 0, got {min_eligible_prints}"
-            )
+            raise ValueError(f"min_eligible_prints must be >= 0, got {min_eligible_prints}")
         if max_gap_seconds <= 0:
             raise ValueError(f"max_gap_seconds must be > 0, got {max_gap_seconds}")
         if epsilon <= 0.0:
@@ -195,10 +177,7 @@ class SweepFlowImbalanceSensor:
 
     def is_eligible(self, event: Trade) -> bool:
         """Class-A ∩ id-14 after correction drop; unknown ids never include."""
-        if (
-            event.correction is not None
-            and event.correction in self._drop_correction_records
-        ):
+        if event.correction is not None and event.correction in self._drop_correction_records:
             return False
         return is_class_a_intersect_id14(
             event.conditions,
@@ -222,7 +201,7 @@ class SweepFlowImbalanceSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         del params  # filter/warm knobs are constructor-versioned
         if not isinstance(event, Trade):
             return None
@@ -233,10 +212,7 @@ class SweepFlowImbalanceSensor:
             return None
 
         # 1. Correction drop (causal follow-ons only — never {1,7,8}).
-        if (
-            event.correction is not None
-            and event.correction in self._drop_correction_records
-        ):
+        if event.correction is not None and event.correction in self._drop_correction_records:
             return None
 
         # 2. Class-A ∩ id-14 (unknown ids fail the intersection — no silent include).
@@ -292,16 +268,7 @@ class SweepFlowImbalanceSensor:
 
         warm = len(window) >= self._min_eligible_prints
 
-        return SensorReading(
-            timestamp_ns=ts,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)
 
 
 def recompute_sfi_from_window(

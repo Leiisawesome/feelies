@@ -1,36 +1,12 @@
-"""Quote-flicker-rate sensor (LIQUIDITY_STRESS mechanism fingerprint).
+"""Measure best-price reversals in a trailing event-time window.
 
-Measures how often the best bid/ask *oscillates* — a best price moves in
-one direction and then reverses — over a trailing event-time window.
-Flickering / rapidly-reverting quotes are an L1 signature of unstable
-liquidity provision and quote-stuffing / spoofing-like behaviour, and a
-component of the ``LIQUIDITY_STRESS`` family (exit-only; half-life
-30–600 s) alongside ``spread_z_30d`` and ``quote_hazard_rate``.
-
-Estimator (deterministic, event-time):
-
-For each side independently, track the sign of the last *non-zero* best-
-price change.  A **reversal (flicker)** occurs on a quote whose best-price
-change is non-zero and has the **opposite sign** to that side's previous
-non-zero change (up-then-down or down-then-up).  A quote update is a
-"flicker event" if either side reverses on it.  The sensor reports the
-trailing-window fraction:
+A quote flickers when either side's non-zero price move reverses its previous
+direction. The emitted value is:
 
     quote_flicker_rate = (# flicker-event quotes) / (# quotes)   ∈ [0, 1]
 
-(Like ``trade_through_rate`` this is a *fraction*, not a per-second rate,
-so it is bounded and comparable across symbols and quote frequencies
-despite the historical ``_rate`` suffix.)  High values mean the top of
-book is whipsawing — depth is being posted and pulled — which precedes /
-accompanies liquidity withdrawal.
-
-Determinism: integer/equality comparisons + one float division; deque
-event-time eviction; no RNG, no clock reads.
-
-Warm-up: ``warm = True`` once at least ``min_quotes`` quotes sit in the
-trailing window.  Optional ``min_window_span_seconds`` (sensor_audit_2026-07-02
-P1) additionally requires those quotes to span a genuine window of time, not
-just a burst; ``None`` (default) preserves the legacy count-only behaviour.
+This is a bounded fraction, not a per-second rate. Warmth requires enough
+quotes and, when configured, enough elapsed history.
 """
 
 from __future__ import annotations
@@ -38,7 +14,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Mapping
 
-from feelies.core.events import NBBOQuote, SensorReading, Trade
+from feelies.core.events import NBBOQuote, Trade
+from feelies.sensors.protocol import SensorEmission
 
 
 def _sign(x: float) -> int:
@@ -60,9 +37,9 @@ class QuoteFlickerRateSensor:
       before ``warm=True``.
     - ``min_window_span_seconds`` (int | None, default None): when set,
       ``warm`` additionally requires the retained quotes to span at least
-      this many seconds (sensor_audit_2026-07-02 P1), so a quote burst
+      this many seconds, so a quote burst
       cannot satisfy ``min_quotes`` before a genuine window of history has
-      accumulated.  ``None`` preserves the legacy count-only behaviour.
+      accumulated. ``None`` disables the duration floor.
     """
 
     sensor_id: str = "quote_flicker_rate"
@@ -110,16 +87,16 @@ class QuoteFlickerRateSensor:
         event: NBBOQuote | Trade,
         state: dict[str, Any],
         params: Mapping[str, Any],
-    ) -> SensorReading | None:
+    ) -> SensorEmission | None:
         if not isinstance(event, NBBOQuote):
             return None
 
         bid = float(event.bid)
         ask = float(event.ask)
-        # A1: a degenerate (halt / pre-open) quote carries no flicker
+        # A degenerate halt or pre-open quote carries no flicker
         # information and would corrupt the direction references; drop it
         # without disturbing state so the next valid quote diffs cleanly.
-        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:
             return None
 
         last_bid = state["last_bid"]
@@ -159,13 +136,4 @@ class QuoteFlickerRateSensor:
         if warm and self._min_span_ns is not None:
             warm = (events[-1][0] - events[0][0]) >= self._min_span_ns
 
-        return SensorReading(
-            timestamp_ns=ts,
-            correlation_id="placeholder",
-            sequence=-1,
-            symbol=event.symbol,
-            sensor_id=self.sensor_id,
-            sensor_version=self.sensor_version,
-            value=value,
-            warm=warm,
-        )
+        return SensorEmission(value=value, warm=warm)

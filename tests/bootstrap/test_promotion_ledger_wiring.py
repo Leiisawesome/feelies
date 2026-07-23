@@ -1,25 +1,7 @@
-"""Bootstrap-time wiring tests for the promotion evidence ledger
-(Workstream F-1).
+"""Bootstrap wiring tests for the promotion evidence ledger.
 
-Covers:
-
-1. ``test_no_promotion_ledger_path_disables_ledger`` — the default
-   ``PlatformConfig`` (no ``promotion_ledger_path``) builds a registry
-   with ``promotion_ledger is None``, preserving Phase-1/2/3/4
-   semantics bit-identically.
-
-2. ``test_promotion_ledger_path_constructs_and_wires_ledger`` — when
-   ``promotion_ledger_path`` is set, ``build_platform`` instantiates a
-   :class:`PromotionLedger` at that path, the file is created on disk,
-   and the registry exposes it via ``promotion_ledger``.
-
-3. ``test_backtest_mode_does_not_emit_transitions`` —
-   ``OperatingMode.BACKTEST`` sets ``registry_clock=None`` so no
-   :class:`AlphaLifecycle` is constructed and the ledger remains empty
-   even after a successful build.  This locks the
-   "lifecycle-disabled-in-backtest" invariant against future changes
-   that might silently start writing during replay (which would break
-   determinism).
+The ledger is optional, configured paths are exposed by the registry, and
+backtests never write lifecycle transitions.
 """
 
 from __future__ import annotations
@@ -104,11 +86,7 @@ def _make_config(
         account_equity=100_000.0,
         sensor_specs=_TEST_SENSOR_SPECS,
         promotion_ledger_path=promotion_ledger_path,
-        # Workstream E flipped the platform default to ``true``.  This
-        # F-1 wiring test is orthogonal to G16 — its concern is the
-        # ``promotion_ledger_path`` plumbing through bootstrap.
-        # Pinning the opt-out keeps the fixture minimal and avoids
-        # dragging the mechanism taxonomy into a ledger-wiring test.
+        # Keep ledger wiring independent of mechanism validation.
         enforce_trend_mechanism=False,
     )
 
@@ -142,10 +120,7 @@ class TestPromotionLedgerWiring:
         assert ledger_path.parent.is_dir()
 
     def test_backtest_mode_does_not_emit_transitions(self, tmp_path: Path) -> None:
-        # In BACKTEST mode the registry has ``clock=None``, so no
-        # AlphaLifecycle SMs are constructed and no ledger entries can
-        # be appended.  This guards two-run determinism (audit
-        # A-DET-02): replay must not cause ledger writes.
+        # BACKTEST has no lifecycle clock, so replay must not write the ledger.
         _write_alpha(tmp_path, "f1.alpha.yaml", _SIGNAL_ALPHA_YAML)
         ledger_path = tmp_path / "promotion.jsonl"
         config = _make_config(tmp_path, promotion_ledger_path=ledger_path)

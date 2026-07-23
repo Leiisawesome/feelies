@@ -1,70 +1,11 @@
-"""``HazardExitController`` — Phase-4.1 hazard-rate-driven exit emitter.
+"""Hazard- and age-driven exit emitter.
 
-Subscribes to two events on the bus:
+``RegimeHazardSpike`` triggers threshold exits; ``Trade`` timestamps drive
+optional maximum-age exits. Event time and content-derived order IDs keep
+replay deterministic. Each symbol emits at most one exit per open episode.
 
-* :class:`RegimeHazardSpike` (Phase 3.1) — publishes a per-symbol
-  hazard score when the dominant regime is about to flip.  When the
-  score exceeds an alpha-declared ``hazard_score_threshold`` and the
-  position has been open at least ``min_age_seconds``, an
-  :class:`OrderRequest` with ``reason='HAZARD_SPIKE'`` is emitted to
-  exit the position.
-* :class:`Trade` (M9 reconciliation) — used as the deterministic
-  clock for the optional ``hard_exit_age_seconds`` guard: if any
-  position has been open longer than the configured cap at the time
-  of any trade print on its symbol, an exit order is emitted with
-  ``reason='HARD_EXIT_AGE'``.
-
-Determinism (Inv-5)
--------------------
-
-Both triggers fire from event timestamps — the controller never reads
-wall-clock time.  Order ID derivation is SHA-256 of
-``(correlation_id, trigger_ts_ns, symbol, reason)`` (the triggering
-event's timestamp, not a sequence number — see ``_maybe_emit_exit``) so
-two replays produce identical IDs.
-
-Idempotency / suppression
--------------------------
-
-Once a hazard exit has been emitted for a symbol, subsequent spikes on
-the *same* ``(symbol, departing_state)`` are suppressed until the
-position returns to flat (Inv-11 fail-safe — never re-enter a hazard
-exit chain in a single regime departure).  Hard-age exits are
-suppressed identically — at most one per symbol per open episode.
-
-Per-alpha configuration
------------------------
-
-Each PORTFOLIO alpha that opts in declares::
-
-    hazard_exit:
-      enabled: true
-      hazard_score_threshold: 0.85       # exit when score > threshold
-      min_age_seconds: 30                # ignore until position is this old
-      hard_exit_age_seconds: 1800        # forcibly exit at this age (optional)
-
-The controller fans the configuration out per ``strategy_id`` so a
-universe with mixed-policy alphas behaves correctly.
-
-Position scope (audit P1-7)
----------------------------
-
-The exit acts on the **symbol-net** position read from a symbol-keyed
-:class:`~feelies.portfolio.position_store.PositionStore`
-(``position_store.get(symbol)``), **not** on a per-strategy slice.
-When two alphas hold the same symbol, a hazard spike attributed to one
-strategy's policy flattens the *shared* symbol position.  This is
-acceptable and fail-safe (the action is exit-only — it can only reduce
-exposure, never amplify it, Inv-11) but it means hazard exits are not
-attributable to a single strategy's book.  Per-strategy scoping would
-require routing a
-:class:`~feelies.portfolio.strategy_position_store.StrategyPositionStore`
-and a ``get(strategy_id, symbol)`` lookup through the controller and the
-orchestrator's fill-application path; that refactor is deferred (it
-touches reconciliation and is out of scope for the hazard fix).  Until
-then, treat the universe filter on each :class:`HazardPolicy` as the
-mechanism for keeping a strategy's hazard exits off symbols it does not
-trade.
+Policies are per strategy, but exits flatten the shared symbol-net position,
+not a strategy slice. Universe filters keep policies off unrelated symbols.
 """
 
 from __future__ import annotations
@@ -91,15 +32,7 @@ _DEFAULT_HAZARD_SCORE_THRESHOLD: float = 0.85
 _DEFAULT_MIN_AGE_SECONDS: int = 30
 
 # ── Hazard-exit OrderRequest signature (single source of truth) ──────────
-# Every hazard exit this controller emits carries ``source_layer`` ==
-# ``HAZARD_EXIT_SOURCE_LAYER`` and a ``reason`` drawn from
-# ``HAZARD_EXIT_REASONS``.  The orchestrator's bus bridge
-# (``Orchestrator._on_bus_hazard_order``) filters on *exactly* this signature
-# to decide which ``OrderRequest`` events to route to the backend, so the
-# producer (here, the sole writer) and the consumer (kernel) must agree
-# byte-for-byte.  Centralising the strings on the writer keeps them in lock-
-# step — adding a new hazard reason here surfaces immediately in the bridge's
-# membership test rather than silently failing to route (audit kernel-P1).
+# Export the controller signature used by the orchestrator's hazard bridge.
 HAZARD_EXIT_SOURCE_LAYER: str = "RISK"
 HAZARD_EXIT_REASON_SPIKE: str = "HAZARD_SPIKE"
 HAZARD_EXIT_REASON_HARD_AGE: str = "HARD_EXIT_AGE"
@@ -116,7 +49,7 @@ class HazardPolicy:
     *departures* trigger a hazard exit.  Each entry is a canonical
     ``"<departing> -> <incoming>"`` transition or a bare ``"<departing>"``
     departing-state name.  Empty ⇒ fire on **all** qualifying departures
-    (the historical behaviour).
+    (the default behavior).
     """
 
     strategy_id: str
@@ -148,7 +81,7 @@ def _spike_matches_regimes(
 
 
 class HazardExitController:
-    """Bus-attached hazard-exit emitter (Phase 4.1).
+    """Bus-attached hazard-exit emitter.
 
     Construction is **opt-in**: bootstrap only instantiates the
     controller when at least one PORTFOLIO alpha declares
@@ -163,6 +96,7 @@ class HazardExitController:
         "_policies",
         "_attached",
         "_emitted_for_episode",
+        "_pending_exit_symbols",
     )
 
     def __init__(
@@ -182,6 +116,9 @@ class HazardExitController:
         # ``(strategy_id, symbol, reason)``.  Cleared when the position
         # returns to flat (see ``_clear_episode_if_flat``).
         self._emitted_for_episode: set[tuple[str, str, str]] = set()
+        # Suppress duplicate asynchronous closes against one stale position.
+        # Episode or quantity changes release the guard for a new residual close.
+        self._pending_exit_symbols: dict[str, tuple[int | None, int]] = {}
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -279,6 +216,13 @@ class HazardExitController:
             return
 
         opened = self._position_store.opened_at_ns(symbol)
+
+        # Release the duplicate-close guard when the episode or quantity changes.
+        if symbol in self._pending_exit_symbols:
+            if self._pending_exit_symbols[symbol] == (opened, position.quantity):
+                return
+            del self._pending_exit_symbols[symbol]
+
         # Min-age safeguard only applies to hazard-spike triggers; the
         # hard-exit-age trigger has already reasoned about age.
         if reason == HAZARD_EXIT_REASON_SPIKE and opened is not None:
@@ -305,6 +249,7 @@ class HazardExitController:
             reason=reason,
         )
         self._emitted_for_episode.add(key)
+        self._pending_exit_symbols[symbol] = (opened, position.quantity)
         self._bus.publish(order)
         _logger.info(
             "HazardExitController emitted %s exit for %s (strategy=%s, qty=%d, side=%s)",
@@ -329,6 +274,7 @@ class HazardExitController:
         position = self._position_store.get(symbol)
         if position.quantity == 0:
             self._emitted_for_episode.discard((strategy_id, symbol, reason))
+            self._pending_exit_symbols.pop(symbol, None)
 
 
 __all__ = [

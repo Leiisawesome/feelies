@@ -113,7 +113,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `alpha/cost_arithmetic.py`, `arbitration.py`, `aggregation.py` | signal_alpha |
 | `alpha/lifecycle.py`, `promotion_ledger.py`, `registry.py`, `loader.py`, `validation.py`, `discovery.py`, `layer_validator.py`, `module.py`, `signal_layer_module.py` | alpha_lifecycle |
 | `alpha/promotion_evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
-| `alpha/portfolio_layer_module.py`, `intent_set.py` | composition |
+| `alpha/portfolio_layer_module.py` | composition |
 | `alpha/fill_attribution.py` | forensics |
 | `alpha/risk_wrapper.py` | risk_engine |
 | `composition/`, `portfolio/cross_sectional_tracker.py` | composition |
@@ -132,7 +132,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) |
-| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`, `run_audit_pack.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) · research_validation (`scripts/research/inventory_fade_census.py`, `scripts/research/horizon_feasibility_map.py`, `scripts/research/h8_contamination_read.py`, `scripts/research/dislocation_lambda_census.py`, `scripts/research/dislocation_lambda_validation_extract.py`, `scripts/research/dislocation_lambda_validation_stats.py`, `scripts/research/sweep_kyle_drift_census.py`, `scripts/research/sweep_kyle_drift_validation_extract.py`, `scripts/research/sweep_kyle_drift_validation_stats.py`, `scripts/research/author_algo_clock_calendars.py`, `scripts/research/halfhour_clock_drift_census.py`, `scripts/research/derive_hour_only_algo_clock_calendars.py`, `scripts/research/hour_checkpoint_drift_census.py`, `scripts/research/tranche2_frontier_characterization.py`) |
+| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`, `run_audit_pack.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) · research_validation (`scripts/research/inventory_fade_census.py`, `scripts/research/horizon_feasibility_map.py`, `scripts/research/h8_contamination_read.py`, `scripts/research/sweep_kyle_drift_census.py`, `scripts/research/sweep_kyle_drift_validation_extract.py`, `scripts/research/sweep_kyle_drift_validation_stats.py`, `scripts/research/author_algo_clock_calendars.py`, `scripts/research/halfhour_clock_drift_census.py`, `scripts/research/derive_hour_only_algo_clock_calendars.py`, `scripts/research/hour_checkpoint_drift_census.py`, `scripts/research/tranche2_frontier_characterization.py`) |
 
 Cross-cutting concerns (not a single package): **determinism** spans `tests/determinism/`
 + every event producer (audit 14); **performance** spans the whole hot path (audit 16).

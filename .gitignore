@@ -26,4 +26,3 @@ docs/audits/_runs/
 
 # Local Windows Cursor/VS Code binary bundle
 code-win/
-.env.example

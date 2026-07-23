@@ -6,8 +6,7 @@ Boundary math is **pure integer** (design doc §7.4 / §12.1):
 
 The scheduler emits one tick the first time a new ``boundary_index`` is
 crossed for each ``(horizon_seconds, scope, symbol)`` triplet — never
-per-event.  Emission ordering inside a single ``on_event`` call is
-strict (plan §3.2):
+    per-event. Emission ordering inside one ``on_event`` call is strict:
 
     sorted by horizon ascending,
       then scope: SYMBOL before UNIVERSE,
@@ -53,12 +52,10 @@ class HorizonScheduler:
     Construction parameters:
 
     - ``horizons``: the registered horizons in seconds (e.g.
-      ``frozenset({30, 120, 300, 900, 1800})``).  Empty horizons set
-      makes ``on_event`` a no-op (zero overhead — used by the
-      orchestrator to short-circuit the legacy path).
+      ``frozenset({30, 120, 300, 900, 1800})``). An empty set makes
+      ``on_event`` a no-op.
     - ``session_id``: passed through to every ``HorizonTick``; built
-      by the bootstrap layer as ``f"{market_id}_{session_kind}_{date}"``
-      per plan §3.2 / M5.
+      as ``f"{market_id}_{session_kind}_{date}"``.
     - ``symbols``: the per-symbol universe (used for ``scope=SYMBOL``
       ticks).  ``UNIVERSE`` ticks ignore this set and emit a single
       tick per ``(horizon, boundary_index)``.
@@ -101,7 +98,7 @@ class HorizonScheduler:
         self._session_id = session_id
         self._symbols_sorted: tuple[str, ...] = tuple(sorted(symbols))
 
-        # S17: warn early when the symbol universe is empty but horizons are
+        # Warn early when the symbol universe is empty but horizons are
         # configured; SYMBOL-scope ticks will never be emitted, which almost
         # certainly means the platform config is wrong.
         if not symbols and horizons:
@@ -117,16 +114,8 @@ class HorizonScheduler:
         # the first event.  Once locked, ``bind_session_open()`` raises.
         self._session_open_locked = session_open_ns is not None
         self._sequence_generator = sequence_generator
-        # Audit P1-8: when no explicit ``session_open_ns`` is configured and
-        # this hook is provided, the lazy first-event bind passes the event
-        # timestamp through it to snap the anchor to (e.g.) the RTH open
-        # instead of the raw first-event time.  ``None`` preserves the
-        # legacy first-event-timestamp behaviour.
-        #
-        # Note: the anchor may be later than the first observed event; in that
-        # case, events with ``timestamp_ns < session_open_ns`` are ignored (no
-        # negative boundary indices).  Must be a pure function of the timestamp
-        # to keep replay bit-identical (Inv-5).
+        # A pure anchor function may snap lazy binding to the session open.
+        # Events before the resolved anchor are ignored.
         self._auto_bind_anchor = session_open_anchor_fn
 
         # Per-(horizon, symbol) and per-(horizon,) for UNIVERSE scope:
@@ -135,10 +124,7 @@ class HorizonScheduler:
         # subsequent events in the same window are no-ops.
         self._last_boundary_symbol: dict[tuple[int, str], int] = {}
         self._last_boundary_universe: dict[int, int] = {}
-        # Plan §4.5: ``feelies.horizon.tick.emitted`` (counter, tags
-        # ``horizon_seconds`` + ``scope``) is emitted once per
-        # ``HorizonTick``.  Dedicated sequence generator so MetricEvent
-        # sequences never perturb the locked HorizonTick stream.
+        # Count each emitted tick without perturbing the tick sequence.
         self._metric_collector = metric_collector
         self._metrics_seq: SequenceGenerator | None = (
             SequenceGenerator() if metric_collector is not None else None
@@ -173,8 +159,8 @@ class HorizonScheduler:
     def on_event(self, event: Event) -> tuple[HorizonTick, ...]:
         """Inspect ``event``; return any ticks crossed at its timestamp.
 
-        The returned tuple is in canonical emission order
-        (plan §3.2).  The orchestrator publishes the ticks on the bus
+        The returned tuple is in canonical emission order. The orchestrator
+        publishes the ticks on the bus
         in the returned order, so consumers see the same ordering on
         every replay.
         """
@@ -242,15 +228,8 @@ class HorizonScheduler:
             last = self._last_boundary_symbol.get(key)
             if last is not None and current_boundary <= last:
                 continue
-            # Audit P1-8 late start: when the first event lands past
-            # boundary 0 (e.g. RTH-anchored auto-bind with the first
-            # event arriving well after 09:30 ET), emit only the tick
-            # for the boundary the event actually crossed.  Backfilling
-            # 0..current_boundary at the same ``ts_ns`` would flood the
-            # aggregator and signal engine with duplicate snapshots and
-            # gate evaluations on a single quote — the missed
-            # boundaries had no events, so there is no state to publish
-            # for them.
+            # On a late start, emit only the crossed boundary; empty prior buckets
+            # have no state worth backfilling.
             self._last_boundary_symbol[key] = current_boundary
             yield self._make_tick(
                 horizon=horizon,
@@ -270,11 +249,7 @@ class HorizonScheduler:
         last = self._last_boundary_universe.get(horizon)
         if last is not None and current_boundary <= last:
             return
-        # Audit P1-8 late start (UNIVERSE scope): emit only the tick
-        # for the boundary the first event crossed, for the same
-        # reason as ``_emit_for_symbols`` — backfilling missed
-        # boundaries at the same ``ts_ns`` would multiply downstream
-        # work without representing real distinct moments in time.
+        # Universe late-start behavior also skips empty prior boundaries.
         self._last_boundary_universe[horizon] = current_boundary
         yield self._make_tick(
             horizon=horizon,
@@ -294,13 +269,7 @@ class HorizonScheduler:
         symbol: str | None,
     ) -> HorizonTick:
         seq = self._sequence_generator.next()
-        # Plan §3.2 / M4 — deterministic correlation_id formula:
-        #   make_correlation_id(prefix=f"htick-{horizon}-{scope}",
-        #                       ts_ns=boundary_ts, seq=boundary_index)
-        # We reuse ``make_correlation_id`` (symbol/ts/seq triple) by
-        # passing the synthesized prefix as the "symbol" slot and the
-        # ``boundary_index`` as the "sequence" slot — this keeps the
-        # canonical ID format ``{prefix}:{ts}:{idx}`` per the plan.
+        # Encode horizon, scope, boundary time, and index deterministically.
         boundary_ts = (self._session_open_ns or 0) + boundary_index * horizon * _NS_PER_SECOND
         prefix = f"htick-{horizon}-{scope}"
         if symbol is not None:
@@ -317,20 +286,23 @@ class HorizonScheduler:
             source_layer="SCHEDULER",
             horizon_seconds=horizon,
             boundary_index=boundary_index,
-            # ENG-1: the exact nominal boundary (already computed for the
-            # correlation id) — the regular-grid anchor distinct from the
-            # trigger time ``ts_ns``.
+            # Both nominal-boundary fields use the exact regular-grid anchor,
+            # not the trigger time ``ts_ns``.
             boundary_ts_ns=boundary_ts,
             session_id=self._session_id,
             scope=scope,
             boundary_timestamp_ns=boundary_ts,
             symbol=symbol,
         )
+        assert tick.boundary_ts_ns == tick.boundary_timestamp_ns, (
+            "HorizonTick.boundary_ts_ns and boundary_timestamp_ns must agree — "
+            f"got {tick.boundary_ts_ns} vs {tick.boundary_timestamp_ns}"
+        )
         if self._metric_collector is not None:
             self._emit_tick_metric(tick=tick)
         return tick
 
-    # ── Monitoring (plan §4.5) ───────────────────────────────────────
+    # Monitoring.
 
     def _emit_tick_metric(self, *, tick: HorizonTick) -> None:
         """Emit ``feelies.horizon.tick.emitted`` for one tick.

@@ -1,4 +1,4 @@
-"""MOC session clock bounds for backtest closing-auction modeling (BT-8).
+"""MOC session bounds for backtest closing-auction modeling.
 
 Resolves IB's MOC submission cutoff (15:50 ET regular, 12:50 ET on
 NYSE early-close half-days) and the official close print time (16:00 /

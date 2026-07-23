@@ -1,39 +1,9 @@
-"""Pattern Day Trader (PDT) tracking + $25k minimum-equity maintenance (BT-4).
+"""Track pattern-day-trader round trips and the minimum-equity entry gate.
 
-The locked account type for this platform is ``margin_25k`` — a margin
-account that *opens* above the $25,000 threshold and is therefore
-PDT-*exempt*: the FINRA 3-round-trip / 5-business-day hard cap is **not**
-modeled, and there is no cash-account T+2 settlement branch.
-
-Two pieces live here:
-
-1. A rolling 5-business-day **round-trip counter** keyed by ``account_id``.
-   A round-trip (a "day trade") is recorded whenever a fill closes — in
-   whole or in part — a position that was *opened the same trading day*.
-   Four or more round-trips inside the rolling window sets the PDT
-   **flag**.  The flag is forensic: it never suppresses a fill on its own.
-
-2. The one real backtest constraint at this tier: a PDT-flagged account
-   whose live equity has dropped **below $25,000** is restricted from
-   opening new day trades until equity is restored.  The risk engine
-   consults :meth:`PDTConstraint.should_suppress_entry` on every ENTRY
-   order; exits are always permitted (Inv-11, fail-safe).
-
-Determinism (Inv-5)
--------------------
-Every method is a pure function of the fills observed and the event-time
-nanosecond timestamps carried on those fills.  The trading day is derived
-from the timestamp via ``ZoneInfo("America/New_York")`` (the same ET
-clock the event calendar uses); no wall clock and no RNG are consulted,
-so replay is bit-identical.
-
-Extensibility
--------------
-``AccountType`` carries ``MARGIN_UNDER_25K`` and ``CASH`` members so the
-config grammar is forward-compatible, but only the ``MARGIN_25K`` path is
-implemented now (:meth:`should_suppress_entry` is a no-op for the others;
-``bootstrap`` refuses to construct the constraint for an unimplemented
-account type).
+A same-day position reduction records a round trip. Four round trips within
+five business days set the PDT flag. Flagged ``margin_25k`` accounts below the
+configured equity floor cannot open positions; exits remain allowed. Trading
+dates come only from event timestamps in New York time.
 """
 
 from __future__ import annotations
@@ -47,18 +17,12 @@ from zoneinfo import ZoneInfo
 _NY_TZ = ZoneInfo("America/New_York")
 _NS_PER_SECOND = 1_000_000_000
 
-# Round-trip dates older than this many calendar days from the most
-# recent observation can never fall inside a 5-business-day window, so
-# they are pruned to bound the per-account list across a long backtest.
+# Older dates cannot enter a five-business-day window.
 _PRUNE_AGE_CALENDAR_DAYS = 14
 
 
 class AccountType(str, Enum):
-    """Locked-extensible account-type taxonomy (BT-4).
-
-    Only :attr:`MARGIN_25K` is implemented; the other members exist so
-    the ``platform.account_type`` grammar accepts them without rework.
-    """
+    """Account types accepted by platform configuration."""
 
     MARGIN_25K = "margin_25k"
     MARGIN_UNDER_25K = "margin_under_25k"
@@ -78,12 +42,7 @@ class PDTConfig:
 
 
 class PDTConstraint:
-    """Rolling round-trip counter + minimum-equity entry gate.
-
-    State is per ``account_id``; the platform feeds a single configured
-    account id, but the dict-keyed shape honours the multi-account
-    contract in the remediation plan.
-    """
+    """Rolling round-trip counter and minimum-equity entry gate."""
 
     def __init__(self, config: PDTConfig) -> None:
         self._config = config

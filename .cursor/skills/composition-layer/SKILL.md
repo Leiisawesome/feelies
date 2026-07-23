@@ -31,8 +31,8 @@ Inherits Inv-5 (deterministic replay), Inv-6 (causality), Inv-11
 2. **Mechanism-cap enforcement** — every `SizedPositionIntent`
    carries a typed `mechanism_breakdown: dict[TrendMechanism, float]`.
    Per-family `max_share_of_gross` declared on the alpha YAML is
-   validated by G16 at load time (see the ranker section below for
-   the runtime-enforcement gap).
+   validated by G16 at load time and enforced at emit time by the
+   ranker (see the ranker section below).
 3. **Replay-parity over intents** — replay determinism is verified by
    the L3 sized-intent stream parity hashes
    (`tests/determinism/test_sized_intent_with_decay_replay.py`
@@ -170,14 +170,25 @@ from `Signal.strength × sign(direction) × edge_estimate_bps`, then:
    Platform budget: ≤ 5 % wall-clock regression.
 2. **Standardisation** — robust z-score across the universe.
 3. **Mechanism-cap enforcement** — when any `TrendMechanism` family
-   would exceed the ranker's `mechanism_max_share_of_gross`, scales
-   that family's contribution proportionally before re-normalizing
-   the gross. **Known gap**: G16 PORTFOLIO rule 8 validates the
-   `trend_mechanism.consumes[*].max_share_of_gross` declaration at
-   LOAD time, but bootstrap builds the `CrossSectionalRanker` with
-   the default `mechanism_max_share_of_gross=1.0` (cap disabled) and
-   does not pass the alpha-declared caps through — runtime
-   enforcement of alpha YAML caps is not wired today.
+   would exceed its declared `max_share_of_gross`, scales that
+   family's contribution proportionally before re-normalizing the
+   gross. The alpha's YAML `trend_mechanism.consumes[*].max_share_of_gross`
+   and global `max_share_of_gross` are threaded from the loader
+   (`parse_mechanism_caps`, `alpha/portfolio_layer_module.py`) through
+   bootstrap's `_DefaultPortfolioConstructor` into
+   `CompositionEngine.run_default_pipeline(mechanism_caps=...,
+   global_mechanism_cap=...)`, which applies them per-sleeve via
+   `cap_family_vectors` *before* combining and again as an emit-time
+   dollar-space backstop after the optimizer — this is genuinely
+   enforced at runtime, not merely validated at load. The scaling loop
+   iterates until every over-cap family's share is monotonically
+   reduced to its cap; as of the 2026-07-02 composition audit the
+   iteration budget is 200 (previously 5, which left a confirmed ~9%
+   relative cap overshoot for 3+ mechanism families simultaneously over
+   cap even under configurations G16 rule 8 allows at load time — see
+   `cross_sectional.py: _MAX_CAP_SCALE_ITERS`). A post-loop check logs a
+   warning if a cap is still breached beyond `1e-9` after the budget is
+   exhausted.
 
 Output: a public `RankResult` value object
 (`feelies.composition.cross_sectional.RankResult`, exported in
@@ -303,7 +314,7 @@ mechanism-share enforcement is disabled (the ranker gap above).
 | G11 | `factor_neutralization:` declared as a boolean (`true` opts into the platform factor model; `false` is an explicit opt-out) |
 | G12 | `cost_arithmetic:` declared (margin_ratio ≥ 1.5; reconciles ±0.05 absolute — `alpha/cost_arithmetic.py`) |
 | G14 | `depends_on_signals:` references registered SIGNAL alpha IDs |
-| G16 (PORTFOLIO rule 8) | Every consumed mechanism family declares `max_share_of_gross`; sum ≤ 1.0; family whitelist matches upstream `Signal.trend_mechanism` values |
+| G16 (PORTFOLIO rule 8) | Every consumed mechanism family declares `max_share_of_gross` in `[0, 1]`; the caps must **sum to at least 1.0** (`layer_validator.py: MechanismShareUnreachableError`, tolerance `1e-9`) so full-book deployment is structurally reachable — this is a floor, not a ceiling; family whitelist matches upstream `Signal.trend_mechanism` values |
 
 ---
 

@@ -112,6 +112,8 @@ line-length = 99
 # contract (Inv-9) are preserved.
 select = [
     "DTZ",  # flake8-datetimez (DTZ005/DTZ006/DTZ011/...)
+    "F401",  # unused-import
+    "F841",  # unused-variable
 ]
 
 [tool.ruff.lint.per-file-ignores]
