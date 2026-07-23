@@ -105,6 +105,17 @@ def _replay() -> tuple[str, int]:
 # Locked non-empty reference-alpha SIGNAL baseline.  Re-baseline only with an
 # intentional change to sig_benign_midcap_v1's evaluate()/regime_gate or the
 # engine's emission semantics, justified in the commit.
+#
+# Re-baselined 2026-07-02 (merge-integration): this baseline was originally
+# locked (by the commit that added this test) against sig_benign_midcap_v1
+# when it still declared the cosmetic ``micro_price`` dependency.  The
+# sensor_audit_2026-07-02 P1 fix removed ``micro_price`` from that alpha's
+# ``depends_on_sensors`` (evaluate() never read a micro_price-derived value —
+# see the alpha's own comment block), which correctly propagates to the
+# emitted ``Signal.consumed_features`` provenance and hence the hashed ``CF=``
+# field.  Only that field changed: the count is still 2 and every signal still
+# fires LONG at the same strength/edge/mechanism (verified), so this is the
+# intended provenance update, not a behavioural regression.
 EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH = (
     "be37d6a4d95b839780712a57ae5df1bc36137a59b0444e78f070e1a17dbd5f4c"
 )

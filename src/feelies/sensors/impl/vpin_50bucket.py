@@ -96,31 +96,74 @@ class VPIN50BucketSensor:
         state["last_price"] = price
         state["last_side"] = side
 
-        # Accumulate into the current bucket; spill into subsequent
-        # buckets so total volume is conserved with no rounding.
+        # Accumulate into the current bucket; spill into subsequent buckets so
+        # total volume is conserved with no rounding.
+        #
+        # F5 (sensor_review_2026-07-02): the previous ``while remaining > 0``
+        # loop was O(size / bucket_volume) — a single block/sweep print (e.g.
+        # 1e6 shares into a 5000-share bucket) cost ~200 iterations, breaching
+        # the per-sensor latency budget on that one event.  Because the
+        # tick-rule ``side`` is constant within a single ``update()``, every
+        # *fully-filled* spanned bucket is 100 % one-sided ⇒ imbalance exactly
+        # 1.0.  So we complete the current bucket, batch the run of whole
+        # 1.0-buckets in O(min(k, window)), and open the remainder — O(1) in
+        # the trade size.  On non-spanning trades (the fixture / normal market)
+        # the batch branch is never taken, so the emitted stream is byte-
+        # identical to the loop (locked by ``vpin_50bucket.jsonl``).
         remaining = size
         bucket_vol = self._bucket_volume
         buckets = state["buckets"]
-        while remaining > 0:
-            cur_total = state["buy_vol"] + state["sell_vol"]
-            room = bucket_vol - cur_total
-            take = remaining if remaining <= room else room
+        maxlen = buckets.maxlen
+
+        cur_total = state["buy_vol"] + state["sell_vol"]
+        room = bucket_vol - cur_total  # room >= 1 (buckets reset on completion)
+
+        if remaining < room:
+            # Common case: the whole trade fits in the current partial bucket.
             if side > 0:
-                state["buy_vol"] += take
+                state["buy_vol"] += remaining
             else:
-                state["sell_vol"] += take
-            remaining -= take
-            if state["buy_vol"] + state["sell_vol"] >= bucket_vol:
-                imbalance = abs(state["buy_vol"] - state["sell_vol"]) / float(bucket_vol)
-                # Maintain ``buckets_sum`` in sync with the bounded deque.
-                # When the deque is at maxlen the append silently drops the
-                # oldest element — subtract it from the running sum first.
-                if len(buckets) == buckets.maxlen:
-                    state["buckets_sum"] -= buckets[0]
-                buckets.append(imbalance)
-                state["buckets_sum"] += imbalance
-                state["buy_vol"] = 0
-                state["sell_vol"] = 0
+                state["sell_vol"] += remaining
+        else:
+            # 1) Complete the current bucket.
+            if side > 0:
+                state["buy_vol"] += room
+            else:
+                state["sell_vol"] += room
+            imbalance = abs(state["buy_vol"] - state["sell_vol"]) / float(bucket_vol)
+            if len(buckets) == maxlen:
+                state["buckets_sum"] -= buckets[0]
+            buckets.append(imbalance)
+            state["buckets_sum"] += imbalance
+            state["buy_vol"] = 0
+            state["sell_vol"] = 0
+            remaining -= room
+
+            # 2) Whole single-sided buckets (each imbalance == 1.0), batched.
+            k = remaining // bucket_vol
+            if k > 0:
+                if k >= maxlen:
+                    # The entire window is overwritten by 1.0 buckets; only the
+                    # last ``maxlen`` survive.  Set the running sum to the exact
+                    # value (``maxlen`` ones), which also resets any accumulated
+                    # float drift.
+                    buckets.clear()
+                    buckets.extend((1.0,) * maxlen)
+                    state["buckets_sum"] = float(maxlen)
+                else:
+                    overflow = len(buckets) + k - maxlen
+                    for _ in range(max(0, overflow)):
+                        state["buckets_sum"] -= buckets.popleft()
+                    buckets.extend((1.0,) * k)
+                    state["buckets_sum"] += float(k)
+                remaining -= k * bucket_vol
+
+            # 3) Remainder opens a fresh partial bucket.
+            if remaining > 0:
+                if side > 0:
+                    state["buy_vol"] += remaining
+                else:
+                    state["sell_vol"] += remaining
 
         if buckets:
             value = state["buckets_sum"] / float(len(buckets))

@@ -101,3 +101,56 @@ def test_warm_flag_respects_threshold() -> None:
     assert last is not None and last.warm is False
     last = s.update(_q(bid="100.00", ask="100.10", ts=5), state, {})
     assert last is not None and last.warm is True
+
+
+# ── F2 (sensor_review_2026-07-02): Welford drift guard ──────────────────
+
+
+def test_recompute_from_window_matches_two_pass() -> None:
+    """The drift-reset helper must produce the exact two-pass mean/M2."""
+    from collections import deque
+
+    vals = [0.10, 0.12, 0.11, 0.30, 0.09, 0.15]
+    state = {"spreads": deque(vals), "n": 0, "mean": 0.0, "M2": 0.0}
+    SpreadZScoreSensor._recompute_from_window(state)
+    n = len(vals)
+    mean = sum(vals) / n
+    assert state["n"] == n
+    assert state["mean"] == pytest.approx(mean, rel=1e-15)
+    assert state["M2"] == pytest.approx(sum((v - mean) ** 2 for v in vals), rel=1e-12)
+
+
+def test_recompute_from_empty_window_is_zeroed() -> None:
+    from collections import deque
+
+    state = {"spreads": deque(), "n": 5, "mean": 9.9, "M2": 3.3}
+    SpreadZScoreSensor._recompute_from_window(state)
+    assert state == {"spreads": state["spreads"], "n": 0, "mean": 0.0, "M2": 0.0}
+
+
+def test_incremental_variance_tracks_batch_over_long_sliding_run() -> None:
+    """Numerical-stability invariant: after a long sliding-window run, the
+    incremental Welford mean/M2 must still match a from-scratch two-pass
+    computation over the *current* window to tight tolerance — this is what
+    the F2 clamp+recompute guard protects against eroding on adversarial
+    (large-dynamic-range) inputs."""
+    import random
+
+    rng = random.Random(1234)
+    window = 50
+    s = SpreadZScoreSensor(window=window, warm_after=window, min_std=1e-12)
+    state = s.initial_state()
+    # Alternate tiny and large spreads to stress the accumulator.
+    for i in range(5000):
+        spread_cents = rng.choice((1, 1, 1, 500))  # mostly 0.01, occasional 5.00
+        bid = "100.00"
+        ask = f"{100.00 + spread_cents / 100.0:.2f}"
+        s.update(_q(bid=bid, ask=ask, ts=i), state, {})
+
+    live = list(state["spreads"])
+    n = len(live)
+    batch_mean = sum(live) / n
+    batch_m2 = sum((x - batch_mean) ** 2 for x in live)
+    assert state["mean"] == pytest.approx(batch_mean, rel=1e-9, abs=1e-12)
+    assert state["M2"] == pytest.approx(batch_m2, rel=1e-9, abs=1e-12)
+    assert state["M2"] >= 0.0  # never left in a corrupt negative state

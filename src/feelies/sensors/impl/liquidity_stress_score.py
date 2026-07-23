@@ -24,17 +24,43 @@ from feelies.core.events import NBBOQuote, Trade
 from feelies.sensors.protocol import SensorEmission
 
 
+def _recompute_from_window(state: dict[str, Any], prefix: str) -> None:
+    """Exact two-pass mean/M2 over the live window (F2 drift reset).
+
+    Mirrors ``spread_z_30d._recompute_from_window`` /
+    ``HorizonWindowedFeature._recompute_from_window``.  Only invoked when a
+    reverse-Welford removal drove M2 negative (a floating-point cancellation
+    artifact), so on well-conditioned streams it is never reached and locked
+    vectors are unaffected.
+    """
+    buf: deque[float] = state[prefix + "buf"]
+    n = len(buf)
+    if n == 0:
+        state[prefix + "n"] = 0
+        state[prefix + "mean"] = 0.0
+        state[prefix + "M2"] = 0.0
+        return
+    mean = sum(buf) / n
+    state[prefix + "mean"] = mean
+    state[prefix + "M2"] = sum((v - mean) ** 2 for v in buf)
+    state[prefix + "n"] = n
+
+
 def _welford_push(state: dict[str, Any], prefix: str, x: float, window: int) -> None:
     """Add ``x`` to a fixed-size Welford window, evicting the oldest sample."""
     buf: deque[float] = state[prefix + "buf"]
+    drift_dirty = False
     if len(buf) == window:
         x_old = buf[0]
         n_cur = state[prefix + "n"]  # == window >= 2
         mean_cur = state[prefix + "mean"]
         mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
         state[prefix + "M2"] -= (x_old - mean_cur) * (x_old - mean_without)
+        # F2 (sensor_review_2026-07-02): clamp *and* recompute (this helper
+        # previously only clamped), matching spread_z_30d / horizon_windowed.
         if state[prefix + "M2"] < 0.0:
             state[prefix + "M2"] = 0.0
+            drift_dirty = True
         state[prefix + "mean"] = mean_without
         state[prefix + "n"] -= 1
 
@@ -45,6 +71,9 @@ def _welford_push(state: dict[str, Any], prefix: str, x: float, window: int) -> 
     state[prefix + "M2"] += delta * delta2
     state[prefix + "n"] = n_new
     buf.append(x)  # evicts oldest at maxlen
+
+    if drift_dirty:
+        _recompute_from_window(state, prefix)
 
 
 def _zscore(state: dict[str, Any], prefix: str, x: float, min_std: float) -> float:

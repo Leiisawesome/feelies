@@ -35,7 +35,90 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # data-free coverage. Re-pin these values from the cached run with:
 #   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
 #       --symbol APP --date 2026-03-26
-_BASELINE_CONFIG_HASH = "be6047f70e25ec49b693fd085d1064bda3aaa410d75c5ec239ba389a250fde15"
+#
+# CAVEAT (audit P0, 2026-06-18): this functional test is data-gated and
+# SKIPS on cache miss, so it does not lock the trim defaults in CI.  The
+# non-data-gated guard that the PlatformConfig defaults + bootstrap wiring
+# actually drive TRIM lives in
+# ``tests/bootstrap/test_position_manager_wiring.py``.
+#
+# NOTE (G-7 / 2026-06-11): the sizing-tilt config keys (sizer_tilt_drive,
+# sizer_edge_*, sizer_vol_*, sizer_inventory_*, sizer_tilt_*) were added to
+# the PlatformConfig snapshot.  They are all default-off and the live trade
+# path is byte-identical (the size shadow is measurement-only), so Net P&L
+# (then $15.07; later refreshed to $71.56 in d101f30) and the fill count
+# (6) are UNCHANGED by G-7 — only the config snapshot shifts.  The config
+# CONTRACT hash (raw YAML + defaults, no per-run ingest-
+# health provenance) is data-independent, so it is re-baked directly here in
+# ``test_app_baseline_config_contract_hash`` and runs without the dataset.
+#
+# The combined per-fill parity hash mixed the (data-derived) ingest-health
+# provenance into config_hash and the trade journal into pnl_hash, so it can
+# only be regenerated from a cached run; the trade path is instead locked by
+# Net P&L + fill count.  To re-pin a full literal, run against the cache:
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
+#       --symbol APP --date 2026-03-26
+# Re-baked after audit P0/P1 + 2P: the reference alpha now confirms with
+# ``book_imbalance_mean`` (2P-3), and the platform sensor block gained
+# ``ofi_raw`` (2P-2, integrated signed flow) on top of ``book_imbalance`` and
+# the P1-E ``max_gap_seconds`` keys — all shift the resolved config snapshot.
+# Re-baked for audit R-1: added the ``regime_min_discriminability`` config
+# field (default 0.0 — behaviour-neutral) to the snapshot, which shifts the
+# config-contract hash. Trade path is byte-identical (the floor is a no-op at
+# 0.0), so Net P&L / fill count are unchanged.
+# Re-baked for audit P2.1 (2026-06-18): the discretionary-TRIM execution
+# style flipped to PASSIVE-with-MARKET-fallback (position_manager_urgency_exec
+# default ON), which shifts the resolved config snapshot, so the data-free
+# config-contract hash below was recomputed.  The G-7 EDGE sizing factor
+# (sizer_tilt_drive + sizer_edge_weighting_enabled) was left available
+# OPT-IN / default OFF (audit P2.3), so it does not perturb this baseline.
+# Net P&L / fill count were re-verified against the disk cache on 2026-06-18:
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
+#       --symbol APP --date 2026-03-26
+# The APP/2026-03-26 trade path emits no discretionary passive TRIM in this
+# dataset, so Net P&L ($71.56) and fill count (6) are UNCHANGED from the
+# d101f30 trim-on baseline — only the config snapshot shifted.
+# Re-baked for the 2026-06-19 execution-realism audit (P1/P2 backlog): the
+# new execution-realism knobs are additive and behaviour-neutral *in code*,
+# but the reference ``platform.yaml`` now FLIPS the conservative profile ON so
+# backtests price fills live-realistically by default —
+# ``passive_through_fill_size_cap_enabled: true``,
+# ``passive_require_trade_for_level_fill: true`` (inert here while
+# ``passive_queue_position_shares > 0``), ``cost_within_l1_impact_factor: 0.3``,
+# ``cost_stop_depth_depletion_factor: 2.0``, ``cost_moc_penalty_bps: 3.0``
+# (inert for this non-MOC alpha).  This is a deliberate TRADE-PATH change: the
+# +participation impact on aggressive exit legs and the through-fill cap cost
+# the alpha ~$2.50, compressing Net P&L $71.56 → $69.06 (edge survives) while
+# fill count stays 6.  Re-verified against the disk cache on 2026-06-19:
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
+#       --symbol APP --date 2026-03-26
+# The data-free config-contract hash was recomputed for the flipped snapshot.
+# Re-baked on 2026-06-29 against the current APP/2026-03-26 disk-cache output
+# after the L1->L2 boundary-time/latch regression audit.  The current trade
+# path pins 21 journal records and $430.85 net P&L.
+#
+# Re-baked 2026-07-02 (sensor_audit_2026-07-02 P1): platform.yaml's
+# quote_replenish_asymmetry / quote_hazard_rate / quote_flicker_rate sensor
+# specs gained an opt-in min_window_span_seconds param (set to 5s in
+# production), shifting the resolved config hash. Config-contract change
+# only — sig_benign_midcap_v1 (the alpha this baseline backtests) does not
+# depend on any of those three sensors, so the trade path / P&L pins above
+# are unaffected.
+#
+# Re-baked again 2026-07-02 (sensor_audit_2026-07-02 P2): platform.yaml's
+# scheduled_flow_window sensor spec gained throttled_ms=1000 (verified safe:
+# its update() reads no state at all). Config-contract change only —
+# sig_benign_midcap_v1 does not depend on this sensor either.
+#
+# Re-baked again 2026-07-02 (sensor_review_2026-07-02 F1): platform.yaml's
+# kyle_lambda_60s sensor bumped 2.0.0 → 2.1.0 (causal alignment +
+# numerically-stable Welford covariance estimator; equal to the 2.0.0 slope
+# in exact arithmetic, but without the sum-of-products denominator
+# cancellation). Config-contract change only — sig_benign_midcap_v1 does not
+# depend on kyle_lambda_60s, so the trade path / P&L pins above are unaffected.
+_BASELINE_CONFIG_HASH = (
+    "952ac123f7b67e448bdaa55f81cc8c5825b0c2555180da8d1c54849285af2446"
+)
 _BASELINE_NET_PNL = Decimal("430.85")
 _BASELINE_FILL_COUNT = 21
 

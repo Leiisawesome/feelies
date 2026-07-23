@@ -91,6 +91,27 @@ class SpreadZScoreSensor:
             "last_ts_ns": None,  # event time of the previous accepted quote
         }
 
+    @staticmethod
+    def _recompute_from_window(state: dict[str, Any]) -> None:
+        """Exact two-pass mean/M2 over the live window (F2 drift reset).
+
+        Mirrors ``HorizonWindowedFeature._recompute_from_window``.  Only
+        invoked when a reverse-Welford removal drove M2 negative, which is a
+        pure floating-point cancellation artifact — so on well-conditioned
+        streams this is never reached and the locked vectors are unaffected.
+        """
+        spreads: deque[float] = state["spreads"]
+        n = len(spreads)
+        if n == 0:
+            state["n"] = 0
+            state["mean"] = 0.0
+            state["M2"] = 0.0
+            return
+        mean = sum(spreads) / n
+        state["mean"] = mean
+        state["M2"] = sum((x - mean) ** 2 for x in spreads)
+        state["n"] = n
+
     def update(
         self,
         event: NBBOQuote | Trade,
@@ -125,13 +146,31 @@ class SpreadZScoreSensor:
         spread = ask - bid
         spreads: deque[float] = state["spreads"]
 
-        # Remove the evicted value from Welford state before appending.
+        # S14: Welford sliding-window variance (Pébay 2008).
+        # If the deque is full, the oldest element will be evicted
+        # by the append below; remove it from the Welford accumulators first.
+        # ``window >= 2`` is enforced in __init__, so when we hit ``maxlen``
+        # we always have n_cur == maxlen >= 2 — the ``n_cur == 1`` branch
+        # is unreachable.
+        drift_dirty = False
         if len(spreads) == spreads.maxlen:
             x_old = spreads[0]
             n_cur = state["n"]  # == len(spreads) == maxlen >= 2
             mean_cur = state["mean"]
             mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
             state["M2"] -= (x_old - mean_cur) * (x_old - mean_without)
+            # F2 (sensor_review_2026-07-02): M2 < 0 is impossible in exact
+            # arithmetic — it flags that catastrophic cancellation has
+            # corrupted the incremental accumulator.  Clamp for an immediate
+            # sane result, then recompute exactly from the live window below so
+            # the drift is *bounded*, not merely hidden.  Matches the 3P-4
+            # guard already present in ``features/impl/horizon_windowed.py``;
+            # ``liquidity_stress_score`` gets the same treatment.  On
+            # well-conditioned windows this never fires, so the locked
+            # golden/Level-4 vectors are byte-unchanged.
+            if state["M2"] < 0.0:
+                state["M2"] = 0.0
+                drift_dirty = True
             state["mean"] = mean_without
             state["n"] -= 1
 
@@ -144,6 +183,12 @@ class SpreadZScoreSensor:
         state["n"] = n_new
 
         spreads.append(spread)  # evicts oldest when maxlen is hit
+
+        # F2: if cancellation corrupted the accumulator on this eviction,
+        # restore mean/M2 exactly from the live window (two-pass) so drift
+        # cannot persist across the session.
+        if drift_dirty:
+            self._recompute_from_window(state)
 
         n = state["n"]  # == len(spreads)
         if n < 2:

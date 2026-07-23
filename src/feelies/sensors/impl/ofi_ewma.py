@@ -18,9 +18,39 @@ or configured event-time decay:
     alpha_t = 1 - exp(-dt / tau)
     ewma_t  = alpha_t * ofi_t + (1 - alpha_t) * ewma_{t-1}
 
-Positive values indicate accumulating buy pressure. Warmth depends on quote
-count within a trailing event-time window, so sustained gaps make the sensor
-cold again.
+Reference: Cont, Kukanov & Stoikov (2014) "The Price Impact of Order
+Book Events".  The sign convention follows their definition: positive
+EWMA ⇒ accumulating buy pressure.
+
+Flow vs. level — pick the right OFI aggregate (F4, sensor_review_2026-07-02)
+---------------------------------------------------------------------------
+``ofi_t`` is a *flow* (a signed increment per quote), but this sensor
+EWMA-*smooths* it — treating it like a level.  With the event-time decay
+``alpha_t = 1 − exp(−dt/tau)`` the weighting is inverted from what a pressure
+measure usually wants: during dense bursts ``dt → 0 ⇒ alpha_t → 0``, so each
+event's OFI is *under*-weighted, while after a gap ``alpha_t → 1`` lets a
+single event dominate.  This is a legitimate *responsiveness* filter (a
+low-pass on instantaneous imbalance) and is the correct input for a
+regime/gate view of "is imbalance currently one-sided?".
+
+It is **not** the right input for a permanent-impact (KYLE_INFO) hypothesis.
+The CKS price-impact result is driven by the *integrated* signed flow
+``Σ ofi_t`` over the decision horizon, and summing a decayed EWMA
+double-counts each event through its decay tail.  For that, use the
+``ofi_raw`` sensor (per-event, unsmoothed OFI) with a windowed ``sum``
+reducer (the ``ofi_integrated`` feature), which counts each event exactly
+once.  This sensor's smoothing behaviour is left unchanged (it is a valid
+estimator and its output is parity-locked); the guidance here is to consume
+the *right* OFI aggregate for the mechanism you are modelling.
+
+Determinism: pure float arithmetic, no time-of-day dependency, no
+RNG.  Replay-stable to the bit.
+
+Warm-up: ``warm = True`` once at least ``warm_after`` NBBOQuote events
+have arrived within the trailing ``warm_window_seconds`` event-time
+window.  Using a sliding window rather than a monotonic counter means
+the sensor correctly reverts to ``warm=False`` after market halts or
+extended data gaps (S3).
 """
 
 from __future__ import annotations

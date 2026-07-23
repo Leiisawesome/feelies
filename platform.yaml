@@ -273,15 +273,38 @@ sensor_specs:
   # Trade-backed sensors for Kyle / Hawkes / trade-through reference alphas.
   # Extend this block when wiring additional shipped SIGNAL specs locally.
   - sensor_id: kyle_lambda_60s
-    # Causal lag-one alignment pairs each price change with the flow that drove it.
-    sensor_version: "2.0.0"
+    # Audit P1-5: 2.0.0 uses the causal lag-one alignment (Δp over [t-1,t)
+    # paired with Δq_{t-1}, the flow that drove it) instead of the 1.2.0
+    # legacy alignment (Δp paired with the *current* trade's Δq, which
+    # measured lagged drift vs current flow).  Semantic change ⇒ major bump;
+    # 1.2.0 is retained (class default) for the locked golden vector.
+    #
+    # VALIDATED (cached AAPL IC, kyle_legacy_win vs kyle_causal_win RankIC):
+    #   horizon   legacy    causal
+    #   300s     -0.225    +0.145
+    #   900s     -0.155    +0.160
+    #   1800s    -0.194    +0.150
+    # Legacy carries the WRONG sign at the KYLE_INFO horizons (it reads
+    # reversal/flow-autocorrelation); causal flips it to correct positive
+    # impact.
+    #
+    # sensor_review_2026-07-02 F1: 2.1.0 = causal alignment + the streaming
+    # Welford/Bennett co-moment estimator (``covariance_estimator="welford"``),
+    # which computes the identical OLS slope as the 2.0.0 sum-of-products form
+    # in exact arithmetic but without its catastrophic denominator cancellation
+    # (``n·Σδq² − (Σδq)²`` loses ~5-6 digits when Δq is near-constant — the
+    # regime where informed flow is most regular).  2.0.0 is retained
+    # (byte-identical, class default) for the locked golden vector.
+    sensor_version: "2.1.0"
     cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
     params:
       # Thirty samples stabilize the OLS slope.
       min_samples: 30
       alignment: "causal"
-      # The instance version must match this spec.
-      sensor_version: "2.0.0"
+      covariance_estimator: "welford"
+      # The instance must report the spec version (registry check); the
+      # class exposes ``sensor_version`` for exactly this versioned variant.
+      sensor_version: "2.1.0"
     subscribes_to: [NBBOQuote, Trade]
     input_sensor_ids: []
     min_history: 30

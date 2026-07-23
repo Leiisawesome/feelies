@@ -181,8 +181,16 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
 
 # ── Manifest fingerprint ─────────────────────────────────────────────────
 
-# A single SHA-256 covers the sorted manifest. Re-baseline it with any
-# intentional baseline change.
+# A single SHA-256 over the sorted manifest.  Any re-pin — one baseline or
+# several at once — changes this one line, so a coordinated re-pin is a
+# one-line diff in review instead of several hash literals that each look
+# individually plausible. Re-baseline alongside whatever baseline change
+# caused it to move, in the same commit, with the same justification.
+# Re-baselined 2026-07-02 alongside the ``reference_alpha_signal_fires`` entry:
+# sig_benign_midcap_v1 dropped its cosmetic ``micro_price`` dependency
+# (sensor_audit_2026-07-02 P1), changing that alpha's emitted
+# ``Signal.consumed_features`` provenance (count and behaviour unchanged). See
+# ``test_reference_alpha_signal_fires_replay.py`` for the full justification.
 EXPECTED_MANIFEST_FINGERPRINT = "6c1318a79d2132abd49f1bb4d09ab96e5073cb98e9230b7a37b829b411719eae"
 
 
