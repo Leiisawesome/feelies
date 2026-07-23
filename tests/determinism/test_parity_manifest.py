@@ -196,7 +196,12 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
 # one-line diff in review instead of several hash literals that each look
 # individually plausible. Re-baseline alongside whatever baseline change
 # caused it to move, in the same commit, with the same justification.
-EXPECTED_MANIFEST_FINGERPRINT = "b181f9790b6f1046f68753e4df8d4621ec746f4ca3dc08415feea86358aa76d9"
+# Re-baselined 2026-07-02 alongside the ``reference_alpha_signal_fires`` entry:
+# sig_benign_midcap_v1 dropped its cosmetic ``micro_price`` dependency
+# (sensor_audit_2026-07-02 P1), changing that alpha's emitted
+# ``Signal.consumed_features`` provenance (count and behaviour unchanged). See
+# ``test_reference_alpha_signal_fires_replay.py`` for the full justification.
+EXPECTED_MANIFEST_FINGERPRINT = "6c1318a79d2132abd49f1bb4d09ab96e5073cb98e9230b7a37b829b411719eae"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:
