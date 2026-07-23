@@ -98,3 +98,45 @@ def test_warm_flag_after_threshold() -> None:
         last = s.update(_q(bid="100.00", ask="100.02", ts=i * 100_000_000), state, {})
     assert last is not None
     assert last.warm is True  # 4 returns observed, ≥ threshold of 3
+
+
+# ── F3 (sensor_review_2026-07-02): uncentered realized volatility ───────
+
+
+def test_centered_default_is_unchanged() -> None:
+    """The default centered=True path must equal the legacy formula exactly."""
+    s = RealizedVol30sSensor(window_seconds=30, warm_after=1)  # no centered kwarg
+    state = s.initial_state()
+    s.update(_q(bid="100.00", ask="100.02", ts=1_000_000_000), state, {})
+    s.update(_q(bid="100.01", ask="100.03", ts=2_000_000_000), state, {})
+    r = s.update(_q(bid="100.02", ask="100.04", ts=3_000_000_000), state, {})
+    assert r is not None
+    r1 = math.log(100.02 / 100.01)
+    r2 = math.log(100.03 / 100.02)
+    mu = (r1 + r2) / 2.0
+    var = ((r1 - mu) ** 2 + (r2 - mu) ** 2) / 1.0
+    assert r.value == pytest.approx(math.sqrt(var), rel=1e-12)
+
+
+def test_uncentered_rms_does_not_subtract_drift() -> None:
+    """Uncentered mode returns √(E[r²]) = √(mean(r²)); under a one-signed
+    drift it is strictly larger than the centered std (which cancels drift)."""
+    centered = RealizedVol30sSensor(window_seconds=30, warm_after=1, centered=True)
+    uncentered = RealizedVol30sSensor(window_seconds=30, warm_after=1, centered=False)
+    cs, us = centered.initial_state(), uncentered.initial_state()
+    # Monotonically rising mids ⇒ all log-returns positive ⇒ large drift E[r].
+    prices = ["100.00", "100.05", "100.11", "100.18", "100.26"]
+    r_c = r_u = None
+    for i, px in enumerate(prices):
+        ask = f"{float(px) + 0.02:.2f}"
+        r_c = centered.update(_q(bid=px, ask=ask, ts=i * 100_000_000), cs, {})
+        r_u = uncentered.update(_q(bid=px, ask=ask, ts=i * 100_000_000), us, {})
+    assert r_c is not None and r_u is not None
+    # Hand-recompute the uncentered RMS from the returns.
+    mids = [float(p) + 0.01 for p in prices]
+    rets = [math.log(mids[i] / mids[i - 1]) for i in range(1, len(mids))]
+    n = len(rets)
+    rms = math.sqrt(sum(x * x for x in rets) / n)
+    assert r_u.value == pytest.approx(rms, rel=1e-12)
+    # Under strong one-signed drift the uncentered RMS exceeds the centered std.
+    assert r_u.value > r_c.value

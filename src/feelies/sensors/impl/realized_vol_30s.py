@@ -1,12 +1,30 @@
 """Realized volatility over a sliding event-time window.
 
-Computes the **sample standard deviation** (Bessel-corrected) of mid-price
-log-returns over the last ``window_seconds`` of quotes via a Welford
-sliding-window mean/M2 accumulator (Pébay 2008):
+By default (``centered=True``) computes the **sample standard deviation**
+(Bessel-corrected, mean-subtracted) of mid-price log-returns over the last
+``window_seconds`` of quotes via a Welford sliding-window mean/M2 accumulator
+(Pébay 2008):
 
     r_i        = log(mid_i / mid_{i-1})
-    M2 / (n-1) = sample variance (unbiased)
+    M2 / (n-1) = sample variance (unbiased, centered)
     rv_t       = sqrt( max(0, M2 / (n-1)) )
+
+Centered vs uncentered (F3, sensor_review_2026-07-02)
+-----------------------------------------------------
+The default above is the *centered* sample std ``√(Var(r)) = √(E[r²] − E[r]²)``
+— it subtracts the drift ``E[r]``.  Canonical realized volatility in the
+Andersen–Bollerslev sense is the **uncentered** second moment (it does *not*
+subtract the mean): realized variance ``= Σr²``, realized vol ``= √(Σr²)``.
+For high-frequency returns ``E[r] ≈ 0`` so the two nearly coincide, but under
+sustained intraday drift (trending opens, post-news) they diverge — the
+uncentered form correctly *includes* the directional component.
+
+``centered=False`` selects the uncentered per-return root-mean-square,
+``√(E[r²]) = √(M2/n + mean²)`` (the Welford identity ``Σr² = M2 + n·mean²``),
+which stays on the same per-return scale as the centered std rather than the
+window-size-dependent ``√(Σr²)``.  The default remains ``True`` so existing
+configs and the locked Level-4 / parity vectors are byte-unchanged; no shipped
+alpha currently needs the uncentered form.
 
 The Welford forward + reverse update avoids the catastrophic cancellation
 of the ``Σr² − (Σr)²/n`` "shortcut" formula, which is critical here because
@@ -47,6 +65,11 @@ class RealizedVol30sSensor:
       observed before ``warm=True``.  16 corresponds to roughly 1.5
       seconds at typical 10Hz quote frequency, enough to compute a
       meaningful local std.
+    - ``centered`` (bool, default True): when True, the mean-subtracted
+      Bessel-corrected sample std (legacy behaviour).  When False, the
+      uncentered per-return RMS ``√(M2/n + mean²)`` — the Andersen–Bollerslev
+      realized-volatility convention that does not subtract the drift.  See
+      the module docstring.
     """
 
     sensor_id: str = "realized_vol_30s"
@@ -59,6 +82,7 @@ class RealizedVol30sSensor:
         sensor_version: str | None = None,
         window_seconds: int = 30,
         warm_after: int = 16,
+        centered: bool = True,
     ) -> None:
         if window_seconds <= 0:
             raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
@@ -70,6 +94,7 @@ class RealizedVol30sSensor:
             self.sensor_version = sensor_version
         self._window_ns = int(window_seconds) * 1_000_000_000
         self._warm_after = warm_after
+        self._centered = centered
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -132,9 +157,15 @@ class RealizedVol30sSensor:
             n = len(history)
             if n < 2:
                 value = 0.0
-            else:
+            elif self._centered:
                 var = max(0.0, state["M2"] / float(n - 1))
                 value = math.sqrt(var)
+            else:
+                # F3: uncentered per-return RMS — E[r²] = M2/n + mean²
+                # (Welford identity Σr² = M2 + n·mean²).  Does not subtract
+                # the drift, matching the Andersen–Bollerslev RV convention.
+                ms = max(0.0, state["M2"] / float(n) + state["mean"] * state["mean"])
+                value = math.sqrt(ms)
         else:
             value = 0.0
 

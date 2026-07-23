@@ -237,6 +237,166 @@ def test_causal_reports_version_2() -> None:
     assert s.sensor_version == "2.0.0"
 
 
+# ── F1 (sensor_review_2026-07-02): streaming Welford covariance ─────────
+
+
+def test_constructor_validates_covariance_estimator() -> None:
+    with pytest.raises(ValueError, match="covariance_estimator"):
+        KyleLambda60sSensor(covariance_estimator="bogus")
+
+
+def _run_stream(estimator: str, events: list) -> tuple:
+    version = "2.1.0" if estimator == "welford" else "2.0.0"
+    s = KyleLambda60sSensor(
+        window_seconds=600,
+        min_samples=2,
+        alignment="causal",
+        covariance_estimator=estimator,
+        sensor_version=version,
+    )
+    state = s.initial_state()
+    last = None
+    for ev in events:
+        r = s.update(ev, state, params={})
+        if r is not None:
+            last = r
+    return last, state
+
+
+def _exact_ols_lambda(samples: list) -> float:
+    """Exact-rational OLS slope over the window's (dp, dq) float samples."""
+    from fractions import Fraction
+
+    xs = [Fraction(dq) for _t, _dp, dq in samples]  # Δq
+    ys = [Fraction(dp) for _t, dp, _dq in samples]  # Δp
+    n = len(xs)
+    sx, sy = sum(xs), sum(ys)
+    sxy = sum(x * y for x, y in zip(xs, ys))
+    sxx = sum(x * x for x in xs)
+    denom = n * sxx - sx * sx
+    numer = n * sxy - sx * sy
+    return float(Fraction(numer, denom))
+
+
+def test_welford_agrees_with_sum_products_on_wellconditioned_data() -> None:
+    """On normal (well-varied) sizes the two estimators must agree — welford
+    equals the sum-of-products slope in exact arithmetic."""
+    # Rising prices (all buy) with widely varying sizes ⇒ well-conditioned Δq.
+    steps = [("q", "100.00", 0)]
+    price = 100.00
+    for i in range(40):
+        price += 0.01
+        steps.append(("q", f"{price:.2f}", 0))
+        steps.append(("m", f"{price:.2f}", (i % 7 + 1) * 137))
+    # Build events via the module's _drive step encoding.
+    events = []
+    seq = 0
+    for kind, val, size in steps:
+        seq += 1
+        if kind == "q":
+            events.append(
+                _quote(ts_ns=seq * 10**9, bid=val, ask=f"{float(val) + 0.02:.2f}", sequence=seq)
+            )
+        else:
+            events.append(_trade(ts_ns=seq * 10**9, price=val, size=size, sequence=seq))
+
+    sp_last, _ = _run_stream("sum_products", events)
+    wf_last, _ = _run_stream("welford", events)
+    assert sp_last is not None and wf_last is not None
+    assert wf_last.value == pytest.approx(sp_last.value, rel=1e-9, abs=1e-15)
+    assert wf_last.warm == sp_last.warm
+
+
+def test_welford_beats_sum_products_under_near_constant_large_flow() -> None:
+    """F1's raison d'être: with *large* Δq of small relative dispersion the
+    sum-of-products denominator ``n·Σδq² − (Σδq)²`` loses precision to
+    catastrophic cancellation, while the Welford co-moment stays near machine
+    precision.  The dispersion is chosen so **neither** estimator's degeneracy
+    guard fires (both emit a non-zero λ), isolating accuracy from suppression.
+    Both are compared to the exact-rational OLS slope over the same window."""
+    base = 10**8  # large signed flow …
+    events: list = []
+    seq = 0
+    price = 100.00
+    events.append(
+        _quote(
+            ts_ns=(seq := seq + 1) * 10**9,
+            bid=f"{price:.2f}",
+            ask=f"{price + 0.02:.2f}",
+            sequence=seq,
+        )
+    )
+    for i in range(60):
+        # Real (small) slope: mid rises with the flow every other trade.
+        price += 0.01 if (i % 2 == 0) else 0.0
+        events.append(
+            _quote(
+                ts_ns=(seq := seq + 1) * 10**9,
+                bid=f"{price:.2f}",
+                ask=f"{price + 0.02:.2f}",
+                sequence=seq,
+            )
+        )
+        # … with ~±4000 dispersion: small relative to 1e8 (so Σδq² − (Σδq)²/n
+        # cancels ~11 digits) but large enough in absolute terms that neither
+        # degeneracy guard trips.
+        size = base + ((i * 911) % 4000)
+        events.append(
+            _trade(ts_ns=(seq := seq + 1) * 10**9, price=f"{price:.2f}", size=size, sequence=seq)
+        )
+
+    sp_last, sp_state = _run_stream("sum_products", events)
+    wf_last, wf_state = _run_stream("welford", events)
+    assert sp_last is not None and wf_last is not None
+    # Both must emit a real (non-suppressed) slope for an apples-to-apples cmp.
+    assert sp_last.value != 0.0 and wf_last.value != 0.0
+    # dp/dq samples are identical across estimators (same events/alignment).
+    exact = _exact_ols_lambda(list(wf_state["samples"]))
+    assert exact != 0.0
+
+    err_welford = abs(wf_last.value - exact)
+    err_sumprod = abs(sp_last.value - exact)
+    # Welford is near-exact; sum-of-products is measurably less accurate.
+    assert err_welford <= err_sumprod
+    assert err_welford < 1e-9 * abs(exact)
+    assert err_sumprod > 10 * err_welford
+
+
+def test_welford_recompute_from_window_matches_two_pass() -> None:
+    from collections import deque
+
+    samples = deque(
+        [
+            (1, 0.01, 300.0),
+            (2, 0.02, 100.0),
+            (3, -0.01, 200.0),
+            (4, 0.03, 500.0),
+        ]
+    )
+    state = {
+        "samples": samples,
+        "mean_dp": 0.0,
+        "mean_dq": 0.0,
+        "m2_dq": 0.0,
+        "c_dp_dq": 0.0,
+        "_wn": 0,
+        "_drift_dirty": True,
+    }
+    KyleLambda60sSensor._recompute_from_window(state)
+    dqs = [dq for _t, _dp, dq in samples]
+    dps = [dp for _t, dp, _dq in samples]
+    n = len(dqs)
+    mean_dq = sum(dqs) / n
+    mean_dp = sum(dps) / n
+    assert state["_wn"] == n
+    assert state["_drift_dirty"] is False
+    assert state["mean_dq"] == pytest.approx(mean_dq, rel=1e-15)
+    assert state["m2_dq"] == pytest.approx(sum((x - mean_dq) ** 2 for x in dqs), rel=1e-12)
+    assert state["c_dp_dq"] == pytest.approx(
+        sum((x - mean_dq) * (y - mean_dp) for x, y in zip(dqs, dps)), rel=1e-12
+    )
+
+
 def test_locked_vector_replay() -> None:
     sensor = kyle_factory()
     state = sensor.initial_state()

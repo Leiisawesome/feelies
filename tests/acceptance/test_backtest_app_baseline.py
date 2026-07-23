@@ -117,8 +117,15 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # scheduled_flow_window sensor spec gained throttled_ms=1000 (verified safe:
 # its update() reads no state at all). Config-contract change only —
 # sig_benign_midcap_v1 does not depend on this sensor either.
+#
+# Re-baked again 2026-07-02 (sensor_review_2026-07-02 F1): platform.yaml's
+# kyle_lambda_60s sensor bumped 2.0.0 → 2.1.0 (causal alignment +
+# numerically-stable Welford covariance estimator; equal to the 2.0.0 slope
+# in exact arithmetic, but without the sum-of-products denominator
+# cancellation). Config-contract change only — sig_benign_midcap_v1 does not
+# depend on kyle_lambda_60s, so the trade path / P&L pins above are unaffected.
 _BASELINE_CONFIG_HASH = (
-    "c4a74f6a98b021d055ea84f237d978fd8fe28bef81522b31c90a7f05537b3da1"
+    "952ac123f7b67e448bdaa55f81cc8c5825b0c2555180da8d1c54849285af2446"
 )
 _BASELINE_NET_PNL = Decimal("430.85")
 _BASELINE_FILL_COUNT = 21

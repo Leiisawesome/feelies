@@ -130,6 +130,95 @@ def test_warm_only_after_min_buckets() -> None:
     assert r is not None and r.warm is True  # 3 buckets complete
 
 
+# ── F5 (sensor_review_2026-07-02): O(1) block-trade fill ───────────
+
+
+def _naive_reference_fill(
+    *, trades: list[tuple[int, int]], bucket_volume: int, window_buckets: int
+) -> tuple[list[float], int, int]:
+    """A from-scratch re-implementation of the original per-share spill loop,
+    used to lock the O(1) rewrite's byte-for-byte equivalence on inputs the
+    fixture does not exercise (multi-bucket-spanning trades).
+
+    ``trades`` is a list of ``(side, size)`` with side in {+1, -1}.
+    Returns ``(bucket_imbalances, buy_vol, sell_vol)`` after all trades.
+    """
+    from collections import deque
+
+    buckets: deque[float] = deque(maxlen=window_buckets)
+    buy_vol = sell_vol = 0
+    for side, size in trades:
+        remaining = size
+        while remaining > 0:
+            cur_total = buy_vol + sell_vol
+            room = bucket_volume - cur_total
+            take = remaining if remaining <= room else room
+            if side > 0:
+                buy_vol += take
+            else:
+                sell_vol += take
+            remaining -= take
+            if buy_vol + sell_vol >= bucket_volume:
+                buckets.append(abs(buy_vol - sell_vol) / float(bucket_volume))
+                buy_vol = sell_vol = 0
+    return list(buckets), buy_vol, sell_vol
+
+
+def test_block_trade_matches_naive_reference_no_window_overflow() -> None:
+    """A single block trade spanning several (but < window) buckets must
+    produce the exact same bucket deque and residual volumes as the original
+    per-share loop."""
+    bucket_volume, window = 1_000, 50
+    sensor = VPIN50BucketSensor(bucket_volume=bucket_volume, window_buckets=window, min_buckets=1)
+    state = sensor.initial_state()
+    # First trade: 300 buys → partial bucket. Second: a 7_450-share buy block
+    # → completes bucket1 (700 more), 7 full 1.0 buckets, 450 remainder.
+    sensor.update(_trade(ts_ns=1, price="100", size=300), state, params={})
+    sensor.update(_trade(ts_ns=2, price="100", size=7_450), state, params={})
+
+    ref_buckets, ref_buy, ref_sell = _naive_reference_fill(
+        trades=[(+1, 300), (+1, 7_450)],
+        bucket_volume=bucket_volume,
+        window_buckets=window,
+    )
+    assert list(state["buckets"]) == ref_buckets
+    assert state["buy_vol"] == ref_buy
+    assert state["sell_vol"] == ref_sell
+    # 300 + 7450 = 7750 shares: bucket1 completes with 700 (300+700), leaving
+    # 6750 → 6 full 1.0 buckets (6000) + 750 residual. 7 buckets, 750 open.
+    assert len(state["buckets"]) == 7
+    assert state["buy_vol"] + state["sell_vol"] == 750
+
+
+def test_giant_trade_overwrites_whole_window_with_ones() -> None:
+    """A trade whose whole-bucket count exceeds the window fills the entire
+    window with 1.0 imbalances and reports VPIN == 1.0, in O(1)."""
+    bucket_volume, window = 1_000, 50
+    sensor = VPIN50BucketSensor(bucket_volume=bucket_volume, window_buckets=window, min_buckets=1)
+    state = sensor.initial_state()
+    # 1_000_000 buy shares = 1000 full buckets ≫ window of 50.
+    reading = sensor.update(_trade(ts_ns=1, price="100", size=1_000_000), state, params={})
+    assert reading is not None
+    assert list(state["buckets"]) == [1.0] * window
+    assert state["buckets_sum"] == float(window)
+    assert reading.value == 1.0
+    # Residual: 1_000_000 % 1000 == 0, so no partial bucket is open.
+    assert state["buy_vol"] + state["sell_vol"] == 0
+
+
+def test_block_trade_then_normal_trades_stay_consistent() -> None:
+    """After a window-overflowing block trade, subsequent normal trades must
+    keep buckets_sum in exact agreement with the deque contents."""
+    bucket_volume, window = 500, 10
+    sensor = VPIN50BucketSensor(bucket_volume=bucket_volume, window_buckets=window, min_buckets=1)
+    state = sensor.initial_state()
+    sensor.update(_trade(ts_ns=1, price="100", size=100_000), state, params={})  # block
+    # A few normal alternating trades.
+    sensor.update(_trade(ts_ns=2, price="100.01", size=500), state, params={})  # buy bucket
+    sensor.update(_trade(ts_ns=3, price="99.99", size=500), state, params={})  # sell bucket
+    assert state["buckets_sum"] == pytest.approx(sum(state["buckets"]), rel=1e-12)
+
+
 # ── Locked-vector replay ──────────────────────────────────────────
 
 

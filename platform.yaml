@@ -374,8 +374,16 @@ sensor_specs:
     #   1800s    -0.194    +0.150
     # Legacy carries the WRONG sign at the KYLE_INFO horizons (it reads
     # reversal/flow-autocorrelation); causal flips it to correct positive
-    # impact.  Keep 2.0.0.
-    sensor_version: "2.0.0"
+    # impact.
+    #
+    # sensor_review_2026-07-02 F1: 2.1.0 = causal alignment + the streaming
+    # Welford/Bennett co-moment estimator (``covariance_estimator="welford"``),
+    # which computes the identical OLS slope as the 2.0.0 sum-of-products form
+    # in exact arithmetic but without its catastrophic denominator cancellation
+    # (``n·Σδq² − (Σδq)²`` loses ~5-6 digits when Δq is near-constant — the
+    # regime where informed flow is most regular).  2.0.0 is retained
+    # (byte-identical, class default) for the locked golden vector.
+    sensor_version: "2.1.0"
     cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
     params:
       # 30 samples is the sensor's documented default; the prior value of
@@ -383,9 +391,10 @@ sensor_specs:
       # feature standardized into spuriously large signals.
       min_samples: 30
       alignment: "causal"
+      covariance_estimator: "welford"
       # The instance must report the spec version (registry check); the
       # class exposes ``sensor_version`` for exactly this versioned variant.
-      sensor_version: "2.0.0"
+      sensor_version: "2.1.0"
     subscribes_to: [NBBOQuote, Trade]
     input_sensor_ids: []
     min_history: 30
