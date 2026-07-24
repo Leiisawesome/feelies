@@ -23,6 +23,12 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 os.chdir(_REPO_ROOT)
 
+from tests.determinism.test_decoupled_safety_replay import (
+    _replay_risk_flatten as decoupled_risk_flatten_replay,
+)
+from tests.determinism.test_decoupled_safety_replay import (
+    _replay_safety_state_change as decoupled_safety_state_change_replay,
+)
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
 from tests.determinism.test_portfolio_order_replay import _replay as portfolio_order_replay
@@ -82,6 +88,12 @@ def main() -> None:
 
     states = _drive_regime_states()
     rows.append(("EXPECTED_LEVEL6_REGIME_STATE", _hash_regime_stream(states), len(states)))
+
+    h, c = decoupled_safety_state_change_replay()
+    rows.append(("EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE", h, c))
+
+    h, c = decoupled_risk_flatten_replay()
+    rows.append(("EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER", h, c))
 
     _section("Locked parity hashes (copy into tests/determinism/)")
     for prefix, hash_hex, count in rows:
