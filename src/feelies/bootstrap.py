@@ -103,6 +103,7 @@ from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.risk.engine import RiskEngine
+from feelies.risk.exit_composer import ExitComposer, ExitComposerPolicy
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
@@ -503,6 +504,18 @@ def build_platform(
         thread_safe_sequences=_seq_thread_safe,
     )
 
+    # Stage-0 dual-permission: wire the risk-layer exit composer beside the
+    # hazard controller for any decoupled SIGNAL alpha.  Returns None (and never
+    # subscribes) when no alpha is decoupled, so default deployments stay
+    # bit-identical (Inv-5).
+    exit_composer = _create_exit_composer(
+        bus=bus,
+        horizon_signal_engine=horizon_signal_engine,
+        strategy_positions=strategy_positions,
+        fallback_universe=config.symbols,
+        thread_safe_sequences=_seq_thread_safe,
+    )
+
     # Build the detector only when an alpha enables hazard exits.
     hazard_seq, regime_hazard_detector = _create_hazard_detector(
         registry,
@@ -567,6 +580,7 @@ def build_platform(
         cross_sectional_tracker=cross_sectional_tracker,
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
+        exit_composer=exit_composer,
         edge_calibration_factors=resolved_edge_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
@@ -2029,6 +2043,58 @@ def _hazard_block_enabled(block: object | None) -> bool:
     if not isinstance(block, dict):
         return False
     return bool(block.get("enabled", False)) is True
+
+
+def _create_exit_composer(
+    *,
+    bus: EventBus,
+    horizon_signal_engine: HorizonSignalEngine | None,
+    strategy_positions: StrategyPositionStore,
+    fallback_universe: Iterable[str],
+    thread_safe_sequences: bool = True,
+) -> ExitComposer | None:
+    """Build a :class:`ExitComposer` for every decoupled SIGNAL alpha (§3.3).
+
+    Scan the composed :class:`HorizonSignalEngine` for registrations whose
+    ``decouple_gate_close`` flag is set — the Stage-0 opt-in threaded from the
+    alpha config.  With none decoupled the composer is not created and nothing
+    subscribes to the bus, so default deployments are bit-identical (Inv-5); the
+    Stage-1/Phase-4 config surface is what flips the flag on.
+
+    The composer reads the **strategy-slice** store (not the symbol-net
+    ``PositionStore``) so a flatten never crosses into another strategy's slice
+    on a shared symbol.  SIGNAL modules don't expose a per-alpha universe, so the
+    policy universe falls back to the platform-wide symbols — mirroring
+    :func:`_create_hazard_exit_controller`.
+    """
+    if horizon_signal_engine is None:
+        return None
+    decoupled = [s for s in horizon_signal_engine.signals if s.decouple_gate_close]
+    if not decoupled:
+        return None
+
+    fallback = tuple(sorted(fallback_universe))
+    composer = ExitComposer(
+        bus=bus,
+        sequence_generator=SequenceGenerator(thread_safe=thread_safe_sequences),
+        position_store=strategy_positions,
+    )
+    for registered in sorted(decoupled, key=lambda s: s.alpha_id):
+        composer.register_policy(
+            ExitComposerPolicy(
+                strategy_id=registered.alpha_id,
+                universe=fallback,
+                # Stage 0: no story map configured (Phase-4/Stage-1 flips this).
+                story_configured=False,
+            )
+        )
+    composer.attach()
+    logger.info(
+        "ExitComposer wired: %d decoupled SIGNAL alpha(s) (%s)",
+        len(decoupled),
+        ", ".join(sorted(s.alpha_id for s in decoupled)),
+    )
+    return composer
 
 
 def _enforce_ex_date_replay_guard(

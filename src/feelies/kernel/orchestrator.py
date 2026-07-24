@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
     from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
+    from feelies.risk.exit_composer import ExitComposer
     from feelies.risk.hazard_exit import HazardExitController
 
 from feelies.alpha.arbitration import (
@@ -141,6 +142,7 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
@@ -204,6 +206,14 @@ _FORCED_EXIT_PANIC_REASON: Mapping[str, str] = MappingProxyType(
     }
 )
 
+# Reducing forced-exit reasons routed through the non-vetoable RISK-layer bridge
+# (:meth:`Orchestrator._on_bus_hazard_order`).  Both authors — the hazard
+# controller and the exit composer — stamp ``source_layer="RISK"`` and one of
+# these reasons; the union keeps the bridge's membership test a single source of
+# truth so adding a reason to either writer automatically extends what routes,
+# and a mandated exit never silently drops (Inv-11 fail-safe).
+_RISK_FORCED_EXIT_REASONS: frozenset[str] = HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS
+
 
 def _int_to_direction(sign: int) -> SignalDirection:
     """Map a signed direction (+1 / -1 / 0) to a ``SignalDirection``."""
@@ -264,6 +274,7 @@ class Orchestrator:
         cross_sectional_tracker: "CrossSectionalTracker | None" = None,
         composition_metrics_collector: "HorizonMetricsCollector | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
+        exit_composer: "ExitComposer | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
         edge_calibration_factors: Mapping[str, float] | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
@@ -363,6 +374,12 @@ class Orchestrator:
         self._cross_sectional_tracker = cross_sectional_tracker
         self._composition_metrics_collector = composition_metrics_collector
         self._hazard_exit_controller = hazard_exit_controller
+        # Stage-0 exit composer (risk layer): actuates decoupled alphas' unwind
+        # from ``SafetyStateChange``.  It self-subscribes to the bus in bootstrap;
+        # the orchestrator holds the reference for lifecycle/inspection symmetry
+        # with ``_hazard_exit_controller``.  Its emitted flatten ``OrderRequest``
+        # routes through ``_on_bus_hazard_order`` like any RISK-layer forced exit.
+        self._exit_composer = exit_composer
         self._signal_arbitrator: SignalArbitrator = (
             signal_arbitrator if signal_arbitrator is not None else EdgeWeightedArbitrator()
         )
@@ -4805,6 +4822,19 @@ class Orchestrator:
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
                         )
+                elif order.reason in EXIT_COMPOSER_EXIT_REASONS and order.strategy_id:
+                    # Slice-scoped composer exit: attribute the whole fill to its
+                    # own strategy slice.  A proportional net split would bleed the
+                    # fill onto a bystander strategy sharing the symbol, leaving the
+                    # mandated slice partially open (design §3.3).
+                    self._strategy_positions.update(
+                        order.strategy_id,
+                        ack.symbol,
+                        signed_qty,
+                        ack.fill_price,
+                        fees=ack.fees,
+                        timestamp_ns=ack.timestamp_ns,
+                    )
                 else:
                     # Without attribution, split proportionally to keep stores in
                     # sync. Aggregate PnL stays exact; per-alpha PnL is estimated.
@@ -5303,7 +5333,15 @@ class Orchestrator:
     # Import the controller's signature so hazard filtering cannot drift.
 
     def _on_bus_hazard_order(self, event: Event) -> None:
-        """Route reducing hazard-exit orders to the execution backend.
+        """Route reducing RISK-layer forced-exit orders to the execution backend.
+
+        Handles both risk-layer exit authors that share this non-vetoable bridge:
+        the :class:`~feelies.risk.hazard_exit.HazardExitController` and the
+        Stage-0 :class:`~feelies.risk.exit_composer.ExitComposer`.  Both stamp
+        ``source_layer="RISK"`` and a reason in
+        :data:`_RISK_FORCED_EXIT_REASONS`.  The order is validated with
+        ``check_order`` (not ``check_sized_intent``), so a cost/edge veto that may
+        suppress an *entry* can never suppress a mandated safety exit (Inv-11).
 
         Tight source and reason filters prevent double submission of orders
         already routed by the normal signal, portfolio, or emergency paths.
@@ -5312,7 +5350,7 @@ class Orchestrator:
             return
         if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
             return
-        if event.reason not in HAZARD_EXIT_REASONS:
+        if event.reason not in _RISK_FORCED_EXIT_REASONS:
             return
         # Hazard IDs remain in a dedicated set after active orders are pruned.
         if event.order_id in self._hazard_submitted_order_ids:
@@ -5322,7 +5360,16 @@ class Orchestrator:
         # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(event.symbol).quantity
         signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
-        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
+        # A composer exit is slice-scoped: judge "reduces" against its own
+        # strategy slice, not symbol-net exposure.  Another strategy holding the
+        # opposite side can leave net flat while the mandated slice is still open,
+        # which would otherwise strand the exit at the non-reducing REJECT branch.
+        reduce_basis_qty = current_qty
+        if event.reason in EXIT_COMPOSER_EXIT_REASONS and self._strategy_positions is not None:
+            reduce_basis_qty = self._strategy_positions.get(
+                event.strategy_id, event.symbol
+            ).quantity
+        order_reduces = abs(reduce_basis_qty + signed_qty) < abs(reduce_basis_qty)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)

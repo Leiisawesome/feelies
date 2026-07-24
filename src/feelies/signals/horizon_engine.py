@@ -76,12 +76,14 @@ class RegisteredSignal:
     consumed_features: tuple[str, ...] = ()
     # None requires every snapshot feature; otherwise require only these IDs.
     required_warm_feature_ids: frozenset[str] | None = None
-    # Stage-0 dual-permission decoupling (design §2.3, §3.1).  When True, a
-    # *clean* ON→OFF gate transition emits a typed ``SafetyStateChange`` and
-    # suppresses the direct gate-close FLAT — a risk-layer composer actuates the
-    # unwind instead (later phase).  The three fail-closed error paths still
-    # FLAT for now.  Default False keeps today's unconditional auto-FLAT, so the
-    # emitted Signal stream stays bit-identical (Inv-5).
+    # Stage-0 dual-permission decoupling (design §2.3, §3.1).  When True, every
+    # gate-close path emits a typed ``SafetyStateChange`` and suppresses the
+    # direct gate-close FLAT — the risk-layer composer
+    # (:class:`~feelies.risk.exit_composer.ExitComposer`) actuates the unwind
+    # from that event: a *clean* ON→OFF becomes a bounded HOLD (the deferral cap
+    # owns the timed exit), and the three fail-closed error paths become an
+    # immediate EXIT.  Default False keeps today's unconditional auto-FLAT on
+    # every path, so the emitted Signal stream stays bit-identical (Inv-5).
     decouple_gate_close: bool = False
 
 
@@ -480,20 +482,25 @@ class HorizonSignalEngine:
         and the three fail-closed error paths (``reason`` names which). The
         ``SafetyStateChange`` is published on **every** path (design §3.1);
         omitting it on an error path would strand an open book under a decoupled
-        alpha once the composer arrives — a fail-open defect, not an
-        optimization.
+        alpha — a fail-open defect, not an optimization.
 
-        The direct FLAT is suppressed only for a **decoupled** alpha's **clean**
-        transition (``decouple_gate_close`` and ``reason == "clean_transition"``);
-        the risk-layer composer will actuate that unwind in a later phase. The
-        three error paths still FLAT here so nothing strands before the composer
-        exists, and default (non-decoupled) alphas always FLAT — keeping the
-        emitted Signal stream bit-identical (Inv-5).
+        For a **decoupled** alpha (``decouple_gate_close``) the direct FLAT is
+        suppressed on **every** path: the risk-layer exit composer
+        (:class:`~feelies.risk.exit_composer.ExitComposer`) actuates the unwind
+        from the ``SafetyStateChange`` instead — a clean ON→OFF becomes a bounded
+        HOLD (the deferral cap owns the timed exit), and the three fail-closed
+        error paths become an immediate EXIT via the composer. The composer runs
+        synchronously on this same dispatch, so the fail-closed unwind keeps the
+        liveness the inline FLAT had (design §3.1, §3.6). This removes the
+        Phase-1 temporary error-path FLAT that held decoupled error unwinds
+        before the composer existed.
 
-        The FLAT retains entry provenance so the unwind is attributed correctly.
+        Default (non-decoupled) alphas always FLAT on every path — keeping the
+        emitted Signal stream bit-identical (Inv-5). The FLAT retains entry
+        provenance so the unwind is attributed correctly.
         """
         self._publish_safety_state_change(snapshot, registered, reason)
-        if reason == "clean_transition" and registered.decouple_gate_close:
+        if registered.decouple_gate_close:
             return
         self._bus.publish(
             Signal(

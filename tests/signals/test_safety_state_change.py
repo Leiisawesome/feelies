@@ -9,8 +9,10 @@ Covers (design rev 5 §3.1, §4.3; plan Phase 1):
   ``SafetyStateChange(safe=False)`` and **no** FLAT.
 * All four legacy ``_publish_gate_close`` paths (clean transition + three
   fail-closed error paths) emit ``SafetyStateChange`` with the right ``reason``.
-* Error-path FLAT is retained even under decoupling (Phase 1: the composer that
-  will actuate those exits arrives later).
+* Under decoupling **no** gate-close FLAT is emitted on any path — Phase 3
+  removed the temporary Phase-1 error-path FLAT; the risk-layer exit composer
+  actuates those fail-closed EXITs from the ``SafetyStateChange`` instead. A
+  non-decoupled alpha still FLATs on every path (bit-identical).
 * The event carries the full gate-close provenance (Inv-13).
 * Replay determinism of the ``SafetyStateChange`` sequence (Inv-5), and its
   isolation from the locked Signal sequence stream.
@@ -360,21 +362,44 @@ def test_all_four_paths_emit_safety_state_change(
     [p for p in _FOUR_PATHS if p[0] != "clean_transition"],
     ids=[reason for reason, _g, _d in _FOUR_PATHS if reason != "clean_transition"],
 )
-def test_error_paths_still_flat_under_decoupling(
+def test_error_paths_emit_no_flat_under_decoupling(
     reason: str,
     gate_factory: Any,
     driver: Any,
 ) -> None:
-    """Phase 1: only the *clean* transition FLAT is decoupled. The three
-    fail-closed error paths still emit their FLAT even when decoupled, so an
-    open book never strands before the composer exists."""
+    """Phase 3: a decoupled alpha emits **no** gate-close FLAT on the three
+    fail-closed error paths — the risk-layer exit composer actuates the
+    fail-closed EXIT from the ``SafetyStateChange`` instead. This removes the
+    temporary Phase-1 error-path FLAT that held the unwind before the composer
+    existed (plan Phase 3; design §3.1)."""
     bus, signals, safety = _engine(_registered(gate=gate_factory(), decouple_gate_close=True))
     driver(bus)
 
     flats = [s for s in signals if s.direction is SignalDirection.FLAT]
-    assert len(flats) == 1, f"{reason}: error-path FLAT must be retained in Phase 1"
+    assert flats == [], f"{reason}: decoupled error path must not emit a SIGNAL FLAT"
+    # The typed safety event is still emitted — it is the composer's trigger.
+    assert [e.reason for e in safety] == [reason]
+
+
+@pytest.mark.parametrize(
+    "reason,gate_factory,driver",
+    [p for p in _FOUR_PATHS if p[0] != "clean_transition"],
+    ids=[reason for reason, _g, _d in _FOUR_PATHS if reason != "clean_transition"],
+)
+def test_error_paths_still_flat_when_not_decoupled(
+    reason: str,
+    gate_factory: Any,
+    driver: Any,
+) -> None:
+    """Default (non-decoupled): the error-path FLAT is retained on every path —
+    bit-identical to today, so nothing strands for a non-decoupled alpha (Inv-5)."""
+    bus, signals, safety = _engine(_registered(gate=gate_factory(), decouple_gate_close=False))
+    driver(bus)
+
+    flats = [s for s in signals if s.direction is SignalDirection.FLAT]
+    assert len(flats) == 1, f"{reason}: non-decoupled error-path FLAT must be retained"
     assert flats[0].regime_gate_state == "OFF"
-    # ...and the safety event is still emitted alongside it.
+    # ...and the safety event is still emitted alongside it (purely additive).
     assert [e.reason for e in safety] == [reason]
 
 
