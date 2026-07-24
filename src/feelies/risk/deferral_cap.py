@@ -22,7 +22,9 @@ of the *open episode* and is **monotonic**: an ``OFF->ON->OFF`` gate flicker
 never re-anchors it (design §2.3, §2.8) — otherwise hysteresis chatter could
 hold indefinitely, which the design calls a defect.  The anchor is bound to the
 episode via the slice's ``opened_at`` so a later episode never inherits a stale
-anchor.
+anchor.  A direct sign flip (long<->short without going flat) restarts
+``opened_at`` for the age backstop but leaves the book continuously open, so the
+monotonic anchor is carried onto the reversed leg rather than dropped.
 
 Evaluation is **event-time** on ``Trade`` arrival (Inv-7 — the platform polls
 nothing), the same deterministic clock proxy the hazard controller uses for its
@@ -264,6 +266,18 @@ class DeferralCapController:
             return
 
         opened = self._position_store.opened_at_ns(strategy_id, symbol)
+
+        # Sign-flip carry: a direct long<->short reversal restarts the slice's
+        # ``opened_at`` (the age backstop is meant to reset on a flip) while the
+        # book stays continuously open under the same safety-OFF weather and no
+        # fresh ``safe=False`` arrives to re-anchor.  Carry the monotonic
+        # first-safe-OFF anchor onto the reversed leg so the bounded hold is not
+        # silently dropped.  A genuinely new episode (flat->reopen) instead needs
+        # safe-ON to enter and re-anchors on its own first safe-OFF, so it never
+        # inherits this anchor.
+        anchor = self._first_safe_off_ns.get(key)
+        if anchor is not None and opened is not None and anchor[0] != opened:
+            self._first_safe_off_ns[key] = (opened, anchor[1])
 
         # Duplicate-close guard: stay silent against a slice we already flattened
         # until the position actually changes (fill) or the episode resets.

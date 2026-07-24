@@ -295,6 +295,34 @@ def test_reopen_reanchors_new_episode() -> None:
     assert out[1].timestamp_ns == 1_060 * _SECOND
 
 
+def test_sign_flip_carries_deferral_clock() -> None:
+    # A direct long->short reversal (no flat gap) restarts the slice's opened_at
+    # for the age backstop, but the book stays continuously open under the same
+    # safety-OFF weather and no re-arm arrives.  The monotonic deferral clock must
+    # carry onto the reversed leg — the cap still fires at the ORIGINAL
+    # first-safe-OFF ceiling, not a re-anchored one, and never silently drops it.
+    _, store, bus, out = _make(policies={_SID: _policy(max_hold_s=60, hard_age_s=10_000_000)})
+    _open(store, at_ns=0)  # long 100, opened_at = 0
+    bus.publish(_safety_off(10 * _SECOND))  # anchor -> deferral ceiling 70s
+
+    # Cross through zero into a short while safe stays OFF: 100 long -> 50 short.
+    store.update(_SID, _SYMBOL, -150, Decimal("100"), timestamp_ns=30 * _SECOND)
+    assert store.get(_SID, _SYMBOL).quantity == -50
+    assert store.opened_at_ns(_SID, _SYMBOL) == 30 * _SECOND  # age backstop reset
+
+    bus.publish(_trade(69 * _SECOND))
+    assert out == [], "held below the carried deferral ceiling"
+
+    # Fires at the ORIGINAL 70s ceiling (first_off 10s + 60s), proving the clock
+    # was carried, not reset to the flip time (which would defer to 90s).
+    bus.publish(_trade(70 * _SECOND))
+    assert len(out) == 1
+    assert out[0].reason == DEFERRAL_REASON_MAX_HOLD
+    assert out[0].side.name == "BUY"  # covering the reversed short leg
+    assert out[0].quantity == 50
+    assert out[0].timestamp_ns == 70 * _SECOND
+
+
 @settings(max_examples=75, deadline=None)
 @given(
     first_off_s=st.integers(min_value=1, max_value=10_000),
