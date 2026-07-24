@@ -14,10 +14,29 @@ from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from enum import Enum
 from typing import Any, cast
 
+from feelies.core.inv12_stress import (
+    INV12_COST_STRESS_MULTIPLIER,
+    INV12_LATENCY_STRESS_MULTIPLIER,
+)
+
 EVIDENCE_SCHEMA_VERSION = "1.0.0"
 
 PROMOTE_CAPITAL_TIER_TRIGGER = "promote_capital_tier"
 """Stable trigger that distinguishes LIVE capital-tier escalations."""
+
+AUTHORIZE_DECOUPLE_TRIGGER = "authorize_decouple_caps_only"
+"""Stable trigger for the Stage-0 ``decouple_caps_only`` authorization.
+
+Recorded as a ``LIVE -> LIVE`` self-loop (like
+:data:`PROMOTE_CAPITAL_TIER_TRIGGER`) so the promotion ledger carries the
+dual-permission Stage-0 gate outcome + config version without adding a
+lifecycle state (design rev 5 §2.5 — human re-authorization is an opt-in
+promotion recorded in the ledger)."""
+
+# Small absolute tolerance for the Inv-12 stress-multiplier floor checks.  The
+# harness stamps the multipliers from the locked constants, so this only guards
+# against float-repr drift on round-trip through JSON, never a real shortfall.
+_INV12_MULTIPLIER_TOL = 1e-9
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -82,6 +101,14 @@ class GateId(Enum):
     """QUARANTINED → DECOMMISSIONED (terminal retirement).  No
     structured evidence is required — the operator records a free-form
     reason on the lifecycle call."""
+
+    DECOUPLE_CAPS_ONLY = "decouple_caps_only"
+    """LIVE @ ``gate_close_flat`` → LIVE @ ``decouple_caps_only`` authorization
+    (dual-permission Stage-0, design rev 5 §3.5).  Recorded as a ``LIVE -> LIVE``
+    self-loop with :data:`AUTHORIZE_DECOUPLE_TRIGGER`.  Requires the powered
+    conditional-CVaR falsifier, the turnover bound, and the quote-freeze /
+    session-backstop check — a failing or under-powered gate blocks the
+    promotion."""
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -243,6 +270,111 @@ class RevalidationEvidence:
 
 
 # ─────────────────────────────────────────────────────────────────────
+#   Stage-0 decouple_caps_only evidence (dual-permission design rev 5 §3.5)
+# ─────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class ConditionalCVaREvidence:
+    """Conditional-CVaR falsifier for ``decouple_caps_only`` promotion.
+
+    Compares the conditional left tail of *hold-until-cap* against
+    *flatten-on-gate-OFF* in the ``open ∧ safe-OFF ∧ ¬caps`` subpopulation
+    (design rev 5 §2.1 / §3.5).  The gate passes only when holding through the
+    flagged regime does **not** deepen the left tail beyond a tolerance.
+
+    Estimation contract (all three are load-bearing — the validator rejects
+    evidence that violates any of them):
+
+    * **Modeled fills under Inv-12 stress.** ``hold_cvar`` / ``flatten_cvar``
+      MUST be computed on modeled fills at 1.5× cost and 2× latency, not mid
+      marks (:data:`~feelies.core.inv12_stress.INV12_COST_STRESS_MULTIPLIER` /
+      ``INV12_LATENCY_STRESS_MULTIPLIER``).  ``modeled_fills`` records that the
+      returns came from a fill model rather than mid quotes.
+    * **Purged CPCV.** The tail is estimated over ``cpcv_fold_count``
+      reconstructed CPCV paths with ``cpcv_embargo_bars`` purge/embargo, not a
+      single in-sample tail.
+    * **Powered.** ``effective_tail_sample`` is the count of *distinct*
+      subpopulation episodes in the α-tail (``⌊cvar_level · subpopulation_size⌋``
+      — not inflated by CPCV path multiplicity).  An under-powered cell is a
+      FAIL, never a default-accept (design rev 5 §3.5).
+    """
+
+    cvar_level: float = 0.05
+    """Pre-registered left-tail fraction α (e.g. 0.05 = worst 5%)."""
+    horizon_bars: int = 0
+    """Pre-registered PnL horizon over which each episode return is measured."""
+    subpopulation_size: int = 0
+    """Distinct ``open ∧ safe-OFF ∧ ¬caps`` episodes in the cell."""
+    effective_tail_sample: int = 0
+    """Distinct episodes in the α-tail (the power measure; see class docstring)."""
+    hold_cvar: float = 0.0
+    """Mean of the worst α-fraction of *hold-until-cap* returns (a loss ⇒ negative)."""
+    flatten_cvar: float = 0.0
+    """Mean of the worst α-fraction of *flatten-on-gate-OFF* returns."""
+    cvar_delta: float = 0.0
+    """``hold_cvar - flatten_cvar``; ``>= -tolerance`` ⇒ hold tail not worse."""
+    cpcv_fold_count: int = 0
+    """Reconstructed CPCV paths the tail was estimated over."""
+    cpcv_embargo_bars: int = 0
+    inv12_cost_multiplier: float = 1.0
+    """Cost-stress multiplier applied to the fills (must be ≥ 1.5)."""
+    inv12_latency_multiplier: float = 1.0
+    """Fill-latency stress multiplier applied to the fills (must be ≥ 2)."""
+    modeled_fills: bool = False
+    """``True`` ⇒ returns came from modeled fills, not mid marks."""
+    path_cvar_deltas: tuple[float, ...] = ()
+    """Per-CPCV-path ``hold_cvar - flatten_cvar`` deltas; mean must equal
+    ``cvar_delta`` (integrity check against a fabricated summary)."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class TurnoverBoundEvidence:
+    """Turnover-bound falsifier for ``decouple_caps_only`` promotion.
+
+    The bounded deferral must not raise realized round-trips beyond a declared
+    bound versus the ``flatten-on-gate-OFF`` baseline (design rev 5 §2.7 / §3.5;
+    Inv-12).  Deferring an exit then re-entering can burn extra round-trips —
+    the mirror image of the churn the decoupling is meant to reduce.
+    """
+
+    baseline_round_trips: int = 0
+    """Realized round-trips under ``flatten-on-gate-OFF`` (must be > 0)."""
+    deferral_round_trips: int = 0
+    """Realized round-trips under ``hold-until-cap``."""
+    declared_max_ratio: float = 1.0
+    """Alpha-declared upper bound on ``deferral / baseline`` round-trips."""
+    observed_ratio: float = 1.0
+    """Measured ``deferral_round_trips / baseline_round_trips``."""
+    subpopulation_size: int = 0
+    """Episodes the turnover comparison was measured over (power)."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class QuoteFreezeBackstopEvidence:
+    """Quote-freeze / session-backstop check for ``decouple_caps_only``.
+
+    Deferral deadlines are enforced in **event-time** (Inv-7); during a
+    post-safety-OFF quote freeze the position may be held past the nominal
+    ceiling until the next event, so ``session_flatten`` is the wall-clock
+    backstop of last resort (design rev 5 §2.3 / §3.5).  This evidence proves
+    that every frozen-quote episode still exits by ``session_flatten`` at latest
+    — a stranded book past the session boundary is a defect, not a pass.
+    """
+
+    quote_freeze_episodes: int = 0
+    """Episodes exercised with a post-safety-OFF quote freeze (must be ≥ 1)."""
+    exited_by_session_flatten: int = 0
+    """Freeze episodes that exited by the session-flatten backstop."""
+    breached_session_backstop: int = 0
+    """Freeze episodes still open past ``session_flatten`` (must be 0)."""
+    session_flatten_bound_seconds: float = 0.0
+    """The wall-clock session-flatten bound the episodes were checked against."""
+    max_hold_seconds_observed: float = 0.0
+    """Longest observed hold across the freeze episodes (must be ≤ the bound)."""
+
+
+# ─────────────────────────────────────────────────────────────────────
 #   Threshold configuration
 # ─────────────────────────────────────────────────────────────────────
 
@@ -336,6 +468,32 @@ class GateThresholds:
 
     # ── Revalidation (QUARANTINED → PAPER re-entry) ──────────────
     revalidation_min_oos_sharpe: float = 1.0
+
+    # ── Stage-0 decouple_caps_only gates (design rev 5 §3.5) ──────
+    decouple_cvar_max_level: float = 0.10
+    """Max left-tail fraction α the CVaR gate accepts.  A "tail" wider than
+    this is not a tail — a per-alpha override may only *lower* it."""
+    decouple_cvar_min_tail_sample: int = 20
+    """Minimum effective (distinct-episode) tail sample.  Below this the
+    conditional-CVaR cell is under-powered and the gate FAILs (never a
+    default-accept)."""
+    decouple_cvar_tolerance: float = 0.0
+    """Max amount by which *hold-until-cap* CVaR may fall below
+    *flatten-on-gate-OFF* CVaR (in return units).  Default 0.0 = strict "not
+    worse".  A per-alpha override may only *lower* it (tighten)."""
+    decouple_cvar_min_folds: int = 8
+    """Minimum reconstructed CPCV paths behind the conditional-CVaR estimate."""
+    decouple_cvar_min_embargo_bars: int = 1
+    """Minimum CPCV purge/embargo bars for the conditional-CVaR estimate."""
+    decouple_turnover_ceiling_ratio: float = 1.5
+    """Platform ceiling on an alpha's *declared* turnover bound — a decoupled
+    alpha may not declare a looser deferral/baseline round-trip bound than
+    this."""
+    decouple_turnover_min_sample: int = 20
+    """Minimum episodes behind the turnover comparison (power)."""
+    decouple_quote_freeze_min_episodes: int = 1
+    """Minimum quote-freeze episodes the session-backstop check must exercise —
+    an empty check is not evidence."""
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -712,6 +870,255 @@ def validate_revalidation(
     return errors
 
 
+def validate_conditional_cvar(
+    evidence: ConditionalCVaREvidence,
+    thresholds: GateThresholds | None = None,
+) -> list[str]:
+    """Validate :class:`ConditionalCVaREvidence` for ``decouple_caps_only``.
+
+    Pass conditions (design rev 5 §3.5, "Conditional CVaR (mandatory, powered)"):
+
+    - **modeled fills under Inv-12 stress** — ``modeled_fills`` set and the cost
+      / latency multipliers at or above the locked 1.5× / 2× floors (a mid-mark
+      or un-stressed estimate is refused);
+    - **powered** — ``effective_tail_sample >= decouple_cvar_min_tail_sample``;
+      an under-powered cell is a FAIL, not a pass;
+    - **purged CPCV** — ``cpcv_fold_count`` and ``cpcv_embargo_bars`` at or above
+      their floors;
+    - **tail not worse** — ``cvar_delta >= -decouple_cvar_tolerance`` (holding
+      through the flagged regime does not deepen the left tail);
+    - **internal integrity** — ``cvar_level`` in ``(0, decouple_cvar_max_level]``,
+      a positive horizon, ``effective_tail_sample`` equal to
+      ``floor(cvar_level * subpopulation_size)`` (the honest power measure cannot
+      be spoofed), all CVaR figures finite, ``cvar_delta`` matches
+      ``hold - flatten`` and the mean of ``path_cvar_deltas``, and
+      ``len(path_cvar_deltas)`` matches ``cpcv_fold_count`` whenever paths are
+      claimed (catches a fabricated/drifted summary or omitted path evidence).
+    """
+    t = thresholds or GateThresholds()
+    errors: list[str] = []
+
+    # ── Integrity ────────────────────────────────────────────────
+    if not (0.0 < evidence.cvar_level <= t.decouple_cvar_max_level):
+        errors.append(
+            f"CVaR level {evidence.cvar_level} outside (0, "
+            f"{t.decouple_cvar_max_level}] — a tail wider than the ceiling is "
+            "not a left tail"
+        )
+    if evidence.horizon_bars <= 0:
+        errors.append(f"CVaR horizon_bars {evidence.horizon_bars} must be > 0")
+    if evidence.subpopulation_size < 0:
+        errors.append(f"CVaR subpopulation_size {evidence.subpopulation_size} must be >= 0")
+    if evidence.effective_tail_sample < 0:
+        errors.append(f"CVaR effective_tail_sample {evidence.effective_tail_sample} must be >= 0")
+    if evidence.effective_tail_sample > evidence.subpopulation_size:
+        errors.append(
+            f"CVaR effective_tail_sample {evidence.effective_tail_sample} > "
+            f"subpopulation_size {evidence.subpopulation_size} (impossible)"
+        )
+    if 0.0 < evidence.cvar_level <= 1.0 and evidence.subpopulation_size >= 0:
+        expected_tail = int(evidence.cvar_level * evidence.subpopulation_size)
+        if evidence.effective_tail_sample != expected_tail:
+            errors.append(
+                f"CVaR effective_tail_sample {evidence.effective_tail_sample} != "
+                f"floor(cvar_level * subpopulation_size) = {expected_tail} "
+                "(spoofed tail power?)"
+            )
+    for name, value in (
+        ("hold_cvar", evidence.hold_cvar),
+        ("flatten_cvar", evidence.flatten_cvar),
+        ("cvar_delta", evidence.cvar_delta),
+    ):
+        if not math.isfinite(value):
+            errors.append(f"CVaR {name} is non-finite ({value})")
+    nonfinite = [d for d in evidence.path_cvar_deltas if not math.isfinite(d)]
+    if nonfinite:
+        errors.append(f"CVaR path_cvar_deltas contains non-finite values: {nonfinite}")
+    else:
+        if not math.isclose(
+            evidence.cvar_delta,
+            evidence.hold_cvar - evidence.flatten_cvar,
+            rel_tol=1e-6,
+            abs_tol=1e-12,
+        ):
+            errors.append(
+                f"CVaR cvar_delta {evidence.cvar_delta} does not match "
+                f"hold_cvar - flatten_cvar = {evidence.hold_cvar - evidence.flatten_cvar} "
+                "(fabricated/drifted summary?)"
+            )
+        if evidence.path_cvar_deltas:
+            recomputed = statistics.fmean(evidence.path_cvar_deltas)
+            if not math.isclose(evidence.cvar_delta, recomputed, rel_tol=1e-6, abs_tol=1e-12):
+                errors.append(
+                    f"CVaR cvar_delta {evidence.cvar_delta} does not match "
+                    f"mean(path_cvar_deltas)={recomputed} (fabricated/drifted summary?)"
+                )
+    if evidence.cpcv_fold_count > 0 and len(evidence.path_cvar_deltas) != evidence.cpcv_fold_count:
+        errors.append(
+            f"CVaR inconsistent: cpcv_fold_count={evidence.cpcv_fold_count} but "
+            f"{len(evidence.path_cvar_deltas)} path_cvar_deltas provided"
+        )
+
+    # ── Modeled fills under Inv-12 stress (not mid marks) ─────────
+    if not evidence.modeled_fills:
+        errors.append(
+            "CVaR must be estimated on modeled fills, not mid marks (modeled_fills is False)"
+        )
+    if evidence.inv12_cost_multiplier < INV12_COST_STRESS_MULTIPLIER - _INV12_MULTIPLIER_TOL:
+        errors.append(
+            f"CVaR inv12_cost_multiplier {evidence.inv12_cost_multiplier} < "
+            f"{INV12_COST_STRESS_MULTIPLIER} required (Inv-12 cost stress)"
+        )
+    if evidence.inv12_latency_multiplier < INV12_LATENCY_STRESS_MULTIPLIER - _INV12_MULTIPLIER_TOL:
+        errors.append(
+            f"CVaR inv12_latency_multiplier {evidence.inv12_latency_multiplier} < "
+            f"{INV12_LATENCY_STRESS_MULTIPLIER} required (Inv-12 latency stress)"
+        )
+
+    # ── Power: under-powered tail is a FAIL, never a default-accept ─
+    if evidence.effective_tail_sample < t.decouple_cvar_min_tail_sample:
+        errors.append(
+            f"CVaR effective tail sample {evidence.effective_tail_sample} < "
+            f"{t.decouple_cvar_min_tail_sample} required — the "
+            "open∧safe-OFF∧¬caps cell is under-powered; the gate FAILs rather "
+            "than default-accept (fall back to gate_close_flat)"
+        )
+
+    # ── Purged-CPCV requirements ─────────────────────────────────
+    if evidence.cpcv_fold_count < t.decouple_cvar_min_folds:
+        errors.append(
+            f"CVaR cpcv_fold_count {evidence.cpcv_fold_count} < "
+            f"{t.decouple_cvar_min_folds} required"
+        )
+    if evidence.cpcv_embargo_bars < t.decouple_cvar_min_embargo_bars:
+        errors.append(
+            f"CVaR cpcv_embargo_bars {evidence.cpcv_embargo_bars} < "
+            f"{t.decouple_cvar_min_embargo_bars} required (a zero-embargo run "
+            "applies no serial-correlation guard)"
+        )
+
+    # ── The gate: hold-until-cap left tail not worse than flatten ─
+    if evidence.cvar_delta < -t.decouple_cvar_tolerance:
+        errors.append(
+            f"CVaR hold-until-cap left tail worse than flatten-on-gate-OFF: "
+            f"cvar_delta {evidence.cvar_delta} < -{t.decouple_cvar_tolerance} "
+            "tolerance (holding through the flagged regime deepens the tail)"
+        )
+
+    return errors
+
+
+def validate_turnover_bound(
+    evidence: TurnoverBoundEvidence,
+    thresholds: GateThresholds | None = None,
+) -> list[str]:
+    """Validate :class:`TurnoverBoundEvidence` for ``decouple_caps_only``.
+
+    Pass conditions (design rev 5 §3.5, "Turnover bound (mandatory)"):
+
+    - a positive baseline (a ratio needs a non-zero denominator) and enough
+      episodes to measure (``subpopulation_size >= decouple_turnover_min_sample``);
+    - the alpha's *declared* bound is itself within the platform ceiling
+      ``decouple_turnover_ceiling_ratio`` (an alpha cannot self-authorize an
+      unbounded churn);
+    - the *observed* ratio matches the round-trip counts and does not exceed the
+      declared bound.
+    """
+    t = thresholds or GateThresholds()
+    errors: list[str] = []
+
+    if evidence.baseline_round_trips <= 0:
+        errors.append(
+            f"turnover baseline_round_trips {evidence.baseline_round_trips} must "
+            "be > 0 to form a ratio"
+        )
+    if evidence.deferral_round_trips < 0:
+        errors.append(
+            f"turnover deferral_round_trips {evidence.deferral_round_trips} must be >= 0"
+        )
+    if evidence.subpopulation_size < t.decouple_turnover_min_sample:
+        errors.append(
+            f"turnover subpopulation_size {evidence.subpopulation_size} < "
+            f"{t.decouple_turnover_min_sample} required (under-powered)"
+        )
+    if evidence.declared_max_ratio <= 0.0:
+        errors.append(f"turnover declared_max_ratio {evidence.declared_max_ratio} must be > 0")
+    elif evidence.declared_max_ratio > t.decouple_turnover_ceiling_ratio:
+        errors.append(
+            f"turnover declared_max_ratio {evidence.declared_max_ratio} > platform "
+            f"ceiling {t.decouple_turnover_ceiling_ratio} (an alpha may not declare "
+            "a looser round-trip bound than the platform allows)"
+        )
+
+    if evidence.baseline_round_trips > 0:
+        recomputed = evidence.deferral_round_trips / evidence.baseline_round_trips
+        if not math.isclose(evidence.observed_ratio, recomputed, rel_tol=1e-6, abs_tol=1e-12):
+            errors.append(
+                f"turnover observed_ratio {evidence.observed_ratio} does not match "
+                f"deferral/baseline = {recomputed} (fabricated/drifted summary?)"
+            )
+
+    if evidence.observed_ratio > evidence.declared_max_ratio:
+        errors.append(
+            f"turnover observed_ratio {evidence.observed_ratio} > declared bound "
+            f"{evidence.declared_max_ratio} — deferral churns beyond the declared "
+            "round-trip bound (Inv-12)"
+        )
+
+    return errors
+
+
+def validate_quote_freeze_backstop(
+    evidence: QuoteFreezeBackstopEvidence,
+    thresholds: GateThresholds | None = None,
+) -> list[str]:
+    """Validate :class:`QuoteFreezeBackstopEvidence` for ``decouple_caps_only``.
+
+    Pass conditions (design rev 5 §2.3 / §3.5, quote-freeze backstop):
+
+    - at least ``decouple_quote_freeze_min_episodes`` freeze episodes exercised
+      (an empty check is not evidence);
+    - a positive session-flatten bound, and every freeze episode exited by it —
+      ``exited_by_session_flatten == quote_freeze_episodes`` with **zero**
+      ``breached_session_backstop`` (a stranded book past ``session_flatten`` is
+      a defect);
+    - the longest observed hold is within the session-flatten bound.
+    """
+    t = thresholds or GateThresholds()
+    errors: list[str] = []
+
+    if evidence.quote_freeze_episodes < t.decouple_quote_freeze_min_episodes:
+        errors.append(
+            f"quote-freeze episodes {evidence.quote_freeze_episodes} < "
+            f"{t.decouple_quote_freeze_min_episodes} required — the session "
+            "backstop was not exercised"
+        )
+    if evidence.session_flatten_bound_seconds <= 0.0:
+        errors.append(
+            f"quote-freeze session_flatten_bound_seconds "
+            f"{evidence.session_flatten_bound_seconds} must be > 0"
+        )
+    if evidence.breached_session_backstop > 0:
+        errors.append(
+            f"quote-freeze {evidence.breached_session_backstop} episode(s) still "
+            "open past session_flatten — deferred book stranded past the wall-clock "
+            "backstop (design §2.3 defect)"
+        )
+    if evidence.exited_by_session_flatten != evidence.quote_freeze_episodes:
+        errors.append(
+            f"quote-freeze only {evidence.exited_by_session_flatten} of "
+            f"{evidence.quote_freeze_episodes} freeze episodes exited by "
+            "session_flatten"
+        )
+    if evidence.max_hold_seconds_observed > evidence.session_flatten_bound_seconds:
+        errors.append(
+            f"quote-freeze max hold {evidence.max_hold_seconds_observed}s exceeds "
+            f"session_flatten bound {evidence.session_flatten_bound_seconds}s"
+        )
+
+    return errors
+
+
 # ─────────────────────────────────────────────────────────────────────
 #   Gate matrix + top-level dispatcher
 # ─────────────────────────────────────────────────────────────────────
@@ -732,6 +1139,11 @@ GATE_EVIDENCE_REQUIREMENTS: Mapping[GateId, tuple[_EvidenceType, ...]] = {
     GateId.LIVE_TO_QUARANTINED: (QuarantineTriggerEvidence,),
     GateId.QUARANTINED_TO_PAPER: (RevalidationEvidence,),
     GateId.QUARANTINED_TO_DECOMMISSIONED: (),
+    GateId.DECOUPLE_CAPS_ONLY: (
+        ConditionalCVaREvidence,
+        TurnoverBoundEvidence,
+        QuoteFreezeBackstopEvidence,
+    ),
 }
 """Declarative gate matrix.
 
@@ -910,7 +1322,9 @@ def _evidence_to_jsonable(ev: object) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────
 
 
-RESERVED_METADATA_KEYS: frozenset[str] = frozenset({"schema_version", "reason"})
+RESERVED_METADATA_KEYS: frozenset[str] = frozenset(
+    {"schema_version", "reason", "config_version", "authorized_by"}
+)
 """Non-evidence metadata co-keys that may legitimately accompany F-2
 evidence sections in a ledger entry's ``metadata`` and therefore must be
 **ignored** (not treated as an unknown evidence ``kind``) by
@@ -922,6 +1336,10 @@ evidence sections in a ledger entry's ``metadata`` and therefore must be
   :meth:`feelies.alpha.lifecycle.AlphaLifecycle.quarantine` (and
   ``decommission``) always writes alongside any structured evidence
   (``{"reason": ...}`` merged with ``evidence_to_metadata(*evs)``).
+* ``config_version`` / ``authorized_by`` — the config-provenance and
+  human-signoff co-keys that
+  :meth:`feelies.alpha.lifecycle.AlphaLifecycle.authorize_decouple` merges
+  alongside the Stage-0 ``decouple_caps_only`` gate evidence (Inv-11 / Inv-13).
 
 Without this allow-list, replaying a quarantine-with-evidence entry
 raised ``ValueError: metadata carries unknown kind(s) ['reason']`` and
@@ -978,6 +1396,26 @@ def _reconstruct_revalidation(
     return RevalidationEvidence(**payload)
 
 
+def _reconstruct_conditional_cvar(
+    payload: Mapping[str, Any],
+) -> ConditionalCVaREvidence:
+    fixed = dict(payload)
+    fixed["path_cvar_deltas"] = tuple(payload.get("path_cvar_deltas", ()))
+    return ConditionalCVaREvidence(**fixed)
+
+
+def _reconstruct_turnover_bound(
+    payload: Mapping[str, Any],
+) -> TurnoverBoundEvidence:
+    return TurnoverBoundEvidence(**payload)
+
+
+def _reconstruct_quote_freeze_backstop(
+    payload: Mapping[str, Any],
+) -> QuoteFreezeBackstopEvidence:
+    return QuoteFreezeBackstopEvidence(**payload)
+
+
 _EVIDENCE_REGISTRY: Mapping[_EvidenceType, _EvidenceRegistration] = {
     ResearchAcceptanceEvidence: _EvidenceRegistration(
         "research_acceptance",
@@ -999,6 +1437,21 @@ _EVIDENCE_REGISTRY: Mapping[_EvidenceType, _EvidenceRegistration] = {
     ),
     RevalidationEvidence: _EvidenceRegistration(
         "revalidation", validate_revalidation, _reconstruct_revalidation
+    ),
+    ConditionalCVaREvidence: _EvidenceRegistration(
+        "conditional_cvar",
+        validate_conditional_cvar,
+        _reconstruct_conditional_cvar,
+    ),
+    TurnoverBoundEvidence: _EvidenceRegistration(
+        "turnover_bound",
+        validate_turnover_bound,
+        _reconstruct_turnover_bound,
+    ),
+    QuoteFreezeBackstopEvidence: _EvidenceRegistration(
+        "quote_freeze_backstop",
+        validate_quote_freeze_backstop,
+        _reconstruct_quote_freeze_backstop,
     ),
 }
 """Single registration source for validation and metadata round-tripping.
@@ -1251,6 +1704,17 @@ _GATE_THRESHOLD_DIRECTIONS: dict[str, _FloorDirection] = {
     "quarantine_min_crowding_symptoms": _FloorDirection.FREE,
     # ── Revalidation ───────────────────────────────────────────────────
     "revalidation_min_oos_sharpe": _FloorDirection.MIN,
+    # ── Stage-0 decouple_caps_only gates ───────────────────────────────
+    # A per-alpha override may only tighten: raise a power/CPCV floor, or
+    # lower a tail-worsening tolerance / turnover ceiling / tail width.
+    "decouple_cvar_max_level": _FloorDirection.MAX,
+    "decouple_cvar_min_tail_sample": _FloorDirection.MIN,
+    "decouple_cvar_tolerance": _FloorDirection.MAX,
+    "decouple_cvar_min_folds": _FloorDirection.MIN,
+    "decouple_cvar_min_embargo_bars": _FloorDirection.MIN,
+    "decouple_turnover_ceiling_ratio": _FloorDirection.MAX,
+    "decouple_turnover_min_sample": _FloorDirection.MIN,
+    "decouple_quote_freeze_min_episodes": _FloorDirection.MIN,
 }
 """Per-field monotonicity used by :func:`assert_per_alpha_overrides_respect_floor`.
 
@@ -1401,11 +1865,13 @@ _check_threshold_direction_coverage()
 
 
 __all__ = (
+    "AUTHORIZE_DECOUPLE_TRIGGER",
     "EVIDENCE_SCHEMA_VERSION",
     "PROMOTE_CAPITAL_TIER_TRIGGER",
     "CPCVEvidence",
     "CapitalStageEvidence",
     "CapitalStageTier",
+    "ConditionalCVaREvidence",
     "DSREvidence",
     "GATE_EVIDENCE_REQUIREMENTS",
     "GateId",
@@ -1414,9 +1880,11 @@ __all__ = (
     "KIND_TO_TYPE",
     "PaperWindowEvidence",
     "QuarantineTriggerEvidence",
+    "QuoteFreezeBackstopEvidence",
     "RESERVED_METADATA_KEYS",
     "ResearchAcceptanceEvidence",
     "RevalidationEvidence",
+    "TurnoverBoundEvidence",
     "apply_gate_thresholds_overrides",
     "assert_per_alpha_overrides_respect_floor",
     "evidence_to_metadata",
@@ -1424,11 +1892,14 @@ __all__ = (
     "parse_gate_thresholds_overrides",
     "required_evidence_types",
     "validate_capital_stage",
+    "validate_conditional_cvar",
     "validate_cpcv",
     "validate_dsr",
     "validate_gate",
     "validate_paper_window",
     "validate_quarantine_trigger",
+    "validate_quote_freeze_backstop",
     "validate_research_acceptance",
     "validate_revalidation",
+    "validate_turnover_bound",
 )

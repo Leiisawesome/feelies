@@ -705,7 +705,17 @@ The Stage-0 decoupling schema surface and its guards are live
   determinism / regenerated-golden phase. Until then the default `gate_close_flat`
   path is untouched (bit-identical, Inv-5) and no shipped alpha declares
   `decouple_caps_only`.
-- **Not yet promotable** — the promotion gates that let an alpha *adopt*
-  `decouple_caps_only` in production (conditional-CVaR under purged CPCV,
-  turnover bound, Inv-12 stress fills) are the Stage-0 validation harness and
-  land in a later phase.
+- **Promotion gate (Phase 6)** — the Stage-0 falsifiers that let an alpha
+  *adopt* `decouple_caps_only` in production are live as
+  `GateId.DECOUPLE_CAPS_ONLY` (`promotion_evidence.py`): the **powered
+  conditional-CVaR** falsifier (hold-until-cap vs flatten-on-gate-OFF in the
+  `open ∧ safe-OFF ∧ ¬caps` cell, modeled fills under `--inv12-stress`,
+  estimated under purged CPCV with a declared minimum effective tail-sample so
+  an under-powered cell FAILs rather than passes), the **turnover bound**
+  (`research/decouple_gates.py`), and the **quote-freeze / session-backstop**
+  check (`forensics/decouple_backstop.py`). `AlphaLifecycle.authorize_decouple`
+  is the write path — a LIVE-only, human-signed opt-in (Inv-11) that runs the
+  gate and, only on a clean pass, records the outcome + `config_version` in the
+  promotion ledger as a `LIVE -> LIVE` self-loop. A failing or under-powered
+  gate blocks the promotion and writes nothing. `feelies promote gate-matrix`
+  and `replay-evidence` surface the gate read-only.

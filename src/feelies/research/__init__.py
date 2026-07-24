@@ -16,6 +16,12 @@ from feelies.research.cpcv import (
     reconstruct_paths,
     sharpe_ratio,
 )
+from feelies.research.decouple_gates import (
+    apply_inv12_cost_stress,
+    build_conditional_cvar_evidence,
+    build_turnover_bound_evidence,
+    conditional_cvar,
+)
 from feelies.research.dsr import (
     DSRComputation,
     build_dsr_evidence,
@@ -36,11 +42,15 @@ __all__ = [
     "DSRComputation",
     "ExperimentTracker",
     "HypothesisRegistry",
+    "apply_inv12_cost_stress",
     "assemble_path_returns",
     "assign_groups",
+    "build_conditional_cvar_evidence",
     "build_cpcv_evidence",
     "build_dsr_evidence",
     "build_dsr_evidence_from_returns",
+    "build_turnover_bound_evidence",
+    "conditional_cvar",
     "deflated_sharpe",
     "expected_max_sharpe",
     "fold_pnl_curves_sha256",

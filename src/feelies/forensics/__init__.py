@@ -6,6 +6,10 @@ and edge-decay analysis. See post-trade-forensics skill for specification.
 
 from feelies.forensics.analyzer import ForensicAnalyzer
 from feelies.forensics.decay_detector import DecayDetector
+from feelies.forensics.decouple_backstop import (
+    QuoteFreezeEpisode,
+    build_quote_freeze_backstop_evidence,
+)
 from feelies.forensics.gate_close_attribution import (
     GateCloseAttribution,
     GateCloseAttributionError,
@@ -18,6 +22,8 @@ __all__ = [
     "ForensicAnalyzer",
     "GateCloseAttribution",
     "GateCloseAttributionError",
+    "QuoteFreezeEpisode",
+    "build_quote_freeze_backstop_evidence",
     "from_gate_close_flat",
     "reconstruct_from_safety_flatten",
 ]
