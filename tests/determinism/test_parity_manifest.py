@@ -9,6 +9,12 @@ import pytest
 
 from tests.determinism import parity_manifest
 from tests.determinism.test_cross_sectional_context_replay import _replay as xsect_context_replay
+from tests.determinism.test_decoupled_safety_replay import (
+    _replay_risk_flatten as decoupled_risk_flatten_replay,
+)
+from tests.determinism.test_decoupled_safety_replay import (
+    _replay_safety_state_change as decoupled_safety_state_change_replay,
+)
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
 from tests.determinism.test_market_fill_replay import _replay as market_fill_replay
@@ -88,6 +94,8 @@ _REPLAY_BY_NAME = {
     "halt_ack": _replay_halt_ack,
     "halt_position_update": _replay_halt_position_update,
     "risk_verdict": risk_verdict_replay,
+    "decoupled_safety_state_change": decoupled_safety_state_change_replay,
+    "decoupled_risk_flatten_order": decoupled_risk_flatten_replay,
 }
 
 
@@ -191,7 +199,12 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
 # (sensor_audit_2026-07-02 P1), changing that alpha's emitted
 # ``Signal.consumed_features`` provenance (count and behaviour unchanged). See
 # ``test_reference_alpha_signal_fires_replay.py`` for the full justification.
-EXPECTED_MANIFEST_FINGERPRINT = "6c1318a79d2132abd49f1bb4d09ab96e5073cb98e9230b7a37b829b411719eae"
+# Re-baselined again (Stage-0 dual-permission decoupling, design rev 5 / Phase 5)
+# to REGISTER — not change — two brand-new cross-layer baselines:
+# ``decoupled_safety_state_change`` and ``decoupled_risk_flatten_order``. No
+# existing baseline moved; the fingerprint shifts purely because the manifest set
+# grew (23 → 25). See ``test_decoupled_safety_replay.py`` for the migration note.
+EXPECTED_MANIFEST_FINGERPRINT = "83dece6dfcc4be08009d79d02c55536792a9b1c68a1530e082b8060cb8ee26b7"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:

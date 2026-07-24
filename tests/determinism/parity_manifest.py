@@ -24,6 +24,12 @@ from tests.determinism.test_cross_sectional_context_replay import (
     EXPECTED_XSECT_CONTEXT_COUNT,
     EXPECTED_XSECT_CONTEXT_HASH,
 )
+from tests.determinism.test_decoupled_safety_replay import (
+    EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_COUNT,
+    EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH,
+    EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_COUNT,
+    EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_HASH,
+)
 from tests.determinism.test_hazard_exit_replay import (
     EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT,
     EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH,
@@ -187,6 +193,20 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     ),
     # Risk verdict action, reason, and scale.
     "risk_verdict": (EXPECTED_RISK_VERDICT_HASH, EXPECTED_RISK_VERDICT_COUNT),
+    # Stage-0 dual-permission decoupling (design rev 5).  Promotion migrates a
+    # gate-close FLAT off the SIGNAL Signal stream onto a typed SafetyStateChange
+    # that a RISK-layer author converts to a flatten OrderRequest at a new
+    # sequence.  These two baselines lock the shape of those new cross-layer
+    # streams; the FLAT-migration itself is guarded in
+    # test_decoupled_safety_replay.py.
+    "decoupled_safety_state_change": (
+        EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_HASH,
+        EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_COUNT,
+    ),
+    "decoupled_risk_flatten_order": (
+        EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH,
+        EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_COUNT,
+    ),
 }
 
 
