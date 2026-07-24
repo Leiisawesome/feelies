@@ -20,7 +20,7 @@ from hypothesis import given, settings, strategies as st
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import OrderRequest, SafetyStateChange, Trade
 from feelies.core.identifiers import SequenceGenerator
-from feelies.core.session_clock import rth_close_ns
+from feelies.core.session_clock import rth_close_ns, rth_open_ns
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.deferral_cap import (
     DEFERRAL_REASON_HARD_AGE,
@@ -426,6 +426,32 @@ def test_quote_freeze_exits_by_session_boundary() -> None:
     # The binding cap that lapsed during the freeze (max_hold) is the reason it
     # fires; the guarantee is that it fires by the session boundary at latest.
     assert out[0].reason == DEFERRAL_REASON_MAX_HOLD
+
+
+def test_session_flatten_does_not_roll_forward_across_sessions() -> None:
+    # Safety goes OFF on day one; the deferral ceiling out-runs the session, so
+    # the day-one 16:00 ET close is the binding backstop.  If no trade arrives
+    # until day two, the session flatten must still fire on the first day-two
+    # trade — the backstop stays anchored to the day-one session close and does
+    # not roll forward to day two's close.
+    day_one_close = rth_close_ns(_MID_SESSION_NS)
+    first_off = day_one_close - 2 * 60 * 60 * _SECOND  # 14:00 ET day one
+    day_two_open = rth_open_ns(day_one_close + 24 * 60 * 60 * _SECOND)  # 09:30 ET day two
+    store = StrategyPositionStore()
+    _open(store, at_ns=first_off - 60 * _SECOND)
+    _, _, bus, out = _make(
+        store=store,
+        # Deferral ceiling of one day out-runs the day-one session close.
+        policies={_SID: _policy(max_hold_s=86_400, hard_age_s=86_400)},
+        session_flatten_enabled=True,
+    )
+    bus.publish(_safety_off(first_off))
+
+    # Cross-session quote gap: first trade is on day two, past the day-one close.
+    bus.publish(_trade(day_two_open))
+    assert len(out) == 1, "day-one session backstop must fire on the first day-two trade"
+    assert out[0].reason == DEFERRAL_REASON_SESSION_FLATTEN
+    assert out[0].timestamp_ns == day_two_open
 
 
 # ── Strategy-slice scoping (not symbol-net) ──────────────────────────────

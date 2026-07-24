@@ -287,7 +287,7 @@ class DeferralCapController:
                 return
             del self._pending_exit[key]
 
-        resolved = self._episode_deadline(policy, key, opened, now_ns)
+        resolved = self._episode_deadline(policy, key, opened)
         if resolved is None:
             return
         deadline_ns, reason = resolved
@@ -329,7 +329,6 @@ class DeferralCapController:
         policy: DeferralPolicy,
         key: tuple[str, str],
         opened: int | None,
-        now_ns: int,
     ) -> tuple[int, str] | None:
         """Earliest of the enumerated caps for a *deferred* open episode.
 
@@ -356,9 +355,13 @@ class DeferralCapController:
                 )
             )
         if self._session_flatten_enabled:
+            # Anchor to the session of the FIRST safe->OFF, not ``now_ns``: a
+            # cross-session quote gap must not roll the backstop forward to a
+            # later ET date's close (the prior session's close already bounds
+            # this deferred episode — design §2.3/§2.8).
             candidates.append(
                 (
-                    rth_close_ns(now_ns) - self._session_flatten_buffer_ns,
+                    rth_close_ns(first_off) - self._session_flatten_buffer_ns,
                     DEFERRAL_REASON_SESSION_FLATTEN,
                 )
             )
