@@ -149,6 +149,11 @@ class DeferralCapController:
         # Suppresses a re-fire against the same stale slice; a quantity change
         # (partial fill) or new episode releases it so a residual still closes.
         "_pending_exit",
+        # Keys whose anchored book saw a safe->ON re-arm since its last safe->OFF.
+        # Marks a subsequent safe->OFF as the second OFF of an OFF->ON->OFF flicker
+        # so it carries the monotonic anchor (even across a sign flip) instead of
+        # re-anchoring to the flicker timestamp.
+        "_rearmed_keys",
     )
 
     def __init__(
@@ -172,6 +177,7 @@ class DeferralCapController:
         )
         self._first_safe_off_ns: dict[tuple[str, str], tuple[int, int]] = {}
         self._pending_exit: dict[tuple[str, str], tuple[int | None, int]] = {}
+        self._rearmed_keys: set[tuple[str, str]] = set()
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -204,17 +210,28 @@ class DeferralCapController:
         Only ``safe=False`` transitions anchor; a ``safe=True`` re-arm never
         re-anchors (monotonic).  A repeated ``safe=False`` within the same open
         episode — the second OFF of an ``OFF->ON->OFF`` flicker — is ignored, so
-        chatter cannot push the deadline out (design §2.3).
+        chatter cannot push the deadline out (design §2.3).  A flicker whose
+        re-arm straddles a sign flip (``opened_at`` advances mid-flicker) is still
+        a flicker: it carries the monotonic anchor onto the reversed leg rather
+        than restarting the clock at the flicker timestamp.
         """
-        if event.safe:
-            return
         policy = self._policies.get(event.strategy_id)
         if policy is None:
             return
         if policy.universe and event.symbol not in policy.universe:
             return
         key = (event.strategy_id, event.symbol)
+        if event.safe:
+            # A re-arm over an anchored open book: the next safe->OFF is the
+            # second OFF of an ``OFF->ON->OFF`` flicker.  Remember it so that OFF
+            # carries the anchor even if a sign flip has meanwhile advanced
+            # ``opened_at`` (the trade-path carry only runs on a ``Trade``).
+            if key in self._first_safe_off_ns:
+                self._rearmed_keys.add(key)
+            return
         opened = self._position_store.opened_at_ns(event.strategy_id, event.symbol)
+        rearmed = key in self._rearmed_keys
+        self._rearmed_keys.discard(key)
         if opened is None:
             # Safe went OFF while the slice is flat — entries are blocked when
             # safe is OFF, so there is no open episode to defer.  Prune any stale
@@ -222,11 +239,23 @@ class DeferralCapController:
             self._first_safe_off_ns.pop(key, None)
             return
         existing = self._first_safe_off_ns.get(key)
-        if existing is None or existing[0] != opened:
-            # First safe->OFF of *this* open episode (existing anchor, if any,
-            # belongs to a prior episode with a different opened_at).
+        if existing is None:
+            # First safe->OFF of a fresh anchor.
             self._first_safe_off_ns[key] = (opened, event.timestamp_ns)
-        # else: same episode, already anchored — monotonic; do not re-anchor.
+        elif existing[0] == opened:
+            # Same open slice, already anchored — monotonic; do not re-anchor.
+            pass
+        elif rearmed:
+            # OFF->ON->OFF flicker whose re-arm straddled a sign flip: the book
+            # stayed continuously open, so carry the monotonic first-safe-OFF
+            # anchor onto the reversed leg (mirrors the trade-path carry) instead
+            # of restarting the clock at this flicker's timestamp (design §2.3).
+            self._first_safe_off_ns[key] = (opened, existing[1])
+        else:
+            # First safe->OFF of a genuinely new open episode (flat->reopen): the
+            # stale anchor belongs to a prior episode and no re-arm bridged them,
+            # so re-anchor to this episode's own first safe->OFF.
+            self._first_safe_off_ns[key] = (opened, event.timestamp_ns)
 
     def _on_trade(self, trade: Trade) -> None:
         """Evaluate the ``min()`` deadline in event-time on ``Trade`` arrival.
@@ -394,6 +423,7 @@ class DeferralCapController:
             key = (strategy_id, symbol)
             self._first_safe_off_ns.pop(key, None)
             self._pending_exit.pop(key, None)
+            self._rearmed_keys.discard(key)
 
 
 __all__ = [

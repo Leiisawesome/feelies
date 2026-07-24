@@ -323,6 +323,35 @@ def test_sign_flip_carries_deferral_clock() -> None:
     assert out[0].timestamp_ns == 70 * _SECOND
 
 
+def test_flicker_after_sign_flip_does_not_reanchor() -> None:
+    # Regression: an OFF->ON->OFF gate flicker AFTER a sign flip (while the book
+    # stays continuously open) must NOT restart the deferral clock.  The sign
+    # flip advances the slice's opened_at, so the stored anchor's opened no longer
+    # matches; the flicker's second safe->OFF must carry the ORIGINAL first-safe-OFF
+    # (mirroring the trade-path carry), not re-anchor to the flicker timestamp.
+    _, store, bus, out = _make(policies={_SID: _policy(max_hold_s=60, hard_age_s=10_000_000)})
+    _open(store, at_ns=0)  # long 100, opened_at = 0
+    bus.publish(_safety_off(10 * _SECOND))  # first OFF -> anchor, ceiling 70s
+
+    # Sign flip while safe stays OFF: 100 long -> 50 short, opened_at resets to 30s.
+    store.update(_SID, _SYMBOL, -150, Decimal("100"), timestamp_ns=30 * _SECOND)
+    assert store.opened_at_ns(_SID, _SYMBOL) == 30 * _SECOND
+
+    # Gate flicker before any trade runs the carry: re-arm then OFF again.
+    bus.publish(_safety_on(40 * _SECOND))
+    bus.publish(_safety_off(50 * _SECOND))  # must NOT push the ceiling to 110s
+
+    bus.publish(_trade(69 * _SECOND))
+    assert out == [], "held below the carried deferral ceiling"
+
+    # Fires at the ORIGINAL 70s ceiling (first_off 10s + 60s), proving the flicker
+    # did not re-anchor the clock to 50s (which would defer the exit to 110s).
+    bus.publish(_trade(70 * _SECOND))
+    assert len(out) == 1
+    assert out[0].reason == DEFERRAL_REASON_MAX_HOLD
+    assert out[0].timestamp_ns == 70 * _SECOND
+
+
 @settings(max_examples=75, deadline=None)
 @given(
     first_off_s=st.integers(min_value=1, max_value=10_000),
