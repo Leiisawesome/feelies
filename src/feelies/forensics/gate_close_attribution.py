@@ -44,7 +44,10 @@ from feelies.core.events import (
     TrendMechanism,
 )
 from feelies.risk.deferral_cap import DEFERRAL_EXIT_REASONS
-from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
+from feelies.risk.exit_composer import (
+    EXIT_COMPOSER_EXIT_REASONS,
+    EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED,
+)
 
 # Every RISK-layer reason token that represents a gate-close-derived flatten,
 # i.e. an unwind that (pre-decoupling) would have ridden the SIGNAL-layer FLAT.
@@ -52,12 +55,14 @@ from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
 # authors the bounded-deferral deadline exits.
 SAFETY_DERIVED_EXIT_REASONS: frozenset[str] = EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
 
-# Composer reasons copy the triggering ``SafetyStateChange.correlation_id`` onto
-# the flatten order, so the join is exact on ``correlation_id``.  Deferral-cap
-# reasons instead stamp the triggering ``Trade.correlation_id`` (the event-time
-# clock proxy), so those orders join to their safety episode on
+# Only the fail-closed composer reason copies the triggering
+# ``SafetyStateChange.correlation_id`` onto the flatten order, so its join is
+# exact on ``correlation_id``.  The revocation reason (``DECOUPLING_REVOKED``)
+# carries a caller-supplied ``correlation_id`` (``revoke_and_flatten``), and
+# deferral-cap reasons stamp the triggering ``Trade.correlation_id`` (the
+# event-time clock proxy); both instead join to their safety episode on
 # ``(strategy_id, symbol)`` — never on ``correlation_id`` (§2.3, §3.3).
-_CORRELATION_JOINED_REASONS: frozenset[str] = EXIT_COMPOSER_EXIT_REASONS
+_CORRELATION_JOINED_REASONS: frozenset[str] = frozenset({EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED})
 
 Actuation = Literal["SIGNAL_FLAT", "RISK_FLATTEN"]
 
@@ -181,11 +186,11 @@ def reconstruct_from_safety_flatten(
       (:data:`SAFETY_DERIVED_EXIT_REASONS`) and ``order.source_layer`` RISK;
     * ``safety.safe`` must be ``False`` (a ``safe=True`` re-arm never flattens);
     * the two must agree on ``(strategy_id, symbol)``;
-    * for a composer reason (which copies the safety ``correlation_id``), the
-      ``correlation_id`` must match exactly.  A deferral-cap reason carries the
-      triggering trade's ``correlation_id`` instead, so that field is *not*
-      required to match — the association is the ``(strategy_id, symbol)``
-      episode (§2.3).
+    * for the fail-closed composer reason (which copies the safety
+      ``correlation_id``), the ``correlation_id`` must match exactly.  A
+      revocation flatten (caller-supplied ``correlation_id``) or a deferral-cap
+      reason (the triggering trade's ``correlation_id``) is *not* required to
+      match — the association is the ``(strategy_id, symbol)`` episode (§2.3).
     """
     if order.reason not in SAFETY_DERIVED_EXIT_REASONS:
         raise GateCloseAttributionError(
