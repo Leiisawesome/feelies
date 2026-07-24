@@ -252,6 +252,7 @@ class TestGateMatrixSubcommand:
             "live_to_quarantined",
             "quarantined_to_paper",
             "quarantined_to_decommissioned",
+            "decouple_caps_only",
         }
         # paper_to_live carries all three evidence types.
         paper_to_live = next(g for g in payload["gates"] if g["gate_id"] == "paper_to_live")

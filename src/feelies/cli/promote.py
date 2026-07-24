@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from feelies.alpha.promotion_evidence import (
+    AUTHORIZE_DECOUPLE_TRIGGER,
     EVIDENCE_SCHEMA_VERSION,
     GATE_EVIDENCE_REQUIREMENTS,
     PROMOTE_CAPITAL_TIER_TRIGGER,
@@ -230,6 +231,8 @@ def _gate_for_entry(entry: PromotionLedgerEntry) -> GateId | None:
     if pair == ("LIVE", "LIVE"):
         if entry.trigger == PROMOTE_CAPITAL_TIER_TRIGGER:
             return GateId.LIVE_PROMOTE_CAPITAL_TIER
+        if entry.trigger == AUTHORIZE_DECOUPLE_TRIGGER:
+            return GateId.DECOUPLE_CAPS_ONLY
         return None
     return _STATE_PAIR_TO_GATE.get(pair)
 

@@ -30,6 +30,7 @@ from enum import Enum, auto
 from typing import Any
 
 from feelies.alpha.promotion_evidence import (
+    AUTHORIZE_DECOUPLE_TRIGGER,
     PROMOTE_CAPITAL_TIER_TRIGGER,
     CapitalStageEvidence,
     CapitalStageTier,
@@ -475,6 +476,69 @@ class AlphaLifecycle:
         self._sm.transition(
             AlphaLifecycleState.LIVE,
             trigger=PROMOTE_CAPITAL_TIER_TRIGGER,
+            correlation_id=correlation_id,
+            metadata=metadata,
+        )
+        return []
+
+    def authorize_decouple(
+        self,
+        *,
+        structured_evidence: Sequence[object],
+        config_version: str,
+        authorized_by: str,
+        correlation_id: str = "",
+    ) -> list[str]:
+        """Authorize the Stage-0 ``decouple_caps_only`` safety-exit policy.
+
+        Dual-permission design rev 5 §2.5: decoupling the immediate gate-close
+        flatten is an **opt-in promotion** that requires human re-authorization
+        (Inv-11) and passing the Stage-0 falsifiers — the powered conditional
+        CVaR, the turnover bound, and the quote-freeze / session-backstop check
+        (:data:`GateId.DECOUPLE_CAPS_ONLY`).  A failing or under-powered gate
+        blocks the authorization: the errors are returned and **nothing** is
+        written to the ledger (fail-safe by default).
+
+        Recorded — on success — as a ``LIVE -> LIVE`` self-loop with
+        :data:`AUTHORIZE_DECOUPLE_TRIGGER` (mirroring capital-tier escalation),
+        so the promotion ledger carries the gate outcome plus the
+        ``config_version`` and human ``authorized_by`` provenance (Inv-13).  The
+        alpha must be ``LIVE``: decoupling governs a live book's exit actuation,
+        and its revocation routes through quarantine (§2.5).
+
+        Returns the list of gate / precondition errors (empty = authorized).
+        """
+        errors: list[str] = []
+
+        if self._sm.state is not AlphaLifecycleState.LIVE:
+            errors.append(
+                f"decouple authorization requires state=LIVE; "
+                f"current state is {self._sm.state.name}"
+            )
+            return errors
+        if not config_version.strip():
+            errors.append("decouple authorization requires a non-empty config_version (Inv-13)")
+        if not authorized_by.strip():
+            errors.append(
+                "decouple authorization requires a non-empty authorized_by human sign-off (Inv-11)"
+            )
+        if errors:
+            return errors
+
+        gate_errors = validate_gate(
+            GateId.DECOUPLE_CAPS_ONLY,
+            structured_evidence,
+            self._gate_thresholds,
+        )
+        if gate_errors:
+            return list(gate_errors)
+
+        metadata = evidence_to_metadata(*structured_evidence)
+        metadata["config_version"] = config_version
+        metadata["authorized_by"] = authorized_by
+        self._sm.transition(
+            AlphaLifecycleState.LIVE,
+            trigger=AUTHORIZE_DECOUPLE_TRIGGER,
             correlation_id=correlation_id,
             metadata=metadata,
         )

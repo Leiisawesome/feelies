@@ -29,14 +29,17 @@ from feelies.alpha.promotion_evidence import (
     KIND_TO_TYPE,
     CapitalStageEvidence,
     CapitalStageTier,
+    ConditionalCVaREvidence,
     CPCVEvidence,
     DSREvidence,
     GateId,
     GateThresholds,
     PaperWindowEvidence,
     QuarantineTriggerEvidence,
+    QuoteFreezeBackstopEvidence,
     ResearchAcceptanceEvidence,
     RevalidationEvidence,
+    TurnoverBoundEvidence,
     apply_gate_thresholds_overrides,
     evidence_to_metadata,
     metadata_to_evidence,
@@ -975,6 +978,9 @@ class TestKindToType:
             "capital_stage",
             "quarantine_trigger",
             "revalidation",
+            "conditional_cvar",
+            "turnover_bound",
+            "quote_freeze_backstop",
         }
         assert set(KIND_TO_TYPE.keys()) == expected
 
@@ -986,6 +992,9 @@ class TestKindToType:
         assert KIND_TO_TYPE["capital_stage"] is CapitalStageEvidence
         assert KIND_TO_TYPE["quarantine_trigger"] is QuarantineTriggerEvidence
         assert KIND_TO_TYPE["revalidation"] is RevalidationEvidence
+        assert KIND_TO_TYPE["conditional_cvar"] is ConditionalCVaREvidence
+        assert KIND_TO_TYPE["turnover_bound"] is TurnoverBoundEvidence
+        assert KIND_TO_TYPE["quote_freeze_backstop"] is QuoteFreezeBackstopEvidence
 
 
 # ─────────────────────────────────────────────────────────────────────
