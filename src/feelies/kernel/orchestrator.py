@@ -4822,6 +4822,19 @@ class Orchestrator:
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
                         )
+                elif order.reason in EXIT_COMPOSER_EXIT_REASONS and order.strategy_id:
+                    # Slice-scoped composer exit: attribute the whole fill to its
+                    # own strategy slice.  A proportional net split would bleed the
+                    # fill onto a bystander strategy sharing the symbol, leaving the
+                    # mandated slice partially open (design §3.3).
+                    self._strategy_positions.update(
+                        order.strategy_id,
+                        ack.symbol,
+                        signed_qty,
+                        ack.fill_price,
+                        fees=ack.fees,
+                        timestamp_ns=ack.timestamp_ns,
+                    )
                 else:
                     # Without attribution, split proportionally to keep stores in
                     # sync. Aggregate PnL stays exact; per-alpha PnL is estimated.
@@ -5347,7 +5360,16 @@ class Orchestrator:
         # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(event.symbol).quantity
         signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
-        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
+        # A composer exit is slice-scoped: judge "reduces" against its own
+        # strategy slice, not symbol-net exposure.  Another strategy holding the
+        # opposite side can leave net flat while the mandated slice is still open,
+        # which would otherwise strand the exit at the non-reducing REJECT branch.
+        reduce_basis_qty = current_qty
+        if event.reason in EXIT_COMPOSER_EXIT_REASONS and self._strategy_positions is not None:
+            reduce_basis_qty = self._strategy_positions.get(
+                event.strategy_id, event.symbol
+            ).quantity
+        order_reduces = abs(reduce_basis_qty + signed_qty) < abs(reduce_basis_qty)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
