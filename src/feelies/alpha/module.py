@@ -112,6 +112,10 @@ class AlphaManifest:
 
       ``hazard_exit`` — optional hazard-exit policy block.
 
+      ``safety_exit_policy`` — optional Stage-0 dual-permission actuation
+      block (``mode`` + bounded-deferral ceilings).  Absent ⇒ the default
+      ``gate_close_flat`` behaviour (immediate flatten on gate-OFF).
+
       ``gate_thresholds_overrides`` — validated per-alpha promotion thresholds.
     """
 
@@ -133,6 +137,7 @@ class AlphaManifest:
     layer: str | None = None
     trend_mechanism: dict[str, Any] | None = None
     hazard_exit: dict[str, Any] | None = None
+    safety_exit_policy: dict[str, Any] | None = None
     gate_thresholds_overrides: dict[str, Any] | None = None
     lifecycle_cap: str | None = None
 

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from feelies.alpha.discovery import load_and_register
 from feelies.alpha.fill_attribution import FillAttributionLedger
+from feelies.alpha.layer_validator import validate_decouple_symbol_scope
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
@@ -766,6 +767,37 @@ def _load_alphas(
         logger.info(
             "Registered alpha '%s' from explicit path %s", module.manifest.alpha_id, spec_path
         )
+
+    _enforce_decouple_symbol_scope(config, registry)
+
+
+def _enforce_decouple_symbol_scope(config: PlatformConfig, registry: AlphaRegistry) -> None:
+    """Cross-alpha Stage-0 scope invariant at load (design rev 5 §3.3 / §3.4).
+
+    The per-spec loader/G17 cannot see whether *another* strategy also trades a
+    decoupled alpha's symbol, so this runs once over the whole registered set.
+    This platform's decoupling backstop caps are strategy-slice-scoped (the
+    :class:`~feelies.risk.deferral_cap.DeferralCapController` and
+    :class:`~feelies.risk.exit_composer.ExitComposer` read the per-strategy
+    :class:`~feelies.portfolio.strategy_position_store.StrategyPositionStore`), so
+    a decoupled alpha may share a symbol with another strategy — the guard is a
+    no-op here.  It is wired regardless so the invariant is *enforced at load*
+    (not merely recorded) and bites immediately if a future change ever routes a
+    symbol-net cap as the backstop.
+    """
+    entries: list[tuple[str, frozenset[str], bool]] = []
+    for alpha_id in sorted(registry.alpha_ids()):
+        manifest = registry.get(alpha_id).manifest
+        policy = manifest.safety_exit_policy
+        is_decoupled = policy is not None and policy.get("mode") == "decouple_caps_only"
+        symbols = manifest.symbols
+        resolved = frozenset(symbols) if symbols else frozenset(config.symbols)
+        entries.append((alpha_id, resolved, is_decoupled))
+    validate_decouple_symbol_scope(
+        entries,
+        # This platform flattens the promoting strategy's slice, not symbol-net.
+        backstop_slice_scoped=True,
+    )
 
 
 def _resolve_trading_session_bounds(

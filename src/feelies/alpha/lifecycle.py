@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
@@ -55,6 +55,35 @@ class AlphaLifecycleState(Enum):
     LIVE = auto()
     QUARANTINED = auto()
     DECOMMISSIONED = auto()
+
+
+# Transitions that *revoke* a decoupled alpha's Stage-0 authorization (design
+# rev 5 §2.5 / §3.6).  Entering either state must immediately flatten any open
+# deferred book — the deferral never outlives its authorization.  De-promotion in
+# this platform routes through QUARANTINED, and DECOMMISSIONED is the terminal
+# revocation, so both are covered.  (A config revert to ``gate_close_flat`` is
+# not a lifecycle transition; it calls the same composer entry point directly.)
+_REVOCATION_STATES: frozenset[AlphaLifecycleState] = frozenset(
+    {AlphaLifecycleState.QUARANTINED, AlphaLifecycleState.DECOMMISSIONED}
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class LifecycleRevocation:
+    """Typed context handed to an :class:`AlphaLifecycle` revocation hook.
+
+    Emitted on a transition into a revocation state (quarantine / decommission).
+    The consumer (the risk-layer exit composer, wired at bootstrap) flattens the
+    alpha's open deferred book immediately — the position closes on this
+    transition, not at the old deferral ceiling (§2.5).
+    """
+
+    alpha_id: str
+    from_state: str
+    to_state: str
+    trigger: str
+    timestamp_ns: int
+    correlation_id: str
 
 
 _LIFECYCLE_TRANSITIONS: dict[AlphaLifecycleState, frozenset[AlphaLifecycleState]] = {
@@ -208,12 +237,14 @@ class AlphaLifecycle:
         gate_thresholds: GateThresholds | None = None,
         ledger: PromotionLedger | None = None,
         lifecycle_cap: str | None = None,
+        revocation_hook: Callable[[LifecycleRevocation], None] | None = None,
     ) -> None:
         self._alpha_id = alpha_id
         self._gate_requirements = gate_requirements or GateRequirements()
         self._gate_thresholds = gate_thresholds or GateThresholds()
         self._ledger = ledger
         self._lifecycle_cap = lifecycle_cap
+        self._revocation_hook = revocation_hook
         # Restored tier is a fallback until fresh transition history supersedes it.
         self._persisted_capital_tier: CapitalStageTier | None = None
         self._sm = StateMachine(
@@ -225,6 +256,12 @@ class AlphaLifecycle:
         # Ledger-write failure rolls back the transition atomically.
         if self._ledger is not None:
             self._sm.on_transition(self._record_to_ledger)
+        # Registered after the ledger callback so a revocation is recorded before
+        # the deferred book is flattened.  The handler swallows hook exceptions
+        # so a flatten failure can never abort a demotion (Inv-11: "demotion
+        # commits" — the state machine rolls a transition back on any callback
+        # exception, so this one must never raise).
+        self._sm.on_transition(self._maybe_fire_revocation_hook)
 
     @property
     def state(self) -> AlphaLifecycleState:
@@ -562,6 +599,62 @@ class AlphaLifecycle:
             return evidence_to_metadata(*structured_evidence)
         assert legacy_evidence is not None
         return {"evidence": _evidence_to_dict(legacy_evidence)}
+
+    # ── Revocation-symmetry hook (design rev 5 §2.5 / §3.6) ──────────
+
+    def set_revocation_hook(
+        self,
+        hook: Callable[[LifecycleRevocation], None] | None,
+    ) -> None:
+        """Wire (or clear) the open-deferred-book flatten hook.
+
+        The hook cannot always be supplied at construction — the risk-layer exit
+        composer it targets is built *after* the alpha registers — so bootstrap
+        sets it post-hoc.  Passing ``None`` detaches it.
+        """
+        self._revocation_hook = hook
+
+    def _maybe_fire_revocation_hook(self, record: TransitionRecord) -> None:
+        """Fire the revocation hook on a transition into a revocation state.
+
+        Runs as a ``StateMachine.on_transition`` callback, i.e. *before* the
+        state pointer commits (``record.to_state`` is the authoritative edge).
+        Any exception is swallowed and logged: a failed flatten must never abort
+        the demotion, because the state machine rolls a transition back on a
+        callback exception and Inv-11 requires the demotion to commit (the
+        deferral cap / session flatten remain as backstops if the immediate
+        flatten could not be emitted).
+        """
+        hook = self._revocation_hook
+        if hook is None:
+            return
+        try:
+            to_state = AlphaLifecycleState[record.to_state]
+        except KeyError:  # pragma: no cover - state names come from this enum
+            return
+        if to_state not in _REVOCATION_STATES:
+            return
+        try:
+            hook(
+                LifecycleRevocation(
+                    alpha_id=self._alpha_id,
+                    from_state=record.from_state,
+                    to_state=record.to_state,
+                    trigger=record.trigger,
+                    timestamp_ns=record.timestamp_ns,
+                    correlation_id=record.correlation_id,
+                )
+            )
+        except Exception:  # noqa: BLE001 - demotion must commit regardless
+            _logger.exception(
+                "alpha %r revocation flatten hook failed on %s -> %s "
+                "(trigger=%s); demotion still commits (Inv-11), deferral cap / "
+                "session flatten remain as backstops",
+                self._alpha_id,
+                record.from_state,
+                record.to_state,
+                record.trigger,
+            )
 
     # ── Promotion ledger ─────────────────────────────────────
 

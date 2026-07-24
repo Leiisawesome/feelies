@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 _logger = logging.getLogger(__name__)
@@ -157,6 +158,30 @@ _HORIZON_RATIO_FLOOR: float = 0.5
 _HORIZON_RATIO_CEILING: float = 4.0
 # Warn when minor half-life recalibration could cross a hard ratio bound.
 _HORIZON_RATIO_WARN_MARGIN: float = 0.05
+
+
+# ── G17: Stage-0 safety_exit_policy data (design rev 5 §2.8 / §3.4) ──────
+
+# Dual-permission actuation modes (mirrors ``feelies.alpha.loader``).
+_SAFETY_EXIT_POLICY_DEFAULT_MODE: str = "gate_close_flat"
+_SAFETY_EXIT_POLICY_DECOUPLE_MODE: str = "decouple_caps_only"
+
+# The Stage-0 ``max_hold_after_safe_off`` ceiling may not exceed a per-family
+# multiple of the alpha's declared ``expected_half_life_seconds`` (§2.8).  The
+# multiple is per *mechanism family* — not a global scalar and not per-alpha —
+# because the residual edge left to harvest after safety-OFF depends on the
+# family's decay shape.  Short-decay families (market-maker inventory drift,
+# order-flow self-excitation) retain negligible residual by the time the gate
+# flips, so their deferral ceiling is a single half-life; slower information and
+# scheduled-flow families may harvest residual for a few half-lives.  Frozen at
+# schema freeze; changing a value is a deliberate platform-level decision.
+_FAMILY_MAX_HOLD_HALF_LIFE_MULTIPLE: dict[str, int] = {
+    "KYLE_INFO": 3,
+    "INVENTORY": 1,
+    "HAWKES_SELF_EXCITE": 1,
+    "LIQUIDITY_STRESS": 2,
+    "SCHEDULED_FLOW": 2,
+}
 
 
 _STRESS_FAMILY: str = "LIQUIDITY_STRESS"
@@ -309,6 +334,11 @@ class LayerValidator:
 
         # Trend-mechanism gate.
         self._check_g16_trend_mechanism_compliance(spec, source)
+
+        # Stage-0 dual-permission actuation gate.  Always blocking — the
+        # bounded-deferral ceiling and the story/decouple coupling are
+        # safety-critical (Inv-11), not research-downgradable.
+        self._check_g17_safety_exit_policy(spec, source)
 
     def _check_g14_data_scope(self, spec: dict[str, Any], source: str) -> None:
         """G14 — alpha must declare no data dependency beyond L1 NBBO + trades.
@@ -1086,6 +1116,110 @@ class LayerValidator:
                         f"{sorted(seen_families)}"
                     )
 
+    def _check_g17_safety_exit_policy(self, spec: dict[str, Any], source: str) -> None:
+        """G17 — Stage-0 dual-permission actuation (design rev 5 §2.8 / §3.4).
+
+        Cross-block, single-spec invariants for the ``safety_exit_policy:`` and
+        ``story_permission:`` blocks (both SIGNAL-only).  The purely structural
+        checks (``mode`` enum; both ceilings present + positive under
+        ``decouple_caps_only``) live in
+        :meth:`~feelies.alpha.loader.AlphaLoader._parse_safety_exit_policy_block`;
+        this gate owns the invariants that need *other* blocks:
+
+        1. ``safety_exit_policy`` / ``story_permission`` are SIGNAL-layer only.
+        2. ``story_permission`` set ⇒ ``mode ≠ gate_close_flat`` (a story map
+           while the gate still auto-flattens on close is contradictory, §3.4).
+        3. ``decouple_caps_only`` requires a ``trend_mechanism:`` with a known
+           ``family`` and a positive ``expected_half_life_seconds`` — the
+           deferral ceiling is bounded by the family's half-life envelope, so a
+           decoupled alpha with no family has nothing to bound it against (§2.8).
+        4. ``max_hold_after_safe_off`` ≤ per-family multiple ×
+           ``expected_half_life_seconds`` (§2.8).
+
+        Deliberately tolerant of a *structurally* malformed block (non-mapping,
+        unknown mode, missing/negative ceiling): those raise from the loader's
+        parser, so this gate returns early rather than double-reporting.
+        """
+        policy = spec.get("safety_exit_policy")
+        story = spec.get("story_permission")
+        if policy is None and story is None:
+            return  # default gate_close_flat behaviour — nothing to validate.
+
+        layer = str(spec.get("layer") or "").upper()
+        if layer != "SIGNAL":
+            offending = "safety_exit_policy" if policy is not None else "story_permission"
+            raise LayerValidationError(
+                f"{source}: G17 — '{offending}:' is a SIGNAL-layer block "
+                f"(Stage-0 dual-permission actuation is regime-gate-scoped); "
+                f"layer: {layer or '<missing>'} may not declare it."
+            )
+
+        # ``mode`` defaults to gate_close_flat; a non-mapping / unknown mode is a
+        # structural error the loader parser raises — defer to it.
+        if policy is not None and not isinstance(policy, dict):
+            return
+        mode = (
+            str((policy or {}).get("mode", _SAFETY_EXIT_POLICY_DEFAULT_MODE))
+            if policy is not None
+            else _SAFETY_EXIT_POLICY_DEFAULT_MODE
+        )
+
+        # (2) story ⇒ decouple.
+        if story is not None and mode != _SAFETY_EXIT_POLICY_DECOUPLE_MODE:
+            raise LayerValidationError(
+                f"{source}: G17 — 'story_permission:' requires "
+                f"safety_exit_policy.mode='{_SAFETY_EXIT_POLICY_DECOUPLE_MODE}' "
+                f"(got mode='{mode}'); a story map while the gate still "
+                f"auto-flattens on close is contradictory (design §3.4)."
+            )
+
+        if mode != _SAFETY_EXIT_POLICY_DECOUPLE_MODE:
+            return
+
+        # (3) decouple requires a family + half-life envelope to bound the ceiling.
+        tm = spec.get("trend_mechanism")
+        family = str(tm.get("family")) if isinstance(tm, dict) and tm.get("family") else None
+        if family is None or family not in _NORMATIVE_FAMILY_NAMES:
+            raise LayerValidationError(
+                f"{source}: G17 — safety_exit_policy.mode="
+                f"'{_SAFETY_EXIT_POLICY_DECOUPLE_MODE}' requires a "
+                f"'trend_mechanism.family' in {sorted(_NORMATIVE_FAMILY_NAMES)}; "
+                f"the deferral ceiling is bounded by the family's half-life "
+                f"envelope, so decoupling with no family has nothing to bound "
+                f"max_hold_after_safe_off against (design §2.8)."
+            )
+        half_life_raw = tm.get("expected_half_life_seconds") if isinstance(tm, dict) else None
+        try:
+            half_life = int(half_life_raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            half_life = 0
+        if half_life <= 0:
+            raise LayerValidationError(
+                f"{source}: G17 — safety_exit_policy.mode="
+                f"'{_SAFETY_EXIT_POLICY_DECOUPLE_MODE}' requires a positive "
+                f"'trend_mechanism.expected_half_life_seconds' to bound the "
+                f"deferral ceiling (§2.8); got {half_life_raw!r}."
+            )
+
+        # (4) max_hold_after_safe_off ≤ per-family multiple × half-life.
+        max_hold_raw = (policy or {}).get("max_hold_after_safe_off")
+        try:
+            max_hold = int(max_hold_raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return  # missing / malformed ceiling — the loader parser rejects it.
+        if max_hold <= 0:
+            return  # non-positive ceiling — loader parser rejects it.
+        multiple = _FAMILY_MAX_HOLD_HALF_LIFE_MULTIPLE[family]
+        ceiling = multiple * half_life
+        if max_hold > ceiling:
+            raise LayerValidationError(
+                f"{source}: G17 — safety_exit_policy.max_hold_after_safe_off="
+                f"{max_hold}s exceeds the {family} ceiling of "
+                f"{multiple}×expected_half_life_seconds({half_life}) = {ceiling}s "
+                f"(design §2.8 — the deferral window may not outlast a per-family "
+                f"multiple of the mechanism's half-life)."
+            )
+
 
 # ── G16 helpers ─────────────────────────────────────────────────────────
 
@@ -1183,3 +1317,69 @@ def _literal_or_attr_name(node: ast.AST) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
     return None
+
+
+# ── G17 cross-alpha scope invariant (design rev 5 §3.3 / §3.4) ──────────────
+
+
+def validate_decouple_symbol_scope(
+    entries: Sequence[tuple[str, frozenset[str], bool]],
+    *,
+    backstop_slice_scoped: bool = True,
+    source: str = "<platform>",
+) -> None:
+    """Reject a symbol-net decoupling backstop on a symbol shared by strategies.
+
+    A cross-alpha companion to gate G17: the per-spec loader/validator cannot
+    see whether *another* strategy also trades a decoupled alpha's symbol, so
+    this runs over the whole registered set at load time (design §3.3, §3.4).
+
+    ``entries`` is ``(alpha_id, resolved_symbols, is_decoupled)`` for every
+    registered alpha — the caller resolves each alpha's effective symbol set
+    (per-alpha ``symbols`` / ``universe``, or the platform universe when the
+    alpha declares none).
+
+    * ``backstop_slice_scoped=True`` (the default, and this platform's wiring —
+      :class:`~feelies.risk.deferral_cap.DeferralCapController` and
+      :class:`~feelies.risk.exit_composer.ExitComposer` both read the
+      per-strategy :class:`~feelies.portfolio.strategy_position_store.StrategyPositionStore`):
+      a slice-scoped backstop flattens only the promoting strategy's slice, so a
+      decoupled alpha may safely share a symbol with another strategy — nothing
+      to reject.
+
+    * ``backstop_slice_scoped=False`` (a symbol-net backstop — e.g. wiring the
+      symbol-net :class:`~feelies.risk.hazard_exit.HazardExitController` as the
+      age backstop): a symbol-net flatten crosses into every strategy's slice on
+      that symbol, so decoupling is hard-restricted to single-strategy-per-symbol
+      — a decoupled alpha sharing a symbol with any other strategy is a **defect**
+      and is rejected here (not merely recorded, §3.3).
+
+    Raises :class:`LayerValidationError` on a shared-symbol violation.
+    """
+    if backstop_slice_scoped:
+        # Slice-scoped backstop: a shared symbol is safe (the cap flattens one
+        # strategy's slice, never symbol-net).  Nothing to enforce.
+        return
+
+    owners: dict[str, set[str]] = {}
+    for alpha_id, symbols, _is_decoupled in entries:
+        for sym in symbols:
+            owners.setdefault(sym, set()).add(alpha_id)
+
+    for alpha_id, symbols, is_decoupled in entries:
+        if not is_decoupled:
+            continue
+        shared = sorted(sym for sym in symbols if len(owners.get(sym, set())) > 1)
+        if shared:
+            others = sorted(
+                {owner for sym in shared for owner in owners.get(sym, set())} - {alpha_id}
+            )
+            raise LayerValidationError(
+                f"{source}: G17 scope — decouple_caps_only alpha {alpha_id!r} "
+                f"shares symbol(s) {shared} with strateg(ies) {others} while the "
+                f"decoupling backstop is symbol-net; a symbol-net cap cannot "
+                f"flatten one strategy's slice without cross-flattening the "
+                f"others (design §3.3). Either scope the backstop caps to the "
+                f"strategy slice or restrict this symbol universe to "
+                f"single-strategy-per-symbol."
+            )
