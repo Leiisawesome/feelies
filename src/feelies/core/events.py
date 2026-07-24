@@ -420,6 +420,51 @@ class KillSwitchActivation(Event):
     activated_by: str
 
 
+# Why a regime gate force-closed and drove safety OFF.  One token per legacy
+# ``_publish_gate_close`` path in :class:`~feelies.signals.horizon_engine.HorizonSignalEngine`:
+# the clean ON→OFF transition and the three fail-closed error paths.
+SafetyReason = Literal[
+    "clean_transition",
+    "missing_binding",
+    "gate_error",
+    "arithmetic_error",
+]
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class SafetyStateChange(Event):
+    """Typed safety-permission transition for a regime-gated SIGNAL alpha.
+
+    Published on every path that force-closes the regime gate — the clean
+    ON→OFF transition and the three fail-closed error paths (missing binding,
+    gate error, arithmetic/type error, named by ``reason``).  ``safe=False``
+    means the mechanism "weather" is now OFF: no new exposure is permitted.
+
+    This decouples *"no new exposure"* (the gate's safety meaning) from
+    *"flatten this open book now"* (an actuation policy).  A later risk-layer
+    exit composer decides HOLD vs EXIT from this event, the hard caps, and book
+    state (design §2.3, §3.3); the signal engine stays stateless (Inv-8).
+
+    The event carries the same alpha-level provenance the gate-close ``Signal``
+    FLAT carries today — ``trend_mechanism``, ``regime_gate_state``,
+    ``consumed_features``, ``expected_half_life_seconds`` and the G12
+    disclosed-cost totals — so a downstream flatten reproduces gate-close
+    attribution (Inv-13).  The engine emits it on a dedicated sequence stream
+    so it can never perturb the locked ``Signal`` stream (Inv-5).
+    """
+
+    symbol: str
+    strategy_id: str
+    safe: bool
+    reason: SafetyReason
+    trend_mechanism: TrendMechanism | None = None
+    regime_gate_state: Literal["ON", "OFF", "N/A"] = "OFF"
+    consumed_features: tuple[str, ...] = ()
+    expected_half_life_seconds: int = 0
+    disclosed_cost_total_bps: float = 0.0
+    disclosed_margin_ratio: float = 0.0
+
+
 # Layered sensor, signal, and portfolio event contracts.
 
 

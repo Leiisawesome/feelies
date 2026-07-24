@@ -20,6 +20,8 @@ from feelies.core.events import (
     MetricEvent,
     MetricType,
     RegimeState,
+    SafetyReason,
+    SafetyStateChange,
     SensorReading,
     Signal,
     SignalDirection,
@@ -74,6 +76,13 @@ class RegisteredSignal:
     consumed_features: tuple[str, ...] = ()
     # None requires every snapshot feature; otherwise require only these IDs.
     required_warm_feature_ids: frozenset[str] | None = None
+    # Stage-0 dual-permission decoupling (design §2.3, §3.1).  When True, a
+    # *clean* ON→OFF gate transition emits a typed ``SafetyStateChange`` and
+    # suppresses the direct gate-close FLAT — a risk-layer composer actuates the
+    # unwind instead (later phase).  The three fail-closed error paths still
+    # FLAT for now.  Default False keeps today's unconditional auto-FLAT, so the
+    # emitted Signal stream stays bit-identical (Inv-5).
+    decouple_gate_close: bool = False
 
 
 class HorizonSignalEngine:
@@ -90,6 +99,7 @@ class HorizonSignalEngine:
         "_regime_min_discriminability",
         "_metric_collector",
         "_metrics_seq",
+        "_safety_seq",
         "_last_boundary_index",
     )
 
@@ -110,6 +120,10 @@ class HorizonSignalEngine:
         self._metrics_seq: SequenceGenerator | None = (
             SequenceGenerator() if metric_collector is not None else None
         )
+        # Isolate SafetyStateChange on its own sequence stream so publishing it
+        # on every gate-close path can never perturb the locked Signal stream
+        # (Inv-5) — mirrors the metrics-seq isolation above.
+        self._safety_seq: SequenceGenerator = SequenceGenerator()
         # Fail regime gates closed when calibrated states are not distinct.
         self._regime_min_discriminability = float(regime_min_discriminability)
         self._signals: list[RegisteredSignal] = []
@@ -317,7 +331,7 @@ class HorizonSignalEngine:
                 hint,
             )
             if was_on:
-                self._publish_gate_close(snapshot, registered)
+                self._publish_gate_close(snapshot, registered, reason="missing_binding")
                 self._emit_metric(
                     "feelies.signal.gate.failsafe_unwind",
                     ts_ns=snapshot.timestamp_ns,
@@ -335,7 +349,7 @@ class HorizonSignalEngine:
                 exc,
             )
             if was_on:
-                self._publish_gate_close(snapshot, registered)
+                self._publish_gate_close(snapshot, registered, reason="gate_error")
                 self._emit_metric(
                     "feelies.signal.gate.failsafe_unwind",
                     ts_ns=snapshot.timestamp_ns,
@@ -361,7 +375,7 @@ class HorizonSignalEngine:
                 exc,
             )
             if was_on:
-                self._publish_gate_close(snapshot, registered)
+                self._publish_gate_close(snapshot, registered, reason="arithmetic_error")
                 self._emit_metric(
                     "feelies.signal.gate.failsafe_unwind",
                     ts_ns=snapshot.timestamp_ns,
@@ -370,8 +384,8 @@ class HorizonSignalEngine:
             return
 
         if was_on and not on:
-            # ON to OFF closes the position.
-            self._publish_gate_close(snapshot, registered)
+            # ON to OFF closes the position (clean transition).
+            self._publish_gate_close(snapshot, registered, reason="clean_transition")
             self._emit_metric(
                 "feelies.signal.gate.transition",
                 ts_ns=snapshot.timestamp_ns,
@@ -456,13 +470,31 @@ class HorizonSignalEngine:
         self,
         snapshot: HorizonFeatureSnapshot,
         registered: RegisteredSignal,
+        *,
+        reason: SafetyReason,
     ) -> None:
-        """Emit a FLAT signal carrying full alpha-level provenance.
+        """Force-close the gate: emit the typed ``SafetyStateChange`` and, unless
+        suppressed, the gate-close FLAT ``Signal``.
 
-        Used for a normal ON → OFF transition and when an active gate cannot
-        re-evaluate because a binding is missing or cold. The signal retains
-        entry provenance so the unwind is attributed correctly.
+        Called on all four legacy flatten paths — the clean ON→OFF transition
+        and the three fail-closed error paths (``reason`` names which). The
+        ``SafetyStateChange`` is published on **every** path (design §3.1);
+        omitting it on an error path would strand an open book under a decoupled
+        alpha once the composer arrives — a fail-open defect, not an
+        optimization.
+
+        The direct FLAT is suppressed only for a **decoupled** alpha's **clean**
+        transition (``decouple_gate_close`` and ``reason == "clean_transition"``);
+        the risk-layer composer will actuate that unwind in a later phase. The
+        three error paths still FLAT here so nothing strands before the composer
+        exists, and default (non-decoupled) alphas always FLAT — keeping the
+        emitted Signal stream bit-identical (Inv-5).
+
+        The FLAT retains entry provenance so the unwind is attributed correctly.
         """
+        self._publish_safety_state_change(snapshot, registered, reason)
+        if reason == "clean_transition" and registered.decouple_gate_close:
+            return
         self._bus.publish(
             Signal(
                 timestamp_ns=snapshot.timestamp_ns,
@@ -482,6 +514,38 @@ class HorizonSignalEngine:
                 expected_half_life_seconds=(registered.expected_half_life_seconds),
                 disclosed_cost_total_bps=(registered.cost_arithmetic.cost_total_bps),
                 disclosed_margin_ratio=(registered.cost_arithmetic.margin_ratio),
+            )
+        )
+
+    def _publish_safety_state_change(
+        self,
+        snapshot: HorizonFeatureSnapshot,
+        registered: RegisteredSignal,
+        reason: SafetyReason,
+    ) -> None:
+        """Publish a typed ``SafetyStateChange(safe=False)`` carrying the same
+        alpha-level provenance as the gate-close FLAT (Inv-13).
+
+        Emitted on the dedicated safety sequence stream so it never perturbs the
+        locked Signal stream (Inv-5). Consumed by the risk-layer exit composer
+        in a later phase; harmless (no subscriber) until then.
+        """
+        self._bus.publish(
+            SafetyStateChange(
+                timestamp_ns=snapshot.timestamp_ns,
+                correlation_id=snapshot.correlation_id,
+                sequence=self._safety_seq.next(),
+                source_layer="SIGNAL",
+                symbol=snapshot.symbol,
+                strategy_id=registered.alpha_id,
+                safe=False,
+                reason=reason,
+                trend_mechanism=registered.trend_mechanism,
+                regime_gate_state="OFF",
+                consumed_features=registered.consumed_features,
+                expected_half_life_seconds=registered.expected_half_life_seconds,
+                disclosed_cost_total_bps=registered.cost_arithmetic.cost_total_bps,
+                disclosed_margin_ratio=registered.cost_arithmetic.margin_ratio,
             )
         )
 
