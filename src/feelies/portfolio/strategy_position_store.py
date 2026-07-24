@@ -42,6 +42,19 @@ class StrategyPositionStore:
         """Get position for a specific strategy + symbol."""
         return self._get_store(strategy_id).get(symbol)
 
+    def opened_at_ns(self, strategy_id: str, symbol: str) -> int | None:
+        """Open-episode start (ns) for a strategy's slice, or ``None`` when flat.
+
+        Read-only mirror of :meth:`PositionStore.opened_at_ns` at the
+        **strategy-slice** grain — the bounded-deferral cap
+        (``feelies.risk.deferral_cap``) needs the promoting strategy's own
+        open time to anchor its ``hard_exit_age_seconds`` backstop, not the
+        symbol-net episode.  Never materialises a sub-store: an
+        unseen strategy is flat, so ``None``.
+        """
+        store = self._stores.get(strategy_id)
+        return store.opened_at_ns(symbol) if store is not None else None
+
     def update(
         self,
         strategy_id: str,
