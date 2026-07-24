@@ -888,9 +888,12 @@ def validate_conditional_cvar(
     - **tail not worse** — ``cvar_delta >= -decouple_cvar_tolerance`` (holding
       through the flagged regime does not deepen the left tail);
     - **internal integrity** — ``cvar_level`` in ``(0, decouple_cvar_max_level]``,
-      a positive horizon, ``effective_tail_sample <= subpopulation_size``, all
-      CVaR figures finite, ``cvar_delta`` matches ``hold - flatten`` and the mean
-      of ``path_cvar_deltas`` (catches a fabricated/drifted summary).
+      a positive horizon, ``effective_tail_sample`` equal to
+      ``floor(cvar_level * subpopulation_size)`` (the honest power measure cannot
+      be spoofed), all CVaR figures finite, ``cvar_delta`` matches
+      ``hold - flatten`` and the mean of ``path_cvar_deltas``, and
+      ``len(path_cvar_deltas)`` matches ``cpcv_fold_count`` whenever paths are
+      claimed (catches a fabricated/drifted summary or omitted path evidence).
     """
     t = thresholds or GateThresholds()
     errors: list[str] = []
@@ -913,6 +916,14 @@ def validate_conditional_cvar(
             f"CVaR effective_tail_sample {evidence.effective_tail_sample} > "
             f"subpopulation_size {evidence.subpopulation_size} (impossible)"
         )
+    if 0.0 < evidence.cvar_level <= 1.0 and evidence.subpopulation_size >= 0:
+        expected_tail = int(evidence.cvar_level * evidence.subpopulation_size)
+        if evidence.effective_tail_sample != expected_tail:
+            errors.append(
+                f"CVaR effective_tail_sample {evidence.effective_tail_sample} != "
+                f"floor(cvar_level * subpopulation_size) = {expected_tail} "
+                "(spoofed tail power?)"
+            )
     for name, value in (
         ("hold_cvar", evidence.hold_cvar),
         ("flatten_cvar", evidence.flatten_cvar),
@@ -942,11 +953,11 @@ def validate_conditional_cvar(
                     f"CVaR cvar_delta {evidence.cvar_delta} does not match "
                     f"mean(path_cvar_deltas)={recomputed} (fabricated/drifted summary?)"
                 )
-            if len(evidence.path_cvar_deltas) != evidence.cpcv_fold_count:
-                errors.append(
-                    f"CVaR inconsistent: cpcv_fold_count={evidence.cpcv_fold_count} but "
-                    f"{len(evidence.path_cvar_deltas)} path_cvar_deltas provided"
-                )
+    if evidence.cpcv_fold_count > 0 and len(evidence.path_cvar_deltas) != evidence.cpcv_fold_count:
+        errors.append(
+            f"CVaR inconsistent: cpcv_fold_count={evidence.cpcv_fold_count} but "
+            f"{len(evidence.path_cvar_deltas)} path_cvar_deltas provided"
+        )
 
     # ── Modeled fills under Inv-12 stress (not mid marks) ─────────
     if not evidence.modeled_fills:
