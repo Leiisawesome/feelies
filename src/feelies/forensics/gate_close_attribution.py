@@ -43,17 +43,33 @@ from feelies.core.events import (
     SignalDirection,
     TrendMechanism,
 )
-from feelies.risk.deferral_cap import DEFERRAL_EXIT_REASONS
+from feelies.risk.deferral_cap import DEFERRAL_EXIT_REASONS, DEFERRAL_EXIT_SOURCE_LAYER
 from feelies.risk.exit_composer import (
     EXIT_COMPOSER_EXIT_REASONS,
     EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED,
+    EXIT_COMPOSER_SOURCE_LAYER,
 )
+from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS
 
 # Every RISK-layer reason token that represents a gate-close-derived flatten,
 # i.e. an unwind that (pre-decoupling) would have ridden the SIGNAL-layer FLAT.
 # The composer authors the fail-closed / revocation exits; the deferral cap
-# authors the bounded-deferral deadline exits.
-SAFETY_DERIVED_EXIT_REASONS: frozenset[str] = EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
+# authors the bounded-deferral deadline exits.  ``HARD_EXIT_AGE`` is deliberately
+# excluded: it is a shared token that the HazardExitController also emits *with
+# no linked SafetyStateChange*, so a hazard age exit is indistinguishable from a
+# deferral age exit on the order alone.  Accepting it would let a hazard exit be
+# mis-joined to an unrelated safe=False episode and silently fabricate gate-close
+# provenance, so we drop every hazard-authored reason and let it fail loudly.
+SAFETY_DERIVED_EXIT_REASONS: frozenset[str] = (
+    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
+) - HAZARD_EXIT_REASONS
+
+# The RISK-layer source tokens a safety-derived flatten is authored on (both the
+# exit composer and the deferral cap tag their orders ``"RISK"``).  A flatten on
+# any other layer cannot be a gate-close unwind (§3.1.6).
+SAFETY_DERIVED_SOURCE_LAYERS: frozenset[str] = frozenset(
+    {EXIT_COMPOSER_SOURCE_LAYER, DEFERRAL_EXIT_SOURCE_LAYER}
+)
 
 # Only the fail-closed composer reason copies the triggering
 # ``SafetyStateChange.correlation_id`` onto the flatten order, so its join is
@@ -197,6 +213,11 @@ def reconstruct_from_safety_flatten(
             f"order.reason {order.reason!r} is not a safety-derived flatten "
             f"(expected one of {sorted(SAFETY_DERIVED_EXIT_REASONS)})"
         )
+    if order.source_layer not in SAFETY_DERIVED_SOURCE_LAYERS:
+        raise GateCloseAttributionError(
+            f"order.source_layer {order.source_layer!r} is not a RISK-layer flatten "
+            f"(expected one of {sorted(SAFETY_DERIVED_SOURCE_LAYERS)})"
+        )
     if safety.safe:
         raise GateCloseAttributionError(
             "cannot reconstruct a gate-close from a safe=True (re-arm) event"
@@ -239,4 +260,5 @@ __all__ = [
     "from_gate_close_flat",
     "reconstruct_from_safety_flatten",
     "SAFETY_DERIVED_EXIT_REASONS",
+    "SAFETY_DERIVED_SOURCE_LAYERS",
 ]
