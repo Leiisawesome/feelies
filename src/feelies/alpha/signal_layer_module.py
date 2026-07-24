@@ -52,6 +52,7 @@ class LoadedSignalLayerModule:
         "_expected_half_life_seconds",
         "_consumed_features",
         "_params",
+        "_decouple_gate_close",
     )
 
     def __init__(
@@ -68,6 +69,7 @@ class LoadedSignalLayerModule:
         consumed_features: tuple[str, ...],
         params: Mapping[str, Any],
         signal_source: str | None = None,
+        decouple_gate_close: bool = False,
     ) -> None:
         self._manifest = manifest
         self._signal = signal
@@ -80,6 +82,7 @@ class LoadedSignalLayerModule:
         self._expected_half_life_seconds = expected_half_life_seconds
         self._consumed_features = consumed_features
         self._params = dict(params)
+        self._decouple_gate_close = bool(decouple_gate_close)
 
     # ── AlphaModule protocol ─────────────────────────────────────────
 
@@ -170,6 +173,19 @@ class LoadedSignalLayerModule:
     def params(self) -> Mapping[str, Any]:
         """Resolved parameter mapping passed to ``signal.evaluate``."""
         return dict(self._params)
+
+    @property
+    def decouple_gate_close(self) -> bool:
+        """Stage-0 opt-in: suppress the clean gate-close FLAT for this alpha.
+
+        ``True`` when ``safety_exit_policy.mode == decouple_caps_only`` (design
+        rev 5 §3.4).  Threaded onto ``RegisteredSignal.decouple_gate_close`` at
+        bootstrap so the risk-layer exit composer (not the SIGNAL engine)
+        authors the bounded-deferral HOLD / fail-closed EXIT.  ``False`` (the
+        default ``gate_close_flat`` mode) keeps today's inline gate-close FLAT
+        bit-identically.
+        """
+        return self._decouple_gate_close
 
 
 # ── HorizonSignal adapter for inline YAML evaluate() ────────────────────

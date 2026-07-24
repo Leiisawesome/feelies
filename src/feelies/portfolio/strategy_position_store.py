@@ -214,6 +214,25 @@ class StrategyPositionStore:
         """Set of all strategy IDs with positions."""
         return frozenset(self._stores.keys())
 
+    def open_positions(self, strategy_id: str) -> dict[str, Position]:
+        """Open (non-zero-quantity) slices for one strategy, keyed by symbol.
+
+        The bounded-deferral revocation path
+        (:meth:`~feelies.risk.exit_composer.ExitComposer.revoke_and_flatten`)
+        enumerates a decoupled strategy's open book to flatten it immediately on
+        demotion / quarantine / config-revert.  Never materialises a sub-store:
+        an unseen strategy is flat, so the result is empty.  Iteration order is
+        the sub-store's insertion order — the caller sorts for determinism.
+        """
+        store = self._stores.get(strategy_id)
+        if store is None:
+            return {}
+        return {
+            symbol: position
+            for symbol, position in store.all_positions().items()
+            if position.quantity != 0
+        }
+
     def as_aggregate(self) -> _AggregateView:
         """Return a PositionStore-compatible aggregate view.
 

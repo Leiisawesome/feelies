@@ -35,6 +35,7 @@ from feelies.alpha.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
     GateRequirements,
+    LifecycleRevocation,
     PromotionEvidence,
 )
 from feelies.alpha.loader import AlphaLoadError, AlphaLoader
@@ -96,6 +97,7 @@ __all__ = [
     "GateRequirements",
     "GateThresholds",
     "KIND_TO_TYPE",
+    "LifecycleRevocation",
     "load_and_register",
     "metadata_to_evidence",
     "PaperWindowEvidence",

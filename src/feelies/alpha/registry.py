@@ -21,12 +21,13 @@ Lifecycle integration:
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from feelies.alpha.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
     GateRequirements,
+    LifecycleRevocation,
     PromotionEvidence,
 )
 from feelies.alpha.module import AlphaModule
@@ -92,6 +93,11 @@ class AlphaRegistry:
         )
         self._promotion_ledger = promotion_ledger
         self._feature_cache: list[FeatureDefinition] | None = None
+        # Stage-0 revocation-symmetry hook (design rev 5 §2.5): wired by bootstrap
+        # after the risk-layer exit composer exists, then applied to every
+        # lifecycle (existing and future) so a demotion flattens the decoupled
+        # alpha's open deferred book immediately.
+        self._lifecycle_revocation_hook: Callable[[LifecycleRevocation], None] | None = None
 
     def register(self, alpha: AlphaModule) -> None:
         """Register an alpha module.
@@ -125,6 +131,7 @@ class AlphaRegistry:
                 gate_thresholds=per_alpha_thresholds,
                 ledger=self._promotion_ledger,
                 lifecycle_cap=manifest.lifecycle_cap,
+                revocation_hook=self._lifecycle_revocation_hook,
             )
 
         self._alphas[alpha_id] = alpha
@@ -288,6 +295,21 @@ class AlphaRegistry:
         return per_alpha
 
     # ── Lifecycle management ────────────────────────────────────
+
+    def set_lifecycle_revocation_hook(
+        self,
+        hook: Callable[[LifecycleRevocation], None] | None,
+    ) -> None:
+        """Wire the Stage-0 revocation-symmetry flatten hook (design §2.5).
+
+        Applies to every lifecycle — those already registered *and* any
+        registered later — so a demotion / quarantine of a decoupled alpha
+        immediately flattens its open deferred book.  Bootstrap calls this once
+        the risk-layer exit composer exists; passing ``None`` detaches it.
+        """
+        self._lifecycle_revocation_hook = hook
+        for lifecycle in self._lifecycles.values():
+            lifecycle.set_revocation_hook(hook)
 
     def get_lifecycle(self, alpha_id: str) -> AlphaLifecycle | None:
         """Get the lifecycle state machine for an alpha.

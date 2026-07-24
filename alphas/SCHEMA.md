@@ -180,6 +180,47 @@ only checks that the block is a mapping; field-level enforcement is
 deferred to Phase 4.1 when the composition layer activates
 hazard-rate exits via `RegimeHazardSpike` events.
 
+### `safety_exit_policy:` block (Stage-0 dual-permission actuation, design rev 5)
+
+Optional, `SIGNAL`-layer only. **Opt-in via field presence** — an absent
+block is the default `gate_close_flat` behaviour: the SIGNAL engine flattens
+an open book *immediately* on the clean regime-gate ON→OFF transition, exactly
+as today (bit-identical).
+
+The block decouples *"no new exposure"* (the gate's safety meaning, which
+still blocks entries autonomously) from *"flatten this open book now"* (an
+actuation policy). Under `decouple_caps_only`, the clean gate-OFF FLAT becomes
+a **bounded deferral**: the open book may be held, but only until the earliest
+of the declared ceilings, after which a risk-layer author forces the exit.
+
+```yaml
+safety_exit_policy:
+  mode: gate_close_flat | decouple_caps_only   # default: gate_close_flat
+  max_hold_after_safe_off: <positive_seconds>  # REQUIRED when mode = decouple_caps_only
+  hard_exit_age_seconds: <positive_seconds>    # REQUIRED when mode = decouple_caps_only
+```
+
+| Field | Type | Rule |
+|---|---|---|
+| `mode` | string | `gate_close_flat` (default) or `decouple_caps_only`. |
+| `max_hold_after_safe_off` | int seconds > 0 | The deferral ceiling, measured from the episode's **first** `safe→OFF` (monotonic — a gate flicker never re-anchors it). Mandatory under `decouple_caps_only`; turns "no immediate flatten" into a *bounded delay*, never a removal. |
+| `hard_exit_age_seconds` | int seconds > 0 | The monotonic position-age backstop, measured from open. Mandatory under `decouple_caps_only`; holds even if the first-safe-OFF anchor is mis-derived. |
+
+Parsing (structural) lives in `AlphaLoader._parse_safety_exit_policy_block`
+([`src/feelies/alpha/loader.py`](../src/feelies/alpha/loader.py)); it rejects
+an unknown `mode`, a non-positive ceiling, and — under `decouple_caps_only` — a
+**missing** `max_hold_after_safe_off` or `hard_exit_age_seconds` (design §3.6:
+"Stage 0 without either ceiling → reject load"). The normalized block is stored
+verbatim on `AlphaManifest.safety_exit_policy`; a `decouple_caps_only` module
+also carries `LoadedSignalLayerModule.decouple_gate_close = True`.
+
+The cross-block and cross-alpha invariants are gate **G17** (below).
+
+An optional Stage-1 `story_permission:` block (a positive hold-desire map) is
+**deferred** — do not author it yet — but the load-time coupling is already
+enforced: `story_permission` present ⇒ `mode` must be `decouple_caps_only`
+(a story map while the gate still auto-flattens is contradictory, §3.4).
+
 ### Architectural gates
 
 | Gate | Status | Description |
@@ -200,6 +241,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
 | G15 | **Active** (Phase 1) | Declared `fill_model.router` must name a platform-supported router (`PassiveLimitOrderRouter` or `BacktestOrderRouter`). |
 | G16 | **Active** (Phase 3.1) | Mechanism-horizon binding — when a `schema_version: "1.1"` SIGNAL/PORTFOLIO alpha declares a `trend_mechanism:` block, validates: (1) `family` ∈ closed taxonomy; (2) `expected_half_life_seconds` ∈ per-family envelope; (3) `horizon_seconds / expected_half_life_seconds` ∈ `[0.5, 4.0]`; (4) every entry in `l1_signature_sensors` is a registered sensor; (5) the family's primary fingerprint sensor is among them; (6) `failure_signature` declared; (7) `LIQUIDITY_STRESS` mechanisms emit no entry-direction `Signal` (AST-checked); (8) PORTFOLIO `trend_mechanism.consumes.max_share_of_gross` summation; (9) PORTFOLIO `depends_on_signals` family whitelist. **Strict mode is the platform default since Workstream E** (`platform.yaml: enforce_trend_mechanism: true`, default `true`) — schema-1.1 SIGNAL/PORTFOLIO specs *missing* a `trend_mechanism:` block are rejected at load time unless the operator explicitly pins `enforce_trend_mechanism: false`. |
+| G17 | **Active** (Phase 4) | Stage-0 dual-permission actuation (`safety_exit_policy:` / `story_permission:`) — always blocking (safety-critical, Inv-11; not `enforce_layer_gates`-downgradable). Cross-block, single-spec: (1) both blocks are `SIGNAL`-layer only; (2) `story_permission` present ⇒ `mode = decouple_caps_only`; (3) `decouple_caps_only` requires a `trend_mechanism:` with a known `family` and positive `expected_half_life_seconds` (the deferral ceiling is bounded by the family envelope); (4) `max_hold_after_safe_off ≤` per-family multiple × `expected_half_life_seconds` (`_FAMILY_MAX_HOLD_HALF_LIFE_MULTIPLE`: KYLE_INFO 3×, INVENTORY 1×, HAWKES_SELF_EXCITE 1×, LIQUIDITY_STRESS 2×, SCHEDULED_FLOW 2×; §2.8). The structural checks (`mode` enum, both ceilings present + positive under decouple) are the loader's (`_parse_safety_exit_policy_block`). A **cross-alpha** companion, `validate_decouple_symbol_scope` (called at load from `bootstrap._enforce_decouple_symbol_scope`), rejects a `decouple_caps_only` alpha that shares a symbol with another strategy **when the decoupling backstop is symbol-net** (single-strategy-per-symbol otherwise); this platform's backstop is strategy-slice-scoped, so a shared symbol is safe. |
 
 ### Phase-2 status (Sensor layer + Horizon scheduler shipped)
 
@@ -626,3 +668,44 @@ the LEGACY_SIGNAL retirement is complete:
   sunset banner has been removed; any spec carrying
   `layer: LEGACY_SIGNAL` raises an `AlphaLoadError` at parse time
   with a stable pointer to the backward-compatibility notes in SCHEMA.md.
+
+### Stage-0 dual-permission actuation status (`safety_exit_policy`, Phase 4)
+
+The Stage-0 decoupling schema surface and its guards are live
+(`dual_permission_actuation_design` rev 5, staged Phases 1–4):
+
+- **Config surface** — the `safety_exit_policy:` block parses and round-trips
+  onto `AlphaManifest.safety_exit_policy`; `mode: decouple_caps_only` marks the
+  loaded module `decouple_gate_close = True`. An absent block (or the default
+  `gate_close_flat`) is **bit-identical to pre-decoupling behaviour** (Inv-5).
+- **Load-time invariants (Phase 4)** — gate **G17** and the cross-alpha
+  `validate_decouple_symbol_scope` enforce, at load: both ceilings mandatory
+  under decouple; `story_permission ⇒ decouple`; the per-family
+  `max_hold_after_safe_off` half-life ceiling; and the symbol-scope rule
+  (single-strategy-per-symbol unless the backstop is strategy-slice-scoped —
+  which this platform's is).
+- **Revocation symmetry (Phase 4, §2.5 / §3.6)** — the mechanism that flattens
+  an open deferred book **immediately** on a decoupled alpha's Stage-0
+  authorization removal, not at the old ceiling. A lifecycle demotion
+  (`quarantine` / `decommission`) fires `AlphaLifecycle`'s revocation hook;
+  `AlphaRegistry.set_lifecycle_revocation_hook` propagates one hook to every
+  lifecycle; and the risk-layer `ExitComposer.revoke_and_flatten` emits a
+  strategy-slice-scoped `DECOUPLING_REVOKED` flatten through the same
+  non-vetoable forced-exit bridge as the fail-closed unwind (Inv-11). A config
+  revert to `gate_close_flat` calls the same composer entry point. The demotion
+  always commits even if the immediate flatten fails (the deferral cap / session
+  flatten remain as backstops).
+- **Runtime activation deferred to the parity phase** — Phase 4 delivers the
+  *load-time* surface + guards and the revocation *mechanism*. Flipping
+  `decouple_gate_close` into the live `HorizonSignalEngine`, wiring the
+  `DeferralCapController` beside the composer, and connecting the registry's
+  revocation hook to that composer at bootstrap are the runtime go-live steps —
+  they change a decoupled alpha's **event-stream shape** (SIGNAL-stream
+  gate-close FLAT → RISK-stream flatten at a new sequence), so they land with the
+  determinism / regenerated-golden phase. Until then the default `gate_close_flat`
+  path is untouched (bit-identical, Inv-5) and no shipped alpha declares
+  `decouple_caps_only`.
+- **Not yet promotable** — the promotion gates that let an alpha *adopt*
+  `decouple_caps_only` in production (conditional-CVaR under purged CPCV,
+  turnover bound, Inv-12 stress fills) are the Stage-0 validation harness and
+  land in a later phase.

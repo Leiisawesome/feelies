@@ -82,7 +82,18 @@ EXIT_COMPOSER_SOURCE_LAYER: str = "RISK"
 # keyed on the old gate-close FLAT reconstruct attribution from this reason code
 # plus that event (design §3.1.6, Inv-13).
 EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED: str = "SAFETY_FAIL_CLOSED"
-EXIT_COMPOSER_EXIT_REASONS: frozenset[str] = frozenset({EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED})
+# Revocation-symmetry unwind (design rev 5 §2.5 / §3.6): removing a decoupled
+# alpha's Stage-0 authorization — quarantine, de-promotion, or a config revert to
+# ``gate_close_flat`` — immediately flattens any open deferred book.  The deferral
+# never outlives its authorization, so the position flattens on the revocation
+# transition, not at the old ``max_hold_after_safe_off`` / age ceiling.
+EXIT_COMPOSER_REASON_DECOUPLING_REVOKED: str = "DECOUPLING_REVOKED"
+EXIT_COMPOSER_EXIT_REASONS: frozenset[str] = frozenset(
+    {
+        EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED,
+        EXIT_COMPOSER_REASON_DECOUPLING_REVOKED,
+    }
+)
 
 # The three fail-closed gate-error reasons.  ``clean_transition`` is the only
 # ``SafetyReason`` that is *not* fail-closed: under Stage-0 decoupling it becomes
@@ -325,6 +336,72 @@ class ExitComposer:
 
         self._emit_flatten(event, position.quantity, opened)
 
+    # ── Public API: revocation symmetry ──────────────────────────────
+
+    def revoke_and_flatten(
+        self,
+        strategy_id: str,
+        *,
+        now_ns: int,
+        correlation_id: str,
+    ) -> list[OrderRequest]:
+        """Immediately flatten a decoupled strategy's open deferred book (§2.5).
+
+        The revocation-symmetry hook for Inv-11: when a decoupled alpha's Stage-0
+        authorization is removed — a lifecycle demotion (quarantine /
+        decommission), a de-promotion, or an operator config revert to
+        ``gate_close_flat`` — the deferral no longer holds, so every open slice
+        the composer governs flattens **now**, not at the old
+        ``max_hold_after_safe_off`` / age ceiling (design §3.6: "the position
+        flattens on the transition, not at the old ceiling").
+
+        The flatten is unconditional (it does not consult :func:`compose_exit`;
+        revocation is a mandated EXIT, not a permission decision) and
+        **strategy-slice scoped** — only the revoked strategy's slices are
+        touched, never another strategy's book on a shared symbol.  Each emitted
+        order carries :data:`EXIT_COMPOSER_REASON_DECOUPLING_REVOKED`, so the
+        kernel routes it through the same non-vetoable forced-exit bridge as the
+        fail-closed unwind (a cost/edge gate can never suppress it, Inv-11).
+
+        No-ops (returns ``[]``) when ``strategy_id`` has no composer policy — a
+        non-decoupled alpha keeps its SIGNAL-layer ``gate_close_flat``, so its
+        book is not the composer's to flatten.  Returns the emitted orders (also
+        published to the bus) for caller assertions / forensics.
+        """
+        policy = self._policies.get(strategy_id)
+        if policy is None:
+            return []
+        emitted: list[OrderRequest] = []
+        open_slices = self._position_store.open_positions(strategy_id)
+        # Lex-sorted so the emitted order IDs / sequence are replayable (Inv-5).
+        for symbol in sorted(open_slices):
+            if policy.universe and symbol not in policy.universe:
+                continue
+            quantity = open_slices[symbol].quantity
+            opened = self._position_store.opened_at_ns(strategy_id, symbol)
+            order = self._emit_flatten_order(
+                strategy_id=strategy_id,
+                symbol=symbol,
+                quantity=quantity,
+                opened=opened,
+                timestamp_ns=now_ns,
+                correlation_id=correlation_id,
+                reason=EXIT_COMPOSER_REASON_DECOUPLING_REVOKED,
+                id_seed=f"{correlation_id}:{now_ns}:{symbol}:{strategy_id}:"
+                f"{EXIT_COMPOSER_REASON_DECOUPLING_REVOKED}",
+            )
+            if order is not None:
+                emitted.append(order)
+        if emitted:
+            _logger.info(
+                "ExitComposer revoked decoupling for strategy=%s: flattened %d "
+                "open slice(s) immediately (%s)",
+                strategy_id,
+                len(emitted),
+                EXIT_COMPOSER_REASON_DECOUPLING_REVOKED,
+            )
+        return emitted
+
     # ── Internals ────────────────────────────────────────────────────
 
     def _emit_flatten(
@@ -333,51 +410,79 @@ class ExitComposer:
         quantity: int,
         opened: int | None,
     ) -> None:
-        key = (event.strategy_id, event.symbol)
+        reason = EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED
+        # Strategy slice + the specific SafetyReason in the seed so two strategies
+        # (or two error causes) flattening the same symbol on one event derive
+        # distinct, replayable order IDs (Inv-5).
+        self._emit_flatten_order(
+            strategy_id=event.strategy_id,
+            symbol=event.symbol,
+            quantity=quantity,
+            opened=opened,
+            timestamp_ns=event.timestamp_ns,
+            correlation_id=event.correlation_id,
+            reason=reason,
+            id_seed=f"{event.correlation_id}:{event.timestamp_ns}:{event.symbol}:"
+            f"{event.strategy_id}:{reason}:{event.reason}",
+        )
+
+    def _emit_flatten_order(
+        self,
+        *,
+        strategy_id: str,
+        symbol: str,
+        quantity: int,
+        opened: int | None,
+        timestamp_ns: int,
+        correlation_id: str,
+        reason: str,
+        id_seed: str,
+    ) -> OrderRequest | None:
+        """Emit one strategy-slice flatten ``OrderRequest``, dedup-guarded.
+
+        Shared by the safety-event fail-closed path (:meth:`_emit_flatten`) and
+        the revocation path (:meth:`revoke_and_flatten`).  Returns the published
+        order, or ``None`` when the per-episode duplicate-close guard suppresses
+        a re-fire against a slice already flattened this episode.
+        """
+        key = (strategy_id, symbol)
 
         # Duplicate-close guard: stay silent against a slice already flattened
         # this episode until the position changes (fill) or the episode resets.
         pending = self._pending_exit.get(key)
         if pending is not None:
             if pending == (opened, quantity):
-                return
+                return None
             del self._pending_exit[key]
 
         side = Side.SELL if quantity > 0 else Side.BUY
         exit_quantity = abs(quantity)
-        reason = EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED
-        # Strategy slice + the specific SafetyReason in the seed so two strategies
-        # (or two error causes) flattening the same symbol on one event derive
-        # distinct, replayable order IDs (Inv-5).
-        order_id = derive_order_id(
-            f"{event.correlation_id}:{event.timestamp_ns}:{event.symbol}:"
-            f"{event.strategy_id}:{reason}:{event.reason}"
-        )
+        order_id = derive_order_id(id_seed)
 
         order = OrderRequest(
-            timestamp_ns=event.timestamp_ns,
-            correlation_id=event.correlation_id,
+            timestamp_ns=timestamp_ns,
+            correlation_id=correlation_id,
             sequence=self._seq.next(),
             source_layer=EXIT_COMPOSER_SOURCE_LAYER,
             order_id=order_id,
-            symbol=event.symbol,
+            symbol=symbol,
             side=side,
             order_type=OrderType.MARKET,
             quantity=exit_quantity,
-            strategy_id=event.strategy_id,
+            strategy_id=strategy_id,
             reason=reason,
         )
         self._pending_exit[key] = (opened, quantity)
         self._bus.publish(order)
         _logger.info(
-            "ExitComposer emitted %s EXIT for %s (strategy=%s, qty=%d, side=%s, safety_reason=%s)",
+            "ExitComposer emitted %s EXIT for %s (strategy=%s, qty=%d, side=%s)",
             reason,
-            event.symbol,
-            event.strategy_id,
+            symbol,
+            strategy_id,
             exit_quantity,
             side.name,
-            event.reason,
         )
+        return order
 
     def _clear_episode_if_flat(self, strategy_id: str, symbol: str) -> None:
         """Release the duplicate-close guard once the slice returns to flat."""
@@ -395,5 +500,6 @@ __all__ = [
     "ExitComposer",
     "EXIT_COMPOSER_SOURCE_LAYER",
     "EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED",
+    "EXIT_COMPOSER_REASON_DECOUPLING_REVOKED",
     "EXIT_COMPOSER_EXIT_REASONS",
 ]

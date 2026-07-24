@@ -108,6 +108,20 @@ _TREND_MECHANISM_FAMILIES = {
     "SCHEDULED_FLOW",
 }
 
+# Stage-0 dual-permission actuation modes (design rev 5 §3.4).
+#   ``gate_close_flat``     — default; the SIGNAL engine flattens immediately on
+#                             the clean gate-OFF transition (today's behaviour,
+#                             bit-identical).
+#   ``decouple_caps_only``  — Stage-0 opt-in; the clean gate-OFF FLAT is decoupled
+#                             into a bounded deferral, so both ceiling fields
+#                             (``max_hold_after_safe_off`` and
+#                             ``hard_exit_age_seconds``) are mandatory.
+_SAFETY_EXIT_POLICY_DEFAULT_MODE: str = "gate_close_flat"
+_SAFETY_EXIT_POLICY_DECOUPLE_MODE: str = "decouple_caps_only"
+_SAFETY_EXIT_POLICY_MODES: frozenset[str] = frozenset(
+    {_SAFETY_EXIT_POLICY_DEFAULT_MODE, _SAFETY_EXIT_POLICY_DECOUPLE_MODE}
+)
+
 # Below 30 seconds, L1 sampling cannot support a meaningful horizon snapshot.
 # PlatformConfig remains the authoritative horizon whitelist.
 _SIGNAL_MIN_HORIZON_SECONDS = 30
@@ -341,6 +355,13 @@ class AlphaLoader:
         hazard_exit_block = self._parse_hazard_exit_block(
             spec.get("hazard_exit"), source, hazard_known_states
         )
+        safety_exit_policy_block = self._parse_safety_exit_policy_block(
+            spec.get("safety_exit_policy"), source
+        )
+        decouple_gate_close = (
+            safety_exit_policy_block is not None
+            and safety_exit_policy_block.get("mode") == _SAFETY_EXIT_POLICY_DECOUPLE_MODE
+        )
         promotion_overrides = self._parse_promotion_block(spec.get("promotion"), source)
         lifecycle_cap = self._parse_lifecycle_state(spec.get("lifecycle_state"), source)
         trend_enum, expected_half_life = self._extract_trend_metadata(
@@ -373,6 +394,7 @@ class AlphaLoader:
             layer="SIGNAL",
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
+            safety_exit_policy=safety_exit_policy_block,
             gate_thresholds_overrides=promotion_overrides,
             lifecycle_cap=lifecycle_cap,
         )
@@ -390,6 +412,7 @@ class AlphaLoader:
             params=params,
             # Retain source so required_warm can follow actual value reads.
             signal_source=str(spec["signal"]),
+            decouple_gate_close=decouple_gate_close,
         )
 
     def _load_portfolio_layer(
@@ -1078,6 +1101,100 @@ class AlphaLoader:
                     )
             out.append(canonical)
         return tuple(out)
+
+    _SAFETY_EXIT_POLICY_KNOWN_KEYS: frozenset[str] = frozenset(
+        {
+            "mode",
+            "max_hold_after_safe_off",
+            "hard_exit_age_seconds",
+        }
+    )
+
+    def _parse_safety_exit_policy_block(
+        self,
+        block: Any,
+        source: str,
+    ) -> dict[str, Any] | None:
+        """Parse the optional ``safety_exit_policy:`` block (design rev 5 §3.4).
+
+        Structural, single-block validation:
+
+        * block is a mapping if present (else ``None`` — the default
+          ``gate_close_flat`` behaviour, bit-identical to today).
+        * unknown keys are rejected.
+        * ``mode`` ∈ ``{gate_close_flat, decouple_caps_only}`` (default
+          ``gate_close_flat``).
+        * ``mode == decouple_caps_only`` **requires** both bounded-deferral
+          ceilings, each a positive integer number of seconds:
+          ``max_hold_after_safe_off`` (the deferral ceiling that turns "no
+          immediate flatten" into a *bounded* delay, never a removal) **and**
+          ``hard_exit_age_seconds`` (the monotonic position-age backstop).
+          A ``decouple_caps_only`` alpha missing either ceiling is rejected at
+          load (design §3.6: "Stage 0 without ``max_hold_after_safe_off`` or
+          ``hard_exit_age_seconds`` → reject load").
+
+        Cross-block invariants (``story_permission ⇒ mode ≠ gate_close_flat``;
+        ``max_hold_after_safe_off`` ≤ the per-family half-life multiple) live in
+        gate G17 of :class:`~feelies.alpha.layer_validator.LayerValidator`, which
+        also has the ``trend_mechanism:`` / ``story_permission:`` context.
+
+        Returns the normalized block with ``mode`` always present and the two
+        ceilings coerced to ``int`` when supplied.
+        """
+        if block is None:
+            return None
+        if not isinstance(block, dict):
+            raise AlphaLoadError(
+                f"{source}: 'safety_exit_policy' must be a mapping, got {type(block).__name__}"
+            )
+
+        unknown = sorted(k for k in block if k not in self._SAFETY_EXIT_POLICY_KNOWN_KEYS)
+        if unknown:
+            raise AlphaLoadError(
+                f"{source}: safety_exit_policy carries unknown key(s) {unknown}; "
+                f"supported keys are {sorted(self._SAFETY_EXIT_POLICY_KNOWN_KEYS)}"
+            )
+
+        normalized: dict[str, Any] = {}
+        mode = str(block.get("mode", _SAFETY_EXIT_POLICY_DEFAULT_MODE))
+        if mode not in _SAFETY_EXIT_POLICY_MODES:
+            raise AlphaLoadError(
+                f"{source}: safety_exit_policy.mode {mode!r} is not supported; "
+                f"must be one of {sorted(_SAFETY_EXIT_POLICY_MODES)}"
+            )
+        normalized["mode"] = mode
+
+        for key in ("max_hold_after_safe_off", "hard_exit_age_seconds"):
+            if key not in block or block[key] is None:
+                continue
+            try:
+                seconds = int(block[key])
+            except (TypeError, ValueError) as exc:
+                raise AlphaLoadError(
+                    f"{source}: safety_exit_policy.{key} must be an integer "
+                    f"number of seconds, got {block[key]!r}"
+                ) from exc
+            if seconds <= 0:
+                raise AlphaLoadError(
+                    f"{source}: safety_exit_policy.{key} must be > 0, got {seconds}"
+                )
+            normalized[key] = seconds
+
+        if mode == _SAFETY_EXIT_POLICY_DECOUPLE_MODE:
+            missing = [
+                key
+                for key in ("max_hold_after_safe_off", "hard_exit_age_seconds")
+                if key not in normalized
+            ]
+            if missing:
+                raise AlphaLoadError(
+                    f"{source}: safety_exit_policy.mode='{_SAFETY_EXIT_POLICY_DECOUPLE_MODE}' "
+                    f"requires {missing} — both bounded-deferral ceilings are "
+                    f"mandatory under decoupling so the delayed flatten stays a "
+                    f"bounded delay, never a removal (design §2.3 / §3.6)."
+                )
+
+        return normalized
 
     def _parse_promotion_block(
         self,
