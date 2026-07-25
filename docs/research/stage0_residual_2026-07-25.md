@@ -183,16 +183,15 @@ is a static param, upstream of any stressed cost).
 | Symbol | Sessions | Signals | Directional entries | Gate-close (`SafetyStateChange`) | Fills |
 |---|---|---|---|---|---|
 | APP | 14 | 229 | **1** | 228 | 2 |
-| AAPL | 2 (03-13, 04-09) | 16 | 0 | 16 | 0 |
-| SNDU | 1 (05-01) | 12 | 0 | 12 | 0 |
-| **Total** | **17** | **257** | **1** | **256** | **2** |
+| SPY | 5 | 58 | 0 | 58 | 0 |
+| AAPL | 5 | 27 | 0 | 27 | 0 |
+| SNDU | 2 | 15 | 0 | 15 | 0 |
+| INTC | 1 | 14 | 0 | 14 | 0 |
+| **Total** | **27** | **343** | **1** | **342** | **2** |
 
-The 10 remaining replayable cells (AAPL 03-26/04-08/04-28, SNDU 04-30, INTC 05-04,
-SPY ×5 — the large ones, 1.4–5.3 M events each) were still replaying at the time of
-writing. They are baseline-arm only and were left running after the defect stopped
-the A/B; the census is therefore **17 of 27 cells**. Even if every remaining cell
-produced an entry that coincided with a safe-OFF, N_sub ≤ 11 against a floor of 200,
-so the order of magnitude is not in question.
+**Census is complete** — all 27 replayable cells of the frozen universe (§3 of the
+pre-registration, less the 4 unreplayable cells in §7.3). Across the whole universe
+the alpha opened a position **once**.
 
 ### 3.2 The funnel
 
@@ -210,11 +209,11 @@ Clause-by-clause census of the entry conjunction over every
 
 **`|ofi_ewma| ≥ 0.5` is the binding constraint** — it admits ~0.1–0.3 % of
 snapshots. Of the few that pass, most do not coincide with gate-ON, which is why
-257 signals across 17 sessions contain exactly **one** directional entry.
+343 signals across 27 sessions contain exactly **one** directional entry.
 
 ### 3.3 N_sub = 1
 
-The subpopulation is `open ∧ safe-OFF ∧ ¬caps`. Across 17 sessions there were **256
+The subpopulation is `open ∧ safe-OFF ∧ ¬caps`. Across 27 sessions there were **342
 gate-close safety events** but only **one** occurred with an open book:
 
 > **APP 2026-06-03.** LONG 50 filled @ 567.17 (`t=1780507814296252974`), first
@@ -233,7 +232,7 @@ and `CPCVConfig(n_groups=10, …)` cannot even partition the series.
 transitions — the baseline arm, which ran correctly. The defect changes only what
 happens *after* a safe-OFF with an open book. A working arm B could shift N_sub
 slightly (a longer hold can occlude a later entry), but it cannot manufacture
-entries: the alpha entered once in 17 sessions, and the deficit is ~200×. **The
+entries: the alpha entered once in 27 sessions, and the deficit is ~200×. **The
 UNDERPOWERED verdict stands independently of the defect.**
 
 ### 3.4 Secondary pilot — `sig_moc_imbalance_v1` (as pre-declared)
@@ -349,14 +348,17 @@ done here**):
 
 ### 7.2 Data and universe breadth to power the gate
 
-Observed entry rate: **1 directional entry per 17 symbol-sessions**, and the single
-entry did coincide with a safe-OFF. Taking that as an upper bound on the
-episode yield (~0.06 subpopulation episodes per symbol-session):
+Observed entry rate over the complete census: **1 directional entry per 27
+symbol-sessions**, and that single entry did coincide with a safe-OFF — so the
+subpopulation yield is ~**0.037 episodes per symbol-session**:
 
 | Requirement | Arithmetic |
 |---|---|
-| N_sub ≥ 200 (α = 0.10, tail ≥ 20) | ≈ **3,400 symbol-sessions** at the observed rate |
-| vs. available | 27 replayable — a **~125×** shortfall |
+| N_sub ≥ 200 (α = 0.10, tail ≥ 20) | 200 × 27 ≈ **5,400 symbol-sessions** at the observed rate |
+| vs. available | 27 replayable — a **200×** shortfall |
+
+The yield estimate is itself based on a single episode, so it carries essentially no
+precision; treat 5,400 as an order-of-magnitude floor, not a target.
 
 Three routes, in order of leverage:
 
