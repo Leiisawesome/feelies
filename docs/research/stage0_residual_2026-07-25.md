@@ -4,7 +4,10 @@
 **Pre-registration:** [`stage0_residual_preregistration.md`](stage0_residual_preregistration.md) (commit `5019a62`, committed before any outcome data was touched — Inv-2)
 **Design:** `dual_permission_actuation_design.md` rev 5 (locked)
 **Scope:** Measure the residual Stage 0 leaves; decide Stage-1 GO / NO-GO / UNDERPOWERED.
-**Stage 1 was not implemented. Stage-0 behavior was not modified.**
+**Stage 1 was not implemented.** Stage-0 behavior was not modified *during the
+measurement*; the §1.1 defect fix was applied afterwards on explicit instruction and
+is scoped to restoring the documented Stage-0 contract (§1.6). Defect §1.7 remains
+open and unfixed.
 
 ---
 
@@ -13,7 +16,7 @@
 > ### UNDERPOWERED — NOT A GO
 > ### plus a blocking Stage-0 defect that invalidates the A/B counterfactual
 
-Two independent findings, **either one** of which precludes a GO:
+Three findings, **any one** of which precludes a GO:
 
 1. **Stage-0 defect (blocking).** `src/feelies/bootstrap.py:1817` constructs
    `RegisteredSignal(...)` without passing `decouple_gate_close`. The flag is
@@ -22,8 +25,17 @@ Two independent findings, **either one** of which precludes a GO:
    is inert end-to-end in any composed platform.** The A/B counterfactual is
    therefore invalid: both arms ran `gate_close_flat`, and their event streams are
    byte-identical. Per pre-registration §7.7 the measurement **STOPPED** here; the
-   defect was **not** fixed inline. Details in §1.
-2. **Independently UNDERPOWERED.** The `open ∧ safe-OFF ∧ ¬caps` subpopulation
+   defect was **not** fixed inline. Details in §1. *(Fixed later on explicit
+   instruction — which then exposed defect 3 below.)*
+2. **Second Stage-0 defect — FAIL-OPEN (found after fixing the first).**
+   `StrategyPositionStore`, the strategy-slice book both Stage-0 authors read, is
+   **never written on entry fills**: `FillAttributionLedger.record(...)` has no
+   callers, so the ledger the write path is gated on is always empty. With
+   decoupling live the pilot book was held **2361.6 s** against a declared **600 s**
+   ceiling and was flattened by an unrelated stop author, not by any cap. The
+   bounded-deferral guarantee — the load-bearing Inv-11 defense — does not execute.
+   Reported, not fixed. Details in §1.7. **The §1.1 fix must not ship alone.**
+3. **Independently UNDERPOWERED.** The `open ∧ safe-OFF ∧ ¬caps` subpopulation
    contains **N_sub = 1 episode** against the pre-registered floor of **N_sub ≥ 200**
    (effective tail sample ≥ 20 at α = 0.10). This finding is **robust to the
    defect** — see §3.3. Bar **B4 fails by a factor of ~200**.
@@ -40,7 +52,7 @@ it.
 
 ---
 
-## 1. Stage-0 defect (BLOCKING) — reported, not fixed
+## 1. Stage-0 defects (BLOCKING)
 
 ### 1.1 The defect
 
@@ -151,8 +163,76 @@ book and no Inv-11 violation in the dangerous direction. The concrete harms are:
   itself and cannot detect the difference except by noticing the streams are
   identical.
 
-**No fix was applied**, per the brief and pre-registration §7.7. §7 records the
-recommended remediation for a separate change.
+**Remediation (applied later, on request).** The one-line fix — passing
+`decouple_gate_close=module.decouple_gate_close` at the registration call — plus an
+integration test through the real loader→registry→bootstrap chain
+(`tests/kernel/test_stage0_decouple_registration_seam.py`) was applied after this
+report's measurement was complete, at the operator's explicit instruction. Applying
+it **immediately exposed a second, more serious defect** — see §1.7. The fix is
+verified correct in itself (arm A stays bit-identical; the gate-close FLAT is now
+suppressed for a decoupled alpha) but **must not ship alone**.
+
+### 1.7 Second defect (FAIL-OPEN) — `StrategyPositionStore` is never written
+
+Uncovered only once §1.1 was fixed and decoupling actually engaged. **Reported, not
+fixed**, per pre-registration §7.7.
+
+**Symptom.** With decoupling live, the pilot episode's book was held **+2361.6 s**
+past its first `safe→OFF` — against a declared `max_hold_after_safe_off` of **600 s**
+and a `hard_exit_age_seconds` deadline falling at **+1213 s** from that anchor. **No
+`MAX_HOLD_AFTER_SAFE_OFF`, `HARD_EXIT_AGE` or `SESSION_FLATTEN` order was ever
+emitted.** The position was eventually flattened by an unrelated `__stop_exit__`
+author at ~4× the declared ceiling.
+
+**Mechanism.** Both Stage-0 authors are strategy-slice-scoped by design (§3.3) and
+read `StrategyPositionStore`. That store is written on fills **only** from the
+multi-alpha attribution branch at `kernel/orchestrator.py:4842`, which is gated on
+`self._fill_ledger.allocate_fill(...)` returning allocations.
+`FillAttributionLedger.record(...)` (`alpha/fill_attribution.py:60`) has **no callers
+anywhere in the codebase**, so the ledger is always empty, `allocate_fill` returns
+`[]` for every unknown `order_id` (line 89–91), and the slice store is never written
+for an entry fill. The `elif order.reason in EXIT_COMPOSER_EXIT_REASONS` branch does
+self-attribute *composer exits*, so exits can write the store — but entries never do,
+so no author ever sees the position an entry created.
+
+**Verified on a full session in which a 50-share position opened and closed:**
+
+| Check | Result |
+|---|---|
+| `cap._position_store is orch._strategy_positions` | `True` — correct object, correctly wired |
+| `cap.policies['sig_kyle_drift_v1']` | `max_hold=600s, hard_age=1800s, universe=('APP',)` — correctly armed |
+| `DeferralCapController._maybe_emit_exit` calls | **94,833** (the cap is attached and evaluating on every `Trade`) |
+| …of which saw a non-zero position | **0** |
+| `StrategyPositionStore.update` calls | **0** |
+
+The cap is built, armed with the right ceilings, and reading the right object. The
+object is simply empty, so `_maybe_emit_exit` returns at
+`if position.quantity == 0` on every one of its 94,833 evaluations and
+`_on_safety_state_change` never anchors an episode (`opened_at_ns` is always `None`).
+
+**Why this is worse than §1.1.** Defect §1.1 was **fail-safe**: the platform silently
+kept today's immediate flatten. With §1.1 fixed and this defect present, the
+gate-close FLAT is suppressed *and* no cap can bind — exposure is **retained past the
+declared ceiling with no exit author**. That directly violates the §2.6 composition
+check ("No path **retains** exposure beyond the deferral ceiling when safe OFF") and
+guts the Inv-11 defense §2.5 rests on: the bounded-deferral ceiling is what makes
+decoupling a *delay* rather than a *removal* of today's flatten. Under this defect it
+is a removal.
+
+**Exposure today: nil, but conditional.** No alpha in `alphas/` declares a
+`safety_exit_policy` block and no config sets `decouple_caps_only`, so the §1.1 fix
+changes no current behavior. The hazard materializes the moment any alpha opts in.
+
+> **Consequence for sequencing: the §1.1 fix must not ship alone.** Either fix the
+> slice-store population first (or together), or gate `decouple_caps_only` load on a
+> proven-populated `StrategyPositionStore` so the mode cannot be enabled while its
+> backstop is blind. Stage-0 promotion must remain blocked either way.
+
+This is the **third** instance of one defect family: a Stage-0 component that is
+built, unit-tested in isolation, and inert in situ because the seam feeding it is
+unconnected (§1.1 the flag; `da32627`'s B1–B3 the authors and routing; this the slice
+book). A test asserting only that a component *exists* cannot catch it — the
+assertion has to be that it *acts* on a real fill.
 
 ---
 
@@ -334,17 +414,29 @@ and bars are as committed in `5019a62`.
 
 ### 7.1 Precondition — fix the defect first
 
-Any re-run is meaningless until `bootstrap.py:1817` passes
-`decouple_gate_close=module.decouple_gate_close`. Recommended alongside it (**not
-done here**):
+Two defects must be closed before any re-run is meaningful.
 
-1. An integration test asserting that a `decouple_caps_only` spec loaded through
-   `build_platform` yields `engine.signals[i].decouple_gate_close is True` **and** a
-   non-`None` `DeferralCapController` and `ExitComposer` — closing the seam class
-   that `da32627` and this defect share.
-2. A promotion-time assertion that an alpha authorized for `decouple_caps_only` has
-   a live deferral cap, so the ledger cannot record an authorization with no
-   runtime effect.
+**Done (on instruction).** `bootstrap.py:1817` now passes
+`decouple_gate_close=module.decouple_gate_close`, with
+`tests/kernel/test_stage0_decouple_registration_seam.py` asserting the flag survives
+the real loader→registry→bootstrap chain *and* that both risk authors get built with
+the declared ceilings. Verified to fail without the fix and to leave arm A
+bit-identical.
+
+**Outstanding (not done — §1.7).** The slice-store population defect. Until it is
+closed, `decouple_caps_only` is fail-open and must not be enabled. Recommended:
+
+1. Populate `StrategyPositionStore` on entry fills for single-alpha SIGNAL runs —
+   either by recording an `AttributionRecord` when a SIGNAL order is submitted, or by
+   self-attributing a single-strategy fill the way the `EXIT_COMPOSER_EXIT_REASONS`
+   branch already does.
+2. A load-time or promotion-time guard so `decouple_caps_only` cannot be enabled
+   while the slice book its backstop reads is unpopulated — the ledger must not be
+   able to record an authorization whose ceiling cannot bind.
+3. **A test that asserts the ceiling *acts*, not that the author exists**: drive a
+   real fill, a real `safe→OFF`, then trades past the deadline, and assert a
+   `MAX_HOLD_AFTER_SAFE_OFF` order reaches the execution backend. All three defects
+   in this family survived suites that only asserted existence.
 
 ### 7.2 Data and universe breadth to power the gate
 
@@ -408,10 +500,12 @@ Stage-0 source file was modified.
 
 | Field | Value |
 |---|---|
-| Verdict | **UNDERPOWERED — NOT A GO**, plus a blocking Stage-0 defect |
-| Blocking defect | `src/feelies/bootstrap.py:1817` drops `decouple_gate_close` |
+| Verdict | **UNDERPOWERED — NOT A GO**, plus two Stage-0 defects |
+| Defect 1 (fixed on instruction) | `src/feelies/bootstrap.py:1817` dropped `decouple_gate_close` — Stage 0 wholly inert; fail-safe |
+| Defect 2 (**open**, fail-open) | `StrategyPositionStore` never written on entry fills — deferral ceiling cannot bind (§1.7) |
+| Ship gate | The defect-1 fix **must not ship alone**; `decouple_caps_only` must stay disabled until defect 2 closes |
 | Primary pilot | `sig_kyle_drift_v1` — N_sub = 1 (floor 200) |
 | Secondary pilot | `sig_moc_imbalance_v1` — N_sub = 0 (pre-declared underpowered) |
 | Bars evaluated | B4 FAIL; B1–B3 not evaluable |
 | Stage 1 | **Not implemented.** Claim B untested, remains unproven (design §4.2) |
-| Stage-0 behavior | **Unmodified.** Defect reported, not fixed |
+| Stage-0 behavior | Unmodified during measurement; defect 1 fixed afterwards on instruction, defect 2 left open |
