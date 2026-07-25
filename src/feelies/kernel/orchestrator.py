@@ -4849,11 +4849,35 @@ class Orchestrator:
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
                         )
-                elif order.reason in EXIT_COMPOSER_EXIT_REASONS and order.strategy_id:
-                    # Slice-scoped composer exit: attribute the whole fill to its
-                    # own strategy slice.  A proportional net split would bleed the
-                    # fill onto a bystander strategy sharing the symbol, leaving the
-                    # mandated slice partially open (design §3.3).
+                elif order.strategy_id and (
+                    order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS
+                    or order.reason not in _RISK_FORCED_EXIT_REASONS
+                ):
+                    # Single-strategy fill: attribute the whole fill to its own
+                    # slice.  Two cases reach here.
+                    #
+                    # 1. A **slice-scoped forced exit** (composer / deferral cap).
+                    #    A proportional net split would bleed the fill onto a
+                    #    bystander strategy sharing the symbol, leaving the mandated
+                    #    slice partially open (design §3.3).
+                    # 2. An **ordinary signal-path order** (entry or exit, no forced
+                    #    -exit reason).  The standalone path arbitrates a *single*
+                    #    winner per order (``SignalArbitrator``), so the fill belongs
+                    #    entirely to ``order.strategy_id``.  This is the case that
+                    #    populates a slice's *first* position: without it
+                    #    ``_distribute_fill_to_strategies`` cannot bootstrap one (it
+                    #    splits across strategies that already hold quantity and
+                    #    returns early when none do), so the slice book stayed
+                    #    permanently empty and every strategy-slice-scoped reader —
+                    #    the Stage-0 deferral cap and exit composer, and the per-alpha
+                    #    budgets in ``AlphaBudgetRiskWrapper`` — saw a flat book.
+                    #
+                    # Symbol-net hazard exits deliberately fall through to the
+                    # proportional split below: they flatten the whole symbol even
+                    # though they carry a ``strategy_id``.  ``HARD_EXIT_AGE`` is a
+                    # shared token (hazard *and* deferral cap) and is treated as
+                    # slice-scoped here, matching the bridge's existing reading of it
+                    # at ``_SLICE_SCOPED_FORCED_EXIT_REASONS``.
                     self._strategy_positions.update(
                         order.strategy_id,
                         ack.symbol,

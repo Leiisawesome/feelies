@@ -5,16 +5,16 @@
 **Design:** `dual_permission_actuation_design.md` rev 5 (locked)
 **Scope:** Measure the residual Stage 0 leaves; decide Stage-1 GO / NO-GO / UNDERPOWERED.
 **Stage 1 was not implemented.** Stage-0 behavior was not modified *during the
-measurement*; the §1.1 defect fix was applied afterwards on explicit instruction and
-is scoped to restoring the documented Stage-0 contract (§1.6). Defect §1.7 remains
-open and unfixed.
+measurement*. Both defects found (§1.1, §1.7) were fixed afterwards on explicit
+instruction; each fix restores the documented Stage-0 contract rather than changing
+it.
 
 ---
 
 ## 0. Verdict
 
 > ### UNDERPOWERED — NOT A GO
-> ### plus a blocking Stage-0 defect that invalidates the A/B counterfactual
+> ### plus two Stage-0 defects that invalidated the A/B counterfactual
 
 Three findings, **any one** of which precludes a GO:
 
@@ -26,15 +26,17 @@ Three findings, **any one** of which precludes a GO:
    therefore invalid: both arms ran `gate_close_flat`, and their event streams are
    byte-identical. Per pre-registration §7.7 the measurement **STOPPED** here; the
    defect was **not** fixed inline. Details in §1. *(Fixed later on explicit
-   instruction — which then exposed defect 3 below.)*
+   instruction — which then exposed defect 2 below.)*
 2. **Second Stage-0 defect — FAIL-OPEN (found after fixing the first).**
    `StrategyPositionStore`, the strategy-slice book both Stage-0 authors read, is
    **never written on entry fills**: `FillAttributionLedger.record(...)` has no
    callers, so the ledger the write path is gated on is always empty. With
    decoupling live the pilot book was held **2361.6 s** against a declared **600 s**
    ceiling and was flattened by an unrelated stop author, not by any cap. The
-   bounded-deferral guarantee — the load-bearing Inv-11 defense — does not execute.
-   Reported, not fixed. Details in §1.7. **The §1.1 fix must not ship alone.**
+   bounded-deferral guarantee — the load-bearing Inv-11 defense — did not execute.
+   Details in §1.7. **Fixed on instruction** (§1.8): the ceiling now binds at
+   `first_safe_off + 600 s` exactly, verified end to end. One consequence needs a
+   decision — a pinned acceptance baseline moved (§1.8.1).
 3. **Independently UNDERPOWERED.** The `open ∧ safe-OFF ∧ ¬caps` subpopulation
    contains **N_sub = 1 episode** against the pre-registered floor of **N_sub ≥ 200**
    (effective tail sample ≥ 20 at α = 0.10). This finding is **robust to the
@@ -170,12 +172,13 @@ integration test through the real loader→registry→bootstrap chain
 report's measurement was complete, at the operator's explicit instruction. Applying
 it **immediately exposed a second, more serious defect** — see §1.7. The fix is
 verified correct in itself (arm A stays bit-identical; the gate-close FLAT is now
-suppressed for a decoupled alpha) but **must not ship alone**.
+suppressed for a decoupled alpha), and it does **not** ship alone: §1.7 was fixed
+alongside it (§1.8).
 
-### 1.7 Second defect (FAIL-OPEN) — `StrategyPositionStore` is never written
+### 1.7 Second defect (FAIL-OPEN) — `StrategyPositionStore` was never written
 
-Uncovered only once §1.1 was fixed and decoupling actually engaged. **Reported, not
-fixed**, per pre-registration §7.7.
+Uncovered only once §1.1 was fixed and decoupling actually engaged. Reported first per
+pre-registration §7.7, then fixed on instruction — see §1.8.
 
 **Symptom.** With decoupling live, the pilot episode's book was held **+2361.6 s**
 past its first `safe→OFF` — against a declared `max_hold_after_safe_off` of **600 s**
@@ -223,16 +226,80 @@ is a removal.
 `safety_exit_policy` block and no config sets `decouple_caps_only`, so the §1.1 fix
 changes no current behavior. The hazard materializes the moment any alpha opts in.
 
-> **Consequence for sequencing: the §1.1 fix must not ship alone.** Either fix the
-> slice-store population first (or together), or gate `decouple_caps_only` load on a
-> proven-populated `StrategyPositionStore` so the mode cannot be enabled while its
-> backstop is blind. Stage-0 promotion must remain blocked either way.
-
 This is the **third** instance of one defect family: a Stage-0 component that is
 built, unit-tested in isolation, and inert in situ because the seam feeding it is
 unconnected (§1.1 the flag; `da32627`'s B1–B3 the authors and routing; this the slice
 book). A test asserting only that a component *exists* cannot catch it — the
 assertion has to be that it *acts* on a real fill.
+
+### 1.8 Defect §1.7 — fixed, and what it changed
+
+Fixed on instruction, together with §1.1 so neither ships alone.
+
+**Change.** `kernel/orchestrator.py` now self-attributes a **single-strategy** fill to
+its own slice: the existing composer-exit branch was broadened to cover any order that
+carries a `strategy_id` and is either an explicitly slice-scoped forced exit
+(`_SLICE_SCOPED_FORCED_EXIT_REASONS`) or not a forced exit at all — i.e. an ordinary
+signal-path entry or exit. The standalone path arbitrates a **single winner** per order
+(`SignalArbitrator`), so such a fill belongs entirely to that strategy. Symbol-net
+hazard exits deliberately still fall through to the proportional split.
+
+**Verified end to end on the pilot episode.** The cap now sees the book and the ceiling
+binds exactly as pre-registered:
+
+| | before | after |
+|---|---|---|
+| `_maybe_emit_exit` calls that saw a non-zero position | 0 / 94,833 | **2,667** / 94,833 |
+| `StrategyPositionStore.update` calls | 0 | non-zero |
+| Episode anchored at first `safe→OFF` | never | **yes** (`opened=…814296252974`, `anchor=…401005218137`) |
+| Deferral order emitted | none | **1 ×** `MAX_HOLD_AFTER_SAFE_OFF` at `first_safe_off + 600.1 s` |
+| Hold past safe-OFF | 2361.6 s (stop author) | **610.6 s** (600 s ceiling + fill latency) |
+
+The order fires on the first trade 72 ms after the deadline — event-time enforcement
+per §2.3 — and exactly once, so the per-episode dedup holds. Attribution is **exact**:
+on a single-alpha run the slice book equals the aggregate book on quantity, realized
+PnL and fees.
+
+`tests/kernel/test_fill_attribution_seam.py` drives the orchestrator's real
+ack-reconciliation path (5 of its 7 tests fail without the fix; the other 2 are
+negative controls). It is the assertion the family was missing — the existing Stage-0
+end-to-end test hand-seeds the slice store before checking the ceiling, so it verified
+the promise over a book the real fill path never filled.
+
+#### 1.8.1 Behavioral side effect — a pinned baseline moved (needs a decision)
+
+Populating the slice book also un-blocks a second reader:
+`standalone_signal_actionable_for_strategy` (`alpha/arbitration.py:54–55`) returns
+`_signal_reduces_book(strategy_qty, direction)` whenever a signal reduces the aggregate
+book. With `strategy_qty` permanently 0 that was always `False`, so **every directional
+reducing exit from a standalone alpha was silently non-actionable**. Those exits now
+fire when the alpha genuinely owns the exposure — which is what the function documents
+("directional exits likewise require matching strategy exposure").
+
+Consequence: `tests/acceptance/test_backtest_app_baseline.py` now fails on its pinned
+net PnL — **430.85 → 363.34** on APP 2026-03-26 (gross realized 536.31 → 468.80; fees
+unchanged at 105.46). Fill count and the parity hash still match. Per-alpha budgets in
+`AlphaBudgetRiskWrapper` also became computable, but measured on this cell **none
+bind** (zero budget REJECTs), so they are not the cause.
+
+**Not re-pinned here.** The old number encodes the suppressed-exit bug, so the
+assessment is that the new value is the correct one and the baseline should be
+regenerated with this rationale recorded — but re-pinning a locked regression guard is
+the owner's call, not a side effect of a defect fix. Everything else is green: 4,506
+fast tests, the full determinism suite, 174 other acceptance tests, `ruff`, and
+`mypy --strict`.
+
+#### 1.8.2 Left open
+
+- `FillAttributionLedger.record(...)` still has **no caller**, so the *multi-alpha*
+  proportional attribution path (`allocate_fill`) remains dead. It is unreachable for
+  standalone alphas (single arbitrated winner) and therefore not on the Stage-0 path,
+  but the ledger's documented step 1 is still unimplemented for genuine multi-alpha
+  netting.
+- The slice-attribution block is gated on `self._fill_ledger is not None` even though
+  neither the self-attribution nor the proportional branch needs the ledger. `bootstrap`
+  always constructs one so production is unaffected, but the guard is a latent trap of
+  the same shape as the three defects above.
 
 ---
 
@@ -423,20 +490,22 @@ the real loader→registry→bootstrap chain *and* that both risk authors get bu
 the declared ceilings. Verified to fail without the fix and to leave arm A
 bit-identical.
 
-**Outstanding (not done — §1.7).** The slice-store population defect. Until it is
-closed, `decouple_caps_only` is fail-open and must not be enabled. Recommended:
+**Also done (§1.8).** The slice-store population defect. Single-strategy fills now
+self-attribute, so the ceiling binds; `tests/kernel/test_fill_attribution_seam.py`
+asserts the slice book is actually written by the real ack path — the "does it *act*"
+assertion this defect family kept slipping past.
 
-1. Populate `StrategyPositionStore` on entry fills for single-alpha SIGNAL runs —
-   either by recording an `AttributionRecord` when a SIGNAL order is submitted, or by
-   self-attributing a single-strategy fill the way the `EXIT_COMPOSER_EXIT_REASONS`
-   branch already does.
-2. A load-time or promotion-time guard so `decouple_caps_only` cannot be enabled
-   while the slice book its backstop reads is unpopulated — the ledger must not be
-   able to record an authorization whose ceiling cannot bind.
-3. **A test that asserts the ceiling *acts*, not that the author exists**: drive a
-   real fill, a real `safe→OFF`, then trades past the deadline, and assert a
-   `MAX_HOLD_AFTER_SAFE_OFF` order reaches the execution backend. All three defects
-   in this family survived suites that only asserted existence.
+**Outstanding.**
+
+1. **Decide the APP baseline** (§1.8.1): net PnL moved 430.85 → 363.34 because
+   directional reducing exits are no longer suppressed. Assessment is that the new
+   value is correct and the baseline should be regenerated with that rationale; not
+   re-pinned here.
+2. `FillAttributionLedger.record(...)` still uncalled — genuine multi-alpha
+   proportional attribution remains unimplemented (§1.8.2). Off the Stage-0 path.
+3. A promotion-time guard so `decouple_caps_only` cannot be authorized unless its
+   ceiling is demonstrably able to bind, so the ledger cannot record an authorization
+   with no runtime effect.
 
 ### 7.2 Data and universe breadth to power the gate
 
@@ -502,8 +571,8 @@ Stage-0 source file was modified.
 |---|---|
 | Verdict | **UNDERPOWERED — NOT A GO**, plus two Stage-0 defects |
 | Defect 1 (fixed on instruction) | `src/feelies/bootstrap.py:1817` dropped `decouple_gate_close` — Stage 0 wholly inert; fail-safe |
-| Defect 2 (**open**, fail-open) | `StrategyPositionStore` never written on entry fills — deferral ceiling cannot bind (§1.7) |
-| Ship gate | The defect-1 fix **must not ship alone**; `decouple_caps_only` must stay disabled until defect 2 closes |
+| Defect 2 (fixed on instruction) | `StrategyPositionStore` never written on entry fills — deferral ceiling could not bind; was fail-open (§1.7, §1.8) |
+| Open decision | APP acceptance baseline net PnL moved 430.85 → 363.34; not re-pinned (§1.8.1) |
 | Primary pilot | `sig_kyle_drift_v1` — N_sub = 1 (floor 200) |
 | Secondary pilot | `sig_moc_imbalance_v1` — N_sub = 0 (pre-declared underpowered) |
 | Bars evaluated | B4 FAIL; B1–B3 not evaluable |
