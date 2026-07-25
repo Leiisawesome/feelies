@@ -116,9 +116,27 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # in exact arithmetic, but without the sum-of-products denominator
 # cancellation). Config-contract change only — sig_benign_midcap_v1 does not
 # depend on kyle_lambda_60s, so the trade path / P&L pins above are unaffected.
-_BASELINE_CONFIG_HASH = (
-    "952ac123f7b67e448bdaa55f81cc8c5825b0c2555180da8d1c54849285af2446"
-)
+#
+# Re-baked 2026-07-25: the F1 value above was pinned on the sensor-audit branch
+# *before* it merged main (dc347ec).  That merge brought in `prune_unused_sensors`
+# (6436154), which `PlatformConfig._to_dict()` discloses, so the resolved
+# snapshot gained one key and the pin went stale on the merge commit rather
+# than on any later change.  The added key is the sole snapshot delta between
+# the F1 tree and this one; every other field is identical.
+#
+# CAVEAT — unlike the three re-bakes above, this one is NOT provenance-only.
+# `configs/bt_sig_benign_midcap.yaml` (which bt_app.yaml extends) has long set
+# `prune_unused_sensors: true`, but the key was inert until 6436154 added the
+# PlatformConfig field and the bootstrap helper; it now actually drops sensor
+# specs no loaded SIGNAL alpha declares.  6436154 (2026-07-19) postdates the
+# commit that pinned _BASELINE_NET_PNL / _BASELINE_FILL_COUNT (08c3da6,
+# 2026-06-29), so those two pins have NOT been re-verified since pruning went
+# live.  They are deliberately left untouched here: this environment has no
+# APP/2026-03-26 disk cache, so the data-gated test skips and cannot confirm
+# or refute them.  Re-verify against a cached run before trusting them:
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
+#       --symbol APP --date 2026-03-26
+_BASELINE_CONFIG_HASH = "8ec4abd53ea20be74eac25e11ff9a7f93c135ef40c604e34eb709ec931075f45"
 _BASELINE_NET_PNL = Decimal("430.85")
 _BASELINE_FILL_COUNT = 21
 
