@@ -35,8 +35,9 @@ Three findings, **any one** of which precludes a GO:
    ceiling and was flattened by an unrelated stop author, not by any cap. The
    bounded-deferral guarantee — the load-bearing Inv-11 defense — did not execute.
    Details in §1.7. **Fixed on instruction** (§1.8): the ceiling now binds at
-   `first_safe_off + 600 s` exactly, verified end to end. One consequence needs a
-   decision — a pinned acceptance baseline moved (§1.8.1).
+   `first_safe_off + 600 s` exactly, verified end to end. It also un-suppressed
+   directional exits that had been silently blocked, moving a pinned acceptance
+   baseline — re-pinned to the corrected value (§1.8.1).
 3. **Independently UNDERPOWERED.** The `open ∧ safe-OFF ∧ ¬caps` subpopulation
    contains **N_sub = 1 episode** against the pre-registered floor of **N_sub ≥ 200**
    (effective tail sample ≥ 20 at α = 0.10). This finding is **robust to the
@@ -266,7 +267,7 @@ negative controls). It is the assertion the family was missing — the existing 
 end-to-end test hand-seeds the slice store before checking the ceiling, so it verified
 the promise over a book the real fill path never filled.
 
-#### 1.8.1 Behavioral side effect — a pinned baseline moved (needs a decision)
+#### 1.8.1 Behavioral side effect — a pinned baseline moved
 
 Populating the slice book also un-blocks a second reader:
 `standalone_signal_actionable_for_strategy` (`alpha/arbitration.py:54–55`) returns
@@ -282,24 +283,41 @@ unchanged at 105.46). Fill count and the parity hash still match. Per-alpha budg
 `AlphaBudgetRiskWrapper` also became computable, but measured on this cell **none
 bind** (zero budget REJECTs), so they are not the cause.
 
-**Not re-pinned here.** The old number encodes the suppressed-exit bug, so the
-assessment is that the new value is the correct one and the baseline should be
-regenerated with this rationale recorded — but re-pinning a locked regression guard is
-the owner's call, not a side effect of a defect fix. Everything else is green: 4,506
-fast tests, the full determinism suite, 174 other acceptance tests, `ruff`, and
-`mypy --strict`.
+**Re-pinned on the owner's decision.** The old number encodes the suppressed-exit bug —
+the alpha was holding positions it should have exited, which flattered PnL on this
+session — so 363.34 is the corrected value. `_BASELINE_NET_PNL` is updated with the
+cause recorded at the pin; `_BASELINE_FILL_COUNT` and the config hash are untouched.
+This is also the re-verification that pin's own CAVEAT had been requesting: it warned
+the value had not been re-checked since sensor pruning went live and could not be
+confirmed in an environment without an APP/2026-03-26 cache. It has now been checked
+against a cached run, and the delta is behavioral rather than pruning drift.
 
-#### 1.8.2 Left open
+#### 1.8.2 Follow-ups — both closed
 
-- `FillAttributionLedger.record(...)` still has **no caller**, so the *multi-alpha*
-  proportional attribution path (`allocate_fill`) remains dead. It is unreachable for
-  standalone alphas (single arbitrated winner) and therefore not on the Stage-0 path,
-  but the ledger's documented step 1 is still unimplemented for genuine multi-alpha
-  netting.
-- The slice-attribution block is gated on `self._fill_ledger is not None` even though
-  neither the self-attribution nor the proportional branch needs the ledger. `bootstrap`
-  always constructs one so production is unaffected, but the guard is a latent trap of
-  the same shape as the three defects above.
+**The ledger is now the live attribution path.** `_track_order` calls
+`FillAttributionLedger.record(...)` for every order that owns one slice — step 1 of the
+ledger's own documented contract, which had **no caller at all**. Attribution now flows
+through `allocate_fill`, so if cross-alpha netting is ever wired a multi-contribution
+record splits the fill proportionally on its own instead of silently self-attributing a
+netted fill to one strategy. Verified behaviour-neutral today: the pilot deferral
+episode replays **byte-identical** to the pre-wiring run.
+
+**The ledger gate is gone.** The attribution block is gated on
+`self._strategy_positions is not None` alone. Neither surviving branch needs the ledger,
+so a deployment that skipped constructing one used to lose slice attribution silently —
+and with it the Stage-0 ceiling, the composer's scoping, and every per-alpha budget.
+
+**One predicate, one rule.** `_order_owns_one_slice(order)` is the single source of
+truth for slice-vs-symbol-net attribution, used both to decide which orders get a record
+and which fills self-attribute when no record exists. Previously the rule lived inline
+in one branch only, so record-time and fill-time could have disagreed.
+
+**Still genuinely absent (by design, not defect).** Cross-alpha netting itself:
+`aggregate_intents` (`alpha/aggregation.py`) has **no production caller**, so every order
+carries exactly one `strategy_id` and records always hold a single 100% contribution. The
+proportional-split machinery is therefore exercised but never multi-contribution. Wiring
+netting changes how orders are built — order counts, sequences, parity hashes — and needs
+its own design review; it is not a defect fix and was not attempted here.
 
 ---
 
@@ -495,15 +513,18 @@ self-attribute, so the ceiling binds; `tests/kernel/test_fill_attribution_seam.p
 asserts the slice book is actually written by the real ack path — the "does it *act*"
 assertion this defect family kept slipping past.
 
+**Also done.** The APP baseline was re-pinned to the corrected value (430.85 → 363.34,
+§1.8.1) with the cause recorded at the pin — this is the re-verification the baseline
+file's own CAVEAT had been asking for since pruning went live. Both §1.8.2 follow-ups
+are closed: the fill ledger is populated and is now the live attribution path, and the
+attribution block no longer depends on the ledger existing.
+
 **Outstanding.**
 
-1. **Decide the APP baseline** (§1.8.1): net PnL moved 430.85 → 363.34 because
-   directional reducing exits are no longer suppressed. Assessment is that the new
-   value is correct and the baseline should be regenerated with that rationale; not
-   re-pinned here.
-2. `FillAttributionLedger.record(...)` still uncalled — genuine multi-alpha
-   proportional attribution remains unimplemented (§1.8.2). Off the Stage-0 path.
-3. A promotion-time guard so `decouple_caps_only` cannot be authorized unless its
+1. **Cross-alpha netting is unwired** — `aggregate_intents` has no production caller, so
+   proportional attribution, while now exercised, is never multi-contribution (§1.8.2).
+   Wiring it is an execution-path change needing its own design review, not a defect fix.
+2. A promotion-time guard so `decouple_caps_only` cannot be authorized unless its
    ceiling is demonstrably able to bind, so the ledger cannot record an authorization
    with no runtime effect.
 
@@ -572,7 +593,7 @@ Stage-0 source file was modified.
 | Verdict | **UNDERPOWERED — NOT A GO**, plus two Stage-0 defects |
 | Defect 1 (fixed on instruction) | `src/feelies/bootstrap.py:1817` dropped `decouple_gate_close` — Stage 0 wholly inert; fail-safe |
 | Defect 2 (fixed on instruction) | `StrategyPositionStore` never written on entry fills — deferral ceiling could not bind; was fail-open (§1.7, §1.8) |
-| Open decision | APP acceptance baseline net PnL moved 430.85 → 363.34; not re-pinned (§1.8.1) |
+| APP baseline | Re-pinned 430.85 → 363.34 with cause recorded (§1.8.1) — the re-verification the pin's own CAVEAT asked for |
 | Primary pilot | `sig_kyle_drift_v1` — N_sub = 1 (floor 200) |
 | Secondary pilot | `sig_moc_imbalance_v1` — N_sub = 0 (pre-declared underpowered) |
 | Bars evaluated | B4 FAIL; B1–B3 not evaluable |

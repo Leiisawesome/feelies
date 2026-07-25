@@ -235,6 +235,42 @@ _SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = (
 )
 
 
+def _order_owns_one_slice(order: OrderRequest) -> bool:
+    """Whether a fill on *order* belongs **entirely** to ``order.strategy_id``.
+
+    The single source of truth for slice-vs-symbol-net fill attribution: it decides
+    both which orders get an :class:`~feelies.alpha.fill_attribution.AttributionRecord`
+    at track time and, if the ledger is absent, which fills self-attribute at
+    reconciliation.  Keeping one predicate stops the two from disagreeing.
+
+    True for:
+
+    * a **slice-scoped forced exit** (composer / deferral cap): flattening one
+      strategy's slice, so a proportional net split would bleed the fill onto a
+      bystander strategy sharing the symbol and leave the mandated slice partially
+      open (design §3.3);
+    * an **ordinary signal-path order** (entry or exit, no forced-exit reason): the
+      standalone path arbitrates a *single* winner per order
+      (:class:`~feelies.alpha.arbitration.EdgeWeightedArbitrator`), so the fill is
+      wholly that strategy's.
+
+    False for a **symbol-net** forced exit (hazard): it flattens the whole symbol even
+    though it carries a ``strategy_id``, so crediting its full fill to that one slice
+    would over-debit it.  Those fall to the proportional split.  ``HARD_EXIT_AGE`` is a
+    token shared by the hazard controller and the deferral cap and is treated as
+    slice-scoped here, matching the bridge's reading at
+    :data:`_SLICE_SCOPED_FORCED_EXIT_REASONS`.
+
+    False for an order with no ``strategy_id`` (aggregate / emergency flatten): it owns
+    no slice to credit.
+    """
+    if not order.strategy_id:
+        return False
+    if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS:
+        return True
+    return order.reason not in _RISK_FORCED_EXIT_REASONS
+
+
 def _int_to_direction(sign: int) -> SignalDirection:
     """Map a signed direction (+1 / -1 / 0) to a ``SignalDirection``."""
     if sign > 0:
@@ -4481,6 +4517,52 @@ class Orchestrator:
         self._active_orders[order_id] = (sm, side, order)
         if trading_intent:
             self._order_trading_intent[order_id] = trading_intent
+        self._record_fill_attribution(order_id, side, order)
+
+    def _record_fill_attribution(
+        self,
+        order_id: str,
+        side: Side,
+        order: OrderRequest,
+    ) -> None:
+        """Register this order's per-alpha provenance with the fill ledger.
+
+        Step 1 of :class:`~feelies.alpha.fill_attribution.FillAttributionLedger`'s
+        documented contract ("record() when building each net order").  Without it
+        ``allocate_fill`` returns ``[]`` for every unknown ``order_id`` and the ledger
+        is dead weight — which is how the strategy-slice book came to be never written
+        on an entry fill.
+
+        Today every order carries exactly one ``strategy_id`` (no cross-alpha netting is
+        wired: :func:`~feelies.alpha.aggregation.aggregate_intents` has no caller), so
+        the record holds a single 100% contribution.  Routing attribution through the
+        ledger anyway means that if netting is ever added, a multi-contribution record
+        splits the fill proportionally on its own rather than silently self-attributing
+        a netted fill to one strategy.
+
+        ``signed_quantity`` is a positive magnitude: ``allocate_fill`` derives direction
+        from ``net_side``, and a contribution moving *with* the net order must not flip
+        it (a negative value there means "this alpha wanted the opposite side").
+        """
+        if self._fill_ledger is None or not _order_owns_one_slice(order):
+            return
+        from feelies.alpha.fill_attribution import AlphaContribution, AttributionRecord
+
+        self._fill_ledger.record(
+            AttributionRecord(
+                order_id=order_id,
+                symbol=order.symbol,
+                net_side=side,
+                net_quantity=order.quantity,
+                contributions=(
+                    AlphaContribution(
+                        strategy_id=order.strategy_id,
+                        signed_quantity=order.quantity,
+                        proportion=1.0,
+                    ),
+                ),
+            )
+        )
 
     def _transition_order(
         self,
@@ -4821,23 +4903,30 @@ class Orchestrator:
                     ack.timestamp_ns,
                 )
 
-            # ── Per-alpha fill attribution (multi-alpha mode) ──
-            if self._fill_ledger is not None and self._strategy_positions is not None:
-                try:
-                    alpha_allocs = self._fill_ledger.allocate_fill(
-                        ack.order_id,
-                        ack.filled_quantity,
-                        ack.fill_price,
-                        total_fees=ack.fees,
-                        is_final=ack.status == OrderAckStatus.FILLED,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Fill attribution failed for order %s — "
-                        "falling back to proportional distribution",
-                        ack.order_id,
-                    )
-                    alpha_allocs = []
+            # ── Per-alpha fill attribution ──
+            # Gated on the slice book alone: neither the self-attribution nor the
+            # proportional branch needs the ledger, so making the whole block depend on
+            # it meant a deployment that skipped constructing one silently lost slice
+            # attribution entirely — and with it the Stage-0 deferral ceiling, the exit
+            # composer's scoping, and every per-alpha risk budget.
+            if self._strategy_positions is not None:
+                alpha_allocs: list[tuple[str, str, int, Decimal, Decimal]] = []
+                if self._fill_ledger is not None:
+                    try:
+                        alpha_allocs = self._fill_ledger.allocate_fill(
+                            ack.order_id,
+                            ack.filled_quantity,
+                            ack.fill_price,
+                            total_fees=ack.fees,
+                            is_final=ack.status == OrderAckStatus.FILLED,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Fill attribution failed for order %s — "
+                            "falling back to proportional distribution",
+                            ack.order_id,
+                        )
+                        alpha_allocs = []
 
                 if alpha_allocs:
                     for strat_id, sym, alpha_signed, price, alloc_fees in alpha_allocs:
@@ -4849,35 +4938,19 @@ class Orchestrator:
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
                         )
-                elif order.strategy_id and (
-                    order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS
-                    or order.reason not in _RISK_FORCED_EXIT_REASONS
-                ):
-                    # Single-strategy fill: attribute the whole fill to its own
-                    # slice.  Two cases reach here.
+                elif _order_owns_one_slice(order):
+                    # Ledger had no record for this order (none constructed, or the
+                    # order predates one) but the fill still belongs wholly to one
+                    # slice — attribute it directly.  Same predicate the ledger is
+                    # populated from, so the two can never disagree.
                     #
-                    # 1. A **slice-scoped forced exit** (composer / deferral cap).
-                    #    A proportional net split would bleed the fill onto a
-                    #    bystander strategy sharing the symbol, leaving the mandated
-                    #    slice partially open (design §3.3).
-                    # 2. An **ordinary signal-path order** (entry or exit, no forced
-                    #    -exit reason).  The standalone path arbitrates a *single*
-                    #    winner per order (``SignalArbitrator``), so the fill belongs
-                    #    entirely to ``order.strategy_id``.  This is the case that
-                    #    populates a slice's *first* position: without it
-                    #    ``_distribute_fill_to_strategies`` cannot bootstrap one (it
-                    #    splits across strategies that already hold quantity and
-                    #    returns early when none do), so the slice book stayed
-                    #    permanently empty and every strategy-slice-scoped reader —
-                    #    the Stage-0 deferral cap and exit composer, and the per-alpha
-                    #    budgets in ``AlphaBudgetRiskWrapper`` — saw a flat book.
-                    #
-                    # Symbol-net hazard exits deliberately fall through to the
-                    # proportional split below: they flatten the whole symbol even
-                    # though they carry a ``strategy_id``.  ``HARD_EXIT_AGE`` is a
-                    # shared token (hazard *and* deferral cap) and is treated as
-                    # slice-scoped here, matching the bridge's existing reading of it
-                    # at ``_SLICE_SCOPED_FORCED_EXIT_REASONS``.
+                    # This is the branch that lets a slice acquire its *first*
+                    # position: ``_distribute_fill_to_strategies`` splits across
+                    # strategies that already hold quantity and returns early when
+                    # none do, so without it the slice book stayed permanently empty
+                    # and every slice-scoped reader — the Stage-0 deferral cap and
+                    # exit composer, and the per-alpha budgets in
+                    # ``AlphaBudgetRiskWrapper`` — saw a flat book.
                     self._strategy_positions.update(
                         order.strategy_id,
                         ack.symbol,

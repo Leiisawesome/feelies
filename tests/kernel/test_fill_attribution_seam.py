@@ -100,29 +100,37 @@ def _fill(
     )
 
 
-def _orchestrator(positions: MemoryPositionStore, slices: StrategyPositionStore) -> object:
+def _orchestrator(
+    positions: MemoryPositionStore,
+    slices: StrategyPositionStore,
+    *,
+    ledger: FillAttributionLedger | None = None,
+    with_ledger: bool = True,
+) -> object:
     """Orchestrator wired the way ``build_platform`` wires it.
 
-    ``bootstrap`` always constructs a :class:`FillAttributionLedger`
-    (``bootstrap.py``), and the slice-attribution block is gated on it being
-    present — so a builder that omits it skips attribution entirely and would
-    make these tests vacuous.
+    ``bootstrap`` always constructs a :class:`FillAttributionLedger`, so the default
+    mirrors production.  ``with_ledger=False`` covers a deployment that omits one: slice
+    attribution must still happen, which is what the fill-ledger gate used to break.
     """
     orch = _build_orchestrator(
         SimulatedClock(start_ns=1000),
         position_store=positions,
         strategy_positions=slices,
     )
-    orch._fill_ledger = FillAttributionLedger()
+    orch._fill_ledger = (ledger or FillAttributionLedger()) if with_ledger else None
     return orch
 
 
 def _run_fill(
-    order: OrderRequest, ack: OrderAck
+    order: OrderRequest,
+    ack: OrderAck,
+    *,
+    with_ledger: bool = True,
 ) -> tuple[MemoryPositionStore, StrategyPositionStore]:
     positions = MemoryPositionStore()
     slices = StrategyPositionStore()
-    orch = _orchestrator(positions, slices)
+    orch = _orchestrator(positions, slices, with_ledger=with_ledger)
     orch._track_order(order.order_id, order.side, order)  # type: ignore[attr-defined]
     orch._reconcile_fills([ack], correlation_id="tick-cid")  # type: ignore[attr-defined]
     return positions, slices
@@ -231,3 +239,105 @@ def test_symbol_net_hazard_exit_is_not_self_attributed_to_one_slice() -> None:
         "a symbol-net hazard exit was self-attributed to one slice, leaving the "
         "bystander strategy's slice stale"
     )
+
+
+# ── The ledger is the live attribution path, not dead weight ─────────────
+
+
+def test_tracking_an_order_registers_its_attribution_record() -> None:
+    """Step 1 of the ledger's contract: ``record()`` on order construction.
+
+    It had no caller at all, so ``allocate_fill`` returned ``[]`` for every
+    ``order_id`` and the ledger was inert.
+    """
+    ledger = FillAttributionLedger()
+    orch = _orchestrator(MemoryPositionStore(), StrategyPositionStore(), ledger=ledger)
+    order = _entry_order()
+    orch._track_order(order.order_id, order.side, order)  # type: ignore[attr-defined]
+
+    allocs = ledger.allocate_fill(order.order_id, 10, Decimal("150.00"))
+    assert allocs, "no attribution record was registered for a single-strategy order"
+    assert [(sid, signed) for sid, _sym, signed, _px, _fee in allocs] == [(_SID, 10)]
+
+
+def test_ledger_allocation_signs_a_sell_entry_negative() -> None:
+    """Direction comes from ``net_side``; a positive contribution must not flip it."""
+    ledger = FillAttributionLedger()
+    orch = _orchestrator(MemoryPositionStore(), StrategyPositionStore(), ledger=ledger)
+    order = _entry_order(order_id="entry-sell", side=Side.SELL)
+    orch._track_order(order.order_id, order.side, order)  # type: ignore[attr-defined]
+
+    allocs = ledger.allocate_fill(order.order_id, 10, Decimal("150.00"))
+    assert [signed for _sid, _sym, signed, _px, _fee in allocs] == [-10]
+
+
+def test_symbol_net_hazard_exit_gets_no_attribution_record() -> None:
+    """A symbol-net exit must not be recorded as one slice's whole fill."""
+    ledger = FillAttributionLedger()
+    orch = _orchestrator(MemoryPositionStore(), StrategyPositionStore(), ledger=ledger)
+    hazard = _entry_order(
+        order_id="hz-record",
+        side=Side.SELL,
+        strategy_id=_SID,
+        reason=HAZARD_EXIT_REASON_SPIKE,
+    )
+    orch._track_order(hazard.order_id, hazard.side, hazard)  # type: ignore[attr-defined]
+    assert ledger.allocate_fill(hazard.order_id, 10, Decimal("150.00")) == []
+
+
+def test_order_without_a_strategy_id_gets_no_attribution_record() -> None:
+    ledger = FillAttributionLedger()
+    orch = _orchestrator(MemoryPositionStore(), StrategyPositionStore(), ledger=ledger)
+    order = _entry_order(order_id="agg-record", strategy_id="")
+    orch._track_order(order.order_id, order.side, order)  # type: ignore[attr-defined]
+    assert ledger.allocate_fill(order.order_id, 10, Decimal("150.00")) == []
+
+
+def test_partial_fills_through_the_ledger_sum_to_the_total() -> None:
+    """Cumulative largest-remainder allocation must not double- or under-count."""
+    positions = MemoryPositionStore()
+    slices = StrategyPositionStore()
+    orch = _orchestrator(positions, slices)
+    order = _entry_order(order_id="entry-partials", quantity=10)
+    orch._track_order(order.order_id, order.side, order)  # type: ignore[attr-defined]
+
+    orch._reconcile_fills(  # type: ignore[attr-defined]
+        [
+            OrderAck(
+                timestamp_ns=2000,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                order_id=order.order_id,
+                symbol=order.symbol,
+                status=OrderAckStatus.PARTIALLY_FILLED,
+                filled_quantity=4,
+                fill_price=Decimal("150.00"),
+                fees=Decimal("0.04"),
+            )
+        ],
+        correlation_id="tick-1",
+    )
+    assert slices.get(_SID, _SYMBOL).quantity == 4
+
+    orch._reconcile_fills(  # type: ignore[attr-defined]
+        [_fill(order, quantity=6, timestamp_ns=3000, fees=Decimal("0.06"))],
+        correlation_id="tick-2",
+    )
+    assert slices.get(_SID, _SYMBOL).quantity == 10
+    assert slices.get(_SID, _SYMBOL).quantity == positions.get(_SYMBOL).quantity
+
+
+# ── The ledger gate no longer decides whether slices are written ─────────
+
+
+def test_slice_is_attributed_even_without_a_fill_ledger() -> None:
+    """Attribution must depend on the slice book, not on the ledger existing.
+
+    The block used to be gated on ``self._fill_ledger is not None``, so a
+    deployment that skipped constructing one silently lost slice attribution —
+    and with it the Stage-0 ceiling, the composer's scoping, and every per-alpha
+    budget.  Neither surviving branch needs the ledger.
+    """
+    order = _entry_order(order_id="entry-no-ledger")
+    _positions, slices = _run_fill(order, _fill(order), with_ledger=False)
+    assert slices.get(_SID, _SYMBOL).quantity == 10
