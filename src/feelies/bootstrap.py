@@ -656,7 +656,7 @@ def build_platform(
 
         bundle.ib_connection.on_alert_event(_publish_ib_alert)
 
-    _wire_decouple_revocation_hook(registry, exit_composer)
+    _wire_decouple_revocation_hook(registry, exit_composer, deferral_cap_controller)
 
     logger.info(
         "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, config_checksum=%s",
@@ -673,6 +673,7 @@ def build_platform(
 def _wire_decouple_revocation_hook(
     registry: AlphaRegistry,
     exit_composer: ExitComposer | None,
+    deferral_cap_controller: DeferralCapController | None,
 ) -> None:
     """Connect lifecycle revocation to the composer's immediate flatten (§2.5).
 
@@ -682,7 +683,11 @@ def _wire_decouple_revocation_hook(
     ``max_hold_after_safe_off`` / age ceiling.  The lifecycle emits a typed
     :class:`~feelies.alpha.lifecycle.LifecycleRevocation`; this binds that to
     :meth:`~feelies.risk.exit_composer.ExitComposer.revoke_and_flatten` so the
-    deferral never outlives its authorization.
+    deferral never outlives its authorization.  The same transition
+    :meth:`~feelies.risk.deferral_cap.DeferralCapController.revoke`\\ s the
+    bounded-deferral cap so it stops bounding the revoked slice — otherwise a
+    later ``Trade`` at/after the old deadline could publish a second, duplicate
+    cap-driven exit for the slice the composer already flattened.
 
     No-op when no alpha is decoupled (no composer): a non-decoupled alpha keeps
     its SIGNAL-layer ``gate_close_flat`` and has no deferred book to revoke.
@@ -700,6 +705,8 @@ def _wire_decouple_revocation_hook(
             now_ns=revocation.timestamp_ns,
             correlation_id=revocation.correlation_id,
         )
+        if deferral_cap_controller is not None:
+            deferral_cap_controller.revoke(revocation.alpha_id)
 
     registry.set_lifecycle_revocation_hook(_on_revocation)
 

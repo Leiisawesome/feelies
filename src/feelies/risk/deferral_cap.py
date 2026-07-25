@@ -205,6 +205,26 @@ class DeferralCapController:
         """Add or replace a strategy's bounded-deferral policy."""
         self._policies[policy.strategy_id] = policy
 
+    def revoke(self, strategy_id: str) -> None:
+        """Drop a strategy's deferral policy and anchored episode state (§2.5).
+
+        Revocation symmetry (Inv-11): when a decoupled alpha's Stage-0
+        authorization is removed — quarantine, de-promotion, or decommission —
+        :meth:`~feelies.risk.exit_composer.ExitComposer.revoke_and_flatten`
+        flattens its open book immediately.  This cap must then stop bounding
+        that strategy's holds so a later ``Trade`` at/after the old deadline
+        cannot publish a second, duplicate cap-driven exit for a slice the
+        composer already flattened (conflicting order IDs on one book).  Dropping
+        the policy detaches the strategy from future deadline and safety-anchor
+        evaluation; clearing the episode anchor and duplicate-close guard leaves
+        no stale state behind should the alpha ever be re-authorized.
+        """
+        self._policies.pop(strategy_id, None)
+        for key in [k for k in self._first_safe_off_ns if k[0] == strategy_id]:
+            del self._first_safe_off_ns[key]
+        for key in [k for k in self._pending_exit if k[0] == strategy_id]:
+            del self._pending_exit[key]
+
     def attach(self) -> None:
         if self._attached:
             return

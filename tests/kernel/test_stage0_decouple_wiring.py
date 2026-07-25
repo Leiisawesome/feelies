@@ -308,7 +308,7 @@ def test_revocation_hook_is_wired_to_the_composer() -> None:
     bus.subscribe(OrderRequest, emitted.append)  # type: ignore[arg-type]
 
     registry = _registry(**{_SID: _decouple_block()})
-    _wire_decouple_revocation_hook(registry, composer)
+    _wire_decouple_revocation_hook(registry, composer, None)
     assert registry._lifecycle_revocation_hook is not None
 
     # Fire the hook the way AlphaLifecycle does on a quarantine transition.
@@ -333,7 +333,7 @@ def test_revocation_hook_is_wired_to_the_composer() -> None:
 
 def test_revocation_hook_not_wired_without_a_composer() -> None:
     registry = _registry(**{_OTHER_SID: None})
-    _wire_decouple_revocation_hook(registry, None)
+    _wire_decouple_revocation_hook(registry, None, None)
     assert registry._lifecycle_revocation_hook is None
 
 
