@@ -378,12 +378,20 @@ Any of:
 |---|---|---|
 | **R1** | \(\overline{U^{\text{boundary}}} \leq 0\) net of stressed costs | No residual **even with perfect foresight**. The strongest possible falsification: no map, however good, beats a non-positive ceiling. |
 | **R2** | \(\sum_i U^{\text{boundary}}_i < \sum_{i \in (a)} \lvert \Delta_i \rvert\) | The harvestable residual is smaller than the damage the deferral drags along. |
-| **R3** | `CVaR₅(Δ \| W)` materially worse than `CVaR₅(Δ \| X)` | **The §2.1 failure.** The reason we held is the reason we should have left. A map keyed on the same latent state would hold precisely in the toxic cell — this rejects the *premise* of mercy, not merely its size. |
+| **R3** | `CVaR₅(Δ \| X) − CVaR₅(Δ \| W)` > one Inv-12-stressed round-trip cost | **The §2.1 failure.** The reason we held is the reason we should have left. A map keyed on the same latent state would hold precisely in the toxic cell — this rejects the *premise* of mercy, not merely its size. |
 | **R4** | B1 met but B2 or B3 missed | A real but sub-threshold residual: measured, priced, and not worth the machinery. |
 
 Per design §4.2 this is an **expected outcome and a successful result**, not a shortfall.
 Claim A (bounded deferral) stands independently of Claim B; empirical rejection of a map
 does not reject Stage 0.
+
+**R3's materiality quantum.** R3 originally read "materially worse" without a number, which
+left exactly the discretion this document exists to remove. It is fixed here — still before
+any outcome data — as **one Inv-12-stressed round-trip cost** for the pilot (18.0 bps for
+MOC, 19.5 bps for kyle_drift): a tail difference smaller than the transaction-cost quantum
+is not economically material. R3 requires **both** strata powered to be computable; when
+only one is, R3 cannot fire and its silence is recorded as *not computable*, never as a
+pass.
 
 ### 7.3 UNDERPOWERED — not a GO
 
@@ -452,6 +460,38 @@ reasons only — so it is Inv-2-safe, and it answers "is this powerable at all?"
 tail statistic is computed. If the scout returns UNDERPOWERED, the study stops there and
 no CVaR estimate is produced, which prevents an underpowered tail number from entering the
 record where it could later be quoted as evidence.
+
+---
+
+## 11. Implementation
+
+The protocol is executable; it must be run **where the data is** (a machine with
+`MASSIVE_API_KEY` and a populated `~/.feelies/cache/`), not in a cloud session.
+
+| Component | Path | Status |
+|---|---|---|
+| Decision engine (§7 rules, §6 power floor, frozen bars) | `src/feelies/research/stage0_residual.py` | Implemented, unit-tested |
+| Rule tests (including "under-powered ⇒ UNDERPOWERED, never GO") | `tests/research/test_stage0_residual.py` | 31 tests green |
+| Local runner — scout + arm materialization | `scripts/research/stage0_residual_measurement.py` | `--scout` implemented; `--full` gated (below) |
+
+```bash
+PYTHONHASHSEED=0 uv run python scripts/research/stage0_residual_measurement.py \
+    --alpha sig_moc_imbalance_v1 --symbol APP NVDA AMD \
+    --date 2026-03-02 --end-date 2026-04-30 --scout \
+    --out docs/research/artifacts/stage0_residual
+```
+
+The runner never mutates a committed alpha spec: each arm runs from a temporary copy with
+`safety_exit_policy` injected, so measuring an alpha cannot promote it as a side effect.
+It refuses to start without `PYTHONHASHSEED=0` (Inv-5), and both arms run under
+`--inv12-stress` by construction rather than by operator flag.
+
+**`--full` is deliberately gated.** The two-arm PnL reconciliation and the hindsight-oracle
+extraction have never been exercised against a real cache, and a silently-wrong extraction
+would emit a confident, plausible GO/NO-GO. Since §10 makes the scout the gating step
+anyway — a NO-GO on power means `--full` never runs — the extraction should be completed
+and validated against a real short date range (reconciling arm-F/arm-H divergence points
+and episode counts against the trade journal) before any verdict is recorded.
 
 ---
 
