@@ -143,7 +143,10 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
-from feelies.risk.deferral_cap import DEFERRAL_EXIT_REASONS
+from feelies.risk.deferral_cap import (
+    DEFERRAL_EXIT_REASONS,
+    DEFERRAL_SLICE_SCOPED_REASONS,
+)
 from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
 from feelies.risk.edge_weighted_sizer import (
@@ -234,6 +237,18 @@ _SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = (
     EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
 )
 
+# Forced-exit reasons that unambiguously identify a **single strategy-slice**
+# owner for fill attribution.  Narrower than the reduce-test set above: it omits
+# the shared ``HARD_EXIT_AGE`` token because the symbol-net
+# :class:`~feelies.risk.hazard_exit.HazardExitController` and the slice-scoped
+# deferral cap both stamp it, so an order carrying it cannot be credited wholly
+# to one slice by reason alone (``DEFERRAL_SLICE_SCOPED_REASONS`` omits it for the
+# same reason).  A hazard hard-age exit flattens symbol-net, so its fill must fall
+# to the proportional split, not self-attribute.
+_SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
+    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_SLICE_SCOPED_REASONS
+)
+
 
 def _order_owns_one_slice(order: OrderRequest) -> bool:
     """Whether a fill on *order* belongs **entirely** to ``order.strategy_id``.
@@ -257,16 +272,19 @@ def _order_owns_one_slice(order: OrderRequest) -> bool:
     False for a **symbol-net** forced exit (hazard): it flattens the whole symbol even
     though it carries a ``strategy_id``, so crediting its full fill to that one slice
     would over-debit it.  Those fall to the proportional split.  ``HARD_EXIT_AGE`` is a
-    token shared by the hazard controller and the deferral cap and is treated as
-    slice-scoped here, matching the bridge's reading at
-    :data:`_SLICE_SCOPED_FORCED_EXIT_REASONS`.
+    token shared by the symbol-net hazard controller and the slice-scoped deferral cap,
+    so it cannot identify a single-slice owner by reason alone and is **excluded** here
+    (:data:`_SELF_ATTRIBUTED_FORCED_EXIT_REASONS`, mirroring
+    :data:`~feelies.risk.deferral_cap.DEFERRAL_SLICE_SCOPED_REASONS`) — unlike the
+    reduce-test at :data:`_SLICE_SCOPED_FORCED_EXIT_REASONS`, which may consult the
+    slice basis as a symbol-net-first fallback without attributing the fill.
 
     False for an order with no ``strategy_id`` (aggregate / emergency flatten): it owns
     no slice to credit.
     """
     if not order.strategy_id:
         return False
-    if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS:
+    if order.reason in _SELF_ATTRIBUTED_FORCED_EXIT_REASONS:
         return True
     return order.reason not in _RISK_FORCED_EXIT_REASONS
 
