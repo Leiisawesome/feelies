@@ -39,7 +39,9 @@ def _make(
         bus=bus,
         sequence_generator=SequenceGenerator(start=seq_start),
         position_store=store,
-        policies=policies if policies is not None else {_SID: ExitComposerPolicy(strategy_id=_SID)},
+        policies=policies
+        if policies is not None
+        else {_SID: ExitComposerPolicy(strategy_id=_SID)},
     )
     # No attach() needed — revoke_and_flatten publishes directly; the kernel's
     # OrderRequest bridge routes it regardless of the SafetyStateChange subscription.
