@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
     from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
+    from feelies.risk.deferral_cap import DeferralCapController
     from feelies.risk.exit_composer import ExitComposer
     from feelies.risk.hazard_exit import HazardExitController
 
@@ -142,6 +143,7 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.risk.deferral_cap import DEFERRAL_EXIT_REASONS
 from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
 from feelies.risk.edge_weighted_sizer import (
@@ -207,12 +209,30 @@ _FORCED_EXIT_PANIC_REASON: Mapping[str, str] = MappingProxyType(
 )
 
 # Reducing forced-exit reasons routed through the non-vetoable RISK-layer bridge
-# (:meth:`Orchestrator._on_bus_hazard_order`).  Both authors — the hazard
-# controller and the exit composer — stamp ``source_layer="RISK"`` and one of
-# these reasons; the union keeps the bridge's membership test a single source of
-# truth so adding a reason to either writer automatically extends what routes,
-# and a mandated exit never silently drops (Inv-11 fail-safe).
-_RISK_FORCED_EXIT_REASONS: frozenset[str] = HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS
+# (:meth:`Orchestrator._on_bus_hazard_order`).  All three authors — the hazard
+# controller, the Stage-0 exit composer, and the Stage-0 bounded-deferral cap —
+# stamp ``source_layer="RISK"`` and one of these reasons; the union keeps the
+# bridge's membership test a single source of truth so adding a reason to any
+# writer automatically extends what routes, and a mandated exit never silently
+# drops (Inv-11 fail-safe).
+_RISK_FORCED_EXIT_REASONS: frozenset[str] = (
+    HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
+)
+
+# Forced-exit reasons whose author *may* flatten a **strategy slice** rather than
+# symbol-net (design §3.3).  For these the bridge judges "does this order reduce
+# exposure?" against the strategy slice **in addition to** symbol-net, treating
+# the order as reducing when it shrinks *either* basis.  ``HARD_EXIT_AGE`` is
+# included: the deferral cap reuses the hazard controller's token for forensic
+# lineage (``deferral_cap.DEFERRAL_REASON_HARD_AGE``), so an order carrying it may
+# be a slice-scoped deferral flatten whose symbol-net is left flat by another
+# strategy's offsetting slice.  Consulting the slice basis only as a fallback
+# (symbol-net is checked first) keeps a true symbol-net hazard exit correct — it
+# always reduces symbol-net — while never stranding a slice-scoped mandated exit
+# at the non-reducing REJECT branch.
+_SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = (
+    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
+)
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -275,6 +295,7 @@ class Orchestrator:
         composition_metrics_collector: "HorizonMetricsCollector | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
         exit_composer: "ExitComposer | None" = None,
+        deferral_cap_controller: "DeferralCapController | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
         edge_calibration_factors: Mapping[str, float] | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
@@ -380,6 +401,12 @@ class Orchestrator:
         # with ``_hazard_exit_controller``.  Its emitted flatten ``OrderRequest``
         # routes through ``_on_bus_hazard_order`` like any RISK-layer forced exit.
         self._exit_composer = exit_composer
+        # Stage-0 bounded-deferral cap (risk layer): owns the timed EXIT at the
+        # §2.3 ``min()`` deadline for a decoupled alpha's held book.  Like the
+        # composer it self-subscribes in bootstrap; the orchestrator holds the
+        # reference for lifecycle/inspection symmetry, and its flatten
+        # ``OrderRequest`` routes through ``_on_bus_hazard_order``.
+        self._deferral_cap_controller = deferral_cap_controller
         self._signal_arbitrator: SignalArbitrator = (
             signal_arbitrator if signal_arbitrator is not None else EdgeWeightedArbitrator()
         )
@@ -5360,16 +5387,22 @@ class Orchestrator:
         # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(event.symbol).quantity
         signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
-        # A composer exit is slice-scoped: judge "reduces" against its own
-        # strategy slice, not symbol-net exposure.  Another strategy holding the
-        # opposite side can leave net flat while the mandated slice is still open,
-        # which would otherwise strand the exit at the non-reducing REJECT branch.
-        reduce_basis_qty = current_qty
-        if event.reason in EXIT_COMPOSER_EXIT_REASONS and self._strategy_positions is not None:
-            reduce_basis_qty = self._strategy_positions.get(
-                event.strategy_id, event.symbol
-            ).quantity
-        order_reduces = abs(reduce_basis_qty + signed_qty) < abs(reduce_basis_qty)
+        # A composer or deferral-cap exit is slice-scoped: another strategy
+        # holding the opposite side can leave symbol-net flat while the mandated
+        # slice is still open.  Treat the order as reducing when it shrinks
+        # *either* the symbol-net book or its own strategy slice, so a slice
+        # flatten is never stranded at the non-reducing REJECT branch.  Symbol-net
+        # is checked first, so a true symbol-net hazard exit (which always reduces
+        # net) never needs the slice fallback — this keeps the shared
+        # ``HARD_EXIT_AGE`` token correct for both authors without attributing it.
+        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
+        if (
+            not order_reduces
+            and event.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS
+            and self._strategy_positions is not None
+        ):
+            slice_qty = self._strategy_positions.get(event.strategy_id, event.symbol).quantity
+            order_reduces = abs(slice_qty + signed_qty) < abs(slice_qty)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)

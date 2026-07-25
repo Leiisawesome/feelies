@@ -32,6 +32,7 @@ from feelies.alpha.promotion_evidence import (
     apply_gate_thresholds_overrides,
 )
 from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.alpha.lifecycle import LifecycleRevocation
 from feelies.alpha.registry import AlphaRegistry
 from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
@@ -104,6 +105,7 @@ from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.risk.engine import RiskEngine
+from feelies.risk.deferral_cap import DeferralCapController, DeferralPolicy
 from feelies.risk.exit_composer import ExitComposer, ExitComposerPolicy
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 from feelies.risk.edge_weighted_sizer import (
@@ -505,10 +507,26 @@ def build_platform(
         thread_safe_sequences=_seq_thread_safe,
     )
 
-    # Stage-0 dual-permission: wire the risk-layer exit composer beside the
-    # hazard controller for any decoupled SIGNAL alpha.  Returns None (and never
-    # subscribes) when no alpha is decoupled, so default deployments stay
+    # Stage-0 dual-permission: wire the two risk-layer authors beside the hazard
+    # controller for any decoupled SIGNAL alpha — the bounded-deferral cap (timed
+    # EXIT at the §2.3 min() deadline) and the exit composer (fail-closed
+    # error-path EXIT, clean-transition HOLD).  Both return None (and never
+    # subscribe) when no alpha is decoupled, so default deployments stay
     # bit-identical (Inv-5).
+    #
+    # The cap is attached **first** so that on a dispatch where both consume the
+    # same SafetyStateChange, the episode anchor is recorded before the composer
+    # decides — a fixed, replayable subscriber order (Inv-5).
+    deferral_cap_controller = _create_deferral_cap_controller(
+        bus=bus,
+        registry=registry,
+        horizon_signal_engine=horizon_signal_engine,
+        strategy_positions=strategy_positions,
+        fallback_universe=config.symbols,
+        session_flatten_enabled=config.session_flatten_enabled,
+        session_flatten_seconds_before_close=config.session_flatten_seconds_before_close,
+        thread_safe_sequences=_seq_thread_safe,
+    )
     exit_composer = _create_exit_composer(
         bus=bus,
         horizon_signal_engine=horizon_signal_engine,
@@ -582,6 +600,7 @@ def build_platform(
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
         exit_composer=exit_composer,
+        deferral_cap_controller=deferral_cap_controller,
         edge_calibration_factors=resolved_edge_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
@@ -637,6 +656,8 @@ def build_platform(
 
         bundle.ib_connection.on_alert_event(_publish_ib_alert)
 
+    _wire_decouple_revocation_hook(registry, exit_composer, deferral_cap_controller)
+
     logger.info(
         "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, config_checksum=%s",
         config.mode.name,
@@ -647,6 +668,47 @@ def build_platform(
     )
 
     return orchestrator, config
+
+
+def _wire_decouple_revocation_hook(
+    registry: AlphaRegistry,
+    exit_composer: ExitComposer | None,
+    deferral_cap_controller: DeferralCapController | None,
+) -> None:
+    """Connect lifecycle revocation to the composer's immediate flatten (§2.5).
+
+    Inv-11 revocation symmetry: removing a decoupled alpha's Stage-0
+    authorization — quarantine, de-promotion, or decommission — must flatten any
+    open deferred book **on the transition**, not at the old
+    ``max_hold_after_safe_off`` / age ceiling.  The lifecycle emits a typed
+    :class:`~feelies.alpha.lifecycle.LifecycleRevocation`; this binds that to
+    :meth:`~feelies.risk.exit_composer.ExitComposer.revoke_and_flatten` so the
+    deferral never outlives its authorization.  The same transition
+    :meth:`~feelies.risk.deferral_cap.DeferralCapController.revoke`\\ s the
+    bounded-deferral cap so it stops bounding the revoked slice — otherwise a
+    later ``Trade`` at/after the old deadline could publish a second, duplicate
+    cap-driven exit for the slice the composer already flattened.
+
+    No-op when no alpha is decoupled (no composer): a non-decoupled alpha keeps
+    its SIGNAL-layer ``gate_close_flat`` and has no deferred book to revoke.
+
+    The flatten is stamped with the *transition's own* ``timestamp_ns`` rather
+    than a fresh clock read, so the emitted order is a pure function of the
+    lifecycle event and replays identically (Inv-5, Inv-10).
+    """
+    if exit_composer is None:
+        return
+
+    def _on_revocation(revocation: LifecycleRevocation) -> None:
+        exit_composer.revoke_and_flatten(
+            revocation.alpha_id,
+            now_ns=revocation.timestamp_ns,
+            correlation_id=revocation.correlation_id,
+        )
+        if deferral_cap_controller is not None:
+            deferral_cap_controller.revoke(revocation.alpha_id)
+
+    registry.set_lifecycle_revocation_hook(_on_revocation)
 
 
 def _select_clock(mode: OperatingMode) -> Clock:
@@ -2127,6 +2189,79 @@ def _create_exit_composer(
         ", ".join(sorted(s.alpha_id for s in decoupled)),
     )
     return composer
+
+
+def _create_deferral_cap_controller(
+    *,
+    bus: EventBus,
+    registry: AlphaRegistry,
+    horizon_signal_engine: HorizonSignalEngine | None,
+    strategy_positions: StrategyPositionStore,
+    fallback_universe: Iterable[str],
+    session_flatten_enabled: bool,
+    session_flatten_seconds_before_close: int,
+    thread_safe_sequences: bool = True,
+) -> DeferralCapController | None:
+    """Build the bounded-deferral cap for every decoupled SIGNAL alpha (§2.3).
+
+    This is the author that makes Stage-0 decoupling a *bounded deferral* rather
+    than a removal of today's gate-close flatten: it holds the episode's
+    ``min(opened_at + hard_exit_age_seconds, first_safe_off +
+    max_hold_after_safe_off, session_flatten)`` deadline and forces the EXIT.
+    Without it the composer's clean-transition HOLD would have no timed
+    counterpart and the declared ceilings would never bind (Inv-11).
+
+    Decoupled alphas are read from the **same source** as
+    :func:`_create_exit_composer` — ``RegisteredSignal.decouple_gate_close`` — so
+    the two authors can never cover different sets; the per-episode ceilings then
+    come from that alpha's validated ``safety_exit_policy`` manifest block.  With
+    none decoupled nothing is created and nothing subscribes, so default
+    deployments stay bit-identical (Inv-5).
+    """
+    if horizon_signal_engine is None:
+        return None
+    decoupled = [s for s in horizon_signal_engine.signals if s.decouple_gate_close]
+    if not decoupled:
+        return None
+
+    fallback = tuple(sorted(fallback_universe))
+    controller = DeferralCapController(
+        bus=bus,
+        sequence_generator=SequenceGenerator(thread_safe=thread_safe_sequences),
+        position_store=strategy_positions,
+        session_flatten_enabled=session_flatten_enabled,
+        session_flatten_seconds_before_close=session_flatten_seconds_before_close,
+    )
+    for registered in sorted(decoupled, key=lambda s: s.alpha_id):
+        alpha_id = registered.alpha_id
+        block = registry.get(alpha_id).manifest.safety_exit_policy or {}
+        max_hold = block.get("max_hold_after_safe_off")
+        hard_age = block.get("hard_exit_age_seconds")
+        if max_hold is None or hard_age is None:
+            # Unreachable via the loader, which rejects a decoupled spec missing
+            # either ceiling (design §3.6).  Fail loudly rather than wire a
+            # controller that would silently never bound the deferral.
+            raise ValueError(
+                f"alpha {alpha_id!r} is decoupled (decouple_caps_only) but its "
+                f"safety_exit_policy is missing "
+                f"{'max_hold_after_safe_off' if max_hold is None else 'hard_exit_age_seconds'}; "
+                "both ceilings are mandatory under decoupling (design §2.3/§3.6)"
+            )
+        controller.register_policy(
+            DeferralPolicy(
+                strategy_id=alpha_id,
+                max_hold_after_safe_off_seconds=int(max_hold),
+                hard_exit_age_seconds=int(hard_age),
+                universe=fallback,
+            )
+        )
+    controller.attach()
+    logger.info(
+        "DeferralCapController wired: %d decoupled SIGNAL alpha(s) (%s)",
+        len(decoupled),
+        ", ".join(sorted(s.alpha_id for s in decoupled)),
+    )
+    return controller
 
 
 def _enforce_ex_date_replay_guard(

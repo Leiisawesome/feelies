@@ -24,7 +24,17 @@ hold indefinitely, which the design calls a defect.  The anchor is bound to the
 episode via the slice's ``opened_at`` so a later episode never inherits a stale
 anchor.  A direct sign flip (long<->short without going flat) restarts
 ``opened_at`` for the age backstop but leaves the book continuously open, so the
-monotonic anchor is carried onto the reversed leg rather than dropped.
+trade path carries the monotonic anchor onto the reversed leg rather than
+dropping it.
+
+One documented deviation: a ``safe->OFF`` that arrives after a sign flip but
+before any ``Trade`` has run that carry cannot tell the reversed leg from a
+fresh episode by ``opened_at`` alone, so it re-anchors and the ceiling extends.
+Reaching it needs a real safe-ON re-entry window plus a reversal — not gate
+chatter, which the design's "unbounded hold via chatter" defect is about — and
+the flip restarts ``hard_exit_age_seconds`` too, so the hold stays bounded.
+Pinned by ``test_flicker_after_sign_flip_reanchors``.  Closing it exactly would
+require the gate to publish a ``safe=True`` re-arm event, which no path emits.
 
 Evaluation is **event-time** on ``Trade`` arrival (Inv-7 — the platform polls
 nothing), the same deterministic clock proxy the hazard controller uses for its
@@ -74,6 +84,18 @@ DEFERRAL_REASON_SESSION_FLATTEN: str = "SESSION_FLATTEN"
 DEFERRAL_EXIT_REASONS: frozenset[str] = frozenset(
     {
         DEFERRAL_REASON_HARD_AGE,
+        DEFERRAL_REASON_MAX_HOLD,
+        DEFERRAL_REASON_SESSION_FLATTEN,
+    }
+)
+# Reasons that unambiguously identify *this* (strategy-slice-scoped) author.
+# ``HARD_EXIT_AGE`` is excluded because it is deliberately shared with the
+# symbol-net :class:`~feelies.risk.hazard_exit.HazardExitController` for forensic
+# lineage, so an order carrying it cannot be attributed to one author by reason
+# alone.  The kernel uses this narrower set to pick the slice-vs-symbol-net basis
+# when judging whether a mandated exit reduces exposure.
+DEFERRAL_SLICE_SCOPED_REASONS: frozenset[str] = frozenset(
+    {
         DEFERRAL_REASON_MAX_HOLD,
         DEFERRAL_REASON_SESSION_FLATTEN,
     }
@@ -149,11 +171,6 @@ class DeferralCapController:
         # Suppresses a re-fire against the same stale slice; a quantity change
         # (partial fill) or new episode releases it so a residual still closes.
         "_pending_exit",
-        # Keys whose anchored book saw a safe->ON re-arm since its last safe->OFF.
-        # Marks a subsequent safe->OFF as the second OFF of an OFF->ON->OFF flicker
-        # so it carries the monotonic anchor (even across a sign flip) instead of
-        # re-anchoring to the flicker timestamp.
-        "_rearmed_keys",
     )
 
     def __init__(
@@ -177,7 +194,6 @@ class DeferralCapController:
         )
         self._first_safe_off_ns: dict[tuple[str, str], tuple[int, int]] = {}
         self._pending_exit: dict[tuple[str, str], tuple[int | None, int]] = {}
-        self._rearmed_keys: set[tuple[str, str]] = set()
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -188,6 +204,26 @@ class DeferralCapController:
     def register_policy(self, policy: DeferralPolicy) -> None:
         """Add or replace a strategy's bounded-deferral policy."""
         self._policies[policy.strategy_id] = policy
+
+    def revoke(self, strategy_id: str) -> None:
+        """Drop a strategy's deferral policy and anchored episode state (§2.5).
+
+        Revocation symmetry (Inv-11): when a decoupled alpha's Stage-0
+        authorization is removed — quarantine, de-promotion, or decommission —
+        :meth:`~feelies.risk.exit_composer.ExitComposer.revoke_and_flatten`
+        flattens its open book immediately.  This cap must then stop bounding
+        that strategy's holds so a later ``Trade`` at/after the old deadline
+        cannot publish a second, duplicate cap-driven exit for a slice the
+        composer already flattened (conflicting order IDs on one book).  Dropping
+        the policy detaches the strategy from future deadline and safety-anchor
+        evaluation; clearing the episode anchor and duplicate-close guard leaves
+        no stale state behind should the alpha ever be re-authorized.
+        """
+        self._policies.pop(strategy_id, None)
+        for key in [k for k in self._first_safe_off_ns if k[0] == strategy_id]:
+            del self._first_safe_off_ns[key]
+        for key in [k for k in self._pending_exit if k[0] == strategy_id]:
+            del self._pending_exit[key]
 
     def attach(self) -> None:
         if self._attached:
@@ -210,10 +246,18 @@ class DeferralCapController:
         Only ``safe=False`` transitions anchor; a ``safe=True`` re-arm never
         re-anchors (monotonic).  A repeated ``safe=False`` within the same open
         episode — the second OFF of an ``OFF->ON->OFF`` flicker — is ignored, so
-        chatter cannot push the deadline out (design §2.3).  A flicker whose
-        re-arm straddles a sign flip (``opened_at`` advances mid-flicker) is still
-        a flicker: it carries the monotonic anchor onto the reversed leg rather
-        than restarting the clock at the flicker timestamp.
+        chatter cannot push the deadline out (design §2.3).
+
+        The flicker case is identified by ``opened_at``: while the slice stays
+        the same open episode, the stored anchor matches and is left alone.  A
+        sign flip advances ``opened_at`` mid-episode; the trade path
+        (:meth:`_maybe_emit_exit`) carries the anchor onto the reversed leg, so
+        a flip under continuous safety-OFF keeps its bounded hold.  A safety
+        event that arrives after a flip but *before* any trade has run that carry
+        is read as a new episode and re-anchors — see the documented deviation in
+        ``test_flicker_after_sign_flip_reanchors``.  Bounded either way: the flip
+        also restarts the position-age backstop, and reaching that state requires
+        a real re-entry window plus a reversal, not gate chatter.
         """
         policy = self._policies.get(event.strategy_id)
         if policy is None:
@@ -222,16 +266,10 @@ class DeferralCapController:
             return
         key = (event.strategy_id, event.symbol)
         if event.safe:
-            # A re-arm over an anchored open book: the next safe->OFF is the
-            # second OFF of an ``OFF->ON->OFF`` flicker.  Remember it so that OFF
-            # carries the anchor even if a sign flip has meanwhile advanced
-            # ``opened_at`` (the trade-path carry only runs on a ``Trade``).
-            if key in self._first_safe_off_ns:
-                self._rearmed_keys.add(key)
+            # A re-arm only loosens; loosening requires human re-authorization
+            # (Inv-11 / §2.5), so it never anchors, re-anchors, or clears.
             return
         opened = self._position_store.opened_at_ns(event.strategy_id, event.symbol)
-        rearmed = key in self._rearmed_keys
-        self._rearmed_keys.discard(key)
         if opened is None:
             # Safe went OFF while the slice is flat — entries are blocked when
             # safe is OFF, so there is no open episode to defer.  Prune any stale
@@ -245,16 +283,10 @@ class DeferralCapController:
         elif existing[0] == opened:
             # Same open slice, already anchored — monotonic; do not re-anchor.
             pass
-        elif rearmed:
-            # OFF->ON->OFF flicker whose re-arm straddled a sign flip: the book
-            # stayed continuously open, so carry the monotonic first-safe-OFF
-            # anchor onto the reversed leg (mirrors the trade-path carry) instead
-            # of restarting the clock at this flicker's timestamp (design §2.3).
-            self._first_safe_off_ns[key] = (opened, existing[1])
         else:
-            # First safe->OFF of a genuinely new open episode (flat->reopen): the
-            # stale anchor belongs to a prior episode and no re-arm bridged them,
-            # so re-anchor to this episode's own first safe->OFF.
+            # ``opened_at`` moved, so this is a different leg than the one the
+            # stale anchor bound.  Normally a genuinely new episode
+            # (flat->reopen), which must anchor to its own first safe->OFF.
             self._first_safe_off_ns[key] = (opened, event.timestamp_ns)
 
     def _on_trade(self, trade: Trade) -> None:
@@ -423,7 +455,6 @@ class DeferralCapController:
             key = (strategy_id, symbol)
             self._first_safe_off_ns.pop(key, None)
             self._pending_exit.pop(key, None)
-            self._rearmed_keys.discard(key)
 
 
 __all__ = [
@@ -434,4 +465,5 @@ __all__ = [
     "DEFERRAL_REASON_HARD_AGE",
     "DEFERRAL_REASON_MAX_HOLD",
     "DEFERRAL_REASON_SESSION_FLATTEN",
+    "DEFERRAL_SLICE_SCOPED_REASONS",
 ]

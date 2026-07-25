@@ -72,9 +72,7 @@ def _spec(**overrides: object) -> dict[str, Any]:
     return out
 
 
-def _decouple(
-    *, max_hold: int = 300, hard_age: int = 600, **extra: object
-) -> dict[str, Any]:
+def _decouple(*, max_hold: int = 300, hard_age: int = 600, **extra: object) -> dict[str, Any]:
     block: dict[str, Any] = {
         "mode": "decouple_caps_only",
         "max_hold_after_safe_off": max_hold,
@@ -129,16 +127,12 @@ def test_block_stored_as_copy_not_alias() -> None:
 
 def test_non_mapping_block_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="safety_exit_policy.*must be a mapping"):
-        AlphaLoader().load_from_dict(
-            _spec(safety_exit_policy="decouple_caps_only"), source="<t>"
-        )
+        AlphaLoader().load_from_dict(_spec(safety_exit_policy="decouple_caps_only"), source="<t>")
 
 
 def test_unknown_key_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="unknown key"):
-        AlphaLoader().load_from_dict(
-            _spec(safety_exit_policy=_decouple(surprise=1)), source="<t>"
-        )
+        AlphaLoader().load_from_dict(_spec(safety_exit_policy=_decouple(surprise=1)), source="<t>")
 
 
 def test_unknown_mode_rejected() -> None:
@@ -182,9 +176,7 @@ def test_story_permission_requires_decouple_mode() -> None:
 def test_story_permission_without_any_policy_requires_decouple() -> None:
     # No safety_exit_policy ⇒ effective mode is gate_close_flat ⇒ still rejected.
     with pytest.raises(_LOAD_REJECTED, match="story_permission"):
-        AlphaLoader().load_from_dict(
-            _spec(story_permission={"map_id": "story_v1"}), source="<t>"
-        )
+        AlphaLoader().load_from_dict(_spec(story_permission={"map_id": "story_v1"}), source="<t>")
 
 
 def test_story_permission_with_decouple_accepted() -> None:
@@ -259,9 +251,7 @@ def test_per_family_ceiling_boundary(
                 horizon_seconds=horizon,
                 depends_on_sensors=sensors,
                 trend_mechanism=tm,
-                safety_exit_policy=_decouple(
-                    max_hold=ceiling + 1, hard_age=ceiling + 10
-                ),
+                safety_exit_policy=_decouple(max_hold=ceiling + 1, hard_age=ceiling + 10),
             ),
             source="<t>",
         )
