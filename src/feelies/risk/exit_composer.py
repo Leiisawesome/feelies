@@ -322,9 +322,19 @@ class ExitComposer:
             book=book,
             p_safe=SafetyPermission.OFF,
             p_story=StoryPermission.UNKNOWN,
-            # Independent hard-cap authors (deferral, hazard) own the timed exit;
-            # at the safety-event instant the composer defers to them and only
-            # acts on the fail-closed error paths.
+            # Always False by construction — the composer is not the emitter for
+            # cap-driven exits.  The independent hard-cap authors
+            # (:class:`~feelies.risk.deferral_cap.DeferralCapController`, the
+            # hazard controller) own the timed EXIT and carry their *own*
+            # per-episode dedup, so a composer flatten on an already-breached cap
+            # would not be seen by that dedup and the slice would be flattened
+            # twice.  Deferring here is also exactly the §2.3 event-time
+            # contract: a breached deadline fires "on the first bus event on the
+            # symbol at/after the deadline", which is the cap author's next
+            # ``Trade``, not this safety event.  The ``caps_hit=True`` rows of
+            # §2.4 are therefore realized by those authors' emissions, while
+            # :func:`compose_exit` keeps the parameter so the table stays total
+            # and exhaustively testable.
             caps_hit=False,
             story_configured=policy.story_configured,
             safe_off_fail_closed=event.reason in _FAIL_CLOSED_SAFETY_REASONS,

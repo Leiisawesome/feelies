@@ -78,6 +78,18 @@ DEFERRAL_EXIT_REASONS: frozenset[str] = frozenset(
         DEFERRAL_REASON_SESSION_FLATTEN,
     }
 )
+# Reasons that unambiguously identify *this* (strategy-slice-scoped) author.
+# ``HARD_EXIT_AGE`` is excluded because it is deliberately shared with the
+# symbol-net :class:`~feelies.risk.hazard_exit.HazardExitController` for forensic
+# lineage, so an order carrying it cannot be attributed to one author by reason
+# alone.  The kernel uses this narrower set to pick the slice-vs-symbol-net basis
+# when judging whether a mandated exit reduces exposure.
+DEFERRAL_SLICE_SCOPED_REASONS: frozenset[str] = frozenset(
+    {
+        DEFERRAL_REASON_MAX_HOLD,
+        DEFERRAL_REASON_SESSION_FLATTEN,
+    }
+)
 
 # Tie-break when two caps share a deadline ns.  The age backstop is anchored to
 # the (flicker-immune) open time, so it wins ties; session flatten is the last
@@ -434,4 +446,5 @@ __all__ = [
     "DEFERRAL_REASON_HARD_AGE",
     "DEFERRAL_REASON_MAX_HOLD",
     "DEFERRAL_REASON_SESSION_FLATTEN",
+    "DEFERRAL_SLICE_SCOPED_REASONS",
 ]
