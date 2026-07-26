@@ -1825,6 +1825,14 @@ def _create_signal_layer(
                 expected_half_life_seconds=module.expected_half_life_seconds,
                 consumed_features=consumed_feature_ids,
                 required_warm_feature_ids=warm_ids,
+                # Stage-0 opt-in, carried from the validated manifest block.  This
+                # flag is the *sole* selector for every decoupling behaviour: the
+                # engine's gate-close FLAT suppression reads it, and both risk-layer
+                # authors (`_create_deferral_cap_controller`, `_create_exit_composer`)
+                # filter their alpha set on it.  Dropping it here silently reverts a
+                # promoted alpha to `gate_close_flat` with no deferral ceilings at
+                # runtime, so it must stay wired to the loader's value.
+                decouple_gate_close=module.decouple_gate_close,
             )
         )
     engine.attach()

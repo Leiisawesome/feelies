@@ -136,8 +136,28 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # or refute them.  Re-verify against a cached run before trusting them:
 #   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
 #       --symbol APP --date 2026-03-26
+#
+# Re-pinned 2026-07-25 (net PnL only): 430.85 -> 363.34.  This is the re-verification
+# the CAVEAT above asks for, run against a real APP/2026-03-26 disk cache — and it
+# found a behavioural change, not pruning drift.
+#
+# Cause: fills never reached `StrategyPositionStore`, so
+# `standalone_signal_actionable_for_strategy` (alpha/arbitration.py) evaluated
+# `_signal_reduces_book(strategy_qty=0, ...)` — always False — and **silently
+# suppressed every directional reducing exit from a standalone alpha**.  Populating
+# the slice book on single-strategy fills un-blocks those exits, which is what that
+# function documents ("directional exits likewise require matching strategy
+# exposure").  The old 430.85 encodes the suppressed-exit bug: the alpha was holding
+# positions it should have exited, which flattered PnL on this session.
+#
+# Gross realized 536.31 -> 468.80; fees unchanged at 105.46.  `_BASELINE_FILL_COUNT`
+# and the parity hash are **unchanged** — same number of fills, same replay stream;
+# only which exits were actionable moved.  Per-alpha budgets in
+# `AlphaBudgetRiskWrapper` also became computable for the first time, but measured on
+# this cell none bind, so they are not part of this delta.
+# See docs/research/stage0_residual_2026-07-25.md §1.8.1.
 _BASELINE_CONFIG_HASH = "8ec4abd53ea20be74eac25e11ff9a7f93c135ef40c604e34eb709ec931075f45"
-_BASELINE_NET_PNL = Decimal("430.85")
+_BASELINE_NET_PNL = Decimal("363.34")
 _BASELINE_FILL_COUNT = 21
 
 
