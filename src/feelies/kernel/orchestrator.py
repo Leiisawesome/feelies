@@ -14,7 +14,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
@@ -279,14 +279,118 @@ def _order_owns_one_slice(order: OrderRequest) -> bool:
     reduce-test at :data:`_SLICE_SCOPED_FORCED_EXIT_REASONS`, which may consult the
     slice basis as a symbol-net-first fallback without attributing the fill.
 
+    False for a **kernel-synthesised forced exit** (``__stop_exit__`` /
+    ``__session_flat__``): :meth:`Orchestrator._check_stop_exit` and
+    :meth:`Orchestrator._check_session_flat` read the *symbol-net* position, so their
+    fill closes whatever slices hold the symbol — there is no slice named after the
+    sentinel.  These carry a ``strategy_id`` and a ``reason`` outside
+    :data:`_RISK_FORCED_EXIT_REASONS`, so without an explicit case they fall through
+    the trailing ``return`` and self-attribute: the originating alpha's slice is
+    never decremented and a phantom sentinel slice accumulates the offsetting
+    quantity.  That corrupts every slice-scoped reader — most visibly
+    :class:`~feelies.alpha.risk_wrapper.AlphaBudgetRiskWrapper`, which then pins the
+    stopped-out alpha at its per-alpha position cap and REJECTs its re-entries
+    (Inv-8 layer separation, Inv-11 fail-safe, Inv-13 provenance).
+
     False for an order with no ``strategy_id`` (aggregate / emergency flatten): it owns
     no slice to credit.
     """
     if not order.strategy_id:
         return False
+    if order.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
+        return False
     if order.reason in _SELF_ATTRIBUTED_FORCED_EXIT_REASONS:
         return True
     return order.reason not in _RISK_FORCED_EXIT_REASONS
+
+
+@dataclass(frozen=True, kw_only=True)
+class _TradeJournalLeg:
+    """One trade-journal row's share of a single fill."""
+
+    strategy_id: str
+    filled_quantity: int
+    fees: Decimal
+    realized_pnl: Decimal
+    metadata: dict[str, str]
+
+
+def _trade_journal_legs(
+    order: OrderRequest,
+    *,
+    filled_quantity: int,
+    fees: Decimal,
+    realized_pnl: Decimal,
+    attributed_legs: Sequence[tuple[str, int, Decimal]],
+) -> list[_TradeJournalLeg]:
+    """Split one fill into the trade-journal rows it should produce.
+
+    An ordinary order yields exactly one row under its own ``strategy_id`` —
+    unchanged from the single-record behaviour.
+
+    A kernel-synthesised forced exit (``__stop_exit__`` / ``__session_flat__``) closes
+    the **symbol-net** book, so it owns no slice of its own.  ``realized_pnl`` is
+    booked entirely on the *closing* fill, so journalling that fill under the sentinel
+    strips the losing leg out of the originating alpha's evidence: every per-alpha
+    estimator groups by ``strategy_id``
+    (:func:`~feelies.forensics.edge_calibration.build_edge_calibrations`,
+    :func:`~feelies.forensics.cost_survival.per_alpha_cost_survival`,
+    :class:`~feelies.forensics.decay_detector.DecayDetector`), so the alpha ends up
+    measured on its surviving trades only.  That biases realized edge upward — a
+    stop-loss fires on losers, so the omission is systematically favourable — and on a
+    stop-heavy tape it inverts the sign of the measured edge, which then feeds
+    promotion and quarantine gates (Inv-3 evidence, Inv-4 decay, Inv-13 provenance).
+
+    Emit one row per slice the exit actually closed instead, splitting quantity, fees,
+    and realized PnL by each slice's share of the fill.  The synthetic author stays
+    recoverable via ``metadata["forced_exit_strategy_id"]``, alongside the existing
+    ``order_reason`` / ``order_source_layer`` provenance.
+
+    Falls back to the single sentinel row when nothing was attributed (no slice book
+    wired, or no strategy held the symbol): a row with the synthetic ``strategy_id``
+    still beats dropping the fill from the journal.
+    """
+    base_metadata = {
+        "order_reason": order.reason,
+        "order_source_layer": order.source_layer,
+    }
+    total_abs = sum(abs(qty) for _sid, qty, _leg_fees in attributed_legs)
+    if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES or total_abs <= 0:
+        return [
+            _TradeJournalLeg(
+                strategy_id=order.strategy_id,
+                filled_quantity=filled_quantity,
+                fees=fees,
+                realized_pnl=realized_pnl,
+                metadata=base_metadata,
+            )
+        ]
+
+    legs: list[_TradeJournalLeg] = []
+    pnl_remaining = realized_pnl
+    last_index = len(attributed_legs) - 1
+    for index, (strategy_id, qty, leg_fees) in enumerate(attributed_legs):
+        # Give the last leg the remainder so the rows sum to the fill's realized
+        # PnL exactly — the same convention the per-alpha fee split uses.
+        leg_pnl = (
+            pnl_remaining
+            if index == last_index
+            else (realized_pnl * abs(qty) / total_abs).quantize(Decimal("0.01"))
+        )
+        pnl_remaining -= leg_pnl
+        legs.append(
+            _TradeJournalLeg(
+                strategy_id=strategy_id,
+                filled_quantity=abs(qty),
+                fees=leg_fees,
+                realized_pnl=leg_pnl,
+                metadata={
+                    **base_metadata,
+                    "forced_exit_strategy_id": order.strategy_id,
+                },
+            )
+        )
+    return legs
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -4927,6 +5031,11 @@ class Orchestrator:
             # it meant a deployment that skipped constructing one silently lost slice
             # attribution entirely — and with it the Stage-0 deferral ceiling, the exit
             # composer's scoping, and every per-alpha risk budget.
+            # Slices this fill was actually booked against, as
+            # ``(strategy_id, signed_quantity, fees)``.  Drives the trade-journal
+            # attribution below so a symbol-net forced exit is credited to the
+            # slices it closed rather than to its synthetic ``strategy_id``.
+            attributed_legs: list[tuple[str, int, Decimal]] = []
             if self._strategy_positions is not None:
                 alpha_allocs: list[tuple[str, str, int, Decimal, Decimal]] = []
                 if self._fill_ledger is not None:
@@ -4956,6 +5065,10 @@ class Orchestrator:
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
                         )
+                    attributed_legs = [
+                        (strat_id, alpha_signed, alloc_fees)
+                        for strat_id, _sym, alpha_signed, _price, alloc_fees in alpha_allocs
+                    ]
                 elif _order_owns_one_slice(order):
                     # Ledger had no record for this order (none constructed, or the
                     # order predates one) but the fill still belongs wholly to one
@@ -4977,10 +5090,11 @@ class Orchestrator:
                         fees=ack.fees,
                         timestamp_ns=ack.timestamp_ns,
                     )
+                    attributed_legs = [(order.strategy_id, signed_qty, ack.fees)]
                 else:
                     # Without attribution, split proportionally to keep stores in
                     # sync. Aggregate PnL stays exact; per-alpha PnL is estimated.
-                    self._distribute_fill_to_strategies(
+                    attributed_legs = self._distribute_fill_to_strategies(
                         ack.symbol,
                         signed_qty,
                         ack.fill_price,
@@ -5057,40 +5171,47 @@ class Orchestrator:
                         )
 
             if self._trade_journal is not None:
-                _trade_mech, _trade_hl = self._last_signal_mechanism.get(
-                    (order.strategy_id, ack.symbol),
-                    (None, 0),
-                )
-                self._trade_journal.record(
-                    TradeRecord(
-                        order_id=ack.order_id,
-                        symbol=ack.symbol,
-                        strategy_id=order.strategy_id,
-                        side=side,
-                        requested_quantity=order.quantity,
-                        filled_quantity=ack.filled_quantity,
-                        fill_price=ack.fill_price,
-                        signal_timestamp_ns=order.timestamp_ns,
-                        submit_timestamp_ns=order.timestamp_ns,
-                        fill_timestamp_ns=ack.timestamp_ns,
-                        cost_bps=ack.cost_bps,
-                        fees=ack.fees,
-                        realized_pnl=position.realized_pnl - prev_realized,
-                        correlation_id=order.correlation_id,
-                        trading_intent=self._order_trading_intent.get(
-                            ack.order_id,
-                            "",
-                        ),
-                        trend_mechanism=_trade_mech,
-                        expected_half_life_seconds=_trade_hl,
-                        regime_state=self._regime_label_for(ack.symbol),
-                        # Preserve forced-exit class and producing layer on the trade.
-                        metadata={
-                            "order_reason": order.reason,
-                            "order_source_layer": order.source_layer,
-                        },
+                for leg in _trade_journal_legs(
+                    order,
+                    filled_quantity=ack.filled_quantity,
+                    fees=ack.fees,
+                    realized_pnl=position.realized_pnl - prev_realized,
+                    attributed_legs=attributed_legs,
+                ):
+                    _trade_mech, _trade_hl = self._last_signal_mechanism.get(
+                        (leg.strategy_id, ack.symbol),
+                        (None, 0),
                     )
-                )
+                    self._trade_journal.record(
+                        TradeRecord(
+                            order_id=ack.order_id,
+                            symbol=ack.symbol,
+                            strategy_id=leg.strategy_id,
+                            side=side,
+                            requested_quantity=order.quantity,
+                            filled_quantity=leg.filled_quantity,
+                            fill_price=ack.fill_price,
+                            signal_timestamp_ns=order.timestamp_ns,
+                            submit_timestamp_ns=order.timestamp_ns,
+                            fill_timestamp_ns=ack.timestamp_ns,
+                            cost_bps=ack.cost_bps,
+                            fees=leg.fees,
+                            realized_pnl=leg.realized_pnl,
+                            correlation_id=order.correlation_id,
+                            trading_intent=self._order_trading_intent.get(
+                                ack.order_id,
+                                "",
+                            ),
+                            trend_mechanism=_trade_mech,
+                            expected_half_life_seconds=_trade_hl,
+                            regime_state=self._regime_label_for(ack.symbol),
+                            # Preserve forced-exit class and producing layer on the
+                            # trade; ``forced_exit_strategy_id`` keeps the synthetic
+                            # author recoverable now that ``strategy_id`` names the
+                            # slice the exit closed (Inv-13).
+                            metadata=leg.metadata,
+                        )
+                    )
             if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
@@ -5124,7 +5245,7 @@ class Orchestrator:
         fill_price: Decimal,
         fees: Decimal,
         timestamp_ns: int,
-    ) -> None:
+    ) -> list[tuple[str, int, Decimal]]:
         """Distribute a fill proportionally across per-alpha strategy positions.
 
         Used when no fill-attribution record exists (emergency flatten,
@@ -5134,9 +5255,14 @@ class Orchestrator:
 
         Uses largest-remainder rounding so the sum of per-alpha deltas
         equals ``signed_qty`` exactly.
+
+        Returns the ``(strategy_id, signed_quantity, fees)`` legs it applied, so the
+        caller can journal a symbol-net forced exit against the slices it actually
+        closed instead of the synthetic order's ``strategy_id`` (Inv-13).  Empty when
+        no slice book is wired or no strategy holds the symbol.
         """
         if self._strategy_positions is None:
-            return
+            return []
 
         # Inv-5: iterate strategies in a deterministic (sorted) order.
         # ``strategy_ids()`` returns a ``frozenset``; materialising it directly
@@ -5144,7 +5270,7 @@ class Orchestrator:
         # depend on hash-iteration order (process/seed dependent).
         strategy_ids = sorted(self._strategy_positions.strategy_ids())
         if not strategy_ids:
-            return
+            return []
 
         # Collect each strategy's current quantity for this symbol.
         strategy_qtys: list[tuple[str, int]] = []
@@ -5156,7 +5282,7 @@ class Orchestrator:
                 total_abs += abs(q)
 
         if total_abs == 0:
-            return
+            return []
 
         # Proportional allocation via largest-remainder.
         abs_fill = abs(signed_qty)
@@ -5169,6 +5295,7 @@ class Orchestrator:
             floors[indices[i]] += 1
 
         # Apply each allocation with the sign matching the fill direction.
+        applied: list[tuple[str, int, Decimal]] = []
         fee_remainder = fees
         remainder_sid: str | None = None
         for (sid, _q), alloc_qty in zip(strategy_qtys, floors, strict=True):
@@ -5190,6 +5317,7 @@ class Orchestrator:
                 fees=alloc_fees,
                 timestamp_ns=timestamp_ns,
             )
+            applied.append((sid, alloc_sign * alloc_qty, alloc_fees))
             remainder_sid = sid
 
         # Assign any rounding remainder to the last non-zero allocation.
@@ -5199,6 +5327,12 @@ class Orchestrator:
                 symbol,
                 fee_remainder,
             )
+            # Keep the returned legs' fees summing to ``fees`` exactly, so a
+            # caller journalling from them reconciles against the ack.
+            last_sid, last_qty, last_fees = applied[-1]
+            applied[-1] = (last_sid, last_qty, last_fees + fee_remainder)
+
+        return applied
 
     def _prune_terminal_orders(self) -> None:
         """Remove terminally-resolved orders from _active_orders.

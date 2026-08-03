@@ -1382,10 +1382,71 @@ class TestForcedExitReasonClassification:
         assert len(stop_orders) == 1
         assert stop_orders[0].reason == "STOP_EXIT"
 
-        # Inv-13 provenance: the forced-exit reason reaches the journal.
+        # Inv-13 provenance: the forced-exit reason reaches the journal.  No slice
+        # book is wired here, so the sentinel row is the documented fallback
+        # (see ``_trade_journal_legs``); the attributed case is covered by
+        # ``test_stop_exit_attributes_to_the_slice_it_closed``.
         recorded = list(journal.query(strategy_id="__stop_exit__"))
         assert len(recorded) == 1
         assert recorded[0].metadata["order_reason"] == "STOP_EXIT"
+        assert "order_source_layer" in recorded[0].metadata
+
+    def test_stop_exit_attributes_to_the_slice_it_closed(self) -> None:
+        """A stop-out must close the alpha's slice, not mint a sentinel one.
+
+        ``__stop_exit__`` reads the symbol-net book, so it owns no slice.  Booking
+        its fill under the sentinel left the originating alpha's slice open forever
+        (pinning it at its per-alpha position cap in ``AlphaBudgetRiskWrapper``) and
+        siphoned the closing ``realized_pnl`` out of that alpha's evidence, biasing
+        every per-alpha estimator upward (Inv-3 / Inv-13).
+        """
+        from feelies.alpha.fill_attribution import FillAttributionLedger
+        from feelies.storage.memory_trade_journal import InMemoryTradeJournal
+
+        alpha_id = "sig_alpha_v1"
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+        # The symbol-net 100 belongs to the alpha.
+        strategy_positions = StrategyPositionStore()
+        strategy_positions.update(alpha_id, "AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            position_store=position_store,
+            strategy_positions=strategy_positions,
+        )
+        journal = InMemoryTradeJournal()
+        orch._trade_journal = journal
+        orch._fill_ledger = FillAttributionLedger()
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # Slice book: no phantom sentinel slice exists, and the alpha is flat.
+        # ``strategy_ids()`` is checked first — ``get()`` materialises a sub-store,
+        # so probing the sentinel would create the very key under test.
+        assert "__stop_exit__" not in strategy_positions.strategy_ids()
+        assert strategy_positions.get(alpha_id, "AAPL").quantity == 0
+
+        # Journal: the closing PnL lands on the alpha, not the sentinel.
+        assert list(journal.query(strategy_id="__stop_exit__")) == []
+        recorded = list(journal.query(strategy_id=alpha_id))
+        assert len(recorded) == 1
+        assert recorded[0].realized_pnl < 0
+        assert recorded[0].filled_quantity == 100
+        # Aggregate PnL is unchanged by the re-attribution.
+        assert recorded[0].realized_pnl == position_store.get("AAPL").realized_pnl
+
+        # Inv-13: forced-exit provenance survives the re-attribution.
+        assert recorded[0].metadata["order_reason"] == "STOP_EXIT"
+        assert recorded[0].metadata["forced_exit_strategy_id"] == "__stop_exit__"
         assert "order_source_layer" in recorded[0].metadata
 
     def test_emergency_flatten_tags_force_flatten_reason(self) -> None:
