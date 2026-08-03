@@ -304,6 +304,28 @@ def _order_owns_one_slice(order: OrderRequest) -> bool:
     return order.reason not in _RISK_FORCED_EXIT_REASONS
 
 
+def _is_forced_market_exit(order: OrderRequest) -> bool:
+    """Whether *order* is an aggressive, non-vetoable flatten.
+
+    Two authors produce these.  The kernel synthesises stop-loss and
+    session-flatten exits under :data:`_FORCED_MARKET_EXIT_STRATEGIES`; the
+    RISK-layer controllers (hazard, Stage-0 exit composer, bounded-deferral cap)
+    publish theirs on the bus with ``source_layer="RISK"`` and a reason in
+    :data:`_RISK_FORCED_EXIT_REASONS`.
+
+    Both must answer the same resting-order question: a mandated exit cancels
+    stale passive orders so it can cross immediately, and never stacks a second
+    aggressive leg on one already in flight (Inv-11).  Testing only the kernel
+    sentinels left the RISK-layer authors outside that guard entirely.
+    """
+    if order.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
+        return True
+    return (
+        order.source_layer == HAZARD_EXIT_SOURCE_LAYER
+        and order.reason in _RISK_FORCED_EXIT_REASONS
+    )
+
+
 @dataclass(frozen=True, kw_only=True)
 class _TradeJournalLeg:
     """One trade-journal row's share of a single fill."""
@@ -4299,18 +4321,22 @@ class Orchestrator:
         )
 
     def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
-        """True if a forced MARKET exit (stop / session-flat) is already in flight.
+        """True if a forced MARKET exit is already in flight for *symbol*.
 
         Distinguishes an aggressive exit already crossing the book from a
         merely-resting passive cover.  The resting-order guard cancels stale
         passive orders to let a forced MARKET exit through (Inv-11) but must
         not stack a second aggressive leg on top of one already pending —
         that would overshoot the position.
+
+        Covers both mandated-exit authors — the kernel's synthetic stop /
+        session-flat and the RISK-layer controllers routed through
+        :meth:`_on_bus_hazard_order` — so neither can stack on the other.
         """
         return any(
             order.symbol == symbol
             and sm.state not in _TERMINAL_ORDER_STATES
-            and order.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
+            and _is_forced_market_exit(order)
             for sm, _, order in self._active_orders.values()
         )
 
@@ -5702,6 +5728,25 @@ class Orchestrator:
                     },
                 )
             )
+        # Resting-order guard, mirroring the SIGNAL path's forced-exit branch.
+        # Deferred until here so an exit that ends up blocked above never cancels
+        # a resting order without replacing it: cancelling a resting *cover* and
+        # then bailing would leave the book more exposed, not less (Inv-11).
+        if self._has_pending_order_for_symbol(event.symbol):
+            if self._has_pending_forced_exit_for_symbol(event.symbol):
+                # A mandated exit is already crossing; a second aggressive leg
+                # would overshoot the position it is closing.
+                logger.info(
+                    "Forced exit already pending for %s; skipping duplicate "
+                    "%s exit (order_id=%s, strategy_id=%s).",
+                    event.symbol,
+                    event.reason,
+                    event.order_id,
+                    event.strategy_id,
+                )
+                return
+            self._emit_forced_exit_supersedes_pending_alert(event, event.correlation_id)
+            self._cancel_resting_for_symbol(event.symbol, event.correlation_id)
         self._track_order(event.order_id, event.side, event)
         submit_error = self._submit_tracked_order(event, trigger=event.reason)
         if submit_error is not None:
