@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 logger = logging.getLogger(__name__)
@@ -829,6 +830,18 @@ class Orchestrator:
     @property
     def metric_collector(self) -> MetricCollector:
         return self._metrics
+
+    @property
+    def edge_calibration_factors(self) -> Mapping[str, float]:
+        """Per-alpha realization factors the B4 gate multiplied into disclosed edge.
+
+        Resolved at boot from either the explicit bootstrap argument or
+        ``PlatformConfig.edge_calibration_path``.  Exposed so run provenance
+        identifies the factors actually applied rather than the ones a particular
+        caller happened to pass — the two routes diverged once config gained a
+        path (Inv-13).
+        """
+        return MappingProxyType(dict(self._edge_calibration_factors))
 
     @property
     def kill_switch(self) -> KillSwitch | None:

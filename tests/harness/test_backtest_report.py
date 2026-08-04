@@ -51,6 +51,9 @@ class _FakeOrchestrator:
         self.kill_switch = None
         self.metric_collector = None
         self.alpha_registry = None
+        # The report reads the factors the B4 gate actually applied, which may
+        # have come from ``edge_calibration_path`` rather than its own argument.
+        self.edge_calibration_factors: dict[str, float] = {}
 
 
 def test_generate_report_uses_live_nav_for_max_exposure_pct() -> None:

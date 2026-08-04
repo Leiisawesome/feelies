@@ -156,7 +156,14 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # `AlphaBudgetRiskWrapper` also became computable for the first time, but measured on
 # this cell none bind, so they are not part of this delta.
 # See docs/research/stage0_residual_2026-07-25.md §1.8.1.
-_BASELINE_CONFIG_HASH = "8ec4abd53ea20be74eac25e11ff9a7f93c135ef40c604e34eb709ec931075f45"
+# Re-baselined when ``edge_calibration_path`` became a real ``PlatformConfig``
+# field.  The config snapshot gained one key (value ``None`` for this run), so the
+# contract hash moves by construction — no configured value changed, and
+# ``_BASELINE_NET_PNL`` / ``_BASELINE_FILL_COUNT`` are unaffected.  Before the
+# field existed, bootstrap probed it with ``getattr`` and ``from_yaml`` rejected
+# it as an unknown key, so the forensics -> B4-gate loop was unreachable from
+# configuration and only the backtest CLI could supply factors (Inv-9).
+_BASELINE_CONFIG_HASH = "8923295b2fdfd474b3892ab2440084bc9d92c68953af941b796b4979c15a6fad"
 _BASELINE_NET_PNL = Decimal("363.34")
 _BASELINE_FILL_COUNT = 21
 

@@ -588,7 +588,13 @@ def generate_report(
     config_hash = compute_config_hash(config)
     parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
     resolved_data_version = data_version if data_version is not None else "unknown"
-    resolved_edge_cal_version = edge_calibration_version(edge_calibration_factors)
+    # Prefer the factors the gate actually used: they may have come from
+    # ``edge_calibration_path`` rather than this caller's argument.
+    resolved_edge_cal_version = edge_calibration_version(
+        edge_calibration_factors
+        if edge_calibration_factors is not None
+        else orchestrator.edge_calibration_factors
+    )
     artifact_id = compute_artifact_id(
         orchestrator,
         config,

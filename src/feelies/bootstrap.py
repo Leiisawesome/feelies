@@ -572,11 +572,34 @@ def build_platform(
         resolved_edge_factors: dict[str, float] = dict(edge_calibration_factors)
     else:
         resolved_edge_factors = {}
-        _edge_cal_path = getattr(config, "edge_calibration_path", None)
-        if _edge_cal_path:
+        if config.edge_calibration_path is not None:
             from feelies.forensics.edge_calibration import EdgeCalibrationStore
 
-            resolved_edge_factors = EdgeCalibrationStore(_edge_cal_path).factors()
+            resolved_edge_factors = EdgeCalibrationStore(
+                str(config.edge_calibration_path)
+            ).factors()
+
+    # Inv-9: the B4 gate compares a *calibrated* edge against modeled round-trip
+    # cost.  Calibration factors shrink disclosed edge toward observed, so a
+    # deployment that gates without them admits strictly more trades than the
+    # backtest that validated it — the divergence resolves toward more exposure,
+    # which is the direction Inv-11 forbids.  Only the backtest harness could
+    # supply factors before ``edge_calibration_path`` existed as a config field,
+    # so this combination was previously unreachable to notice.
+    if (
+        config.signal_min_edge_cost_ratio > 0
+        and not resolved_edge_factors
+        and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE)
+    ):
+        logger.warning(
+            "B4 edge-vs-cost gate is active (signal_min_edge_cost_ratio=%s) but no "
+            "edge calibration is configured; every alpha gates on its full "
+            "disclosed edge. A backtest run with --edge-calibration gates on a "
+            "haircut edge and will admit fewer trades than this deployment "
+            "(Inv-9 parity). Set edge_calibration_path to an artifact emitted by "
+            "`--emit-edge-calibration`.",
+            config.signal_min_edge_cost_ratio,
+        )
 
     orchestrator = Orchestrator(
         clock=clock,

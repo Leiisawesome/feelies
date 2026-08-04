@@ -331,6 +331,13 @@ class PlatformConfig:
     # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
     ex_date_calendar_path: Path | None = None
     backtest_enforce_ex_date_guard: bool = True
+    # Per-alpha realization factors shrinking disclosed edge toward observed edge,
+    # emitted by ``feelies.forensics.edge_calibration`` from a prior window and
+    # consumed by the B4 edge-vs-cost gate at boot.  None ⇒ every alpha gates on
+    # its full disclosed edge.  This is the only config route into that loop: a
+    # backtest run with calibration and a paper/live run without it gate on
+    # different edges, and live is the more permissive of the two (Inv-9).
+    edge_calibration_path: Path | None = None
     market_id: str = "US_EQUITY"
     session_kind: str = "RTH"
 
@@ -878,6 +885,9 @@ class PlatformConfig:
                 self.ex_date_calendar_path.name if self.ex_date_calendar_path else None
             ),
             "backtest_enforce_ex_date_guard": self.backtest_enforce_ex_date_guard,
+            "edge_calibration_path": (
+                self.edge_calibration_path.name if self.edge_calibration_path else None
+            ),
             "market_id": self.market_id,
             "session_kind": self.session_kind,
             "enforce_trend_mechanism": self.enforce_trend_mechanism,
@@ -1331,6 +1341,11 @@ class PlatformConfig:
             ex_date_calendar_path=(
                 Path(str(data["ex_date_calendar_path"]))
                 if data.get("ex_date_calendar_path") is not None
+                else None
+            ),
+            edge_calibration_path=(
+                Path(str(data["edge_calibration_path"]))
+                if data.get("edge_calibration_path") is not None
                 else None
             ),
             backtest_enforce_ex_date_guard=bool(data.get("backtest_enforce_ex_date_guard", True)),
