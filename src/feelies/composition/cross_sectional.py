@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Callable, Mapping
 
 from feelies.core.events import (
     EXIT_ONLY_MECHANISMS,
@@ -30,10 +30,72 @@ _logger = logging.getLogger(__name__)
 # Re-export the core event constant under this module's private name.
 _EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = EXIT_ONLY_MECHANISMS
 
-# Rescaling one family changes every family's share, so iterate to convergence.
+# Retained as the fallback budget for the (unreachable in practice) infeasible
+# branch of :func:`_solve_family_cap_scales`; the normal path is a direct solve.
 _MAX_CAP_SCALE_ITERS: int = 200
 # Match the emit-time cap backstop tolerance.
 _CAP_CONVERGENCE_TOLERANCE: float = 1e-9
+
+
+def _solve_family_cap_scales(
+    gross_by_family: Mapping[str, float],
+    cap_by_family: Mapping[str, float],
+) -> dict[str, float] | None:
+    """Per-family scale factors that put every family at or under its cap.
+
+    Keys are opaque sort-stable identifiers (mechanism names); ``cap_by_family``
+    must cover every key.  Returns ``{family: scale}`` for families that must
+    shrink, or ``None`` when no feasible allocation exists.
+
+    Why this is a direct solve rather than an iteration
+    ---------------------------------------------------
+    The obvious approach — repeatedly rescale each over-cap family to sit exactly
+    at its cap against the *current* total — is a Gauss-Seidel sweep whose
+    contraction factor is the sum of the binding caps.  G16 rule 8 requires those
+    caps to sum to at least 1.0, so configurations that press several families at
+    once drive the factor arbitrarily close to 1 and the sweep converges
+    arbitrarily slowly.  A four-family case with caps summing to 0.984375 still
+    sat 1e-4 above cap after 200 passes and would have needed ~1300 to reach the
+    1e-9 tolerance.  No fixed iteration budget is correct, because the required
+    budget depends on the caps.
+
+    The fixed point is closed-form once the *binding set* is known.  Families that
+    bind end at ``cap_i · T``; the rest keep their gross.  Summing gives
+    ``T = Σ_unbound gross / (1 - Σ_bound cap)``.  Binding sets are found by
+    water-filling: start with none bound, and add families whose gross exceeds
+    their share of the resulting total.  Adding a family lowers ``T``, which can
+    only pull more families in, so the set grows monotonically and settles in at
+    most one pass per family — exactly, not approximately.
+
+    Determinism (Inv-5): every sum is taken over a lex-sorted key list so float
+    accumulation order is fixed regardless of dict or set iteration order.
+    """
+    keys = sorted(gross_by_family)
+    total = math.fsum(gross_by_family[k] for k in keys)
+    if total <= 0.0:
+        return None
+
+    # Only families with a cap below 1.0 can ever bind; the rest — including the
+    # unattributed family — keep their gross and act as the fixed remainder.
+    cappable = [k for k in keys if cap_by_family[k] < 1.0]
+    bound: list[str] = []
+    for _ in range(len(cappable) + 1):
+        cap_sum = math.fsum(cap_by_family[k] for k in bound)
+        if cap_sum >= 1.0:
+            # No allocation can hold every bound family at its cap while the
+            # unbound remainder keeps a positive share.  Caller falls back.
+            return None
+        fixed_gross = math.fsum(gross_by_family[k] for k in keys if k not in bound)
+        capped_total = fixed_gross / (1.0 - cap_sum)
+        next_bound = [k for k in cappable if gross_by_family[k] > cap_by_family[k] * capped_total]
+        if next_bound == bound:
+            return {
+                k: (cap_by_family[k] * capped_total) / gross_by_family[k]
+                for k in bound
+                if gross_by_family[k] > 0.0
+            }
+        bound = next_bound
+    return None
 
 
 @dataclass(frozen=True)
@@ -576,12 +638,29 @@ class CrossSectionalRanker:
             }
             return weights, breakdown_unchanged
 
-        # Recursive scaling: each over-cap mechanism is scaled to exactly
-        # its cap (using current gross_total).  Because scaling reduces
-        # gross_total, we iterate until stable (see _MAX_CAP_SCALE_ITERS —
-        # every family's share is monotonically decreasing, but convergence
-        # is slow, not one-shot, once 2+ families are over cap at once).
+        # Solve the capped allocation directly (see _solve_family_cap_scales);
+        # the sweep below only runs when no feasible allocation exists.
         scaled = dict(weights)
+        unattributed = math.fsum(
+            abs(w) for sym, w in sorted(weights.items()) if mechanism_by_symbol.get(sym) is None
+        )
+        _gross_in = {m.name: g for m, g in gross_by_mech.items()}
+        _caps_in = {m.name: cap_for(m) for m in gross_by_mech}
+        if unattributed > 0.0:
+            _gross_in[""] = unattributed
+            _caps_in[""] = 1.0
+        _solved = _solve_family_cap_scales(_gross_in, _caps_in)
+        if _solved is not None:
+            _by_name = {m.name: m for m in gross_by_mech}
+            for _name, _s in sorted(_solved.items()):
+                if _s >= 1.0 or _name not in _by_name:
+                    continue
+                _mech = _by_name[_name]
+                for symbol, w in list(scaled.items()):
+                    if mechanism_by_symbol.get(symbol) is _mech:
+                        scaled[symbol] = w * _s
+            return self._finalize_mechanism_breakdown(scaled, mechanism_by_symbol, cap_for)
+
         for _ in range(_MAX_CAP_SCALE_ITERS):
             cur_gross = sum(abs(w) for w in scaled.values())
             if cur_gross <= 0:
@@ -616,29 +695,41 @@ class CrossSectionalRanker:
             if not adjusted:
                 break
 
-        new_gross = sum(abs(w) for w in scaled.values())
+        return self._finalize_mechanism_breakdown(scaled, mechanism_by_symbol, cap_for)
+
+    @staticmethod
+    def _finalize_mechanism_breakdown(
+        scaled: dict[str, float],
+        mechanism_by_symbol: Mapping[str, TrendMechanism],
+        cap_for: "Callable[[TrendMechanism], float]",
+    ) -> tuple[dict[str, float], dict[TrendMechanism, float]]:
+        """Realised per-family share, warning on any residual cap breach.
+
+        Shared by the direct solve and the iterative fallback so a breach reads
+        the same whichever path produced the weights.
+        """
+        new_gross = math.fsum(abs(w) for _sym, w in sorted(scaled.items()))
         breakdown: dict[TrendMechanism, float] = {}
-        if new_gross > 0:
-            new_by_mech: dict[TrendMechanism, float] = {}
-            for symbol, w in scaled.items():
-                mech = mechanism_by_symbol.get(symbol)
-                if mech is None:
-                    continue
-                new_by_mech[mech] = new_by_mech.get(mech, 0.0) + abs(w)
-            breakdown = {m: g / new_gross for m, g in new_by_mech.items()}
-            for mech, share in breakdown.items():
-                if share > cap_for(mech) + _CAP_CONVERGENCE_TOLERANCE:
-                    _logger.warning(
-                        "CrossSectionalRanker: mechanism %s share %.6f still "
-                        "exceeds cap %.6f after %d scaling passes — "
-                        "simultaneous multi-family cap pressure did not fully "
-                        "converge; consider loosening caps or reducing the "
-                        "number of concurrently active mechanism families",
-                        mech.name,
-                        share,
-                        cap_for(mech),
-                        _MAX_CAP_SCALE_ITERS,
-                    )
+        if new_gross <= 0:
+            return scaled, breakdown
+        new_by_mech: dict[TrendMechanism, float] = {}
+        for symbol, w in scaled.items():
+            mech = mechanism_by_symbol.get(symbol)
+            if mech is None:
+                continue
+            new_by_mech[mech] = new_by_mech.get(mech, 0.0) + abs(w)
+        breakdown = {m: g / new_gross for m, g in new_by_mech.items()}
+        for mech, share in breakdown.items():
+            if share > cap_for(mech) + _CAP_CONVERGENCE_TOLERANCE:
+                _logger.warning(
+                    "CrossSectionalRanker: mechanism %s share %.6f still exceeds "
+                    "cap %.6f — no allocation satisfies every cap simultaneously "
+                    "(binding caps sum to at least 1.0); loosen caps or reduce "
+                    "the number of concurrently active mechanism families",
+                    mech.name,
+                    share,
+                    cap_for(mech),
+                )
         return scaled, breakdown
 
 
@@ -676,6 +767,26 @@ def cap_family_vectors(
         return sum(abs(x) for x in scaled[mech].values())
 
     real_mechs = sorted((m for m in scaled if m is not None), key=lambda m: m.name)
+
+    # Direct solve first; the sweep below is the fallback for the infeasible case.
+    _by_name = {m.name: m for m in real_mechs}
+    _solved = _solve_family_cap_scales(
+        {
+            **{m.name: gross_of(m) for m in real_mechs},
+            **({"": gross_of(None)} if None in scaled else {}),
+        },
+        {
+            **{m.name: cap_for(m) for m in real_mechs},
+            **({"": 1.0} if None in scaled else {}),
+        },
+    )
+    if _solved is not None:
+        for _name, _s in sorted(_solved.items()):
+            if _s < 1.0 and _name in _by_name:
+                _m = _by_name[_name]
+                scaled[_m] = {sym: x * _s for sym, x in scaled[_m].items()}
+        return _finalize_cap_breakdown(scaled, cap_for)
+
     for _ in range(_MAX_CAP_SCALE_ITERS):
         cur_total = sum(gross_of(m) for m in scaled)
         if cur_total <= 0.0:
@@ -698,28 +809,45 @@ def cap_family_vectors(
         if not adjusted:
             break
 
-    new_total = sum(gross_of(m) for m in scaled)
+    return _finalize_cap_breakdown(scaled, cap_for)
+
+
+def _finalize_cap_breakdown(
+    scaled: dict["TrendMechanism | None", dict[str, float]],
+    cap_for: "Callable[[TrendMechanism | None], float]",
+) -> tuple[dict["TrendMechanism | None", dict[str, float]], dict[TrendMechanism, float]]:
+    """Realised per-family share, warning on any residual cap breach.
+
+    Shared by the direct solve and the iterative fallback so a breach is reported
+    identically whichever path produced the vectors.
+    """
+
+    def gross_of(mech: "TrendMechanism | None") -> float:
+        return math.fsum(abs(x) for x in scaled[mech].values())
+
+    new_total = math.fsum(
+        gross_of(m) for m in sorted(scaled, key=lambda m: "" if m is None else m.name)
+    )
     breakdown: dict[TrendMechanism, float] = {}
-    if new_total > 0.0:
-        for mech_key in scaled:
-            if mech_key is None:
-                continue
-            g = gross_of(mech_key)
-            if g > 0.0:
-                breakdown[mech_key] = g / new_total
-        for mech_key, share in breakdown.items():
-            if share > cap_for(mech_key) + _CAP_CONVERGENCE_TOLERANCE:
-                _logger.warning(
-                    "cap_family_vectors: mechanism %s share %.6f still exceeds "
-                    "cap %.6f after %d scaling passes — simultaneous "
-                    "multi-family cap pressure did not fully converge; "
-                    "consider loosening caps or reducing the number of "
-                    "concurrently active mechanism families",
-                    mech_key.name,
-                    share,
-                    cap_for(mech_key),
-                    _MAX_CAP_SCALE_ITERS,
-                )
+    if new_total <= 0.0:
+        return scaled, breakdown
+    for mech_key in scaled:
+        if mech_key is None:
+            continue
+        g = gross_of(mech_key)
+        if g > 0.0:
+            breakdown[mech_key] = g / new_total
+    for mech_key, share in breakdown.items():
+        if share > cap_for(mech_key) + _CAP_CONVERGENCE_TOLERANCE:
+            _logger.warning(
+                "cap_family_vectors: mechanism %s share %.6f still exceeds cap "
+                "%.6f — no allocation satisfies every cap simultaneously "
+                "(binding caps sum to at least 1.0); loosen caps or reduce the "
+                "number of concurrently active mechanism families",
+                mech_key.name,
+                share,
+                cap_for(mech_key),
+            )
     return scaled, breakdown
 
 
