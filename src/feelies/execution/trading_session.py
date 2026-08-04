@@ -135,6 +135,56 @@ def should_suppress_entry(
     return False, ""
 
 
+def session_flatten_deadline_ns(
+    bounds: TradingSessionBounds | None,
+    *,
+    enabled: bool,
+    seconds_before_close: int,
+    at_ns: int,
+) -> int | None:
+    """Exchange-time ns at/after which the session flattens, or ``None``.
+
+    ``None`` when session flatten is disabled or no RTH session is configured.
+    The deadline is ``rth_close - seconds_before_close`` so an operator can
+    unwind before the closing auction.
+
+    Bounds are resolved for *this timestamp's* NY session date via
+    :meth:`TradingSessionBounds.resolve_for_timestamp`, so a multi-day replay
+    rebinds the close per replayed day rather than pinning every day to the
+    single ``session_date`` the bounds were booted with (which, for a CLI date
+    *range*, falls back to the stale ``event_calendar_path`` date and would
+    otherwise flag every quote as past-close — see
+    ``apply_backtest_session_dates_from_cli``).
+
+    The deadline answers two distinct questions that must never disagree:
+    whether to *emit* the end-of-session flatten, and whether to *suppress* new
+    entries inside the window.  Those live in different engines, so the
+    arithmetic belongs here — beside the bounds it reads — rather than in either
+    caller.
+    """
+    if not enabled or bounds is None:
+        return None
+    effective = bounds.resolve_for_timestamp(at_ns)
+    return effective.rth_close_ns - seconds_before_close * _NS_PER_SECOND
+
+
+def in_session_flatten_window(
+    bounds: TradingSessionBounds | None,
+    *,
+    enabled: bool,
+    seconds_before_close: int,
+    at_ns: int,
+) -> bool:
+    """Whether ``at_ns`` is at or past the session-flatten deadline."""
+    deadline = session_flatten_deadline_ns(
+        bounds,
+        enabled=enabled,
+        seconds_before_close=seconds_before_close,
+        at_ns=at_ns,
+    )
+    return deadline is not None and at_ns >= deadline
+
+
 def opens_or_increases_signed(current_qty: int, post_signed: int) -> bool:
     """Entry detection: True iff the resulting position grows or flips sign.
 
@@ -242,8 +292,10 @@ __all__ = [
     "RthEntryFillGate",
     "TradingSessionBounds",
     "build_trading_session_from_platform",
+    "in_session_flatten_window",
     "resolve_trading_session_bounds",
     "order_opens_or_increases",
     "opens_or_increases_signed",
+    "session_flatten_deadline_ns",
     "should_suppress_entry",
 ]

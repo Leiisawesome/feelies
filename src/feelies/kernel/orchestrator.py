@@ -113,7 +113,11 @@ from feelies.execution.position_manager import (
     reversal_edge_gate,
     round_trip_cost_bps,
 )
-from feelies.execution.trading_session import TradingSessionBounds
+from feelies.execution.trading_session import (
+    TradingSessionBounds,
+    in_session_flatten_window,
+    session_flatten_deadline_ns,
+)
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
     build_borrow_table,
@@ -3335,32 +3339,30 @@ class Orchestrator:
     def _session_flatten_deadline_ns(self, quote: NBBOQuote) -> int | None:
         """Exchange-time ns at/after which the session flattens, or None.
 
-        ``None`` when session flatten is disabled or no RTH session is
-        configured.  The deadline is ``rth_close - buffer`` so an operator
-        can unwind before the closing auction.
-
-        The bounds are resolved for *this quote's* NY session date via
-        :meth:`TradingSessionBounds.resolve_for_timestamp` so a multi-day
-        replay rebinds the close per replayed day rather than pinning every
-        day to the single ``session_date`` the bounds were booted with
-        (which, for a CLI date *range*, falls back to the stale
-        ``event_calendar_path`` date and would otherwise flag every quote
-        as past-close — see ``apply_backtest_session_dates_from_cli``).
+        Thin binding of this orchestrator's session configuration to
+        :func:`~feelies.execution.trading_session.session_flatten_deadline_ns`,
+        which owns the arithmetic beside the bounds it reads.
         """
-        if not self._session_flatten_enabled:
-            return None
-        bounds = self._trading_session_bounds
-        if bounds is None:
-            return None
-        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
-        return effective.rth_close_ns - (
-            self._session_flatten_seconds_before_close * 1_000_000_000
+        return session_flatten_deadline_ns(
+            self._trading_session_bounds,
+            enabled=self._session_flatten_enabled,
+            seconds_before_close=self._session_flatten_seconds_before_close,
+            at_ns=quote.exchange_timestamp_ns,
         )
 
     def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
-        """True once the quote crosses the session-flatten deadline."""
-        deadline = self._session_flatten_deadline_ns(quote)
-        return deadline is not None and quote.exchange_timestamp_ns >= deadline
+        """True once the quote crosses the session-flatten deadline.
+
+        Gates entry suppression on the SIGNAL path.  Shares one deadline with
+        the end-of-session flatten emission so the two can never disagree about
+        when the window opens.
+        """
+        return in_session_flatten_window(
+            self._trading_session_bounds,
+            enabled=self._session_flatten_enabled,
+            seconds_before_close=self._session_flatten_seconds_before_close,
+            at_ns=quote.exchange_timestamp_ns,
+        )
 
     def _check_session_flat(self, quote: NBBOQuote) -> Signal | None:
         """Return a synthetic flat signal for an open position at close.
