@@ -754,6 +754,16 @@ def compute_parity_hash(orchestrator: Orchestrator) -> str:
 
     Identical inputs MUST yield identical hashes for the same alpha + date range
     + same platform.yaml.
+
+    ``strategy_id`` is part of the sequence because *which alpha a fill is booked
+    to* is a platform output, not bookkeeping: it is the sole input to every
+    per-alpha estimator (:func:`~feelies.forensics.edge_calibration.build_edge_calibrations`,
+    :func:`~feelies.forensics.cost_survival.per_alpha_cost_survival`,
+    :class:`~feelies.forensics.decay_detector.DecayDetector`), and those feed the
+    promotion and quarantine gates.  Omitting it left re-attribution invisible to
+    every parity check in the repo — a fill could silently move between alphas,
+    inverting a measured edge, while the hash stayed green (Inv-5 covers the
+    outputs that reach capital decisions; Inv-13 requires the chain be auditable).
     """
     from feelies.storage.trade_journal import TradeRecord
 
@@ -764,6 +774,7 @@ def compute_parity_hash(orchestrator: Orchestrator) -> str:
         {
             "order_id": str(r.order_id),
             "symbol": str(r.symbol),
+            "strategy_id": str(r.strategy_id),
             "side": str(r.side).split(".")[-1],
             "quantity": int(r.filled_quantity),
             "fill_price": str(r.fill_price),
