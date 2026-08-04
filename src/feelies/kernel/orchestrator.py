@@ -2012,13 +2012,21 @@ class Orchestrator:
         if self._signal_order_trace_sink is not None:
             self._tick_quote_for_trace = quote
             self._last_quote_context_for_signal_trace = quote
-        # Sensor fan-out (+ router on_quote) runs synchronously inside
-        # publish; time the call for hot-path attribution.
-        t_pub = time.perf_counter_ns()
-        self._bus.publish(quote)
-        self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
-
         # Mark aggregate and strategy books for exposure and drawdown checks.
+        #
+        # Marking runs **before** the bus publish so every subscriber evaluates
+        # against this quote's book rather than the previous one.  The risk-layer
+        # exit authors are the reason: ``StopExitController`` fires on the quote
+        # itself, and a stop fires precisely on an adverse move, so a stale mark
+        # would systematically understate the loss at the moment the bridge runs
+        # ``check_order`` — the drawdown guard could read well inside its bar on a
+        # tick that actually breached it (Inv-11 fail-safe).  Marking first also
+        # puts the stop author on the same footing as the hazard controller, which
+        # fires later at ``_update_regime``.
+        #
+        # Safe to hoist: ``update_mark`` writes prices only, never quantities, and
+        # no ``NBBOQuote`` subscriber reads marks — sensors are pure market-data
+        # observers and the router's entry gate reads position *quantity*.
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
             # Mark liquidation at bid for longs and ask for shorts.
@@ -2043,6 +2051,12 @@ class Orchestrator:
                     bid=quote.bid,
                     ask=quote.ask,
                 )
+
+        # Sensor fan-out (+ router on_quote) runs synchronously inside
+        # publish; time the call for hot-path attribution.
+        t_pub = time.perf_counter_ns()
+        self._bus.publish(quote)
+        self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
         # Use exchange time so risk and routing cross the RTH close together.
         self._maybe_flip_buying_power_at_rth_close(quote)
 

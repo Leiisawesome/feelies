@@ -1306,6 +1306,47 @@ class TestOrchestratorRiskReject:
         assert position_store.get("AAPL").quantity == 0
 
 
+class TestQuoteSubscribersSeeAFreshlyMarkedBook:
+    """Marking must precede the bus publish, not follow it.
+
+    ``StopExitController`` fires on the quote itself, and a stop fires precisely
+    on an adverse move — so if marking ran after the publish, the bridge's
+    ``check_order`` would evaluate the drawdown guard against the *previous*
+    quote and systematically understate the loss on exactly the tick that
+    triggered the exit (Inv-11).  Marking first also puts the stop author on the
+    same footing as the hazard controller, which fires later at
+    ``_update_regime``.
+    """
+
+    def test_unrealized_pnl_reflects_this_quote_when_subscribers_run(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+        # Prior quote's mark: a small loss.
+        position_store.update_mark(
+            "AAPL", Decimal("149.50"), bid=Decimal("149.45"), ask=Decimal("149.55")
+        )
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        _boot_to_backtest(orch)
+
+        seen: list[Decimal] = []
+        bus.subscribe(NBBOQuote, lambda _q: seen.append(position_store.get("AAPL").unrealized_pnl))
+
+        # A large adverse move on this tick.
+        quote = _make_quote(ts=2000, bid="140.00", ask="140.10", seq=7)
+        orch._process_tick(quote)
+
+        assert seen, "expected the quote to reach subscribers"
+        # Marked to this quote (bid 140.00 for a long), not the prior 149.45.
+        assert seen[0] == position_store.get("AAPL").unrealized_pnl
+        assert seen[0] < Decimal("-900"), (
+            "quote subscribers saw a stale mark — marking must run before "
+            f"bus.publish(quote); got unrealized {seen[0]}"
+        )
+
+
 class TestStopExitIsNotASignal:
     """A stop is a risk control, not alpha conviction.
 
