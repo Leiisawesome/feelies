@@ -50,7 +50,9 @@ from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
+from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -415,6 +417,41 @@ def _boot_to_ready(orch: Orchestrator) -> None:
     config = _MinimalConfig()
     orch.boot(config)
     assert orch.macro_state == MacroState.READY
+
+
+def _attach_stop_exit(
+    orch: Orchestrator,
+    *,
+    stop_loss_per_share: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    trail_activate_pct: float = 0.0,
+    trail_pct: float = 0.5,
+    session_flatten_enabled: bool = False,
+    session_flatten_seconds_before_close: int = 0,
+    bounds: Any = None,
+) -> StopExitController:
+    """Attach the risk-layer stop/session-flatten author to an orchestrator.
+
+    Stop-loss and session flatten used to be kernel state poked directly onto the
+    orchestrator; they are now authored by ``StopExitController``, which
+    self-subscribes to quotes and routes through the RISK-layer bridge.
+    """
+    controller = StopExitController(
+        bus=orch._bus,
+        sequence_generator=SequenceGenerator(),
+        position_store=orch._positions,
+        policy=StopExitPolicy(
+            stop_loss_per_share=stop_loss_per_share,
+            stop_loss_pct=stop_loss_pct,
+            trail_activate_pct=trail_activate_pct,
+            trail_pct=trail_pct,
+            session_flatten_enabled=session_flatten_enabled,
+            session_flatten_seconds_before_close=session_flatten_seconds_before_close,
+        ),
+        trading_session_bounds=bounds if bounds is not None else orch._trading_session_bounds,
+    )
+    controller.attach()
+    return controller
 
 
 def _boot_to_backtest(orch: Orchestrator) -> None:
@@ -1269,35 +1306,45 @@ class TestOrchestratorRiskReject:
         assert position_store.get("AAPL").quantity == 0
 
 
-class TestStopExitSignalMetadata:
-    def test_stop_exit_signal_uses_signal_sequence_family(self) -> None:
+class TestStopExitIsNotASignal:
+    """A stop is a risk control, not alpha conviction.
+
+    It used to be synthesised as a ``Signal`` with a sentinel ``strategy_id``,
+    which put a trading decision on the SIGNAL layer and left it outside the
+    RISK-layer reason taxonomy every routing predicate keys on.  It is now
+    authored by ``StopExitController`` and reaches the router through the same
+    non-vetoable bridge as every other mandated exit.
+    """
+
+    def test_stop_emits_a_risk_layer_order_and_no_signal(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         published_signals: list[Signal] = []
+        orders: list[OrderRequest] = []
         bus.subscribe(Signal, published_signals.append)
+        bus.subscribe(OrderRequest, orders.append)
 
         position_store = MemoryPositionStore()
         position_store.update("AAPL", 100, Decimal("150.00"))
 
         orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
-
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        stop_signals = [
-            signal for signal in published_signals if signal.strategy_id == "__stop_exit__"
-        ]
-        assert len(stop_signals) == 1
-        stop_signal = stop_signals[0]
-        assert stop_signal.correlation_id == quote.correlation_id
-        assert stop_signal.sequence == 0
-        assert stop_signal.sequence != quote.sequence
-        assert stop_signal.source_layer == "SIGNAL"
-        assert stop_signal.layer == "SIGNAL"
-        assert stop_signal.regime_gate_state == "N/A"
+        assert published_signals == []
+        stop_orders = [o for o in orders if o.reason == "STOP_EXIT"]
+        assert len(stop_orders) == 1
+        stop = stop_orders[0]
+        assert stop.source_layer == "RISK"
+        assert stop.order_type is OrderType.MARKET
+        assert stop.correlation_id == quote.correlation_id
+        # Symbol-net: the control belongs to no alpha.
+        assert stop.strategy_id == ""
+        assert position_store.get("AAPL").quantity == 0
 
 
 class TestForcedExitReasonClassification:
@@ -1330,7 +1377,13 @@ class TestForcedExitReasonClassification:
             signal=signal,
         )
 
-    def test_only_stop_exit_intent_is_tagged_as_panic(self) -> None:
+    def test_signal_path_orders_are_never_tagged_as_panic(self) -> None:
+        """Panic pricing rides the risk author's reason token, not the intent.
+
+        The SIGNAL path no longer builds mandated exits, so nothing it produces
+        may carry a reason in the fill models' panic set — an alpha exit that got
+        surcharged would overstate its cost and depress its measured edge.
+        """
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         verdict = RiskVerdict(
@@ -1342,19 +1395,9 @@ class TestForcedExitReasonClassification:
             reason="ok",
         )
 
-        stop_order, _ = orch._try_build_order_from_intent(
-            self._exit_intent("__stop_exit__"), verdict, "AAPL:2000:1"
-        )
-        session_order, _ = orch._try_build_order_from_intent(
-            self._exit_intent("__session_flat__"), verdict, "AAPL:2000:1"
-        )
         alpha_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
         )
-
-        assert stop_order is not None and stop_order.reason == "STOP_EXIT"
-        # Scheduled session flatten and ordinary alpha exit are not panics.
-        assert session_order is not None and session_order.reason == ""
         assert alpha_order is not None and alpha_order.reason == ""
 
     def test_stop_trigger_tags_order_and_journals_reason(self) -> None:
@@ -1371,14 +1414,14 @@ class TestForcedExitReasonClassification:
         orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
         journal = InMemoryTradeJournal()
         orch._trade_journal = journal
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        stop_orders = [o for o in orders if o.strategy_id == "__stop_exit__"]
+        stop_orders = [o for o in orders if o.reason == "STOP_EXIT"]
         assert len(stop_orders) == 1
         assert stop_orders[0].reason == "STOP_EXIT"
 
@@ -1386,7 +1429,7 @@ class TestForcedExitReasonClassification:
         # book is wired here, so the sentinel row is the documented fallback
         # (see ``_trade_journal_legs``); the attributed case is covered by
         # ``test_stop_exit_attributes_to_the_slice_it_closed``.
-        recorded = list(journal.query(strategy_id="__stop_exit__"))
+        recorded = list(journal.query(strategy_id=""))
         assert len(recorded) == 1
         assert recorded[0].metadata["order_reason"] == "STOP_EXIT"
         assert "order_source_layer" in recorded[0].metadata
@@ -1394,7 +1437,7 @@ class TestForcedExitReasonClassification:
     def test_stop_exit_attributes_to_the_slice_it_closed(self) -> None:
         """A stop-out must close the alpha's slice, not mint a sentinel one.
 
-        ``__stop_exit__`` reads the symbol-net book, so it owns no slice.  Booking
+        The stop reads the symbol-net book, so it owns no slice.  Booking
         its fill under the sentinel left the originating alpha's slice open forever
         (pinning it at its per-alpha position cap in ``AlphaBudgetRiskWrapper``) and
         siphoned the closing ``realized_pnl`` out of that alpha's evidence, biasing
@@ -1422,7 +1465,7 @@ class TestForcedExitReasonClassification:
         journal = InMemoryTradeJournal()
         orch._trade_journal = journal
         orch._fill_ledger = FillAttributionLedger()
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
@@ -1432,11 +1475,11 @@ class TestForcedExitReasonClassification:
         # Slice book: no phantom sentinel slice exists, and the alpha is flat.
         # ``strategy_ids()`` is checked first — ``get()`` materialises a sub-store,
         # so probing the sentinel would create the very key under test.
-        assert "__stop_exit__" not in strategy_positions.strategy_ids()
+        assert "" not in strategy_positions.strategy_ids()
         assert strategy_positions.get(alpha_id, "AAPL").quantity == 0
 
         # Journal: the closing PnL lands on the alpha, not the sentinel.
-        assert list(journal.query(strategy_id="__stop_exit__")) == []
+        assert list(journal.query(strategy_id="")) == []
         recorded = list(journal.query(strategy_id=alpha_id))
         assert len(recorded) == 1
         assert recorded[0].realized_pnl < 0
@@ -1446,7 +1489,7 @@ class TestForcedExitReasonClassification:
 
         # Inv-13: forced-exit provenance survives the re-attribution.
         assert recorded[0].metadata["order_reason"] == "STOP_EXIT"
-        assert recorded[0].metadata["forced_exit_strategy_id"] == "__stop_exit__"
+        assert recorded[0].metadata["forced_exit_strategy_id"] == ""
         assert "order_source_layer" in recorded[0].metadata
 
     def test_emergency_flatten_tags_force_flatten_reason(self) -> None:
@@ -2881,11 +2924,18 @@ class TestSessionFlatten:
             metric_collector=_NoOpMetricCollector(),
         )
         _boot_to_backtest(orch)
-        orch._trading_session_bounds = self._day_anchored_bounds(
-            anchor or date(2026, 3, 26),
-        )
+        bounds = self._day_anchored_bounds(anchor if anchor is not None else date(2026, 3, 26))
+        orch._trading_session_bounds = bounds
+        # Two consumers of one deadline: the kernel suppresses new entries inside
+        # the window, the controller authors the unwind.  Both must be configured.
         orch._session_flatten_enabled = enabled
         orch._session_flatten_seconds_before_close = flatten_buffer_s
+        _attach_stop_exit(
+            orch,
+            session_flatten_enabled=enabled,
+            session_flatten_seconds_before_close=flatten_buffer_s,
+            bounds=bounds,
+        )
         return orch, bus, orders, pos_store
 
     def test_flattens_open_position_past_close(self) -> None:
@@ -3799,7 +3849,7 @@ class TestRestingOrderGuardAfterRisk:
         position_store.update("AAPL", 100, Decimal("150.00"))
 
         orch = _build_orchestrator(clock, position_store=position_store)
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         fake_order = OrderRequest(
@@ -3812,7 +3862,9 @@ class TestRestingOrderGuardAfterRisk:
             order_type=OrderType.MARKET,
             quantity=100,
             limit_price=None,
-            strategy_id="__stop_exit__",
+            source_layer="RISK",
+            strategy_id="",
+            reason="STOP_EXIT",
         )
         orch._track_order(fake_order.order_id, fake_order.side, fake_order)
 
@@ -3822,7 +3874,13 @@ class TestRestingOrderGuardAfterRisk:
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        assert new_orders == []
+        # The controller authors an exit unconditionally — it does not know what
+        # is in flight.  Arbitration against pending state is the bridge's job,
+        # so the published intent is expected; what must not happen is a second
+        # aggressive leg reaching the router on top of the pending one.
+        assert [o.reason for o in new_orders] == ["STOP_EXIT"]
+        assert new_orders[0].order_id not in orch._active_orders
+        assert position_store.get("AAPL").quantity == 100
 
     def test_stop_exit_supersedes_resting_passive_cover(self) -> None:
         """A hard stop cancels a resting passive cover and crosses immediately."""
@@ -3839,7 +3897,7 @@ class TestRestingOrderGuardAfterRisk:
             position_store=position_store,
             order_router=router,
         )
-        orch._stop_loss_pct = 0.01
+        _attach_stop_exit(orch, stop_loss_pct=0.01)
         orch._use_passive_entries = True
         _boot_to_backtest(orch)
 
@@ -3877,7 +3935,7 @@ class TestRestingOrderGuardAfterRisk:
         assert "cover-001" in router.cancelled_order_ids
         assert not orch._has_pending_order_for_symbol("AAPL")
         # A forced MARKET exit was submitted and filled → position flat.
-        assert any(o.strategy_id == "__stop_exit__" for o in new_orders)
+        assert any(o.reason == "STOP_EXIT" for o in new_orders)
         assert position_store.get("AAPL").quantity == 0
         # Operator-visible forensic marker distinguishes the cancel-and-cross.
         assert any(a.alert_name == "forced_exit_supersedes_pending_order" for a in alerts)
@@ -3895,7 +3953,7 @@ class TestForcedExitPanicReason:
     """
 
     def test_stop_exit_order_carries_stop_exit_reason(self) -> None:
-        """A synthetic ``__stop_exit__`` MARKET exit is tagged ``STOP_EXIT``."""
+        """A risk-layer stop MARKET exit is tagged ``STOP_EXIT``."""
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         orders: list[OrderRequest] = []
@@ -3906,13 +3964,13 @@ class TestForcedExitPanicReason:
 
         quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
         orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        stop_orders = [o for o in orders if o.strategy_id == "__stop_exit__"]
+        stop_orders = [o for o in orders if o.reason == "STOP_EXIT"]
         assert len(stop_orders) == 1
         assert stop_orders[0].reason == "STOP_EXIT"
         assert stop_orders[0].order_type == OrderType.MARKET
@@ -3970,7 +4028,7 @@ class TestForcedExitPanicReason:
         orch = _build_orchestrator(
             clock, bus=bus, position_store=position_store, order_router=router
         )
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         orch._process_tick(quote)
@@ -4000,7 +4058,7 @@ class TestTradeJournalProvenance:
         orch = _build_orchestrator(clock, position_store=position_store)
         journal = InMemoryTradeJournal()
         orch._trade_journal = journal
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]

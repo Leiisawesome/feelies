@@ -34,6 +34,8 @@ from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
+from feelies.core.identifiers import SequenceGenerator
+from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 # Neither verdict may block a reduction in backtest mode.
@@ -217,6 +219,33 @@ def _capture_orders(bus: EventBus) -> list[OrderRequest]:
     return captured
 
 
+# Stop-loss and session flatten are authored by ``StopExitController`` and reach
+# the router through the kernel's RISK-layer bridge rather than the SIGNAL path.
+# The contract is unchanged and is what these tests pin: a blocking verdict from
+# the shared exposure/drawdown gate must never strand a mandated exit (Inv-11).
+# The bridge honours REJECT only for orders that do *not* reduce, and lets
+# FORCE_FLATTEN fall through to submission.
+
+
+def _attach_stop_controller(
+    orch: Orchestrator,
+    bus: EventBus,
+    positions: PositionStore,
+    policy: StopExitPolicy,
+    *,
+    bounds: TradingSessionBounds | None = None,
+) -> StopExitController:
+    controller = StopExitController(
+        bus=bus,
+        sequence_generator=SequenceGenerator(),
+        position_store=positions,
+        policy=policy,
+        trading_session_bounds=bounds,
+    )
+    controller.attach()
+    return controller
+
+
 @pytest.mark.parametrize("action", _BLOCKING_ACTIONS)
 class TestStopLossSurvivesRiskGate:
     def test_stop_loss_flattens_despite_blocking_verdict(self, action: RiskAction) -> None:
@@ -230,7 +259,7 @@ class TestStopLossSurvivesRiskGate:
             risk_engine=_FixedActionRiskEngine(action),
             position_store=positions,
         )
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_controller(orch, bus, positions, StopExitPolicy(stop_loss_per_share=1.0))
         captured = _capture_orders(bus)
         _boot_to_backtest(orch)
 
@@ -259,16 +288,24 @@ class TestSessionFlattenSurvivesRiskGate:
             risk_engine=_FixedActionRiskEngine(action),
             position_store=positions,
         )
-        captured = _capture_orders(bus)
-        _boot_to_backtest(orch)
         anchor = date(2026, 3, 26)
-        orch._trading_session_bounds = TradingSessionBounds(
+        bounds = TradingSessionBounds(
             session_date=anchor,
             rth_open_ns=et_clock_to_ns(anchor, "09:30"),
             rth_close_ns=et_clock_to_ns(anchor, "16:00"),
         )
-        orch._session_flatten_enabled = True
-        orch._session_flatten_seconds_before_close = 0
+        _attach_stop_controller(
+            orch,
+            bus,
+            positions,
+            StopExitPolicy(
+                session_flatten_enabled=True,
+                session_flatten_seconds_before_close=0,
+            ),
+            bounds=bounds,
+        )
+        captured = _capture_orders(bus)
+        _boot_to_backtest(orch)
 
         # Past the 16:00 close.
         ns = et_clock_to_ns(anchor, "16:01")

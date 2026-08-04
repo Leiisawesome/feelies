@@ -25,29 +25,30 @@ class _FixedRoutePolicy:
         return self.decision
 
 
+# ``forced_market`` was dropped when stop-loss / session flatten moved to
+# ``StopExitController``: mandated exits no longer reach this route resolver at
+# all, they are authored as MARKET orders and routed through the RISK-layer
+# bridge.  The row that exercised it went with it.
 @pytest.mark.parametrize(
     (
         "use_passive",
         "policy_decision",
         "exec_style",
-        "forced_market",
         "moc",
         "expected_type",
     ),
     [
-        (False, None, None, False, False, OrderType.MARKET),
-        (True, None, None, False, False, OrderType.LIMIT),
-        (True, "aggressive", None, False, False, OrderType.MARKET),
-        (False, None, ExecStyle.PASSIVE, False, False, OrderType.LIMIT),
-        (True, "passive", ExecStyle.PASSIVE, True, False, OrderType.MARKET),
-        (True, "passive", ExecStyle.PASSIVE, False, True, OrderType.MARKET),
+        (False, None, None, False, OrderType.MARKET),
+        (True, None, None, False, OrderType.LIMIT),
+        (True, "aggressive", None, False, OrderType.MARKET),
+        (False, None, ExecStyle.PASSIVE, False, OrderType.LIMIT),
+        (True, "passive", ExecStyle.PASSIVE, True, OrderType.MARKET),
     ],
 )
 def test_order_route_precedence(
     use_passive: bool,
     policy_decision: str | None,
     exec_style: ExecStyle | None,
-    forced_market: bool,
     moc: bool,
     expected_type: OrderType,
 ) -> None:
@@ -69,14 +70,11 @@ def test_order_route_precedence(
         is_exit_or_stop=False,
         edge_bps=5.0,
         exec_style=exec_style,
-        forced_market=forced_market,
     )
 
     assert order_type is expected_type
     assert limit_price == (Decimal("149.50") if expected_type is OrderType.LIMIT else None)
     assert is_moc is moc
-    if forced_market:
-        assert policy is not None and policy.calls == []
 
 
 def test_submit_exception_rejects_and_prunes_order(monkeypatch) -> None:

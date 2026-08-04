@@ -108,6 +108,7 @@ from feelies.risk.engine import RiskEngine
 from feelies.risk.deferral_cap import DeferralCapController, DeferralPolicy
 from feelies.risk.exit_composer import ExitComposer, ExitComposerPolicy
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
+from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -498,6 +499,18 @@ def build_platform(
         thread_safe_sequences=_seq_thread_safe,
     )
 
+    # Platform-level stop-loss / session flatten.  Returns None (and never
+    # subscribes) when neither is configured, so default deployments are
+    # unaffected.  Attached before the alpha-driven authors so a stop and a
+    # hazard spike on the same dispatch resolve in a fixed order (Inv-5).
+    stop_exit_controller = _create_stop_exit_controller(
+        bus=bus,
+        config=config,
+        position_store=position_store,
+        trading_session_bounds=trading_session_bounds,
+        thread_safe_sequences=_seq_thread_safe,
+    )
+
     # Scan every active alpha so SIGNAL-layer hazard exits receive a controller.
     hazard_exit_controller = _create_hazard_exit_controller(
         bus=bus,
@@ -599,6 +612,7 @@ def build_platform(
         cross_sectional_tracker=cross_sectional_tracker,
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
+        stop_exit_controller=stop_exit_controller,
         exit_composer=exit_composer,
         deferral_cap_controller=deferral_cap_controller,
         edge_calibration_factors=resolved_edge_factors,
@@ -2043,6 +2057,58 @@ def _create_composition_layer(
         horizon_metrics,
         None,
     )
+
+
+def _create_stop_exit_controller(
+    *,
+    bus: EventBus,
+    config: PlatformConfig,
+    position_store: MemoryPositionStore,
+    trading_session_bounds: TradingSessionBounds | None,
+    thread_safe_sequences: bool = True,
+) -> StopExitController | None:
+    """Build the platform stop-loss / session-flatten controller, or ``None``.
+
+    Returns ``None`` when neither control is configured, so a deployment with
+    stops and session flatten off never subscribes and stays bit-identical to one
+    predating the controller (Inv-5).
+
+    The controller gets its own sequence family: sharing the kernel's would make
+    every downstream event id shift the moment a stop fires, and sharing the
+    hazard family would couple two independent authors' id streams.
+    """
+    policy = StopExitPolicy(
+        stop_loss_per_share=config.stop_loss_per_share,
+        trail_activate_per_share=config.trail_activate_per_share,
+        stop_loss_pct=config.stop_loss_pct,
+        trail_activate_pct=config.trail_activate_pct,
+        trail_pct=config.trail_pct,
+        session_flatten_enabled=config.session_flatten_enabled,
+        session_flatten_seconds_before_close=(config.session_flatten_seconds_before_close),
+    )
+    if not policy.any_enabled:
+        return None
+    controller = StopExitController(
+        bus=bus,
+        sequence_generator=SequenceGenerator(thread_safe=thread_safe_sequences),
+        position_store=position_store,
+        policy=policy,
+        trading_session_bounds=trading_session_bounds,
+    )
+    controller.attach()
+    logger.info(
+        "StopExitController wired: stop=%s (pct=%.4f, per_share=%.4f), "
+        "trail=%s (activate_pct=%.4f, retain=%.2f), session_flatten=%s (%ds before close)",
+        policy.stop_enabled,
+        policy.stop_loss_pct,
+        policy.stop_loss_per_share,
+        policy.trail_activate_pct > 0 or policy.trail_activate_per_share > 0,
+        policy.trail_activate_pct,
+        policy.trail_pct,
+        policy.session_flatten_enabled,
+        policy.session_flatten_seconds_before_close,
+    )
+    return controller
 
 
 def _create_hazard_exit_controller(

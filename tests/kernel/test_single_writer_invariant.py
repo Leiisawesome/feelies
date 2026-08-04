@@ -122,8 +122,16 @@ def test_same_sequence_across_different_types_is_not_a_false_positive() -> None:
     _assert_no_duplicate_type_sequence_pairs(events)  # must not raise
 
 
-def test_signal_sequence_never_repeats_across_standalone_and_forced_exit_paths() -> None:
-    # The signal engine and forced-exit path must not publish the same signal.
+def test_forced_exits_do_not_consume_the_signal_sequence_family() -> None:
+    """A mandated exit must not draw from the SIGNAL sequence family.
+
+    This used to be a collision test: the kernel synthesised stop exits as
+    ``Signal`` events, so the forced-exit path and the signal engine shared one
+    sequence generator and could only be checked for duplicates.  Now that
+    ``StopExitController`` authors a RISK-layer ``OrderRequest`` instead, the
+    stronger property holds — a stop emits no ``Signal`` at all, so the two
+    families cannot collide by construction (Inv-5).
+    """
     config = _make_stop_exit_config()
     orchestrator, captured = _boot_and_record(config, _synth_stop_exit_events())
     orchestrator._positions.update(
@@ -132,8 +140,13 @@ def test_signal_sequence_never_repeats_across_standalone_and_forced_exit_paths()
         _STOP_EXIT_ENTRY_PRICE,
     )
     orchestrator.run_backtest()
-    signal_sequences = [e.sequence for e in _grouped_by_type(captured)["Signal"]]
-    assert signal_sequences, "expected at least one Signal (the synthetic stop-exit)"
+    grouped = _grouped_by_type(captured)
+
+    stop_orders = [o for o in grouped.get("OrderRequest", []) if o.reason == "STOP_EXIT"]
+    assert stop_orders, "expected the stop to fire on this tape"
+    assert all(o.source_layer == "RISK" for o in stop_orders)
+
+    signal_sequences = [e.sequence for e in grouped.get("Signal", [])]
     assert len(signal_sequences) == len(set(signal_sequences)), (
         f"Signal.sequence repeated across captured events: {signal_sequences}"
     )
