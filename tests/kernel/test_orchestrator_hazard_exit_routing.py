@@ -124,10 +124,13 @@ class _CancellingRouter(_RecordingRouter):
     test can observe a mandated exit that is still in flight.
     """
 
-    def __init__(self, auto_fill: bool = True) -> None:
+    def __init__(self, auto_fill: bool = True, fill_on_cancel: bool = False) -> None:
         super().__init__()
         self.cancelled: list[str] = []
         self._auto_fill = auto_fill
+        # ``fill_on_cancel`` models the venue race: the resting order had already
+        # filled when the cancel arrived, so the poll returns a FILL, not a CANCEL.
+        self._fill_on_cancel = fill_on_cancel
         self._live: dict[str, OrderRequest] = {}
 
     def submit(self, request: OrderRequest) -> None:
@@ -156,6 +159,20 @@ class _CancellingRouter(_RecordingRouter):
         request = self._live.pop(order_id, None)
         if request is None:
             return False
+        if self._fill_on_cancel:
+            self._pending.append(
+                OrderAck(
+                    timestamp_ns=request.timestamp_ns + 1,
+                    correlation_id=request.correlation_id,
+                    sequence=request.sequence,
+                    order_id=order_id,
+                    symbol=request.symbol,
+                    status=OrderAckStatus.FILLED,
+                    filled_quantity=request.quantity,
+                    fill_price=Decimal("150.00"),
+                )
+            )
+            return True
         self._pending.append(
             OrderAck(
                 timestamp_ns=request.timestamp_ns + 1,
@@ -519,6 +536,37 @@ class TestRestingOrderGuard:
         assert router.cancelled == []
         entry = orch._active_orders.get(resting.order_id)
         assert entry is not None and entry[0].state not in _TERMINAL_STATES
+
+    def test_exit_stands_down_when_cancel_settles_a_closing_fill(self) -> None:
+        """The cancel can settle a fill that already flattened the book.
+
+        ``_cancel_resting_for_symbol`` polls acks *by order id* and reconciles
+        whatever comes back — a resting order that had already filled at the venue
+        returns a FILL, not a CANCEL.  The exit's quantity was fixed by the
+        controller before that, so crossing it into an already-flat book would open
+        the opposite side: a fail-safe control increasing exposure, which is the
+        precise failure Inv-11 forbids.
+        """
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        # A resting passive SELL 100 — a passive exit covering the whole long.
+        self._rest_order(orch, router, order_id="resting-sell-1", side=Side.SELL)
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, order_id="hz-1"))
+
+        # The resting SELL filled during the cancel and flattened the book, so the
+        # mandated exit must stand down rather than cross a stale quantity.
+        assert positions.get("AAPL").quantity == 0
+        assert router.submitted == []
+        # Inv-13: a mandated exit that never reached the router must be visible.
+        assert any(a.alert_name == "forced_exit_stood_down_after_cancel" for a in alerts)
 
 
 class TestIdempotency:

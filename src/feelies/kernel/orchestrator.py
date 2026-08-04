@@ -4320,6 +4320,34 @@ class Orchestrator:
             for sm, side, order in self._active_orders.values()
         )
 
+    def _forced_exit_reduces(self, order: OrderRequest) -> bool:
+        """Whether *order* shrinks the live book it claims to close.
+
+        A composer or deferral-cap exit is slice-scoped: another strategy holding
+        the opposite side can leave symbol-net flat while the mandated slice is
+        still open.  Treat the order as reducing when it shrinks *either* the
+        symbol-net book or its own strategy slice, so a slice flatten is never
+        stranded at the non-reducing REJECT branch.  Symbol-net is checked first,
+        so a true symbol-net hazard exit (which always reduces net) never needs the
+        slice fallback — this keeps the shared ``HARD_EXIT_AGE`` token correct for
+        both authors without attributing it.
+
+        Re-evaluated after any resting-order cancel, because the cancel reconciles
+        whatever acks were already queued for those orders — including fills — so
+        the book can move between the controller sizing the exit and the exit
+        reaching the router.
+        """
+        signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
+        current_qty = self._positions.get(order.symbol).quantity
+        if abs(current_qty + signed_qty) < abs(current_qty):
+            return True
+        if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS and (
+            self._strategy_positions is not None
+        ):
+            slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
+            return abs(slice_qty + signed_qty) < abs(slice_qty)
+        return False
+
     def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
         """True if a forced MARKET exit is already in flight for *symbol*.
 
@@ -5661,23 +5689,7 @@ class Orchestrator:
         hv = self._risk_engine.check_order(event, self._positions)
         # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(event.symbol).quantity
-        signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
-        # A composer or deferral-cap exit is slice-scoped: another strategy
-        # holding the opposite side can leave symbol-net flat while the mandated
-        # slice is still open.  Treat the order as reducing when it shrinks
-        # *either* the symbol-net book or its own strategy slice, so a slice
-        # flatten is never stranded at the non-reducing REJECT branch.  Symbol-net
-        # is checked first, so a true symbol-net hazard exit (which always reduces
-        # net) never needs the slice fallback — this keeps the shared
-        # ``HARD_EXIT_AGE`` token correct for both authors without attributing it.
-        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
-        if (
-            not order_reduces
-            and event.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS
-            and self._strategy_positions is not None
-        ):
-            slice_qty = self._strategy_positions.get(event.strategy_id, event.symbol).quantity
-            order_reduces = abs(slice_qty + signed_qty) < abs(slice_qty)
+        order_reduces = self._forced_exit_reduces(event)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
@@ -5747,6 +5759,16 @@ class Orchestrator:
                 return
             self._emit_forced_exit_supersedes_pending_alert(event, event.correlation_id)
             self._cancel_resting_for_symbol(event.symbol, event.correlation_id)
+            # The cancel reconciles acks already queued for those orders --
+            # including fills -- so the book may have moved since the reduce test
+            # above.  Crossing a stale quantity into a book another leg already
+            # flattened would open the *opposite* exposure: exactly what a
+            # fail-safe control must never do (Inv-11).  Re-test against the
+            # settled book and stand down if there is no longer anything to close;
+            # the controller re-emits on its next trigger if the risk persists.
+            if not self._forced_exit_reduces(event):
+                self._emit_forced_exit_stood_down_alert(event)
+                return
         self._track_order(event.order_id, event.side, event)
         submit_error = self._submit_tracked_order(event, trigger=event.reason)
         if submit_error is not None:
@@ -5902,6 +5924,40 @@ class Orchestrator:
                     f"({intent.intent.name}); retries next boundary."
                 ),
                 context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
+
+    def _emit_forced_exit_stood_down_alert(self, order: OrderRequest) -> None:
+        """Publish a marker when a mandated exit stands down post-cancel.
+
+        The resting-order cancel settled a fill that already closed the book, so
+        submitting the exit's now-stale quantity would open the opposite side.
+        Standing down is the fail-safe branch (Inv-11), but it is *not* routine —
+        an operator needs to see that a mandated exit did not reach the router,
+        and forensics needs it to explain the missing order (Inv-13).
+        """
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="forced_exit_stood_down_after_cancel",
+                message=(
+                    f"Forced exit {order.reason!r} on {order.symbol!r} stood down: "
+                    f"cancelling resting orders settled a fill that already closed "
+                    f"the book, so the exit's quantity ({order.quantity}) no longer "
+                    f"reduces exposure (strategy_id={order.strategy_id!r})."
+                ),
+                context={
+                    "symbol": order.symbol,
+                    "strategy_id": order.strategy_id,
+                    "order_id": order.order_id,
+                    "reason": order.reason,
+                    "order_quantity": order.quantity,
+                    "position_quantity": self._positions.get(order.symbol).quantity,
+                },
             )
         )
 
