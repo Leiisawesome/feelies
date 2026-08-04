@@ -42,6 +42,10 @@ from tests.determinism.test_horizon_tick_replay import (
     EXPECTED_LEVEL2_TICK_COUNT,
     EXPECTED_LEVEL2_TICK_HASH,
 )
+from tests.determinism.test_forced_exit_attribution_replay import (
+    EXPECTED_FORCED_EXIT_ATTRIBUTION_COUNT,
+    EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH,
+)
 from tests.determinism.test_market_fill_replay import (
     EXPECTED_MARKET_FILL_ACK_COUNT,
     EXPECTED_MARKET_FILL_HASH,
@@ -157,6 +161,12 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "position_pnl": (
         EXPECTED_POSITION_PNL_HASH,
         EXPECTED_POSITION_PNL_COUNT,
+    ),
+    # Per-strategy attribution of a symbol-net forced exit across two slices.
+    # The only fixture that observes *which alpha* a fill is booked to.
+    "forced_exit_attribution": (
+        EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH,
+        EXPECTED_FORCED_EXIT_ATTRIBUTION_COUNT,
     ),
     # State-machine emission order and sequence allocation.
     "state_transition": (

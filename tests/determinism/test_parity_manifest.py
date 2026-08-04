@@ -15,6 +15,9 @@ from tests.determinism.test_decoupled_safety_replay import (
 from tests.determinism.test_decoupled_safety_replay import (
     _replay_safety_state_change as decoupled_safety_state_change_replay,
 )
+from tests.determinism.test_forced_exit_attribution_replay import (
+    _replay as forced_exit_attribution_replay,
+)
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
 from tests.determinism.test_market_fill_replay import _replay as market_fill_replay
@@ -84,6 +87,7 @@ _REPLAY_BY_NAME = {
     "level6_regime_state": _replay_regime_state,
     "market_fill_acks": market_fill_replay,
     "position_pnl": position_pnl_replay,
+    "forced_exit_attribution": forced_exit_attribution_replay,
     "state_transition": state_transition_replay,
     "cross_sectional_context": xsect_context_replay,
     "signal_fires": signal_fires_replay,
@@ -204,7 +208,14 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
 # ``decoupled_safety_state_change`` and ``decoupled_risk_flatten_order``. No
 # existing baseline moved; the fingerprint shifts purely because the manifest set
 # grew (23 → 25). See ``test_decoupled_safety_replay.py`` for the migration note.
-EXPECTED_MANIFEST_FINGERPRINT = "83dece6dfcc4be08009d79d02c55536792a9b1c68a1530e082b8060cb8ee26b7"
+# Re-baselined again to REGISTER — not change — one brand-new baseline:
+# ``forced_exit_attribution``. No existing baseline moved; the fingerprint shifts
+# purely because the manifest set grew (25 → 26). The new entry is the first to
+# observe *which alpha* a fill is booked to: every prior fixture either wires no
+# ``StrategyPositionStore`` or hashes order/state streams rather than the journal,
+# so per-strategy re-attribution was invisible to the whole corpus. See
+# ``test_forced_exit_attribution_replay.py``.
+EXPECTED_MANIFEST_FINGERPRINT = "0c959bd73525797ed8fd2a2f252bb79e2daf146d1fd2e06f2a6de2243862b140"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:

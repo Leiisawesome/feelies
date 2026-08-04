@@ -351,37 +351,42 @@ def _trade_journal_legs(
 ) -> list[_TradeJournalLeg]:
     """Split one fill into the trade-journal rows it should produce.
 
-    An ordinary order yields exactly one row under its own ``strategy_id`` —
-    unchanged from the single-record behaviour.
+    The journal asks :func:`_order_owns_one_slice` — the same predicate that decides
+    where the *position* goes — so the two can never disagree about who a fill
+    belongs to.  An order that owns one slice yields exactly one row under its own
+    ``strategy_id``; a **symbol-net** order yields one row per slice it actually
+    closed, splitting quantity, fees, and realized PnL by each slice's share.
 
-    A kernel-synthesised forced exit (``__stop_exit__`` / ``__session_flat__``) closes
-    the **symbol-net** book, so it owns no slice of its own.  ``realized_pnl`` is
-    booked entirely on the *closing* fill, so journalling that fill under the sentinel
-    strips the losing leg out of the originating alpha's evidence: every per-alpha
-    estimator groups by ``strategy_id``
+    That distinction matters because ``realized_pnl`` is booked entirely on the
+    *closing* fill.  Journalling a symbol-net close under the order's own
+    ``strategy_id`` strips the closing leg out of every other holder's evidence:
+    each per-alpha estimator groups by ``strategy_id``
     (:func:`~feelies.forensics.edge_calibration.build_edge_calibrations`,
     :func:`~feelies.forensics.cost_survival.per_alpha_cost_survival`,
-    :class:`~feelies.forensics.decay_detector.DecayDetector`), so the alpha ends up
-    measured on its surviving trades only.  That biases realized edge upward — a
-    stop-loss fires on losers, so the omission is systematically favourable — and on a
-    stop-heavy tape it inverts the sign of the measured edge, which then feeds
-    promotion and quarantine gates (Inv-3 evidence, Inv-4 decay, Inv-13 provenance).
+    :class:`~feelies.forensics.decay_detector.DecayDetector`), so an alpha ends up
+    measured on its surviving trades only.  For a stop-loss the omission is
+    systematically favourable — stops fire on losers — and on a stop-heavy tape it
+    inverts the sign of the measured edge, which then feeds the promotion and
+    quarantine gates (Inv-3 evidence, Inv-4 decay, Inv-13 provenance).
 
-    Emit one row per slice the exit actually closed instead, splitting quantity, fees,
-    and realized PnL by each slice's share of the fill.  The synthetic author stays
-    recoverable via ``metadata["forced_exit_strategy_id"]``, alongside the existing
+    Three author families reach the symbol-net branch: the kernel's synthetic
+    ``__stop_exit__`` / ``__session_flat__``, the RISK-layer hazard controller
+    (whose exit flattens the whole symbol though it carries the triggering policy's
+    ``strategy_id``), and aggregate flattens with no ``strategy_id`` at all.  The
+    order's own author stays recoverable via
+    ``metadata["forced_exit_strategy_id"]``, alongside the existing
     ``order_reason`` / ``order_source_layer`` provenance.
 
-    Falls back to the single sentinel row when nothing was attributed (no slice book
-    wired, or no strategy held the symbol): a row with the synthetic ``strategy_id``
-    still beats dropping the fill from the journal.
+    Falls back to a single row under the order's ``strategy_id`` when nothing was
+    attributed (no slice book wired, or no strategy held the symbol): a row with the
+    wrong owner still beats dropping the fill from the journal.
     """
     base_metadata = {
         "order_reason": order.reason,
         "order_source_layer": order.source_layer,
     }
     total_abs = sum(abs(qty) for _sid, qty, _leg_fees in attributed_legs)
-    if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES or total_abs <= 0:
+    if _order_owns_one_slice(order) or total_abs <= 0:
         return [
             _TradeJournalLeg(
                 strategy_id=order.strategy_id,
