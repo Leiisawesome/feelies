@@ -106,7 +106,6 @@ class BasicRiskEngine:
         self._config = config
         self._regime_states = regime_states
         self._high_water_mark = config.account_equity
-        self._realized_pnl = Decimal("0")
         self._regime_scale_map: dict[str, float] = {
             "vol_breakout": config.regime_vol_breakout_scale,
             "compression_clustering": config.regime_compression_scale,

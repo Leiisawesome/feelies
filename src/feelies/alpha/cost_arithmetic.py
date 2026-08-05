@@ -75,8 +75,14 @@ class CostArithmetic:
         return self.half_spread_bps + self.impact_bps + self.fee_bps
 
     @property
-    def round_trip_cost_bps(self) -> float:
-        """Round-trip cost estimate for the Inv-12 survival comparison.
+    def declared_round_trip_cost_bps(self) -> float:
+        """Declaration-time round-trip cost estimate for the Inv-12 comparison.
+
+        Named ``declared_`` to keep it distinct from
+        :func:`feelies.execution.position_manager.round_trip_cost_bps`, the
+        *runtime* model the B4 gate actually prices against.  This one is alpha
+        metadata derived from the YAML and does not size or gate anything at
+        runtime; conflating the two would read a static disclosure as a live cost.
 
         When ``cost_basis == "one_way"`` (the default) the disclosed
         components describe a single crossing, so the round-trip estimate

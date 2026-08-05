@@ -260,9 +260,20 @@ class PlatformConfig:
     # one zero — never a two-sided contest between opposing convictions, which is
     # the case netting exists for and the case most likely to diverge.
     #
-    # Before flipping: decide which semantics is wanted when the winner says flat
-    # and a live target disagrees, then re-measure on data where a second alpha
-    # actually takes a side.
+    # And note what this flag is *for*: netting applies to the standalone-SIGNAL
+    # path, where arbitration picks one winner per tick.  `configs/bt_multialpha.yaml`
+    # states plainly that standalone mode is "NOT FOR PRODUCTION / LIVE CAPITAL"
+    # and that production multi-alpha books must use a PORTFOLIO alpha with
+    # `depends_on_signals`, which routes through CompositionEngine and
+    # `check_sized_intent` instead and never consults the netter.  That path is
+    # covered (tests/integration/test_xsect_v1_e2e.py, test_mixed_mechanism_e2e.py).
+    #
+    # So this shadow improves a path production is told not to use.  Before
+    # spending more on it, decide whether the standalone multi-alpha path is
+    # supported at all; if it is not, retiring the netter is the cheaper answer
+    # than flipping it.  If it is, decide which semantics is wanted when the
+    # winner says flat and a live target disagrees, then re-measure on data where
+    # a second SIGNAL alpha actually takes a side.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 

@@ -641,9 +641,14 @@ class TestOutOfBandSettleIsDeliberate:
     ``bus.publish(quote)`` while micro sits in ``MARKET_EVENT_RECEIVED``.  Making
     it walk M8 -> M9 from there would be an illegal transition.
 
-    The cost is a forensic gap: ``StateTransition`` events do not cover mandated
-    exits, so provenance for those orders comes from the order stream and the
-    ``forced_exit_*`` alerts instead (Inv-13).
+    This costs less than it first appears.  ``StateTransition`` has no consumer
+    anywhere in ``forensics/``, ``harness/`` or ``monitoring/`` — it is an
+    operator/debug stream, not the provenance record.  Inv-13 for a mandated exit
+    is carried by the durable chain instead: the ``OrderRequest``
+    (``source_layer="RISK"`` plus its reason token), the ``OrderAck``, and the
+    ``TradeRecord`` whose metadata keeps ``order_reason``,
+    ``order_source_layer`` and ``forced_exit_strategy_id``.
+    ``forensics/gate_close_attribution.py`` reconstructs from exactly those.
     """
 
     def test_micro_state_machine_forbids_the_walk_the_bridge_would_need(self) -> None:
