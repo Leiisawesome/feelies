@@ -103,6 +103,7 @@ _FILE_OWNERS: dict[str, str] = {
     "cli/main.py": "audit_harness_cli",
     "cli/__main__.py": "audit_harness_cli",
     "cli/promote.py": "audit_alpha_lifecycle",
+    "cli/forensics.py": "audit_forensics",
 }
 
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +18,10 @@ from feelies.core.events import (
     Event,
     OrderAck,
     OrderRequest,
+    Side,
     Signal,
 )
+from feelies.storage.trade_journal import TradeRecord
 
 
 def _event_to_dict(event: Event) -> dict[str, Any]:
@@ -154,7 +158,17 @@ class PaperSessionRecorder:
 
 
 def trade_records_to_dicts(records: list[Any]) -> list[dict[str, Any]]:
-    """Convert TradeRecord objects to JSON-serialisable dicts."""
+    """Convert TradeRecord objects to JSON-serialisable dicts.
+
+    ``realized_pnl`` and ``fees`` are the two fields post-trade cost analysis
+    cannot work without: ``per_alpha_cost_survival`` computes an alpha's net as
+    ``sum(realized_pnl) - sum(fees)``, and the cost circuit breaker trips on that
+    net.  Omitting them made the persisted session forensically incomplete — the
+    breaker could not run against a finished paper session at all.
+
+    Decimals are serialised as strings so cent-level PnL survives the round-trip
+    without float drift.
+    """
     out: list[dict[str, Any]] = []
     for rec in records:
         out.append(
@@ -168,6 +182,41 @@ def trade_records_to_dicts(records: list[Any]) -> list[dict[str, Any]]:
                 "fill_price": str(rec.fill_price),
                 "fill_timestamp_ns": rec.fill_timestamp_ns,
                 "cost_bps": float(rec.cost_bps) if rec.cost_bps is not None else None,
+                "realized_pnl": str(rec.realized_pnl),
+                "fees": str(rec.fees),
             }
+        )
+    return out
+
+
+def trade_records_from_dicts(rows: Iterable[Mapping[str, Any]]) -> list[TradeRecord]:
+    """Rebuild ``TradeRecord``s from a persisted ``fills.jsonl``.
+
+    The inverse of :func:`trade_records_to_dicts`, for operator tooling that
+    analyses a finished session (see ``feelies forensics circuit-breaker``).
+    Fields the session file does not carry are reconstructed as neutral defaults;
+    only those cost analysis actually reads are load-bearing.
+    """
+    out: list[TradeRecord] = []
+    for row in rows:
+        fill_price = row.get("fill_price")
+        cost_bps = row.get("cost_bps")
+        out.append(
+            TradeRecord(
+                order_id=str(row.get("order_id", "")),
+                symbol=str(row.get("symbol", "")),
+                strategy_id=str(row.get("strategy_id", "")),
+                side=Side[str(row["side"])] if row.get("side") else Side.BUY,
+                requested_quantity=int(row.get("requested_quantity", 0)),
+                filled_quantity=int(row.get("filled_quantity", 0)),
+                fill_price=Decimal(str(fill_price)) if fill_price is not None else None,
+                signal_timestamp_ns=int(row.get("fill_timestamp_ns") or 0),
+                submit_timestamp_ns=int(row.get("fill_timestamp_ns") or 0),
+                fill_timestamp_ns=int(row.get("fill_timestamp_ns") or 0),
+                cost_bps=Decimal(str(cost_bps)) if cost_bps is not None else Decimal("0"),
+                fees=Decimal(str(row.get("fees", "0"))),
+                realized_pnl=Decimal(str(row.get("realized_pnl", "0"))),
+                correlation_id=str(row.get("correlation_id", "")),
+            )
         )
     return out

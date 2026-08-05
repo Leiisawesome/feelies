@@ -14,7 +14,9 @@ Exit-code convention:
   ``2``  data error (corrupt ledger entries, malformed YAML config)
   ``3``  validation failed (e.g. ``replay-evidence`` found a
                             transition whose recorded evidence
-                            no longer satisfies current thresholds)
+                            no longer satisfies current thresholds), or
+                            ``forensics circuit-breaker`` recommends a
+                            quarantine that was not applied
 
 Stable codes matter for CI integrations: an operator wiring the CLI
 into a deployment gate can ``feelies promote validate --ledger
@@ -41,8 +43,10 @@ def _build_parser(argv: Sequence[str] | None = None) -> argparse.ArgumentParser:
         prog="feelies",
         description=(
             "Operator command-line surface for the feelies trading "
-            "platform.  Read-only forensic tooling — does not perturb "
-            "replay determinism (audit A-DET-02)."
+            "platform.  Forensic tooling reads durable session artifacts and "
+            "does not perturb replay determinism (audit A-DET-02).  Read-only "
+            "except ``forensics circuit-breaker --apply``, which demotes a "
+            "bleeding LIVE alpha to QUARANTINED."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
@@ -62,6 +66,19 @@ def _build_parser(argv: Sequence[str] | None = None) -> argparse.ArgumentParser:
         ),
     )
     promote.register(promote_parser)
+
+    from feelies.cli import forensics
+
+    forensics_parser = subparsers.add_parser(
+        "forensics",
+        help="Post-trade analysis over a finished session.",
+        description=(
+            "Subcommands that score a completed session's fills.  Read-only by "
+            "default; ``circuit-breaker --apply`` is the one path that writes "
+            "lifecycle state, and it only tightens (LIVE -> QUARANTINED)."
+        ),
+    )
+    forensics.register(forensics_parser)
 
     selected = argv[0] if argv else None
     if selected == "backtest":
