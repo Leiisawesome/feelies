@@ -36,7 +36,8 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.identifiers import SequenceGenerator
-from feelies.risk.sized_intent_orders import build_sized_intent_orders, resolve_mark
+from feelies.execution.sized_intent_legs import resolve_mark
+from feelies.risk.sized_intent_orders import build_sized_intent_orders
 from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
 from feelies.execution.trading_session import (

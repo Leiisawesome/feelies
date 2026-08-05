@@ -80,6 +80,7 @@ _FILE_OWNERS: dict[str, str] = {
     "execution/intent.py": "audit_position_management",
     "execution/position_manager.py": "audit_position_management",
     "execution/portfolio_netter.py": "audit_position_management",
+    "execution/sized_intent_legs.py": "audit_position_management",
     "execution/live_router.py": "audit_live_execution",
     "execution/paper_backend.py": "audit_live_execution",
     "execution/order_state.py": "audit_live_execution",
