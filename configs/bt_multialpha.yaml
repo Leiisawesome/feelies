@@ -32,6 +32,16 @@ symbols:
 # are gate literals, not tunable parameters).  A one-alpha "multi-alpha" config
 # silently exercised nothing: cross-alpha arbitration and the portfolio-netting
 # shadow both need two live standing targets on one symbol.
+#
+# Known limit of this dataset: only sig_benign_midcap_v1 ever takes a *direction*
+# on the cached APP sessions.  sig_kyle_drift_v1 and sig_hawkes_burst_v1 emit
+# FLAT exclusively, so kyle contributes a zero standing target and the overlap
+# this config produces is "one real target vs one zero", not a two-sided
+# directional contest.  A FLAT is additionally dropped by
+# ``is_redundant_gate_close_flat`` whenever the book is already flat, which is
+# why some sessions show two emitting alphas and still zero contended ticks.
+# Closing that gap needs data on which a second alpha takes a side, or a
+# purpose-built research fixture alpha — not another config tweak.
 alpha_specs:
   - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
   - alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml

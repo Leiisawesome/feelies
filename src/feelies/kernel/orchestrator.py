@@ -5216,11 +5216,11 @@ class Orchestrator:
 
         * ``layer != "SIGNAL"`` — PORTFOLIO order flow uses
           ``SizedPositionIntent``, not this handler.
-        * ``strategy_id == "__stop_exit__"`` — synthetic stop-loss signals
-          are computed inline at M4 by ``_check_stop_exit`` and merged
-          there; routing them through the bus would require the producer
-          to mint sequence numbers from the right generator and would
-          double-fire.
+        * ``strategy_id == "__stop_exit__"`` — a legacy guard.  Stop exits are
+          authored by :class:`~feelies.risk.stop_exit.StopExitController` as
+          RISK-layer ``OrderRequest`` events and never reach this handler; the
+          check remains so a stale producer emitting the old sentinel ``Signal``
+          cannot double-fire.
         * ``alpha_id`` listed in any registered PORTFOLIO's
           ``depends_on_signals`` — these Signals are aggregated by
           ``CompositionEngine`` into ``SizedPositionIntent`` events.

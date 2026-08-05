@@ -251,13 +251,18 @@ class PlatformConfig:
     # 50** — sig_benign_midcap_v1 won arbitration asking to close while
     # sig_kyle_drift_v1 still held a standing long.
     #
-    # That is a directional disagreement, not a rounding artefact, and it is the
-    # netter working as designed: winner-take-all discards the loser's view
-    # entirely, netting keeps it budget-weighted.  So flipping this is a
-    # deliberate change to what the book holds, not a no-op cleanup.  Before
-    # flipping, decide which semantics is wanted when the winner says flat and a
-    # live target disagrees, and re-measure over a window with more than two
-    # alphas and one symbol.
+    # That is a directional disagreement, not a rounding artefact, so flipping
+    # this changes what the book holds rather than being a no-op cleanup.
+    #
+    # But treat the sweep as a lower bound, not a clean bill of health: on that
+    # dataset only sig_benign_midcap_v1 ever takes a direction (kyle and hawkes
+    # emit FLAT exclusively), so the measured overlap is one real target against
+    # one zero — never a two-sided contest between opposing convictions, which is
+    # the case netting exists for and the case most likely to diverge.
+    #
+    # Before flipping: decide which semantics is wanted when the winner says flat
+    # and a live target disagrees, then re-measure on data where a second alpha
+    # actually takes a side.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
