@@ -1797,16 +1797,11 @@ class Orchestrator:
                 trigger="portfolio_poll_acks",
                 correlation_id=correlation_id,
             )
-            expected_order_ids = {o.order_id for o in orders}
-            acks = self._poll_order_router_acks(expected_order_ids)
-            self._publish_and_apply_order_acks(acks)
-
-            self._micro.transition(
-                MicroState.POSITION_UPDATE,
-                trigger="portfolio_reconcile",
-                correlation_id=correlation_id,
+            self._settle_router_acks(
+                correlation_id,
+                expected_order_ids={o.order_id for o in orders},
+                position_update_trigger="portfolio_reconcile",
             )
-            self._reconcile_fills(acks, correlation_id)
 
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1843,9 +1838,10 @@ class Orchestrator:
             )
             self._backend.order_router.submit(order)
             self._bus.publish(order)
-        acks = self._poll_order_router_acks({o.order_id for o in orders})
-        self._publish_and_apply_order_acks(acks)
-        self._reconcile_fills(acks, correlation_id)
+        self._settle_router_acks(
+            correlation_id,
+            expected_order_ids={o.order_id for o in orders},
+        )
 
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
@@ -2544,16 +2540,12 @@ class Orchestrator:
             trigger="order_submitted",
             correlation_id=cid,
         )
-        acks = self._poll_order_router_acks({order.order_id})
-        self._publish_and_apply_order_acks(acks)
-
         # ── M8 → M9: POSITION_UPDATE ───────────────────────────
-        self._micro.transition(
-            MicroState.POSITION_UPDATE,
-            trigger="order_acknowledged",
-            correlation_id=cid,
+        self._settle_router_acks(
+            cid,
+            expected_order_ids={order.order_id},
+            position_update_trigger="order_acknowledged",
         )
-        self._reconcile_fills(acks, cid)
 
         # ── M9 → M10: LOG_AND_METRICS ──────────────────────────
         self._finalize_tick(t_wall_start, cid, "position_updated")
@@ -3149,9 +3141,7 @@ class Orchestrator:
                     continue
 
                 self._bus.publish(order)
-                acks = self._poll_order_router_acks({order_id})
-                self._publish_and_apply_order_acks(acks)
-                self._reconcile_fills(acks, correlation_id)
+                acks = self._settle_router_acks(correlation_id, expected_order_ids={order_id})
                 # A reject / zero-fill ack still leaves the position open.
                 # Surface it as a failure so the residual alert sees it.
                 non_fill_acks = [
@@ -3741,14 +3731,11 @@ class Orchestrator:
                 trigger="reverse_exit_submit_failed",
                 correlation_id=cid,
             )
-            acks = self._poll_order_router_acks({exit_order.order_id})
-            self._publish_and_apply_order_acks(acks)
-            self._micro.transition(
-                MicroState.POSITION_UPDATE,
-                trigger="reverse_acks_after_failed_exit_submit",
-                correlation_id=cid,
+            self._settle_router_acks(
+                cid,
+                expected_order_ids={exit_order.order_id},
+                position_update_trigger="reverse_acks_after_failed_exit_submit",
             )
-            self._reconcile_fills(acks, cid)
             self._finalize_tick(t_wall_start, cid, "reverse_aborted_exit_submit_failed")
             return
 
@@ -3780,16 +3767,12 @@ class Orchestrator:
         expected_order_ids = {exit_order.order_id}
         if entry_order is not None and entry_submitted_ok:
             expected_order_ids.add(entry_order.order_id)
-        acks = self._poll_order_router_acks(expected_order_ids)
-        self._publish_and_apply_order_acks(acks)
-
         # ── M8 → M9: POSITION_UPDATE ──────────────────────────────
-        self._micro.transition(
-            MicroState.POSITION_UPDATE,
-            trigger="reverse_acks_received",
-            correlation_id=cid,
+        self._settle_router_acks(
+            cid,
+            expected_order_ids=expected_order_ids,
+            position_update_trigger="reverse_acks_received",
         )
-        self._reconcile_fills(acks, cid)
 
         if self._signal_order_trace_sink is not None:
             leg = (
@@ -4047,9 +4030,7 @@ class Orchestrator:
             self._prune_terminal_orders()
             return True
         accepted = cancel_fn(order_id)
-        acks = self._poll_order_router_acks({order_id})
-        self._publish_and_apply_order_acks(acks)
-        self._reconcile_fills(acks, order.correlation_id)
+        self._settle_router_acks(order.correlation_id, expected_order_ids={order_id})
         # Accepted broker cancels resolve asynchronously; rejected ones resolve locally.
         if not accepted and order_id in self._active_orders:
             sm_post = self._active_orders[order_id][0]
@@ -4193,10 +4174,55 @@ class Orchestrator:
             for order_id, (sm, _, order) in self._active_orders.items()
             if order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
         }
-        cancel_acks = self._poll_order_router_acks(cancel_order_ids)
-        if cancel_acks:
-            self._publish_and_apply_order_acks(cancel_acks)
-            self._reconcile_fills(cancel_acks, cid)
+        self._settle_router_acks(
+            cid,
+            expected_order_ids=cancel_order_ids,
+            settle_empty=False,
+        )
+
+    def _settle_router_acks(
+        self,
+        correlation_id: str,
+        *,
+        expected_order_ids: set[str] | None = None,
+        settle_empty: bool = True,
+        position_update_trigger: str | None = None,
+    ) -> list[OrderAck]:
+        """Drain router acks, publish them, and reconcile the resulting fills.
+
+        The one place the post-submission sequence lives.  It was open-coded at
+        eleven call sites, so adding a step meant finding all eleven and missing
+        one produced a path that submitted orders without settling them.
+
+        Two variations are real and are therefore parameters rather than
+        smoothed away:
+
+        ``position_update_trigger`` walks M8 -> M9 between publishing the acks
+        and reconciling them.  Only the paths that own a micro-SM walk pass it;
+        the RISK-layer bridge and the emergency flatten deliberately do not (see
+        ``_on_bus_hazard_order``).
+
+        ``settle_empty=False`` skips the whole settle on an empty drain.  That is
+        not cosmetic: :meth:`_reconcile_fills` ends with an unconditional
+        :meth:`_prune_terminal_orders`, so settling an empty ack list still
+        retires terminal orders from ``_active_orders`` — which is what
+        :meth:`_has_pending_order_for_symbol` reads.  Callers that polled
+        speculatively keep the skip.
+
+        Returns the drained acks so callers can act on them further.
+        """
+        acks = self._poll_order_router_acks(expected_order_ids)
+        if not acks and not settle_empty:
+            return acks
+        self._publish_and_apply_order_acks(acks)
+        if position_update_trigger is not None:
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger=position_update_trigger,
+                correlation_id=correlation_id,
+            )
+        self._reconcile_fills(acks, correlation_id)
+        return acks
 
     def _poll_order_router_acks(
         self,
@@ -4376,10 +4402,8 @@ class Orchestrator:
         buffer (``_deferred_router_acks``) is honoured.
         """
         t0 = time.perf_counter_ns()
-        acks = self._poll_order_router_acks()
+        acks = self._settle_router_acks(correlation_id, settle_empty=False)
         if acks:
-            self._publish_and_apply_order_acks(acks)
-            self._reconcile_fills(acks, correlation_id)
             # Escalate an unfilled working exit to a market fallback
             # unfilled to a guaranteed MARKET fallback (after reconcile, so
             # the residual reflects this drain's fills).
@@ -5563,9 +5587,7 @@ class Orchestrator:
                 ),
             )
             return
-        acks = self._poll_order_router_acks({event.order_id})
-        self._publish_and_apply_order_acks(acks)
-        self._reconcile_fills(acks, event.correlation_id)
+        self._settle_router_acks(event.correlation_id, expected_order_ids={event.order_id})
 
     # ── Configuration and data integrity ────────────────────────────
 
@@ -5967,9 +5989,7 @@ class Orchestrator:
             )
             self._backend.order_router.submit(order)
             self._bus.publish(order)
-            acks = self._poll_order_router_acks({order_id})
-            self._publish_and_apply_order_acks(acks)
-            self._reconcile_fills(acks, correlation_id)
+            self._settle_router_acks(correlation_id, expected_order_ids={order_id})
         except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
             logger.exception(
                 "Force-flatten on %s failed for symbol=%s (qty=%d, side=%s); "
