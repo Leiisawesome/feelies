@@ -52,6 +52,7 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/promotion_evidence.py": "audit_alpha_lifecycle",
     "alpha/registry.py": "audit_alpha_lifecycle",
     "alpha/loader.py": "audit_alpha_lifecycle",
+    "alpha/dependency_graph.py": "audit_alpha_lifecycle",
     "alpha/validation.py": "audit_alpha_lifecycle",
     "alpha/discovery.py": "audit_alpha_lifecycle",
     "alpha/layer_validator.py": "audit_alpha_lifecycle",
