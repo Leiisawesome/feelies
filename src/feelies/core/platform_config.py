@@ -243,6 +243,21 @@ class PlatformConfig:
 
     # Net standing alpha targets instead of trading only the arbitrated winner.
     # Targets expire after net_staleness_k × their horizon.
+    #
+    # Still shadow-only, and measured rather than assumed.  Sweeping the
+    # ``bt_multialpha`` harness over all 15 cached APP sessions (7304 ticks with
+    # two live standing targets on one symbol) produced exactly one divergence,
+    # on 2026-06-03: winner-take-all wanted **flat** while the net wanted **long
+    # 50** — sig_benign_midcap_v1 won arbitration asking to close while
+    # sig_kyle_drift_v1 still held a standing long.
+    #
+    # That is a directional disagreement, not a rounding artefact, and it is the
+    # netter working as designed: winner-take-all discards the loser's view
+    # entirely, netting keeps it budget-weighted.  So flipping this is a
+    # deliberate change to what the book holds, not a no-op cleanup.  Before
+    # flipping, decide which semantics is wanted when the winner says flat and a
+    # live target disagrees, and re-measure over a window with more than two
+    # alphas and one symbol.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
