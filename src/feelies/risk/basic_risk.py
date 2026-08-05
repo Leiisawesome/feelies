@@ -51,7 +51,7 @@ from feelies.risk.buying_power import (
     buying_power_limit,
 )
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
-from feelies.services.regime_engine import RegimeEngine
+from feelies.services.regime_state_cache import RegimeStateCache
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,7 +92,7 @@ class BasicRiskEngine:
     def __init__(
         self,
         config: RiskConfig,
-        regime_engine: RegimeEngine | None = None,
+        regime_states: RegimeStateCache | None = None,
         *,
         bus: EventBus | None = None,
         alert_sequence_generator: SequenceGenerator | None = None,
@@ -103,7 +103,7 @@ class BasicRiskEngine:
         warn_on_inert_entry_gates: bool = False,
     ) -> None:
         self._config = config
-        self._regime_engine = regime_engine
+        self._regime_states = regime_states
         self._high_water_mark = config.account_equity
         self._realized_pnl = Decimal("0")
         self._regime_scale_map: dict[str, float] = {
@@ -728,14 +728,17 @@ class BasicRiskEngine:
         Missing posteriors and unknown states use the minimum scale. A missing
         regime engine means scaling was explicitly disabled and returns 1.0.
         """
-        if self._regime_engine is None:
+        if self._regime_states is None:
             return 1.0
 
-        posteriors = self._regime_engine.current_state(symbol)
-        if not posteriors:
+        # Read the *published* snapshot, not the live engine: risk and the signal
+        # layer must scale and gate on the same announced state (Inv-8).
+        state = self._regime_states.latest(symbol)
+        if state is None or not state.posteriors:
             return self._regime_scale_default
 
-        state_names = list(self._regime_engine.state_names)
+        posteriors = state.posteriors
+        state_names = list(state.state_names)
         default = self._regime_scale_default
         ev = sum(
             posteriors[i] * self._regime_scale_map.get(state_names[i], default)

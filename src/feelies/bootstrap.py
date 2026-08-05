@@ -121,6 +121,7 @@ from feelies.risk.edge_weighted_sizer import (
 )
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
+from feelies.services.regime_state_cache import RegimeStateCache
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -322,9 +323,13 @@ def build_platform(
         overnight_multiplier=_decimal(config.risk_margin_overnight_buying_power_multiplier),
     )
     trading_session_bounds = _resolve_trading_session_bounds(config)
+    # One read path for regime: consumers read what was published, never the
+    # live engine (see feelies.services.regime_state_cache).
+    regime_states = RegimeStateCache(bus=bus)
+    regime_states.attach()
     risk_engine = BasicRiskEngine(
         config=risk_config,
-        regime_engine=regime_engine,
+        regime_states=regime_states,
         bus=bus,
         alert_sequence_generator=risk_alert_seq,
         pdt_constraint=pdt_constraint,
@@ -407,7 +412,7 @@ def build_platform(
     feature_snapshots = InMemoryFeatureSnapshotStore()
     # Size and limit scales are sequential controls sourced from one config.
     base_sizer = BudgetBasedSizer(
-        regime_engine=regime_engine,
+        regime_states=regime_states,
         regime_factors={
             "vol_breakout": risk_config.regime_vol_breakout_scale,
             "compression_clustering": risk_config.regime_compression_scale,

@@ -20,7 +20,7 @@ from typing import Protocol
 
 from feelies.alpha.module import AlphaRiskBudget
 from feelies.core.events import Signal
-from feelies.services.regime_engine import RegimeEngine
+from feelies.services.regime_state_cache import RegimeStateCache
 
 
 class PositionSizer(Protocol):
@@ -69,10 +69,10 @@ class BudgetBasedSizer:
 
     def __init__(
         self,
-        regime_engine: RegimeEngine | None = None,
+        regime_states: RegimeStateCache | None = None,
         regime_factors: dict[str, float] | None = None,
     ) -> None:
-        self._regime_engine = regime_engine
+        self._regime_states = regime_states
         self._regime_factors = regime_factors or dict(self._DEFAULT_REGIME_FACTORS)
         self._regime_factor_default = (
             min(self._regime_factors.values()) if self._regime_factors else 1.0
@@ -106,14 +106,16 @@ class BudgetBasedSizer:
 
     def _get_regime_factor(self, symbol: str) -> float:
         # No engine means no scaling; missing posterior means the tightest scale.
-        if self._regime_engine is None:
+        if self._regime_states is None:
             return 1.0
 
-        posteriors = self._regime_engine.current_state(symbol)
-        if not posteriors:
+        # Read the *published* snapshot, not the live engine (see basic_risk).
+        state = self._regime_states.latest(symbol)
+        if state is None or not state.posteriors:
             return self._regime_factor_default
 
-        state_names = list(self._regime_engine.state_names)
+        posteriors = state.posteriors
+        state_names = list(state.state_names)
         default = self._regime_factor_default
         ev = sum(
             posteriors[i] * self._regime_factors.get(state_names[i], default)

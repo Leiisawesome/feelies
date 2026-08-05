@@ -485,9 +485,7 @@ class Orchestrator:
             intent_translator if intent_translator is not None else SignalPositionTranslator()
         )
         self._position_sizer: PositionSizer = (
-            position_sizer
-            if position_sizer is not None
-            else BudgetBasedSizer(regime_engine=regime_engine)
+            position_sizer if position_sizer is not None else BudgetBasedSizer()
         )
         # Shadow the planner without affecting orders, events, or journals.
         self._position_manager = position_manager
