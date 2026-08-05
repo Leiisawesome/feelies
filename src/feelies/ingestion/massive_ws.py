@@ -57,6 +57,7 @@ class MassiveLiveFeed:
         "_thread",
         "_stop_event",
         "_loop",
+        "_main_task",
         "_events_dropped",
     )
 
@@ -80,6 +81,7 @@ class MassiveLiveFeed:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._main_task: asyncio.Task[None] | None = None
         self._events_dropped: int = 0
 
     # ── MarketDataSource protocol ────────────────────────────────────
@@ -139,10 +141,22 @@ class MassiveLiveFeed:
         self._thread.start()
 
     def stop(self) -> None:
-        """Signal shutdown and wait for the background thread to exit."""
+        """Signal shutdown and wait for the background thread to exit.
+
+        Cancels the connection task rather than stopping the loop underneath it.
+        ``loop.stop()`` returns from ``run_until_complete`` with the task still
+        pending, so the subsequent ``loop.close()`` left the coroutine to be
+        finalised by the garbage collector while suspended inside
+        ``async with websockets.connect(...)`` — surfacing as ``RuntimeError:
+        coroutine ignored GeneratorExit`` and skipping the websocket's own
+        ``__aexit__``.  Cancellation unwinds it properly:
+        ``_connect_with_retry`` already returns on ``CancelledError``.
+        """
         self._stop_event.set()
-        if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._loop.stop)
+        loop = self._loop
+        task = self._main_task
+        if loop is not None and task is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(task.cancel)
         self._enqueue_sentinel_nowait()
         if self._thread is not None:
             self._thread.join(timeout=10.0)
@@ -204,16 +218,42 @@ class MassiveLiveFeed:
 
     def _run_loop(self) -> None:
         """Entry point for the background thread."""
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        asyncio.set_event_loop(loop)
         try:
-            self._loop.run_until_complete(self._connect_with_retry())
+            self._main_task = loop.create_task(self._connect_with_retry())
+            loop.run_until_complete(self._main_task)
+        except asyncio.CancelledError:
+            pass
         except Exception:
             logger.exception("massive_ws: event loop terminated unexpectedly")
         finally:
-            self._loop.close()
+            self._shutdown_loop(loop)
+            self._main_task = None
             self._loop = None
             self._enqueue_sentinel_nowait()
+
+    @staticmethod
+    def _shutdown_loop(loop: asyncio.AbstractEventLoop) -> None:
+        """Drain the loop before closing it.
+
+        Closing a loop that still owns pending tasks or live async generators
+        leaves their frames to the garbage collector, which finalises them
+        outside any running loop.  Cancel what is left, let it unwind, then shut
+        the async generators down — the sequence ``asyncio.run`` performs.
+        """
+        try:
+            pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:
+            logger.exception("massive_ws: error draining event loop during shutdown")
+        finally:
+            loop.close()
 
     async def _connect_with_retry(self) -> None:
         """Connect to the WebSocket with exponential backoff on failure."""
