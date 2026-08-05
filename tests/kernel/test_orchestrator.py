@@ -2579,189 +2579,6 @@ class _EmptyPlanManager:
         return PositionPlan()
 
 
-class TestPositionManagerShadow:
-    """The shadow planner runs alongside the translator path with zero
-    divergence, drives nothing, and the harness genuinely detects a
-    mismatch when one exists."""
-
-    def _build(
-        self,
-        clock: SimulatedClock,
-        *,
-        manager,
-        sink,
-        position_store=None,
-    ) -> tuple[Orchestrator, EventBus]:
-        bus = EventBus()
-        pos_store = position_store or MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
-        orch = Orchestrator(
-            clock=clock,
-            bus=bus,
-            backend=ExecutionBackend(
-                market_data=_StubMarketData(),
-                order_router=bt_router,
-                mode="BACKTEST",
-            ),
-            risk_engine=_StubRiskEngine(),
-            position_store=pos_store,
-            event_log=InMemoryEventLog(),
-            metric_collector=_NoOpMetricCollector(),
-            position_manager=manager,
-            position_manager_shadow_sink=sink,
-        )
-        return orch, bus
-
-    def test_legacy_manager_zero_divergence_entry_reverse_exit(self) -> None:
-        from feelies.execution.position_manager import (
-            LegacyPositionManager,
-            PlanDivergence,
-        )
-
-        clock = SimulatedClock(start_ns=1000)
-        sink: list[PlanDivergence] = []
-        pos_store = MemoryPositionStore()
-        orch, bus = self._build(
-            clock,
-            manager=LegacyPositionManager(),
-            sink=sink,
-            position_store=pos_store,
-        )
-
-        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
-        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
-        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
-
-        def emit(quote: NBBOQuote) -> None:
-            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
-            if sig is not None:
-                bus.publish(
-                    replace(
-                        sig,
-                        timestamp_ns=quote.timestamp_ns,
-                        correlation_id=quote.correlation_id,
-                        sequence=quote.sequence,
-                    )
-                )
-
-        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
-        _boot_to_backtest(orch)
-
-        for seq in (1, 2, 3):
-            q = _make_quote(ts=1000 + seq, seq=seq)
-            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-            orch._process_tick(q)
-
-        # Translator path drove the book through entry → reverse → exit …
-        assert pos_store.get("AAPL").quantity == 0
-        # … and the shadow planner never disagreed.
-        assert sink == [], f"unexpected divergence: {sink}"
-
-    def test_shadow_harness_detects_real_divergence(self) -> None:
-        # A manager that plans nothing must be caught diverging on an entry.
-        from feelies.execution.position_manager import PlanDivergence
-
-        clock = SimulatedClock(start_ns=1000)
-        sink: list[PlanDivergence] = []
-        orch, bus = self._build(clock, manager=_EmptyPlanManager(), sink=sink)
-        _publish_signal_on_quote(
-            bus,
-            _make_signal(_make_quote(), SignalDirection.LONG),
-        )
-        _boot_to_backtest(orch)
-        q = _make_quote()
-        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-        orch._process_tick(q)
-
-        assert len(sink) == 1
-        assert sink[0].legacy_intent == "ENTRY_LONG"
-        assert sink[0].planner_quantity == 0
-
-    def test_shadow_is_noop_without_sink(self) -> None:
-        # Manager wired but no sink → harness is inert, book still moves.
-        from feelies.execution.position_manager import LegacyPositionManager
-
-        clock = SimulatedClock(start_ns=1000)
-        orch, bus = self._build(
-            clock,
-            manager=LegacyPositionManager(),
-            sink=None,
-        )
-        _publish_signal_on_quote(
-            bus,
-            _make_signal(_make_quote(), SignalDirection.LONG),
-        )
-        _boot_to_backtest(orch)
-        q = _make_quote()
-        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-        orch._process_tick(q)
-        assert orch._positions.get("AAPL").quantity > 0
-
-
-class TestPositionManagerDrive:
-    """The flip: driving the decision from the planner (drive=True) produces
-    byte-identical orders to the legacy translator (drive=False)."""
-
-    @staticmethod
-    def _run_scenario(*, drive: bool) -> list[tuple]:
-        from feelies.execution.position_manager import LegacyPositionManager
-
-        clock = SimulatedClock(start_ns=1000)
-        bus = EventBus()
-        orders: list[OrderRequest] = []
-        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
-        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
-        orch = Orchestrator(
-            clock=clock,
-            bus=bus,
-            backend=ExecutionBackend(
-                market_data=_StubMarketData(),
-                order_router=bt_router,
-                mode="BACKTEST",
-            ),
-            risk_engine=_StubRiskEngine(),
-            position_store=MemoryPositionStore(),
-            event_log=InMemoryEventLog(),
-            metric_collector=_NoOpMetricCollector(),
-            position_manager=LegacyPositionManager(),
-            position_manager_drive=drive,
-        )
-        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
-        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
-        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
-
-        def emit(quote: NBBOQuote) -> None:
-            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
-            if sig is not None:
-                bus.publish(
-                    replace(
-                        sig,
-                        timestamp_ns=quote.timestamp_ns,
-                        correlation_id=quote.correlation_id,
-                        sequence=quote.sequence,
-                    )
-                )
-
-        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
-        _boot_to_backtest(orch)
-
-        for seq in (1, 2, 3):
-            q = _make_quote(ts=1000 + seq, seq=seq)
-            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-            orch._process_tick(q)
-
-        return [
-            (o.order_id, o.side.name, o.quantity, o.order_type.name, str(o.limit_price))
-            for o in orders
-        ]
-
-    def test_drive_is_byte_identical_to_legacy(self) -> None:
-        legacy_orders = self._run_scenario(drive=False)
-        driven_orders = self._run_scenario(drive=True)
-        assert driven_orders, "scenario must submit at least one order"
-        assert driven_orders == legacy_orders
-
-
 class TestPositionManagerTrim:
     """A cost-aware trim can reduce a same-direction position."""
 
@@ -2789,7 +2606,6 @@ class TestPositionManagerTrim:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=enable_trim,
         )
         # LONG signal → default target 100 < current 150 → would trim 50.
@@ -2844,7 +2660,6 @@ class TestPositionManagerTrim:
             metric_collector=_NoOpMetricCollector(),
             cost_model=DefaultCostModel(DefaultCostModelConfig()),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=True,
             position_manager_trim_edge_gate_multiplier=1.0,
         )
@@ -2887,7 +2702,6 @@ class TestPositionManagerTrim:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=True,
             position_manager_urgency_exec=urgency_exec,
         )
@@ -3184,7 +2998,6 @@ class TestWorkingExitFallback:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=True,
             position_manager_urgency_exec=True,
         )
@@ -3437,7 +3250,6 @@ class TestNetDrive:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=LegacyPositionManager(),
-            position_manager_drive=True,
         )
         TestNetShadow._emit(bus, specs)
         _boot_to_backtest(orch)

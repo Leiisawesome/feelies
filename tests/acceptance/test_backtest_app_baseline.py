@@ -163,7 +163,11 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # field existed, bootstrap probed it with ``getattr`` and ``from_yaml`` rejected
 # it as an unknown key, so the forensics -> B4-gate loop was unreachable from
 # configuration and only the backtest CLI could supply factors (Inv-9).
-_BASELINE_CONFIG_HASH = "8923295b2fdfd474b3892ab2440084bc9d92c68953af941b796b4979c15a6fad"
+# Re-baselined again when ``position_manager_drive`` was removed: the planner is
+# now the only decision path, so the flag left the config surface and the
+# snapshot lost a key.  No configured value changed and no trade-path behaviour
+# moved — the flag's production default was already ``True``.
+_BASELINE_CONFIG_HASH = "16517106390472bcf90892fe144b09562e798a46c9069380e1600153bce31720"
 _BASELINE_NET_PNL = Decimal("363.34")
 _BASELINE_FILL_COUNT = 21
 

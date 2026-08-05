@@ -102,12 +102,10 @@ from feelies.execution.position_manager import (
     DesiredPosition,
     ExecStyle,
     MarketContext,
-    PlanDivergence,
     PlanLeg,
     PositionManager,
     PositionManagerConfig,
     PositionPlan,
-    compare_plan_to_intent,
     desired_from_signal,
     entry_edge_clears_cost,
     order_intent_from_plan,
@@ -459,8 +457,6 @@ class Orchestrator:
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
         position_manager: "PositionManager | None" = None,
-        position_manager_shadow_sink: "list[PlanDivergence] | None" = None,
-        position_manager_drive: bool = False,
         position_manager_enable_trim: bool = False,
         position_manager_trim_edge_gate_multiplier: float = 0.0,
         position_manager_urgency_exec: bool = False,
@@ -495,9 +491,6 @@ class Orchestrator:
         )
         # Shadow the planner without affecting orders, events, or journals.
         self._position_manager = position_manager
-        self._position_manager_shadow_sink = position_manager_shadow_sink
-        # When enabled, the planner supplies the live OrderIntent.
-        self._position_manager_drive = position_manager_drive
         # Allow cost-aware partial reductions when a same-direction target shrinks.
         self._position_manager_enable_trim = position_manager_enable_trim
         # Suppress trims while forward edge clears this cost multiple; 0 disables.
@@ -2144,7 +2137,7 @@ class Orchestrator:
         current_position = self._positions.get(signal.symbol)
         # Only discretionary trims override the builder's execution style.
         exec_style_override: ExecStyle | None = None
-        if self._position_manager is not None and self._position_manager_drive:
+        if self._position_manager is not None:
             # With portfolio netting, the winner selects the symbol and the
             # budget-weighted net target selects its position.
             decision_signal = signal
@@ -2179,18 +2172,11 @@ class Orchestrator:
             if plan.primary_leg is PlanLeg.TRIM and plan.orders:
                 exec_style_override = plan.orders[0].style
         else:
+            # No planner wired (minimal test doubles); translate directly.
             intent = self._intent_translator.translate(
                 signal,
                 current_position,
                 target_qty,
-            )
-            # Shadow planning is observational and does not affect execution.
-            self._record_position_manager_shadow(
-                signal,
-                current_position,
-                target_qty,
-                intent,
-                quote,
             )
 
         if intent.intent == TradingIntent.NO_ACTION:
@@ -3377,8 +3363,8 @@ class Orchestrator:
                 cost_model=self._cost_model,
             ),
             config=PositionManagerConfig(
-                shadow=not self._position_manager_drive,
-                enabled=self._position_manager_drive,
+                shadow=False,
+                enabled=True,
                 enable_trim=self._position_manager_enable_trim,
                 trim_edge_gate_multiplier=(self._position_manager_trim_edge_gate_multiplier),
                 urgency_exec=self._position_manager_urgency_exec,
@@ -3509,42 +3495,6 @@ class Orchestrator:
                     detail=f"net={net.target_qty} winner={winner_target}",
                 )
             )
-
-    def _record_position_manager_shadow(
-        self,
-        signal: Signal,
-        current_position: Position,
-        target_qty: int | None,
-        intent: OrderIntent,
-        quote: NBBOQuote,
-    ) -> None:
-        """Run the shadow planner and record decision divergence.
-
-        No-op unless both a position manager and a divergence sink are
-        wired.  Strictly observational — it builds no orders, publishes
-        nothing on the bus, and writes no journal records, so it cannot
-        move a parity hash. ``OrderIntent`` continues to drive shadow-mode execution.
-        """
-        manager = self._position_manager
-        sink = self._position_manager_shadow_sink
-        if manager is None or sink is None:
-            return
-        plan = self._plan_for_signal(
-            signal,
-            current_position,
-            target_qty,
-            quote,
-        )
-        divergence = compare_plan_to_intent(
-            intent_name=intent.intent.name,
-            intent_target_quantity=intent.target_quantity,
-            current_quantity=current_position.quantity,
-            plan=plan,
-            symbol=signal.symbol,
-            signal_sequence=signal.sequence,
-        )
-        if divergence is not None:
-            sink.append(divergence)
 
     def _execute_reverse(
         self,

@@ -647,7 +647,6 @@ def build_platform(
         regime_calibration_quotes=regime_calibration_quotes,
         thread_safe_sequences=_seq_thread_safe,
         position_manager=position_manager,
-        position_manager_drive=config.position_manager_drive,
         position_manager_enable_trim=config.position_manager_enable_trim,
         position_manager_trim_edge_gate_multiplier=(
             config.position_manager_trim_edge_gate_multiplier

@@ -230,7 +230,6 @@ class PlatformConfig:
 
     # The planner may drive live intents and trim same-direction positions.
     # trim_min_fraction suppresses small, churn-prone reductions.
-    position_manager_drive: bool = True
     position_manager_enable_trim: bool = True
     position_manager_trim_min_fraction: float = 0.10
     # Suppress trims while forward edge clears this cost multiple; 0 disables.
@@ -820,7 +819,6 @@ class PlatformConfig:
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
             "reversal_min_edge_cost_multiplier": (self.reversal_min_edge_cost_multiplier),
-            "position_manager_drive": self.position_manager_drive,
             "position_manager_enable_trim": self.position_manager_enable_trim,
             "position_manager_trim_min_fraction": (self.position_manager_trim_min_fraction),
             "position_manager_trim_edge_gate_multiplier": (
@@ -1275,7 +1273,6 @@ class PlatformConfig:
             reversal_min_edge_cost_multiplier=float(
                 data.get("reversal_min_edge_cost_multiplier", 1.5)
             ),
-            position_manager_drive=bool(data.get("position_manager_drive", True)),
             position_manager_enable_trim=bool(data.get("position_manager_enable_trim", True)),
             position_manager_trim_min_fraction=float(
                 data.get("position_manager_trim_min_fraction", 0.10)
