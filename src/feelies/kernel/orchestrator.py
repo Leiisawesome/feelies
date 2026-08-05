@@ -4174,18 +4174,13 @@ class Orchestrator:
             for order_id, (sm, _, order) in self._active_orders.items()
             if order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
         }
-        self._settle_router_acks(
-            cid,
-            expected_order_ids=cancel_order_ids,
-            settle_empty=False,
-        )
+        self._settle_router_acks(cid, expected_order_ids=cancel_order_ids)
 
     def _settle_router_acks(
         self,
         correlation_id: str,
         *,
         expected_order_ids: set[str] | None = None,
-        settle_empty: bool = True,
         position_update_trigger: str | None = None,
     ) -> list[OrderAck]:
         """Drain router acks, publish them, and reconcile the resulting fills.
@@ -4194,26 +4189,24 @@ class Orchestrator:
         eleven call sites, so adding a step meant finding all eleven and missing
         one produced a path that submitted orders without settling them.
 
-        Two variations are real and are therefore parameters rather than
-        smoothed away:
+        ``position_update_trigger`` walks M8 -> M9 between publishing the acks and
+        reconciling them.  It is a parameter rather than automatic because the
+        asymmetry is structural, not an oversight: ``POSITION_UPDATE`` is legal
+        only from ``ORDER_ACK`` (see :mod:`feelies.kernel.micro`), and the
+        RISK-layer bridge fires re-entrantly during ``bus.publish(quote)`` while
+        micro sits in ``MARKET_EVENT_RECEIVED``.  Those paths cannot walk the
+        machine, so they pass ``None`` and settle out of band.
 
-        ``position_update_trigger`` walks M8 -> M9 between publishing the acks
-        and reconciling them.  Only the paths that own a micro-SM walk pass it;
-        the RISK-layer bridge and the emergency flatten deliberately do not (see
-        ``_on_bus_hazard_order``).
-
-        ``settle_empty=False`` skips the whole settle on an empty drain.  That is
-        not cosmetic: :meth:`_reconcile_fills` ends with an unconditional
-        :meth:`_prune_terminal_orders`, so settling an empty ack list still
-        retires terminal orders from ``_active_orders`` — which is what
-        :meth:`_has_pending_order_for_symbol` reads.  Callers that polled
-        speculatively keep the skip.
+        An empty drain still settles.  Two callers used to guard with ``if acks``,
+        which also skipped :meth:`_reconcile_fills`'s unconditional
+        :meth:`_prune_terminal_orders`.  That guard was measured before removal:
+        it fired 87876 times on one APP session and *never once* with a terminal
+        order awaiting prune, because every submitting path settles
+        unconditionally and prunes first.  It guarded a state that cannot arise.
 
         Returns the drained acks so callers can act on them further.
         """
         acks = self._poll_order_router_acks(expected_order_ids)
-        if not acks and not settle_empty:
-            return acks
         self._publish_and_apply_order_acks(acks)
         if position_update_trigger is not None:
             self._micro.transition(
@@ -4402,7 +4395,7 @@ class Orchestrator:
         buffer (``_deferred_router_acks``) is honoured.
         """
         t0 = time.perf_counter_ns()
-        acks = self._settle_router_acks(correlation_id, settle_empty=False)
+        acks = self._settle_router_acks(correlation_id)
         if acks:
             # Escalate an unfilled working exit to a market fallback
             # unfilled to a guaranteed MARKET fallback (after reconcile, so

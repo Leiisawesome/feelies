@@ -629,3 +629,47 @@ class TestHazardSignatureSingleSourceOfTruth:
                 f"hazard reason {reason!r} from HAZARD_EXIT_REASONS was not "
                 f"routed by Orchestrator._on_bus_hazard_order"
             )
+
+
+class TestOutOfBandSettleIsDeliberate:
+    """The RISK-layer bridge settles without walking the micro state machine.
+
+    That asymmetry is structural, not an oversight, and it is pinned here so it
+    is neither widened by accident nor "fixed" into an illegal transition:
+    ``POSITION_UPDATE`` is reachable only from ``ORDER_ACK`` (see
+    ``feelies.kernel.micro``), and the bridge fires re-entrantly during
+    ``bus.publish(quote)`` while micro sits in ``MARKET_EVENT_RECEIVED``.  Making
+    it walk M8 -> M9 from there would be an illegal transition.
+
+    The cost is a forensic gap: ``StateTransition`` events do not cover mandated
+    exits, so provenance for those orders comes from the order stream and the
+    ``forced_exit_*`` alerts instead (Inv-13).
+    """
+
+    def test_micro_state_machine_forbids_the_walk_the_bridge_would_need(self) -> None:
+        from feelies.kernel.micro import MicroState, create_micro_state_machine
+
+        sm = create_micro_state_machine(SimulatedClock(start_ns=0))
+        sm.transition(MicroState.MARKET_EVENT_RECEIVED, trigger="tick", correlation_id="c")
+
+        # The state the bridge fires from cannot reach POSITION_UPDATE.
+        assert not sm.can_transition(MicroState.POSITION_UPDATE)
+
+    def test_bridge_emits_no_state_transition(self) -> None:
+        from feelies.core.events import StateTransition
+
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        _orch, router, _ = _build_orchestrator(bus=bus, positions=positions)
+        transitions: list[StateTransition] = []
+        bus.subscribe(StateTransition, transitions.append)  # type: ignore[arg-type]
+
+        bus.publish(_make_hazard_order(reason="HAZARD_SPIKE", order_id="hz-1"))
+
+        # The exit reached the router...
+        assert [o.order_id for o in router.submitted] == ["hz-1"]
+        # ...without pretending to be a tick-pipeline step.
+        assert [t for t in transitions if t.machine_name == "tick_pipeline"] == []
