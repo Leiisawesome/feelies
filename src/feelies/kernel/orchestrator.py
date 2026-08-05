@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from feelies.risk.exit_composer import ExitComposer
     from feelies.risk.hazard_exit import HazardExitController
 
+from feelies.alpha.fill_attribution import largest_remainder_split, split_fees
 from feelies.alpha.arbitration import (
     EdgeWeightedArbitrator,
     SignalArbitrator,
@@ -5181,63 +5182,35 @@ class Orchestrator:
 
         # Collect each strategy's current quantity for this symbol.
         strategy_qtys: list[tuple[str, int]] = []
-        total_abs = 0
         for sid in strategy_ids:
             q = self._strategy_positions.get(sid, symbol).quantity
             if q != 0:
                 strategy_qtys.append((sid, q))
-                total_abs += abs(q)
-
-        if total_abs == 0:
+        if not strategy_qtys:
             return []
 
-        # Proportional allocation via largest-remainder.
+        # Same rounding and fee convention the ledger uses, so a fill rounds
+        # identically whichever path attributes it.
         abs_fill = abs(signed_qty)
-        exact = [abs_fill * abs(q) / total_abs for _, q in strategy_qtys]
-        floors = [int(e) for e in exact]
-        remainders = [e - f for e, f in zip(exact, floors)]
-        deficit = abs_fill - sum(floors)
-        indices = sorted(range(len(remainders)), key=lambda i: -remainders[i])
-        for i in range(deficit):
-            floors[indices[i]] += 1
+        alloc_qtys = largest_remainder_split(abs_fill, [abs(q) for _sid, q in strategy_qtys])
+        alloc_fees = split_fees(fees, alloc_qtys)
 
-        # Apply each allocation with the sign matching the fill direction.
         applied: list[tuple[str, int, Decimal]] = []
-        fee_remainder = fees
-        remainder_sid: str | None = None
-        for (sid, _q), alloc_qty in zip(strategy_qtys, floors, strict=True):
+        alloc_sign = 1 if signed_qty > 0 else -1
+        for (sid, _q), alloc_qty, alloc_fee in zip(
+            strategy_qtys, alloc_qtys, alloc_fees, strict=True
+        ):
             if alloc_qty == 0:
                 continue
-            # Sign: same as the overall fill direction.
-            alloc_sign = 1 if signed_qty > 0 else -1
-            alloc_fees = Decimal("0")
-            if total_abs > 0:
-                alloc_fees = (fees * alloc_qty / abs_fill).quantize(
-                    Decimal("0.01"),
-                )
-            fee_remainder -= alloc_fees
             self._strategy_positions.update(
                 sid,
                 symbol,
                 alloc_sign * alloc_qty,
                 fill_price,
-                fees=alloc_fees,
+                fees=alloc_fee,
                 timestamp_ns=timestamp_ns,
             )
-            applied.append((sid, alloc_sign * alloc_qty, alloc_fees))
-            remainder_sid = sid
-
-        # Assign any rounding remainder to the last non-zero allocation.
-        if fee_remainder != Decimal("0") and remainder_sid is not None:
-            self._strategy_positions.debit_fees(
-                remainder_sid,
-                symbol,
-                fee_remainder,
-            )
-            # Keep the returned legs' fees summing to ``fees`` exactly, so a
-            # caller journalling from them reconciles against the ack.
-            last_sid, last_qty, last_fees = applied[-1]
-            applied[-1] = (last_sid, last_qty, last_fees + fee_remainder)
+            applied.append((sid, alloc_sign * alloc_qty, alloc_fee))
 
         return applied
 

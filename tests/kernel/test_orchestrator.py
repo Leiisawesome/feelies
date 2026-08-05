@@ -1636,7 +1636,15 @@ class TestCancelFeeAccounting:
 
 
 class TestStrategyFillDistribution:
-    def test_fee_remainder_uses_debit_fees_on_last_nonzero_allocation(self) -> None:
+    def test_fee_remainder_lands_on_the_last_nonzero_allocation(self) -> None:
+        """Per-alpha fees must sum to the fill's fees exactly.
+
+        Quantising each share to the cent leaves a residue; it goes to the last
+        non-zero allocation. Asserted as an outcome on ``cumulative_fees`` rather
+        than on which store call delivers it — the kernel and the ledger now share
+        one fee split (``alpha.fill_attribution.split_fees``), so the remainder
+        rides the allocation itself instead of a separate ``debit_fees``.
+        """
         clock = SimulatedClock(start_ns=1000)
         strategy_positions = _SnapshotStrategyPositionStore()
 
@@ -1658,11 +1666,14 @@ class TestStrategyFillDistribution:
         assert strategy_positions.get("alpha_c", "AAPL").quantity == 101
         assert strategy_positions.get("alpha_d", "AAPL").quantity == 1
 
-        assert strategy_positions.debit_fee_calls == [
-            ("alpha_c", "AAPL", Decimal("0.01")),
-        ]
         assert strategy_positions.get("alpha_c", "AAPL").cumulative_fees == Decimal("0.01")
         assert strategy_positions.get("alpha_d", "AAPL").cumulative_fees == Decimal("0")
+        # The whole fee is accounted for, nowhere else.
+        total = sum(
+            strategy_positions.get(sid, "AAPL").cumulative_fees
+            for sid in ("alpha_a", "alpha_b", "alpha_c", "alpha_d")
+        )
+        assert total == Decimal("0.01")
 
     def test_distribution_iterates_strategies_in_sorted_order(self) -> None:
         # Sorted IDs make largest-remainder ties independent of hash order.
