@@ -36,12 +36,15 @@ _logger = logging.getLogger(__name__)
 class RegimeStateCache:
     """Bus-attached read model over published :class:`RegimeState` events."""
 
-    __slots__ = ("_bus", "_by_key", "_attached")
+    __slots__ = ("_bus", "_by_key", "_attached", "_warned_ambiguous")
 
     def __init__(self, *, bus: EventBus) -> None:
         self._bus = bus
         self._by_key: dict[tuple[str, str], RegimeState] = {}
         self._attached = False
+        # Ambiguity is a static wiring property, so warn once per engine set
+        # rather than on every lookup — risk reads this per tick.
+        self._warned_ambiguous: set[tuple[str, frozenset[str]]] = set()
 
     # ── Wiring ───────────────────────────────────────────────────────
 
@@ -70,7 +73,11 @@ class RegimeStateCache:
 
         Ambiguity is resolved by highest ``timestamp_ns`` rather than insertion
         order so replays agree, and logged so a multi-engine deployment that
-        forgot to declare an engine name is visible in production.
+        forgot to declare an engine name is visible in production — once per
+        ``(symbol, engine set)``, not per lookup.  Whether two engines publish
+        overlapping symbols is fixed at boot, but risk and the sizer call this on
+        every tick, so an unguarded warning would emit hundreds of thousands of
+        identical records per session about a configuration that never changed.
         """
         best: RegimeState | None = None
         best_engine: str | None = None
@@ -83,6 +90,11 @@ class RegimeStateCache:
                 best = state
                 best_engine = engine
         if count > 1:
+            seen = {engine for (sym, engine) in self._by_key if sym == symbol}
+            key = (symbol, frozenset(seen))
+            if key in self._warned_ambiguous:
+                return best
+            self._warned_ambiguous.add(key)
             _logger.warning(
                 "RegimeStateCache: regime lookup for symbol %s found %d engines "
                 "(%r selected by latest timestamp); declare engine_name to remove "

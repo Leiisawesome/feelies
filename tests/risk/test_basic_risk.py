@@ -802,3 +802,35 @@ class TestSizedIntentScaleDownDecimal:
                 store,
             )
         assert result.orders == ()
+
+
+def test_multi_engine_ambiguity_warns_once_not_per_lookup(caplog) -> None:
+    """Risk reads the cache per tick; the ambiguity is a boot-time property.
+
+    An unguarded warning here would emit one record per risk check per tick about
+    a configuration that has not changed since startup.
+    """
+    import logging
+
+    cache = _regime_states((0.0, 1.0, 0.0))
+    names = tuple(HMM3StateFractional().state_names)
+    cache.record(
+        RegimeState(
+            timestamp_ns=2,
+            correlation_id="c",
+            sequence=2,
+            symbol="AAPL",
+            engine_name="second_engine",
+            state_names=names,
+            posteriors=(0.0, 0.0, 1.0),
+            dominant_state=2,
+            dominant_name=names[2],
+        )
+    )
+
+    with caplog.at_level(logging.WARNING, logger="feelies.services.regime_state_cache"):
+        for _ in range(50):
+            cache.latest("AAPL")
+
+    warnings = [r for r in caplog.records if "found 2 engines" in r.getMessage()]
+    assert len(warnings) == 1, f"expected one warning, got {len(warnings)}"

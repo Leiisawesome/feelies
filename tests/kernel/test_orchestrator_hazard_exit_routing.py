@@ -449,6 +449,7 @@ class TestRestingOrderGuard:
         order_id: str = "resting-limit-1",
         side: Side = Side.BUY,
         symbol: str = "AAPL",
+        quantity: int = 100,
     ) -> OrderRequest:
         resting = OrderRequest(
             timestamp_ns=1500,
@@ -460,7 +461,7 @@ class TestRestingOrderGuard:
             side=side,
             order_type=OrderType.LIMIT,
             limit_price=Decimal("149.00"),
-            quantity=100,
+            quantity=quantity,
             strategy_id="sig_alpha_v1",
             reason="",
         )
@@ -567,6 +568,53 @@ class TestRestingOrderGuard:
         assert router.submitted == []
         # Inv-13: a mandated exit that never reached the router must be visible.
         assert any(a.alert_name == "forced_exit_stood_down_after_cancel" for a in alerts)
+
+    def test_partial_cover_resizes_the_exit_instead_of_overshooting(self) -> None:
+        """A *partial* resting cover must not let the exit cross zero.
+
+        The full-cover case above leaves the book at exactly flat, which a
+        magnitude-shrinkage test happens to catch.  A partial cover does not:
+        ``SELL 100`` into a book the cover has already taken to long 70 shrinks
+        the magnitude while flipping to short 30 — a fail-safe control opening
+        exposure, which Inv-11 forbids.  The exit is clamped to the residual
+        rather than stood down, because the residual still needs closing and the
+        hazard controller will not re-emit within the same episode.
+        """
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        # Resting passive SELL 30 — covers part of the long, not all of it.
+        self._rest_order(orch, router, order_id="resting-sell-30", side=Side.SELL, quantity=30)
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, order_id="hz-1"))
+
+        # Flat, not short: the exit closed the residual and stopped there.
+        assert positions.get("AAPL").quantity == 0
+        assert [o.order_id for o in router.submitted] == ["hz-1"]
+        assert router.submitted[0].quantity == 70
+        # Inv-13: the submitted size differs from what the controller authored.
+        assert any(a.alert_name == "forced_exit_resized_after_cancel" for a in alerts)
+
+    def test_partial_cover_on_a_short_resizes_symmetrically(self) -> None:
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", -100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        self._rest_order(orch, router, order_id="resting-buy-30", side=Side.BUY, quantity=30)
+
+        bus.publish(_make_hazard_order(side=Side.BUY, quantity=100, order_id="hz-1"))
+
+        assert positions.get("AAPL").quantity == 0
+        assert router.submitted[0].quantity == 70
 
 
 class TestIdempotency:

@@ -278,6 +278,18 @@ def _order_owns_one_slice(order: OrderRequest) -> bool:
     return order.reason not in _RISK_FORCED_EXIT_REASONS
 
 
+def _closable_quantity(position_qty: int, side: Side) -> int:
+    """Shares *side* can close against ``position_qty`` without crossing zero.
+
+    A SELL closes a long, a BUY closes a short; anything beyond that opens
+    opposite exposure rather than reducing.  Returns 0 when there is nothing on
+    the closable side.
+    """
+    if side is Side.SELL:
+        return max(position_qty, 0)
+    return max(-position_qty, 0)
+
+
 def _is_forced_market_exit(order: OrderRequest) -> bool:
     """Whether *order* is an aggressive, non-vetoable flatten.
 
@@ -4123,16 +4135,32 @@ class Orchestrator:
         the book can move between the controller sizing the exit and the exit
         reaching the router.
         """
-        signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
-        current_qty = self._positions.get(order.symbol).quantity
-        if abs(current_qty + signed_qty) < abs(current_qty):
-            return True
+        return self._forced_exit_closable_quantity(order) > 0
+
+    def _forced_exit_closable_quantity(self, order: OrderRequest) -> int:
+        """Shares *order* can close right now without crossing into new exposure.
+
+        Magnitude shrinkage is **not** the test.  ``abs(current + signed) <
+        abs(current)`` is true for any reduction, including one that crosses zero:
+        a mandated ``SELL 100`` into a book a resting cover has already taken to
+        long 70 shrinks the magnitude while flipping to short 30.  That is a
+        fail-safe control opening exposure, which is exactly what Inv-11 forbids,
+        so the clamp is on the closable side only.
+
+        Slice-scoped authors (composer, deferral cap) may legitimately exceed
+        symbol-net: another strategy holding the opposite side can leave the net
+        flat while the mandated slice is still open, and flattening that slice
+        moves the net through zero on purpose (design §3.3).  So they take the
+        larger of the two bases rather than being clamped to net.
+        """
+        net = self._positions.get(order.symbol).quantity
+        closable = _closable_quantity(net, order.side)
         if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS and (
             self._strategy_positions is not None
         ):
             slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
-            return abs(slice_qty + signed_qty) < abs(slice_qty)
-        return False
+            closable = max(closable, _closable_quantity(slice_qty, order.side))
+        return min(order.quantity, closable)
 
     def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
         """True if a forced MARKET exit is already in flight for *symbol*.
@@ -5554,12 +5582,19 @@ class Orchestrator:
             # including fills -- so the book may have moved since the reduce test
             # above.  Crossing a stale quantity into a book another leg already
             # flattened would open the *opposite* exposure: exactly what a
-            # fail-safe control must never do (Inv-11).  Re-test against the
-            # settled book and stand down if there is no longer anything to close;
-            # the controller re-emits on its next trigger if the risk persists.
-            if not self._forced_exit_reduces(event):
+            # fail-safe control must never do (Inv-11).  Clamp to what is still
+            # closable rather than only testing it — a *partial* cover leaves a
+            # residual that a mandated exit should still close, and standing the
+            # whole order down would strand it (the hazard controller will not
+            # re-emit within the same episode).
+            closable = self._forced_exit_closable_quantity(event)
+            if closable <= 0:
                 self._emit_forced_exit_stood_down_alert(event)
                 return
+            if closable < event.quantity:
+                self._emit_forced_exit_resized_alert(event, closable)
+                # Same order_id: one mandated decision resized, not a new order.
+                event = replace(event, quantity=closable)
         self._track_order(event.order_id, event.side, event)
         submit_error = self._submit_tracked_order(event, trigger=event.reason)
         if submit_error is not None:
@@ -5713,6 +5748,41 @@ class Orchestrator:
                     f"({intent.intent.name}); retries next boundary."
                 ),
                 context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
+
+    def _emit_forced_exit_resized_alert(self, order: OrderRequest, closable: int) -> None:
+        """Publish a marker when a mandated exit is clamped to the settled book.
+
+        The resting-order cancel settled a *partial* fill, so the exit's original
+        quantity would now cross zero into opposite exposure.  It is resized to
+        the residual rather than stood down, but an operator needs to see that the
+        submitted size differs from what the controller authored (Inv-13).
+        """
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="forced_exit_resized_after_cancel",
+                message=(
+                    f"Forced exit {order.reason!r} on {order.symbol!r} resized "
+                    f"{order.quantity} -> {closable}: cancelling resting orders "
+                    f"settled a partial fill, and the original quantity would have "
+                    f"crossed zero into opposite exposure "
+                    f"(strategy_id={order.strategy_id!r})."
+                ),
+                context={
+                    "symbol": order.symbol,
+                    "strategy_id": order.strategy_id,
+                    "order_id": order.order_id,
+                    "reason": order.reason,
+                    "original_quantity": order.quantity,
+                    "submitted_quantity": closable,
+                    "position_quantity": self._positions.get(order.symbol).quantity,
+                },
             )
         )
 
