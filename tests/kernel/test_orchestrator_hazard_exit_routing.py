@@ -862,3 +862,84 @@ class TestSliceScopedForcedExitClamp:
         assert strategy_positions.get("test_alpha", "AAPL").quantity == 0
         assert strategy_positions.get("other_alpha", "AAPL").quantity == -100
         assert positions.get("AAPL").quantity == -100
+
+
+class TestForcedExitClampAppliesWithoutARestingOrder:
+    """The clamp guards the ordinary path, not only the resting-order branch.
+
+    It used to run only inside ``if self._has_pending_order_for_symbol(...)``.
+    ``order_reduces`` is computed above it but gates nothing, so on the ordinary
+    path nothing stopped a mandated exit from crossing into a book that could not
+    absorb it.  What kept that safe was a property of four *other* files -- every
+    shipped controller sizes from a live non-zero position and returns early when
+    flat -- rather than anything at the submit site.
+    """
+
+    def test_symbol_net_exit_stands_down_when_the_net_is_already_flat(self) -> None:
+        """Two strategies on opposite sides leave net flat; a symbol-net exit must not fire.
+
+        Before the clamp was hoisted this submitted the full 100: net went to
+        -100 and the *other* strategy was driven from -100 to -150 by the
+        proportional split.  A fail-safe control both opening exposure and
+        deepening an unrelated slice's short is precisely Inv-11's prohibition.
+        """
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, entry)
+        positions.update("AAPL", -100, entry)
+        positions.update_mark("AAPL", entry)
+        strategy_positions = StrategyPositionStore()
+        strategy_positions.update("test_alpha", "AAPL", 100, entry)
+        strategy_positions.update("other_alpha", "AAPL", -100, entry)
+        assert positions.get("AAPL").quantity == 0
+
+        orch, router, _pos = _build_orchestrator(
+            positions=positions, strategy_positions=strategy_positions
+        )
+        # No resting order: the clamp only reaches this order once hoisted.
+        assert not orch._has_pending_order_for_symbol("AAPL")
+
+        orch._bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, reason="HAZARD_SPIKE"))
+
+        assert router.submitted == []
+        assert positions.get("AAPL").quantity == 0
+        # Neither slice moved — especially not the one that was never mandated.
+        assert strategy_positions.get("test_alpha", "AAPL").quantity == 100
+        assert strategy_positions.get("other_alpha", "AAPL").quantity == -100
+
+    def test_slice_scoped_exit_still_crosses_a_flat_net_without_a_resting_order(
+        self,
+    ) -> None:
+        """Guarding the path must not cost slice-scoped authors their latitude."""
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, entry)
+        positions.update("AAPL", -100, entry)
+        positions.update_mark("AAPL", entry)
+        strategy_positions = StrategyPositionStore()
+        strategy_positions.update("test_alpha", "AAPL", 100, entry)
+        strategy_positions.update("other_alpha", "AAPL", -100, entry)
+
+        orch, router, _pos = _build_orchestrator(
+            positions=positions, strategy_positions=strategy_positions
+        )
+        orch._bus.publish(
+            _make_hazard_order(side=Side.SELL, quantity=100, reason="MAX_HOLD_AFTER_SAFE_OFF")
+        )
+
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
+        assert strategy_positions.get("test_alpha", "AAPL").quantity == 0
+        assert strategy_positions.get("other_alpha", "AAPL").quantity == -100
+
+    def test_a_well_formed_exit_is_untouched_by_the_clamp(self) -> None:
+        """The common case stays a no-op: closable equals the requested quantity."""
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, entry)
+        positions.update_mark("AAPL", entry)
+
+        orch, router, _pos = _build_orchestrator(positions=positions)
+        orch._bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, reason="HAZARD_SPIKE"))
+
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
+        assert positions.get("AAPL").quantity == 0
