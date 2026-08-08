@@ -155,8 +155,7 @@ def test_trade_before_first_quote_defers_horizon_ticks_when_regime_wired() -> No
 
     orch._process_trade(_trade(SESSION_OPEN_NS, seq=1))
     assert ticks == [], (
-        "trade-path HorizonTicks must wait for a quote-driven RegimeState "
-        f"publish; got {ticks!r}"
+        f"trade-path HorizonTicks must wait for a quote-driven RegimeState publish; got {ticks!r}"
     )
     assert "AAPL" not in orch._regime_bus_published_symbols
 

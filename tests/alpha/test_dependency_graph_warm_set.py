@@ -10,12 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from feelies.alpha.loader import AlphaLoader
-from feelies.bootstrap import (
-    _consumed_features_for_signal_registration,
-    _consumed_value_keys_from_signal_source,
-    _horizon_features_for,
-    _required_warm_feature_ids_for_signal_alpha,
-    _warn_unread_sensor_dependencies,
+from feelies.bootstrap import _horizon_features_for
+from feelies.alpha.dependency_graph import (
+    consumed_features_for_signal_registration,
+    consumed_value_keys_from_signal_source,
+    required_warm_feature_ids_for_signal_alpha,
+    warn_unread_sensor_dependencies,
 )
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature
@@ -33,7 +33,7 @@ def test_extracts_literal_get_and_subscript_keys() -> None:
         "    c = snapshot.values['spread_z_30d']\n"
         "    return None\n"
     )
-    assert _consumed_value_keys_from_signal_source(src) == frozenset(
+    assert consumed_value_keys_from_signal_source(src) == frozenset(
         {"ofi_ewma_zscore", "book_imbalance", "spread_z_30d"}
     )
 
@@ -44,7 +44,7 @@ def test_dynamic_key_forces_conservative_none() -> None:
         "    key = 'ofi_ewma_zscore'\n"
         "    return snapshot.values.get(key)\n"
     )
-    assert _consumed_value_keys_from_signal_source(src) is None
+    assert consumed_value_keys_from_signal_source(src) is None
 
 
 def test_aliased_values_forces_conservative_none() -> None:
@@ -54,17 +54,17 @@ def test_aliased_values_forces_conservative_none() -> None:
         "    return v.get('ofi_ewma_zscore')\n"
     )
     # ``v = snapshot.values`` is an unresolved .values access → conservative.
-    assert _consumed_value_keys_from_signal_source(src) is None
+    assert consumed_value_keys_from_signal_source(src) is None
 
 
 def test_values_iteration_forces_conservative_none() -> None:
     src = "def evaluate(snapshot, regime, params):\n    return sum(snapshot.values.values())\n"
-    assert _consumed_value_keys_from_signal_source(src) is None
+    assert consumed_value_keys_from_signal_source(src) is None
 
 
 def test_missing_or_unparseable_source_is_none() -> None:
-    assert _consumed_value_keys_from_signal_source(None) is None
-    assert _consumed_value_keys_from_signal_source("def evaluate(:") is None
+    assert consumed_value_keys_from_signal_source(None) is None
+    assert consumed_value_keys_from_signal_source("def evaluate(:") is None
 
 
 # ── End-to-end required_warm ────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def test_consume_driven_excludes_unread_features() -> None:
         "def evaluate(snapshot, regime, params):\n"
         "    return snapshot.values.get('ofi_ewma_zscore')\n"
     )
-    req = _required_warm_feature_ids_for_signal_alpha(
+    req = required_warm_feature_ids_for_signal_alpha(
         depends_on_sensors=("ofi_ewma", "spread_z_30d"),
         horizon_seconds=h,
         horizon_features=features,
@@ -124,7 +124,7 @@ def test_conservative_fallback_requires_all_depended_features() -> None:
         "    k = 'ofi_ewma_zscore'\n"
         "    return snapshot.values.get(k)\n"
     )
-    req = _required_warm_feature_ids_for_signal_alpha(
+    req = required_warm_feature_ids_for_signal_alpha(
         depends_on_sensors=("ofi_ewma",),
         horizon_seconds=h,
         horizon_features=features,
@@ -153,7 +153,7 @@ def test_gate_bare_identifier_prefers_exact_feature_over_derivatives() -> None:
             "off_condition": "quote_hazard_rate < 4.0",
         },
     )
-    req = _required_warm_feature_ids_for_signal_alpha(
+    req = required_warm_feature_ids_for_signal_alpha(
         depends_on_sensors=("quote_hazard_rate",),
         horizon_seconds=h,
         horizon_features=features,
@@ -174,7 +174,7 @@ def test_inventory_revert_required_warm_excludes_unused_hazard_zscore() -> None:
     for sensor_id in module.depends_on_sensors:
         features.extend(_horizon_features_for(sensor_id, module.horizon_seconds))
 
-    req = _required_warm_feature_ids_for_signal_alpha(
+    req = required_warm_feature_ids_for_signal_alpha(
         depends_on_sensors=module.depends_on_sensors,
         horizon_seconds=module.horizon_seconds,
         horizon_features=features,
@@ -199,7 +199,7 @@ def test_inventory_revert_bootstrap_consumed_features_are_feature_ids() -> None:
     features = []
     for sensor_id in module.depends_on_sensors:
         features.extend(_horizon_features_for(sensor_id, module.horizon_seconds))
-    req = _required_warm_feature_ids_for_signal_alpha(
+    req = required_warm_feature_ids_for_signal_alpha(
         depends_on_sensors=module.depends_on_sensors,
         horizon_seconds=module.horizon_seconds,
         horizon_features=features,
@@ -207,7 +207,7 @@ def test_inventory_revert_bootstrap_consumed_features_are_feature_ids() -> None:
         signal_source=module.signal_source,
     )
 
-    consumed = _consumed_features_for_signal_registration(
+    consumed = consumed_features_for_signal_registration(
         declared_consumed_features=module.consumed_features,
         required_warm_feature_ids=req,
     )
@@ -239,7 +239,7 @@ def test_warns_on_declared_sensor_whose_features_are_never_read(caplog) -> None:
             "micro_price", h, reducer="zscore", feature_id="micro_price_zscore"
         ),
     ]
-    warm_ids = _required_warm_feature_ids_for_signal_alpha(
+    warm_ids = required_warm_feature_ids_for_signal_alpha(
         depends_on_sensors=("ofi_ewma", "micro_price"),
         horizon_seconds=h,
         horizon_features=features,
@@ -253,7 +253,7 @@ def test_warns_on_declared_sensor_whose_features_are_never_read(caplog) -> None:
     assert "micro_price_zscore" not in warm_ids
 
     with caplog.at_level(logging.WARNING, logger="feelies.bootstrap"):
-        _warn_unread_sensor_dependencies(
+        warn_unread_sensor_dependencies(
             alpha_id="alpha_x",
             depends_on_sensors=("ofi_ewma", "micro_price"),
             horizon_seconds=h,
@@ -274,7 +274,7 @@ def test_no_warning_when_sensor_produces_no_features_at_this_horizon(caplog) -> 
     import logging
 
     with caplog.at_level(logging.WARNING, logger="feelies.bootstrap"):
-        _warn_unread_sensor_dependencies(
+        warn_unread_sensor_dependencies(
             alpha_id="alpha_x",
             depends_on_sensors=("inventory_pressure",),
             horizon_seconds=120,
@@ -294,7 +294,7 @@ def test_sig_benign_midcap_v1_has_no_unread_sensor_dependency(caplog) -> None:
     features = []
     for sensor_id in module.depends_on_sensors:
         features.extend(_horizon_features_for(sensor_id, module.horizon_seconds))
-    warm_ids = _required_warm_feature_ids_for_signal_alpha(
+    warm_ids = required_warm_feature_ids_for_signal_alpha(
         depends_on_sensors=module.depends_on_sensors,
         horizon_seconds=module.horizon_seconds,
         horizon_features=features,
@@ -303,7 +303,7 @@ def test_sig_benign_midcap_v1_has_no_unread_sensor_dependency(caplog) -> None:
     )
 
     with caplog.at_level(logging.WARNING, logger="feelies.bootstrap"):
-        _warn_unread_sensor_dependencies(
+        warn_unread_sensor_dependencies(
             alpha_id=module.manifest.alpha_id,
             depends_on_sensors=module.depends_on_sensors,
             horizon_seconds=module.horizon_seconds,
@@ -311,3 +311,59 @@ def test_sig_benign_midcap_v1_has_no_unread_sensor_dependency(caplog) -> None:
             warm_ids=warm_ids,
         )
     assert not caplog.records
+
+
+# ── Fail-safe direction of the static analysis ──────────────────────────
+# Every unresolvable form must widen to "require everything warm". A narrower
+# answer would let an alpha trade on a cold feature (Inv-11), so these pin the
+# direction rather than just the happy path.
+
+
+def test_unresolvable_value_access_forms_all_fall_back_to_none() -> None:
+    unresolvable = {
+        "aliased binding": "def evaluate(s, r, p):\n    v = s.values\n    return v.get('a')\n",
+        "iteration": "def evaluate(s, r, p):\n    return list(s.values.items())\n",
+        "dynamic get key": "def evaluate(s, r, p):\n    return s.values.get(p['k'])\n",
+        "dynamic subscript": "def evaluate(s, r, p):\n    return s.values[p['k']]\n",
+        "f-string key": "def evaluate(s, r, p):\n    return s.values[f'{p['k']}_z']\n",
+        "keys()": "def evaluate(s, r, p):\n    return sorted(s.values.keys())\n",
+    }
+    for label, src in unresolvable.items():
+        assert consumed_value_keys_from_signal_source(src) is None, (
+            f"{label}: unresolvable access must widen to the conservative set, not a subset"
+        )
+
+
+def test_absent_or_unparseable_source_falls_back_to_none() -> None:
+    assert consumed_value_keys_from_signal_source(None) is None
+    assert consumed_value_keys_from_signal_source("") is None
+    # A body that does not compile cannot be analysed; it must not read as
+    # "consumes nothing".
+    assert consumed_value_keys_from_signal_source("def evaluate(:\n") is None
+
+
+def test_literal_forms_resolve_exactly() -> None:
+    src = (
+        "def evaluate(s, r, p):\n"
+        "    a = s.values.get('ofi_ewma')\n"
+        "    b = s.values['spread_z_30d']\n"
+        "    c = s.values.get('vpin_50bucket', 0.0)\n"
+        "    return a + b + c\n"
+    )
+    assert consumed_value_keys_from_signal_source(src) == frozenset(
+        {"ofi_ewma", "spread_z_30d", "vpin_50bucket"}
+    )
+
+
+def test_one_dynamic_access_poisons_the_whole_result() -> None:
+    """A body that reads two literals and one dynamic key is not partially known.
+
+    Returning just the literals would under-declare the warm set.
+    """
+    src = (
+        "def evaluate(s, r, p):\n"
+        "    a = s.values.get('ofi_ewma')\n"
+        "    b = s.values[p['dynamic']]\n"
+        "    return a + b\n"
+    )
+    assert consumed_value_keys_from_signal_source(src) is None

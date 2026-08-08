@@ -50,7 +50,9 @@ from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
+from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -415,6 +417,41 @@ def _boot_to_ready(orch: Orchestrator) -> None:
     config = _MinimalConfig()
     orch.boot(config)
     assert orch.macro_state == MacroState.READY
+
+
+def _attach_stop_exit(
+    orch: Orchestrator,
+    *,
+    stop_loss_per_share: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    trail_activate_pct: float = 0.0,
+    trail_pct: float = 0.5,
+    session_flatten_enabled: bool = False,
+    session_flatten_seconds_before_close: int = 0,
+    bounds: Any = None,
+) -> StopExitController:
+    """Attach the risk-layer stop/session-flatten author to an orchestrator.
+
+    Stop-loss and session flatten used to be kernel state poked directly onto the
+    orchestrator; they are now authored by ``StopExitController``, which
+    self-subscribes to quotes and routes through the RISK-layer bridge.
+    """
+    controller = StopExitController(
+        bus=orch._bus,
+        sequence_generator=SequenceGenerator(),
+        position_store=orch._positions,
+        policy=StopExitPolicy(
+            stop_loss_per_share=stop_loss_per_share,
+            stop_loss_pct=stop_loss_pct,
+            trail_activate_pct=trail_activate_pct,
+            trail_pct=trail_pct,
+            session_flatten_enabled=session_flatten_enabled,
+            session_flatten_seconds_before_close=session_flatten_seconds_before_close,
+        ),
+        trading_session_bounds=bounds if bounds is not None else orch._trading_session_bounds,
+    )
+    controller.attach()
+    return controller
 
 
 def _boot_to_backtest(orch: Orchestrator) -> None:
@@ -1269,35 +1306,86 @@ class TestOrchestratorRiskReject:
         assert position_store.get("AAPL").quantity == 0
 
 
-class TestStopExitSignalMetadata:
-    def test_stop_exit_signal_uses_signal_sequence_family(self) -> None:
+class TestQuoteSubscribersSeeAFreshlyMarkedBook:
+    """Marking must precede the bus publish, not follow it.
+
+    ``StopExitController`` fires on the quote itself, and a stop fires precisely
+    on an adverse move — so if marking ran after the publish, the bridge's
+    ``check_order`` would evaluate the drawdown guard against the *previous*
+    quote and systematically understate the loss on exactly the tick that
+    triggered the exit (Inv-11).  Marking first also puts the stop author on the
+    same footing as the hazard controller, which fires later at
+    ``_update_regime``.
+    """
+
+    def test_unrealized_pnl_reflects_this_quote_when_subscribers_run(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+        # Prior quote's mark: a small loss.
+        position_store.update_mark(
+            "AAPL", Decimal("149.50"), bid=Decimal("149.45"), ask=Decimal("149.55")
+        )
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        _boot_to_backtest(orch)
+
+        seen: list[Decimal] = []
+        bus.subscribe(NBBOQuote, lambda _q: seen.append(position_store.get("AAPL").unrealized_pnl))
+
+        # A large adverse move on this tick.
+        quote = _make_quote(ts=2000, bid="140.00", ask="140.10", seq=7)
+        orch._process_tick(quote)
+
+        assert seen, "expected the quote to reach subscribers"
+        # Marked to this quote (bid 140.00 for a long), not the prior 149.45.
+        assert seen[0] == position_store.get("AAPL").unrealized_pnl
+        assert seen[0] < Decimal("-900"), (
+            "quote subscribers saw a stale mark — marking must run before "
+            f"bus.publish(quote); got unrealized {seen[0]}"
+        )
+
+
+class TestStopExitIsNotASignal:
+    """A stop is a risk control, not alpha conviction.
+
+    It used to be synthesised as a ``Signal`` with a sentinel ``strategy_id``,
+    which put a trading decision on the SIGNAL layer and left it outside the
+    RISK-layer reason taxonomy every routing predicate keys on.  It is now
+    authored by ``StopExitController`` and reaches the router through the same
+    non-vetoable bridge as every other mandated exit.
+    """
+
+    def test_stop_emits_a_risk_layer_order_and_no_signal(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         published_signals: list[Signal] = []
+        orders: list[OrderRequest] = []
         bus.subscribe(Signal, published_signals.append)
+        bus.subscribe(OrderRequest, orders.append)
 
         position_store = MemoryPositionStore()
         position_store.update("AAPL", 100, Decimal("150.00"))
 
         orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
-
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        stop_signals = [
-            signal for signal in published_signals if signal.strategy_id == "__stop_exit__"
-        ]
-        assert len(stop_signals) == 1
-        stop_signal = stop_signals[0]
-        assert stop_signal.correlation_id == quote.correlation_id
-        assert stop_signal.sequence == 0
-        assert stop_signal.sequence != quote.sequence
-        assert stop_signal.source_layer == "SIGNAL"
-        assert stop_signal.layer == "SIGNAL"
-        assert stop_signal.regime_gate_state == "N/A"
+        assert published_signals == []
+        stop_orders = [o for o in orders if o.reason == "STOP_EXIT"]
+        assert len(stop_orders) == 1
+        stop = stop_orders[0]
+        assert stop.source_layer == "RISK"
+        assert stop.order_type is OrderType.MARKET
+        assert stop.correlation_id == quote.correlation_id
+        # Symbol-net: the control belongs to no alpha.
+        assert stop.strategy_id == ""
+        assert position_store.get("AAPL").quantity == 0
 
 
 class TestForcedExitReasonClassification:
@@ -1330,7 +1418,13 @@ class TestForcedExitReasonClassification:
             signal=signal,
         )
 
-    def test_only_stop_exit_intent_is_tagged_as_panic(self) -> None:
+    def test_signal_path_orders_are_never_tagged_as_panic(self) -> None:
+        """Panic pricing rides the risk author's reason token, not the intent.
+
+        The SIGNAL path no longer builds mandated exits, so nothing it produces
+        may carry a reason in the fill models' panic set — an alpha exit that got
+        surcharged would overstate its cost and depress its measured edge.
+        """
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         verdict = RiskVerdict(
@@ -1342,19 +1436,9 @@ class TestForcedExitReasonClassification:
             reason="ok",
         )
 
-        stop_order, _ = orch._try_build_order_from_intent(
-            self._exit_intent("__stop_exit__"), verdict, "AAPL:2000:1"
-        )
-        session_order, _ = orch._try_build_order_from_intent(
-            self._exit_intent("__session_flat__"), verdict, "AAPL:2000:1"
-        )
         alpha_order, _ = orch._try_build_order_from_intent(
             self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
         )
-
-        assert stop_order is not None and stop_order.reason == "STOP_EXIT"
-        # Scheduled session flatten and ordinary alpha exit are not panics.
-        assert session_order is not None and session_order.reason == ""
         assert alpha_order is not None and alpha_order.reason == ""
 
     def test_stop_trigger_tags_order_and_journals_reason(self) -> None:
@@ -1371,21 +1455,82 @@ class TestForcedExitReasonClassification:
         orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
         journal = InMemoryTradeJournal()
         orch._trade_journal = journal
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        stop_orders = [o for o in orders if o.strategy_id == "__stop_exit__"]
+        stop_orders = [o for o in orders if o.reason == "STOP_EXIT"]
         assert len(stop_orders) == 1
         assert stop_orders[0].reason == "STOP_EXIT"
 
-        # Inv-13 provenance: the forced-exit reason reaches the journal.
-        recorded = list(journal.query(strategy_id="__stop_exit__"))
+        # Inv-13 provenance: the forced-exit reason reaches the journal.  No slice
+        # book is wired here, so the sentinel row is the documented fallback
+        # (see ``_trade_journal_legs``); the attributed case is covered by
+        # ``test_stop_exit_attributes_to_the_slice_it_closed``.
+        recorded = list(journal.query(strategy_id=""))
         assert len(recorded) == 1
         assert recorded[0].metadata["order_reason"] == "STOP_EXIT"
+        assert "order_source_layer" in recorded[0].metadata
+
+    def test_stop_exit_attributes_to_the_slice_it_closed(self) -> None:
+        """A stop-out must close the alpha's slice, not mint a sentinel one.
+
+        The stop reads the symbol-net book, so it owns no slice.  Booking
+        its fill under the sentinel left the originating alpha's slice open forever
+        (pinning it at its per-alpha position cap in ``AlphaBudgetRiskWrapper``) and
+        siphoned the closing ``realized_pnl`` out of that alpha's evidence, biasing
+        every per-alpha estimator upward (Inv-3 / Inv-13).
+        """
+        from feelies.alpha.fill_attribution import FillAttributionLedger
+        from feelies.storage.memory_trade_journal import InMemoryTradeJournal
+
+        alpha_id = "sig_alpha_v1"
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+        # The symbol-net 100 belongs to the alpha.
+        strategy_positions = StrategyPositionStore()
+        strategy_positions.update(alpha_id, "AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            position_store=position_store,
+            strategy_positions=strategy_positions,
+        )
+        journal = InMemoryTradeJournal()
+        orch._trade_journal = journal
+        orch._fill_ledger = FillAttributionLedger()
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
+        _boot_to_backtest(orch)
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # Slice book: no phantom sentinel slice exists, and the alpha is flat.
+        # ``strategy_ids()`` is checked first — ``get()`` materialises a sub-store,
+        # so probing the sentinel would create the very key under test.
+        assert "" not in strategy_positions.strategy_ids()
+        assert strategy_positions.get(alpha_id, "AAPL").quantity == 0
+
+        # Journal: the closing PnL lands on the alpha, not the sentinel.
+        assert list(journal.query(strategy_id="")) == []
+        recorded = list(journal.query(strategy_id=alpha_id))
+        assert len(recorded) == 1
+        assert recorded[0].realized_pnl < 0
+        assert recorded[0].filled_quantity == 100
+        # Aggregate PnL is unchanged by the re-attribution.
+        assert recorded[0].realized_pnl == position_store.get("AAPL").realized_pnl
+
+        # Inv-13: forced-exit provenance survives the re-attribution.
+        assert recorded[0].metadata["order_reason"] == "STOP_EXIT"
+        assert recorded[0].metadata["forced_exit_strategy_id"] == ""
         assert "order_source_layer" in recorded[0].metadata
 
     def test_emergency_flatten_tags_force_flatten_reason(self) -> None:
@@ -1491,7 +1636,15 @@ class TestCancelFeeAccounting:
 
 
 class TestStrategyFillDistribution:
-    def test_fee_remainder_uses_debit_fees_on_last_nonzero_allocation(self) -> None:
+    def test_fee_remainder_lands_on_the_last_nonzero_allocation(self) -> None:
+        """Per-alpha fees must sum to the fill's fees exactly.
+
+        Quantising each share to the cent leaves a residue; it goes to the last
+        non-zero allocation. Asserted as an outcome on ``cumulative_fees`` rather
+        than on which store call delivers it — the kernel and the ledger now share
+        one fee split (``alpha.fill_attribution.split_fees``), so the remainder
+        rides the allocation itself instead of a separate ``debit_fees``.
+        """
         clock = SimulatedClock(start_ns=1000)
         strategy_positions = _SnapshotStrategyPositionStore()
 
@@ -1513,11 +1666,14 @@ class TestStrategyFillDistribution:
         assert strategy_positions.get("alpha_c", "AAPL").quantity == 101
         assert strategy_positions.get("alpha_d", "AAPL").quantity == 1
 
-        assert strategy_positions.debit_fee_calls == [
-            ("alpha_c", "AAPL", Decimal("0.01")),
-        ]
         assert strategy_positions.get("alpha_c", "AAPL").cumulative_fees == Decimal("0.01")
         assert strategy_positions.get("alpha_d", "AAPL").cumulative_fees == Decimal("0")
+        # The whole fee is accounted for, nowhere else.
+        total = sum(
+            strategy_positions.get(sid, "AAPL").cumulative_fees
+            for sid in ("alpha_a", "alpha_b", "alpha_c", "alpha_d")
+        )
+        assert total == Decimal("0.01")
 
     def test_distribution_iterates_strategies_in_sorted_order(self) -> None:
         # Sorted IDs make largest-remainder ties independent of hash order.
@@ -2423,189 +2579,6 @@ class _EmptyPlanManager:
         return PositionPlan()
 
 
-class TestPositionManagerShadow:
-    """The shadow planner runs alongside the translator path with zero
-    divergence, drives nothing, and the harness genuinely detects a
-    mismatch when one exists."""
-
-    def _build(
-        self,
-        clock: SimulatedClock,
-        *,
-        manager,
-        sink,
-        position_store=None,
-    ) -> tuple[Orchestrator, EventBus]:
-        bus = EventBus()
-        pos_store = position_store or MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
-        orch = Orchestrator(
-            clock=clock,
-            bus=bus,
-            backend=ExecutionBackend(
-                market_data=_StubMarketData(),
-                order_router=bt_router,
-                mode="BACKTEST",
-            ),
-            risk_engine=_StubRiskEngine(),
-            position_store=pos_store,
-            event_log=InMemoryEventLog(),
-            metric_collector=_NoOpMetricCollector(),
-            position_manager=manager,
-            position_manager_shadow_sink=sink,
-        )
-        return orch, bus
-
-    def test_legacy_manager_zero_divergence_entry_reverse_exit(self) -> None:
-        from feelies.execution.position_manager import (
-            LegacyPositionManager,
-            PlanDivergence,
-        )
-
-        clock = SimulatedClock(start_ns=1000)
-        sink: list[PlanDivergence] = []
-        pos_store = MemoryPositionStore()
-        orch, bus = self._build(
-            clock,
-            manager=LegacyPositionManager(),
-            sink=sink,
-            position_store=pos_store,
-        )
-
-        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
-        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
-        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
-
-        def emit(quote: NBBOQuote) -> None:
-            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
-            if sig is not None:
-                bus.publish(
-                    replace(
-                        sig,
-                        timestamp_ns=quote.timestamp_ns,
-                        correlation_id=quote.correlation_id,
-                        sequence=quote.sequence,
-                    )
-                )
-
-        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
-        _boot_to_backtest(orch)
-
-        for seq in (1, 2, 3):
-            q = _make_quote(ts=1000 + seq, seq=seq)
-            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-            orch._process_tick(q)
-
-        # Translator path drove the book through entry → reverse → exit …
-        assert pos_store.get("AAPL").quantity == 0
-        # … and the shadow planner never disagreed.
-        assert sink == [], f"unexpected divergence: {sink}"
-
-    def test_shadow_harness_detects_real_divergence(self) -> None:
-        # A manager that plans nothing must be caught diverging on an entry.
-        from feelies.execution.position_manager import PlanDivergence
-
-        clock = SimulatedClock(start_ns=1000)
-        sink: list[PlanDivergence] = []
-        orch, bus = self._build(clock, manager=_EmptyPlanManager(), sink=sink)
-        _publish_signal_on_quote(
-            bus,
-            _make_signal(_make_quote(), SignalDirection.LONG),
-        )
-        _boot_to_backtest(orch)
-        q = _make_quote()
-        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-        orch._process_tick(q)
-
-        assert len(sink) == 1
-        assert sink[0].legacy_intent == "ENTRY_LONG"
-        assert sink[0].planner_quantity == 0
-
-    def test_shadow_is_noop_without_sink(self) -> None:
-        # Manager wired but no sink → harness is inert, book still moves.
-        from feelies.execution.position_manager import LegacyPositionManager
-
-        clock = SimulatedClock(start_ns=1000)
-        orch, bus = self._build(
-            clock,
-            manager=LegacyPositionManager(),
-            sink=None,
-        )
-        _publish_signal_on_quote(
-            bus,
-            _make_signal(_make_quote(), SignalDirection.LONG),
-        )
-        _boot_to_backtest(orch)
-        q = _make_quote()
-        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-        orch._process_tick(q)
-        assert orch._positions.get("AAPL").quantity > 0
-
-
-class TestPositionManagerDrive:
-    """The flip: driving the decision from the planner (drive=True) produces
-    byte-identical orders to the legacy translator (drive=False)."""
-
-    @staticmethod
-    def _run_scenario(*, drive: bool) -> list[tuple]:
-        from feelies.execution.position_manager import LegacyPositionManager
-
-        clock = SimulatedClock(start_ns=1000)
-        bus = EventBus()
-        orders: list[OrderRequest] = []
-        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
-        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
-        orch = Orchestrator(
-            clock=clock,
-            bus=bus,
-            backend=ExecutionBackend(
-                market_data=_StubMarketData(),
-                order_router=bt_router,
-                mode="BACKTEST",
-            ),
-            risk_engine=_StubRiskEngine(),
-            position_store=MemoryPositionStore(),
-            event_log=InMemoryEventLog(),
-            metric_collector=_NoOpMetricCollector(),
-            position_manager=LegacyPositionManager(),
-            position_manager_drive=drive,
-        )
-        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
-        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
-        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
-
-        def emit(quote: NBBOQuote) -> None:
-            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
-            if sig is not None:
-                bus.publish(
-                    replace(
-                        sig,
-                        timestamp_ns=quote.timestamp_ns,
-                        correlation_id=quote.correlation_id,
-                        sequence=quote.sequence,
-                    )
-                )
-
-        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
-        _boot_to_backtest(orch)
-
-        for seq in (1, 2, 3):
-            q = _make_quote(ts=1000 + seq, seq=seq)
-            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
-            orch._process_tick(q)
-
-        return [
-            (o.order_id, o.side.name, o.quantity, o.order_type.name, str(o.limit_price))
-            for o in orders
-        ]
-
-    def test_drive_is_byte_identical_to_legacy(self) -> None:
-        legacy_orders = self._run_scenario(drive=False)
-        driven_orders = self._run_scenario(drive=True)
-        assert driven_orders, "scenario must submit at least one order"
-        assert driven_orders == legacy_orders
-
-
 class TestPositionManagerTrim:
     """A cost-aware trim can reduce a same-direction position."""
 
@@ -2633,7 +2606,6 @@ class TestPositionManagerTrim:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=enable_trim,
         )
         # LONG signal → default target 100 < current 150 → would trim 50.
@@ -2688,7 +2660,6 @@ class TestPositionManagerTrim:
             metric_collector=_NoOpMetricCollector(),
             cost_model=DefaultCostModel(DefaultCostModelConfig()),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=True,
             position_manager_trim_edge_gate_multiplier=1.0,
         )
@@ -2731,7 +2702,6 @@ class TestPositionManagerTrim:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=True,
             position_manager_urgency_exec=urgency_exec,
         )
@@ -2820,11 +2790,18 @@ class TestSessionFlatten:
             metric_collector=_NoOpMetricCollector(),
         )
         _boot_to_backtest(orch)
-        orch._trading_session_bounds = self._day_anchored_bounds(
-            anchor or date(2026, 3, 26),
-        )
+        bounds = self._day_anchored_bounds(anchor if anchor is not None else date(2026, 3, 26))
+        orch._trading_session_bounds = bounds
+        # Two consumers of one deadline: the kernel suppresses new entries inside
+        # the window, the controller authors the unwind.  Both must be configured.
         orch._session_flatten_enabled = enabled
         orch._session_flatten_seconds_before_close = flatten_buffer_s
+        _attach_stop_exit(
+            orch,
+            session_flatten_enabled=enabled,
+            session_flatten_seconds_before_close=flatten_buffer_s,
+            bounds=bounds,
+        )
         return orch, bus, orders, pos_store
 
     def test_flattens_open_position_past_close(self) -> None:
@@ -3021,7 +2998,6 @@ class TestWorkingExitFallback:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=TargetPositionManager(trim_min_fraction=0.10),
-            position_manager_drive=True,
             position_manager_enable_trim=True,
             position_manager_urgency_exec=True,
         )
@@ -3274,7 +3250,6 @@ class TestNetDrive:
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             position_manager=LegacyPositionManager(),
-            position_manager_drive=True,
         )
         TestNetShadow._emit(bus, specs)
         _boot_to_backtest(orch)
@@ -3738,7 +3713,7 @@ class TestRestingOrderGuardAfterRisk:
         position_store.update("AAPL", 100, Decimal("150.00"))
 
         orch = _build_orchestrator(clock, position_store=position_store)
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         fake_order = OrderRequest(
@@ -3751,7 +3726,9 @@ class TestRestingOrderGuardAfterRisk:
             order_type=OrderType.MARKET,
             quantity=100,
             limit_price=None,
-            strategy_id="__stop_exit__",
+            source_layer="RISK",
+            strategy_id="",
+            reason="STOP_EXIT",
         )
         orch._track_order(fake_order.order_id, fake_order.side, fake_order)
 
@@ -3761,7 +3738,13 @@ class TestRestingOrderGuardAfterRisk:
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        assert new_orders == []
+        # The controller authors an exit unconditionally — it does not know what
+        # is in flight.  Arbitration against pending state is the bridge's job,
+        # so the published intent is expected; what must not happen is a second
+        # aggressive leg reaching the router on top of the pending one.
+        assert [o.reason for o in new_orders] == ["STOP_EXIT"]
+        assert new_orders[0].order_id not in orch._active_orders
+        assert position_store.get("AAPL").quantity == 100
 
     def test_stop_exit_supersedes_resting_passive_cover(self) -> None:
         """A hard stop cancels a resting passive cover and crosses immediately."""
@@ -3778,7 +3761,7 @@ class TestRestingOrderGuardAfterRisk:
             position_store=position_store,
             order_router=router,
         )
-        orch._stop_loss_pct = 0.01
+        _attach_stop_exit(orch, stop_loss_pct=0.01)
         orch._use_passive_entries = True
         _boot_to_backtest(orch)
 
@@ -3816,7 +3799,7 @@ class TestRestingOrderGuardAfterRisk:
         assert "cover-001" in router.cancelled_order_ids
         assert not orch._has_pending_order_for_symbol("AAPL")
         # A forced MARKET exit was submitted and filled → position flat.
-        assert any(o.strategy_id == "__stop_exit__" for o in new_orders)
+        assert any(o.reason == "STOP_EXIT" for o in new_orders)
         assert position_store.get("AAPL").quantity == 0
         # Operator-visible forensic marker distinguishes the cancel-and-cross.
         assert any(a.alert_name == "forced_exit_supersedes_pending_order" for a in alerts)
@@ -3834,7 +3817,7 @@ class TestForcedExitPanicReason:
     """
 
     def test_stop_exit_order_carries_stop_exit_reason(self) -> None:
-        """A synthetic ``__stop_exit__`` MARKET exit is tagged ``STOP_EXIT``."""
+        """A risk-layer stop MARKET exit is tagged ``STOP_EXIT``."""
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         orders: list[OrderRequest] = []
@@ -3845,13 +3828,13 @@ class TestForcedExitPanicReason:
 
         quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
         orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        stop_orders = [o for o in orders if o.strategy_id == "__stop_exit__"]
+        stop_orders = [o for o in orders if o.reason == "STOP_EXIT"]
         assert len(stop_orders) == 1
         assert stop_orders[0].reason == "STOP_EXIT"
         assert stop_orders[0].order_type == OrderType.MARKET
@@ -3909,7 +3892,7 @@ class TestForcedExitPanicReason:
         orch = _build_orchestrator(
             clock, bus=bus, position_store=position_store, order_router=router
         )
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         orch._process_tick(quote)
@@ -3939,7 +3922,7 @@ class TestTradeJournalProvenance:
         orch = _build_orchestrator(clock, position_store=position_store)
         journal = InMemoryTradeJournal()
         orch._trade_journal = journal
-        orch._stop_loss_per_share = 1.0
+        _attach_stop_exit(orch, stop_loss_per_share=1.0)
         _boot_to_backtest(orch)
 
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]

@@ -16,6 +16,8 @@ Invariants preserved:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+from collections.abc import Sequence
 from decimal import Decimal
 
 from feelies.core.events import Side
@@ -105,25 +107,18 @@ class FillAttributionLedger:
         )
         allocations = [n - p for n, p in zip(new_cum, prev_cum, strict=True)]
 
-        total_allocated = sum(a for a in allocations if a > 0)
+        alloc_fees = split_fees(total_fees, allocations)
         result: list[tuple[str, str, int, Decimal, Decimal]] = []
-        fee_remainder = total_fees
-        for idx, (contrib, alloc_qty) in enumerate(
-            zip(
-                record.contributions,
-                allocations,
-                strict=True,
-            )
+        for contrib, alloc_qty, alloc_fee in zip(
+            record.contributions,
+            allocations,
+            alloc_fees,
+            strict=True,
         ):
             if alloc_qty == 0:
                 continue
             contrib_sign = 1 if contrib.signed_quantity >= 0 else -1
             effective_sign = sign if contrib_sign >= 0 else -sign
-            if total_allocated > 0:
-                alloc_fee = (total_fees * alloc_qty / total_allocated).quantize(Decimal("0.01"))
-            else:
-                alloc_fee = Decimal("0")
-            fee_remainder -= alloc_fee
             result.append(
                 (
                     contrib.strategy_id,
@@ -134,10 +129,6 @@ class FillAttributionLedger:
                 )
             )
 
-        if result and fee_remainder != Decimal("0"):
-            last = result[-1]
-            result[-1] = (last[0], last[1], last[2], last[3], last[4] + fee_remainder)
-
         if is_final:
             self._records.pop(order_id, None)
             self._cumulative_allocations.pop(order_id, None)
@@ -147,34 +138,80 @@ class FillAttributionLedger:
         return result
 
 
-def _largest_remainder_allocate(
-    total: int,
-    contributions: tuple[AlphaContribution, ...],
-) -> list[int]:
-    """Allocate *total* across contributions proportionally.
+def largest_remainder_split(total: int, weights: Sequence[float]) -> list[int]:
+    """Split *total* integer units across *weights* proportionally.
 
-    Largest-remainder method: compute exact fractional allocation,
-    floor each, then distribute remaining units one at a time to
-    contributions with the largest fractional remainders.
+    Largest-remainder method: floor each exact share, then hand the leftover
+    units one at a time to the largest fractional remainders.  The result sums to
+    *total* exactly, which is what keeps a per-alpha split reconciling against the
+    fill it came from.
+
+    Two callers share this: the ledger splits by each alpha's declared
+    contribution to a netted order, and the kernel's symbol-net fallback splits by
+    each slice's current position.  The *basis* differs by design; the rounding
+    must not, or the same fill would round differently depending on which path
+    attributed it — and per-alpha PnL feeds the promotion gates.
+
+    All-zero (or non-positive) weights fall back to an even split so a fill is
+    never silently dropped.
+
+    Determinism (Inv-5): ties break by index via a stable sort, so the caller's
+    ordering — not dict or set iteration order — decides who gets the odd unit.
     """
-    if not contributions:
+    n = len(weights)
+    if n == 0:
         return []
 
-    total_proportion = sum(abs(c.proportion) for c in contributions)
-    if total_proportion <= 0:
-        n = len(contributions)
+    total_weight = math.fsum(abs(w) for w in weights)
+    if total_weight <= 0:
         base = total // n
         remainder = total - base * n
         return [base + (1 if i < remainder else 0) for i in range(n)]
 
-    exact = [total * abs(c.proportion) / total_proportion for c in contributions]
+    exact = [total * abs(w) / total_weight for w in weights]
     floors = [int(e) for e in exact]
     remainders = [e - f for e, f in zip(exact, floors)]
 
     deficit = total - sum(floors)
-
     indices = sorted(range(len(remainders)), key=lambda i: -remainders[i])
     for i in range(deficit):
         floors[indices[i]] += 1
 
     return floors
+
+
+def split_fees(total_fees: Decimal, allocations: Sequence[int]) -> list[Decimal]:
+    """Split *total_fees* in proportion to *allocations*, to the cent.
+
+    Quantising each share loses a residue, so the remainder is handed to the last
+    non-zero allocation.  The returned list sums to ``total_fees`` exactly — a
+    caller reconciling per-alpha fees against the ack's fees must not find a gap.
+
+    Zero allocations receive zero.  An all-zero allocation vector returns all
+    zeros, leaving the caller to account for the fee itself.
+    """
+    out = [Decimal("0")] * len(allocations)
+    total_allocated = sum(a for a in allocations if a > 0)
+    if total_allocated <= 0:
+        return out
+
+    remainder = total_fees
+    last_nonzero = -1
+    for idx, alloc in enumerate(allocations):
+        if alloc <= 0:
+            continue
+        share = (total_fees * alloc / total_allocated).quantize(Decimal("0.01"))
+        out[idx] = share
+        remainder -= share
+        last_nonzero = idx
+    if remainder != Decimal("0") and last_nonzero >= 0:
+        out[last_nonzero] += remainder
+    return out
+
+
+def _largest_remainder_allocate(
+    total: int,
+    contributions: tuple[AlphaContribution, ...],
+) -> list[int]:
+    """Allocate *total* across contributions by declared proportion."""
+    return largest_remainder_split(total, [c.proportion for c in contributions])

@@ -14,7 +14,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from feelies.risk.exit_composer import ExitComposer
     from feelies.risk.hazard_exit import HazardExitController
 
+from feelies.alpha.fill_attribution import largest_remainder_split, split_fees
 from feelies.alpha.arbitration import (
     EdgeWeightedArbitrator,
     SignalArbitrator,
@@ -101,19 +102,21 @@ from feelies.execution.position_manager import (
     DesiredPosition,
     ExecStyle,
     MarketContext,
-    PlanDivergence,
     PlanLeg,
     PositionManager,
     PositionManagerConfig,
     PositionPlan,
-    compare_plan_to_intent,
     desired_from_signal,
     entry_edge_clears_cost,
     order_intent_from_plan,
     reversal_edge_gate,
     round_trip_cost_bps,
 )
-from feelies.execution.trading_session import TradingSessionBounds
+from feelies.execution.trading_session import (
+    TradingSessionBounds,
+    in_session_flatten_window,
+    session_flatten_deadline_ns,
+)
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
     build_borrow_table,
@@ -149,6 +152,7 @@ from feelies.risk.deferral_cap import (
 )
 from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
+from feelies.risk.stop_exit import STOP_EXIT_REASONS, StopExitController
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -194,23 +198,6 @@ _ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset(
     }
 )
 
-# Synthetic strategies whose exits must always cross at MARKET — a
-# guaranteed close (stop-loss, end-of-day flatten) is never left to a
-# passive non-fill (Inv-11).
-_FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset(
-    {
-        "__stop_exit__",
-        "__session_flat__",
-    }
-)
-
-# Stop exits receive panic-fill pricing; scheduled session flats do not.
-_FORCED_EXIT_PANIC_REASON: Mapping[str, str] = MappingProxyType(
-    {
-        "__stop_exit__": "STOP_EXIT",
-    }
-)
-
 # Reducing forced-exit reasons routed through the non-vetoable RISK-layer bridge
 # (:meth:`Orchestrator._on_bus_hazard_order`).  All three authors — the hazard
 # controller, the Stage-0 exit composer, and the Stage-0 bounded-deferral cap —
@@ -219,7 +206,7 @@ _FORCED_EXIT_PANIC_REASON: Mapping[str, str] = MappingProxyType(
 # writer automatically extends what routes, and a mandated exit never silently
 # drops (Inv-11 fail-safe).
 _RISK_FORCED_EXIT_REASONS: frozenset[str] = (
-    HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
+    HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS | STOP_EXIT_REASONS
 )
 
 # Forced-exit reasons whose author *may* flatten a **strategy slice** rather than
@@ -279,14 +266,141 @@ def _order_owns_one_slice(order: OrderRequest) -> bool:
     reduce-test at :data:`_SLICE_SCOPED_FORCED_EXIT_REASONS`, which may consult the
     slice basis as a symbol-net-first fallback without attributing the fill.
 
-    False for an order with no ``strategy_id`` (aggregate / emergency flatten): it owns
-    no slice to credit.
+    False for an order with no ``strategy_id`` (aggregate / emergency flatten, and
+    the platform stop / session flatten authored by
+    :class:`~feelies.risk.stop_exit.StopExitController`): it owns no slice to
+    credit, so its fill falls to the proportional symbol-net split.
     """
     if not order.strategy_id:
         return False
     if order.reason in _SELF_ATTRIBUTED_FORCED_EXIT_REASONS:
         return True
     return order.reason not in _RISK_FORCED_EXIT_REASONS
+
+
+def _closable_quantity(position_qty: int, side: Side) -> int:
+    """Shares *side* can close against ``position_qty`` without crossing zero.
+
+    A SELL closes a long, a BUY closes a short; anything beyond that opens
+    opposite exposure rather than reducing.  Returns 0 when there is nothing on
+    the closable side.
+    """
+    if side is Side.SELL:
+        return max(position_qty, 0)
+    return max(-position_qty, 0)
+
+
+def _is_forced_market_exit(order: OrderRequest) -> bool:
+    """Whether *order* is an aggressive, non-vetoable flatten.
+
+    All four authors — the hazard controller, the Stage-0 exit composer, the
+    bounded-deferral cap, and the platform stop / session flatten — publish on the
+    bus with ``source_layer="RISK"`` and a reason in
+    :data:`_RISK_FORCED_EXIT_REASONS`, so one test covers them.
+
+    They share one resting-order question: a mandated exit cancels stale passive
+    orders so it can cross immediately, and never stacks a second aggressive leg on
+    one already in flight (Inv-11).
+    """
+    return (
+        order.source_layer == HAZARD_EXIT_SOURCE_LAYER
+        and order.reason in _RISK_FORCED_EXIT_REASONS
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _TradeJournalLeg:
+    """One trade-journal row's share of a single fill."""
+
+    strategy_id: str
+    filled_quantity: int
+    fees: Decimal
+    realized_pnl: Decimal
+    metadata: dict[str, str]
+
+
+def _trade_journal_legs(
+    order: OrderRequest,
+    *,
+    filled_quantity: int,
+    fees: Decimal,
+    realized_pnl: Decimal,
+    attributed_legs: Sequence[tuple[str, int, Decimal, Decimal]],
+) -> list[_TradeJournalLeg]:
+    """Split one fill into the trade-journal rows it should produce.
+
+    The journal asks :func:`_order_owns_one_slice` — the same predicate that decides
+    where the *position* goes — so the two can never disagree about who a fill
+    belongs to.  An order that owns one slice yields exactly one row under its own
+    ``strategy_id``; a **symbol-net** order yields one row per slice it actually
+    closed, carrying each slice's own quantity, fees, and realized PnL as the
+    position store booked them — *not* the aggregate figure apportioned by
+    quantity, which would hand every slice the blended entry price's PnL instead
+    of its own.
+
+    That distinction matters because ``realized_pnl`` is booked entirely on the
+    *closing* fill.  Journalling a symbol-net close under the order's own
+    ``strategy_id`` strips the closing leg out of every other holder's evidence:
+    each per-alpha estimator groups by ``strategy_id``
+    (:func:`~feelies.forensics.edge_calibration.build_edge_calibrations`,
+    :func:`~feelies.forensics.cost_survival.per_alpha_cost_survival`,
+    :class:`~feelies.forensics.decay_detector.DecayDetector`), so an alpha ends up
+    measured on its surviving trades only.  For a stop-loss the omission is
+    systematically favourable — stops fire on losers — and on a stop-heavy tape it
+    inverts the sign of the measured edge, which then feeds the promotion and
+    quarantine gates (Inv-3 evidence, Inv-4 decay, Inv-13 provenance).
+
+    Three author families reach the symbol-net branch: the kernel's synthetic
+    ``__stop_exit__`` / ``__session_flat__``, the RISK-layer hazard controller
+    (whose exit flattens the whole symbol though it carries the triggering policy's
+    ``strategy_id``), and aggregate flattens with no ``strategy_id`` at all.  The
+    order's own author stays recoverable via
+    ``metadata["forced_exit_strategy_id"]``, alongside the existing
+    ``order_reason`` / ``order_source_layer`` provenance.
+
+    Falls back to a single row under the order's ``strategy_id`` when nothing was
+    attributed (no slice book wired, or no strategy held the symbol): a row with the
+    wrong owner still beats dropping the fill from the journal.
+    """
+    base_metadata = {
+        "order_reason": order.reason,
+        "order_source_layer": order.source_layer,
+    }
+    if not attributed_legs:
+        return [
+            _TradeJournalLeg(
+                strategy_id=order.strategy_id,
+                filled_quantity=filled_quantity,
+                fees=fees,
+                realized_pnl=realized_pnl,
+                metadata=base_metadata,
+            )
+        ]
+
+    # Each leg carries the realized PnL the slice book actually booked for it,
+    # measured against that slice's own ``avg_entry_price``.  Splitting the
+    # aggregate proportionally by quantity would only agree when every slice
+    # entered at the same price: two alphas holding 50 @ 100 and 50 @ 110 give an
+    # aggregate basis of 105, so a close at 90 books -500 / -1000 in the slice
+    # book but would be journalled -750 / -750.  The journal is what every
+    # per-alpha estimator groups by ``strategy_id`` and sums, so the two
+    # authoritative records must not disagree (Inv-3, Inv-13).
+    owns_one_slice = _order_owns_one_slice(order)
+    metadata = (
+        base_metadata
+        if owns_one_slice
+        else {**base_metadata, "forced_exit_strategy_id": order.strategy_id}
+    )
+    return [
+        _TradeJournalLeg(
+            strategy_id=strategy_id,
+            filled_quantity=abs(qty),
+            fees=leg_fees,
+            realized_pnl=leg_realized,
+            metadata=dict(metadata),
+        )
+        for strategy_id, qty, leg_fees, leg_realized in attributed_legs
+    ]
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -348,6 +462,7 @@ class Orchestrator:
         cross_sectional_tracker: "CrossSectionalTracker | None" = None,
         composition_metrics_collector: "HorizonMetricsCollector | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
+        stop_exit_controller: "StopExitController | None" = None,
         exit_composer: "ExitComposer | None" = None,
         deferral_cap_controller: "DeferralCapController | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
@@ -355,8 +470,6 @@ class Orchestrator:
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
         position_manager: "PositionManager | None" = None,
-        position_manager_shadow_sink: "list[PlanDivergence] | None" = None,
-        position_manager_drive: bool = False,
         position_manager_enable_trim: bool = False,
         position_manager_trim_edge_gate_multiplier: float = 0.0,
         position_manager_urgency_exec: bool = False,
@@ -385,15 +498,10 @@ class Orchestrator:
             intent_translator if intent_translator is not None else SignalPositionTranslator()
         )
         self._position_sizer: PositionSizer = (
-            position_sizer
-            if position_sizer is not None
-            else BudgetBasedSizer(regime_engine=regime_engine)
+            position_sizer if position_sizer is not None else BudgetBasedSizer()
         )
         # Shadow the planner without affecting orders, events, or journals.
         self._position_manager = position_manager
-        self._position_manager_shadow_sink = position_manager_shadow_sink
-        # When enabled, the planner supplies the live OrderIntent.
-        self._position_manager_drive = position_manager_drive
         # Allow cost-aware partial reductions when a same-direction target shrinks.
         self._position_manager_enable_trim = position_manager_enable_trim
         # Suppress trims while forward edge clears this cost multiple; 0 disables.
@@ -449,6 +557,12 @@ class Orchestrator:
         self._cross_sectional_tracker = cross_sectional_tracker
         self._composition_metrics_collector = composition_metrics_collector
         self._hazard_exit_controller = hazard_exit_controller
+        # Platform stop-loss / session flatten (risk layer).  Self-subscribes to
+        # quotes in bootstrap; the orchestrator holds the reference for
+        # lifecycle and inspection symmetry with the other exit authors.  Its
+        # flatten ``OrderRequest`` routes through ``_on_bus_hazard_order`` like
+        # any RISK-layer forced exit.
+        self._stop_exit_controller = stop_exit_controller
         # Stage-0 exit composer (risk layer): actuates decoupled alphas' unwind
         # from ``SafetyStateChange``.  It self-subscribes to the bus in bootstrap;
         # the orchestrator holds the reference for lifecycle/inspection symmetry
@@ -488,12 +602,6 @@ class Orchestrator:
         # M2 publishes RegimeState before the scheduler runs.
         self._regime_bus_published_symbols: set[str] = set()
 
-        self._stop_loss_per_share: float = 0.0
-        self._trail_activate_per_share: float = 0.0
-        self._stop_loss_pct: float = 0.0
-        self._trail_activate_pct: float = 0.0
-        self._trail_pct: float = 0.5
-        self._peak_pnl_per_share: dict[str, float] = {}
         # Optional EOD flatten blocks entries and closes positions near RTH close.
         self._session_flatten_enabled: bool = False
         self._session_flatten_seconds_before_close: int = 0
@@ -729,6 +837,18 @@ class Orchestrator:
         return self._metrics
 
     @property
+    def edge_calibration_factors(self) -> Mapping[str, float]:
+        """Per-alpha realization factors the B4 gate multiplied into disclosed edge.
+
+        Resolved at boot from either the explicit bootstrap argument or
+        ``PlatformConfig.edge_calibration_path``.  Exposed so run provenance
+        identifies the factors actually applied rather than the ones a particular
+        caller happened to pass — the two routes diverged once config gained a
+        path (Inv-13).
+        """
+        return MappingProxyType(dict(self._edge_calibration_factors))
+
+    @property
     def kill_switch(self) -> KillSwitch | None:
         return self._kill_switch
 
@@ -875,20 +995,6 @@ class Orchestrator:
                 within_l1_impact_factor=within_l1_impact_factor,
                 permanent_impact_coefficient=permanent_impact_coefficient,
             )
-            if hasattr(config, "stop_loss_per_share"):
-                self._stop_loss_per_share = config.stop_loss_per_share
-            if hasattr(config, "trail_activate_per_share"):
-                self._trail_activate_per_share = config.trail_activate_per_share
-            # Percentage-based stops override the per-share fields when set.
-            # The actual per-share threshold can only be derived at fill time
-            # (it depends on entry price), so we cache the pct and convert in
-            # ``_check_stop_exit`` against the position's ``avg_entry_price``.
-            if hasattr(config, "stop_loss_pct"):
-                self._stop_loss_pct = config.stop_loss_pct
-            if hasattr(config, "trail_activate_pct"):
-                self._trail_activate_pct = config.trail_activate_pct
-            if hasattr(config, "trail_pct"):
-                self._trail_pct = config.trail_pct
             # Session-flatten configuration.
             if hasattr(config, "session_flatten_enabled"):
                 self._session_flatten_enabled = config.session_flatten_enabled
@@ -1702,16 +1808,11 @@ class Orchestrator:
                 trigger="portfolio_poll_acks",
                 correlation_id=correlation_id,
             )
-            expected_order_ids = {o.order_id for o in orders}
-            acks = self._poll_order_router_acks(expected_order_ids)
-            self._publish_and_apply_order_acks(acks)
-
-            self._micro.transition(
-                MicroState.POSITION_UPDATE,
-                trigger="portfolio_reconcile",
-                correlation_id=correlation_id,
+            self._settle_router_acks(
+                correlation_id,
+                expected_order_ids={o.order_id for o in orders},
+                position_update_trigger="portfolio_reconcile",
             )
-            self._reconcile_fills(acks, correlation_id)
 
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1748,9 +1849,10 @@ class Orchestrator:
             )
             self._backend.order_router.submit(order)
             self._bus.publish(order)
-        acks = self._poll_order_router_acks({o.order_id for o in orders})
-        self._publish_and_apply_order_acks(acks)
-        self._reconcile_fills(acks, correlation_id)
+        self._settle_router_acks(
+            correlation_id,
+            expected_order_ids={o.order_id for o in orders},
+        )
 
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
@@ -1924,13 +2026,21 @@ class Orchestrator:
         if self._signal_order_trace_sink is not None:
             self._tick_quote_for_trace = quote
             self._last_quote_context_for_signal_trace = quote
-        # Sensor fan-out (+ router on_quote) runs synchronously inside
-        # publish; time the call for hot-path attribution.
-        t_pub = time.perf_counter_ns()
-        self._bus.publish(quote)
-        self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
-
         # Mark aggregate and strategy books for exposure and drawdown checks.
+        #
+        # Marking runs **before** the bus publish so every subscriber evaluates
+        # against this quote's book rather than the previous one.  The risk-layer
+        # exit authors are the reason: ``StopExitController`` fires on the quote
+        # itself, and a stop fires precisely on an adverse move, so a stale mark
+        # would systematically understate the loss at the moment the bridge runs
+        # ``check_order`` — the drawdown guard could read well inside its bar on a
+        # tick that actually breached it (Inv-11 fail-safe).  Marking first also
+        # puts the stop author on the same footing as the hazard controller, which
+        # fires later at ``_update_regime``.
+        #
+        # Safe to hoist: ``update_mark`` writes prices only, never quantities, and
+        # no ``NBBOQuote`` subscriber reads marks — sensors are pure market-data
+        # observers and the router's entry gate reads position *quantity*.
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
             # Mark liquidation at bid for longs and ask for shorts.
@@ -1955,6 +2065,12 @@ class Orchestrator:
                     bid=quote.bid,
                     ask=quote.ask,
                 )
+
+        # Sensor fan-out (+ router on_quote) runs synchronously inside
+        # publish; time the call for hot-path attribution.
+        t_pub = time.perf_counter_ns()
+        self._bus.publish(quote)
+        self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
         # Use exchange time so risk and routing cross the RTH close together.
         self._maybe_flip_buying_power_at_rth_close(quote)
 
@@ -1998,12 +2114,15 @@ class Orchestrator:
             signal = self._select_bus_signal()
             self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
-        stop_signal = self._check_stop_exit(quote)
+        # Stop-loss and session flatten are authored by
+        # :class:`~feelies.risk.stop_exit.StopExitController`, which fires off the
+        # same quote publish above and routes through the RISK-layer bridge.  The
+        # SIGNAL path carries alpha conviction only.
         self._trace_buffered_signals_arbitration(
             quote,
             buf_snapshot,
             signal,
-            stop_signal,
+            None,
         )
         # Update standing targets and record winner-versus-net divergence.
         self._record_net_shadow(buf_snapshot, signal, quote)
@@ -2012,21 +2131,9 @@ class Orchestrator:
                 self._carryover_signal_sequences.discard(buffered.sequence)
             self._signal_buffer.clear()
 
-        # Flat-by-close overrides alpha conviction; a simultaneous stop also flattens.
-        session_flat_signal = self._check_session_flat(quote)
-        if session_flat_signal is not None:
-            signal = session_flat_signal
-
-        if stop_signal is not None:
-            signal = stop_signal
-
         if signal is None:
             self._finalize_tick(t_wall_start, cid, "no_signal_this_tick")
             return
-
-        # Alpha signals are already published upstream; publish only synthetic exits here.
-        if signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
-            self._bus.publish(signal)
 
         # ── Position sizing: compute target quantity from risk budget ──
         target_qty = self._compute_target_quantity(signal, quote)
@@ -2037,15 +2144,11 @@ class Orchestrator:
         current_position = self._positions.get(signal.symbol)
         # Only discretionary trims override the builder's execution style.
         exec_style_override: ExecStyle | None = None
-        if self._position_manager is not None and self._position_manager_drive:
+        if self._position_manager is not None:
             # With portfolio netting, the winner selects the symbol and the
             # budget-weighted net target selects its position.
-            # Forced exits bypass alpha netting and always target flat.
             decision_signal = signal
-            if (
-                self._enable_portfolio_netting
-                and signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
-            ):
+            if self._enable_portfolio_netting:
                 net_desired = self._portfolio_netter.net(
                     signal.symbol,
                     int(quote.timestamp_ns),
@@ -2076,18 +2179,11 @@ class Orchestrator:
             if plan.primary_leg is PlanLeg.TRIM and plan.orders:
                 exec_style_override = plan.orders[0].style
         else:
+            # No planner wired (minimal test doubles); translate directly.
             intent = self._intent_translator.translate(
                 signal,
                 current_position,
                 target_qty,
-            )
-            # Shadow planning is observational and does not affect execution.
-            self._record_position_manager_shadow(
-                signal,
-                current_position,
-                target_qty,
-                intent,
-                quote,
             )
 
         if intent.intent == TradingIntent.NO_ACTION:
@@ -2367,28 +2463,13 @@ class Orchestrator:
                 f"Fail-safe: aborting order path."
             )
 
-        # Suppress duplicates while an order is pending. Forced exits may
-        # supersede passive orders; reversals use their own path.
+        # Suppress duplicates while an order is pending.  Mandated exits are no
+        # longer authored here — they arrive on the bus and supersede resting
+        # orders inside ``_on_bus_hazard_order`` — so this path only ever blocks;
+        # it never cancels, and therefore has no cancel-then-submit window in
+        # which the book could move under an already-built order.
         if self._has_pending_order_for_symbol(order.symbol):
-            # A forced market exit supersedes resting passive orders. Keep an
-            # existing forced exit to avoid sending a second aggressive leg.
-            if intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
-                if self._has_pending_forced_exit_for_symbol(order.symbol):
-                    self._append_signal_order_trace(
-                        quote,
-                        signal,
-                        outcome="NO_ORDER",
-                        reasons=(
-                            "resting_order_guard_forced_exit_already_pending",
-                            f"symbol={order.symbol}",
-                        ),
-                        trading_intent=intent.intent.name,
-                    )
-                    self._finalize_tick(t_wall_start, cid, "resting_order_pending")
-                    return
-                self._emit_forced_exit_supersedes_pending_alert(order, cid)
-                self._cancel_resting_for_symbol(order.symbol, cid)
-            elif intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
+            if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
                 order.symbol
             ):
                 self._append_signal_order_trace(
@@ -2470,16 +2551,12 @@ class Orchestrator:
             trigger="order_submitted",
             correlation_id=cid,
         )
-        acks = self._poll_order_router_acks({order.order_id})
-        self._publish_and_apply_order_acks(acks)
-
         # ── M8 → M9: POSITION_UPDATE ───────────────────────────
-        self._micro.transition(
-            MicroState.POSITION_UPDATE,
-            trigger="order_acknowledged",
-            correlation_id=cid,
+        self._settle_router_acks(
+            cid,
+            expected_order_ids={order.order_id},
+            position_update_trigger="order_acknowledged",
         )
-        self._reconcile_fills(acks, cid)
 
         # ── M9 → M10: LOG_AND_METRICS ──────────────────────────
         self._finalize_tick(t_wall_start, cid, "position_updated")
@@ -3075,9 +3152,7 @@ class Orchestrator:
                     continue
 
                 self._bus.publish(order)
-                acks = self._poll_order_router_acks({order_id})
-                self._publish_and_apply_order_acks(acks)
-                self._reconcile_fills(acks, correlation_id)
+                acks = self._settle_router_acks(correlation_id, expected_order_ids={order_id})
                 # A reject / zero-fill ack still leaves the position open.
                 # Surface it as a failure so the residual alert sees it.
                 non_fill_acks = [
@@ -3131,134 +3206,32 @@ class Orchestrator:
             )
         return failures, residual
 
-    def _check_stop_exit(self, quote: NBBOQuote) -> Signal | None:
-        """Check stop-loss and trailing stop for open positions.
-
-        Returns a synthetic FLAT Signal if a stop triggers, None otherwise.
-        Also updates peak unrealized P&L tracking for trailing stops.
-
-        Percentage-based thresholds (``stop_loss_pct``,
-        ``trail_activate_pct``) take precedence over per-share fields when
-        non-zero, converted against ``avg_entry_price`` at check time so a
-        single config value applies across the universe regardless of
-        per-symbol price level.
-        """
-        if (
-            self._stop_loss_per_share <= 0
-            and self._trail_activate_per_share <= 0
-            and self._stop_loss_pct <= 0
-            and self._trail_activate_pct <= 0
-        ):
-            return None
-
-        pos = self._positions.get(quote.symbol)
-        if pos.quantity == 0:
-            self._peak_pnl_per_share.pop(quote.symbol, None)
-            return None
-
-        mid = float((quote.bid + quote.ask) / Decimal(2))
-        entry = float(pos.avg_entry_price)
-        if entry <= 0:
-            return None
-
-        sign = 1.0 if pos.quantity > 0 else -1.0
-        unrealized_per_share = (mid - entry) * sign
-
-        peak = self._peak_pnl_per_share.get(quote.symbol, unrealized_per_share)
-        if unrealized_per_share > peak:
-            peak = unrealized_per_share
-        self._peak_pnl_per_share[quote.symbol] = peak
-
-        # Percentage thresholds override per-share fields when set.
-        stop_threshold = (
-            entry * self._stop_loss_pct if self._stop_loss_pct > 0 else self._stop_loss_per_share
-        )
-        trail_activate_threshold = (
-            entry * self._trail_activate_pct
-            if self._trail_activate_pct > 0
-            else self._trail_activate_per_share
-        )
-
-        triggered = False
-
-        if stop_threshold > 0 and unrealized_per_share < -stop_threshold:
-            triggered = True
-
-        if (
-            trail_activate_threshold > 0
-            and peak >= trail_activate_threshold
-            and unrealized_per_share < peak * self._trail_pct
-        ):
-            triggered = True
-
-        if not triggered:
-            return None
-
-        return Signal(
-            timestamp_ns=quote.timestamp_ns,
-            correlation_id=quote.correlation_id,
-            sequence=self._signal_seq.next(),
-            source_layer="SIGNAL",
-            symbol=quote.symbol,
-            strategy_id="__stop_exit__",
-            direction=SignalDirection.FLAT,
-            strength=0.0,
-            edge_estimate_bps=0.0,
-        )
-
     def _session_flatten_deadline_ns(self, quote: NBBOQuote) -> int | None:
         """Exchange-time ns at/after which the session flattens, or None.
 
-        ``None`` when session flatten is disabled or no RTH session is
-        configured.  The deadline is ``rth_close - buffer`` so an operator
-        can unwind before the closing auction.
-
-        The bounds are resolved for *this quote's* NY session date via
-        :meth:`TradingSessionBounds.resolve_for_timestamp` so a multi-day
-        replay rebinds the close per replayed day rather than pinning every
-        day to the single ``session_date`` the bounds were booted with
-        (which, for a CLI date *range*, falls back to the stale
-        ``event_calendar_path`` date and would otherwise flag every quote
-        as past-close — see ``apply_backtest_session_dates_from_cli``).
+        Thin binding of this orchestrator's session configuration to
+        :func:`~feelies.execution.trading_session.session_flatten_deadline_ns`,
+        which owns the arithmetic beside the bounds it reads.
         """
-        if not self._session_flatten_enabled:
-            return None
-        bounds = self._trading_session_bounds
-        if bounds is None:
-            return None
-        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
-        return effective.rth_close_ns - (
-            self._session_flatten_seconds_before_close * 1_000_000_000
+        return session_flatten_deadline_ns(
+            self._trading_session_bounds,
+            enabled=self._session_flatten_enabled,
+            seconds_before_close=self._session_flatten_seconds_before_close,
+            at_ns=quote.exchange_timestamp_ns,
         )
 
     def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
-        """True once the quote crosses the session-flatten deadline."""
-        deadline = self._session_flatten_deadline_ns(quote)
-        return deadline is not None and quote.exchange_timestamp_ns >= deadline
+        """True once the quote crosses the session-flatten deadline.
 
-    def _check_session_flat(self, quote: NBBOQuote) -> Signal | None:
-        """Return a synthetic flat signal for an open position at close.
-
-        Independent of alpha behaviour: once the quote crosses the
-        session-flatten deadline, any non-zero position for the symbol is
-        unwound via the normal EXIT path (forced MARKET — the close must
-        not be left to a passive non-fill).  Returns ``None`` when the
-        window has not opened or the book is already flat.
+        Gates entry suppression on the SIGNAL path.  Shares one deadline with
+        the end-of-session flatten emission so the two can never disagree about
+        when the window opens.
         """
-        if not self._in_session_flatten_window(quote):
-            return None
-        if self._positions.get(quote.symbol).quantity == 0:
-            return None
-        return Signal(
-            timestamp_ns=quote.timestamp_ns,
-            correlation_id=quote.correlation_id,
-            sequence=self._signal_seq.next(),
-            source_layer="SIGNAL",
-            symbol=quote.symbol,
-            strategy_id="__session_flat__",
-            direction=SignalDirection.FLAT,
-            strength=0.0,
-            edge_estimate_bps=0.0,
+        return in_session_flatten_window(
+            self._trading_session_bounds,
+            enabled=self._session_flatten_enabled,
+            seconds_before_close=self._session_flatten_seconds_before_close,
+            at_ns=quote.exchange_timestamp_ns,
         )
 
     def _compute_target_quantity(
@@ -3391,8 +3364,8 @@ class Orchestrator:
                 cost_model=self._cost_model,
             ),
             config=PositionManagerConfig(
-                shadow=not self._position_manager_drive,
-                enabled=self._position_manager_drive,
+                shadow=False,
+                enabled=True,
                 enable_trim=self._position_manager_enable_trim,
                 trim_edge_gate_multiplier=(self._position_manager_trim_edge_gate_multiplier),
                 urgency_exec=self._position_manager_urgency_exec,
@@ -3523,42 +3496,6 @@ class Orchestrator:
                     detail=f"net={net.target_qty} winner={winner_target}",
                 )
             )
-
-    def _record_position_manager_shadow(
-        self,
-        signal: Signal,
-        current_position: Position,
-        target_qty: int | None,
-        intent: OrderIntent,
-        quote: NBBOQuote,
-    ) -> None:
-        """Run the shadow planner and record decision divergence.
-
-        No-op unless both a position manager and a divergence sink are
-        wired.  Strictly observational — it builds no orders, publishes
-        nothing on the bus, and writes no journal records, so it cannot
-        move a parity hash. ``OrderIntent`` continues to drive shadow-mode execution.
-        """
-        manager = self._position_manager
-        sink = self._position_manager_shadow_sink
-        if manager is None or sink is None:
-            return
-        plan = self._plan_for_signal(
-            signal,
-            current_position,
-            target_qty,
-            quote,
-        )
-        divergence = compare_plan_to_intent(
-            intent_name=intent.intent.name,
-            intent_target_quantity=intent.target_quantity,
-            current_quantity=current_position.quantity,
-            plan=plan,
-            symbol=signal.symbol,
-            signal_sequence=signal.sequence,
-        )
-        if divergence is not None:
-            sink.append(divergence)
 
     def _execute_reverse(
         self,
@@ -3805,14 +3742,11 @@ class Orchestrator:
                 trigger="reverse_exit_submit_failed",
                 correlation_id=cid,
             )
-            acks = self._poll_order_router_acks({exit_order.order_id})
-            self._publish_and_apply_order_acks(acks)
-            self._micro.transition(
-                MicroState.POSITION_UPDATE,
-                trigger="reverse_acks_after_failed_exit_submit",
-                correlation_id=cid,
+            self._settle_router_acks(
+                cid,
+                expected_order_ids={exit_order.order_id},
+                position_update_trigger="reverse_acks_after_failed_exit_submit",
             )
-            self._reconcile_fills(acks, cid)
             self._finalize_tick(t_wall_start, cid, "reverse_aborted_exit_submit_failed")
             return
 
@@ -3844,16 +3778,12 @@ class Orchestrator:
         expected_order_ids = {exit_order.order_id}
         if entry_order is not None and entry_submitted_ok:
             expected_order_ids.add(entry_order.order_id)
-        acks = self._poll_order_router_acks(expected_order_ids)
-        self._publish_and_apply_order_acks(acks)
-
         # ── M8 → M9: POSITION_UPDATE ──────────────────────────────
-        self._micro.transition(
-            MicroState.POSITION_UPDATE,
-            trigger="reverse_acks_received",
-            correlation_id=cid,
+        self._settle_router_acks(
+            cid,
+            expected_order_ids=expected_order_ids,
+            position_update_trigger="reverse_acks_received",
         )
-        self._reconcile_fills(acks, cid)
 
         if self._signal_order_trace_sink is not None:
             leg = (
@@ -3946,7 +3876,6 @@ class Orchestrator:
             is_exit_or_stop=is_exit_or_stop,
             edge_bps=intent.signal.edge_estimate_bps,
             exec_style=exec_style,
-            forced_market=(intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES),
         )
 
         return (
@@ -3963,8 +3892,7 @@ class Orchestrator:
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
                 is_moc=is_moc,
-                # Forced-exit reasons activate panic slippage and depleted depth.
-                reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
+                reason="",
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,
@@ -3982,7 +3910,6 @@ class Orchestrator:
         is_exit_or_stop: bool,
         edge_bps: float,
         exec_style: ExecStyle | None = None,
-        forced_market: bool = False,
     ) -> tuple[OrderType, Decimal | None, bool]:
         """Resolve order type, limit price, and MOC flag from execution policy."""
         is_moc = (
@@ -3993,11 +3920,11 @@ class Orchestrator:
         if is_moc:
             return OrderType.MARKET, None, True
 
-        if exec_style is ExecStyle.PASSIVE and quote is not None and not forced_market:
+        if exec_style is ExecStyle.PASSIVE and quote is not None:
             limit_price = quote.bid if side == Side.BUY else quote.ask
             return OrderType.LIMIT, limit_price, False
 
-        if not self._use_passive_entries or quote is None or forced_market:
+        if not self._use_passive_entries or quote is None:
             return OrderType.MARKET, None, False
 
         use_passive = True
@@ -4114,9 +4041,7 @@ class Orchestrator:
             self._prune_terminal_orders()
             return True
         accepted = cancel_fn(order_id)
-        acks = self._poll_order_router_acks({order_id})
-        self._publish_and_apply_order_acks(acks)
-        self._reconcile_fills(acks, order.correlation_id)
+        self._settle_router_acks(order.correlation_id, expected_order_ids={order_id})
         # Accepted broker cancels resolve asynchronously; rejected ones resolve locally.
         if not accepted and order_id in self._active_orders:
             sm_post = self._active_orders[order_id][0]
@@ -4194,19 +4119,67 @@ class Orchestrator:
             for sm, side, order in self._active_orders.values()
         )
 
+    def _forced_exit_reduces(self, order: OrderRequest) -> bool:
+        """Whether *order* shrinks the live book it claims to close.
+
+        A composer or deferral-cap exit is slice-scoped: another strategy holding
+        the opposite side can leave symbol-net flat while the mandated slice is
+        still open.  Treat the order as reducing when it shrinks *either* the
+        symbol-net book or its own strategy slice, so a slice flatten is never
+        stranded at the non-reducing REJECT branch.  Symbol-net is checked first,
+        so a true symbol-net hazard exit (which always reduces net) never needs the
+        slice fallback — this keeps the shared ``HARD_EXIT_AGE`` token correct for
+        both authors without attributing it.
+
+        Re-evaluated after any resting-order cancel, because the cancel reconciles
+        whatever acks were already queued for those orders — including fills — so
+        the book can move between the controller sizing the exit and the exit
+        reaching the router.
+        """
+        return self._forced_exit_closable_quantity(order) > 0
+
+    def _forced_exit_closable_quantity(self, order: OrderRequest) -> int:
+        """Shares *order* can close right now without crossing into new exposure.
+
+        Magnitude shrinkage is **not** the test.  ``abs(current + signed) <
+        abs(current)`` is true for any reduction, including one that crosses zero:
+        a mandated ``SELL 100`` into a book a resting cover has already taken to
+        long 70 shrinks the magnitude while flipping to short 30.  That is a
+        fail-safe control opening exposure, which is exactly what Inv-11 forbids,
+        so the clamp is on the closable side only.
+
+        Slice-scoped authors (composer, deferral cap) may legitimately exceed
+        symbol-net: another strategy holding the opposite side can leave the net
+        flat while the mandated slice is still open, and flattening that slice
+        moves the net through zero on purpose (design §3.3).  So they take the
+        larger of the two bases rather than being clamped to net.
+        """
+        net = self._positions.get(order.symbol).quantity
+        closable = _closable_quantity(net, order.side)
+        if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS and (
+            self._strategy_positions is not None
+        ):
+            slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
+            closable = max(closable, _closable_quantity(slice_qty, order.side))
+        return min(order.quantity, closable)
+
     def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
-        """True if a forced MARKET exit (stop / session-flat) is already in flight.
+        """True if a forced MARKET exit is already in flight for *symbol*.
 
         Distinguishes an aggressive exit already crossing the book from a
         merely-resting passive cover.  The resting-order guard cancels stale
         passive orders to let a forced MARKET exit through (Inv-11) but must
         not stack a second aggressive leg on top of one already pending —
         that would overshoot the position.
+
+        Covers both mandated-exit authors — the kernel's synthetic stop /
+        session-flat and the RISK-layer controllers routed through
+        :meth:`_on_bus_hazard_order` — so neither can stack on the other.
         """
         return any(
             order.symbol == symbol
             and sm.state not in _TERMINAL_ORDER_STATES
-            and order.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
+            and _is_forced_market_exit(order)
             for sm, _, order in self._active_orders.values()
         )
 
@@ -4228,10 +4201,48 @@ class Orchestrator:
             for order_id, (sm, _, order) in self._active_orders.items()
             if order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
         }
-        cancel_acks = self._poll_order_router_acks(cancel_order_ids)
-        if cancel_acks:
-            self._publish_and_apply_order_acks(cancel_acks)
-            self._reconcile_fills(cancel_acks, cid)
+        self._settle_router_acks(cid, expected_order_ids=cancel_order_ids)
+
+    def _settle_router_acks(
+        self,
+        correlation_id: str,
+        *,
+        expected_order_ids: set[str] | None = None,
+        position_update_trigger: str | None = None,
+    ) -> list[OrderAck]:
+        """Drain router acks, publish them, and reconcile the resulting fills.
+
+        The one place the post-submission sequence lives.  It was open-coded at
+        eleven call sites, so adding a step meant finding all eleven and missing
+        one produced a path that submitted orders without settling them.
+
+        ``position_update_trigger`` walks M8 -> M9 between publishing the acks and
+        reconciling them.  It is a parameter rather than automatic because the
+        asymmetry is structural, not an oversight: ``POSITION_UPDATE`` is legal
+        only from ``ORDER_ACK`` (see :mod:`feelies.kernel.micro`), and the
+        RISK-layer bridge fires re-entrantly during ``bus.publish(quote)`` while
+        micro sits in ``MARKET_EVENT_RECEIVED``.  Those paths cannot walk the
+        machine, so they pass ``None`` and settle out of band.
+
+        An empty drain still settles.  Two callers used to guard with ``if acks``,
+        which also skipped :meth:`_reconcile_fills`'s unconditional
+        :meth:`_prune_terminal_orders`.  That guard was measured before removal:
+        it fired 87876 times on one APP session and *never once* with a terminal
+        order awaiting prune, because every submitting path settles
+        unconditionally and prunes first.  It guarded a state that cannot arise.
+
+        Returns the drained acks so callers can act on them further.
+        """
+        acks = self._poll_order_router_acks(expected_order_ids)
+        self._publish_and_apply_order_acks(acks)
+        if position_update_trigger is not None:
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger=position_update_trigger,
+                correlation_id=correlation_id,
+            )
+        self._reconcile_fills(acks, correlation_id)
+        return acks
 
     def _poll_order_router_acks(
         self,
@@ -4411,10 +4422,8 @@ class Orchestrator:
         buffer (``_deferred_router_acks``) is honoured.
         """
         t0 = time.perf_counter_ns()
-        acks = self._poll_order_router_acks()
+        acks = self._settle_router_acks(correlation_id)
         if acks:
-            self._publish_and_apply_order_acks(acks)
-            self._reconcile_fills(acks, correlation_id)
             # Escalate an unfilled working exit to a market fallback
             # unfilled to a guaranteed MARKET fallback (after reconcile, so
             # the residual reflects this drain's fills).
@@ -4908,9 +4917,6 @@ class Orchestrator:
                 intent=self._order_trading_intent.get(ack.order_id, ""),
             )
 
-            if position.quantity == 0:
-                self._peak_pnl_per_share.pop(ack.symbol, None)
-
             # Feed the PDT counter when the risk engine supports it.
             record_fill = getattr(self._risk_engine, "record_fill", None)
             if callable(record_fill):
@@ -4927,6 +4933,20 @@ class Orchestrator:
             # it meant a deployment that skipped constructing one silently lost slice
             # attribution entirely — and with it the Stage-0 deferral ceiling, the exit
             # composer's scoping, and every per-alpha risk budget.
+            # Slices this fill was actually booked against, as
+            # ``(strategy_id, signed_quantity, fees, realized_delta)``.  Drives the
+            # trade-journal attribution below so a symbol-net forced exit is credited
+            # to the slices it closed rather than to its synthetic ``strategy_id``.
+            #
+            # ``realized_delta`` is measured around each slice's own ``update()``, not
+            # apportioned from the aggregate.  A symbol-net exit closes slices that
+            # entered at different prices, and the aggregate ``avg_entry_price`` is
+            # their notional-weighted blend — so splitting the aggregate figure by
+            # quantity hands every slice the *blended* PnL rather than its own.  Two
+            # slices of 50 entered at 100 and 110, flattened at 90, really earned
+            # -500 and -1000; the proportional split journalled -750 each, which is
+            # what forensics and the promotion gate then read (Inv-13).
+            attributed_legs: list[tuple[str, int, Decimal, Decimal]] = []
             if self._strategy_positions is not None:
                 alpha_allocs: list[tuple[str, str, int, Decimal, Decimal]] = []
                 if self._fill_ledger is not None:
@@ -4948,13 +4968,22 @@ class Orchestrator:
 
                 if alpha_allocs:
                     for strat_id, sym, alpha_signed, price, alloc_fees in alpha_allocs:
-                        self._strategy_positions.update(
+                        prev_slice = self._strategy_positions.get(strat_id, sym).realized_pnl
+                        slice_position = self._strategy_positions.update(
                             strat_id,
                             sym,
                             alpha_signed,
                             price,
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
+                        )
+                        attributed_legs.append(
+                            (
+                                strat_id,
+                                alpha_signed,
+                                alloc_fees,
+                                slice_position.realized_pnl - prev_slice,
+                            )
                         )
                 elif _order_owns_one_slice(order):
                     # Ledger had no record for this order (none constructed, or the
@@ -4969,7 +4998,10 @@ class Orchestrator:
                     # and every slice-scoped reader — the Stage-0 deferral cap and
                     # exit composer, and the per-alpha budgets in
                     # ``AlphaBudgetRiskWrapper`` — saw a flat book.
-                    self._strategy_positions.update(
+                    prev_slice = self._strategy_positions.get(
+                        order.strategy_id, ack.symbol
+                    ).realized_pnl
+                    slice_position = self._strategy_positions.update(
                         order.strategy_id,
                         ack.symbol,
                         signed_qty,
@@ -4977,10 +5009,18 @@ class Orchestrator:
                         fees=ack.fees,
                         timestamp_ns=ack.timestamp_ns,
                     )
+                    attributed_legs = [
+                        (
+                            order.strategy_id,
+                            signed_qty,
+                            ack.fees,
+                            slice_position.realized_pnl - prev_slice,
+                        )
+                    ]
                 else:
                     # Without attribution, split proportionally to keep stores in
                     # sync. Aggregate PnL stays exact; per-alpha PnL is estimated.
-                    self._distribute_fill_to_strategies(
+                    attributed_legs = self._distribute_fill_to_strategies(
                         ack.symbol,
                         signed_qty,
                         ack.fill_price,
@@ -5057,41 +5097,48 @@ class Orchestrator:
                         )
 
             if self._trade_journal is not None:
-                _trade_mech, _trade_hl = self._last_signal_mechanism.get(
-                    (order.strategy_id, ack.symbol),
-                    (None, 0),
-                )
-                self._trade_journal.record(
-                    TradeRecord(
-                        order_id=ack.order_id,
-                        symbol=ack.symbol,
-                        strategy_id=order.strategy_id,
-                        side=side,
-                        requested_quantity=order.quantity,
-                        filled_quantity=ack.filled_quantity,
-                        fill_price=ack.fill_price,
-                        signal_timestamp_ns=order.timestamp_ns,
-                        submit_timestamp_ns=order.timestamp_ns,
-                        fill_timestamp_ns=ack.timestamp_ns,
-                        cost_bps=ack.cost_bps,
-                        fees=ack.fees,
-                        realized_pnl=position.realized_pnl - prev_realized,
-                        correlation_id=order.correlation_id,
-                        trading_intent=self._order_trading_intent.get(
-                            ack.order_id,
-                            "",
-                        ),
-                        trend_mechanism=_trade_mech,
-                        expected_half_life_seconds=_trade_hl,
-                        regime_state=self._regime_label_for(ack.symbol),
-                        # Preserve forced-exit class and producing layer on the trade.
-                        metadata={
-                            "order_reason": order.reason,
-                            "order_source_layer": order.source_layer,
-                        },
+                for leg in _trade_journal_legs(
+                    order,
+                    filled_quantity=ack.filled_quantity,
+                    fees=ack.fees,
+                    realized_pnl=position.realized_pnl - prev_realized,
+                    attributed_legs=attributed_legs,
+                ):
+                    _trade_mech, _trade_hl = self._last_signal_mechanism.get(
+                        (leg.strategy_id, ack.symbol),
+                        (None, 0),
                     )
-                )
-            if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES:
+                    self._trade_journal.record(
+                        TradeRecord(
+                            order_id=ack.order_id,
+                            symbol=ack.symbol,
+                            strategy_id=leg.strategy_id,
+                            side=side,
+                            requested_quantity=order.quantity,
+                            filled_quantity=leg.filled_quantity,
+                            fill_price=ack.fill_price,
+                            signal_timestamp_ns=order.timestamp_ns,
+                            submit_timestamp_ns=order.timestamp_ns,
+                            fill_timestamp_ns=ack.timestamp_ns,
+                            cost_bps=ack.cost_bps,
+                            fees=leg.fees,
+                            realized_pnl=leg.realized_pnl,
+                            correlation_id=order.correlation_id,
+                            trading_intent=self._order_trading_intent.get(
+                                ack.order_id,
+                                "",
+                            ),
+                            trend_mechanism=_trade_mech,
+                            expected_half_life_seconds=_trade_hl,
+                            regime_state=self._regime_label_for(ack.symbol),
+                            # Preserve forced-exit class and producing layer on the
+                            # trade; ``forced_exit_strategy_id`` keeps the synthetic
+                            # author recoverable now that ``strategy_id`` names the
+                            # slice the exit closed (Inv-13).
+                            metadata=leg.metadata,
+                        )
+                    )
+            if order.strategy_id:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
@@ -5124,7 +5171,7 @@ class Orchestrator:
         fill_price: Decimal,
         fees: Decimal,
         timestamp_ns: int,
-    ) -> None:
+    ) -> list[tuple[str, int, Decimal, Decimal]]:
         """Distribute a fill proportionally across per-alpha strategy positions.
 
         Used when no fill-attribution record exists (emergency flatten,
@@ -5134,9 +5181,15 @@ class Orchestrator:
 
         Uses largest-remainder rounding so the sum of per-alpha deltas
         equals ``signed_qty`` exactly.
+
+        Returns the ``(strategy_id, signed_quantity, fees, realized_delta)`` legs it
+        applied — ``realized_delta`` measured around each slice's own update, so the
+        caller can journal a symbol-net forced exit against the slices it actually
+        closed instead of the synthetic order's ``strategy_id`` (Inv-13).  Empty when
+        no slice book is wired or no strategy holds the symbol.
         """
         if self._strategy_positions is None:
-            return
+            return []
 
         # Inv-5: iterate strategies in a deterministic (sorted) order.
         # ``strategy_ids()`` returns a ``frozenset``; materialising it directly
@@ -5144,61 +5197,49 @@ class Orchestrator:
         # depend on hash-iteration order (process/seed dependent).
         strategy_ids = sorted(self._strategy_positions.strategy_ids())
         if not strategy_ids:
-            return
+            return []
 
         # Collect each strategy's current quantity for this symbol.
         strategy_qtys: list[tuple[str, int]] = []
-        total_abs = 0
         for sid in strategy_ids:
             q = self._strategy_positions.get(sid, symbol).quantity
             if q != 0:
                 strategy_qtys.append((sid, q))
-                total_abs += abs(q)
+        if not strategy_qtys:
+            return []
 
-        if total_abs == 0:
-            return
-
-        # Proportional allocation via largest-remainder.
+        # Same rounding and fee convention the ledger uses, so a fill rounds
+        # identically whichever path attributes it.
         abs_fill = abs(signed_qty)
-        exact = [abs_fill * abs(q) / total_abs for _, q in strategy_qtys]
-        floors = [int(e) for e in exact]
-        remainders = [e - f for e, f in zip(exact, floors)]
-        deficit = abs_fill - sum(floors)
-        indices = sorted(range(len(remainders)), key=lambda i: -remainders[i])
-        for i in range(deficit):
-            floors[indices[i]] += 1
+        alloc_qtys = largest_remainder_split(abs_fill, [abs(q) for _sid, q in strategy_qtys])
+        alloc_fees = split_fees(fees, alloc_qtys)
 
-        # Apply each allocation with the sign matching the fill direction.
-        fee_remainder = fees
-        remainder_sid: str | None = None
-        for (sid, _q), alloc_qty in zip(strategy_qtys, floors, strict=True):
+        applied: list[tuple[str, int, Decimal, Decimal]] = []
+        alloc_sign = 1 if signed_qty > 0 else -1
+        for (sid, _q), alloc_qty, alloc_fee in zip(
+            strategy_qtys, alloc_qtys, alloc_fees, strict=True
+        ):
             if alloc_qty == 0:
                 continue
-            # Sign: same as the overall fill direction.
-            alloc_sign = 1 if signed_qty > 0 else -1
-            alloc_fees = Decimal("0")
-            if total_abs > 0:
-                alloc_fees = (fees * alloc_qty / abs_fill).quantize(
-                    Decimal("0.01"),
-                )
-            fee_remainder -= alloc_fees
-            self._strategy_positions.update(
+            prev_slice = self._strategy_positions.get(sid, symbol).realized_pnl
+            slice_position = self._strategy_positions.update(
                 sid,
                 symbol,
                 alloc_sign * alloc_qty,
                 fill_price,
-                fees=alloc_fees,
+                fees=alloc_fee,
                 timestamp_ns=timestamp_ns,
             )
-            remainder_sid = sid
-
-        # Assign any rounding remainder to the last non-zero allocation.
-        if fee_remainder != Decimal("0") and remainder_sid is not None:
-            self._strategy_positions.debit_fees(
-                remainder_sid,
-                symbol,
-                fee_remainder,
+            applied.append(
+                (
+                    sid,
+                    alloc_sign * alloc_qty,
+                    alloc_fee,
+                    slice_position.realized_pnl - prev_slice,
+                )
             )
+
+        return applied
 
     def _prune_terminal_orders(self) -> None:
         """Remove terminally-resolved orders from _active_orders.
@@ -5252,11 +5293,11 @@ class Orchestrator:
 
         * ``layer != "SIGNAL"`` — PORTFOLIO order flow uses
           ``SizedPositionIntent``, not this handler.
-        * ``strategy_id == "__stop_exit__"`` — synthetic stop-loss signals
-          are computed inline at M4 by ``_check_stop_exit`` and merged
-          there; routing them through the bus would require the producer
-          to mint sequence numbers from the right generator and would
-          double-fire.
+        * ``strategy_id == "__stop_exit__"`` — a legacy guard.  Stop exits are
+          authored by :class:`~feelies.risk.stop_exit.StopExitController` as
+          RISK-layer ``OrderRequest`` events and never reach this handler; the
+          check remains so a stale producer emitting the old sentinel ``Signal``
+          cannot double-fire.
         * ``alpha_id`` listed in any registered PORTFOLIO's
           ``depends_on_signals`` — these Signals are aggregated by
           ``CompositionEngine`` into ``SizedPositionIntent`` events.
@@ -5501,23 +5542,7 @@ class Orchestrator:
         hv = self._risk_engine.check_order(event, self._positions)
         # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(event.symbol).quantity
-        signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
-        # A composer or deferral-cap exit is slice-scoped: another strategy
-        # holding the opposite side can leave symbol-net flat while the mandated
-        # slice is still open.  Treat the order as reducing when it shrinks
-        # *either* the symbol-net book or its own strategy slice, so a slice
-        # flatten is never stranded at the non-reducing REJECT branch.  Symbol-net
-        # is checked first, so a true symbol-net hazard exit (which always reduces
-        # net) never needs the slice fallback — this keeps the shared
-        # ``HARD_EXIT_AGE`` token correct for both authors without attributing it.
-        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
-        if (
-            not order_reduces
-            and event.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS
-            and self._strategy_positions is not None
-        ):
-            slice_qty = self._strategy_positions.get(event.strategy_id, event.symbol).quantity
-            order_reduces = abs(slice_qty + signed_qty) < abs(slice_qty)
+        order_reduces = self._forced_exit_reduces(event)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
@@ -5568,6 +5593,42 @@ class Orchestrator:
                     },
                 )
             )
+        # Resting-order guard, mirroring the SIGNAL path's forced-exit branch.
+        # Deferred until here so an exit that ends up blocked above never cancels
+        # a resting order without replacing it: cancelling a resting *cover* and
+        # then bailing would leave the book more exposed, not less (Inv-11).
+        if self._has_pending_order_for_symbol(event.symbol):
+            if self._has_pending_forced_exit_for_symbol(event.symbol):
+                # A mandated exit is already crossing; a second aggressive leg
+                # would overshoot the position it is closing.
+                logger.info(
+                    "Forced exit already pending for %s; skipping duplicate "
+                    "%s exit (order_id=%s, strategy_id=%s).",
+                    event.symbol,
+                    event.reason,
+                    event.order_id,
+                    event.strategy_id,
+                )
+                return
+            self._emit_forced_exit_supersedes_pending_alert(event, event.correlation_id)
+            self._cancel_resting_for_symbol(event.symbol, event.correlation_id)
+            # The cancel reconciles acks already queued for those orders --
+            # including fills -- so the book may have moved since the reduce test
+            # above.  Crossing a stale quantity into a book another leg already
+            # flattened would open the *opposite* exposure: exactly what a
+            # fail-safe control must never do (Inv-11).  Clamp to what is still
+            # closable rather than only testing it — a *partial* cover leaves a
+            # residual that a mandated exit should still close, and standing the
+            # whole order down would strand it (the hazard controller will not
+            # re-emit within the same episode).
+            closable = self._forced_exit_closable_quantity(event)
+            if closable <= 0:
+                self._emit_forced_exit_stood_down_alert(event)
+                return
+            if closable < event.quantity:
+                self._emit_forced_exit_resized_alert(event, closable)
+                # Same order_id: one mandated decision resized, not a new order.
+                event = replace(event, quantity=closable)
         self._track_order(event.order_id, event.side, event)
         submit_error = self._submit_tracked_order(event, trigger=event.reason)
         if submit_error is not None:
@@ -5586,9 +5647,7 @@ class Orchestrator:
                 ),
             )
             return
-        acks = self._poll_order_router_acks({event.order_id})
-        self._publish_and_apply_order_acks(acks)
-        self._reconcile_fills(acks, event.correlation_id)
+        self._settle_router_acks(event.correlation_id, expected_order_ids={event.order_id})
 
     # ── Configuration and data integrity ────────────────────────────
 
@@ -5723,6 +5782,75 @@ class Orchestrator:
                     f"({intent.intent.name}); retries next boundary."
                 ),
                 context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
+
+    def _emit_forced_exit_resized_alert(self, order: OrderRequest, closable: int) -> None:
+        """Publish a marker when a mandated exit is clamped to the settled book.
+
+        The resting-order cancel settled a *partial* fill, so the exit's original
+        quantity would now cross zero into opposite exposure.  It is resized to
+        the residual rather than stood down, but an operator needs to see that the
+        submitted size differs from what the controller authored (Inv-13).
+        """
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="forced_exit_resized_after_cancel",
+                message=(
+                    f"Forced exit {order.reason!r} on {order.symbol!r} resized "
+                    f"{order.quantity} -> {closable}: cancelling resting orders "
+                    f"settled a partial fill, and the original quantity would have "
+                    f"crossed zero into opposite exposure "
+                    f"(strategy_id={order.strategy_id!r})."
+                ),
+                context={
+                    "symbol": order.symbol,
+                    "strategy_id": order.strategy_id,
+                    "order_id": order.order_id,
+                    "reason": order.reason,
+                    "original_quantity": order.quantity,
+                    "submitted_quantity": closable,
+                    "position_quantity": self._positions.get(order.symbol).quantity,
+                },
+            )
+        )
+
+    def _emit_forced_exit_stood_down_alert(self, order: OrderRequest) -> None:
+        """Publish a marker when a mandated exit stands down post-cancel.
+
+        The resting-order cancel settled a fill that already closed the book, so
+        submitting the exit's now-stale quantity would open the opposite side.
+        Standing down is the fail-safe branch (Inv-11), but it is *not* routine —
+        an operator needs to see that a mandated exit did not reach the router,
+        and forensics needs it to explain the missing order (Inv-13).
+        """
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="forced_exit_stood_down_after_cancel",
+                message=(
+                    f"Forced exit {order.reason!r} on {order.symbol!r} stood down: "
+                    f"cancelling resting orders settled a fill that already closed "
+                    f"the book, so the exit's quantity ({order.quantity}) no longer "
+                    f"reduces exposure (strategy_id={order.strategy_id!r})."
+                ),
+                context={
+                    "symbol": order.symbol,
+                    "strategy_id": order.strategy_id,
+                    "order_id": order.order_id,
+                    "reason": order.reason,
+                    "order_quantity": order.quantity,
+                    "position_quantity": self._positions.get(order.symbol).quantity,
+                },
             )
         )
 
@@ -5956,9 +6084,7 @@ class Orchestrator:
             )
             self._backend.order_router.submit(order)
             self._bus.publish(order)
-            acks = self._poll_order_router_acks({order_id})
-            self._publish_and_apply_order_acks(acks)
-            self._reconcile_fills(acks, correlation_id)
+            self._settle_router_acks(correlation_id, expected_order_ids={order_id})
         except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
             logger.exception(
                 "Force-flatten on %s failed for symbol=%s (qty=%d, side=%s); "

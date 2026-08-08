@@ -126,6 +126,45 @@ cost_arithmetic:
   cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
+#
+# MEASURED 2026-08-08 — 28 cached sessions, 6 symbols (AAPL/APP/INTC/SNDU/SPY),
+# 7.5M sensor ticks, driving the shipped kyle_lambda_60s 2.1.0 and ofi_ewma 1.1.0
+# specs from platform.yaml so the estimator is the one the alpha reads.
+#
+# Signature s_t = λ̂_60s · sign(OFI), the quantity `falsification_criteria` names.
+# Its autocorrelation decays cleanly and exponentially:
+#
+#     lag_s   120     180     240     300     420     600     900    1200    1800
+#     rho    0.697   0.630   0.570   0.519   0.427   0.360   0.261  0.190   0.109
+#
+#     half-life = 626.6 s   95% CI [374.6, 877.9]   fit R^2 = 0.993
+#
+# (Fitted on lags >= 120s: below that the 60-second rolling window overlaps
+# itself, so the autocorrelation measures the estimator, not the information.
+# The CI bootstraps whole sessions, so it reflects day-to-day dispersion rather
+# than tick autocorrelation within a session.)
+#
+# The declared 600 lies inside that CI and is therefore NOT falsified — but it
+# was not measured either.  600 is exactly the ceiling `horizon_seconds: 300`
+# permits under G16 rule 3 (ratio floor 0.5), which is the whole reason the ratio
+# lands on 0.500 and trips the audit warning: the number was pinned to the bound,
+# not derived to it.  Writing the point estimate 626.6 would push the ratio to
+# 0.479 and fail the gate outright.
+#
+# The horizon was left at 300 because the two estimators disagree and the second
+# one favours it.  Conditioning on this alpha's own entry gate
+# (lambda_percentile_floor 0.7, ofi_threshold 0.5; 33,397 qualifying ticks), the
+# forward rank IC against incremental mid-return peaks at **0.160 at 240 s** and
+# fades to 0.063 by 900 s.  So the *edge* is concentrated near the existing
+# horizon even though the *feature* persists roughly twice as long, and moving
+# the horizon to 900 s to buy rule-3 headroom would likely cost more edge than
+# the headroom is worth.  Re-open this if a later dataset resolves the two
+# timescales in the same direction; the gap between them is the real finding.
+#
+# Unconditionally the same forward IC is ~0.00 at every lag out to 1800 s.  That
+# is not a contradiction — it is what a gated alpha looks like when measured
+# without its gate — but it does mean falsification_criteria #1 must be evaluated
+# on gated ticks only, or it will read as a failure every time.
 trend_mechanism:
   family: KYLE_INFO
   expected_half_life_seconds: 600

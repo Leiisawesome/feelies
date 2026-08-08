@@ -230,7 +230,6 @@ class PlatformConfig:
 
     # The planner may drive live intents and trim same-direction positions.
     # trim_min_fraction suppresses small, churn-prone reductions.
-    position_manager_drive: bool = True
     position_manager_enable_trim: bool = True
     position_manager_trim_min_fraction: float = 0.10
     # Suppress trims while forward edge clears this cost multiple; 0 disables.
@@ -244,6 +243,58 @@ class PlatformConfig:
 
     # Net standing alpha targets instead of trading only the arbitrated winner.
     # Targets expire after net_staleness_k × their horizon.
+    #
+    # Still shadow-only, and measured rather than assumed.  Sweeping the
+    # ``bt_multialpha`` harness over all 15 cached APP sessions (7304 ticks with
+    # two live standing targets on one symbol) produced exactly one divergence,
+    # on 2026-06-03: winner-take-all wanted **flat** while the net wanted **long
+    # 50** — sig_benign_midcap_v1 won arbitration asking to close while
+    # sig_kyle_drift_v1 still held a standing long.
+    #
+    # That is a directional disagreement, not a rounding artefact, so flipping
+    # this changes what the book holds rather than being a no-op cleanup.
+    #
+    # But treat the sweep as a lower bound, not a clean bill of health: on that
+    # dataset only sig_benign_midcap_v1 ever takes a direction (kyle and hawkes
+    # emit FLAT exclusively), so the measured overlap is one real target against
+    # one zero — never a two-sided contest between opposing convictions, which is
+    # the case netting exists for and the case most likely to diverge.
+    #
+    # And note what this flag is *for*: netting applies to the standalone-SIGNAL
+    # path, where arbitration picks one winner per tick.  `configs/bt_multialpha.yaml`
+    # states plainly that standalone mode is "NOT FOR PRODUCTION / LIVE CAPITAL"
+    # and that production multi-alpha books must use a PORTFOLIO alpha with
+    # `depends_on_signals`, which routes through CompositionEngine and
+    # `check_sized_intent` instead and never consults the netter.  That path is
+    # covered (tests/integration/test_xsect_v1_e2e.py, test_mixed_mechanism_e2e.py).
+    #
+    # DECIDED 2026-08-08: the standalone multi-alpha path IS supported, so the
+    # netter stays.  Retiring it was the cheaper answer only under the opposite
+    # ruling; with the path supported, this shadow measures something the platform
+    # is expected to do, and the question narrows to two things — which semantics
+    # is wanted when the winner says flat while a live target disagrees, and
+    # evidence from a genuinely two-sided contest.
+    #
+    # The second is now measured rather than assumed, and the answer is that the
+    # cache cannot supply it.  Sweeping this harness over every cached
+    # symbol-session — 33 replayed across AAPL, APP, INTC, SNDU, SPY (4 more
+    # missing their data) — produced exactly **one** divergence in total, the
+    # APP 2026-06-03 case already on record, and it is still "one real target
+    # against one zero":
+    #
+    #     divergences = 1    two_sided = 0    one_vs_zero = 1
+    #
+    # Five symbols and twenty sessions this harness had never been pointed at
+    # yielded not one additional divergence, let alone a contested one.  So the
+    # shortage is a property of the alphas, not of the tape: only
+    # sig_benign_midcap_v1 ever takes a direction under these gates, and pointing
+    # the harness at more data does not manufacture a contest.  A second SIGNAL
+    # alpha has to take a side, which means a purpose-built research fixture alpha
+    # — the shipped ones are gated the way they are for their own reasons.
+    #
+    # The flag therefore stays OFF.  Deciding the flat-vs-live semantics on this
+    # evidence would be choosing between two behaviours only one of which has ever
+    # been observed.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
@@ -331,6 +382,13 @@ class PlatformConfig:
     # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
     ex_date_calendar_path: Path | None = None
     backtest_enforce_ex_date_guard: bool = True
+    # Per-alpha realization factors shrinking disclosed edge toward observed edge,
+    # emitted by ``feelies.forensics.edge_calibration`` from a prior window and
+    # consumed by the B4 edge-vs-cost gate at boot.  None ⇒ every alpha gates on
+    # its full disclosed edge.  This is the only config route into that loop: a
+    # backtest run with calibration and a paper/live run without it gate on
+    # different edges, and live is the more permissive of the two (Inv-9).
+    edge_calibration_path: Path | None = None
     market_id: str = "US_EQUITY"
     session_kind: str = "RTH"
 
@@ -813,7 +871,6 @@ class PlatformConfig:
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
             "reversal_min_edge_cost_multiplier": (self.reversal_min_edge_cost_multiplier),
-            "position_manager_drive": self.position_manager_drive,
             "position_manager_enable_trim": self.position_manager_enable_trim,
             "position_manager_trim_min_fraction": (self.position_manager_trim_min_fraction),
             "position_manager_trim_edge_gate_multiplier": (
@@ -878,6 +935,9 @@ class PlatformConfig:
                 self.ex_date_calendar_path.name if self.ex_date_calendar_path else None
             ),
             "backtest_enforce_ex_date_guard": self.backtest_enforce_ex_date_guard,
+            "edge_calibration_path": (
+                self.edge_calibration_path.name if self.edge_calibration_path else None
+            ),
             "market_id": self.market_id,
             "session_kind": self.session_kind,
             "enforce_trend_mechanism": self.enforce_trend_mechanism,
@@ -1265,7 +1325,6 @@ class PlatformConfig:
             reversal_min_edge_cost_multiplier=float(
                 data.get("reversal_min_edge_cost_multiplier", 1.5)
             ),
-            position_manager_drive=bool(data.get("position_manager_drive", True)),
             position_manager_enable_trim=bool(data.get("position_manager_enable_trim", True)),
             position_manager_trim_min_fraction=float(
                 data.get("position_manager_trim_min_fraction", 0.10)
@@ -1331,6 +1390,11 @@ class PlatformConfig:
             ex_date_calendar_path=(
                 Path(str(data["ex_date_calendar_path"]))
                 if data.get("ex_date_calendar_path") is not None
+                else None
+            ),
+            edge_calibration_path=(
+                Path(str(data["edge_calibration_path"]))
+                if data.get("edge_calibration_path") is not None
                 else None
             ),
             backtest_enforce_ex_date_guard=bool(data.get("backtest_enforce_ex_date_guard", True)),

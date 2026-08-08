@@ -42,6 +42,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backend import ExecutionBackend
+from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -106,6 +107,83 @@ class _RecordingRouter:
         acks = list(self._pending)
         self._pending.clear()
         return acks
+
+
+_TERMINAL_STATES = _orchestrator_mod._TERMINAL_ORDER_STATES
+
+
+class _CancellingRouter(_RecordingRouter):
+    """Router that supports cancellation, like the real backtest/passive routers.
+
+    ``cancel_order`` emits a CANCELLED ack so ``_cancel_resting_for_symbol``'s
+    poll-and-reconcile actually drives the order state machine terminal — the
+    base ``_RecordingRouter`` has no ``cancel_order`` at all, so the
+    orchestrator's ``getattr`` probe silently no-ops against it.
+
+    ``auto_fill=False`` leaves submitted orders live (ACKNOWLEDGED only) so a
+    test can observe a mandated exit that is still in flight.
+    """
+
+    def __init__(self, auto_fill: bool = True, fill_on_cancel: bool = False) -> None:
+        super().__init__()
+        self.cancelled: list[str] = []
+        self._auto_fill = auto_fill
+        # ``fill_on_cancel`` models the venue race: the resting order had already
+        # filled when the cancel arrived, so the poll returns a FILL, not a CANCEL.
+        self._fill_on_cancel = fill_on_cancel
+        self._live: dict[str, OrderRequest] = {}
+
+    def submit(self, request: OrderRequest) -> None:
+        self._live[request.order_id] = request
+        if self._auto_fill:
+            super().submit(request)
+            return
+        self.submitted.append(request)
+        self._pending.append(
+            OrderAck(
+                timestamp_ns=request.timestamp_ns + 1,
+                correlation_id=request.correlation_id,
+                sequence=request.sequence,
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.ACKNOWLEDGED,
+            )
+        )
+
+    def register_resting(self, request: OrderRequest) -> None:
+        """Make a pre-seeded resting order cancellable."""
+        self._live[request.order_id] = request
+
+    def cancel_order(self, order_id: str) -> bool:
+        self.cancelled.append(order_id)
+        request = self._live.pop(order_id, None)
+        if request is None:
+            return False
+        if self._fill_on_cancel:
+            self._pending.append(
+                OrderAck(
+                    timestamp_ns=request.timestamp_ns + 1,
+                    correlation_id=request.correlation_id,
+                    sequence=request.sequence,
+                    order_id=order_id,
+                    symbol=request.symbol,
+                    status=OrderAckStatus.FILLED,
+                    filled_quantity=request.quantity,
+                    fill_price=Decimal("150.00"),
+                )
+            )
+            return True
+        self._pending.append(
+            OrderAck(
+                timestamp_ns=request.timestamp_ns + 1,
+                correlation_id=request.correlation_id,
+                sequence=request.sequence,
+                order_id=order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.CANCELLED,
+            )
+        )
+        return True
 
 
 class _MinimalConfig:
@@ -352,6 +430,193 @@ class TestHazardHandlerAuthoritativeReject:
         )
 
 
+class TestRestingOrderGuard:
+    """A mandated RISK-layer exit must clear the book before it crosses.
+
+    ``execution_mode: passive_limit`` is the platform-wide default
+    (``platform.yaml``), so resting limit orders are the normal state of the
+    book.  The SIGNAL path's forced-exit branch cancels them and refuses to
+    stack a second aggressive leg; the bus bridge did neither, so a resting
+    entry could fill *after* a safety exit flattened and silently re-open the
+    exposure that exit had just closed (Inv-11).
+    """
+
+    @staticmethod
+    def _rest_order(
+        orch: Orchestrator,
+        router: _CancellingRouter,
+        *,
+        order_id: str = "resting-limit-1",
+        side: Side = Side.BUY,
+        symbol: str = "AAPL",
+        quantity: int = 100,
+    ) -> OrderRequest:
+        resting = OrderRequest(
+            timestamp_ns=1500,
+            correlation_id="resting-corr",
+            sequence=99,
+            source_layer="SIGNAL",
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.LIMIT,
+            limit_price=Decimal("149.00"),
+            quantity=quantity,
+            strategy_id="sig_alpha_v1",
+            reason="",
+        )
+        orch._track_order(resting.order_id, resting.side, resting)
+        orch._transition_order(resting.order_id, OrderState.SUBMITTED, "submitted")
+        router.register_resting(resting)
+        return resting
+
+    def test_hazard_exit_cancels_resting_passive_order(self) -> None:
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter()
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        resting = self._rest_order(orch, router)
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        bus.publish(_make_hazard_order(reason="HAZARD_SPIKE", order_id="hz-1"))
+
+        assert router.cancelled == [resting.order_id]
+        # The exit still crosses — cancelling is a precondition, not a substitute.
+        assert [o.order_id for o in router.submitted] == ["hz-1"]
+        # Inv-13: the supersede is attributable to the safety control.
+        assert any(a.alert_name == "forced_exit_supersedes_pending_order" for a in alerts)
+        # The resting order is terminal, so it cannot fill and re-open the book.
+        entry = orch._active_orders.get(resting.order_id)
+        assert entry is None or entry[0].state in _TERMINAL_STATES
+
+    def test_hazard_exit_does_not_stack_on_pending_forced_exit(self) -> None:
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 200, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter(auto_fill=False)
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+
+        bus.publish(_make_hazard_order(order_id="hz-first", quantity=100))
+        assert [o.order_id for o in router.submitted] == ["hz-first"]
+
+        # A second mandated exit while the first is still in flight would
+        # overshoot the position it is closing.
+        bus.publish(_make_hazard_order(order_id="hz-second", quantity=100))
+        assert [o.order_id for o in router.submitted] == ["hz-first"]
+
+    def test_blocked_hazard_order_does_not_cancel_resting_orders(self) -> None:
+        """The guard runs only once the exit is committed to submitting.
+
+        Cancelling a resting *cover* and then bailing out would leave the book
+        more exposed than before — the opposite of the fail-safe intent.
+        """
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter()
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        resting = self._rest_order(orch, router)
+
+        def _reject(order: OrderRequest, _positions: object, **_kw: object) -> RiskVerdict:
+            return _make_reject_verdict(order)
+
+        orch._risk_engine.check_order = _reject  # type: ignore[method-assign]
+
+        # Non-reducing + REJECT ⇒ blocked before the resting-order guard.
+        bus.publish(_make_hazard_order(side=Side.BUY, quantity=50, order_id="hz-bad"))
+
+        assert router.submitted == []
+        assert router.cancelled == []
+        entry = orch._active_orders.get(resting.order_id)
+        assert entry is not None and entry[0].state not in _TERMINAL_STATES
+
+    def test_exit_stands_down_when_cancel_settles_a_closing_fill(self) -> None:
+        """The cancel can settle a fill that already flattened the book.
+
+        ``_cancel_resting_for_symbol`` polls acks *by order id* and reconciles
+        whatever comes back — a resting order that had already filled at the venue
+        returns a FILL, not a CANCEL.  The exit's quantity was fixed by the
+        controller before that, so crossing it into an already-flat book would open
+        the opposite side: a fail-safe control increasing exposure, which is the
+        precise failure Inv-11 forbids.
+        """
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        # A resting passive SELL 100 — a passive exit covering the whole long.
+        self._rest_order(orch, router, order_id="resting-sell-1", side=Side.SELL)
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, order_id="hz-1"))
+
+        # The resting SELL filled during the cancel and flattened the book, so the
+        # mandated exit must stand down rather than cross a stale quantity.
+        assert positions.get("AAPL").quantity == 0
+        assert router.submitted == []
+        # Inv-13: a mandated exit that never reached the router must be visible.
+        assert any(a.alert_name == "forced_exit_stood_down_after_cancel" for a in alerts)
+
+    def test_partial_cover_resizes_the_exit_instead_of_overshooting(self) -> None:
+        """A *partial* resting cover must not let the exit cross zero.
+
+        The full-cover case above leaves the book at exactly flat, which a
+        magnitude-shrinkage test happens to catch.  A partial cover does not:
+        ``SELL 100`` into a book the cover has already taken to long 70 shrinks
+        the magnitude while flipping to short 30 — a fail-safe control opening
+        exposure, which Inv-11 forbids.  The exit is clamped to the residual
+        rather than stood down, because the residual still needs closing and the
+        hazard controller will not re-emit within the same episode.
+        """
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        # Resting passive SELL 30 — covers part of the long, not all of it.
+        self._rest_order(orch, router, order_id="resting-sell-30", side=Side.SELL, quantity=30)
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, order_id="hz-1"))
+
+        # Flat, not short: the exit closed the residual and stopped there.
+        assert positions.get("AAPL").quantity == 0
+        assert [o.order_id for o in router.submitted] == ["hz-1"]
+        assert router.submitted[0].quantity == 70
+        # Inv-13: the submitted size differs from what the controller authored.
+        assert any(a.alert_name == "forced_exit_resized_after_cancel" for a in alerts)
+
+    def test_partial_cover_on_a_short_resizes_symmetrically(self) -> None:
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", -100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _, _ = _build_orchestrator(bus=bus, positions=positions, router=router)
+        self._rest_order(orch, router, order_id="resting-buy-30", side=Side.BUY, quantity=30)
+
+        bus.publish(_make_hazard_order(side=Side.BUY, quantity=100, order_id="hz-1"))
+
+        assert positions.get("AAPL").quantity == 0
+        assert router.submitted[0].quantity == 70
+
+
 class TestIdempotency:
     def test_duplicate_order_id_not_resubmitted(self) -> None:
         bus = EventBus()
@@ -412,3 +677,52 @@ class TestHazardSignatureSingleSourceOfTruth:
                 f"hazard reason {reason!r} from HAZARD_EXIT_REASONS was not "
                 f"routed by Orchestrator._on_bus_hazard_order"
             )
+
+
+class TestOutOfBandSettleIsDeliberate:
+    """The RISK-layer bridge settles without walking the micro state machine.
+
+    That asymmetry is structural, not an oversight, and it is pinned here so it
+    is neither widened by accident nor "fixed" into an illegal transition:
+    ``POSITION_UPDATE`` is reachable only from ``ORDER_ACK`` (see
+    ``feelies.kernel.micro``), and the bridge fires re-entrantly during
+    ``bus.publish(quote)`` while micro sits in ``MARKET_EVENT_RECEIVED``.  Making
+    it walk M8 -> M9 from there would be an illegal transition.
+
+    This costs less than it first appears.  ``StateTransition`` has no consumer
+    anywhere in ``forensics/``, ``harness/`` or ``monitoring/`` — it is an
+    operator/debug stream, not the provenance record.  Inv-13 for a mandated exit
+    is carried by the durable chain instead: the ``OrderRequest``
+    (``source_layer="RISK"`` plus its reason token), the ``OrderAck``, and the
+    ``TradeRecord`` whose metadata keeps ``order_reason``,
+    ``order_source_layer`` and ``forced_exit_strategy_id``.
+    ``forensics/gate_close_attribution.py`` reconstructs from exactly those.
+    """
+
+    def test_micro_state_machine_forbids_the_walk_the_bridge_would_need(self) -> None:
+        from feelies.kernel.micro import MicroState, create_micro_state_machine
+
+        sm = create_micro_state_machine(SimulatedClock(start_ns=0))
+        sm.transition(MicroState.MARKET_EVENT_RECEIVED, trigger="tick", correlation_id="c")
+
+        # The state the bridge fires from cannot reach POSITION_UPDATE.
+        assert not sm.can_transition(MicroState.POSITION_UPDATE)
+
+    def test_bridge_emits_no_state_transition(self) -> None:
+        from feelies.core.events import StateTransition
+
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        _orch, router, _ = _build_orchestrator(bus=bus, positions=positions)
+        transitions: list[StateTransition] = []
+        bus.subscribe(StateTransition, transitions.append)  # type: ignore[arg-type]
+
+        bus.publish(_make_hazard_order(reason="HAZARD_SPIKE", order_id="hz-1"))
+
+        # The exit reached the router...
+        assert [o.order_id for o in router.submitted] == ["hz-1"]
+        # ...without pretending to be a tick-pipeline step.
+        assert [t for t in transitions if t.machine_name == "tick_pipeline"] == []

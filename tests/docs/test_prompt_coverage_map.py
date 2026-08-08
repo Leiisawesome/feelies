@@ -52,6 +52,7 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/promotion_evidence.py": "audit_alpha_lifecycle",
     "alpha/registry.py": "audit_alpha_lifecycle",
     "alpha/loader.py": "audit_alpha_lifecycle",
+    "alpha/dependency_graph.py": "audit_alpha_lifecycle",
     "alpha/validation.py": "audit_alpha_lifecycle",
     "alpha/discovery.py": "audit_alpha_lifecycle",
     "alpha/layer_validator.py": "audit_alpha_lifecycle",
@@ -79,6 +80,7 @@ _FILE_OWNERS: dict[str, str] = {
     "execution/intent.py": "audit_position_management",
     "execution/position_manager.py": "audit_position_management",
     "execution/portfolio_netter.py": "audit_position_management",
+    "execution/sized_intent_legs.py": "audit_position_management",
     "execution/live_router.py": "audit_live_execution",
     "execution/paper_backend.py": "audit_live_execution",
     "execution/order_state.py": "audit_live_execution",
@@ -103,6 +105,7 @@ _FILE_OWNERS: dict[str, str] = {
     "cli/main.py": "audit_harness_cli",
     "cli/__main__.py": "audit_harness_cli",
     "cli/promote.py": "audit_alpha_lifecycle",
+    "cli/forensics.py": "audit_forensics",
 }
 
 

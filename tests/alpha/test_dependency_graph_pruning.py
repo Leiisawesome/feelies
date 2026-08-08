@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from feelies.bootstrap import _maybe_prune_unused_sensors
+from feelies.alpha.dependency_graph import maybe_prune_unused_sensors
 from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
@@ -58,7 +58,7 @@ def test_prune_opt_in_for_backtest() -> None:
         prune_unused_sensors=True,
     )
     registry = _FakeRegistry(("ofi_ewma", "book_imbalance"))
-    pruned = _maybe_prune_unused_sensors(cfg, registry)
+    pruned = maybe_prune_unused_sensors(cfg, registry)
     assert [s.sensor_id for s in pruned.sensor_specs] == ["ofi_ewma", "book_imbalance"]
 
 
@@ -70,7 +70,7 @@ def test_prune_off_by_default() -> None:
         sensor_specs=_specs("ofi_ewma", "book_imbalance", "spread_z_30d"),
     )
     registry = _FakeRegistry(("ofi_ewma",))
-    out = _maybe_prune_unused_sensors(cfg, registry)
+    out = maybe_prune_unused_sensors(cfg, registry)
     assert len(out.sensor_specs) == 3
 
 
@@ -84,7 +84,7 @@ def test_prune_fails_closed_on_missing_required_sensor() -> None:
     )
     registry = _FakeRegistry(("ofi_ewma", "missing_sensor"))
     with pytest.raises(ConfigurationError, match="missing_sensor"):
-        _maybe_prune_unused_sensors(cfg, registry)
+        maybe_prune_unused_sensors(cfg, registry)
 
 
 def test_prune_preserves_registration_order() -> None:
@@ -96,7 +96,7 @@ def test_prune_preserves_registration_order() -> None:
         prune_unused_sensors=True,
     )
     registry = _FakeRegistry(("book_imbalance", "spread_z_30d"))
-    pruned = _maybe_prune_unused_sensors(cfg, registry)
+    pruned = maybe_prune_unused_sensors(cfg, registry)
     assert [s.sensor_id for s in pruned.sensor_specs] == [
         "spread_z_30d",
         "book_imbalance",

@@ -2,7 +2,7 @@
 
 The kernel-level TRIM behaviour is exercised in
 ``tests/kernel/test_orchestrator.py``, but those tests pass
-``position_manager_drive=True`` / ``position_manager_enable_trim=True``
+``position_manager_enable_trim=True``
 *explicitly* — so they would still pass if the ``PlatformConfig`` defaults
 silently regressed to ``False``.  The functional APP baseline
 (``tests/acceptance/test_backtest_app_baseline.py``) does lock the trim-on
@@ -100,9 +100,8 @@ def _make_config(tmp_path: Path) -> PlatformConfig:
 class TestPositionManagerConfigDefaults:
     """Pin the default-on position-manager contract."""
 
-    def test_drive_and_trim_default_on(self) -> None:
+    def test_trim_defaults_on(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}))
-        assert cfg.position_manager_drive is True
         assert cfg.position_manager_enable_trim is True
         assert cfg.position_manager_trim_edge_gate_multiplier == 1.0
 
@@ -129,13 +128,12 @@ class TestSizerTiltConfigDefaults:
 
 
 class TestBuildPlatformPositionManagerWiring:
-    def test_defaults_drive_a_trim_capable_planner(self, tmp_path: Path) -> None:
+    def test_defaults_build_a_trim_capable_planner(self, tmp_path: Path) -> None:
         (tmp_path / "pm.alpha.yaml").write_text(_SIGNAL_ALPHA_YAML, encoding="utf-8")
         orchestrator, _ = build_platform(_make_config(tmp_path))
 
-        # The cost-aware planner drives live sizing with trims enabled.
+        # The cost-aware planner is the only decision path; trims enabled.
         assert isinstance(orchestrator._position_manager, TargetPositionManager)  # noqa: SLF001
-        assert orchestrator._position_manager_drive is True  # noqa: SLF001
         assert orchestrator._position_manager_enable_trim is True  # noqa: SLF001
         assert orchestrator._position_manager_trim_edge_gate_multiplier == 1.0  # noqa: SLF001
 

@@ -225,6 +225,16 @@ If any of these become relevant later, they are scoped as separate proposals.
 
 ### 3.1 Module inventory (as-is)
 
+> **Historical snapshot.** This records the tree *before* the three-layer
+> refactor, with `← SPLITS` / `← EXTENDED` marking what the spec then changed.
+> It is deliberately not updated: it is the starting point the rest of this
+> document reasons from. The tree has since also gained `sensors/`,
+> `composition/`, `harness/`, `cli/`, and `broker/`, and `services/` now holds
+> the regime hazard detector and the published-`RegimeState` read model
+> alongside the engine. For current ownership, read the packages themselves —
+> `AGENTS.md` and `CLAUDE.md` carry the live directory map.
+
+
 ```
 src/feelies/
 ├── core/           Events, clock, state machine, identifiers, config

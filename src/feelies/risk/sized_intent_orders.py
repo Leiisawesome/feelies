@@ -1,31 +1,37 @@
-"""Shared Layer-3 ``SizedPositionIntent`` -> per-leg ``OrderRequest`` logic.
+"""Admit or veto the legs of a Layer-3 ``SizedPositionIntent``.
 
 Both :class:`feelies.risk.basic_risk.BasicRiskEngine` and the per-alpha
-:class:`feelies.alpha.risk_wrapper.AlphaBudgetRiskWrapper` translate a
-portfolio intent into per-leg orders with identical semantics; this module
-holds the single canonical implementation so the two paths cannot drift.
+:class:`feelies.alpha.risk_wrapper.AlphaBudgetRiskWrapper` decompose a portfolio
+intent with identical semantics; this module holds the single canonical
+implementation so the two paths cannot drift.
 
-Determinism (Inv-5): symbols are processed in lexicographic order, share
-counts use ``Decimal`` arithmetic with ``ROUND_HALF_UP`` (never float), and
-``order_id`` is derived deterministically from the intent provenance, so two
-replays of the same intent emit a bit-identical order tuple.
+Risk owns *whether* each leg is admitted and what exposure an admitted leg
+commits.  Constructing the leg — resolving the mark, converting USD to shares,
+choosing a side, minting the order, re-rounding a scale-down — is Execution
+Decision work and lives in
+:mod:`feelies.execution.sized_intent_legs`.
+
+The loop stays interleaved on purpose: a leg's admission depends on the exposure
+previously admitted legs already committed (``additional_exposure``), so the caps
+bind cumulatively rather than every leg seeing the same pre-intent snapshot.
+Separating the responsibilities does not require separating the loop.
+
+Determinism (Inv-5): symbols are processed in lexicographic order.
 """
 
 from __future__ import annotations
 
 import logging
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Callable
 
 from feelies.core.events import (
     OrderRequest,
-    OrderType,
     RiskAction,
     RiskVerdict,
-    Side,
     SizedPositionIntent,
 )
-from feelies.core.identifiers import derive_order_id
+from feelies.execution.sized_intent_legs import plan_leg, rescale_leg
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
@@ -34,37 +40,6 @@ _logger = logging.getLogger(__name__)
 # Concrete engines accept additional_exposure; simple test doubles may ignore it.
 CheckOrder = Callable[..., RiskVerdict]
 DroppedLegsCallback = Callable[[SizedPositionIntent, list[tuple[str, str]]], None]
-
-
-def resolve_mark(symbol: str, current: object, positions: PositionStore) -> Decimal:
-    """Return the best-available mark for translating USD -> shares.
-
-    Prefers the latest live mark when recorded; otherwise falls back to the
-    position's ``avg_entry_price`` for the boot-time case before any quote has
-    flowed through.  Returns ``0`` when neither is available -- the caller must
-    treat zero as "skip this leg" (Inv-11 fail-safe).
-    """
-    latest = getattr(positions, "latest_mark", None)
-    if callable(latest):
-        try:
-            m = latest(symbol)
-            if isinstance(m, Decimal) and m > 0:
-                return m
-        except Exception as exc:  # pragma: no cover - defensive
-            # Inv-11 fail-safe: fall back to cost basis rather than raising
-            # into the risk path.  The swallow itself is a degraded mode
-            # (live-mark feed bug), so surface it via WARNING for the
-            # promotion-window slippage forensics.
-            _logger.warning(
-                "resolve_mark(%s): latest_mark accessor raised %s; "
-                "falling back to avg_entry_price",
-                symbol,
-                exc,
-            )
-    avg = getattr(current, "avg_entry_price", Decimal("0"))
-    if isinstance(avg, Decimal) and avg > 0:
-        return avg
-    return Decimal("0")
 
 
 def build_sized_intent_orders(
@@ -87,43 +62,12 @@ def build_sized_intent_orders(
     dropped: list[tuple[str, str]] = []
     running_extra = Decimal("0")
     for symbol in sorted(intent.target_positions):
-        tgt = intent.target_positions[symbol]
-        current = positions.get(symbol)
-        mark = resolve_mark(symbol, current, positions)
-        if mark <= 0:
+        leg = plan_leg(intent, symbol, positions)
+        if leg is None:
             continue
-
-        target_shares = int(
-            (Decimal(str(tgt.target_usd)) / mark).to_integral_value(
-                rounding=ROUND_HALF_UP,
-            )
-        )
-        delta_shares = target_shares - current.quantity
-        if delta_shares == 0:
-            continue
-
-        side = Side.BUY if delta_shares > 0 else Side.SELL
-        quantity = abs(delta_shares)
-
-        order_id = derive_order_id(f"{intent.correlation_id}:{intent.sequence}:{symbol}")
-        disclosed_cost = intent.disclosed_cost_total_bps_by_symbol.get(symbol, 0.0)
-        order = OrderRequest(
-            timestamp_ns=intent.timestamp_ns,
-            correlation_id=intent.correlation_id,
-            sequence=intent.sequence,
-            source_layer="PORTFOLIO",
-            order_id=order_id,
-            symbol=symbol,
-            side=side,
-            order_type=OrderType.MARKET,
-            quantity=quantity,
-            strategy_id=intent.strategy_id,
-            reason="PORTFOLIO",
-            g12_disclosed_cost_total_bps=disclosed_cost,
-        )
 
         try:
-            verdict = check_order(order, positions, additional_exposure=running_extra)
+            verdict = check_order(leg.order, positions, additional_exposure=running_extra)
         except Exception as exc:  # noqa: BLE001 — Inv-11: never raise from the risk path
             _logger.warning(
                 "build_sized_intent_orders: check_order raised for leg %s "
@@ -144,37 +88,16 @@ def build_sized_intent_orders(
             dropped.append((symbol, verdict.reason))
             continue
         if verdict.action == RiskAction.SCALE_DOWN:
-            # Drop scale-downs that round to zero; never force a one-share order.
-            scaled_qty = int(
-                (Decimal(quantity) * Decimal(str(verdict.scaling_factor))).to_integral_value(
-                    rounding=ROUND_HALF_UP
-                ),
-            )
-            if scaled_qty <= 0:
+            scaled = rescale_leg(leg, verdict.scaling_factor)
+            if scaled is None:
                 dropped.append((symbol, f"scaled down to zero quantity: {verdict.reason}"))
                 continue
-            if scaled_qty != quantity:
-                quantity = scaled_qty
-                order = OrderRequest(
-                    timestamp_ns=intent.timestamp_ns,
-                    correlation_id=intent.correlation_id,
-                    sequence=intent.sequence,
-                    source_layer="PORTFOLIO",
-                    order_id=order_id,
-                    symbol=symbol,
-                    side=side,
-                    order_type=OrderType.MARKET,
-                    quantity=scaled_qty,
-                    strategy_id=intent.strategy_id,
-                    reason="PORTFOLIO",
-                    g12_disclosed_cost_total_bps=disclosed_cost,
-                )
+            leg = scaled
 
         # Include each admitted leg in later legs' exposure checks.
-        admitted_signed = quantity if side == Side.BUY else -quantity
-        post_qty = current.quantity + admitted_signed
-        running_extra += (abs(post_qty) - abs(current.quantity)) * mark
-        orders.append(order)
+        post_qty = leg.current_quantity + leg.signed_quantity
+        running_extra += (abs(post_qty) - abs(leg.current_quantity)) * leg.mark
+        orders.append(leg.order)
 
     if dropped and on_dropped_legs is not None:
         on_dropped_legs(intent, dropped)

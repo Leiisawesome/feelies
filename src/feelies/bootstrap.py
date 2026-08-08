@@ -8,7 +8,6 @@ omitted when their configuration is empty.
 
 from __future__ import annotations
 
-import ast
 import logging
 import os
 from collections.abc import Callable, Iterable, Sequence
@@ -33,6 +32,12 @@ from feelies.alpha.promotion_evidence import (
 )
 from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.lifecycle import LifecycleRevocation
+from feelies.alpha.dependency_graph import (
+    consumed_features_for_signal_registration,
+    maybe_prune_unused_sensors,
+    required_warm_feature_ids_for_signal_alpha,
+    warn_unread_sensor_dependencies,
+)
 from feelies.alpha.registry import AlphaRegistry
 from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
@@ -108,6 +113,7 @@ from feelies.risk.engine import RiskEngine
 from feelies.risk.deferral_cap import DeferralCapController, DeferralPolicy
 from feelies.risk.exit_composer import ExitComposer, ExitComposerPolicy
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
+from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -115,9 +121,9 @@ from feelies.risk.edge_weighted_sizer import (
 )
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
+from feelies.services.regime_state_cache import RegimeStateCache
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
-from feelies.signals.regime_gate import RegimeGate
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
@@ -267,7 +273,7 @@ def build_platform(
     )
 
     _load_alphas(config, registry, loader)
-    config = _maybe_prune_unused_sensors(config, registry)
+    config = maybe_prune_unused_sensors(config, registry)
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
@@ -317,9 +323,13 @@ def build_platform(
         overnight_multiplier=_decimal(config.risk_margin_overnight_buying_power_multiplier),
     )
     trading_session_bounds = _resolve_trading_session_bounds(config)
+    # One read path for regime: consumers read what was published, never the
+    # live engine (see feelies.services.regime_state_cache).
+    regime_states = RegimeStateCache(bus=bus)
+    regime_states.attach()
     risk_engine = BasicRiskEngine(
         config=risk_config,
-        regime_engine=regime_engine,
+        regime_states=regime_states,
         bus=bus,
         alert_sequence_generator=risk_alert_seq,
         pdt_constraint=pdt_constraint,
@@ -402,7 +412,7 @@ def build_platform(
     feature_snapshots = InMemoryFeatureSnapshotStore()
     # Size and limit scales are sequential controls sourced from one config.
     base_sizer = BudgetBasedSizer(
-        regime_engine=regime_engine,
+        regime_states=regime_states,
         regime_factors={
             "vol_breakout": risk_config.regime_vol_breakout_scale,
             "compression_clustering": risk_config.regime_compression_scale,
@@ -498,6 +508,18 @@ def build_platform(
         thread_safe_sequences=_seq_thread_safe,
     )
 
+    # Platform-level stop-loss / session flatten.  Returns None (and never
+    # subscribes) when neither is configured, so default deployments are
+    # unaffected.  Attached before the alpha-driven authors so a stop and a
+    # hazard spike on the same dispatch resolve in a fixed order (Inv-5).
+    stop_exit_controller = _create_stop_exit_controller(
+        bus=bus,
+        config=config,
+        position_store=position_store,
+        trading_session_bounds=trading_session_bounds,
+        thread_safe_sequences=_seq_thread_safe,
+    )
+
     # Scan every active alpha so SIGNAL-layer hazard exits receive a controller.
     hazard_exit_controller = _create_hazard_exit_controller(
         bus=bus,
@@ -559,11 +581,34 @@ def build_platform(
         resolved_edge_factors: dict[str, float] = dict(edge_calibration_factors)
     else:
         resolved_edge_factors = {}
-        _edge_cal_path = getattr(config, "edge_calibration_path", None)
-        if _edge_cal_path:
+        if config.edge_calibration_path is not None:
             from feelies.forensics.edge_calibration import EdgeCalibrationStore
 
-            resolved_edge_factors = EdgeCalibrationStore(_edge_cal_path).factors()
+            resolved_edge_factors = EdgeCalibrationStore(
+                str(config.edge_calibration_path)
+            ).factors()
+
+    # Inv-9: the B4 gate compares a *calibrated* edge against modeled round-trip
+    # cost.  Calibration factors shrink disclosed edge toward observed, so a
+    # deployment that gates without them admits strictly more trades than the
+    # backtest that validated it — the divergence resolves toward more exposure,
+    # which is the direction Inv-11 forbids.  Only the backtest harness could
+    # supply factors before ``edge_calibration_path`` existed as a config field,
+    # so this combination was previously unreachable to notice.
+    if (
+        config.signal_min_edge_cost_ratio > 0
+        and not resolved_edge_factors
+        and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE)
+    ):
+        logger.warning(
+            "B4 edge-vs-cost gate is active (signal_min_edge_cost_ratio=%s) but no "
+            "edge calibration is configured; every alpha gates on its full "
+            "disclosed edge. A backtest run with --edge-calibration gates on a "
+            "haircut edge and will admit fewer trades than this deployment "
+            "(Inv-9 parity). Set edge_calibration_path to an artifact emitted by "
+            "`--emit-edge-calibration`.",
+            config.signal_min_edge_cost_ratio,
+        )
 
     orchestrator = Orchestrator(
         clock=clock,
@@ -599,6 +644,7 @@ def build_platform(
         cross_sectional_tracker=cross_sectional_tracker,
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
+        stop_exit_controller=stop_exit_controller,
         exit_composer=exit_composer,
         deferral_cap_controller=deferral_cap_controller,
         edge_calibration_factors=resolved_edge_factors,
@@ -610,7 +656,6 @@ def build_platform(
         regime_calibration_quotes=regime_calibration_quotes,
         thread_safe_sequences=_seq_thread_safe,
         position_manager=position_manager,
-        position_manager_drive=config.position_manager_drive,
         position_manager_enable_trim=config.position_manager_enable_trim,
         position_manager_trim_edge_gate_multiplier=(
             config.position_manager_trim_edge_gate_multiplier
@@ -1272,257 +1317,6 @@ def _build_horizon_features(
     return features
 
 
-def _feature_ids_for_sensor_at_horizon(
-    sensor_id: str,
-    horizon_seconds: int,
-    horizon_features: Sequence[HorizonFeature],
-) -> frozenset[str]:
-    """Layer-2 ``feature_id`` keys at one horizon driven by a sensor."""
-    out: set[str] = set()
-    for f in horizon_features:
-        if f.horizon_seconds != horizon_seconds:
-            continue
-        if sensor_id in f.input_sensor_ids:
-            out.add(f.feature_id)
-    return frozenset(out)
-
-
-def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str] | None:
-    """Statically extract the ``snapshot.values`` keys a signal body reads.
-
-    ``required_warm`` gates only features the alpha actually consumes. We
-    parse the compiled ``signal:`` source and collect the string-literal keys
-    used in ``snapshot.values.get("…")`` and ``snapshot.values["…"]``.
-
-    Returns:
-
-    - ``frozenset[str]`` of literal keys when **every** ``.values`` access in
-      the body is a recognised literal get/subscript (so the consumed set is
-      fully known), **or**
-    - ``None`` when the source is absent, unparseable, or contains any
-      ``.values`` access we cannot resolve to a string literal (a dynamic key,
-      ``.values.items()``, an aliased ``v = snapshot.values``, …).  ``None`` is
-      the conservative signal: the caller requires every feature of every
-      depended sensor.
-    """
-    if not source:
-        return None
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return None
-
-    keys: set[str] = set()
-    recognised: set[int] = set()  # id() of ``X.values`` Attribute nodes resolved
-
-    for node in ast.walk(tree):
-        # snapshot.values.get("KEY"[, default])
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "get"
-            and isinstance(node.func.value, ast.Attribute)
-            and node.func.value.attr == "values"
-        ):
-            recognised.add(id(node.func.value))
-            if (
-                node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                keys.add(node.args[0].value)
-            else:
-                return None  # dynamic key — cannot determine the consumed set
-        # snapshot.values["KEY"]
-        elif (
-            isinstance(node, ast.Subscript)
-            and isinstance(node.value, ast.Attribute)
-            and node.value.attr == "values"
-        ):
-            recognised.add(id(node.value))
-            sl = node.slice
-            if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
-                keys.add(sl.value)
-            else:
-                return None  # dynamic subscript key
-
-    # Any ``.values`` access that was not one of the recognised literal forms
-    # (e.g. ``snapshot.values.items()``, ``v = snapshot.values``) means we
-    # cannot be sure we captured every consumed key → fall back conservatively.
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Attribute)
-            and node.attr == "values"
-            and id(node) not in recognised
-        ):
-            return None
-
-    return frozenset(keys)
-
-
-def _required_warm_feature_ids_for_signal_alpha(
-    *,
-    depends_on_sensors: Sequence[str],
-    horizon_seconds: int,
-    horizon_features: Sequence[HorizonFeature],
-    gate: RegimeGate,
-    signal_source: str | None = None,
-) -> frozenset[str]:
-    """Snapshot ``warm`` / ``stale`` keys an alpha must satisfy to enter.
-
-    When ``snapshot.values`` keys can be determined statically, gate only on
-    those keys intersected with
-    the features registered at this horizon).  This stops an alpha from being
-    suppressed on a feature it never reads — e.g. an auxiliary ``*_zscore`` /
-    ``*_integrated`` view added to a sensor it depends on.  When the body's
-    feature access cannot be resolved (``signal_source is None`` or it contains
-    a dynamic ``.values`` access), fall back to the conservative set
-    (every feature of every depended sensor).  Either way the regime-gate
-    identifiers are added, since the gate must also resolve from warm features.
-    """
-    req: set[str] = set()
-
-    consumed = _consumed_value_keys_from_signal_source(signal_source)
-    if consumed is None:
-        # Conservative fallback: every feature of every depended sensor.
-        for sid in sorted(depends_on_sensors):
-            req.update(
-                _feature_ids_for_sensor_at_horizon(sid, horizon_seconds, horizon_features),
-            )
-    else:
-        # Consume-driven: only the feature_ids the body reads that a feature
-        # actually produces at this horizon.  (The engine additionally filters
-        # by presence in ``snapshot.warm``, so a consumed key with no producing
-        # feature is harmless either way; intersecting keeps the set auditable.)
-        available = {
-            f.feature_id for f in horizon_features if f.horizon_seconds == horizon_seconds
-        }
-        req.update(k for k in consumed if k in available)
-
-    available = {f.feature_id for f in horizon_features if f.horizon_seconds == horizon_seconds}
-    for name in sorted(gate.binding_identifier_names()):
-        if name.endswith("_percentile") or name.endswith("_zscore"):
-            req.add(name)
-            continue
-        if name in available:
-            req.add(name)
-            continue
-        req.update(
-            _feature_ids_for_sensor_at_horizon(name, horizon_seconds, horizon_features),
-        )
-    return frozenset(req)
-
-
-def _warn_unread_sensor_dependencies(
-    *,
-    alpha_id: str,
-    depends_on_sensors: Sequence[str],
-    horizon_seconds: int,
-    horizon_features: Sequence[HorizonFeature],
-    warm_ids: frozenset[str],
-) -> None:
-    """Warn when a declared sensor dependency is never actually read.
-
-    G16 only checks that ``l1_signature_sensors`` is a subset of
-    ``depends_on_sensors``. It cannot detect a declared sensor whose features
-    are never referenced by ``evaluate()`` or the regime gate. ``warm_ids``
-    holds the union of every feature the body's statically-resolved
-    ``snapshot.values`` accesses and the regime gate's bound identifiers
-    require, so a declared sensor whose *entire* horizon feature set is
-    disjoint from it contributes nothing to this alpha's actual behaviour.
-
-    A sensor producing zero features at this horizon is not flagged — there
-    is nothing to compare against, and that gap is already covered by the
-    H3/M2 "uncovered dependency" check above. When the signal body's
-    ``.values`` access could not be resolved statically, 2P-1's conservative
-    fallback already seeds ``warm_ids`` with every feature of every declared
-    sensor, so this check cannot produce a false positive in that case — it
-    just loses sensitivity, matching 2P-1's own conservative philosophy.
-    """
-    for sid in depends_on_sensors:
-        produced = _feature_ids_for_sensor_at_horizon(sid, horizon_seconds, horizon_features)
-        if produced and produced.isdisjoint(warm_ids):
-            logger.warning(
-                "sensor_audit_2026-07-02 P1: alpha %r declares "
-                "depends_on_sensors entry %r, but none of the feature(s) it "
-                "produces at horizon %ds (%s) are read by evaluate() or the "
-                "regime gate — this looks like a cosmetic/unused dependency. "
-                "Either wire evaluate()/the gate to read one of these "
-                "features, or drop %r from depends_on_sensors (and from "
-                "trend_mechanism.l1_signature_sensors if declared there as a "
-                "G16 fingerprint).",
-                alpha_id,
-                sid,
-                horizon_seconds,
-                sorted(produced),
-                sid,
-            )
-
-
-def _consumed_features_for_signal_registration(
-    *,
-    declared_consumed_features: Sequence[str],
-    required_warm_feature_ids: frozenset[str],
-) -> tuple[str, ...]:
-    """Feature identifiers to stamp on bootstrapped SIGNAL emissions.
-
-    Loader-era ``consumed_features`` historically mirrors
-    ``depends_on_sensors``.  At bootstrap time we know the exact warm feature
-    set used by the signal body and regime gate, so prefer that feature-level
-    provenance.  If no horizon features are available, preserve the declared
-    identifiers as a compatibility fallback.
-    """
-
-    if required_warm_feature_ids:
-        return tuple(sorted(required_warm_feature_ids))
-    return tuple(declared_consumed_features)
-
-
-def _maybe_prune_unused_sensors(
-    config: PlatformConfig,
-    registry: AlphaRegistry,
-) -> PlatformConfig:
-    """Drop sensor specs not required by loaded SIGNAL alphas.
-
-    When ``prune_unused_sensors`` is True (or ``None`` in BACKTEST mode),
-    intersect ``config.sensor_specs`` with the union of every SIGNAL
-    alpha's ``depends_on_sensors``.  Missing required sensors fail closed.
-    Spec order is preserved (topological registration order).
-    """
-    # Opt-in only.  Research configs (e.g. bt_sig_benign_midcap) set
-    # ``prune_unused_sensors: true``; leaving the default ``None``/False
-    # preserves locked Inv-5 baselines that register the full reference
-    # sensor stack under BACKTEST.
-    prune = bool(config.prune_unused_sensors)
-    if not prune or not config.sensor_specs:
-        return config
-
-    required: set[str] = set()
-    for alpha in registry.signal_alphas():
-        required.update(getattr(alpha, "depends_on_sensors", ()))
-    if not required:
-        # No SIGNAL alphas declare sensor deps — leave the stack intact
-        # (PORTFOLIO-only / observational configs still need sensors).
-        return config
-
-    available = {spec.sensor_id for spec in config.sensor_specs}
-    missing = sorted(required - available)
-    if missing:
-        raise ConfigurationError(
-            "prune_unused_sensors: loaded SIGNAL alphas require sensors "
-            f"{missing} that are not present in platform sensor_specs"
-        )
-
-    pruned = tuple(spec for spec in config.sensor_specs if spec.sensor_id in required)
-    logger.info(
-        "prune_unused_sensors: %d → %d specs (kept %s)",
-        len(config.sensor_specs),
-        len(pruned),
-        sorted(required),
-    )
-    return replace(config, sensor_specs=pruned)
-
-
 def _create_sensor_layer(
     config: PlatformConfig,
     bus: EventBus,
@@ -1795,21 +1589,21 @@ def _create_signal_layer(
     for module in signal_alphas:
         if not isinstance(module, LoadedSignalLayerModule):
             continue
-        warm_ids = _required_warm_feature_ids_for_signal_alpha(
+        warm_ids = required_warm_feature_ids_for_signal_alpha(
             depends_on_sensors=module.depends_on_sensors,
             horizon_seconds=module.horizon_seconds,
             horizon_features=horizon_features or [],
             gate=module.gate,
             signal_source=module.signal_source,
         )
-        _warn_unread_sensor_dependencies(
+        warn_unread_sensor_dependencies(
             alpha_id=module.manifest.alpha_id,
             depends_on_sensors=module.depends_on_sensors,
             horizon_seconds=module.horizon_seconds,
             horizon_features=horizon_features or [],
             warm_ids=warm_ids,
         )
-        consumed_feature_ids = _consumed_features_for_signal_registration(
+        consumed_feature_ids = consumed_features_for_signal_registration(
             declared_consumed_features=module.consumed_features,
             required_warm_feature_ids=warm_ids,
         )
@@ -2043,6 +1837,58 @@ def _create_composition_layer(
         horizon_metrics,
         None,
     )
+
+
+def _create_stop_exit_controller(
+    *,
+    bus: EventBus,
+    config: PlatformConfig,
+    position_store: MemoryPositionStore,
+    trading_session_bounds: TradingSessionBounds | None,
+    thread_safe_sequences: bool = True,
+) -> StopExitController | None:
+    """Build the platform stop-loss / session-flatten controller, or ``None``.
+
+    Returns ``None`` when neither control is configured, so a deployment with
+    stops and session flatten off never subscribes and stays bit-identical to one
+    predating the controller (Inv-5).
+
+    The controller gets its own sequence family: sharing the kernel's would make
+    every downstream event id shift the moment a stop fires, and sharing the
+    hazard family would couple two independent authors' id streams.
+    """
+    policy = StopExitPolicy(
+        stop_loss_per_share=config.stop_loss_per_share,
+        trail_activate_per_share=config.trail_activate_per_share,
+        stop_loss_pct=config.stop_loss_pct,
+        trail_activate_pct=config.trail_activate_pct,
+        trail_pct=config.trail_pct,
+        session_flatten_enabled=config.session_flatten_enabled,
+        session_flatten_seconds_before_close=(config.session_flatten_seconds_before_close),
+    )
+    if not policy.any_enabled:
+        return None
+    controller = StopExitController(
+        bus=bus,
+        sequence_generator=SequenceGenerator(thread_safe=thread_safe_sequences),
+        position_store=position_store,
+        policy=policy,
+        trading_session_bounds=trading_session_bounds,
+    )
+    controller.attach()
+    logger.info(
+        "StopExitController wired: stop=%s (pct=%.4f, per_share=%.4f), "
+        "trail=%s (activate_pct=%.4f, retain=%.2f), session_flatten=%s (%ds before close)",
+        policy.stop_enabled,
+        policy.stop_loss_pct,
+        policy.stop_loss_per_share,
+        policy.trail_activate_pct > 0 or policy.trail_activate_per_share > 0,
+        policy.trail_activate_pct,
+        policy.trail_pct,
+        policy.session_flatten_enabled,
+        policy.session_flatten_seconds_before_close,
+    )
+    return controller
 
 
 def _create_hazard_exit_controller(

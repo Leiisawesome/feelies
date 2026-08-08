@@ -24,8 +24,27 @@ symbols:
 
 # A momentum + drift + mean-reversion mix on the same symbol so the net both
 # STACKS (benign + kyle, same direction) and OFFSETS (vs inventory-revert).
+# sig_kyle_drift_v1 is what makes this a collision harness at all.  Without it
+# only sig_benign_midcap_v1 emits on the cached APP sessions —
+# sig_inventory_revert_v1's gate additionally requires ``dominant == "normal"``
+# and ``P(normal) > 0.65``, and mean P(normal) on this data is ~0.31, so it stays
+# silent no matter how ``asymmetry_z_threshold`` is overridden (those posteriors
+# are gate literals, not tunable parameters).  A one-alpha "multi-alpha" config
+# silently exercised nothing: cross-alpha arbitration and the portfolio-netting
+# shadow both need two live standing targets on one symbol.
+#
+# Known limit of this dataset: only sig_benign_midcap_v1 ever takes a *direction*
+# on the cached APP sessions.  sig_kyle_drift_v1 and sig_hawkes_burst_v1 emit
+# FLAT exclusively, so kyle contributes a zero standing target and the overlap
+# this config produces is "one real target vs one zero", not a two-sided
+# directional contest.  A FLAT is additionally dropped by
+# ``is_redundant_gate_close_flat`` whenever the book is already flat, which is
+# why some sessions show two emitting alphas and still zero contended ticks.
+# Closing that gap needs data on which a second alpha takes a side, or a
+# purpose-built research fixture alpha — not another config tweak.
 alpha_specs:
   - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+  - alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml
   - alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml
 
 # Inv-12 margin gate (G12-equivalent 1.5× round-trip floor), as in bt_app.

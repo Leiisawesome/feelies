@@ -7,7 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
+from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    RegimeState,
     OrderRequest,
     OrderType,
     RiskAction,
@@ -21,7 +23,41 @@ from feelies.core.events import (
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.buying_power import BuyingPowerConfig
+from feelies.services.regime_state_cache import RegimeStateCache
 from feelies.services.regime_engine import HMM3StateFractional
+
+
+def _regime_states(
+    posteriors: tuple[float, ...] | None,
+    *,
+    symbol: str = "AAPL",
+) -> RegimeStateCache:
+    """A cache holding one published ``RegimeState``, or nothing.
+
+    Risk reads the published snapshot rather than the live engine, so tests feed
+    it the same way the orchestrator does — by recording the event.  ``None``
+    posteriors leaves the cache empty, which is how a cold start or an
+    unannounced symbol looks to the consumer.
+    """
+    cache = RegimeStateCache(bus=EventBus())
+    if posteriors is None:
+        return cache
+    names = tuple(HMM3StateFractional().state_names)
+    dominant = max(range(len(posteriors)), key=lambda i: posteriors[i])
+    cache.record(
+        RegimeState(
+            timestamp_ns=1,
+            correlation_id="c",
+            sequence=1,
+            symbol=symbol,
+            engine_name="hmm_3state_fractional",
+            state_names=names,
+            posteriors=tuple(posteriors),
+            dominant_state=dominant,
+            dominant_name=names[dominant],
+        )
+    )
+    return cache
 
 
 def _make_signal(
@@ -198,15 +234,12 @@ class TestCheckOrder:
 class TestRegimeScaling:
     def test_vol_breakout_reduces_position_limit(self, store: MemoryPositionStore) -> None:
         """In pure vol_breakout regime, EV scale = 0.5, limit = 500."""
-        regime = HMM3StateFractional()
         cfg = RiskConfig(
             max_position_per_symbol=1000,
             max_gross_exposure_pct=50.0,
             account_equity=Decimal("10000000"),
         )
-        engine = BasicRiskEngine(cfg, regime_engine=regime)
-
-        regime._posteriors["AAPL"] = [0.0, 0.0, 1.0]
+        engine = BasicRiskEngine(cfg, regime_states=_regime_states(tuple([0.0, 0.0, 1.0])))
 
         # EV = 1.0*0.5 = 0.5, adjusted_max = 500, so 500 shares hits limit
         store.update("AAPL", 500, Decimal("10"))
@@ -216,7 +249,7 @@ class TestRegimeScaling:
     def test_no_regime_engine_uses_full_limits(
         self, config: RiskConfig, store: MemoryPositionStore
     ) -> None:
-        engine = BasicRiskEngine(config, regime_engine=None)
+        engine = BasicRiskEngine(config, regime_states=None)
         store.update("AAPL", 999, Decimal("10"))
         verdict = engine.check_signal(_make_signal(), store)
         assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
@@ -640,13 +673,14 @@ class TestRegimeMissingDataFailsSafe:
     symbol tightens to min(scales), not the 1.0 baseline."""
 
     def test_missing_posterior_uses_min_scale(self, store: MemoryPositionStore) -> None:
-        regime = HMM3StateFractional()  # no posterior committed for AAPL
         cfg = RiskConfig(
             max_position_per_symbol=1000,
             max_gross_exposure_pct=50.0,
             account_equity=Decimal("10000000"),
         )
-        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        engine = BasicRiskEngine(
+            cfg, regime_states=_regime_states(tuple([float("nan"), 0.0, 0.0]))
+        )
         # min scale = 0.5 → adjusted_max = 500; a 500-share book is at cap.
         store.update("AAPL", 500, Decimal("10"))
         verdict = engine.check_signal(_make_signal(), store)
@@ -655,16 +689,17 @@ class TestRegimeMissingDataFailsSafe:
     def test_no_engine_still_full_limit(
         self, config: RiskConfig, store: MemoryPositionStore
     ) -> None:
-        engine = BasicRiskEngine(config, regime_engine=None)
+        engine = BasicRiskEngine(config, regime_states=None)
         store.update("AAPL", 500, Decimal("10"))
         verdict = engine.check_signal(_make_signal(), store)
         assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
 
     def test_regime_scaling_never_amplifies_above_one(self) -> None:
-        regime = HMM3StateFractional()
-        regime._posteriors["AAPL"] = [0.0, 1.0, 0.0]  # 100% "normal"
         cfg = RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
-        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        engine = BasicRiskEngine(
+            cfg,
+            regime_states=_regime_states((0.0, 1.0, 0.0)),  # 100% "normal"
+        )
         # Misconfigure the "normal" scale to an amplifier; the clamp caps EV
         # at 1.0 so the limit never exceeds the unscaled baseline.
         engine._regime_scale_map["normal"] = 2.0
@@ -673,18 +708,23 @@ class TestRegimeMissingDataFailsSafe:
     def test_nan_posterior_fails_safe_to_min_scale_not_baseline(self) -> None:
         """Missing regime data tightens limits fail-safe.
 
-        A third-party ``RegimeEngine`` that fails to sanitize its own
-        posterior (the shipped ``HMM3StateFractional`` always does) could
-        produce a NaN EV.  ``min(1.0, float("nan"))`` evaluates to ``1.0``
-        under Python's comparison semantics — the *unscaled baseline*, not
-        the intended fail-safe minimum.  Directly seeding ``_posteriors``
-        bypasses ``posterior()``'s own sanitization to simulate exactly
-        that unsanitized-engine scenario.
+        An engine that fails to sanitize its own posterior (the shipped
+        ``HMM3StateFractional`` always does) could publish a NaN and produce a
+        NaN EV.  ``min(1.0, float("nan"))`` evaluates to ``1.0`` under Python's
+        comparison semantics — the *unscaled baseline*, not the intended
+        fail-safe minimum.  Publishing the unsanitized posterior directly
+        simulates that engine.
         """
-        regime = HMM3StateFractional()
-        regime._posteriors["AAPL"] = [float("nan"), 0.0, 0.0]
         cfg = RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
-        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        engine = BasicRiskEngine(
+            cfg, regime_states=_regime_states((float("nan"), float("nan"), float("nan")))
+        )
+        assert engine._regime_scaling("AAPL") == engine._regime_scale_default
+
+    def test_unannounced_symbol_uses_min_scale(self) -> None:
+        """A symbol whose regime was never published must tighten, not pass."""
+        cfg = RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
+        engine = BasicRiskEngine(cfg, regime_states=_regime_states(None))
         assert engine._regime_scaling("AAPL") == engine._regime_scale_default
 
 
@@ -762,3 +802,35 @@ class TestSizedIntentScaleDownDecimal:
                 store,
             )
         assert result.orders == ()
+
+
+def test_multi_engine_ambiguity_warns_once_not_per_lookup(caplog) -> None:
+    """Risk reads the cache per tick; the ambiguity is a boot-time property.
+
+    An unguarded warning here would emit one record per risk check per tick about
+    a configuration that has not changed since startup.
+    """
+    import logging
+
+    cache = _regime_states((0.0, 1.0, 0.0))
+    names = tuple(HMM3StateFractional().state_names)
+    cache.record(
+        RegimeState(
+            timestamp_ns=2,
+            correlation_id="c",
+            sequence=2,
+            symbol="AAPL",
+            engine_name="second_engine",
+            state_names=names,
+            posteriors=(0.0, 0.0, 1.0),
+            dominant_state=2,
+            dominant_name=names[2],
+        )
+    )
+
+    with caplog.at_level(logging.WARNING, logger="feelies.services.regime_state_cache"):
+        for _ in range(50):
+            cache.latest("AAPL")
+
+    warnings = [r for r in caplog.records if "found 2 engines" in r.getMessage()]
+    assert len(warnings) == 1, f"expected one warning, got {len(warnings)}"

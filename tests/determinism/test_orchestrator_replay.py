@@ -224,8 +224,11 @@ def test_two_full_orchestrator_stop_exit_replays_are_identical() -> None:
 
 def test_stop_exit_replay_produces_a_non_empty_order_and_fill_stream() -> None:
     # Guard against accidentally reducing this fixture to an empty replay.
+    # ``signal`` is deliberately excluded: a stop is a risk control, so it emits
+    # an OrderRequest and no Signal at all.  The order and fill streams are what
+    # prove the fixture still exercises the stop.
     result = _run_stop_exit()
-    assert result["signal"][1] >= 1
+    assert result["signal"][1] == 0
     assert result["order"][1] >= 1
     assert result["position_update"][1] >= 1
 
@@ -255,18 +258,33 @@ def _run_stop_exit_orders() -> list[OrderRequest]:
 
 
 # Host-pinned baseline (re-baseline like any parity hash — see the module
-# docstring's re-baseline workflow note). Unlike EXPECTED_ORCHESTRATOR_STREAMS,
-# every stream here is non-empty: "signal" and "order" pin the synthetic
-# __stop_exit__ Signal and its MARKET OrderRequest (reason="STOP_EXIT"),
-# "position_update" pins the resulting fill, and "intent" pins the same
-# single flat SizedPositionIntent as the baseline above (the UNIVERSE-scope
-# HorizonTick fires trivially on the first quote of any session, at
-# boundary_index 0, for every registered horizon simultaneously).
+# docstring's re-baseline workflow note). "order" pins the stop's MARKET
+# OrderRequest (reason="STOP_EXIT"), "position_update" pins the resulting fill,
+# and "intent" pins the same single flat SizedPositionIntent as the baseline
+# above (the UNIVERSE-scope HorizonTick fires trivially on the first quote of any
+# session, at boundary_index 0, for every registered horizon simultaneously).
+#
+# Re-baselined when stop-loss / session flatten moved from the kernel to
+# ``feelies.risk.stop_exit.StopExitController``:
+#
+#   signal          1 -> 0   the synthetic __stop_exit__ Signal is gone; a stop is
+#                            no longer expressed as alpha conviction, so the hash
+#                            is now the empty-stream digest
+#   order           moved    same SELL 100 MARKET, but source_layer RISK (was
+#                            SIGNAL), strategy_id "" (was __stop_exit__), and a
+#                            content-derived order id from the new author
+#   position_update moved    same fill; sequence numbers shift because the stop no
+#                            longer draws from the kernel's signal family
+#   intent          UNCHANGED — the alpha path is untouched, which is the point
+#
+# Economics are byte-identical across the move: qty 100 @ 99.00, realized
+# -100.00, fees 1.66 (the STOP_EXIT token keeps panic slippage), verified against
+# the pre-move tree before accepting these values.
 EXPECTED_STOP_EXIT_STREAMS: dict[str, tuple[str, int]] = {
-    "signal": ("02e33e3049b03c503e8ea9256374635406f71a117b6b0800e9f7787bd5967012", 1),
+    "signal": ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0),
     "intent": ("fa9a02d84aea823f4cf4bce6d572e87102c0021985ddb03b9c3ec67dd06cc080", 1),
-    "order": ("7f39fea08b3026fcfae96f93b30ad54aa8dc3a7a843aeea119a3328538a5a724", 1),
-    "position_update": ("2c5b505a3c50083f72b3d6d67c30b68f9a710a7fd20680e87034f5b9b0db6e16", 1),
+    "order": ("831c3bf9d551b78bbabeeb88302876925a9317b67da6f54a67402d5dc668179c", 1),
+    "position_update": ("8e15beaa2ac3b90a26924571b7e15262d0fe1960f4faa28de26af86f6219caaf", 1),
 }
 
 

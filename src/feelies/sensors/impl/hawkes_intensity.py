@@ -158,4 +158,6 @@ class HawkesIntensitySensor:
             and len(state["sell_ts"]) >= self._warm_per_side
         )
 
-        return SensorEmission(value=(lam_buy, lam_sell, intensity_ratio, self._impulse_decay_ratio), warm=warm)
+        return SensorEmission(
+            value=(lam_buy, lam_sell, intensity_ratio, self._impulse_decay_ratio), warm=warm
+        )

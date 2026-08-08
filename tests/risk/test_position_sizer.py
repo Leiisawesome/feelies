@@ -7,9 +7,44 @@ from decimal import Decimal
 import pytest
 
 from feelies.alpha.module import AlphaRiskBudget
-from feelies.core.events import Signal, SignalDirection
+from feelies.bus.event_bus import EventBus
+from feelies.core.events import RegimeState, Signal, SignalDirection
 from feelies.risk.position_sizer import BudgetBasedSizer
+from feelies.services.regime_state_cache import RegimeStateCache
 from feelies.services.regime_engine import HMM3StateFractional
+
+
+def _regime_states(
+    posteriors: tuple[float, ...] | None,
+    *,
+    symbol: str = "AAPL",
+) -> RegimeStateCache:
+    """A cache holding one published ``RegimeState``, or nothing.
+
+    Risk reads the published snapshot rather than the live engine, so tests feed
+    it the same way the orchestrator does — by recording the event.  ``None``
+    posteriors leaves the cache empty, which is how a cold start or an
+    unannounced symbol looks to the consumer.
+    """
+    cache = RegimeStateCache(bus=EventBus())
+    if posteriors is None:
+        return cache
+    names = tuple(HMM3StateFractional().state_names)
+    dominant = max(range(len(posteriors)), key=lambda i: posteriors[i])
+    cache.record(
+        RegimeState(
+            timestamp_ns=1,
+            correlation_id="c",
+            sequence=1,
+            symbol=symbol,
+            engine_name="hmm_3state_fractional",
+            state_names=names,
+            posteriors=tuple(posteriors),
+            dominant_state=dominant,
+            dominant_name=names[dominant],
+        )
+    )
+    return cache
 
 
 def _make_signal(
@@ -72,10 +107,9 @@ class TestConvictionScaling:
 
 class TestRegimeFactor:
     def test_vol_breakout_halves_size(self, budget: AlphaRiskBudget) -> None:
-        regime = HMM3StateFractional()
-        regime._posteriors["AAPL"] = [0.0, 0.0, 1.0]
 
-        sizer = BudgetBasedSizer(regime_engine=regime)
+        # No posterior published for this symbol.
+        sizer = BudgetBasedSizer(regime_states=_regime_states(None))
         qty = sizer.compute_target_quantity(
             _make_signal(strength=1.0),
             budget,
@@ -92,12 +126,11 @@ class TestRegimeFactor:
         beyond 1.0) is enforced at the value level — an operator-
         supplied factor > 1.0 must NOT increase quantity above the
         un-scaled baseline."""
-        regime = HMM3StateFractional()
-        regime._posteriors["AAPL"] = [0.0, 1.0, 0.0]  # 100% "normal"
+
         # Misconfigured map: "normal" -> 2.0×.  EV would be 2.0; clamp
         # caps it at 1.0.
         sizer = BudgetBasedSizer(
-            regime_engine=regime,
+            regime_states=_regime_states((0.0, 1.0, 0.0)),  # 100% "normal"
             regime_factors={"normal": 2.0, "vol_breakout": 0.5, "compression_clustering": 0.75},
         )
         qty = sizer.compute_target_quantity(
@@ -120,9 +153,7 @@ class TestRegimeFactor:
         NaN EV must fail to the minimum configured factor, not to ``1.0``
         (which is what ``min(1.0, float("nan"))`` evaluates to).
         """
-        regime = HMM3StateFractional()
-        regime._posteriors["AAPL"] = [float("nan"), 0.0, 0.0]
-        sizer = BudgetBasedSizer(regime_engine=regime)
+        sizer = BudgetBasedSizer(regime_states=_regime_states((float("nan"), 0.0, 0.0)))
         qty = sizer.compute_target_quantity(
             _make_signal(strength=1.0),
             budget,
@@ -172,7 +203,7 @@ class TestEdgeCases:
         assert qty == 10
 
     def test_no_regime_engine_factor_is_one(self, budget: AlphaRiskBudget) -> None:
-        sizer = BudgetBasedSizer(regime_engine=None)
+        sizer = BudgetBasedSizer(regime_states=None)
         qty = sizer.compute_target_quantity(
             _make_signal(strength=1.0),
             budget,
@@ -210,8 +241,8 @@ class TestRegimeMissingDataFailsSafe:
     tightens quantity to min(factors), not the 1.0 baseline."""
 
     def test_missing_posterior_uses_min_factor(self, budget: AlphaRiskBudget) -> None:
-        regime = HMM3StateFractional()  # no posterior for AAPL
-        sizer = BudgetBasedSizer(regime_engine=regime)
+        # No posterior published for this symbol.
+        sizer = BudgetBasedSizer(regime_states=_regime_states(None))
         qty = sizer.compute_target_quantity(
             _make_signal(strength=1.0),
             budget,

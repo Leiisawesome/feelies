@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from tests.determinism.test_decoupled_safety_replay import (
 )
 from tests.determinism.test_decoupled_safety_replay import (
     _replay_safety_state_change as decoupled_safety_state_change_replay,
+)
+from tests.determinism.test_forced_exit_attribution_replay import (
+    _replay as forced_exit_attribution_replay,
 )
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
@@ -84,6 +88,7 @@ _REPLAY_BY_NAME = {
     "level6_regime_state": _replay_regime_state,
     "market_fill_acks": market_fill_replay,
     "position_pnl": position_pnl_replay,
+    "forced_exit_attribution": forced_exit_attribution_replay,
     "state_transition": state_transition_replay,
     "cross_sectional_context": xsect_context_replay,
     "signal_fires": signal_fires_replay,
@@ -119,29 +124,66 @@ def test_regime_state_count_matches_manifest() -> None:
 # ── Completeness: no locked baseline may silently escape the registry ───
 
 _DETERMINISM_DIR = Path(__file__).resolve().parent
+_TESTS_DIR = _DETERMINISM_DIR.parent
 
-# Locked ``EXPECTED_*_HASH`` constants intentionally *not* in the manifest,
-# each with the reason.  Anything else defining such a constant must be
+# Every module-level binding under ``tests/`` that holds a locked hash literal
+# and is *not* in the manifest, each with the reason.  Anything else must be
 # wired into LOCKED_PARITY_BASELINES + _REPLAY_BY_NAME.
+#
+# Exemption is by binding name, not by naming convention.  A leading underscore
+# used to opt a constant out implicitly — the scanner only matched
+# ``EXPECTED_*_HASH``, so anything named otherwise was invisible rather than
+# exempt.  Those are different things, and the difference was load-bearing: see
+# ``_scan_locked_hash_bindings`` for what that cost.
+#
+# The scan covers the whole test tree, not just this package.  Locked baselines
+# do not stop being baselines by living elsewhere: ``_FIXTURE_GOLDEN_HASHES``
+# cites Inv-5 and calls itself "like the determinism parity hashes" from
+# tests/acceptance/, and phase-4's E2E stream hashes are parity pins in
+# tests/integration/.  Both were unregistered, unexempted, and unwatched.
 _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # cvxpy/ECOS solver path is skipped unless the [portfolio] extra is
     # installed, so it cannot be a mandatory manifest entry (the manifest
     # self-test must run without cvxpy).  Locked + guarded locally in
     # tests/determinism/test_sized_intent_solver_replay.py.
     "EXPECTED_LEVEL3_SOLVER_HASH": "cvxpy-conditional baseline (test_sized_intent_solver_replay.py)",
-    # Orchestrator hashes stay local because regime math is host-sensitive.
-    "EXPECTED_ORCHESTRATOR_SIGNAL_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
-    "EXPECTED_ORCHESTRATOR_INTENT_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
-    "EXPECTED_ORCHESTRATOR_ORDER_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
-    "EXPECTED_ORCHESTRATOR_POSITION_UPDATE_HASH": (
-        "orchestrator-level baseline (test_orchestrator_replay.py)"
-    ),
-    "EXPECTED_ORCHESTRATOR_SMOKE_SIGNAL_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
-    "EXPECTED_ORCHESTRATOR_SMOKE_INTENT_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
-    "EXPECTED_ORCHESTRATOR_SMOKE_ORDER_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
-    "EXPECTED_ORCHESTRATOR_SMOKE_POSITION_UPDATE_HASH": (
-        "orchestrator-level baseline (test_orchestrator_replay.py)"
-    ),
+    # Orchestrator streams stay local because these fixtures build the whole
+    # platform, regime engine included, and its transcendental math is stable
+    # only for a fixed host + libm (see this module's docstring).  The manifest
+    # is a portable cross-machine contract, so host-sensitive hashes cannot be
+    # mandatory entries.  Locked + guarded locally in test_orchestrator_replay.py.
+    "EXPECTED_ORCHESTRATOR_STREAMS": "host-sensitive orchestrator baseline (test_orchestrator_replay.py)",
+    "EXPECTED_STOP_EXIT_STREAMS": "host-sensitive orchestrator baseline (test_orchestrator_replay.py)",
+    # SHA-256 of the empty string — a shared spelling of "this stream is empty",
+    # not a baseline of anything.
+    "_EMPTY_SHA": "sha256(b'') helper constant (test_orchestrator_replay.py)",
+    # Signal-stream migration goldens: local assertions that promotion moves a
+    # gate-close FLAT off the Signal stream, not cross-layer parity baselines.
+    "_NON_PROMOTED_SIGNAL_HASH": "module-local migration golden (test_decoupled_safety_replay.py)",
+    "_PROMOTED_SIGNAL_HASH": "module-local migration golden (test_decoupled_safety_replay.py)",
+    # ── Outside tests/determinism/ ──────────────────────────────────────
+    # The APP config *contract* hash: sha256 of the resolved PlatformConfig
+    # snapshot, not a replay stream.  It has no event count, so it does not fit
+    # the (hash, count) manifest shape or a _REPLAY_BY_NAME entry, and the
+    # fingerprint's purpose does not apply to it — that exists so a coordinated
+    # re-pin of several baselines is one line in review rather than a pile of
+    # individually plausible literals, and there is only ever one config hash to
+    # move.  It is also data-free and always runs (unlike the trade-path test,
+    # which skips on cache miss), and each re-baseline is justified inline above
+    # the constant.  Guarded by test_app_baseline_config_contract_hash.
+    "_BASELINE_CONFIG_HASH": "config-contract hash, not a replay baseline "
+    "(tests/acceptance/test_backtest_app_baseline.py)",
+    # CPCV fold-PnL-curve hashes over committed JSON fixtures — they pin fixture
+    # *data* against silent regeneration, not an event stream produced by a
+    # replay, so there is nothing for _REPLAY_BY_NAME to call.
+    "_FIXTURE_GOLDEN_HASHES": "fixture-data goldens "
+    "(tests/acceptance/test_bt12_reference_alpha_validation.py)",
+    # Phase-4 E2E stream pins.  These are genuine parity baselines, but the
+    # fixture builds the whole platform, so they carry the same host-sensitive
+    # regime math that keeps the orchestrator streams out of a portable manifest.
+    "_EMPTY_SHA256": "sha256(b'') helper constant (tests/integration/test_phase4_e2e.py)",
+    "EXPECTED_E2E_INTENT_HASH": "host-sensitive E2E baseline "
+    "(tests/integration/test_phase4_e2e.py)",
 }
 
 
@@ -161,19 +203,67 @@ def test_replay_map_matches_manifest_keys() -> None:
     )
 
 
-def test_every_locked_hash_is_registered_or_exempt() -> None:
-    """No locked ``EXPECTED_*_HASH`` may escape the manifest unnoticed.
+_HEX64 = re.compile(r"[0-9a-f]{64}")
 
-    Scan the determinism package for
-    locked-hash constants and assert each is either referenced by the
-    manifest or explicitly exempted above.
+# The manifest and this module are the registry itself, not places baselines live.
+_REGISTRY_MODULES = frozenset({"parity_manifest.py", "test_parity_manifest.py"})
+
+
+def _scannable_modules() -> list[Path]:
+    """Every test module that could hold a locked baseline, in a stable order."""
+    return [
+        path for path in sorted(_TESTS_DIR.rglob("*.py")) if path.name not in _REGISTRY_MODULES
+    ]
+
+
+def _scan_locked_hash_bindings(path: Path) -> list[str]:
+    """Names of module-level bindings in *path* whose value holds a 64-hex literal.
+
+    Detection is by **shape**, not by name.  The previous scanner matched the
+    regex ``^(EXPECTED_\\w*_HASH)\\b`` over the raw source, which required a
+    baseline to be a top-level constant whose name ended in ``_HASH``.  Two
+    locked orchestrator baselines are ``dict``s named ``*_STREAMS`` holding five
+    hashes between them, so the scanner never saw them — and ``82dfd20``
+    re-pinned three of those with ``EXPECTED_MANIFEST_FINGERPRINT`` green,
+    which is exactly the coordinated re-pin the fingerprint exists to surface.
+    Meanwhile all eight ``EXPECTED_ORCHESTRATOR_*_HASH`` names it exempted had
+    been gone for some time: the allow-list was documenting constants that no
+    longer existed while their replacements went unwatched.
+
+    Walking the AST for any top-level assignment whose value contains a 64-hex
+    literal catches dicts, tuples, lists, and underscore-prefixed names alike,
+    so opting out is a deliberate entry in ``_UNREGISTERED_HASH_EXEMPTIONS``
+    rather than a side effect of what a constant is called.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if value is None or not _HEX64.search(ast.unparse(value)):
+            continue
+        names.extend(t.id for t in targets if isinstance(t, ast.Name))
+    return names
+
+
+def test_every_locked_hash_is_registered_or_exempt() -> None:
+    """No locked hash literal may escape the manifest unnoticed.
+
+    Scan every module in the determinism package for locked-hash bindings and
+    assert each is either referenced by the manifest or explicitly exempted
+    above.  The scan is the whole ``tests/`` tree, not ``test_*replay*.py`` in
+    this package: a fixture that pins a hash without ``replay`` in its filename,
+    or from ``tests/acceptance/``, is no less a baseline.
     """
     manifest_src = (_DETERMINISM_DIR / "parity_manifest.py").read_text(encoding="utf-8")
-    const_re = re.compile(r"^(EXPECTED_\w*_HASH)\b", re.MULTILINE)
 
     unregistered: list[str] = []
-    for path in sorted(_DETERMINISM_DIR.glob("test_*replay*.py")):
-        for const in const_re.findall(path.read_text(encoding="utf-8")):
+    for path in _scannable_modules():
+        for const in _scan_locked_hash_bindings(path):
             if re.search(rf"\b{re.escape(const)}\b", manifest_src):
                 continue  # imported / referenced by the manifest
             if const in _UNREGISTERED_HASH_EXEMPTIONS:
@@ -185,6 +275,46 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
         f"exempted: {unregistered}.  Add them to LOCKED_PARITY_BASELINES + "
         "_REPLAY_BY_NAME, or to _UNREGISTERED_HASH_EXEMPTIONS with a reason."
     )
+
+
+def test_every_exemption_names_a_binding_that_exists() -> None:
+    """A stale exemption is worse than none — it reads as coverage that is gone.
+
+    All eight ``EXPECTED_ORCHESTRATOR_*_HASH`` exemptions outlived the constants
+    they named, so the list asserted a deliberate choice about baselines that no
+    longer existed.  Tie each entry to a live binding.
+    """
+    live: set[str] = set()
+    for path in _scannable_modules():
+        live.update(_scan_locked_hash_bindings(path))
+
+    stale = sorted(set(_UNREGISTERED_HASH_EXEMPTIONS) - live)
+    assert not stale, (
+        f"_UNREGISTERED_HASH_EXEMPTIONS names bindings that no longer hold a "
+        f"locked hash: {stale}.  Drop them."
+    )
+
+
+def test_scanner_sees_dict_and_underscore_bindings(tmp_path: Path) -> None:
+    """Pin the two shapes the name-based scanner was blind to.
+
+    Without this, the widened scanner could quietly narrow back to the old
+    behaviour and the same class of baseline would go unwatched again.
+    """
+    digest = "0" * 64
+    module = tmp_path / "test_shapes_replay.py"
+    module.write_text(
+        f'EXPECTED_PLAIN_HASH = "{digest}"\n'
+        f'_UNDERSCORED_HASH = "{digest}"\n'
+        f'EXPECTED_STREAMS: dict[str, tuple[str, int]] = {{"a": ("{digest}", 1)}}\n'
+        f'NOT_A_HASH = "too short"\n',
+        encoding="utf-8",
+    )
+    assert _scan_locked_hash_bindings(module) == [
+        "EXPECTED_PLAIN_HASH",
+        "_UNDERSCORED_HASH",
+        "EXPECTED_STREAMS",
+    ]
 
 
 # ── Manifest fingerprint ─────────────────────────────────────────────────
@@ -204,7 +334,14 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
 # ``decoupled_safety_state_change`` and ``decoupled_risk_flatten_order``. No
 # existing baseline moved; the fingerprint shifts purely because the manifest set
 # grew (23 → 25). See ``test_decoupled_safety_replay.py`` for the migration note.
-EXPECTED_MANIFEST_FINGERPRINT = "83dece6dfcc4be08009d79d02c55536792a9b1c68a1530e082b8060cb8ee26b7"
+# Re-baselined again to REGISTER — not change — one brand-new baseline:
+# ``forced_exit_attribution``. No existing baseline moved; the fingerprint shifts
+# purely because the manifest set grew (25 → 26). The new entry is the first to
+# observe *which alpha* a fill is booked to: every prior fixture either wires no
+# ``StrategyPositionStore`` or hashes order/state streams rather than the journal,
+# so per-strategy re-attribution was invisible to the whole corpus. See
+# ``test_forced_exit_attribution_replay.py``.
+EXPECTED_MANIFEST_FINGERPRINT = "4b85ce329259e889100629992c31ff3cac332e0c24de91698adb0e0ca49dd95a"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:
