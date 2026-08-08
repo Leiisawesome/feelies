@@ -363,10 +363,12 @@ EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH = (
 )
 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_COUNT = 2
 
-# Module-local Signal-stream migration goldens (underscore-prefixed so the
-# manifest-completeness scanner treats them as assertions, not cross-layer parity
-# baselines).  Non-promoted retains the gate-close FLAT (4 signals); promoted
-# migrates it off the Signal stream (3 signals).
+# Module-local Signal-stream migration goldens: assertions about this migration,
+# not cross-layer parity baselines.  Listed by name in the completeness scanner's
+# ``_UNREGISTERED_HASH_EXEMPTIONS`` — the leading underscore no longer opts them
+# out on its own, since a scanner that cannot see a constant has not exempted it.
+# Non-promoted retains the gate-close FLAT (4 signals); promoted migrates it off
+# the Signal stream (3 signals).
 _NON_PROMOTED_SIGNAL_HASH = "3fcbe3b815ac84d3e0dc333a7feb4eff69079bf06a9dab45f57f7ebb933477c7"
 _NON_PROMOTED_SIGNAL_COUNT = 4
 _PROMOTED_SIGNAL_HASH = "c8e3d0036cf652eed763e6524b90290a94564671eb08d064c17c0738be921a5e"
