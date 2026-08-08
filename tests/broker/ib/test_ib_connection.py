@@ -23,7 +23,11 @@ from typing import Any
 
 import pytest
 
-from feelies.broker.ib.connection import IBFillEvent, IBGatewayConnection
+from feelies.broker.ib.connection import (
+    _WRITER_POLL_TIMEOUT_S,
+    IBFillEvent,
+    IBGatewayConnection,
+)
 from feelies.core.clock import SimulatedClock
 
 try:
@@ -426,3 +430,51 @@ def test_poll_fills_drains_non_blockingly() -> None:
     assert [f.ib_order_id for f in out] == [0, 1, 2]
     # Subsequent call returns empty without blocking.
     assert conn.poll_fills() == []
+
+
+def test_cancel_burst_drains_in_one_poll_not_one_per_poll(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancel burst must not serialise at one per writer wake.
+
+    The writer took a single cancel per pass, so with no submit pending to
+    piggyback on, a burst left the adapter at one cancel per
+    ``_WRITER_POLL_TIMEOUT_S``: measured 1.286s to clear 24, linear in the count.
+    A cancel is how a resting order gets pulled, so that tail is latency on the
+    exposure-reducing path.
+
+    It also made ``test_writer_thread_serialises_submit_and_cancel`` flaky --
+    that test allows 2s and the drain alone took 1.3s, which is what failed CI on
+    macos. Fixing the throughput fixes the flake at its cause; raising the budget
+    would only have hidden it.
+
+    The bound is deliberately loose (8 polls for 24 cancels) so this measures the
+    shape -- constant vs linear -- rather than the speed of the runner. The old
+    behaviour needed 24 polls and cannot pass it.
+    """
+    conn, captured = _build_conn(monkeypatch)
+    threading.Thread(
+        target=lambda: (time.sleep(0.05), conn.nextValidId(1)),
+        daemon=True,
+    ).start()
+    conn.connect_and_start(ready_timeout_s=2.0)
+
+    burst = 24
+    budget_s = 8 * _WRITER_POLL_TIMEOUT_S
+
+    started = time.monotonic()
+    for i in range(burst):
+        conn.enqueue_cancel(9000 + i)
+
+    deadline = started + budget_s
+    while time.monotonic() < deadline and len(captured["cancel"]) < burst:
+        time.sleep(0.005)
+    elapsed = time.monotonic() - started
+
+    assert len(captured["cancel"]) == burst, (
+        f"only {len(captured['cancel'])}/{burst} cancels written in {elapsed:.3f}s "
+        f"— a burst is draining at roughly one per {_WRITER_POLL_TIMEOUT_S}s poll"
+    )
+    assert sorted(captured["cancel"]) == list(range(9000, 9000 + burst))
+
+    conn.disconnect_and_stop()
