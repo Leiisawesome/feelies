@@ -268,12 +268,31 @@ class PlatformConfig:
     # `check_sized_intent` instead and never consults the netter.  That path is
     # covered (tests/integration/test_xsect_v1_e2e.py, test_mixed_mechanism_e2e.py).
     #
-    # So this shadow improves a path production is told not to use.  Before
-    # spending more on it, decide whether the standalone multi-alpha path is
-    # supported at all; if it is not, retiring the netter is the cheaper answer
-    # than flipping it.  If it is, decide which semantics is wanted when the
-    # winner says flat and a live target disagrees, then re-measure on data where
-    # a second SIGNAL alpha actually takes a side.
+    # DECIDED 2026-08-08: the standalone multi-alpha path IS supported, so the
+    # netter stays.  Retiring it was the cheaper answer only under the opposite
+    # ruling; with the path supported, the shadow is measuring something the
+    # platform is expected to do, and the open question narrows to two things —
+    # the semantics when the winner says flat while a live target disagrees, and
+    # evidence from a genuinely two-sided contest.
+    #
+    # DECIDED 2026-08-08: the standalone multi-alpha path IS supported, so the
+    # netter stays.  Retiring it was the cheaper answer only under the opposite
+    # ruling; with the path supported, this shadow measures something the platform
+    # is expected to do, and the question narrows to the two things the sweep
+    # could not settle — which semantics is wanted when the winner says flat while
+    # a live target disagrees, and evidence from a genuinely two-sided contest.
+    #
+    # The flag stays OFF until that evidence exists.  Deciding the flat-vs-live
+    # semantics on "one real target against one zero" would be choosing between
+    # two behaviours only one of which has ever been observed, and the one
+    # divergence on record is precisely that shape.
+    #
+    # Note where the shortage actually comes from: it is a property of the alphas,
+    # not of the tape.  Only sig_benign_midcap_v1 ever takes a direction under
+    # these gates, so pointing the harness at more data does not manufacture a
+    # contest — a second SIGNAL alpha has to take a side.  A purpose-built research
+    # fixture alpha is the honest route, since the shipped ones are gated the way
+    # they are for their own reasons.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
