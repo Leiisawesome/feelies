@@ -124,8 +124,9 @@ def test_regime_state_count_matches_manifest() -> None:
 # ── Completeness: no locked baseline may silently escape the registry ───
 
 _DETERMINISM_DIR = Path(__file__).resolve().parent
+_TESTS_DIR = _DETERMINISM_DIR.parent
 
-# Every module-level binding in this package that holds a locked hash literal
+# Every module-level binding under ``tests/`` that holds a locked hash literal
 # and is *not* in the manifest, each with the reason.  Anything else must be
 # wired into LOCKED_PARITY_BASELINES + _REPLAY_BY_NAME.
 #
@@ -134,6 +135,12 @@ _DETERMINISM_DIR = Path(__file__).resolve().parent
 # ``EXPECTED_*_HASH``, so anything named otherwise was invisible rather than
 # exempt.  Those are different things, and the difference was load-bearing: see
 # ``_scan_locked_hash_bindings`` for what that cost.
+#
+# The scan covers the whole test tree, not just this package.  Locked baselines
+# do not stop being baselines by living elsewhere: ``_FIXTURE_GOLDEN_HASHES``
+# cites Inv-5 and calls itself "like the determinism parity hashes" from
+# tests/acceptance/, and phase-4's E2E stream hashes are parity pins in
+# tests/integration/.  Both were unregistered, unexempted, and unwatched.
 _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # cvxpy/ECOS solver path is skipped unless the [portfolio] extra is
     # installed, so it cannot be a mandatory manifest entry (the manifest
@@ -154,6 +161,29 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # gate-close FLAT off the Signal stream, not cross-layer parity baselines.
     "_NON_PROMOTED_SIGNAL_HASH": "module-local migration golden (test_decoupled_safety_replay.py)",
     "_PROMOTED_SIGNAL_HASH": "module-local migration golden (test_decoupled_safety_replay.py)",
+    # ── Outside tests/determinism/ ──────────────────────────────────────
+    # The APP config *contract* hash: sha256 of the resolved PlatformConfig
+    # snapshot, not a replay stream.  It has no event count, so it does not fit
+    # the (hash, count) manifest shape or a _REPLAY_BY_NAME entry, and the
+    # fingerprint's purpose does not apply to it — that exists so a coordinated
+    # re-pin of several baselines is one line in review rather than a pile of
+    # individually plausible literals, and there is only ever one config hash to
+    # move.  It is also data-free and always runs (unlike the trade-path test,
+    # which skips on cache miss), and each re-baseline is justified inline above
+    # the constant.  Guarded by test_app_baseline_config_contract_hash.
+    "_BASELINE_CONFIG_HASH": "config-contract hash, not a replay baseline "
+    "(tests/acceptance/test_backtest_app_baseline.py)",
+    # CPCV fold-PnL-curve hashes over committed JSON fixtures — they pin fixture
+    # *data* against silent regeneration, not an event stream produced by a
+    # replay, so there is nothing for _REPLAY_BY_NAME to call.
+    "_FIXTURE_GOLDEN_HASHES": "fixture-data goldens "
+    "(tests/acceptance/test_bt12_reference_alpha_validation.py)",
+    # Phase-4 E2E stream pins.  These are genuine parity baselines, but the
+    # fixture builds the whole platform, so they carry the same host-sensitive
+    # regime math that keeps the orchestrator streams out of a portable manifest.
+    "_EMPTY_SHA256": "sha256(b'') helper constant (tests/integration/test_phase4_e2e.py)",
+    "EXPECTED_E2E_INTENT_HASH": "host-sensitive E2E baseline "
+    "(tests/integration/test_phase4_e2e.py)",
 }
 
 
@@ -177,6 +207,13 @@ _HEX64 = re.compile(r"[0-9a-f]{64}")
 
 # The manifest and this module are the registry itself, not places baselines live.
 _REGISTRY_MODULES = frozenset({"parity_manifest.py", "test_parity_manifest.py"})
+
+
+def _scannable_modules() -> list[Path]:
+    """Every test module that could hold a locked baseline, in a stable order."""
+    return [
+        path for path in sorted(_TESTS_DIR.rglob("*.py")) if path.name not in _REGISTRY_MODULES
+    ]
 
 
 def _scan_locked_hash_bindings(path: Path) -> list[str]:
@@ -218,15 +255,14 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
 
     Scan every module in the determinism package for locked-hash bindings and
     assert each is either referenced by the manifest or explicitly exempted
-    above.  The glob is the whole package, not ``test_*replay*.py``: a fixture
-    that pins a hash without ``replay`` in its filename is no less a baseline.
+    above.  The scan is the whole ``tests/`` tree, not ``test_*replay*.py`` in
+    this package: a fixture that pins a hash without ``replay`` in its filename,
+    or from ``tests/acceptance/``, is no less a baseline.
     """
     manifest_src = (_DETERMINISM_DIR / "parity_manifest.py").read_text(encoding="utf-8")
 
     unregistered: list[str] = []
-    for path in sorted(_DETERMINISM_DIR.glob("*.py")):
-        if path.name in _REGISTRY_MODULES:
-            continue
+    for path in _scannable_modules():
         for const in _scan_locked_hash_bindings(path):
             if re.search(rf"\b{re.escape(const)}\b", manifest_src):
                 continue  # imported / referenced by the manifest
@@ -249,9 +285,7 @@ def test_every_exemption_names_a_binding_that_exists() -> None:
     longer existed.  Tie each entry to a live binding.
     """
     live: set[str] = set()
-    for path in sorted(_DETERMINISM_DIR.glob("*.py")):
-        if path.name in _REGISTRY_MODULES:
-            continue
+    for path in _scannable_modules():
         live.update(_scan_locked_hash_bindings(path))
 
     stale = sorted(set(_UNREGISTERED_HASH_EXEMPTIONS) - live)
