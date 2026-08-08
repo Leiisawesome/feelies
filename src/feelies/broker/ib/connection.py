@@ -286,8 +286,34 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
                 ib_id,
             )
 
+    def _drain_queued_cancels(self) -> None:
+        """Write every cancel queued as of entry, not one per writer wake.
+
+        Bounded by the queue depth read at entry so a continuous cancel stream
+        cannot starve submits: anything arriving mid-drain waits for the next
+        pass, which is at most one poll timeout away.
+        """
+        for _ in range(self._cancel_queue.qsize()):
+            try:
+                ib_order_id = self._cancel_queue.get_nowait()
+            except queue.Empty:
+                return
+            self._writer_cancel_order(ib_order_id)
+
     def _drain_writer_queues(self) -> None:
-        """Sole caller of ``EClient.placeOrder`` / ``cancelOrder``."""
+        """Sole caller of ``EClient.placeOrder`` / ``cancelOrder``.
+
+        Cancels are drained in full on every pass.  Taking only one per wake
+        meant a burst left the adapter at one cancel per ``_WRITER_POLL_TIMEOUT_S``
+        whenever no submit was pending to piggyback on — measured at 1.286s to
+        clear 24, rising linearly.  A cancel is how a resting order gets pulled,
+        so that tail is latency on the exposure-reducing path, and it is also what
+        made ``test_writer_thread_serialises_submit_and_cancel`` flaky under CI
+        load: its 2s budget sat just above the 1.3s the drain actually took.
+
+        Nothing was ever dropped — every dequeued item is written — so this is a
+        throughput fix, not a correctness one.
+        """
         while not self._shutdown_event.is_set():
             try:
                 ib_id, contract, order = self._submit_queue.get(
@@ -297,18 +323,9 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
                 pass
             else:
                 self._writer_place_order(ib_id, contract, order)
-                # Fairness: do not starve cancels during a submit burst.
-                try:
-                    cancel_id = self._cancel_queue.get_nowait()
-                except queue.Empty:
-                    continue
-                self._writer_cancel_order(cancel_id)
-                continue
-            try:
-                ib_id = self._cancel_queue.get_nowait()
-            except queue.Empty:
-                continue
-            self._writer_cancel_order(ib_id)
+            # Runs after a submit and after an idle poll alike, so cancels never
+            # wait on submit traffic to carry them.
+            self._drain_queued_cancels()
 
     # ── Message loop (message thread) ────────────────────────────────
 

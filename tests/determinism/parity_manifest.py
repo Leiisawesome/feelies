@@ -13,6 +13,17 @@ so drift between modules is caught in CI.
 Hashes involving transcendental math are stable only for a fixed platform and
 libm. In-process reproducibility is covered separately by
 ``test_transcendental_determinism``.
+
+That caveat is about the general case, not about the entries below.  Every
+baseline registered here was verified identical on macOS and on glibc
+(GitHub Actions run 31262226139, 2026-08-08): both hosts produced
+4600 passed / 5 skipped / 43 deselected with no re-baseline, so the registered
+corpus is portable and CI runs a single host on that basis.  The caveat still
+governs the *unregistered* hashes — the orchestrator streams and the phase-4 E2E
+pins — which is why they carry a host-sensitivity exemption in
+``test_parity_manifest._UNREGISTERED_HASH_EXEMPTIONS`` rather than a manifest
+entry.  If a future entry does prove host-dependent, exempt it there; do not
+re-baseline it onto whichever host CI happens to run.
 """
 
 from __future__ import annotations
