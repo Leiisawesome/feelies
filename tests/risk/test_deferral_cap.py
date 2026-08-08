@@ -563,3 +563,40 @@ def test_attach_without_policies_is_noop() -> None:
     bus.publish(_safety_off(0))
     bus.publish(_trade(10_000 * _SECOND))
     assert received == []
+
+
+def test_flat_slice_emits_nothing_after_the_cap_expires() -> None:
+    """A deferral cap on a flat slice must stay silent.
+
+    The other three exit controllers each assert this (``test_flat_book_emits_nothing``
+    for the stop controller, ``test_no_exit_when_position_flat`` for hazard,
+    ``test_flat_book_never_actuates`` for the composer); the deferral cap was the
+    one that did not, so the ``position.quantity == 0`` early return existed but
+    was unasserted.
+
+    It matters beyond this controller.  The kernel's forced-exit bridge only clamps
+    a mandated exit to what is closable *inside* its resting-order branch --
+    ``_forced_exit_reduces`` is computed but gates nothing on the ordinary path --
+    so the reason a bridge with no resting order cannot open exposure is precisely
+    that no controller emits an exit sized against a flat book.  That premise
+    deserves a test per controller rather than a reading of four source files.
+
+    Two independent guards currently produce the silence: the ``quantity == 0``
+    early return, and ``_episode_deadline`` returning ``None`` because a flat slice
+    has no ``opened_at_ns``.  Mutating either alone leaves this green -- verified --
+    which is the correct shape for an invariant test: it constrains the observable
+    property, not one line's continued existence.  Removing both does fail it.
+    """
+    controller, store, bus, received = _make()
+
+    # Cap anchored while the slice was open, then the slice closes before the
+    # deadline: the deadline still passes, but there is nothing left to flatten.
+    _open(store, at_ns=0)
+    bus.publish(_safety_off(0))
+    store.update(_SID, _SYMBOL, -100, Decimal("100"), timestamp_ns=1 * _SECOND)
+    assert store.get(_SID, _SYMBOL).quantity == 0
+
+    bus.publish(_trade(10_000 * _SECOND))
+
+    assert received == []
+    assert controller is not None

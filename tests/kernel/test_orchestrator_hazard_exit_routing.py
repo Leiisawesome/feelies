@@ -46,6 +46,7 @@ from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.kernel import orchestrator as _orchestrator_mod
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
@@ -202,7 +203,18 @@ def _build_orchestrator(
     bus: EventBus | None = None,
     positions: MemoryPositionStore | None = None,
     router: _RecordingRouter | None = None,
+    strategy_positions: StrategyPositionStore | None = None,
 ) -> tuple[Orchestrator, _RecordingRouter, MemoryPositionStore]:
+    """Build an orchestrator wired for the forced-exit bridge.
+
+    ``strategy_positions`` defaults to ``None``, which is how every test in this
+    module ran before: and that made the slice-scoped half of
+    ``_forced_exit_closable_quantity`` unreachable, since it is guarded on
+    ``self._strategy_positions is not None``.  The ``max(symbol-net, slice)``
+    branch — the one that lets a slice-scoped exit legitimately cross zero — was
+    therefore dead code in the only module that puts a resting order in the book
+    at mandated-exit time.  Pass a store to exercise it.
+    """
     clock = SimulatedClock(start_ns=1000)
     bus = bus or EventBus()
     positions = positions or MemoryPositionStore()
@@ -226,6 +238,7 @@ def _build_orchestrator(
         position_store=positions,
         event_log=InMemoryEventLog(),
         metric_collector=_NoOpMetricCollector(),
+        strategy_positions=strategy_positions,
         account_equity=Decimal("1000000"),
     )
     orch.boot(_MinimalConfig())
@@ -726,3 +739,207 @@ class TestOutOfBandSettleIsDeliberate:
         assert [o.order_id for o in router.submitted] == ["hz-1"]
         # ...without pretending to be a tick-pipeline step.
         assert [t for t in transitions if t.machine_name == "tick_pipeline"] == []
+
+
+class TestSliceScopedForcedExitClamp:
+    """The ``max(symbol-net, slice)`` half of ``_forced_exit_closable_quantity``.
+
+    Every other test in this module leaves ``strategy_positions=None``, so this
+    branch has never executed here — and this is the only module that puts a
+    resting order in the book at mandated-exit time.  The two behaviours below are
+    therefore correct today by an ordering and a branch that nothing asserted:
+    the review that produced this file found five separate defects hiding in
+    exactly that situation.
+    """
+
+    @staticmethod
+    def _seed(
+        *, slice_qty: int, other_qty: int = 0
+    ) -> tuple[MemoryPositionStore, StrategyPositionStore]:
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        strategy_positions = StrategyPositionStore()
+        positions.update("AAPL", slice_qty, entry)
+        strategy_positions.update("test_alpha", "AAPL", slice_qty, entry)
+        if other_qty:
+            positions.update("AAPL", other_qty, entry)
+            strategy_positions.update("other_alpha", "AAPL", other_qty, entry)
+        positions.update_mark("AAPL", entry)
+        return positions, strategy_positions
+
+    def test_same_slice_cancel_fill_resizes_the_mandated_exit(self) -> None:
+        """A cover owned by the exiting slice must shrink the exit, not flip it.
+
+        The clamp reads the slice book *after* ``_cancel_resting_for_symbol``
+        reconciles the queued fill.  Nothing pinned that ordering: were the clamp
+        to read first, it would take ``max(70, 100) = 100`` off a stale slice and
+        cross 100 into a book holding 70, leaving a 30-share short — a fail-safe
+        control opening exposure (Inv-11).
+        """
+        positions, strategy_positions = self._seed(slice_qty=100)
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _router, _pos = _build_orchestrator(
+            positions=positions,
+            router=router,
+            strategy_positions=strategy_positions,
+        )
+
+        resting = OrderRequest(
+            timestamp_ns=1500,
+            correlation_id="resting-corr",
+            sequence=99,
+            source_layer="SIGNAL",
+            order_id="resting-sell-30",
+            symbol="AAPL",
+            side=Side.SELL,
+            order_type=OrderType.LIMIT,
+            limit_price=Decimal("151.00"),
+            quantity=30,
+            strategy_id="test_alpha",
+            reason="",
+        )
+        orch._track_order(resting.order_id, resting.side, resting)
+        orch._transition_order(resting.order_id, OrderState.SUBMITTED, "submitted")
+        router.register_resting(resting)
+
+        orch._bus.publish(
+            _make_hazard_order(side=Side.SELL, quantity=100, reason="MAX_HOLD_AFTER_SAFE_OFF")
+        )
+
+        assert router.cancelled == ["resting-sell-30"]
+        # Resized to the residual, not stood down and not crossed at full size.
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 70)]
+        assert positions.get("AAPL").quantity == 0
+        assert strategy_positions.get("test_alpha", "AAPL").quantity == 0
+
+    def test_slice_scoped_exit_closes_its_slice_through_a_flat_net(self) -> None:
+        """The case the ``max`` exists for: net flat, mandated slice still open.
+
+        Another strategy holding the opposite side leaves symbol-net at zero while
+        the mandated slice is long.  Clamping to net would stand the exit down and
+        strand the slice, so a slice-scoped author takes the larger basis and the
+        net moves through zero on purpose (design §3.3).
+        """
+        positions, strategy_positions = self._seed(slice_qty=100, other_qty=-100)
+        assert positions.get("AAPL").quantity == 0
+
+        router = _CancellingRouter(fill_on_cancel=False)
+        orch, _router, _pos = _build_orchestrator(
+            positions=positions, router=router, strategy_positions=strategy_positions
+        )
+
+        # A resting order must be in the book for the clamp to run at all: it lives
+        # inside the ``_has_pending_order_for_symbol`` branch.  Without one this
+        # test passed while never reaching ``max(symbol-net, slice)`` — confirmed by
+        # mutation, since deleting the max left it green.  This order belongs to the
+        # *other* strategy and cancels without filling, so the mandated slice is
+        # untouched and symbol-net stays flat.
+        resting = OrderRequest(
+            timestamp_ns=1500,
+            correlation_id="resting-corr",
+            sequence=99,
+            source_layer="SIGNAL",
+            order_id="resting-other-buy",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            limit_price=Decimal("149.00"),
+            quantity=10,
+            strategy_id="other_alpha",
+            reason="",
+        )
+        orch._track_order(resting.order_id, resting.side, resting)
+        orch._transition_order(resting.order_id, OrderState.SUBMITTED, "submitted")
+        router.register_resting(resting)
+
+        orch._bus.publish(
+            _make_hazard_order(side=Side.SELL, quantity=100, reason="MAX_HOLD_AFTER_SAFE_OFF")
+        )
+
+        assert router.cancelled == ["resting-other-buy"]
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
+        # The mandated slice is closed; the other strategy's short is untouched.
+        assert strategy_positions.get("test_alpha", "AAPL").quantity == 0
+        assert strategy_positions.get("other_alpha", "AAPL").quantity == -100
+        assert positions.get("AAPL").quantity == -100
+
+
+class TestForcedExitClampAppliesWithoutARestingOrder:
+    """The clamp guards the ordinary path, not only the resting-order branch.
+
+    It used to run only inside ``if self._has_pending_order_for_symbol(...)``.
+    ``order_reduces`` is computed above it but gates nothing, so on the ordinary
+    path nothing stopped a mandated exit from crossing into a book that could not
+    absorb it.  What kept that safe was a property of four *other* files -- every
+    shipped controller sizes from a live non-zero position and returns early when
+    flat -- rather than anything at the submit site.
+    """
+
+    def test_symbol_net_exit_stands_down_when_the_net_is_already_flat(self) -> None:
+        """Two strategies on opposite sides leave net flat; a symbol-net exit must not fire.
+
+        Before the clamp was hoisted this submitted the full 100: net went to
+        -100 and the *other* strategy was driven from -100 to -150 by the
+        proportional split.  A fail-safe control both opening exposure and
+        deepening an unrelated slice's short is precisely Inv-11's prohibition.
+        """
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, entry)
+        positions.update("AAPL", -100, entry)
+        positions.update_mark("AAPL", entry)
+        strategy_positions = StrategyPositionStore()
+        strategy_positions.update("test_alpha", "AAPL", 100, entry)
+        strategy_positions.update("other_alpha", "AAPL", -100, entry)
+        assert positions.get("AAPL").quantity == 0
+
+        orch, router, _pos = _build_orchestrator(
+            positions=positions, strategy_positions=strategy_positions
+        )
+        # No resting order: the clamp only reaches this order once hoisted.
+        assert not orch._has_pending_order_for_symbol("AAPL")
+
+        orch._bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, reason="HAZARD_SPIKE"))
+
+        assert router.submitted == []
+        assert positions.get("AAPL").quantity == 0
+        # Neither slice moved — especially not the one that was never mandated.
+        assert strategy_positions.get("test_alpha", "AAPL").quantity == 100
+        assert strategy_positions.get("other_alpha", "AAPL").quantity == -100
+
+    def test_slice_scoped_exit_still_crosses_a_flat_net_without_a_resting_order(
+        self,
+    ) -> None:
+        """Guarding the path must not cost slice-scoped authors their latitude."""
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, entry)
+        positions.update("AAPL", -100, entry)
+        positions.update_mark("AAPL", entry)
+        strategy_positions = StrategyPositionStore()
+        strategy_positions.update("test_alpha", "AAPL", 100, entry)
+        strategy_positions.update("other_alpha", "AAPL", -100, entry)
+
+        orch, router, _pos = _build_orchestrator(
+            positions=positions, strategy_positions=strategy_positions
+        )
+        orch._bus.publish(
+            _make_hazard_order(side=Side.SELL, quantity=100, reason="MAX_HOLD_AFTER_SAFE_OFF")
+        )
+
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
+        assert strategy_positions.get("test_alpha", "AAPL").quantity == 0
+        assert strategy_positions.get("other_alpha", "AAPL").quantity == -100
+
+    def test_a_well_formed_exit_is_untouched_by_the_clamp(self) -> None:
+        """The common case stays a no-op: closable equals the requested quantity."""
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, entry)
+        positions.update_mark("AAPL", entry)
+
+        orch, router, _pos = _build_orchestrator(positions=positions)
+        orch._bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, reason="HAZARD_SPIKE"))
+
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
+        assert positions.get("AAPL").quantity == 0

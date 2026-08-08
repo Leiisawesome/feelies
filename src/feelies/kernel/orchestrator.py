@@ -5612,23 +5612,39 @@ class Orchestrator:
                 return
             self._emit_forced_exit_supersedes_pending_alert(event, event.correlation_id)
             self._cancel_resting_for_symbol(event.symbol, event.correlation_id)
-            # The cancel reconciles acks already queued for those orders --
-            # including fills -- so the book may have moved since the reduce test
-            # above.  Crossing a stale quantity into a book another leg already
-            # flattened would open the *opposite* exposure: exactly what a
-            # fail-safe control must never do (Inv-11).  Clamp to what is still
-            # closable rather than only testing it — a *partial* cover leaves a
-            # residual that a mandated exit should still close, and standing the
-            # whole order down would strand it (the hazard controller will not
-            # re-emit within the same episode).
-            closable = self._forced_exit_closable_quantity(event)
-            if closable <= 0:
-                self._emit_forced_exit_stood_down_alert(event)
-                return
-            if closable < event.quantity:
-                self._emit_forced_exit_resized_alert(event, closable)
-                # Same order_id: one mandated decision resized, not a new order.
-                event = replace(event, quantity=closable)
+
+        # Clamp to what is still closable, on every path — not only when a resting
+        # order was cancelled just above.
+        #
+        # The cancel reconciles acks already queued for those orders, fills
+        # included, so the book may have moved since the reduce test above:
+        # crossing a stale quantity into a book another leg already flattened
+        # would open the *opposite* exposure, which is what a fail-safe control
+        # must never do (Inv-11).  That is why the clamp first existed here.
+        #
+        # It ran only inside the resting-order branch, which left the ordinary
+        # path protected by an argument rather than a guard: ``order_reduces``
+        # above is computed but gates nothing, so what actually kept a mandated
+        # exit from opening exposure was that every shipped controller sizes from
+        # a live non-zero position and returns early when flat.  True today, and
+        # asserted per controller — but it is a property of four other files, and
+        # a future author sizing an exit from something else would land on an
+        # unguarded submit.  Cheaper to guard the path than to keep the argument.
+        #
+        # No-op for a well-formed order: ``closable`` equals the requested
+        # quantity whenever the author sized against the same basis this reads.
+        # Clamping rather than only testing matters because a *partial* cover
+        # leaves a residual a mandated exit should still close, and standing the
+        # whole order down would strand it (the hazard controller will not re-emit
+        # within the same episode).
+        closable = self._forced_exit_closable_quantity(event)
+        if closable <= 0:
+            self._emit_forced_exit_stood_down_alert(event)
+            return
+        if closable < event.quantity:
+            self._emit_forced_exit_resized_alert(event, closable)
+            # Same order_id: one mandated decision resized, not a new order.
+            event = replace(event, quantity=closable)
         self._track_order(event.order_id, event.side, event)
         submit_error = self._submit_tracked_order(event, trigger=event.reason)
         if submit_error is not None:
