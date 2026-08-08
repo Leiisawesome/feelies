@@ -49,6 +49,14 @@ def _sha256_prefixed(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
 
+def _short_hash(value: object) -> str:
+    """Abbreviate a ``sha256:<hex>`` for an error message, or name its absence."""
+    if not isinstance(value, str) or not value:
+        return "absent"
+    body = value.removeprefix("sha256:")
+    return f"{body[:12]}..." if len(body) > 12 else body
+
+
 def _compute_schema_hash() -> str:
     """SHA-256 of sorted field names + types from NBBOQuote and Trade.
 
@@ -100,16 +108,38 @@ class DiskEventCache:
         except Exception:
             return None
 
+    def unusable_reason(self, symbol: str, date: str) -> str | None:
+        """Why this cache day cannot be used, or ``None`` when it can.
+
+        ``exists`` collapses four distinct situations into one ``False``, and
+        callers then report all of them as a cache *miss* — which sends an
+        operator off to re-download data that may be sitting right there,
+        readable, rejected only because the manifest predates a schema change.
+        The distinction is cheap to keep and expensive to lose, so the reason is
+        returned as text fit for an error message.
+        """
+        if not self._data_path(symbol, date).exists():
+            return "no data file"
+        manifest = self.read_manifest(symbol, date)
+        if manifest is None:
+            return "manifest missing or unreadable"
+        found = manifest.get("event_schema_hash")
+        if found != self._schema_hash:
+            return (
+                f"event_schema_hash mismatch (cached {_short_hash(found)}, "
+                f"current {_short_hash(self._schema_hash)}) — data is present but was "
+                "written under a different event schema; re-ingest to use it"
+            )
+        return None
+
     def exists(self, symbol: str, date: str) -> bool:
         """Check if a valid cache entry exists for this (symbol, date).
 
         Returns False if data file or manifest is missing, or if the
-        schema hash doesn't match current event definitions.
+        schema hash doesn't match current event definitions.  Use
+        :meth:`unusable_reason` when the caller needs to say *which*.
         """
-        if not self._data_path(symbol, date).exists():
-            return False
-        manifest = self.read_manifest(symbol, date)
-        return manifest is not None and manifest.get("event_schema_hash") == self._schema_hash
+        return self.unusable_reason(symbol, date) is None
 
     def load(self, symbol: str, date: str) -> list[NBBOQuote | Trade] | None:
         """Load cached events for a (symbol, date) pair.

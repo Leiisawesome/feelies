@@ -75,17 +75,22 @@ def load_event_log_from_disk_cache(
     dates = iter_calendar_dates(start_date, end_date)
     syms = [s.upper() for s in symbols]
 
-    missing: list[str] = []
+    # Report *why* each day is unusable, not just that it is.  "Disk cache miss"
+    # over a schema-hash mismatch reads as "the data is not there" and sends the
+    # operator to re-download a file that is present and readable, which is a
+    # different problem with a different fix.
+    unusable: list[str] = []
     for sym in syms:
         for day in dates:
-            if not cache.exists(sym, day):
-                missing.append(f"{sym}/{day} under {resolved}")
+            reason = cache.unusable_reason(sym, day)
+            if reason is not None:
+                unusable.append(f"{sym}/{day}: {reason}")
 
-    if missing:
+    if unusable:
         raise CacheReplayError(
-            "Disk cache miss — populate cache with a normal backtest download first "
-            "or pass --cache-dir pointing at your cache root.\n  Missing:\n  "
-            + "\n  ".join(missing)
+            "Disk cache unusable — populate cache with a normal backtest download "
+            "first or pass --cache-dir pointing at your cache root.\n"
+            f"  Cache root: {resolved}\n  " + "\n  ".join(unusable)
         )
 
     all_events: list[NBBOQuote | Trade] = []
