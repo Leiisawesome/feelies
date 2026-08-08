@@ -72,6 +72,32 @@ uv run python scripts/run_paper.py --config configs/paper_smoke_rth.yaml --max-r
 The full suite is green on `main` (skips are gated `functional` / `paper_rth` /
 per-host perf tests). Re-verify with `uv run pytest` before claiming otherwise.
 
+## Adding a test for a safety branch
+
+A green run does not prove the branch executed. Mutate the source and confirm
+the new test fails; if it still passes, it is not testing what you think.
+
+This is not a general policy — it is specific to guards on the fail-safe paths
+(Inv-11 exits, per-alpha attribution, parity clamps), where the failure mode is
+silent. Every defect found in the 2026-08 architecture review was hiding behind a
+fixture that covered the one input shape the buggy logic happened to handle:
+five in #220 (no `StrategyPositionStore` wired, no resting order live at exit, no
+fill landing on cancel, no partial cover, identical entry prices), and in #221 a
+test written to pin the `max()` in `_forced_exit_closable_quantity` never reached
+it, because that clamp only ran when a resting order existed.
+
+```bash
+# Break the guard deliberately, run only the new test, restore.
+cp src/feelies/<file>.py /tmp/f.bak
+# ...edit the guard to a no-op...
+PYTHONHASHSEED=0 uv run pytest <test file> -q -k <new test>   # MUST fail
+cp /tmp/f.bak src/feelies/<file>.py
+```
+
+Surviving a mutation is acceptable when a second guard independently holds the
+same invariant — that is the right shape for a behavioural test. Establish it by
+removing both and confirming the test then fails, and say so in the docstring.
+
 ## Gotchas
 
 - All extras (`dev`, `massive`, `portfolio`, `ib`) must be installed for the
