@@ -26,17 +26,31 @@ _DEFAULT_IB_PORT = 4002
 
 
 def require_rth_window() -> None:
-    """Skip unless inside US regular trading hours (or override set)."""
+    """Skip unless inside US regular trading hours (or override set).
+
+    The window is a weekday one.  Checking only the clock passed at 09:45 on a
+    Saturday — inside 9:30–16:00 ET, market shut — so every ``paper_rth`` test
+    ran against a live feed that returned nothing and failed instead of skipping.
+    That is a 6.5-hour false-failure window twice a week, against an AGENTS.md
+    that documents ``uv run pytest`` as green.
+
+    Holidays are still not covered: the platform's holiday calendar is supplied
+    through ``TradingSessionBounds.market_holiday_dates`` from config, which is
+    more machinery than a skip guard should pull in.  A market holiday will still
+    produce the false failure this fixes for weekends — roughly nine days a year
+    against a hundred and four.
+    """
     if os.getenv("PAPER_RTH_FORCE", "").strip() == "1":
         return
+    now = datetime.now(_ET)
+    if now.weekday() >= 5:  # Saturday or Sunday
+        pytest.skip(f"{now:%A} is not a trading day; set PAPER_RTH_FORCE=1 to override")
     if os.getenv("PAPER_RTH_EXTENDED", "").strip() == "1":
-        now = datetime.now(_ET)
         open_t = now.replace(hour=4, minute=0, second=0, microsecond=0)
         close_t = now.replace(hour=20, minute=0, second=0, microsecond=0)
         if not (open_t <= now <= close_t):
             pytest.skip("Outside extended RTH window (4:00–20:00 ET)")
         return
-    now = datetime.now(_ET)
     open_t = now.replace(hour=9, minute=30, second=0, microsecond=0)
     close_t = now.replace(hour=16, minute=0, second=0, microsecond=0)
     if not (open_t <= now <= close_t):
