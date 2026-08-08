@@ -49,7 +49,15 @@ _ALPHA_B = "sig_alpha_b_v1"
 # and so an off-by-one in either allocator shows up in the hash.
 _QTY_A = 70
 _QTY_B = 55
-_ENTRY_PRICE = Decimal("180.00")
+# Divergent entry prices are the whole point of this fixture.  When both slices
+# enter at the same price, splitting the *aggregate* realized PnL by quantity and
+# reading each slice's own realized delta give identical answers — so a fixture
+# built on one entry price cannot tell a correct attribution from a proportional
+# one.  Here the symbol-net exit is a small aggregate gain (+475) that decomposes
+# into a loss for A and a larger gain for B; a proportional split would report a
+# gain for both, inverting A's sign.
+_ENTRY_PRICE_A = Decimal("180.00")
+_ENTRY_PRICE_B = Decimal("160.00")
 _EXIT_PRICE = Decimal("175.00")
 _EXIT_FEES = Decimal("1.37")
 
@@ -114,10 +122,12 @@ def _replay() -> tuple[str, int]:
     positions = MemoryPositionStore()
     strategy_positions = StrategyPositionStore()
 
-    # Two alphas hold the same symbol; symbol-net is their sum.
-    positions.update(_SYMBOL, _QTY_A + _QTY_B, _ENTRY_PRICE)
-    strategy_positions.update(_ALPHA_A, _SYMBOL, _QTY_A, _ENTRY_PRICE)
-    strategy_positions.update(_ALPHA_B, _SYMBOL, _QTY_B, _ENTRY_PRICE)
+    # Two alphas hold the same symbol at different prices; symbol-net is their sum
+    # and its avg_entry_price is the notional-weighted blend of the two.
+    positions.update(_SYMBOL, _QTY_A, _ENTRY_PRICE_A)
+    positions.update(_SYMBOL, _QTY_B, _ENTRY_PRICE_B)
+    strategy_positions.update(_ALPHA_A, _SYMBOL, _QTY_A, _ENTRY_PRICE_A)
+    strategy_positions.update(_ALPHA_B, _SYMBOL, _QTY_B, _ENTRY_PRICE_B)
 
     router = _FillingRouter()
     orch = Orchestrator(
@@ -203,16 +213,22 @@ class _AllowRiskEngine:
 # A move here means per-strategy fill attribution changed and needs a rationale
 # in the commit.  The pinned values, inspected at baseline time:
 #
-#   slice sig_alpha_a_v1  qty 0  realized -350.00  fees 0.77   (70sh x -5.00)
-#   slice sig_alpha_b_v1  qty 0  realized -275.00  fees 0.60   (55sh x -5.00)
+#   slice sig_alpha_a_v1  qty 0  realized -350.00  fees 0.77   (70sh x 175-180)
+#   slice sig_alpha_b_v1  qty 0  realized  825.00  fees 0.60   (55sh x 175-160)
 #   trade sig_alpha_a_v1  qty 70 realized -350.00  fees 0.77
-#   trade sig_alpha_b_v1  qty 55 realized -275.00  fees 0.60
+#   trade sig_alpha_b_v1  qty 55 realized  825.00  fees 0.60
 #
 # Quantities sum to the 125-share fill, realized PnL sums to the symbol-net
-# -625.00, and fees sum to the ack's 1.37 (largest-remainder, remainder to the
-# last leg).  The journal mirrors the slice book exactly.
+# +475.00 (125sh against the blended 171.20 entry), and fees sum to the ack's
+# 1.37 (largest-remainder, remainder to the last leg).  The journal mirrors the
+# slice book exactly.
+#
+# The signs are the load-bearing part.  Splitting the aggregate +475.00 by
+# quantity yields +266.00 / +209.00 — a gain for both, though A actually lost
+# 350.  Per-alpha forensics groups by strategy_id, so that split would have fed
+# the promotion and quarantine gates a losing alpha dressed as a winner.
 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH = (
-    "61277728bd9155c6804fe65a0c438b089744c37d7ea4a2378accb7cafef50a9f"
+    "8a2844e102e94060e5691ae57a2f4fcea1fd57b2a4a9d05726edc7277b339164"
 )
 EXPECTED_FORCED_EXIT_ATTRIBUTION_COUNT = 2
 
@@ -240,9 +256,10 @@ def test_forced_exit_closes_both_slices_and_mints_no_sentinel() -> None:
     bus = EventBus()
     positions = MemoryPositionStore()
     strategy_positions = StrategyPositionStore()
-    positions.update(_SYMBOL, _QTY_A + _QTY_B, _ENTRY_PRICE)
-    strategy_positions.update(_ALPHA_A, _SYMBOL, _QTY_A, _ENTRY_PRICE)
-    strategy_positions.update(_ALPHA_B, _SYMBOL, _QTY_B, _ENTRY_PRICE)
+    positions.update(_SYMBOL, _QTY_A, _ENTRY_PRICE_A)
+    positions.update(_SYMBOL, _QTY_B, _ENTRY_PRICE_B)
+    strategy_positions.update(_ALPHA_A, _SYMBOL, _QTY_A, _ENTRY_PRICE_A)
+    strategy_positions.update(_ALPHA_B, _SYMBOL, _QTY_B, _ENTRY_PRICE_B)
 
     router = _FillingRouter()
     orch = Orchestrator(
@@ -298,3 +315,17 @@ def test_forced_exit_closes_both_slices_and_mints_no_sentinel() -> None:
     )
     # Fees reconcile against the ack.
     assert sum((r.fees for r in records), Decimal("0")) == _EXIT_FEES
+
+    # ...and each leg carries *its own* realized PnL, not the aggregate
+    # apportioned by quantity.  Summing to the right total is not enough: a
+    # proportional split satisfies that too while reporting the wrong number for
+    # every individual slice, which is what forensics groups by.
+    by_alpha = {r.strategy_id: r.realized_pnl for r in records}
+    assert by_alpha[_ALPHA_A] == (_EXIT_PRICE - _ENTRY_PRICE_A) * _QTY_A
+    assert by_alpha[_ALPHA_B] == (_EXIT_PRICE - _ENTRY_PRICE_B) * _QTY_B
+    # The journal is the same story the slice book tells.
+    for alpha_id in (_ALPHA_A, _ALPHA_B):
+        assert by_alpha[alpha_id] == strategy_positions.get(alpha_id, _SYMBOL).realized_pnl
+    # A is down and B is up, though the symbol-net exit booked an aggregate gain —
+    # the sign disagreement a proportional split would have erased.
+    assert by_alpha[_ALPHA_A] < 0 < positions.get(_SYMBOL).realized_pnl < by_alpha[_ALPHA_B]

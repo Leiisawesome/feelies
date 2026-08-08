@@ -325,7 +325,7 @@ def _trade_journal_legs(
     filled_quantity: int,
     fees: Decimal,
     realized_pnl: Decimal,
-    attributed_legs: Sequence[tuple[str, int, Decimal]],
+    attributed_legs: Sequence[tuple[str, int, Decimal, Decimal]],
 ) -> list[_TradeJournalLeg]:
     """Split one fill into the trade-journal rows it should produce.
 
@@ -333,7 +333,10 @@ def _trade_journal_legs(
     where the *position* goes — so the two can never disagree about who a fill
     belongs to.  An order that owns one slice yields exactly one row under its own
     ``strategy_id``; a **symbol-net** order yields one row per slice it actually
-    closed, splitting quantity, fees, and realized PnL by each slice's share.
+    closed, carrying each slice's own quantity, fees, and realized PnL as the
+    position store booked them — *not* the aggregate figure apportioned by
+    quantity, which would hand every slice the blended entry price's PnL instead
+    of its own.
 
     That distinction matters because ``realized_pnl`` is booked entirely on the
     *closing* fill.  Journalling a symbol-net close under the order's own
@@ -363,8 +366,7 @@ def _trade_journal_legs(
         "order_reason": order.reason,
         "order_source_layer": order.source_layer,
     }
-    total_abs = sum(abs(qty) for _sid, qty, _leg_fees in attributed_legs)
-    if _order_owns_one_slice(order) or total_abs <= 0:
+    if not attributed_legs:
         return [
             _TradeJournalLeg(
                 strategy_id=order.strategy_id,
@@ -375,31 +377,30 @@ def _trade_journal_legs(
             )
         ]
 
-    legs: list[_TradeJournalLeg] = []
-    pnl_remaining = realized_pnl
-    last_index = len(attributed_legs) - 1
-    for index, (strategy_id, qty, leg_fees) in enumerate(attributed_legs):
-        # Give the last leg the remainder so the rows sum to the fill's realized
-        # PnL exactly — the same convention the per-alpha fee split uses.
-        leg_pnl = (
-            pnl_remaining
-            if index == last_index
-            else (realized_pnl * abs(qty) / total_abs).quantize(Decimal("0.01"))
+    # Each leg carries the realized PnL the slice book actually booked for it,
+    # measured against that slice's own ``avg_entry_price``.  Splitting the
+    # aggregate proportionally by quantity would only agree when every slice
+    # entered at the same price: two alphas holding 50 @ 100 and 50 @ 110 give an
+    # aggregate basis of 105, so a close at 90 books -500 / -1000 in the slice
+    # book but would be journalled -750 / -750.  The journal is what every
+    # per-alpha estimator groups by ``strategy_id`` and sums, so the two
+    # authoritative records must not disagree (Inv-3, Inv-13).
+    owns_one_slice = _order_owns_one_slice(order)
+    metadata = (
+        base_metadata
+        if owns_one_slice
+        else {**base_metadata, "forced_exit_strategy_id": order.strategy_id}
+    )
+    return [
+        _TradeJournalLeg(
+            strategy_id=strategy_id,
+            filled_quantity=abs(qty),
+            fees=leg_fees,
+            realized_pnl=leg_realized,
+            metadata=dict(metadata),
         )
-        pnl_remaining -= leg_pnl
-        legs.append(
-            _TradeJournalLeg(
-                strategy_id=strategy_id,
-                filled_quantity=abs(qty),
-                fees=leg_fees,
-                realized_pnl=leg_pnl,
-                metadata={
-                    **base_metadata,
-                    "forced_exit_strategy_id": order.strategy_id,
-                },
-            )
-        )
-    return legs
+        for strategy_id, qty, leg_fees, leg_realized in attributed_legs
+    ]
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -4933,10 +4934,19 @@ class Orchestrator:
             # attribution entirely — and with it the Stage-0 deferral ceiling, the exit
             # composer's scoping, and every per-alpha risk budget.
             # Slices this fill was actually booked against, as
-            # ``(strategy_id, signed_quantity, fees)``.  Drives the trade-journal
-            # attribution below so a symbol-net forced exit is credited to the
-            # slices it closed rather than to its synthetic ``strategy_id``.
-            attributed_legs: list[tuple[str, int, Decimal]] = []
+            # ``(strategy_id, signed_quantity, fees, realized_delta)``.  Drives the
+            # trade-journal attribution below so a symbol-net forced exit is credited
+            # to the slices it closed rather than to its synthetic ``strategy_id``.
+            #
+            # ``realized_delta`` is measured around each slice's own ``update()``, not
+            # apportioned from the aggregate.  A symbol-net exit closes slices that
+            # entered at different prices, and the aggregate ``avg_entry_price`` is
+            # their notional-weighted blend — so splitting the aggregate figure by
+            # quantity hands every slice the *blended* PnL rather than its own.  Two
+            # slices of 50 entered at 100 and 110, flattened at 90, really earned
+            # -500 and -1000; the proportional split journalled -750 each, which is
+            # what forensics and the promotion gate then read (Inv-13).
+            attributed_legs: list[tuple[str, int, Decimal, Decimal]] = []
             if self._strategy_positions is not None:
                 alpha_allocs: list[tuple[str, str, int, Decimal, Decimal]] = []
                 if self._fill_ledger is not None:
@@ -4958,7 +4968,8 @@ class Orchestrator:
 
                 if alpha_allocs:
                     for strat_id, sym, alpha_signed, price, alloc_fees in alpha_allocs:
-                        self._strategy_positions.update(
+                        prev_slice = self._strategy_positions.get(strat_id, sym).realized_pnl
+                        slice_position = self._strategy_positions.update(
                             strat_id,
                             sym,
                             alpha_signed,
@@ -4966,10 +4977,14 @@ class Orchestrator:
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
                         )
-                    attributed_legs = [
-                        (strat_id, alpha_signed, alloc_fees)
-                        for strat_id, _sym, alpha_signed, _price, alloc_fees in alpha_allocs
-                    ]
+                        attributed_legs.append(
+                            (
+                                strat_id,
+                                alpha_signed,
+                                alloc_fees,
+                                slice_position.realized_pnl - prev_slice,
+                            )
+                        )
                 elif _order_owns_one_slice(order):
                     # Ledger had no record for this order (none constructed, or the
                     # order predates one) but the fill still belongs wholly to one
@@ -4983,7 +4998,10 @@ class Orchestrator:
                     # and every slice-scoped reader — the Stage-0 deferral cap and
                     # exit composer, and the per-alpha budgets in
                     # ``AlphaBudgetRiskWrapper`` — saw a flat book.
-                    self._strategy_positions.update(
+                    prev_slice = self._strategy_positions.get(
+                        order.strategy_id, ack.symbol
+                    ).realized_pnl
+                    slice_position = self._strategy_positions.update(
                         order.strategy_id,
                         ack.symbol,
                         signed_qty,
@@ -4991,7 +5009,14 @@ class Orchestrator:
                         fees=ack.fees,
                         timestamp_ns=ack.timestamp_ns,
                     )
-                    attributed_legs = [(order.strategy_id, signed_qty, ack.fees)]
+                    attributed_legs = [
+                        (
+                            order.strategy_id,
+                            signed_qty,
+                            ack.fees,
+                            slice_position.realized_pnl - prev_slice,
+                        )
+                    ]
                 else:
                     # Without attribution, split proportionally to keep stores in
                     # sync. Aggregate PnL stays exact; per-alpha PnL is estimated.
@@ -5146,7 +5171,7 @@ class Orchestrator:
         fill_price: Decimal,
         fees: Decimal,
         timestamp_ns: int,
-    ) -> list[tuple[str, int, Decimal]]:
+    ) -> list[tuple[str, int, Decimal, Decimal]]:
         """Distribute a fill proportionally across per-alpha strategy positions.
 
         Used when no fill-attribution record exists (emergency flatten,
@@ -5157,7 +5182,8 @@ class Orchestrator:
         Uses largest-remainder rounding so the sum of per-alpha deltas
         equals ``signed_qty`` exactly.
 
-        Returns the ``(strategy_id, signed_quantity, fees)`` legs it applied, so the
+        Returns the ``(strategy_id, signed_quantity, fees, realized_delta)`` legs it
+        applied — ``realized_delta`` measured around each slice's own update, so the
         caller can journal a symbol-net forced exit against the slices it actually
         closed instead of the synthetic order's ``strategy_id`` (Inv-13).  Empty when
         no slice book is wired or no strategy holds the symbol.
@@ -5188,14 +5214,15 @@ class Orchestrator:
         alloc_qtys = largest_remainder_split(abs_fill, [abs(q) for _sid, q in strategy_qtys])
         alloc_fees = split_fees(fees, alloc_qtys)
 
-        applied: list[tuple[str, int, Decimal]] = []
+        applied: list[tuple[str, int, Decimal, Decimal]] = []
         alloc_sign = 1 if signed_qty > 0 else -1
         for (sid, _q), alloc_qty, alloc_fee in zip(
             strategy_qtys, alloc_qtys, alloc_fees, strict=True
         ):
             if alloc_qty == 0:
                 continue
-            self._strategy_positions.update(
+            prev_slice = self._strategy_positions.get(sid, symbol).realized_pnl
+            slice_position = self._strategy_positions.update(
                 sid,
                 symbol,
                 alloc_sign * alloc_qty,
@@ -5203,7 +5230,14 @@ class Orchestrator:
                 fees=alloc_fee,
                 timestamp_ns=timestamp_ns,
             )
-            applied.append((sid, alloc_sign * alloc_qty, alloc_fee))
+            applied.append(
+                (
+                    sid,
+                    alloc_sign * alloc_qty,
+                    alloc_fee,
+                    slice_position.realized_pnl - prev_slice,
+                )
+            )
 
         return applied
 

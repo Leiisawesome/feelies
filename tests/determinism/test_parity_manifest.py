@@ -215,7 +215,7 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
 # ``StrategyPositionStore`` or hashes order/state streams rather than the journal,
 # so per-strategy re-attribution was invisible to the whole corpus. See
 # ``test_forced_exit_attribution_replay.py``.
-EXPECTED_MANIFEST_FINGERPRINT = "0c959bd73525797ed8fd2a2f252bb79e2daf146d1fd2e06f2a6de2243862b140"
+EXPECTED_MANIFEST_FINGERPRINT = "4b85ce329259e889100629992c31ff3cac332e0c24de91698adb0e0ca49dd95a"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:
