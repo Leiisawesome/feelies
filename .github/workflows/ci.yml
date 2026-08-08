@@ -1,0 +1,80 @@
+# Lint, types, and the deterministic test suite on every push and PR.
+#
+# Until now nothing ran the suite automatically: `main` was unprotected and the
+# only signal on a PR was a review bot reading the diff. The 2026-08 architecture
+# review found six defects hiding behind fixtures that covered the one input shape
+# the buggy logic handled, and separately found `main` red on a Saturday because
+# an RTH skip guard never checked the weekday (#223). Neither is caught by reading
+# a diff.
+#
+# HOST SENSITIVITY — read before changing `os` below.
+# tests/determinism/parity_manifest.py states that hashes involving transcendental
+# math are stable only for a fixed platform and libm, and several manifest-
+# registered replays run the regime HMM. The locked baselines were minted on
+# macOS. Whether they reproduce under glibc is an open question, so the matrix
+# runs both for now and the first run on this PR answers it:
+#   * both green  -> drop macos-latest, keep ubuntu (cheaper, faster)
+#   * ubuntu red on determinism only -> drop ubuntu, keep macos as the parity host
+#     and record in parity_manifest.py that the corpus is Darwin-pinned
+# Do not "fix" a determinism failure here by re-baselining. A hash that differs
+# across libm is a portability fact about the corpus, not drift in the code.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded push should not keep burning a runner.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # one host failing must not hide the other's result
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    env:
+      # Determinism fixtures hash dict/set iteration order in places; the suite is
+      # documented as requiring this and will produce spurious diffs without it.
+      PYTHONHASHSEED: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync all extras
+        # `dev`, `massive`, `portfolio`, and `ib` are all required — without them
+        # the mypy acceptance test (test_mypy_strict_clean_on_src_feelies) cannot
+        # resolve imports and fails for the wrong reason.
+        run: uv sync --all-extras
+
+      - name: Lint
+        run: uv run ruff check src/ tests/
+
+      - name: Format
+        run: uv run ruff format --check src/ tests/
+
+      - name: Types
+        run: uv run mypy src/feelies
+
+      - name: Tests
+        # `functional` needs a live Massive key; `paper_rth` needs IB Gateway and
+        # an open US market. Both self-skip, but deselecting is explicit and keeps
+        # a skip from quietly becoming a failure the way it did in #223.
+        # `slow` stays selected — it carries the mypy scope acceptance test.
+        run: uv run pytest -m "not functional and not paper_rth" -q

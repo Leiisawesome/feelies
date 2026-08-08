@@ -72,6 +72,12 @@ uv run python scripts/run_paper.py --config configs/paper_smoke_rth.yaml --max-r
 The full suite is green on `main` (skips are gated `functional` / `paper_rth` /
 per-host perf tests). Re-verify with `uv run pytest` before claiming otherwise.
 
+`.github/workflows/ci.yml` runs lint, format, `mypy src/feelies`, and
+`pytest -m "not functional and not paper_rth"` on every push and PR. It does not
+replace the local full run: `functional` and `paper_rth` never execute in CI, so
+anything touching the live Massive feed or IB Gateway is still only ever verified
+by hand.
+
 ## Adding a test for a safety branch
 
 A green run does not prove the branch executed. Mutate the source and confirm
