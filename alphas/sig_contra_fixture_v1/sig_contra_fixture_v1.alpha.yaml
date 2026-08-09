@@ -1,0 +1,205 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: sig_contra_fixture_v1
+version: "1.0.0"
+
+# RESEARCH is load-enforced (loader._parse_lifecycle_state) and blocks PAPER and
+# LIVE promotion. That is the point: this is a measurement instrument, not a
+# strategy, and it must never reach capital.
+lifecycle_state: RESEARCH
+
+description: |
+  RESEARCH FIXTURE — NOT A STRATEGY. NEVER PROMOTE.
+
+  Exists solely to make the portfolio-netting shadow measurable. Netting only
+  differs from winner-take-all arbitration when two SIGNAL alphas hold opposing
+  standing targets on one symbol, and no shipped pair does: sweeping the
+  standalone harness over all 33 replayable cached sessions produced exactly one
+  divergence, and it was "one real target against one zero" rather than a
+  contest (see enable_portfolio_netting in core/platform_config.py).
+
+  The gap is a property of the alphas, not the tape — only sig_benign_midcap_v1
+  ever takes a direction under these gates — so more data cannot close it. This
+  alpha closes it by construction: it mirrors sig_benign_midcap_v1's inputs and
+  thresholds exactly and inverts the direction, so every tick where benign takes
+  a side, this takes the other one.
+
+  It has no edge claim and is not expected to make money. Its disclosed edge
+  exists only to clear the B4 gate so the order actually reaches the book, which
+  is what the netter needs to observe.
+
+notes: |
+  Pair with sig_benign_midcap_v1 under configs/bt_netting_contest.yaml.
+  Running this alone is meaningless — it is one half of a deliberate collision.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  None. This alpha makes no claim about markets.
+
+  Its only claim is mechanical: given identical snapshot inputs, it emits the
+  opposite direction to sig_benign_midcap_v1 under the same conditions, so the
+  pair produces opposing standing targets on one symbol and the portfolio netter
+  has a two-sided contest to resolve.
+
+falsification_criteria:
+  - |
+    A replay in which sig_benign_midcap_v1 emits a directional Signal and this
+    alpha does not emit the opposite direction on the same snapshot. That would
+    mean the mirror has drifted from its counterpart and the netting measurement
+    is no longer a controlled two-sided contest.
+  - |
+    Any appearance of this alpha_id in a PAPER or LIVE promotion ledger entry.
+    lifecycle_state RESEARCH is supposed to make that impossible; observing it
+    falsifies the load-time guard rather than the alpha.
+
+# ── Layer-1 sensor dependencies ───────────────────────────
+# Identical to sig_benign_midcap_v1 — the mirror must see what it sees.
+depends_on_sensors:
+  - ofi_ewma
+  - book_imbalance
+  - spread_z_30d
+  - realized_vol_30s
+
+# ── Parameters ────────────────────────────────────────────
+# Mirrored from sig_benign_midcap_v1's tuned overrides so the two fire on the
+# same ticks. Changing one without the other breaks the contest.
+parameters:
+  entry_threshold_z:
+    type: float
+    default: 1.5
+    min: 0.5
+    max: 3.0
+    description: Mirror of the counterpart's entry gate on |ofi_ewma_zscore|.
+  edge_per_z_bps:
+    type: float
+    default: 6.0
+    min: 1.0
+    max: 8.0
+    description: Mirror of the counterpart's edge slope.
+  edge_cap_bps:
+    type: float
+    default: 20.0
+    min: 5.0
+    max: 40.0
+    description: Hard cap on reported edge_estimate_bps.
+  imbalance_floor:
+    type: float
+    default: 0.05
+    min: 0.0
+    max: 0.5
+    description: Mirror of the counterpart's confirmation floor.
+  cost_floor_bps:
+    type: float
+    default: 5.0
+    min: 5.0
+    max: 30.0
+    description: |
+      One-way cost floor (half_spread 2.0 + impact 2.0 + fee 1.0). Suppresses
+      entries that would not clear disclosed cost, matching the counterpart so
+      the two are gated alike.
+  strength_cap:
+    type: float
+    default: 2.0
+    min: 1.0
+    max: 4.0
+    description: Convex strength ceiling, mirrored.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+# Must match the counterpart, or the two standing targets expire at different
+# times and the overlap the netter needs is intermittent.
+horizon_seconds: 120
+
+# ── Risk Budget ───────────────────────────────────────────
+# Deliberately small: this alpha exists to be observed, not to move a book.
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 5.0
+  max_drawdown_pct: 5.0
+  capital_allocation_pct: 5.0
+
+# ── Regime gate ───────────────────────────────────────────
+# Mirrored exactly. A different gate would let one side fire while the other is
+# suppressed, which is the "one real target against one zero" shape this alpha
+# exists to avoid producing.
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: |
+    P(normal) > 0.5 and spread_z_30d < 1.5
+  off_condition: |
+    P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+# Not an edge claim. These numbers exist so the B4 gate admits the order; the
+# alpha's realized economics are irrelevant to what it measures.
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
+  cost_basis: one_way
+
+# ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
+# Mirrors the counterpart's family and half-life; 120/120 = 1.0 sits mid-range
+# in the [0.5, 4.0] rule-3 band.
+trend_mechanism:
+  family: KYLE_INFO
+  expected_half_life_seconds: 120
+  l1_signature_sensors:
+    - book_imbalance
+    - ofi_ewma
+    - spread_z_30d
+  failure_signature:
+    - "spread_z_30d > 3.0"
+    - "realized_vol_30s_zscore > 4.5"
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      # Byte-for-byte the counterpart's admission logic; only the direction
+      # assignment is inverted. Keeping the gates identical is what makes the
+      # pair a controlled contest rather than two unrelated alphas that happen
+      # to disagree sometimes.
+      threshold = params["entry_threshold_z"]
+      slope_bps = params["edge_per_z_bps"]
+      edge_cap = params["edge_cap_bps"]
+      str_cap = params["strength_cap"]
+
+      z = snapshot.values.get("ofi_ewma_zscore")
+      imb = snapshot.values.get("book_imbalance_mean")
+      if z is None or imb is None:
+          return None
+
+      mag = abs(z)
+      if mag < threshold:
+          return None
+
+      if abs(imb) < params["imbalance_floor"]:
+          return None
+      if (z > 0.0 and imb < 0.0) or (z < 0.0 and imb > 0.0):
+          return None
+
+      # THE INVERSION. The counterpart reads LONG here.
+      direction = SHORT if z > 0 else LONG
+      edge_bps = min(mag * slope_bps, edge_cap)
+
+      if edge_bps <= params["cost_floor_bps"]:
+          return None
+
+      norm = mag / (threshold * 2.0)
+      if norm <= 1.0:
+          strength = norm
+      else:
+          strength = min(1.0 + (norm - 1.0) ** 1.2, str_cap)
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="sig_contra_fixture_v1",
+          direction=direction,
+          strength=min(strength, 1.0),
+          edge_estimate_bps=edge_bps,
+      )
