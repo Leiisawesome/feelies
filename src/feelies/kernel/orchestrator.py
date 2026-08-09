@@ -5199,12 +5199,50 @@ class Orchestrator:
         if not strategy_ids:
             return []
 
-        # Collect each strategy's current quantity for this symbol.
+        # Collect each strategy's current quantity for this symbol, restricted to
+        # the slices this fill actually closes.
+        #
+        # Every non-zero slice used to qualify regardless of sign, weighted by
+        # abs(q) and given one uniform direction — so a reducing symbol-net fill
+        # handed the same-direction delta to slices already on the other side and
+        # made them deeper.  Measured: alpha_a +150, alpha_b -50, symbol-net +100,
+        # a mandated SELL 100 flattens the net but leaves alpha_a at +75 and drives
+        # alpha_b from -50 to -75.  A fail-safe fill increasing a slice's exposure
+        # is what Inv-11 forbids, and the slice book it corrupts is read by the
+        # per-alpha risk budgets, the Stage-0 deferral cap, and the exit composer's
+        # scoping.  A mixed-sign book is not hypothetical: the netting design
+        # (§3.3) explicitly contemplates one strategy holding the opposite side.
+        #
+        # Restricting to the reducible side puts the whole close on the slices that
+        # created the net — alpha_a alone, ending +50 against alpha_b's untouched
+        # -50, which is a net of zero and a book that still reconciles.
+        # Opposite signs: a SELL (signed_qty < 0) closes long slices, a BUY closes
+        # short ones.
         strategy_qtys: list[tuple[str, int]] = []
         for sid in strategy_ids:
             q = self._strategy_positions.get(sid, symbol).quantity
-            if q != 0:
+            if q * signed_qty < 0:
                 strategy_qtys.append((sid, q))
+        if not strategy_qtys:
+            # The slice book sums to symbol-net, so a non-zero net guarantees a
+            # slice on the reducible side.  Reaching here means the two stores have
+            # drifted; attribute across every holder rather than drop the fill, and
+            # say so, because a silently unattributed fill is the failure mode this
+            # whole path exists to avoid (Inv-13).
+            strategy_qtys = [
+                (sid, q)
+                for sid in strategy_ids
+                if (q := self._strategy_positions.get(sid, symbol).quantity) != 0
+            ]
+            if strategy_qtys:
+                logger.warning(
+                    "Fill attribution for %s: no slice on the reducible side of a "
+                    "%d-share fill, so the slice book and the symbol-net store have "
+                    "diverged; falling back to a split across all %d holders.",
+                    symbol,
+                    signed_qty,
+                    len(strategy_qtys),
+                )
         if not strategy_qtys:
             return []
 

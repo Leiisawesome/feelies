@@ -943,3 +943,103 @@ class TestForcedExitClampAppliesWithoutARestingOrder:
 
         assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
         assert positions.get("AAPL").quantity == 0
+
+
+class TestSymbolNetSplitAcrossMixedSignSlices:
+    """A reducing symbol-net fill must not deepen a slice on the other side.
+
+    ``_distribute_fill_to_strategies`` used to take every non-zero slice
+    regardless of sign, weight by ``abs(q)``, and apply one uniform direction.
+    The aggregate reconciled exactly, which is why nothing caught it: the damage
+    was entirely in the per-slice book, and no fixture held slices on both sides
+    of a symbol at once.
+
+    A mixed-sign book is contemplated by design — the netting notes in
+    ``platform_config`` describe one strategy holding the opposite side while
+    another's slice stays open — and the slice book feeds the per-alpha risk
+    budgets, the Stage-0 deferral cap, and the exit composer's scoping.
+    """
+
+    @staticmethod
+    def _seed(a_qty: int, b_qty: int) -> tuple[MemoryPositionStore, StrategyPositionStore]:
+        entry = Decimal("150.00")
+        positions = MemoryPositionStore()
+        strategy_positions = StrategyPositionStore()
+        for sid, qty in (("alpha_a", a_qty), ("alpha_b", b_qty)):
+            positions.update("AAPL", qty, entry)
+            strategy_positions.update(sid, "AAPL", qty, entry)
+        positions.update_mark("AAPL", entry)
+        return positions, strategy_positions
+
+    def test_sell_closes_the_long_slice_and_leaves_the_short_alone(self) -> None:
+        """alpha_a +150, alpha_b -50, net +100; a mandated SELL 100.
+
+        Before: alpha_a kept 75 and alpha_b was driven -50 -> -75, deepened by 25
+        shares on a fill whose whole purpose was to reduce exposure.
+        """
+        positions, strategy_positions = self._seed(150, -50)
+        assert positions.get("AAPL").quantity == 100
+
+        orch, router, _pos = _build_orchestrator(
+            positions=positions, strategy_positions=strategy_positions
+        )
+        orch._bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, reason="HAZARD_SPIKE"))
+
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
+        assert positions.get("AAPL").quantity == 0
+        # The whole close comes out of the slice that created the net long.
+        assert strategy_positions.get("alpha_a", "AAPL").quantity == 50
+        assert strategy_positions.get("alpha_b", "AAPL").quantity == -50
+        # And the slice book still sums to symbol-net.
+        assert (
+            strategy_positions.get("alpha_a", "AAPL").quantity
+            + strategy_positions.get("alpha_b", "AAPL").quantity
+            == positions.get("AAPL").quantity
+        )
+
+    def test_buy_closes_the_short_slice_and_leaves_the_long_alone(self) -> None:
+        """The mirror: a BUY must reduce shorts, not add to longs."""
+        positions, strategy_positions = self._seed(50, -150)
+        assert positions.get("AAPL").quantity == -100
+
+        orch, router, _pos = _build_orchestrator(
+            positions=positions, strategy_positions=strategy_positions
+        )
+        orch._bus.publish(_make_hazard_order(side=Side.BUY, quantity=100, reason="HAZARD_SPIKE"))
+
+        assert [(o.order_id, o.quantity) for o in router.submitted] == [("hz-1", 100)]
+        assert positions.get("AAPL").quantity == 0
+        assert strategy_positions.get("alpha_b", "AAPL").quantity == -50
+        assert strategy_positions.get("alpha_a", "AAPL").quantity == 50
+
+    def test_same_sign_slices_are_unaffected(self) -> None:
+        """The common case must keep splitting across every holder."""
+        positions, strategy_positions = self._seed(150, 50)
+        orch, router, _pos = _build_orchestrator(
+            positions=positions, strategy_positions=strategy_positions
+        )
+        orch._bus.publish(_make_hazard_order(side=Side.SELL, quantity=200, reason="HAZARD_SPIKE"))
+
+        assert positions.get("AAPL").quantity == 0
+        assert strategy_positions.get("alpha_a", "AAPL").quantity == 0
+        assert strategy_positions.get("alpha_b", "AAPL").quantity == 0
+
+    def test_no_slice_is_ever_pushed_further_from_flat(self) -> None:
+        """The invariant behind the two cases above, stated directly."""
+        for a_qty, b_qty, side, qty in (
+            (150, -50, Side.SELL, 100),
+            (50, -150, Side.BUY, 100),
+            (200, -50, Side.SELL, 150),
+            (150, 50, Side.SELL, 200),
+        ):
+            positions, strategy_positions = self._seed(a_qty, b_qty)
+            orch, _router, _pos = _build_orchestrator(
+                positions=positions, strategy_positions=strategy_positions
+            )
+            orch._bus.publish(_make_hazard_order(side=side, quantity=qty, reason="HAZARD_SPIKE"))
+            for sid, before in (("alpha_a", a_qty), ("alpha_b", b_qty)):
+                after = strategy_positions.get(sid, "AAPL").quantity
+                assert abs(after) <= abs(before), (
+                    f"{sid} moved {before} -> {after} on a reducing "
+                    f"{side.name} {qty}: a fail-safe fill grew a slice"
+                )
