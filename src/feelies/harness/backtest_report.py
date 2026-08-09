@@ -770,6 +770,24 @@ def compute_parity_hash(orchestrator: Orchestrator) -> str:
     every parity check in the repo — a fill could silently move between alphas,
     inverting a measured edge, while the hash stayed green (Inv-5 covers the
     outputs that reach capital decisions; Inv-13 requires the chain be auditable).
+
+    ``fees`` and ``cost_bps`` are in the sequence for the same reason, and were
+    missing for longer.  ``realized_pnl`` is booked gross — the position store
+    keeps ``cumulative_fees`` separately — so a fee schedule could change from
+    1.00 to 99.00 a fill and this hash would not move, which is a backtest/live
+    parity check (Inv-9) declaring agreement between two runs with different net
+    profitability, and Inv-12 is specifically about transaction cost realism.
+    ``cost_bps`` is the realized cost the B4 gate and
+    :class:`~feelies.forensics.cost_circuit_breaker` read to quarantine an alpha,
+    so it decides capital just as directly.
+
+    Deliberately still excluded: the three timestamps and ``correlation_id``
+    (plumbing — including them would make the hash sensitive to clock and id
+    wiring rather than to economics), and ``requested_quantity``,
+    ``trading_intent``, ``regime_state`` and ``metadata`` (derived provenance,
+    where the economics they annotate are already hashed through the fill itself).
+    Revisit any of those the moment one is shown to move a capital decision on its
+    own, which is the test this list has always been applied with.
     """
     from feelies.storage.trade_journal import TradeRecord
 
@@ -785,6 +803,8 @@ def compute_parity_hash(orchestrator: Orchestrator) -> str:
             "quantity": int(r.filled_quantity),
             "fill_price": str(r.fill_price),
             "realized_pnl": str(r.realized_pnl),
+            "fees": str(r.fees),
+            "cost_bps": str(r.cost_bps),
         }
         for r in records
     ]
