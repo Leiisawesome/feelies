@@ -93,12 +93,26 @@ test written to pin the `max()` in `_forced_exit_closable_quantity` never reache
 it, because that clamp only ran when a resting order existed.
 
 ```bash
-# Break the guard deliberately, run only the new test, restore.
+# Break the guard deliberately, run only the new test, restore, prove the restore.
 cp src/feelies/<file>.py /tmp/f.bak
 # ...edit the guard to a no-op...
+find . -name __pycache__ -type d -prune -exec rm -rf {} +
 PYTHONHASHSEED=0 uv run pytest <test file> -q -k <new test>   # MUST fail
 cp /tmp/f.bak src/feelies/<file>.py
+find . -name __pycache__ -type d -prune -exec rm -rf {} +
+PYTHONHASHSEED=0 uv run pytest <test file> -q -k <new test>   # MUST pass again
 ```
+
+The two `find` calls are not decoration. `cp` back and forth inside one shell
+loop can leave Python reusing a `.pyc` built from the other version, and the run
+then reports the wrong file's behaviour — in #226 that produced two rounds of
+confident nonsense before the cache was cleared.
+
+**Always end on a pristine run and require it green.** A red "pristine" means the
+restore failed, not that the test is wrong; #226 also lost a fix to a `git
+checkout --` buried in a mutation helper and spent a while reading the resulting
+failures as real. Verify the restore before believing anything the mutation told
+you.
 
 Surviving a mutation is acceptable when a second guard independently holds the
 same invariant — that is the right shape for a behavioural test. Establish it by
