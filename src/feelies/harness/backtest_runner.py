@@ -88,7 +88,7 @@ from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.ingest_health import terminal_symbol_health_rows
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
-from feelies.storage.cache_replay import IngestDayMeta, iter_calendar_dates
+from feelies.storage.cache_replay import IngestDayMeta, iter_trading_dates
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -309,7 +309,15 @@ def ingest_data(
         # Cache metadata uses wall time; market receive times below stay simulated.
         cache = DiskEventCache(resolved_dir, clock=WallClock())
 
-    dates = iter_calendar_dates(start_date, end_date)
+    # Sessions, not calendar days: a weekend has no tape, so fetching one returns
+    # an empty day that is then cached as a zero-event placeholder and read back as
+    # CORRUPTED terminal health, failing every later range that spans it.
+    dates = iter_trading_dates(start_date, end_date)
+    if not dates:
+        raise ValueError(
+            f"No trading days in {start_date}..{end_date} — the range is entirely "
+            "weekend. Widen it or pick a session date."
+        )
     multi_day_or_symbol = len(symbols) * len(dates) > 1
     all_events: list[NBBOQuote | Trade] = []
     day_sources: list[DaySource] = []

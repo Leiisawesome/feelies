@@ -22,6 +22,7 @@ __all__ = [
     "CacheReplayError",
     "IngestDayMeta",
     "iter_calendar_dates",
+    "iter_trading_dates",
     "load_event_log_from_disk_cache",
 ]
 
@@ -53,6 +54,25 @@ def iter_calendar_dates(start_date: str, end_date: str) -> list[str]:
     return dates
 
 
+def iter_trading_dates(start_date: str, end_date: str) -> list[str]:
+    """Weekday dates in ``[start, end]`` — the sessions a market range means.
+
+    ``iter_calendar_dates`` is deliberately literal and its contract is pinned, so
+    this is a separate filter rather than a change to it.  Every consumer of
+    *market data* wants sessions: a Saturday has no tape, and demanding one from
+    the cache is what produced the zero-event weekend placeholders that then read
+    as ``CORRUPTED`` and failed any multi-day range spanning a weekend.
+
+    Holidays are not covered, exactly as in ``tests/paper/conftest.require_rth_window``:
+    the platform's holiday calendar arrives through configuration, and pulling it
+    in here would make an offline cache loader depend on it.  A market holiday
+    still needs a cache entry or an explicit range that skips it.
+    """
+    return [
+        d for d in iter_calendar_dates(start_date, end_date) if date.fromisoformat(d).weekday() < 5
+    ]
+
+
 def load_event_log_from_disk_cache(
     symbols: Sequence[str],
     start_date: str,
@@ -72,7 +92,12 @@ def load_event_log_from_disk_cache(
     """
     resolved = cache_dir if cache_dir is not None else Path.home() / ".feelies" / "cache"
     cache = DiskEventCache(resolved)
-    dates = iter_calendar_dates(start_date, end_date)
+    dates = iter_trading_dates(start_date, end_date)
+    if not dates:
+        raise CacheReplayError(
+            f"No trading days in {start_date}..{end_date} — the range is entirely "
+            "weekend. Widen it or pick a session date."
+        )
     syms = [s.upper() for s in symbols]
 
     # Report *why* each day is unusable, not just that it is.  "Disk cache miss"
