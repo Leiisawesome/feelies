@@ -1,0 +1,36 @@
+# Two-sided netting contest — RESEARCH ONLY, NOT FOR CAPITAL.
+#
+# The portfolio netter only differs from winner-take-all arbitration when two
+# SIGNAL alphas hold opposing standing targets on one symbol. No shipped pair
+# does: sweeping the standalone harness over all 33 replayable cached sessions
+# produced exactly one divergence, and it was one real target against one zero.
+#
+# `sig_contra_fixture_v1` mirrors `sig_benign_midcap_v1` and inverts the
+# direction, so every tick where benign takes a side the fixture takes the other.
+# That manufactures the contest the cache cannot supply, which is what the
+# flat-vs-live semantics decision has been blocked on.
+#
+# Usage:
+#   uv run python scripts/run_backtest.py --config configs/bt_netting_contest.yaml \
+#       --symbol APP --date 2026-03-26
+extends: ../platform.yaml
+
+symbols:
+  - APP
+
+alpha_specs:
+  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+  - alphas/sig_contra_fixture_v1/sig_contra_fixture_v1.alpha.yaml
+
+prune_unused_sensors: true
+signal_min_edge_cost_ratio: 1.5
+
+# Mirrored on both sides — the pair must be gated alike or the contest degrades
+# back into one-real-target-against-one-zero.
+parameter_overrides:
+  sig_benign_midcap_v1:
+    entry_threshold_z: 1.5
+    edge_per_z_bps: 6.0
+  sig_contra_fixture_v1:
+    entry_threshold_z: 1.5
+    edge_per_z_bps: 6.0
