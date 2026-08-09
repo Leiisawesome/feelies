@@ -205,6 +205,13 @@ def generate_report(
     return_pct = float(net_pnl) / starting_equity * 100.0 if starting_equity else 0.0
 
     # ── Trade summary ────────────────────────────────────────────
+    # Headline P&L above comes from the position store; everything below is
+    # per-trade and comes from the journal.  The two are different decompositions
+    # of the same session and are not required to sum to each other: a symbol-net
+    # exit on a mixed-sign book realises the whole episode in the store while
+    # leaving untouched slices open in the journal (see
+    # ``Orchestrator._trade_journal_legs``).  Read win/loss and per-trade figures
+    # as attribution, and never re-derive the headline by summing records.
     journal = orchestrator.trade_journal
     assert journal is not None, "backtest orchestrator must attach trade_journal"
     records: list[TradeRecord] = list(journal.query())

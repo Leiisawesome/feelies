@@ -309,7 +309,10 @@ def test_forced_exit_closes_both_slices_and_mints_no_sentinel() -> None:
     # One leg per closed slice, not one row credited wholly to the trigger.
     assert sorted(r.strategy_id for r in records) == [_ALPHA_A, _ALPHA_B]
     assert sum(r.filled_quantity for r in records) == _QTY_A + _QTY_B
-    # Aggregate realized PnL is preserved by the split.
+    # Every slice this exit touched was closed outright, so the legs also happen
+    # to sum to the symbol-net figure.  That is a property of *this* book, not a
+    # general invariant — see
+    # ``test_legs_need_not_sum_to_symbol_net_when_slices_survive_the_exit``.
     assert sum((r.realized_pnl for r in records), Decimal("0")) == (
         positions.get(_SYMBOL).realized_pnl
     )
@@ -329,3 +332,104 @@ def test_forced_exit_closes_both_slices_and_mints_no_sentinel() -> None:
     # A is down and B is up, though the symbol-net exit booked an aggregate gain —
     # the sign disagreement a proportional split would have erased.
     assert by_alpha[_ALPHA_A] < 0 < positions.get(_SYMBOL).realized_pnl < by_alpha[_ALPHA_B]
+
+
+def test_legs_need_not_sum_to_symbol_net_when_slices_survive_the_exit() -> None:
+    """The journal and the position store are two decompositions, not one figure.
+
+    On a **mixed-sign** book a symbol-net exit lands only on the slices that
+    oppose it, so the slices it does not touch stay open while symbol-net reaches
+    zero.  The store has then realised the whole episode; the journal has realised
+    only the part that closed, and the rest is still unrealised in the surviving
+    slices.  The two are both correct and they do not agree.
+
+    Pinned because the alternative — forcing the legs to sum — is exactly the
+    proportional split this fixture exists to reject: it reconciles by assigning
+    every slice the blended basis instead of its own.  A reader who assumes the
+    sum holds will "fix" it back.
+
+    The account's economics live in the store.  Per-alpha attribution lives in the
+    journal.  Anything summing journal ``realized_pnl`` to a portfolio total is
+    reading the wrong record (see ``backtest_report.generate_report``, which takes
+    its headline from the store).
+    """
+    alpha_c = "sig_alpha_c_v1"
+    positions = MemoryPositionStore()
+    strategy_positions = StrategyPositionStore()
+    # Long 60 @ 275, short 20 @ 275 (books no aggregate PnL), long 60 @ 195.
+    # Symbol-net is 100 at a blended basis of 227.00, which is no slice's own.
+    book = (
+        (_ALPHA_A, 60, Decimal("275.00")),
+        (_ALPHA_B, -20, Decimal("275.00")),
+        (alpha_c, 60, Decimal("195.00")),
+    )
+    for alpha_id, qty, price in book:
+        positions.update(_SYMBOL, qty, price, timestamp_ns=1_000)
+        strategy_positions.update(alpha_id, _SYMBOL, qty, price, timestamp_ns=1_000)
+    assert positions.get(_SYMBOL).quantity == 100
+    assert positions.get(_SYMBOL).avg_entry_price == Decimal("227.00")
+
+    router = _FillingRouter()
+    orch = Orchestrator(
+        clock=SimulatedClock(start_ns=1_000),
+        bus=(bus := EventBus()),
+        backend=ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=router,  # type: ignore[arg-type]
+            mode="BACKTEST",
+        ),
+        risk_engine=_AllowRiskEngine(),
+        position_store=positions,
+        event_log=InMemoryEventLog(),
+        metric_collector=_NoOpMetricCollector(),
+        strategy_positions=strategy_positions,
+        trade_journal=InMemoryTradeJournal(),
+        account_equity=Decimal("1000000"),
+    )
+    orch.boot(_MinimalConfig())
+    orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+    orch._micro.reset(trigger="session_start:test")
+
+    bus.publish(
+        OrderRequest(
+            timestamp_ns=2_000,
+            correlation_id="forced-exit-corr",
+            sequence=1,
+            source_layer="RISK",
+            order_id="forced-exit-mixed",
+            symbol=_SYMBOL,
+            side=Side.SELL,
+            order_type=OrderType.MARKET,
+            quantity=100,
+            strategy_id=_ALPHA_A,
+            reason="HAZARD_SPIKE",
+        )
+    )
+
+    # Symbol-net is flat, but only the two long slices were reduced: the short was
+    # never opposed by a SELL, so it survives and the longs keep a residual.
+    assert positions.get(_SYMBOL).quantity == 0
+    assert strategy_positions.get(_ALPHA_A, _SYMBOL).quantity == 10
+    assert strategy_positions.get(_ALPHA_B, _SYMBOL).quantity == -20
+    assert strategy_positions.get(alpha_c, _SYMBOL).quantity == 10
+    # Quantities still reconcile — that invariant *is* general.
+    assert (
+        sum(strategy_positions.get(a, _SYMBOL).quantity for a in (_ALPHA_A, _ALPHA_B, alpha_c))
+        == positions.get(_SYMBOL).quantity
+    )
+
+    records = list(orch.trade_journal.query())  # type: ignore[union-attr]
+    by_alpha = {r.strategy_id: r.realized_pnl for r in records}
+    # 50 shares off each long, each against its own entry.
+    assert by_alpha[_ALPHA_A] == (_EXIT_PRICE - Decimal("275.00")) * 50
+    assert by_alpha[alpha_c] == (_EXIT_PRICE - Decimal("195.00")) * 50
+    assert _ALPHA_B not in by_alpha
+
+    # The divergence, stated as a number so a change in it has to be deliberate.
+    journal_total = sum((r.realized_pnl for r in records), Decimal("0"))
+    assert journal_total == Decimal("-6000.00")
+    assert positions.get(_SYMBOL).realized_pnl == Decimal("-5200.00")
+    assert journal_total != positions.get(_SYMBOL).realized_pnl
+
+    # Fees still reconcile against the ack — that invariant is general too.
+    assert sum((r.fees for r in records), Decimal("0")) == _EXIT_FEES

@@ -203,7 +203,10 @@ def test_replay_map_matches_manifest_keys() -> None:
     )
 
 
-_HEX64 = re.compile(r"[0-9a-f]{64}")
+# Case-insensitive: ``hexdigest()`` is lowercase, but a baseline pasted from a
+# tool that upper-cases it is no less a locked hash, and a scanner that cannot
+# see a constant has not exempted it.
+_HEX64 = re.compile(r"[0-9a-fA-F]{64}")
 
 # The manifest and this module are the registry itself, not places baselines live.
 _REGISTRY_MODULES = frozenset({"parity_manifest.py", "test_parity_manifest.py"})

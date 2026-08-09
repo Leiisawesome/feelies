@@ -145,9 +145,11 @@ class StopExitController:
         self._policy = policy
         self._bounds = trading_session_bounds
         self._attached = False
-        # Peak favourable excursion per symbol, for the trailing stop.  Cleared
-        # when the symbol returns to flat so the next episode starts fresh.
-        self._peak_pnl_per_share: dict[str, float] = {}
+        # Peak favourable excursion for the trailing stop, as
+        # ``symbol -> (open_episode_start_ns, peak)``.  The episode is part of the
+        # value because a peak earned by one position must not arm the trail on
+        # the next one.
+        self._peak_pnl_per_share: dict[str, tuple[int | None, float]] = {}
         # Suppress a duplicate close against one stale position.  Episode or
         # quantity changes release the guard for a new residual close.
         self._pending_exit_symbols: dict[str, tuple[int | None, int]] = {}
@@ -217,10 +219,21 @@ class StopExitController:
         sign = 1.0 if quantity > 0 else -1.0
         unrealized_per_share = (mid - entry) * sign
 
-        peak = self._peak_pnl_per_share.get(quote.symbol, unrealized_per_share)
-        if unrealized_per_share > peak:
-            peak = unrealized_per_share
-        self._peak_pnl_per_share[quote.symbol] = peak
+        # Scope the peak to the open episode rather than resetting it when a quote
+        # happens to find the book flat.  A reversal crosses zero within a single
+        # fill and a close-and-reopen (``_execute_reverse``) completes inside one
+        # tick, so neither ever presents this handler with a flat position — and
+        # the inherited peak then arms a trail against an entry price the new
+        # position never moved away from.  ``opened_at_ns`` already resets on both
+        # transitions, and the duplicate-exit guard below keys on it too.
+        opened = self._position_store.opened_at_ns(quote.symbol)
+        previous = self._peak_pnl_per_share.get(quote.symbol)
+        peak = (
+            unrealized_per_share
+            if previous is None or previous[0] != opened
+            else max(previous[1], unrealized_per_share)
+        )
+        self._peak_pnl_per_share[quote.symbol] = (opened, peak)
 
         policy = self._policy
         stop_threshold = (

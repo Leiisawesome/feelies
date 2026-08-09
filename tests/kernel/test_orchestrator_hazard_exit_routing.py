@@ -51,6 +51,7 @@ from feelies.kernel import orchestrator as _orchestrator_mod
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
 from feelies.storage.memory_event_log import InMemoryEventLog
+from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
 
 class _NoOpMetricCollector:
@@ -204,6 +205,7 @@ def _build_orchestrator(
     positions: MemoryPositionStore | None = None,
     router: _RecordingRouter | None = None,
     strategy_positions: StrategyPositionStore | None = None,
+    trade_journal: InMemoryTradeJournal | None = None,
 ) -> tuple[Orchestrator, _RecordingRouter, MemoryPositionStore]:
     """Build an orchestrator wired for the forced-exit bridge.
 
@@ -239,6 +241,7 @@ def _build_orchestrator(
         event_log=InMemoryEventLog(),
         metric_collector=_NoOpMetricCollector(),
         strategy_positions=strategy_positions,
+        trade_journal=trade_journal,
         account_equity=Decimal("1000000"),
     )
     orch.boot(_MinimalConfig())
@@ -613,6 +616,60 @@ class TestRestingOrderGuard:
         assert router.submitted[0].quantity == 70
         # Inv-13: the submitted size differs from what the controller authored.
         assert any(a.alert_name == "forced_exit_resized_after_cancel" for a in alerts)
+
+    def test_resized_exit_records_the_announced_quantity_on_the_trade(self) -> None:
+        """A clamped fill must not read as a partial of the announced order.
+
+        The controller published its ``OrderRequest`` before the kernel clamped
+        it, and the kernel re-uses the same ``order_id`` rather than minting a
+        second order — deliberately, since it is one mandated decision resized.
+        The consequence is that the bus carries 100 while the router received 70,
+        so anything joining the order stream to the fill sees a 70-of-100 partial
+        fill instead of a completed 70-share exit.
+
+        The trade row is where that join lands, so it carries what was announced
+        alongside what was requested (Inv-13).
+        """
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        journal = InMemoryTradeJournal()
+        router = _CancellingRouter(fill_on_cancel=True)
+        orch, _, _ = _build_orchestrator(
+            bus=bus, positions=positions, router=router, trade_journal=journal
+        )
+        self._rest_order(orch, router, order_id="resting-sell-30", side=Side.SELL, quantity=30)
+
+        bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, order_id="hz-1"))
+
+        exit_rows = [r for r in journal.query() if r.order_id == "hz-1"]
+        assert len(exit_rows) == 1
+        row = exit_rows[0]
+        assert row.filled_quantity == 70
+        # What the kernel actually asked the router for...
+        assert row.requested_quantity == 70
+        # ...and what the bus was told before the clamp.
+        assert row.metadata.get("forced_exit_announced_quantity") == "100"
+
+    def test_unclamped_exit_records_no_announced_quantity(self) -> None:
+        """The marker is absent when nothing was resized, so its presence means something."""
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        journal = InMemoryTradeJournal()
+        orch, router, _ = _build_orchestrator(bus=bus, positions=positions, trade_journal=journal)
+        assert orch is not None
+
+        bus.publish(_make_hazard_order(side=Side.SELL, quantity=100, order_id="hz-1"))
+
+        exit_rows = [r for r in journal.query() if r.order_id == "hz-1"]
+        assert len(exit_rows) == 1
+        assert exit_rows[0].requested_quantity == 100
+        assert "forced_exit_announced_quantity" not in exit_rows[0].metadata
 
     def test_partial_cover_on_a_short_resizes_symmetrically(self) -> None:
         bus = EventBus()

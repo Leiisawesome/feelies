@@ -499,9 +499,10 @@ def _load_quotes_from_cache(
     config = PlatformConfig.from_yaml(config_path)
     cal_max = config.regime_calibration_max_quotes
 
-    # ``load_event_log_from_disk_cache`` expands [start, end] over the calendar,
-    # so min..max covers both an explicit pair and a longer date list and is
-    # robust to dates passed in any order.
+    # ``load_event_log_from_disk_cache`` expands [start, end] over the *trading*
+    # days in the range (weekends are skipped), so min..max covers both an
+    # explicit pair and a longer date list and is robust to dates passed in any
+    # order.
     sorted_dates = sorted(dates)
     event_log, _ingest, _meta = load_event_log_from_disk_cache(
         symbols, sorted_dates[0], sorted_dates[-1], cache_dir=cache_dir

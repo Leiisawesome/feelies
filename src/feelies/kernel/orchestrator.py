@@ -326,6 +326,7 @@ def _trade_journal_legs(
     fees: Decimal,
     realized_pnl: Decimal,
     attributed_legs: Sequence[tuple[str, int, Decimal, Decimal]],
+    announced_quantity: int | None = None,
 ) -> list[_TradeJournalLeg]:
     """Split one fill into the trade-journal rows it should produce.
 
@@ -361,11 +362,28 @@ def _trade_journal_legs(
     Falls back to a single row under the order's ``strategy_id`` when nothing was
     attributed (no slice book wired, or no strategy held the symbol): a row with the
     wrong owner still beats dropping the fill from the journal.
+
+    What reconciles, and what does not
+    ----------------------------------
+    Quantities and fees always sum back to the ack.  Realized PnL does **not** in
+    general sum to the symbol-net store's figure, and must not be made to.  On a
+    mixed-sign book the fill lands only on the slices that oppose it, so slices it
+    never touched stay open while symbol-net reaches zero: the store has realised
+    the whole episode, the journal only the part that actually closed, and the
+    remainder is still unrealised in the survivors.  Both records are right about
+    different questions — the store answers *what happened to the account*, the
+    journal *which alpha earned it*.  Forcing them to agree means handing every
+    slice the blended basis again, which is the defect this function exists to fix.
+    Pinned in ``test_legs_need_not_sum_to_symbol_net_when_slices_survive_the_exit``.
     """
     base_metadata = {
         "order_reason": order.reason,
         "order_source_layer": order.source_layer,
     }
+    if announced_quantity is not None:
+        # Present only when the kernel clamped this exit, so its presence is
+        # itself the signal that submitted size != announced size.
+        base_metadata["forced_exit_announced_quantity"] = str(announced_quantity)
     if not attributed_legs:
         return [
             _TradeJournalLeg(
@@ -634,6 +652,9 @@ class Orchestrator:
         self._active_orders: dict[str, tuple[StateMachine[OrderState], Side, OrderRequest]] = {}
         # Submission-time intent used to stamp TradeRecord attribution.
         self._order_trading_intent: dict[str, str] = {}
+        # Pre-clamp quantity of a mandated exit the kernel resized, by order id.
+        # Only written on that exceptional path; cleared with the order.
+        self._forced_exit_announced_quantity: dict[str, int] = {}
         # Latest signal mechanism per strategy and symbol, used only for fills.
         self._last_signal_mechanism: dict[tuple[str, str], tuple[TrendMechanism | None, int]] = {}
         # Passive reductions that require MARKET fallback on unfilled residuals.
@@ -5103,6 +5124,7 @@ class Orchestrator:
                     fees=ack.fees,
                     realized_pnl=position.realized_pnl - prev_realized,
                     attributed_legs=attributed_legs,
+                    announced_quantity=self._forced_exit_announced_quantity.get(ack.order_id),
                 ):
                     _trade_mech, _trade_hl = self._last_signal_mechanism.get(
                         (leg.strategy_id, ack.symbol),
@@ -5300,6 +5322,7 @@ class Orchestrator:
         for oid in terminal_ids:
             del self._active_orders[oid]
             self._order_trading_intent.pop(oid, None)
+            self._forced_exit_announced_quantity.pop(oid, None)
 
     # ── Observability ───────────────────────────────────────────────
 
@@ -5667,13 +5690,16 @@ class Orchestrator:
         # must never do (Inv-11).  That is why the clamp first existed here.
         #
         # It ran only inside the resting-order branch, which left the ordinary
-        # path protected by an argument rather than a guard: ``order_reduces``
-        # above is computed but gates nothing, so what actually kept a mandated
-        # exit from opening exposure was that every shipped controller sizes from
-        # a live non-zero position and returns early when flat.  True today, and
-        # asserted per controller — but it is a property of four other files, and
-        # a future author sizing an exit from something else would land on an
-        # unguarded submit.  Cheaper to guard the path than to keep the argument.
+        # path protected by an argument rather than a guard.  ``order_reduces``
+        # above does gate, but only the non-reducing-REJECT block: it decides
+        # whether a REJECT is authoritative, not whether the submitted size fits
+        # the book, and an ALLOW verdict never consults it.  So what actually kept
+        # a mandated exit from opening exposure on the ordinary path was that
+        # every shipped controller sizes from a live non-zero position and returns
+        # early when flat.  True today, and asserted per controller — but it is a
+        # property of four other files, and a future author sizing an exit from
+        # something else would land on an unguarded submit.  Cheaper to guard the
+        # path than to keep the argument.
         #
         # No-op for a well-formed order: ``closable`` equals the requested
         # quantity whenever the author sized against the same basis this reads.
@@ -5688,6 +5714,17 @@ class Orchestrator:
         if closable < event.quantity:
             self._emit_forced_exit_resized_alert(event, closable)
             # Same order_id: one mandated decision resized, not a new order.
+            #
+            # The author already published the pre-clamp ``OrderRequest``, so the
+            # bus now disagrees with the router about this order's size.  It is
+            # not republished here: this handler runs *inside* that event's own
+            # dispatch, so a second publish would reach subscribers registered
+            # after this one before the outer loop delivers the original to them,
+            # leaving the stale size last.  Carry the announced quantity onto the
+            # trade instead — the record every consumer joins the order stream to
+            # (Inv-13) — so a clamped fill is never read as a partial of a larger
+            # order.
+            self._forced_exit_announced_quantity[event.order_id] = event.quantity
             event = replace(event, quantity=closable)
         self._track_order(event.order_id, event.side, event)
         submit_error = self._submit_tracked_order(event, trigger=event.reason)

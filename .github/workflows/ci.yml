@@ -42,13 +42,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
-      fail-fast: false # one host failing must not hide the other's result
+      # One host today. The matrix is kept so re-adding macos to re-test the
+      # host-portability claim above is a one-line change, and `fail-fast: false`
+      # so that when it is re-added one host failing cannot hide the other.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest]
 
     env:
-      # Determinism fixtures hash dict/set iteration order in places; the suite is
-      # documented as requiring this and will produce spurious diffs without it.
+      # Inv-5 is contractually pinned here (conftest.py, three_layer_architecture
+      # §12.5) and the suite warns when it is unset. The pin is a backstop, not a
+      # crutch: the tick-path set-ordering dependency was removed, so a non-zero
+      # seed does not by itself break replay. See the unpinned step below, which
+      # is what actually holds that claim up.
       PYTHONHASHSEED: "0"
 
     steps:
@@ -58,12 +64,19 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          # `requires-python = ">=3.12"` lets uv pick whatever is newest, so the
+          # interpreter could move under the locked baselines without anyone
+          # choosing it. Pin the minor version and change it deliberately.
+          python-version: "3.13"
 
       - name: Sync all extras
         # `dev`, `massive`, `portfolio`, and `ib` are all required — without them
         # the mypy acceptance test (test_mypy_strict_clean_on_src_feelies) cannot
         # resolve imports and fails for the wrong reason.
-        run: uv sync --all-extras
+        #
+        # `--locked` fails the run on a stale `uv.lock` rather than silently
+        # re-resolving it, so CI tests the dependency set the repo committed.
+        run: uv sync --all-extras --locked
 
       - name: Lint
         run: uv run ruff check src/ tests/
@@ -80,3 +93,20 @@ jobs:
         # a skip from quietly becoming a failure the way it did in #223.
         # `slow` stays selected — it carries the mypy scope acceptance test.
         run: uv run pytest -m "not functional and not paper_rth" -q
+
+      - name: Determinism under an unpinned hash seed
+        # Everything above runs at PYTHONHASHSEED=0, which means none of it can
+        # catch a *newly introduced* dependence on set/dict iteration order — the
+        # defect class the pin documents and the tick-path `sorted(...)` calls
+        # exist to prevent. A backstop nothing ever runs without is not a backstop.
+        #
+        # Replaying the locked corpus under a random seed is what exercises the
+        # claim. Verified green at seeds 1, 12345 and 99999 before this step
+        # existed, so a failure here is a new dependence rather than a pre-existing
+        # one. The conftest warning about the unpinned seed is expected here.
+        #
+        # Do not "fix" a failure by pinning the seed back or re-baselining; find
+        # the set or dict whose iteration order reached an output and sort it.
+        env:
+          PYTHONHASHSEED: random
+        run: uv run pytest tests/determinism/ -q

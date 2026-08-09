@@ -184,6 +184,50 @@ def test_trailing_peak_resets_when_the_symbol_goes_flat() -> None:
     assert orders == []
 
 
+def test_trailing_peak_resets_when_a_single_fill_flips_the_position() -> None:
+    """A reversal never shows the controller a flat quote, so flat cannot be the reset.
+
+    The peak belongs to one directional episode.  A fill that crosses zero starts
+    a new one against a new entry price, and carrying the old peak into it arms a
+    trail the new position never earned — here the short is exactly at its entry
+    and would be flattened on the spot.
+    """
+    policy = StopExitPolicy(trail_activate_pct=0.01, trail_pct=0.5)
+    controller, orders, positions = _build(policy)
+    positions.update(_SYMBOL, 100, Decimal("150.00"), timestamp_ns=1_000)
+    controller._bus.publish(_quote(bid="152.95", ask="153.05", ts=2_000))  # peak +3.00
+    assert orders == []
+
+    # One fill takes long 100 straight to short 100 at the new entry.
+    positions.update(_SYMBOL, -200, Decimal("153.00"), timestamp_ns=3_000)
+    assert positions.get(_SYMBOL).quantity == -100
+
+    # Flat on the new episode: nothing has been given back, so nothing may fire.
+    controller._bus.publish(_quote(bid="152.95", ask="153.05", ts=4_000))
+    assert orders == []
+
+
+def test_trailing_peak_resets_when_the_symbol_reopens_between_quotes() -> None:
+    """Close and re-open inside one tick — the flat book is never quoted.
+
+    ``_execute_reverse`` closes and re-enters within a single tick, so the
+    flat-quote reset above cannot see the boundary.  Only the open-episode
+    timestamp distinguishes the two episodes.
+    """
+    policy = StopExitPolicy(trail_activate_pct=0.01, trail_pct=0.5)
+    controller, orders, positions = _build(policy)
+    positions.update(_SYMBOL, 100, Decimal("150.00"), timestamp_ns=1_000)
+    controller._bus.publish(_quote(bid="152.95", ask="153.05", ts=2_000))  # peak +3.00
+    assert orders == []
+
+    # Exit and re-enter the same side, both before the next quote arrives.
+    positions.update(_SYMBOL, -100, Decimal("153.00"), timestamp_ns=3_000)
+    positions.update(_SYMBOL, 100, Decimal("153.00"), timestamp_ns=3_001)
+
+    controller._bus.publish(_quote(bid="152.95", ask="153.05", ts=4_000))
+    assert orders == []
+
+
 # ── Session flatten ─────────────────────────────────────────────────────
 
 

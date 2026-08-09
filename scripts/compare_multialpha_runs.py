@@ -616,7 +616,7 @@ def compare_multialpha_runs(
         )
     except CacheReplayError as exc:
         raise SystemExit(
-            f"Disk cache miss for {symbol.upper()}/{date}: {exc}\n"
+            f"Disk cache unusable for {symbol.upper()}/{date}: {exc}\n"
             "Populate with run_backtest.py first."
         ) from exc
 
