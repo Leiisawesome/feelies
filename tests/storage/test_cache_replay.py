@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 
 from feelies.core.events import NBBOQuote
-from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_disk_cache
+from feelies.storage.cache_replay import (
+    CacheReplayError,
+    iter_calendar_dates,
+    iter_trading_dates,
+    load_event_log_from_disk_cache,
+)
 from feelies.storage.disk_event_cache import DiskEventCache
 
 
@@ -126,3 +131,56 @@ def test_load_cache_replay_day_meta_carries_ingestion_health(
     )
     assert len(meta) == 1
     assert meta[0].ingestion_health == "HEALTHY"
+
+
+def test_iter_trading_dates_skips_weekends() -> None:
+    """A market range means sessions, not calendar days.
+
+    ``iter_calendar_dates`` stays literal — its contract is pinned above — so the
+    filter is separate.
+    """
+    # Fri 2026-06-05 .. Tue 2026-06-09, spanning Sat 06 and Sun 07.
+    assert iter_trading_dates("2026-06-05", "2026-06-09") == [
+        "2026-06-05",
+        "2026-06-08",
+        "2026-06-09",
+    ]
+    assert iter_calendar_dates("2026-06-05", "2026-06-09") == [
+        "2026-06-05",
+        "2026-06-06",
+        "2026-06-07",
+        "2026-06-08",
+        "2026-06-09",
+    ]
+
+
+def test_range_spanning_a_weekend_loads(tmp_path: Path) -> None:
+    """The regression: a multi-day range used to fail on the weekend placeholders.
+
+    Demanding a Saturday from the cache is what produced zero-event weekend
+    entries tagged ``ingestion_health: UNKNOWN``.  ``DataHealth`` has no
+    ``UNKNOWN`` member, so ``parse_ingestion_health_label`` fails closed to
+    ``CORRUPTED``, ``terminal_symbol_health_rows`` merges worst-of, and
+    ``backtest_enforce_ingest_terminal_health`` then rejected the whole run.
+
+    Net effect: no backtest longer than a week could run under the production
+    config, which is why the edge-calibration loop — it needs 30 fills across a
+    multi-session window — had never once executed.
+    """
+    cache = DiskEventCache(tmp_path)
+    for day in ("2026-06-05", "2026-06-08"):
+        cache.save("AAPL", day, [_one_quote()], ingestion_health="HEALTHY")
+    # The weekend placeholder that used to poison the range.
+    cache.save("AAPL", "2026-06-06", [], ingestion_health="UNKNOWN")
+
+    _log, _ingest, meta = load_event_log_from_disk_cache(
+        ["AAPL"], "2026-06-05", "2026-06-08", cache_dir=tmp_path
+    )
+    assert [m.date for m in meta] == ["2026-06-05", "2026-06-08"]
+    assert all(m.ingestion_health == "HEALTHY" for m in meta)
+
+
+def test_all_weekend_range_says_so(tmp_path: Path) -> None:
+    """Silently replaying nothing would be worse than refusing."""
+    with pytest.raises(CacheReplayError, match="No trading days"):
+        load_event_log_from_disk_cache(["AAPL"], "2026-06-06", "2026-06-07", cache_dir=tmp_path)
