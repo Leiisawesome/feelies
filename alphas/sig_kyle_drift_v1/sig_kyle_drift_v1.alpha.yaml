@@ -27,12 +27,29 @@ hypothesis: |
 falsification_criteria:
   - |
     Spearman correlation between λ̂_60s × sign(OFI) and forward
-    300-second return drops below 0.05 in the normal regime for
-    >= 4 consecutive weeks.
+    300-second return drops below 0.05 for >= 4 consecutive weeks,
+    measured ON ENTRY-GATED TICKS ONLY — those where this alpha would
+    actually act (kyle_lambda_60s_percentile >= lambda_percentile_floor
+    AND |ofi_ewma| >= ofi_threshold), in the normal regime.
+
+    The conditioning is not a detail. Measured 2026-08-08 over 28 cached
+    sessions, the same correlation is ~0.00 at every lag from 15 s to
+    1800 s when computed over all ticks, and peaks at 0.160 at 240 s over
+    the 33,397 gated ones. Applying this criterion unconditioned reads as
+    a falsification every time it is run, on an alpha that is not
+    falsified — so an unconditioned evaluation says nothing about the
+    mechanism and should be discarded rather than acted on.
   - |
     Realised half-life of the price-impact signature drifts
     outside [60, 1800] s — the mechanism then no longer satisfies
     G16 rule 2 for the KYLE_INFO family.
+
+    Measured 2026-08-08 at 626.6 s, 95% CI [374.6, 877.9] — comfortably
+    inside the envelope, so this criterion is not close to firing. Note it
+    constrains a different quantity from the criterion above: signature
+    persistence, not forward predictability. The two disagree about this
+    alpha's natural horizon (627 s vs an edge peak at 240 s) and that gap
+    is unresolved; see the trend_mechanism block.
   - |
     Out-of-sample DSR < 1.0 across any single calendar quarter
     after promotion to LIVE.
