@@ -132,6 +132,44 @@ regime_gate:
     P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
+#
+# MEASURED 2026-08-09 — the disclosed edge below is not what this alpha realizes.
+# Replaying all 15 tradeable cached APP sessions independently (so no drawdown
+# lockout carries between them), under configs/bt_sig_benign_midcap.yaml:
+#
+#     fills               154
+#     gross realized   +383.40
+#     fees            1,003.57
+#     NET               -620.17     fees = 2.62x gross
+#     net per fill        -4.03
+#     net-positive          7/15 sessions
+#
+# The edge-calibration artifact from the same data puts realized edge at
+# -75.10 bps against the 9.0 disclosed here.  Gross-positive, cost-negative: the
+# alpha finds the footprint it claims and then hands the proceeds to the spread,
+# which is exactly the failure Inv-12 and the B4 gate exist to catch.
+#
+# The 9.0 above is entry_threshold_z 1.5 x edge_per_z_bps 6.0 from the config
+# overrides, which are *tighter* than this spec's defaults (0.8 / 4.0).  The
+# result is from the more selective configuration, not a loose one.
+#
+# Consequences worth knowing before promoting:
+#   * 6 of 15 sessions breach risk_budget.max_drawdown_pct on their own (worst
+#     single-session loss 371.01 against a 125.00 budget at 25% of 50k equity).
+#     Over a contiguous window the budget latches on day 1 and the alpha is
+#     rejected for the rest of the run — 3 fills over 2026-06-01..06-12.  That
+#     lockout is the risk engine working, not a defect, but it also means the
+#     30-fill edge-calibration bar is unreachable in one window, so no haircut is
+#     ever produced from real data.
+#   * Loosening the drawdown budget would not fix this.  It would let a
+#     cost-negative alpha trade longer.
+#
+# NOT generalized beyond APP.  A cross-symbol attempt on AAPL and SPY produced 4
+# and 0 fills — both are outside this alpha's declared universe ("mid-cap
+# names"), so it correctly declined to trade them and the run says nothing about
+# fee economics.  The cache holds no second midcap with meaningful session count,
+# so whether this is APP-specific or alpha-wide is open and needs data, not
+# reanalysis.
 cost_arithmetic:
   edge_estimate_bps: 9.0
   half_spread_bps: 2.0
