@@ -112,11 +112,16 @@ horizon_seconds: 120
 
 # ── Risk Budget ───────────────────────────────────────────
 # Deliberately small: this alpha exists to be observed, not to move a book.
+# Deliberately LARGER than sig_benign_midcap_v1's 25%. The counterpart's target
+# has to be exceeded, not merely opposed: equal and opposite targets sum to a net
+# of zero, which reads as "netting holds nothing" rather than as the two sides
+# disagreeing about direction. Oversized on purpose, and harmless because
+# lifecycle_state RESEARCH keeps this away from capital.
 risk_budget:
-  max_position_per_symbol: 100
-  max_gross_exposure_pct: 5.0
+  max_position_per_symbol: 500
+  max_gross_exposure_pct: 60.0
   max_drawdown_pct: 5.0
-  capital_allocation_pct: 5.0
+  capital_allocation_pct: 50.0
 
 # ── Regime gate ───────────────────────────────────────────
 # Mirrored exactly. A different gate would let one side fire while the other is
