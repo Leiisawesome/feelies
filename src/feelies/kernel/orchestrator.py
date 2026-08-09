@@ -5224,25 +5224,31 @@ class Orchestrator:
             if q * signed_qty < 0:
                 strategy_qtys.append((sid, q))
         if not strategy_qtys:
-            # The slice book sums to symbol-net, so a non-zero net guarantees a
-            # slice on the reducible side.  Reaching here means the two stores have
-            # drifted; attribute across every holder rather than drop the fill, and
-            # say so, because a silently unattributed fill is the failure mode this
-            # whole path exists to avoid (Inv-13).
+            # No slice opposes the fill.  For a same-direction (increasing) fill
+            # that is expected — every holder is being deepened and there is no
+            # reducible slice — so it is not drift.  Attribute across every holder
+            # either way, but only warn when the slice book and the symbol-net store
+            # actually disagree, because a silently unattributed fill is the failure
+            # mode this whole path exists to avoid (Inv-13).
             strategy_qtys = [
                 (sid, q)
                 for sid in strategy_ids
                 if (q := self._strategy_positions.get(sid, symbol).quantity) != 0
             ]
             if strategy_qtys:
-                logger.warning(
-                    "Fill attribution for %s: no slice on the reducible side of a "
-                    "%d-share fill, so the slice book and the symbol-net store have "
-                    "diverged; falling back to a split across all %d holders.",
-                    symbol,
-                    signed_qty,
-                    len(strategy_qtys),
-                )
+                slice_book_net = sum(q for _sid, q in strategy_qtys)
+                symbol_net = self._positions.get(symbol).quantity
+                if slice_book_net + signed_qty != symbol_net:
+                    logger.warning(
+                        "Fill attribution for %s: the slice book and the symbol-net "
+                        "store have diverged (slices sum to %d, symbol-net %d after a "
+                        "%d-share fill); falling back to a split across all %d holders.",
+                        symbol,
+                        slice_book_net,
+                        symbol_net,
+                        signed_qty,
+                        len(strategy_qtys),
+                    )
         if not strategy_qtys:
             return []
 
