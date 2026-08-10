@@ -319,6 +319,14 @@ class AlphaRegistry:
         """
         return self._lifecycles.get(alpha_id)
 
+    def _require_lifecycle(self, alpha_id: str) -> AlphaLifecycle:
+        lc = self._lifecycles.get(alpha_id)
+        if lc is not None:
+            return lc
+        if alpha_id not in self._alphas:
+            raise KeyError(f"Alpha '{alpha_id}' is not registered")
+        raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
+
     def promote(
         self,
         alpha_id: str,
@@ -341,11 +349,7 @@ class AlphaRegistry:
         Raises ``KeyError`` if alpha not registered.
         Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
         """
-        lc = self._lifecycles.get(alpha_id)
-        if lc is None:
-            if alpha_id not in self._alphas:
-                raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
+        lc = self._require_lifecycle(alpha_id)
 
         state = lc.state
         if state == AlphaLifecycleState.RESEARCH:
@@ -383,11 +387,7 @@ class AlphaRegistry:
         Raises ``KeyError`` if alpha not registered.
         Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
         """
-        lc = self._lifecycles.get(alpha_id)
-        if lc is None:
-            if alpha_id not in self._alphas:
-                raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
+        lc = self._require_lifecycle(alpha_id)
         return lc.promote_capital_tier(
             evidence,
             correlation_id=correlation_id,
@@ -413,11 +413,7 @@ class AlphaRegistry:
         Raises ``KeyError`` if alpha not registered.
         Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
         """
-        lc = self._lifecycles.get(alpha_id)
-        if lc is None:
-            if alpha_id not in self._alphas:
-                raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
+        lc = self._require_lifecycle(alpha_id)
         lc.quarantine(
             reason,
             structured_evidence=structured_evidence,
@@ -436,11 +432,7 @@ class AlphaRegistry:
         Raises ``KeyError`` if alpha not registered.
         Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
         """
-        lc = self._lifecycles.get(alpha_id)
-        if lc is None:
-            if alpha_id not in self._alphas:
-                raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
+        lc = self._require_lifecycle(alpha_id)
         lc.decommission(reason, correlation_id=correlation_id)
 
     def lifecycle_states(self) -> dict[str, AlphaLifecycleState]:
