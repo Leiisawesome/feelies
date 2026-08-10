@@ -29,3 +29,10 @@ def test_numpy_is_a_direct_core_dependency() -> None:
         "NumPy is imported by the core factor-neutralizer and turnover-optimizer "
         "fallback paths, so it must be declared in project.dependencies"
     )
+
+
+def test_tzdata_is_a_windows_only_core_dependency() -> None:
+    """Windows must receive IANA data without changing other platforms."""
+
+    project = tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))["project"]
+    assert "tzdata>=2026.3; sys_platform == 'win32'" in project["dependencies"]
