@@ -36,3 +36,15 @@ def test_tzdata_is_a_windows_only_core_dependency() -> None:
 
     project = tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))["project"]
     assert "tzdata>=2026.3; sys_platform == 'win32'" in project["dependencies"]
+
+
+def test_pyarrow_belongs_only_to_the_portfolio_extra() -> None:
+    """Retired and development extras must not duplicate portfolio tooling."""
+
+    project = tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))["project"]
+    extras = project["optional-dependencies"]
+    pyarrow_groups = {
+        name for name, requirements in extras.items() if "pyarrow>=15.0" in requirements
+    }
+    assert "health" not in extras
+    assert pyarrow_groups == {"portfolio"}

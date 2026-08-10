@@ -247,15 +247,11 @@ dependencies = [
 dev = [
     { name = "hypothesis" },
     { name = "mypy" },
-    { name = "pyarrow" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "python-dotenv" },
     { name = "ruff" },
     { name = "types-pyyaml" },
-]
-health = [
-    { name = "pyarrow" },
 ]
 ib = [
     { name = "nautilus-ibapi" },
@@ -281,8 +277,6 @@ requires-dist = [
     { name = "nautilus-ibapi", marker = "extra == 'ib'", specifier = ">=10.19" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "protobuf", marker = "extra == 'ib'", specifier = ">=4.25" },
-    { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=15.0" },
-    { name = "pyarrow", marker = "extra == 'health'", specifier = ">=15.0" },
     { name = "pyarrow", marker = "extra == 'portfolio'", specifier = ">=15.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
@@ -293,7 +287,7 @@ requires-dist = [
     { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2026.3" },
     { name = "websockets", marker = "extra == 'massive'", specifier = ">=13.0" },
 ]
-provides-extras = ["dev", "massive", "health", "portfolio", "ib"]
+provides-extras = ["dev", "massive", "portfolio", "ib"]
 
 [[package]]
 name = "highspy"
