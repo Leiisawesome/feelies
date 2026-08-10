@@ -24,7 +24,7 @@ other agent config files.
 
 | Layer | Skill | Key packages | Use when |
 |-------|-------|--------------|----------|
-| Foundation | [system-architect](system-architect/SKILL.md) | `kernel/`, `core/`, `bootstrap.py` | Layer boundaries, SMs, events, gates G1–G16 |
+| Foundation | [system-architect](system-architect/SKILL.md) | `kernel/`, `core/`, `bootstrap.py` | Layer boundaries, SMs, events, gates G1–G17 (G13 no-op) |
 | Layer 1 | [feature-engine](feature-engine/SKILL.md) | `sensors/`, `features/aggregator.py` | Sensors, warm/stale, `HorizonFeatureSnapshot` |
 | Layer 2 | [microstructure-alpha](microstructure-alpha/SKILL.md) | `signals/`, `alphas/*.alpha.yaml` | SIGNAL alphas, G16, regime gates, cost arithmetic |
 | Layer 2 (service) | [regime-detection](regime-detection/SKILL.md) | `services/regime_engine.py`, `services/regime_hazard_detector.py` | `RegimeState`, hazard spikes |

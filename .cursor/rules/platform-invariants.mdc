@@ -52,7 +52,7 @@ Canonical term meanings — no local redefinition in skills. Operational detail:
 | **horizon signal** | `HorizonSignal.evaluate` after `regime_gate` is ON; one `Signal` per (alpha, symbol, boundary). See microstructure-alpha skill. |
 | **regime gate** | AST-safe boolean DSL (`on_condition` / `off_condition`) on SIGNAL alphas. See microstructure-alpha skill. |
 | **cost arithmetic** | Required SIGNAL YAML block; `margin_ratio ≥ 1.5` and ±0.05-absolute reconciliation (`alpha/cost_arithmetic.py`; Inv-12). Metadata only — does not size at runtime. |
-| **layer gate (G2–G16)** | Alpha YAML checks in `LayerValidator` before load. G1/G3 toggleable via `enforce_layer_gates`; G12/G16 always block. See `alphas/SCHEMA.md`. |
+| **layer gates (G1–G17)** | `LayerValidator` calls G1–G17 before load. G1/G3 may downgrade via `enforce_layer_gates`; G13 is presently a no-op; all other implemented checks are blocking when applicable. See `alphas/SCHEMA.md`. |
 | **trend mechanism** | Closed enum declaring the causal force (Inv-1); validated by G16. Propagated on `Signal` and intent breakdown. |
 | **hazard spike** | `RegimeHazardSpike` when dominant regime posterior drops across consecutive ticks. Exit-direction hint only (Inv-11). See regime-detection skill. |
 | **expected half-life** | `expected_half_life_seconds` on mechanism block and `Signal`; G16 envelope + horizon ratio `[0.5, 4.0]`. |
@@ -83,5 +83,5 @@ Canonical term meanings — no local redefinition in skills. Operational detail:
 | **trend mechanism breakdown** | Per-family gross share on `SizedPositionIntent`; input to forensics and G16 caps. |
 | **decay weighting** | Optional ranker weight `exp(-age/hl)`; separate L3 parity hash when enabled. |
 | **mechanism concentration** | Realised single-family gross share on an intent; capped at load (G16) and ranker. |
-| **enforce_layer_gates** | If true, G1/G3 block loads; G12/G16 always block regardless. |
+| **enforce_layer_gates** | If true, G1/G3 block loads; if false, only G1/G3 downgrade to warnings. G13 is presently a no-op; G2, G4–G12, and G14–G17 remain blocking when applicable. |
 | **strict typing** | `mypy --strict` on all `src/feelies/`; no `ignore_errors` overrides (acceptance-locked). |

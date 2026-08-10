@@ -11,7 +11,7 @@ live in `.cursor/rules/`.
 | Platform invariants + glossary | `.cursor/rules/platform-invariants.mdc` |
 | Coding behavior (simplicity, surgical diffs) | `.cursor/rules/karpathy-guidelines.mdc` |
 | Skill routing + layer map | `.cursor/skills/README.md` |
-| Alpha YAML gates (G2–G16) | `alphas/SCHEMA.md` |
+| Alpha YAML gates (G1–G17; G13 no-op) | `alphas/SCHEMA.md` |
 | Architecture spec | `docs/three_layer_architecture.md` |
 
 ## Overview

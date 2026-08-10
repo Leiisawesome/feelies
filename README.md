@@ -444,8 +444,8 @@ signal: |
       )
 ```
 
-The `LayerValidator` enforces gates G2–G16 at load time. See
-[`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the gate table.
+The `LayerValidator` calls gates G1–G17 at load time; G13 is presently a no-op.
+See [`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the gate table.
 
 ### Hypothesis authoring
 
