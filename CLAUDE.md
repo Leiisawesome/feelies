@@ -37,6 +37,7 @@ src/feelies/          Core library
   composition/        Layer-3 portfolio construction
   risk/               Risk engine, sizer, hazard exits
   execution/          Execution backends, order routers
+  harness/             Backtest CLI preparation, runner, reports, JSONL, parity helpers
   broker/ib/          IB Gateway adapter (paper/live)
   research/           CPCV, DSR, experiment tracking
   forensics/          Post-trade attribution

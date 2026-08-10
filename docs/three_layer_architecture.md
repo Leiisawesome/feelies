@@ -1160,7 +1160,7 @@ registered_horizons_seconds: [30, 120, 300, 900, 1800]
 
 # Cross-sectional barrier timeout. If UNIVERSE-scope HorizonTick fires
 # and fewer than `completeness_threshold` fraction of symbols have
-# reported, skip the decision (emit warning). Typical: 0.80.
+# reported, skip the decision (emit warning). Default: 0.80.
 composition_completeness_threshold: 0.80
 
 # Factor model for portfolio neutralization.
@@ -1168,6 +1168,8 @@ factor_model: "FF5_momentum_STR"        # or "none" to disable
 
 # Factor loadings refresh cadence (in seconds). 0 = static at bootstrap.
 factor_loadings_refresh_seconds: 3600
+# Maximum accepted age for factor loadings at bootstrap. Default: 7 days.
+factor_loadings_max_age_seconds: 604800
 
 # Turnover optimizer weight on TC penalty (λ_TC).
 composition_lambda_tc: 1.0
@@ -1186,6 +1188,11 @@ enforce_layer_gates: true
 # If false, 1.0 alphas refused.
 allow_legacy_signal_alphas: true
 ```
+
+> **D.1/D.2 amendment (current implementation).**
+> `allow_legacy_signal_alphas` is historical and is not a live setting.
+> `AlphaLoader` accepts only `schema_version: "1.1"` with `layer: SIGNAL` or
+> `layer: PORTFOLIO`; it hard-rejects schema 1.0 and `LEGACY_SIGNAL`.
 
 ### 9.1 No changes to cost model fields
 
