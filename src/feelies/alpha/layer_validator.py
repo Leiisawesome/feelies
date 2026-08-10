@@ -1,6 +1,6 @@
 """Three-layer architecture validation gates.
 
-This module owns G1-G16 as defined in ``alphas/SCHEMA.md``.
+This module owns G1-G17 as defined in ``alphas/SCHEMA.md``.
 
 Each newly active gate is *purely structural* — it operates on the
 raw YAML spec dict without invoking the alpha loader's compilation
@@ -291,7 +291,7 @@ class LayerValidator:
 
         Raises :class:`LayerValidationError` (or a subclass) on the
         first failure.  Order is fixed: gates are applied in numeric
-        order (G1 → G16) so that error messages reference a stable
+        order (G1 → G17) so that error messages reference a stable
         gate identifier.
 
         Parameters

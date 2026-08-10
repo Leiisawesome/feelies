@@ -233,11 +233,11 @@ enforced: `story_permission` present ⇒ `mode` must be `decouple_caps_only`
 | G6 | **Active** (Phase 3-α) | Feature/sensor dependency DAG — every entry in `depends_on_sensors` must resolve to a registered sensor; no unknown ids; no cycles. |
 | G7 | **Active** (Phase 3-α) | Horizon registration — `horizon_seconds` must be one of the platform-registered horizons. |
 | G8 | **Active** (Phase 3-α) | No implicit lookahead — AST-scan rejects access to future-bucketed names. |
-| G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.7`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
+| G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.80`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
 | G10 | **Active** (Phase 4) | PORTFOLIO `universe:` presence + scale cap — every PORTFOLIO alpha must declare a non-empty `universe:` list and the universe size must be ≤ `composition_max_universe_size` (v0.2 cap = 50 symbols). Always blocks. |
 | G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `src/feelies/storage/reference/factor_loadings/` (or the path set in `PlatformConfig.factor_loadings_dir`) must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
 | G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±0.05 absolute on the ratio (`src/feelies/alpha/cost_arithmetic.py`). |
-| G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
+| G13 | **No-op** | Warm-up documentation placeholder — called in numeric order, but surviving SIGNAL/PORTFOLIO layers declare no inline features, so it presently performs no checks. |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
 | G15 | **Active** (Phase 1) | Declared `fill_model.router` must name a platform-supported router (`PassiveLimitOrderRouter` or `BacktestOrderRouter`). |
 | G16 | **Active** (Phase 3.1) | Mechanism-horizon binding — when a `schema_version: "1.1"` SIGNAL/PORTFOLIO alpha declares a `trend_mechanism:` block, validates: (1) `family` ∈ closed taxonomy; (2) `expected_half_life_seconds` ∈ per-family envelope; (3) `horizon_seconds / expected_half_life_seconds` ∈ `[0.5, 4.0]`; (4) every entry in `l1_signature_sensors` is a registered sensor; (5) the family's primary fingerprint sensor is among them; (6) `failure_signature` declared; (7) `LIQUIDITY_STRESS` mechanisms emit no entry-direction `Signal` (AST-checked); (8) PORTFOLIO `trend_mechanism.consumes.max_share_of_gross` summation; (9) PORTFOLIO `depends_on_signals` family whitelist. **Strict mode is the platform default since Workstream E** (`platform.yaml: enforce_trend_mechanism: true`, default `true`) — schema-1.1 SIGNAL/PORTFOLIO specs *missing* a `trend_mechanism:` block are rejected at load time unless the operator explicitly pins `enforce_trend_mechanism: false`. |
@@ -398,8 +398,8 @@ side-by-side with `SIGNAL` alphas on the same universe:
   the per-platform fan-in deadline elapses, whichever comes first).
   The context carries `completeness` (the fraction of the alpha's
   declared `universe` that supplied a non-stale signal); contexts
-  below `composition_completeness_threshold` (default `0.7` in
-  `platform.yaml`) are dropped silently — see G9 in the
+  below `composition_completeness_threshold` (default `0.80` in
+  `PlatformConfig`) are dropped silently — see G9 in the
   Architectural gates table.
 - `CompositionEngine` consumes the context, runs the alpha's
   `evaluate`, and routes the result through `FactorNeutralizer →

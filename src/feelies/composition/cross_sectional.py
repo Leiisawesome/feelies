@@ -422,15 +422,7 @@ class CrossSectionalRanker:
                 decay_factors[symbol] = 0.0
                 continue
 
-            sign = self._direction_to_sign(sig.direction)
-            raw = sign * sig.strength * sig.edge_estimate_bps
-            decay = 1.0
-            if decay_enabled and sig.expected_half_life_seconds > 0:
-                age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
-                age_s = age_ns / 1e9
-                hl = float(sig.expected_half_life_seconds)
-                decay = max(self._decay_floor, math.exp(-age_s / hl))
-                raw *= decay
+            raw, decay = self._raw_and_decay(sig, ctx, decay_enabled)
 
             raw_scores[symbol] = raw
             decay_factors[symbol] = decay
@@ -497,15 +489,7 @@ class CrossSectionalRanker:
                     continue
 
                 had_entry_eligible = True
-                sign = self._direction_to_sign(sig.direction)
-                raw = sign * sig.strength * sig.edge_estimate_bps
-                decay = 1.0
-                if decay_enabled and sig.expected_half_life_seconds > 0:
-                    age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
-                    age_s = age_ns / 1e9
-                    hl = float(sig.expected_half_life_seconds)
-                    decay = max(self._decay_floor, math.exp(-age_s / hl))
-                    raw *= decay
+                raw, decay = self._raw_and_decay(sig, ctx, decay_enabled)
 
                 raw_total += raw
                 decay_track = min(decay_track, decay)

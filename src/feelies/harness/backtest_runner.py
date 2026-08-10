@@ -322,7 +322,6 @@ def ingest_data(
     all_events: list[NBBOQuote | Trade] = []
     day_sources: list[DaySource] = []
 
-    total_events_from_api = 0
     total_pages = 0
     total_gaps = 0
     total_dupes = 0
@@ -383,7 +382,6 @@ def ingest_data(
                     )
 
             result = ingestor.ingest([symbol], day, day, on_page=_on_page)
-            total_events_from_api += result.events_ingested
             total_pages += result.pages_processed
             total_gaps += result.symbols_with_gaps
             total_dupes += result.duplicates_filtered

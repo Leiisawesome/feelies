@@ -100,9 +100,10 @@ feelies/
 │   ├── features/                 # Horizon aggregator + horizon feature engine
 │   ├── signals/                  # Layer-2 horizon signal engine + regime gate DSL
 │   ├── composition/              # Layer-3 cross-sectional construction pipeline
-│   ├── alpha/                    # Alpha module loader (1.0 + 1.1), registry, validator, promotion ledger
+│   ├── alpha/                    # Alpha module loader (schema 1.1 only; rejects 1.0 / LEGACY_SIGNAL), registry, validator, promotion ledger
 │   ├── risk/                     # Risk engine, escalation SM, sizer, hazard-exit controller
 │   ├── execution/                # Backend abstraction, intent translator, order SM, routers, paper_backend
+│   ├── harness/                  # Backtest CLI preparation, runner, reports, JSONL, parity helpers
 │   ├── broker/                   # External-broker adapters (PAPER/LIVE): `broker/ib/` — IB Gateway connection + router
 │   ├── portfolio/                # Position store, per-strategy + cross-sectional trackers
 │   ├── storage/                  # Event log, disk cache, bundled reference YAML/JSON
@@ -444,8 +445,8 @@ signal: |
       )
 ```
 
-The `LayerValidator` enforces gates G2–G16 at load time. See
-[`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the gate table.
+The `LayerValidator` calls gates G1–G17 at load time; G13 is presently a no-op.
+See [`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the gate table.
 
 ### Hypothesis authoring
 
@@ -473,9 +474,9 @@ account_equity: 50000.0
 horizons_seconds: [30, 120, 300, 900, 1800]
 
 # Composition (Phase 4)
-composition_completeness_threshold: 0.7   # Drop CrossSectionalContext below this
+composition_completeness_threshold: 0.80  # PlatformConfig default; drop CrossSectionalContext below this
 composition_max_universe_size: 50         # PORTFOLIO universe cap (G10)
-factor_loadings_max_age_seconds: 86400    # Stale factor loadings → bootstrap fail
+factor_loadings_max_age_seconds: 604800   # PlatformConfig default (7 days); stale loadings → bootstrap fail
 
 # v0.3 strict mode (Phase 3.1) — default-true since Workstream E
 # enforce_trend_mechanism: true           # Default since Workstream E (acceptance row 84):

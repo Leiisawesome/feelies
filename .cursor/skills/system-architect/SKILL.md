@@ -211,7 +211,7 @@ protocols. Composition happens at startup via
 | `LoadedSignalLayerModule` | `alpha/signal_layer_module.py` | Schema-1.1 SIGNAL alpha runtime |
 | `LoadedPortfolioLayerModule` | `alpha/portfolio_layer_module.py` | Schema-1.1 PORTFOLIO alpha runtime |
 | `AlphaLoader` | `alpha/loader.py` | Discovers and loads `*.alpha.yaml`; rejects `LEGACY_SIGNAL` |
-| `LayerValidator` | `alpha/layer_validator.py` | Enforces gates G1–G16 at load time |
+| `LayerValidator` | `alpha/layer_validator.py` | Calls gates G1–G17 at load time; G13 is presently a no-op |
 | `AlphaRegistry` | `alpha/registry.py` | Tracks active modules + per-alpha lifecycle (F-5 threshold merge) |
 | `AlphaLifecycle` | `alpha/lifecycle.py` | 5-state machine (RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED) + LIVE @ SCALED self-loop (F-6) |
 | `PromotionLedger` | `alpha/promotion_ledger.py` | Append-only JSONL audit trail (F-1) |
@@ -227,11 +227,11 @@ its lifetime — replay determinism is preserved.
 See the alpha-lifecycle skill for the full evidence schema, gate
 matrix, capital-tier escalation, and operator-CLI contract.
 
-## Layer Gates G1–G16
+## Layer Gates G1–G17
 
-Enforced by `LayerValidator` against every alpha YAML before
-instantiation. Each gate raises a distinct `LayerValidationError`
-subclass.
+Called by `LayerValidator` against every alpha YAML before
+instantiation. Active failures raise `LayerValidationError` or a
+gate-specific subclass.
 
 | Gate | Concern | Enforcement |
 |------|---------|-------------|
@@ -247,14 +247,16 @@ subclass.
 | G10 | PORTFOLIO universe presence (Phase-4) | Always blocks |
 | G11 | PORTFOLIO factor-neutralization disclosure (Phase-4) | Always blocks |
 | G12 | Cost-arithmetic margin_ratio ≥ 1.5 (Inv-12) | Always blocks |
-| G13 | Warm-up documentation (`_check_g13_warm_up_documentation`; currently a no-op for SIGNAL/PORTFOLIO — neither declares inline features) | Always blocks |
+| G13 | Warm-up documentation (`_check_g13_warm_up_documentation`; surviving SIGNAL/PORTFOLIO layers declare no inline features) | No-op (called for stable numeric order) |
 | G14 | Data dependency declaration | Always blocks |
 | G15 | Router whitelist | Always blocks |
 | G16 | Mechanism-horizon binding (taxonomy + half-life envelope + horizon ratio + fingerprint sensors + stress-family exit-only + family caps) | Always blocks |
+| G17 | Stage-0 dual-permission actuation (`safety_exit_policy` / `story_permission`; Inv-11) | Always blocks |
 
 `PlatformConfig.enforce_layer_gates` (default `true`) toggles **only G1
-and G3** between hard-blocking and WARNING-only. Every other gate
-(G2, G4–G16) **always blocks** regardless of the flag.
+and G3** between hard-blocking and WARNING-only. Every other implemented
+check (G2, G4–G12, G14–G17) **always blocks** when applicable, regardless
+of the flag. G13 is called in sequence but presently a no-op.
 
 `PlatformConfig.enforce_trend_mechanism` (default `true` since
 Workstream E) additionally rejects schema-1.1 SIGNAL/PORTFOLIO alphas

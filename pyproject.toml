@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Deterministic intraday trading platform"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=2.0",
     "pyyaml>=6.0",
+    "tzdata>=2026.3; sys_platform == 'win32'",
 ]
 
 [project.scripts]
@@ -21,7 +23,6 @@ feelies = "feelies.cli.main:main"
 
 [project.optional-dependencies]
 dev = [
-    "pyarrow>=15.0",
     "pytest>=8.0",
     "pytest-cov>=6.0",
     "hypothesis>=6.0",
@@ -33,11 +34,6 @@ dev = [
 massive = [
     "websockets>=13.0",
     "massive>=2.3",
-]
-health = [
-    # Parquet-backed research artefacts for ``feelies.health.load_run_directory``.
-    # Overlaps ``feelies[portfolio]`` which also pins pyarrow for factor loadings.
-    "pyarrow>=15.0",
 ]
 portfolio = [
     # Phase-4 PORTFOLIO layer optional dependencies.  Loaded lazily inside

@@ -173,6 +173,11 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # the constant.  Guarded by test_app_baseline_config_contract_hash.
     "_BASELINE_CONFIG_HASH": "config-contract hash, not a replay baseline "
     "(tests/acceptance/test_backtest_app_baseline.py)",
+    # Genuine trade-sequence parity baseline, but its replay requires the
+    # external APP/2026-03-26 disk cache and skips in standard CI when that
+    # cache is absent. Locked locally in the cache-gated acceptance test.
+    "_BASELINE_TRADE_PARITY_HASH": "data-gated APP trade baseline "
+    "(tests/acceptance/test_backtest_app_baseline.py)",
     # CPCV fold-PnL-curve hashes over committed JSON fixtures — they pin fixture
     # *data* against silent regeneration, not an event stream produced by a
     # replay, so there is nothing for _REPLAY_BY_NAME to call.

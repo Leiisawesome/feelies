@@ -371,14 +371,7 @@ class AlphaLoader:
         symbols_raw = spec.get("symbols")
         symbols = frozenset(symbols_raw) if symbols_raw is not None else None
 
-        risk_budget_raw = spec.get("risk_budget", {}) or {}
-        risk_budget = AlphaRiskBudget(
-            max_position_per_symbol=risk_budget_raw.get("max_position_per_symbol", 100),
-            max_gross_exposure_pct=risk_budget_raw.get("max_gross_exposure_pct", 5.0),
-            max_drawdown_pct=risk_budget_raw.get("max_drawdown_pct", 1.0),
-            capital_allocation_pct=risk_budget_raw.get("capital_allocation_pct", 10.0),
-        )
-        self._validate_risk_budget(risk_budget, source)
+        risk_budget = self._validate_risk_budget(spec, source)
 
         manifest = AlphaManifest(
             alpha_id=alpha_id,
@@ -504,14 +497,7 @@ class AlphaLoader:
                 consumes_mechanisms=consumes,
             )
 
-        risk_budget_raw = spec.get("risk_budget", {}) or {}
-        risk_budget = AlphaRiskBudget(
-            max_position_per_symbol=risk_budget_raw.get("max_position_per_symbol", 100),
-            max_gross_exposure_pct=risk_budget_raw.get("max_gross_exposure_pct", 5.0),
-            max_drawdown_pct=risk_budget_raw.get("max_drawdown_pct", 1.0),
-            capital_allocation_pct=risk_budget_raw.get("capital_allocation_pct", 10.0),
-        )
-        self._validate_risk_budget(risk_budget, source)
+        risk_budget = self._validate_risk_budget(spec, source)
 
         manifest = AlphaManifest(
             alpha_id=alpha_id,
@@ -1274,7 +1260,14 @@ class AlphaLoader:
         return normalized
 
     @staticmethod
-    def _validate_risk_budget(budget: AlphaRiskBudget, source: str) -> None:
+    def _validate_risk_budget(spec: dict[str, Any], source: str) -> AlphaRiskBudget:
+        risk_budget_raw = spec.get("risk_budget", {}) or {}
+        budget = AlphaRiskBudget(
+            max_position_per_symbol=risk_budget_raw.get("max_position_per_symbol", 100),
+            max_gross_exposure_pct=risk_budget_raw.get("max_gross_exposure_pct", 5.0),
+            max_drawdown_pct=risk_budget_raw.get("max_drawdown_pct", 1.0),
+            capital_allocation_pct=risk_budget_raw.get("capital_allocation_pct", 10.0),
+        )
         errors: list[str] = []
         if budget.max_position_per_symbol <= 0:
             errors.append("max_position_per_symbol must be > 0")
@@ -1286,6 +1279,7 @@ class AlphaLoader:
             errors.append("capital_allocation_pct must be in (0, 100]")
         if errors:
             raise AlphaLoadError(f"{source}: risk_budget validation failed: " + "; ".join(errors))
+        return budget
 
     # ── Parameter resolution ──────────────────────────────────
 
