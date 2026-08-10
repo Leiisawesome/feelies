@@ -238,6 +238,7 @@ name = "feelies"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "numpy" },
     { name = "pyyaml" },
 ]
 
@@ -277,6 +278,7 @@ requires-dist = [
     { name = "massive", marker = "extra == 'massive'", specifier = ">=2.3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8" },
     { name = "nautilus-ibapi", marker = "extra == 'ib'", specifier = ">=10.19" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "protobuf", marker = "extra == 'ib'", specifier = ">=4.25" },
     { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=15.0" },
     { name = "pyarrow", marker = "extra == 'health'", specifier = ">=15.0" },
