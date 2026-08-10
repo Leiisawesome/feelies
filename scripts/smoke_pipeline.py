@@ -556,8 +556,6 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
     for intent, cnt in sorted(intent_counts.items(), key=lambda x: str(x[0])):
         print(f"  {intent!s:<35} {cnt}")
     # EXIT/REVERSE orders appear when smoke_always_on_v1 fires SHORT after LONG.
-    reverse_types = {v for k, v in intent_counts.items() if k is not None and "REVERSE" in str(k)}
-    exit_types = {v for k, v in intent_counts.items() if k is not None and "EXIT" in str(k)}
     if intent_counts:
         any_exit = any(
             "EXIT" in str(k) or "REVERSE" in str(k) for k in intent_counts if k is not None
