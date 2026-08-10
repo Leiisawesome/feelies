@@ -168,6 +168,7 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # snapshot lost a key.  No configured value changed and no trade-path behaviour
 # moved — the flag's production default was already ``True``.
 _BASELINE_CONFIG_HASH = "16517106390472bcf90892fe144b09562e798a46c9069380e1600153bce31720"
+_BASELINE_TRADE_PARITY_HASH = "7f2e88cdab857b005be6a3a78e6965ec3260c519a0c7593106b52bafeec37a81"
 _BASELINE_NET_PNL = Decimal("363.34")
 _BASELINE_FILL_COUNT = 21
 
@@ -283,13 +284,10 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
     records = list(journal.query())
     assert len(records) == _BASELINE_FILL_COUNT
 
-    # Trade path — locked by Net P&L (to the cent) + fill count (above), which
-    # pin the realized trade sequence against the dataset.  ``compute_parity_hash``
-    # is exercised for determinism (a second call must match) but not pinned to
-    # a literal, which can only be regenerated from a cached run.  The config
-    # contract is pinned data-free in ``test_app_baseline_config_contract_hash``.
-    pnl_hash = compute_parity_hash(outcome.orchestrator)
-    assert pnl_hash == compute_parity_hash(outcome.orchestrator)
+    # Trade path — locked by its canonical sequence hash, Net P&L (to the cent),
+    # and fill count (above). The config contract is pinned data-free in
+    # ``test_app_baseline_config_contract_hash``.
+    assert compute_parity_hash(outcome.orchestrator) == _BASELINE_TRADE_PARITY_HASH
 
     # Fee reconciliation: the report's fee population (sum of all OrderAck.fees)
     # must equal the position store's cumulative_fees (the NAV truth, which
