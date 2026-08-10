@@ -301,3 +301,18 @@ Per-alpha evidence is recorded in the alpha specs themselves —
 `sig_benign_midcap_v1` (cost arithmetic block) and `sig_kyle_drift_v1`
 (trend mechanism block) — so it is found where the decision is made rather than
 only here.
+
+## Current-code errata (2026-08-10)
+
+These narrow clarifications describe current code; they preserve the review's
+measurements, provenance, and open questions rather than rewriting its history.
+
+- **A02 — dispatch and polling.** Inter-layer event-bus dispatch is synchronous;
+  boundary adapters may poll. In particular, live feeds may use an internal poll
+  timeout and `OrderRouter.poll_acks()` collects pending acknowledgements.
+- **T01 — signal-engine state.** `HorizonSignalEngine` is position/order-unaware,
+  not stateless; its registrations and causal regime, sensor, sequence, attachment,
+  and boundary-index caches are legitimate runtime state.
+- **M09b — live-router status.** `LiveOrderRouter` is a fail-fast reserved stub,
+  not a working router. Its constructor raises `NotImplementedError`; this
+  clarification makes no API, retirement, or implementation-roadmap decision.
