@@ -30,6 +30,5 @@ def test_create_backend_passive_paths_forward_market_impact_factor(
         clock,
         cost_model=DefaultCostModel(),
     )
-    router = bundle.backtest_router
-    assert router is not None
+    router = bundle.backend.order_router
     assert router._market_impact_factor == Decimal("0.33")

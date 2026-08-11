@@ -1,25 +1,14 @@
-"""Concrete Configuration implementation for the trading platform.
+"""YAML-loadable platform configuration with deterministic snapshots.
 
-Provides a YAML-loadable, validatable configuration that satisfies
-the ``Configuration`` protocol.  Carries all settings needed by the
-bootstrap layer to compose the system: trading universe, alpha spec
-paths, operating mode, regime engine selection, and parameter
-overrides.
-
-Invariants preserved:
-  - Inv 13 (provenance): every config is versioned, authored, and
-    snapshotable with a SHA-256 checksum.
-  - Inv 5 (deterministic replay): snapshot + event log → identical
-    output.
-"""
+Bootstrap consumes this concrete type to compose every operating mode."""
 
 from __future__ import annotations
 
 import copy
 import hashlib
 import importlib
-import logging
 import json
+import logging
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 from pathlib import Path
@@ -272,11 +261,7 @@ class PlatformConfig:
     # Default 0.5 (half a spread per full-depth multiple of excess).
     cost_market_impact_factor: float = 0.5
 
-    # Cap on the walk-the-book market-impact premium, expressed in multiples
-    # of the half-spread.  Threaded into the backtest routers (which otherwise
-    # default to 10).  Default 10.0 preserves prior router behaviour for
-    # callers that do not set it; platform.yaml tightens this to 4.0 for an
-    # L1-only retail book.
+    # Maximum walk-the-book premium in half-spreads.
     cost_max_impact_half_spreads: float = 10.0
 
     # Annualized hard-to-borrow fee in basis points for short-side fills.
@@ -318,12 +303,7 @@ class PlatformConfig:
     # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
     ex_date_calendar_path: Path | None = None
     backtest_enforce_ex_date_guard: bool = True
-    # Per-alpha realization factors shrinking disclosed edge toward observed edge,
-    # emitted by ``feelies.forensics.edge_calibration`` from a prior window and
-    # consumed by the B4 edge-vs-cost gate at boot.  None ⇒ every alpha gates on
-    # its full disclosed edge.  This is the only config route into that loop: a
-    # backtest run with calibration and a paper/live run without it gate on
-    # different edges, and live is the more permissive of the two (Inv-9).
+    # Optional prior-window edge-realization factors for the B4 cost gate.
     edge_calibration_path: Path | None = None
     market_id: str = "US_EQUITY"
     session_kind: str = "RTH"
@@ -656,17 +636,7 @@ class PlatformConfig:
             raise ConfigurationError(f"sector_map_path does not exist: {self.sector_map_path}")
 
     def snapshot(self, *, ts_ns: int | None = None) -> ConfigSnapshot:
-        """Create an immutable provenance snapshot.
-
-        ``ts_ns`` stamps the snapshot's wall-time provenance.  Pass a
-        clock-derived value (``clock.now_ns()``) for a deterministic record
-        — bootstrap does exactly this with the injected ``Clock`` so a
-        backtest's snapshot is reproducible (Inv-10).  When omitted it falls
-        back to the ``WallClock`` primitive rather than a raw ``time``
-        read, keeping core free of direct wall-clock calls.  ``timestamp_ns``
-        is never folded into ``checksum`` (see ``_to_dict``), so it cannot
-        affect replay determinism (Inv-5) regardless of its source.
-        """
+        """Create an immutable checksum-stamped provenance snapshot."""
         data = self._to_dict()
         raw = json.dumps(data, sort_keys=True, default=str)
         checksum = hashlib.sha256(raw.encode()).hexdigest()
@@ -745,24 +715,9 @@ class PlatformConfig:
 
     @classmethod
     def from_yaml(cls, path: str | Path, *, strict: bool = False) -> PlatformConfig:
-        """Load configuration from a YAML file.
+        """Load configuration from YAML with recursive parent overlays.
 
-        With ``strict=True`` an unrecognized top-level key raises
-        ``ConfigurationError`` instead of warning — opt-in fail-closed loading
-        for CI / operator runs that want a misspelled override to abort rather
-        than silently keep the default (default ``False`` preserves the
-        forward-compatible warn-and-load behaviour).
-
-        Raises ``ConfigurationError`` if the file is unreadable or
-        contains invalid structure (including loosely-typed scalars, see
-        :meth:`_check_yaml_keys_and_types`).
-
-        Note: this only parses + type-coerces the YAML.  It does NOT run the
-        semantic range checks in :meth:`validate` (e.g. "symbols non-empty",
-        "ratios in range") — callers (``bootstrap.build_platform``) must call
-        ``config.validate()`` before use.  Construction is kept separate from
-        validation so partially-specified configs can be assembled in tests.
-        """
+        Relative paths resolve against the child file and overlay dictionaries merge recursively."""
         path = Path(path)
         from feelies.core.config_yaml import load_yaml_mapping
 
@@ -1221,19 +1176,7 @@ class PlatformConfig:
         *,
         source: Path,
     ) -> dict[str, Any]:
-        """Parse the optional top-level ``gate_thresholds:`` block.
-
-        Keys must name fields of
-        :class:`feelies.alpha.promotion_evidence.GateThresholds`.
-        Per-key validation + type coercion is delegated to
-        :func:`feelies.alpha.promotion_evidence.parse_gate_thresholds_overrides`
-        — failures are re-raised as
-        :class:`~feelies.core.errors.ConfigurationError` so the
-        operator sees a single error class for every YAML parse
-        failure under this loader.
-
-        Returns an empty dict when the block is absent or empty.
-        """
+        """Parse and normalize the optional gate-threshold mapping."""
         if block is None:
             return {}
         if not isinstance(block, dict):
@@ -1257,26 +1200,7 @@ class PlatformConfig:
 
     @staticmethod
     def _parse_sensor_spec(entry: Any, *, source: Path) -> SensorSpec:
-        """Parse a single ``sensor_specs:`` entry from YAML.
-
-        Expected schema:
-
-        .. code-block:: yaml
-
-            sensor_specs:
-              - sensor_id: ofi_ewma
-                sensor_version: "1.0.0"
-                cls: feelies.sensors.impl.ofi_ewma.OfiEwmaSensor
-                params:
-                  half_life_ns: 5000000000
-                subscribes_to: [NBBOQuote]
-                input_sensor_ids: []
-                min_history: 100
-                throttled_ms: null
-
-        ``cls`` is an importable dotted path restricted to
-        ``feelies.sensors.impl.*`` to prevent arbitrary imports from config.
-        """
+        """Parse one sensor declaration and resolve its implementation class."""
         if not isinstance(entry, dict):
             raise ConfigurationError(
                 f"{source}: each sensor_specs entry must be a mapping, got {type(entry).__name__}"

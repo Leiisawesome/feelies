@@ -211,79 +211,24 @@ _ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset(
     }
 )
 
-# Reducing forced-exit reasons routed through the non-vetoable RISK-layer bridge
-# (:meth:`Orchestrator._on_bus_hazard_order`).  All three authors — the hazard
-# controller, the Stage-0 exit composer, and the Stage-0 bounded-deferral cap —
-# stamp ``source_layer="RISK"`` and one of these reasons; the union keeps the
-# bridge's membership test a single source of truth so adding a reason to any
-# writer automatically extends what routes, and a mandated exit never silently
-# drops (Inv-11 fail-safe).
+# Risk-authored exits use one non-vetoable reason registry.
 _RISK_FORCED_EXIT_REASONS: frozenset[str] = (
     HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS | STOP_EXIT_REASONS
 )
 
-# Forced-exit reasons whose author *may* flatten a **strategy slice** rather than
-# symbol-net (design §3.3).  For these the bridge judges "does this order reduce
-# exposure?" against the strategy slice **in addition to** symbol-net, treating
-# the order as reducing when it shrinks *either* basis.  ``HARD_EXIT_AGE`` is
-# included: the deferral cap reuses the hazard controller's token for forensic
-# lineage (``deferral_cap.DEFERRAL_REASON_HARD_AGE``), so an order carrying it may
-# be a slice-scoped deferral flatten whose symbol-net is left flat by another
-# strategy's offsetting slice.  Consulting the slice basis only as a fallback
-# (symbol-net is checked first) keeps a true symbol-net hazard exit correct — it
-# always reduces symbol-net — while never stranding a slice-scoped mandated exit
-# at the non-reducing REJECT branch.
+# Slice-scoped authors may reduce either symbol-net or strategy-slice exposure.
 _SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = (
     EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
 )
 
-# Forced-exit reasons that unambiguously identify a **single strategy-slice**
-# owner for fill attribution.  Narrower than the reduce-test set above: it omits
-# the shared ``HARD_EXIT_AGE`` token because the symbol-net
-# :class:`~feelies.risk.hazard_exit.HazardExitController` and the slice-scoped
-# deferral cap both stamp it, so an order carrying it cannot be credited wholly
-# to one slice by reason alone (``DEFERRAL_SLICE_SCOPED_REASONS`` omits it for the
-# same reason).  A hazard hard-age exit flattens symbol-net, so its fill must fall
-# to the proportional split, not self-attribute.
+# Only unambiguous slice-scoped reasons self-attribute fills.
 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
     EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_SLICE_SCOPED_REASONS
 )
 
 
 def _order_owns_one_slice(order: OrderRequest) -> bool:
-    """Whether a fill on *order* belongs **entirely** to ``order.strategy_id``.
-
-    The single source of truth for slice-vs-symbol-net fill attribution: it decides
-    both which orders get an :class:`~feelies.alpha.fill_attribution.AttributionRecord`
-    at track time and, if the ledger is absent, which fills self-attribute at
-    reconciliation.  Keeping one predicate stops the two from disagreeing.
-
-    True for:
-
-    * a **slice-scoped forced exit** (composer / deferral cap): flattening one
-      strategy's slice, so a proportional net split would bleed the fill onto a
-      bystander strategy sharing the symbol and leave the mandated slice partially
-      open (design §3.3);
-    * an **ordinary signal-path order** (entry or exit, no forced-exit reason): the
-      standalone path arbitrates a *single* winner per order
-      (:class:`~feelies.alpha.arbitration.EdgeWeightedArbitrator`), so the fill is
-      wholly that strategy's.
-
-    False for a **symbol-net** forced exit (hazard): it flattens the whole symbol even
-    though it carries a ``strategy_id``, so crediting its full fill to that one slice
-    would over-debit it.  Those fall to the proportional split.  ``HARD_EXIT_AGE`` is a
-    token shared by the symbol-net hazard controller and the slice-scoped deferral cap,
-    so it cannot identify a single-slice owner by reason alone and is **excluded** here
-    (:data:`_SELF_ATTRIBUTED_FORCED_EXIT_REASONS`, mirroring
-    :data:`~feelies.risk.deferral_cap.DEFERRAL_SLICE_SCOPED_REASONS`) — unlike the
-    reduce-test at :data:`_SLICE_SCOPED_FORCED_EXIT_REASONS`, which may consult the
-    slice basis as a symbol-net-first fallback without attributing the fill.
-
-    False for an order with no ``strategy_id`` (aggregate / emergency flatten, and
-    the platform stop / session flatten authored by
-    :class:`~feelies.risk.stop_exit.StopExitController`): it owns no slice to
-    credit, so its fill falls to the proportional symbol-net split.
-    """
+    """Return whether every fill belongs to the order strategy slice."""
     if not order.strategy_id:
         return False
     if order.reason in _SELF_ATTRIBUTED_FORCED_EXIT_REASONS:
@@ -292,29 +237,14 @@ def _order_owns_one_slice(order: OrderRequest) -> bool:
 
 
 def _closable_quantity(position_qty: int, side: Side) -> int:
-    """Shares *side* can close against ``position_qty`` without crossing zero.
-
-    A SELL closes a long, a BUY closes a short; anything beyond that opens
-    opposite exposure rather than reducing.  Returns 0 when there is nothing on
-    the closable side.
-    """
+    """Return shares that side can close without crossing through zero."""
     if side is Side.SELL:
         return max(position_qty, 0)
     return max(-position_qty, 0)
 
 
 def _is_forced_market_exit(order: OrderRequest) -> bool:
-    """Whether *order* is an aggressive, non-vetoable flatten.
-
-    All four authors — the hazard controller, the Stage-0 exit composer, the
-    bounded-deferral cap, and the platform stop / session flatten — publish on the
-    bus with ``source_layer="RISK"`` and a reason in
-    :data:`_RISK_FORCED_EXIT_REASONS`, so one test covers them.
-
-    They share one resting-order question: a mandated exit cancels stale passive
-    orders so it can cross immediately, and never stacks a second aggressive leg on
-    one already in flight (Inv-11).
-    """
+    """Identify controller-authored aggressive exits routed through the risk bridge."""
     return (
         order.source_layer == HAZARD_EXIT_SOURCE_LAYER
         and order.reason in _RISK_FORCED_EXIT_REASONS
@@ -341,54 +271,9 @@ def _trade_journal_legs(
     attributed_legs: Sequence[tuple[str, int, Decimal, Decimal]],
     announced_quantity: int | None = None,
 ) -> list[_TradeJournalLeg]:
-    """Split one fill into the trade-journal rows it should produce.
+    """Build per-strategy journal rows for one fill.
 
-    The journal asks :func:`_order_owns_one_slice` — the same predicate that decides
-    where the *position* goes — so the two can never disagree about who a fill
-    belongs to.  An order that owns one slice yields exactly one row under its own
-    ``strategy_id``; a **symbol-net** order yields one row per slice it actually
-    closed, carrying each slice's own quantity, fees, and realized PnL as the
-    position store booked them — *not* the aggregate figure apportioned by
-    quantity, which would hand every slice the blended entry price's PnL instead
-    of its own.
-
-    That distinction matters because ``realized_pnl`` is booked entirely on the
-    *closing* fill.  Journalling a symbol-net close under the order's own
-    ``strategy_id`` strips the closing leg out of every other holder's evidence:
-    each per-alpha estimator groups by ``strategy_id``
-    (:func:`~feelies.forensics.edge_calibration.build_edge_calibrations`,
-    :func:`~feelies.forensics.cost_survival.per_alpha_cost_survival`,
-    :class:`~feelies.forensics.decay_detector.DecayDetector`), so an alpha ends up
-    measured on its surviving trades only.  For a stop-loss the omission is
-    systematically favourable — stops fire on losers — and on a stop-heavy tape it
-    inverts the sign of the measured edge, which then feeds the promotion and
-    quarantine gates (Inv-3 evidence, Inv-4 decay, Inv-13 provenance).
-
-    Three author families reach the symbol-net branch: the kernel's synthetic
-    ``__stop_exit__`` / ``__session_flat__``, the RISK-layer hazard controller
-    (whose exit flattens the whole symbol though it carries the triggering policy's
-    ``strategy_id``), and aggregate flattens with no ``strategy_id`` at all.  The
-    order's own author stays recoverable via
-    ``metadata["forced_exit_strategy_id"]``, alongside the existing
-    ``order_reason`` / ``order_source_layer`` provenance.
-
-    Falls back to a single row under the order's ``strategy_id`` when nothing was
-    attributed (no slice book wired, or no strategy held the symbol): a row with the
-    wrong owner still beats dropping the fill from the journal.
-
-    What reconciles, and what does not
-    ----------------------------------
-    Quantities and fees always sum back to the ack.  Realized PnL does **not** in
-    general sum to the symbol-net store's figure, and must not be made to.  On a
-    mixed-sign book the fill lands only on the slices that oppose it, so slices it
-    never touched stay open while symbol-net reaches zero: the store has realised
-    the whole episode, the journal only the part that actually closed, and the
-    remainder is still unrealised in the survivors.  Both records are right about
-    different questions — the store answers *what happened to the account*, the
-    journal *which alpha earned it*.  Forcing them to agree means handing every
-    slice the blended basis again, which is the defect this function exists to fix.
-    Pinned in ``test_legs_need_not_sum_to_symbol_net_when_slices_survive_the_exit``.
-    """
+    Slice-owned orders keep one owner; symbol-net exits use attributed slice economics. Missing attribution falls back to one aggregate row."""
     base_metadata = {
         "order_reason": order.reason,
         "order_source_layer": order.source_layer,
@@ -408,14 +293,7 @@ def _trade_journal_legs(
             )
         ]
 
-    # Each leg carries the realized PnL the slice book actually booked for it,
-    # measured against that slice's own ``avg_entry_price``.  Splitting the
-    # aggregate proportionally by quantity would only agree when every slice
-    # entered at the same price: two alphas holding 50 @ 100 and 50 @ 110 give an
-    # aggregate basis of 105, so a close at 90 books -500 / -1000 in the slice
-    # book but would be journalled -750 / -750.  The journal is what every
-    # per-alpha estimator groups by ``strategy_id`` and sums, so the two
-    # authoritative records must not disagree (Inv-3, Inv-13).
+    # Preserve each slice's realized PnL instead of blending aggregate basis.
     owns_one_slice = _order_owns_one_slice(order)
     metadata = (
         base_metadata
@@ -444,18 +322,9 @@ def _int_to_direction(sign: int) -> SignalDirection:
 
 
 class Orchestrator:
-    """Central coordinator for the deterministic tick-processing pipeline.
+    """Coordinate lifecycle state and the deterministic tick pipeline.
 
-    ``boot`` wires configuration, ``run_*`` drives the one shared tick path,
-    and ``shutdown`` drains outstanding acknowledgements before G9. Execution
-    mode differences remain confined to :class:`ExecutionBackend`.
-
-    Standalone ``Signal`` and portfolio ``SizedPositionIntent`` events arrive
-    on the bus. Portfolio intents are drained first; one arbitrated standalone
-    signal may then walk M4–M10. Signals consumed by a portfolio are filtered
-    from the standalone path to prevent double trading. Forced exits override
-    alpha conviction and always retain fail-safe priority.
-    """
+    Domain calculations stay in their owning layers; this class sequences bus dispatch, state transitions, execution, and fail-safe recovery."""
 
     def __init__(
         self,
@@ -588,16 +457,7 @@ class Orchestrator:
         # Reset session-local hazard history while retaining the regime engine's
         # calibrated posterior across sessions.
         self._last_regime_state: dict[tuple[str, str], RegimeState] = {}
-        # Symbols for which ``_update_regime`` has published at least one
-        # ``RegimeState`` on the bus this session.  The trade path drives
-        # the horizon scheduler without a micro-SM walk and without calling
-        # ``_update_regime`` (regime engines require NBBO quotes).  Emitting
-        # ``HorizonTick``s before the first quote-driven publish leaves
-        # ``HorizonSignalEngine`` with an empty regime cache, so ``P(...)``
-        # gates fail safe with a cold-start WARNING.  Trade-path ticks are
-        # deferred until this set contains the symbol (see
-        # ``_process_trade_inner``); quote-path ticks are unaffected because
-        # M2 publishes RegimeState before the scheduler runs.
+        # Trade-path boundaries wait for a quote-published regime state.
         self._regime_bus_published_symbols: set[str] = set()
 
         # Optional EOD flatten blocks entries and closes positions near RTH close.
@@ -755,23 +615,33 @@ class Orchestrator:
         )
         self._signal_order_trace_seen_sequences.add(signal.sequence)
 
+    def _finish_no_order(
+        self,
+        quote: NBBOQuote,
+        signal: Signal,
+        intent: OrderIntent,
+        t_wall_start_ns: int,
+        correlation_id: str,
+        reasons: Sequence[str],
+        trigger: str,
+    ) -> None:
+        """Record a suppressed signal and close the current micro-state walk."""
+        self._append_signal_order_trace(
+            quote,
+            signal,
+            outcome="NO_ORDER",
+            reasons=tuple(reasons),
+            trading_intent=intent.intent.name,
+        )
+        self._finalize_tick(t_wall_start_ns, correlation_id, trigger)
+
     def _trace_buffered_signals_arbitration(
         self,
         quote: NBBOQuote,
         buf_snapshot: list[Signal],
         bus_selected: Signal | None,
-        stop_signal: Signal | None,
     ) -> None:
         if self._signal_order_trace_sink is None or not buf_snapshot:
-            return
-        if stop_signal is not None:
-            for s in buf_snapshot:
-                self._append_signal_order_trace(
-                    quote,
-                    s,
-                    outcome="NO_ORDER",
-                    reasons=("superseded_by_inline_stop_exit",),
-                )
             return
         if bus_selected is None:
             for s in buf_snapshot:
@@ -862,14 +732,7 @@ class Orchestrator:
 
     @property
     def edge_calibration_factors(self) -> Mapping[str, float]:
-        """Per-alpha realization factors the B4 gate multiplied into disclosed edge.
-
-        Resolved at boot from either the explicit bootstrap argument or
-        ``PlatformConfig.edge_calibration_path``.  Exposed so run provenance
-        identifies the factors actually applied rather than the ones a particular
-        caller happened to pass — the two routes diverged once config gained a
-        path (Inv-13).
-        """
+        """Expose the immutable edge factors actually applied at boot."""
         return MappingProxyType(dict(self._edge_calibration_factors))
 
     @property
@@ -905,16 +768,9 @@ class Orchestrator:
             )
 
     def _bind_router_position_qty_for_rth(self) -> None:
-        """Provide live signed positions to the router's RTH gate.
+        """Bind live position quantity to the optional router RTH entry gate.
 
-        The router-side :class:`RthEntryFillGate` defaults ``current_qty``
-        to 0 when unbound, which would mis-classify exit fills as new
-        entries and suppress them after RTH close (violating Inv-11 for
-        the execution layer).  Binding is a no-op when RTH gating is
-        disabled (``_trading_session_bounds is None``) or when the
-        backend's router does not expose ``bind_position_qty``
-        (e.g. live broker routers without the hook).
-        """
+        The binding keeps post-close exits distinguishable from new entries."""
         if self._trading_session_bounds is None:
             return
         router = getattr(self._backend, "order_router", None)
@@ -924,28 +780,9 @@ class Orchestrator:
         bind(lambda sym: self._positions.get(sym).quantity)
 
     def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
-        """Switch risk buying-power limits at RTH close.
+        """Switch buying-power phase at each resolved RTH close.
 
-        Once-per-session-date: the first quote with
-        ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
-        engine to :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight
-        multiplier is applied to any exits that linger past the close.
-        Compared against ``exchange_timestamp_ns`` rather than
-        ``timestamp_ns`` so the flip aligns with the exchange-time RTH
-        close used by router-side entry gating
-        (``BacktestOrderRouter`` / ``PassiveLimitOrderRouter`` and
-        :class:`TradingSessionBounds`).
-
-        Multi-day replays run as a single booted session whose quotes span
-        several NY dates (``resolve_for_timestamp`` recomputes the close per
-        quote).  When the resolved session date advances, re-arm the flip and
-        reopen the day on the intraday cap — otherwise the day-1 OVERNIGHT flip
-        latches for the whole run and days 2+ trade their entire RTH session
-        under the 2× overnight multiplier.
-
-        No-op when RTH gating is disabled or the risk engine does not expose
-        ``set_buying_power_phase``.
-        """
+        Multi-day replays re-arm the latch when the session date changes."""
         bounds = self._trading_session_bounds
         if bounds is None:
             return
@@ -975,15 +812,7 @@ class Orchestrator:
         self._rth_close_bp_flipped = True
 
     def _reset_buying_power_phase_for_session(self) -> None:
-        """Reset the RTH-close buying-power state at session start.
-
-        Clears the latch (and the armed session date) that gate
-        :meth:`_maybe_flip_buying_power_at_rth_close` and forces the risk
-        engine back onto :attr:`BuyingPowerPhase.INTRADAY` so a new session
-        always opens on the 4× intraday cap — even when the same orchestrator
-        instance is reused across runs and the previous run left the engine
-        flipped to ``OVERNIGHT`` after crossing the close.
-        """
+        """Reset the RTH latch and restore intraday buying power."""
         self._rth_close_bp_flipped = False
         self._rth_bp_session_date = None
         set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
@@ -1143,14 +972,7 @@ class Orchestrator:
             self._events_prelogged = False
 
     def run_paper(self) -> None:
-        """G2 → G5 → pipeline.
-
-        Guard: broker sim connected.
-        Normal completion (feed iterator exhausted without exception)
-        returns macro to **READY** — same hub state as ``run_backtest``.
-        Exceptions during the pipeline transition to **DEGRADED** and
-        re-raise.
-        """
+        """Run the shared pipeline in PAPER mode."""
         self._run_deployment_session(
             mode=MacroState.PAPER_TRADING_MODE,
             session_name="paper",
@@ -1222,23 +1044,9 @@ class Orchestrator:
         return False
 
     def unlock_from_lockdown(self, *, audit_token: str) -> None:
-        """G8 → G2.  Human-authorized only.
+        """Unlock only with an audit token and zero exposure.
 
-        Guard: positions = 0, audit logged (Inv-4 for lockdown recovery).
-
-        Transition ordering: macro first, then risk.  If the macro
-        transition succeeded but risk failed (both are structurally
-        valid, so failure is near-impossible), macro at READY with
-        risk at LOCKED is fail-safe — session-entry guard blocks
-        ``run_*`` until resolved.  The reverse
-        (risk at NORMAL, macro at RISK_LOCKDOWN) would break the
-        retry path because the next unlock_from_lockdown attempt
-        would try R4→R0 from R0, raising IllegalTransition.
-
-        When ``_escalate_risk`` activated the kill switch, this method
-        also resets it with the same audit token so ticks do not
-        immediately re-enter DEGRADED on kill-switch polling.
-        """
+        The kill switch resets before the risk and macro state machines."""
         self._macro.assert_state(MacroState.RISK_LOCKDOWN)
 
         exposure = self._positions.total_exposure()
@@ -1291,20 +1099,7 @@ class Orchestrator:
         )
 
     def shutdown(self) -> None:
-        """→ G9 (terminal).
-
-        Inv-4: all orders must be terminally resolved before shutdown.
-        Pending orders are surfaced as a WARNING alert but do not
-        block shutdown — the operator investigates post-mortem.
-
-        ``CANCEL_REQUESTED`` orders (e.g. abandoned when no router cancel
-        API existed in an older build) are transitioned to ``CANCELLED``
-        best-effort before the pending-order scan so shutdown reflects
-        local operator intent.
-
-        Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
-        can tear down the process without a prior unlock when needed.
-        """
+        """Drain terminal acknowledgements, flush metrics, and enter SHUTDOWN."""
         # Drain late broker acknowledgements before resolving pending orders.
         if self._backend is not None:
             # Expire MOC orders that received no closing-auction print.
@@ -1356,19 +1151,9 @@ class Orchestrator:
     # ── Pipeline: the deterministic tick loop ───────────────────────
 
     def _run_pipeline(self) -> None:
-        """Execute the deterministic micro-state loop over all market events.
+        """Dispatch backend events through the single mode-independent pipeline.
 
-        Inv-2: breaks when macro state leaves TRADING_MODES.
-
-        Dispatches by event type: NBBOQuote drives the full signal
-        pipeline; Trade events are logged and published for
-        observability but do not trigger signal evaluation;
-        :class:`IdleTick` triggers the async fill drain only (no
-        micro-SM transition, no bus publish, no EventLog append) so
-        broker-pushed fills from :class:`IBOrderRouter` are reconciled
-        when the live feed is between frames (Inv-9 paper/live;
-        BACKTEST feeds never emit ``IdleTick`` — Inv-A preserved).
-        """
+        Idle ticks drain asynchronous acknowledgements without walking the micro state machine."""
         for event in self._backend.market_data.events():
             if self._pipeline_abort_requested:
                 break
@@ -1392,29 +1177,11 @@ class Orchestrator:
             )
 
     def _process_trade(self, trade: Trade) -> None:
-        """Log, publish, and forward a trade event to the feature engine.
-
-        Trades update feature state (e.g., volume clustering, trade
-        arrival rate) but do not trigger signal evaluation.  Updated
-        feature values feed into the next quote-driven tick.
-
-        Also forwarded to the order router (D10) when the router
-        supports ``on_trade()`` — enables volume-based queue aging
-        for passive limit order fills.
-        """
+        """Process one trade with fail-safe degradation on error."""
         self._process_trade_inner(trade)
 
     def _process_trade_inner(self, trade: Trade) -> None:
-        """Process one trade through the sensor-aware path.
-
-        The trade path does *not* drive the micro-state machine
-        (trades are out-of-band w.r.t. the quote-driven pipeline), so
-        we do not transition through SENSOR_UPDATE / HORIZON_CHECK
-        for trades.  We *do* however invoke the sensor registry (via
-        the bus) and the horizon scheduler (manually) so trade-only
-        sensors and any time-bucket boundaries crossed by the trade
-        timestamp are observed.
-        """
+        """Log and publish one trade, then drive trade-sensitive layers."""
         # Update halt state before applying the data-health gate.
         self._update_halt_state(trade)
         # Update intraday SSR state from the trade tape.
@@ -1448,17 +1215,7 @@ class Orchestrator:
         if router_on_trade is not None:
             router_on_trade(trade)
 
-        # P2-α: drive the scheduler from the trade path too (C3).  No
-        # micro-state walk; trade ticks just produce HorizonTicks if
-        # they cross a boundary.  Sensor registry runs through the
-        # bus subscription on ``self._bus.publish(trade)`` above.
-        #
-        # Defer until a quote has published RegimeState for this symbol
-        # (Inv-11): regime engines update only on NBBO, so a trade at
-        # RTH open that crosses boundary 0 would otherwise emit snapshots
-        # into an empty HorizonSignalEngine regime cache.  Skipping
-        # ``on_event`` (not discarding its ticks) keeps the scheduler's
-        # last-boundary cursor unadvanced so the first quote still emits.
+        # Trades may cross horizons only after a quote has published regime state.
         if self._horizon_scheduler is not None and self._trade_path_may_emit_horizon_ticks(
             trade.symbol
         ):
@@ -1513,17 +1270,7 @@ class Orchestrator:
                 )
 
     def _maybe_transition_cross_sectional_bookend(self, correlation_id: str) -> None:
-        """Record ``MicroState.CROSS_SECTIONAL`` after the bus composition chain.
-
-        ``UniverseSynchronizer`` / ``CompositionEngine`` run synchronously
-        inside the ``HorizonTick`` handler stack (``_dispatch_sensor_layer``).
-        This transition is a forensic bookend only — it does not re-invoke
-        composition.  It is emitted when a **registered PORTFOLIO alpha**
-        exists **or** a :class:`~feelies.composition.engine.CompositionEngine`
-        is attached (test / partial deployments), and the micro SM can legally
-        enter ``CROSS_SECTIONAL`` from the current horizon state (typically
-        ``HORIZON_AGGREGATE`` or ``SIGNAL_GATE``).
-        """
+        """Record CROSS_SECTIONAL when a horizon boundary was processed."""
         registry_portfolio = (
             self._alpha_registry is not None and self._alpha_registry.has_portfolio_alphas()
         )
@@ -1689,25 +1436,9 @@ class Orchestrator:
         )
 
     def _process_tick(self, quote: NBBOQuote) -> None:
-        """Process a single tick through the full micro-state pipeline.
+        """Process one quote through the deterministic micro-state path.
 
-        This method is IDENTICAL in G4, G5, and G6.  The only
-        mode-specific behavior is inside ExecutionBackend (platform inv 9).
-
-        Micro-state sequence (formal spec Section II):
-          M0 → M1 → M2 → M3 → M4 → M5 →
-            (lockdown FORCE_FLATTEN) → M10 → M0  (via ``_finalize_tick``)
-            (pass, no order)    → M10 → M0
-            (pass, order)       → M6 →
-              (check_order fail)  → M10 → M0
-              (check_order pass)  → M7 → M8 → M9 → M10 → M0
-
-        Exception handling: if any step throws, the micro SM is reset
-        to M0 and macro transitions to DEGRADED.  This prevents the
-        micro SM from being stranded mid-pipeline, which would make
-        the next tick's M0→M1 transition illegal (platform inv 11:
-        errors resolve to reduced exposure, never undefined state).
-        """
+        Any exception degrades the macro state and restores the micro machine to M0."""
         cid = quote.correlation_id
         self._quote_tick_in_flight = True
         try:
@@ -1719,18 +1450,7 @@ class Orchestrator:
             self._micro.bind_timing_sink(None)
 
     def _handle_tick_failure(self, cid: str, original: Exception) -> None:
-        """Recover micro SM and degrade macro after a tick-processing failure.
-
-        The handler itself must not throw — if reset() or the macro
-        transition fails, we still degrade to the safest reachable
-        state.  The original exception's type name is captured in the
-        trigger for provenance (invariant 13).
-
-        If the macro ``DEGRADED`` transition raises (e.g. subscriber
-        veto), ``_pipeline_abort_requested`` is set and :meth:`_run_pipeline`
-        raises :class:`~feelies.core.errors.OrchestratorPipelineAbortError`
-        so callers do not treat the loop as normally exhausted.
-        """
+        """Recover state machines after a tick-processing exception."""
         exc_name = type(original).__name__
 
         try:
@@ -1860,21 +1580,7 @@ class Orchestrator:
         if self._signal_order_trace_sink is not None:
             self._tick_quote_for_trace = quote
             self._last_quote_context_for_signal_trace = quote
-        # Mark aggregate and strategy books for exposure and drawdown checks.
-        #
-        # Marking runs **before** the bus publish so every subscriber evaluates
-        # against this quote's book rather than the previous one.  The risk-layer
-        # exit authors are the reason: ``StopExitController`` fires on the quote
-        # itself, and a stop fires precisely on an adverse move, so a stale mark
-        # would systematically understate the loss at the moment the bridge runs
-        # ``check_order`` — the drawdown guard could read well inside its bar on a
-        # tick that actually breached it (Inv-11 fail-safe).  Marking first also
-        # puts the stop author on the same footing as the hazard controller, which
-        # fires later at ``_update_regime``.
-        #
-        # Safe to hoist: ``update_mark`` writes prices only, never quantities, and
-        # no ``NBBOQuote`` subscriber reads marks — sensors are pure market-data
-        # observers and the router's entry gate reads position *quantity*.
+        # Mark before subscribers so risk exits see current liquidation value.
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
             # Mark liquidation at bid for longs and ask for shorts.
@@ -1952,12 +1658,7 @@ class Orchestrator:
         # :class:`~feelies.risk.stop_exit.StopExitController`, which fires off the
         # same quote publish above and routes through the RISK-layer bridge.  The
         # SIGNAL path carries alpha conviction only.
-        self._trace_buffered_signals_arbitration(
-            quote,
-            buf_snapshot,
-            signal,
-            None,
-        )
+        self._trace_buffered_signals_arbitration(quote, buf_snapshot, signal)
         # Update standing targets and record winner-versus-net divergence.
         self._record_net_shadow(buf_snapshot, signal, quote)
         if buf_snapshot:
@@ -2028,14 +1729,15 @@ class Orchestrator:
             ]
             if target_qty == 0:
                 reasons_no.insert(0, "position_sizer_returned_zero_target_quantity")
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=tuple(reasons_no),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                reasons_no,
+                "intent_no_action",
             )
-            self._finalize_tick(t_wall_start, cid, "intent_no_action")
             return
 
         # ── M4 → M5: RISK_CHECK ────────────────────────────────
@@ -2078,29 +1780,28 @@ class Orchestrator:
                     correlation_id=cid,
                 )
                 return
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=(
-                    "risk_check_signal_force_flatten_simulated",
-                    verdict.reason,
-                ),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("risk_check_signal_force_flatten_simulated", verdict.reason),
+                "risk_force_flatten_simulated",
             )
-            self._finalize_tick(t_wall_start, cid, "risk_force_flatten_simulated")
             return
 
         # ── M5 branch: risk rejected → M10 ─────────────────────
         if verdict.action == RiskAction.REJECT:
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=("risk_check_signal_reject", verdict.reason),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("risk_check_signal_reject", verdict.reason),
+                "risk_reject_no_order",
             )
-            self._finalize_tick(t_wall_start, cid, "risk_reject_no_order")
             return
 
         # ── M5 → M6: risk pass, order warranted ────────────────
@@ -2120,58 +1821,56 @@ class Orchestrator:
         if intent.intent in _ENTRY_OPENING_INTENTS and self._in_halt_blackout(
             intent.symbol, quote.timestamp_ns
         ):
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=(
-                    "halt_resolution_blackout",
-                    f"symbol={intent.symbol}",
-                ),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("halt_resolution_blackout", f"symbol={intent.symbol}"),
+                "halt_resolution_blackout",
             )
-            self._finalize_tick(t_wall_start, cid, "halt_resolution_blackout")
             return
 
         # Refuse new entries inside the session-flatten window.
         if intent.intent in _ENTRY_OPENING_INTENTS and self._in_session_flatten_window(quote):
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=(
-                    "session_flatten_window",
-                    f"symbol={intent.symbol}",
-                ),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("session_flatten_window", f"symbol={intent.symbol}"),
+                "session_flatten_window",
             )
-            self._finalize_tick(t_wall_start, cid, "session_flatten_window")
             return
 
         # Under SSR, refuse new short exposure but permit buys and covers.
         if self._ssr_blocks_intent(intent):
             self._emit_ssr_suppression_alert(intent, cid)
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=("ssr_suppressed", f"symbol={intent.symbol}"),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("ssr_suppressed", f"symbol={intent.symbol}"),
+                "ssr_suppressed",
             )
-            self._finalize_tick(t_wall_start, cid, "ssr_suppressed")
             return
 
         # Reject unavailable locates; hard-to-borrow entries carry fees.
         if self._borrow_blocks_intent(intent):
             self._emit_locate_unavailable_alert(intent, cid)
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=("locate_unavailable", f"symbol={intent.symbol}"),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("locate_unavailable", f"symbol={intent.symbol}"),
+                "locate_unavailable",
             )
-            self._finalize_tick(t_wall_start, cid, "locate_unavailable")
             return
 
         # Reversals close at market before opening through the entry policy.
@@ -2190,17 +1889,15 @@ class Orchestrator:
             exec_style=exec_style_override,
         )
         if order is None:
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=(
-                    "order_request_build_failed",
-                    order_build_reason or "unknown",
-                ),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("order_request_build_failed", order_build_reason or "unknown"),
+                "risk_scale_down_to_zero",
             )
-            self._finalize_tick(t_wall_start, cid, "risk_scale_down_to_zero")
             return
 
         # ── M6: Pre-submission risk check on concrete order ─────
@@ -2236,30 +1933,25 @@ class Orchestrator:
                     correlation_id=cid,
                 )
                 return
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=(
-                    "risk_check_order_force_flatten_simulated",
-                    order_verdict.reason,
-                ),
-                trading_intent=intent.intent.name,
+                intent,
+                t_wall_start,
+                cid,
+                ("risk_check_order_force_flatten_simulated", order_verdict.reason),
+                "check_order_force_flatten_simulated",
             )
-            self._finalize_tick(t_wall_start, cid, "check_order_force_flatten_simulated")
             return
 
         if order_verdict.action == RiskAction.REJECT:
-            self._append_signal_order_trace(
+            self._finish_no_order(
                 quote,
                 signal,
-                outcome="NO_ORDER",
-                reasons=("risk_check_order_reject", order_verdict.reason),
-                trading_intent=intent.intent.name,
-            )
-            self._finalize_tick(
+                intent,
                 t_wall_start,
                 cid,
+                ("risk_check_order_reject", order_verdict.reason),
                 f"check_order_rejected:{order_verdict.reason}",
             )
             return
@@ -2272,17 +1964,18 @@ class Orchestrator:
                 order_verdict.scaling_factor,
             )
             if scaled_qty <= 0:
-                self._append_signal_order_trace(
+                self._finish_no_order(
                     quote,
                     signal,
-                    outcome="NO_ORDER",
-                    reasons=(
+                    intent,
+                    t_wall_start,
+                    cid,
+                    (
                         "risk_check_order_scale_down_to_zero_quantity",
                         order_verdict.reason,
                     ),
-                    trading_intent=intent.intent.name,
+                    "check_order_scale_down_to_zero",
                 )
-                self._finalize_tick(t_wall_start, cid, "check_order_scale_down_to_zero")
                 return
             if scaled_qty != order.quantity:
                 order = replace(order, quantity=scaled_qty)
@@ -2306,17 +1999,18 @@ class Orchestrator:
             if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
                 order.symbol
             ):
-                self._append_signal_order_trace(
+                self._finish_no_order(
                     quote,
                     signal,
-                    outcome="NO_ORDER",
-                    reasons=(
+                    intent,
+                    t_wall_start,
+                    cid,
+                    (
                         "resting_order_guard_blocked_duplicate_passive_order",
                         f"symbol={order.symbol}",
                     ),
-                    trading_intent=intent.intent.name,
+                    "resting_order_pending",
                 )
-                self._finalize_tick(t_wall_start, cid, "resting_order_pending")
                 return
 
         # ── Track order lifecycle (Inv-4) ───────────────────────
@@ -2764,30 +2458,9 @@ class Orchestrator:
         return symbol in self._regime_bus_published_symbols
 
     def _reset_regime_session_state(self) -> None:
-        """Clear hazard-detection state that must not span sessions.
+        """Reset stateful regime components at a session boundary.
 
-        Called from every ``run_*`` entry point alongside ``_micro.reset``.
-        Three structures are cleared:
-
-        * ``self._last_regime_state`` — the prev-pointer dict feeding
-          :class:`RegimeHazardDetector`.  Without this clear, a
-          ``RegimeState`` from session N-1 would pair with the first
-          ``RegimeState`` of session N, the detector would compute a
-          "decay" across the session gap, and a spurious
-          :class:`RegimeHazardSpike` could be emitted (§20.3.1).
-        * ``self._regime_hazard_detector._suppressed`` (via
-          ``reset()``) — without this clear, suppression keys from
-          session N-1 would silence legitimate spikes early in
-          session N for the same ``(symbol, engine_name,
-          departing_state)`` triple.
-        * ``self._regime_bus_published_symbols`` — forces trade-path
-          HorizonTicks to wait for a fresh quote-driven ``RegimeState``
-          publish in the new session (see ``_process_trade_inner``).
-
-        The :class:`RegimeEngine` itself is intentionally NOT reset:
-        its per-symbol HMM posterior is the carry-over we want
-        (boot-time calibration is the only place that wipes it).
-        """
+        Missing reset hooks fail closed when the engine declares persistent state."""
         self._last_regime_state.clear()
         self._regime_bus_published_symbols.clear()
         if self._regime_hazard_detector is not None:
@@ -2897,23 +2570,7 @@ class Orchestrator:
         self,
         correlation_id: str,
     ) -> tuple[dict[str, str], dict[str, int]]:
-        """Submit market orders to flatten all non-zero positions.
-
-        Emergency path -- bypasses the micro SM (which will be reset
-        immediately after).  Individual order failures are captured
-        rather than silently swallowed; we still proceed through the
-        loop so one broken symbol can't block flattening the rest
-        (Inv-11: fail-safe).
-
-        After the flatten loop, residual exposure is checked.  If any
-        positions remain open — whether from submit exceptions, partial
-        fills, or rejected acks — a CRITICAL alert is emitted listing
-        every failed symbol so the operator sees exactly which legs
-        need manual intervention before LOCKED traps them.
-
-        Returns ``(failures, residual_qty_by_symbol)`` so risk escalation
-        can record an honest transition trigger when exposure remains.
-        """
+        """Cancel resting orders and submit market exits for every open position."""
         positions = self._positions.all_positions()
         failures: dict[str, str] = {}
         # Iterate in lexicographic symbol order so the emitted
@@ -3962,29 +3619,9 @@ class Orchestrator:
         expected_order_ids: set[str] | None = None,
         position_update_trigger: str | None = None,
     ) -> list[OrderAck]:
-        """Drain router acks, publish them, and reconcile the resulting fills.
+        """Poll and reconcile acknowledgements for one submission phase.
 
-        The one place the post-submission sequence lives.  It was open-coded at
-        eleven call sites, so adding a step meant finding all eleven and missing
-        one produced a path that submitted orders without settling them.
-
-        ``position_update_trigger`` walks M8 -> M9 between publishing the acks and
-        reconciling them.  It is a parameter rather than automatic because the
-        asymmetry is structural, not an oversight: ``POSITION_UPDATE`` is legal
-        only from ``ORDER_ACK`` (see :mod:`feelies.kernel.micro`), and the
-        RISK-layer bridge fires re-entrantly during ``bus.publish(quote)`` while
-        micro sits in ``MARKET_EVENT_RECEIVED``.  Those paths cannot walk the
-        machine, so they pass ``None`` and settle out of band.
-
-        An empty drain still settles.  Two callers used to guard with ``if acks``,
-        which also skipped :meth:`_reconcile_fills`'s unconditional
-        :meth:`_prune_terminal_orders`.  That guard was measured before removal:
-        it fired 87876 times on one APP session and *never once* with a terminal
-        order awaiting prune, because every submitting path settles
-        unconditionally and prunes first.  It guarded a state that cannot arise.
-
-        Returns the drained acks so callers can act on them further.
-        """
+        Expected orders without an ack remain active for later asynchronous drains."""
         acks = self._poll_order_router_acks(expected_order_ids)
         self._publish_and_apply_order_acks(acks)
         if position_update_trigger is not None:
@@ -4140,25 +3777,9 @@ class Orchestrator:
         )
 
     def _drain_async_fills(self, correlation_id: str) -> None:
-        """Drain pending router acks and reconcile fills.
+        """Apply broker acknowledgements received outside the quote submission path.
 
-        The single source of truth for async fill processing. Called from
-        three triggers:
-
-        * Tick start (via :meth:`_reconcile_resting_fills`) — quote-driven
-          fills from :class:`BacktestOrderRouter` /
-          :class:`PassiveLimitOrderRouter` / :class:`IBOrderRouter` (the
-          latter pushes asynchronously, so this is the dominant path for
-          paper trading).
-        * :class:`IdleTick` — live WS feed idle; no signal pipeline runs
-          (paper/live trading only).
-        * Shutdown — final drain so a fill between the last quote and the
-          operator's halt is not dropped.
-
-        Does NOT transition the micro SM and does NOT touch the macro SM.
-        Routes through :meth:`_poll_order_router_acks` so the deferred-ack
-        buffer (``_deferred_router_acks``) is honoured.
-        """
+        This path updates order state and positions without walking the micro machine."""
         t0 = time.perf_counter_ns()
         acks = self._settle_router_acks(correlation_id)
         if acks:
@@ -4282,25 +3903,9 @@ class Orchestrator:
         side: Side,
         order: OrderRequest,
     ) -> None:
-        """Register this order's per-alpha provenance with the fill ledger.
+        """Record deterministic strategy allocations for an order.
 
-        Step 1 of :class:`~feelies.alpha.fill_attribution.FillAttributionLedger`'s
-        documented contract ("record() when building each net order").  Without it
-        ``allocate_fill`` returns ``[]`` for every unknown ``order_id`` and the ledger
-        is dead weight — which is how the strategy-slice book came to be never written
-        on an entry fill.
-
-        Today every order carries exactly one ``strategy_id``; cross-alpha order
-        netting is not implemented.  The record therefore holds a single 100%
-        contribution.  Routing attribution through the ledger anyway means that if
-        netting is ever added, a multi-contribution record
-        splits the fill proportionally on its own rather than silently self-attributing
-        a netted fill to one strategy.
-
-        ``signed_quantity`` is a positive magnitude: ``allocate_fill`` derives direction
-        from ``net_side``, and a contribution moving *with* the net order must not flip
-        it (a negative value there means "this alpha wanted the opposite side").
-        """
+        Single-slice orders self-attribute; symbol-net exits allocate across live slices."""
         if self._fill_ledger is None or not _order_owns_one_slice(order):
             return
         from feelies.alpha.fill_attribution import AlphaContribution, AttributionRecord
@@ -4614,25 +4219,7 @@ class Orchestrator:
                     ack.timestamp_ns,
                 )
 
-            # ── Per-alpha fill attribution ──
-            # Gated on the slice book alone: neither the self-attribution nor the
-            # proportional branch needs the ledger, so making the whole block depend on
-            # it meant a deployment that skipped constructing one silently lost slice
-            # attribution entirely — and with it the Stage-0 deferral ceiling, the exit
-            # composer's scoping, and every per-alpha risk budget.
-            # Slices this fill was actually booked against, as
-            # ``(strategy_id, signed_quantity, fees, realized_delta)``.  Drives the
-            # trade-journal attribution below so a symbol-net forced exit is credited
-            # to the slices it closed rather than to its synthetic ``strategy_id``.
-            #
-            # ``realized_delta`` is measured around each slice's own ``update()``, not
-            # apportioned from the aggregate.  A symbol-net exit closes slices that
-            # entered at different prices, and the aggregate ``avg_entry_price`` is
-            # their notional-weighted blend — so splitting the aggregate figure by
-            # quantity hands every slice the *blended* PnL rather than its own.  Two
-            # slices of 50 entered at 100 and 110, flattened at 90, really earned
-            # -500 and -1000; the proportional split journalled -750 each, which is
-            # what forensics and the promotion gate then read (Inv-13).
+            # Record per-slice fees and realized PnL for journal attribution.
             attributed_legs: list[tuple[str, int, Decimal, Decimal]] = []
             if self._strategy_positions is not None:
                 alpha_allocs: list[tuple[str, str, int, Decimal, Decimal]] = []
@@ -4673,18 +4260,7 @@ class Orchestrator:
                             )
                         )
                 elif _order_owns_one_slice(order):
-                    # Ledger had no record for this order (none constructed, or the
-                    # order predates one) but the fill still belongs wholly to one
-                    # slice — attribute it directly.  Same predicate the ledger is
-                    # populated from, so the two can never disagree.
-                    #
-                    # This is the branch that lets a slice acquire its *first*
-                    # position: ``_distribute_fill_to_strategies`` splits across
-                    # strategies that already hold quantity and returns early when
-                    # none do, so without it the slice book stayed permanently empty
-                    # and every slice-scoped reader — the Stage-0 deferral cap and
-                    # exit composer, and the per-alpha budgets in
-                    # ``AlphaBudgetRiskWrapper`` — saw a flat book.
+                    # Missing ledger data still self-attributes single-slice orders.
                     prev_slice = self._strategy_positions.get(
                         order.strategy_id, ack.symbol
                     ).realized_pnl
@@ -4876,37 +4452,14 @@ class Orchestrator:
         if not strategy_ids:
             return []
 
-        # Collect each strategy's current quantity for this symbol, restricted to
-        # the slices this fill actually closes.
-        #
-        # Every non-zero slice used to qualify regardless of sign, weighted by
-        # abs(q) and given one uniform direction — so a reducing symbol-net fill
-        # handed the same-direction delta to slices already on the other side and
-        # made them deeper.  Measured: alpha_a +150, alpha_b -50, symbol-net +100,
-        # a mandated SELL 100 flattens the net but leaves alpha_a at +75 and drives
-        # alpha_b from -50 to -75.  A fail-safe fill increasing a slice's exposure
-        # is what Inv-11 forbids, and the slice book it corrupts is read by the
-        # per-alpha risk budgets, the Stage-0 deferral cap, and the exit composer's
-        # scoping.  A mixed-sign book is not hypothetical: the netting design
-        # (§3.3) explicitly contemplates one strategy holding the opposite side.
-        #
-        # Restricting to the reducible side puts the whole close on the slices that
-        # created the net — alpha_a alone, ending +50 against alpha_b's untouched
-        # -50, which is a net of zero and a book that still reconciles.
-        # Opposite signs: a SELL (signed_qty < 0) closes long slices, a BUY closes
-        # short ones.
+        # Reducing fills allocate only across slices on the closable side.
         strategy_qtys: list[tuple[str, int]] = []
         for sid in strategy_ids:
             q = self._strategy_positions.get(sid, symbol).quantity
             if q * signed_qty < 0:
                 strategy_qtys.append((sid, q))
         if not strategy_qtys:
-            # No slice opposes the fill.  For a same-direction (increasing) fill
-            # that is expected — every holder is being deepened and there is no
-            # reducible slice — so it is not drift.  Attribute across every holder
-            # either way, but only warn when the slice book and the symbol-net store
-            # actually disagree, because a silently unattributed fill is the failure
-            # mode this whole path exists to avoid (Inv-13).
+            # Increasing fills fall back across holders; warn only on store drift.
             strategy_qtys = [
                 (sid, q)
                 for sid in strategy_ids
@@ -5009,29 +4562,9 @@ class Orchestrator:
     # ── Bus-driven signal handler ───────────────────────────────────
 
     def _on_bus_signal(self, event: Event) -> None:
-        """Buffer a SIGNAL-layer ``Signal`` for the current tick's M4 drain.
+        """Buffer actionable standalone signals for the next M4 arbitration walk.
 
-        Filtered for safety / correctness:
-
-        * ``layer != "SIGNAL"`` — PORTFOLIO order flow uses
-          ``SizedPositionIntent``, not this handler.
-        * ``strategy_id == "__stop_exit__"`` — a legacy guard.  Stop exits are
-          authored by :class:`~feelies.risk.stop_exit.StopExitController` as
-          RISK-layer ``OrderRequest`` events and never reach this handler; the
-          check remains so a stale producer emitting the old sentinel ``Signal``
-          cannot double-fire.
-        * ``alpha_id`` listed in any registered PORTFOLIO's
-          ``depends_on_signals`` — these Signals are aggregated by
-          ``CompositionEngine`` into ``SizedPositionIntent`` events.
-          Translating them into ``OrderRequest`` events here as well
-          would double-trade (Inv-11 fail-safe: prefer no order over
-          duplicate orders).
-
-        The buffer is cleared at the start of every ``_process_tick_inner``
-        call; Signals published in response to the same tick's
-        ``bus.publish(quote)`` arrive synchronously before M4 and are
-        drained there.
-        """
+        Portfolio-consumed signals remain on their composition path."""
         if not isinstance(event, Signal):
             return
         q = self._tick_quote_for_trace
@@ -5139,23 +4672,7 @@ class Orchestrator:
         return [s for s in signals if self._standalone_signal_actionable_for_strategy_ownership(s)]
 
     def _select_bus_signal(self) -> Signal | None:
-        """Pick one Signal from this tick's bus buffer (deterministic).
-
-        The micro-state machine permits at most one ``RISK_CHECK →
-        ORDER_DECISION → ORDER_SUBMIT → … → LOG_AND_METRICS`` walk per
-        tick (``_MICRO_TRANSITIONS`` in ``feelies.kernel.micro``).  When
-        more than one standalone SIGNAL alpha fires on the same tick,
-        candidates are passed to ``self._signal_arbitrator`` (default
-        :class:`~feelies.alpha.arbitration.EdgeWeightedArbitrator`: FLAT
-        privileged, else highest ``edge_estimate_bps * strength``; below
-        dead-zone yields ``None``).  Ties break by earliest bus arrival
-        (buffer order).  Emits a once-per-process WARNING when multiple
-        candidates appear, recommending a PORTFOLIO alpha for explicit
-        cross-sectional aggregation.
-
-        Returns ``None`` when the buffer is empty or the arbitrator
-        suppresses all candidates.
-        """
+        """Select one deterministic standalone winner from the buffered signals."""
         if not self._signal_buffer:
             return None
         buf = self._filter_standalone_signals_by_strategy_ownership(
@@ -5238,19 +4755,9 @@ class Orchestrator:
     # Import the controller's signature so hazard filtering cannot drift.
 
     def _on_bus_hazard_order(self, event: Event) -> None:
-        """Route reducing RISK-layer forced-exit orders to the execution backend.
+        """Submit non-vetoable risk-layer exits received on the bus.
 
-        Handles both risk-layer exit authors that share this non-vetoable bridge:
-        the :class:`~feelies.risk.hazard_exit.HazardExitController` and the
-        Stage-0 :class:`~feelies.risk.exit_composer.ExitComposer`.  Both stamp
-        ``source_layer="RISK"`` and a reason in
-        :data:`_RISK_FORCED_EXIT_REASONS`.  The order is validated with
-        ``check_order`` (not ``check_sized_intent``), so a cost/edge veto that may
-        suppress an *entry* can never suppress a mandated safety exit (Inv-11).
-
-        Tight source and reason filters prevent double submission of orders
-        already routed by the normal signal, portfolio, or emergency paths.
-        """
+        Orders are clamped to currently closable exposure and deduplicated."""
         if not isinstance(event, OrderRequest):
             return
         if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
@@ -5308,50 +4815,14 @@ class Orchestrator:
             self._emit_forced_exit_supersedes_pending_alert(event, event.correlation_id)
             self._cancel_resting_for_symbol(event.symbol, event.correlation_id)
 
-        # Clamp to what is still closable, on every path — not only when a resting
-        # order was cancelled just above.
-        #
-        # The cancel reconciles acks already queued for those orders, fills
-        # included, so the book may have moved since the reduce test above:
-        # crossing a stale quantity into a book another leg already flattened
-        # would open the *opposite* exposure, which is what a fail-safe control
-        # must never do (Inv-11).  That is why the clamp first existed here.
-        #
-        # It ran only inside the resting-order branch, which left the ordinary
-        # path protected by an argument rather than a guard.  ``order_reduces``
-        # above does gate, but only the non-reducing-REJECT block: it decides
-        # whether a REJECT is authoritative, not whether the submitted size fits
-        # the book, and an ALLOW verdict never consults it.  So what actually kept
-        # a mandated exit from opening exposure on the ordinary path was that
-        # every shipped controller sizes from a live non-zero position and returns
-        # early when flat.  True today, and asserted per controller — but it is a
-        # property of four other files, and a future author sizing an exit from
-        # something else would land on an unguarded submit.  Cheaper to guard the
-        # path than to keep the argument.
-        #
-        # No-op for a well-formed order: ``closable`` equals the requested
-        # quantity whenever the author sized against the same basis this reads.
-        # Clamping rather than only testing matters because a *partial* cover
-        # leaves a residual a mandated exit should still close, and standing the
-        # whole order down would strand it (the hazard controller will not re-emit
-        # within the same episode).
+        # Re-clamp after cancellations because queued fills may have moved the book.
         closable = self._forced_exit_closable_quantity(event)
         if closable <= 0:
             self._emit_forced_exit_stood_down_alert(event)
             return
         if closable < event.quantity:
             self._emit_forced_exit_resized_alert(event, closable)
-            # Same order_id: one mandated decision resized, not a new order.
-            #
-            # The author already published the pre-clamp ``OrderRequest``, so the
-            # bus now disagrees with the router about this order's size.  It is
-            # not republished here: this handler runs *inside* that event's own
-            # dispatch, so a second publish would reach subscribers registered
-            # after this one before the outer loop delivers the original to them,
-            # leaving the stale size last.  Carry the announced quantity onto the
-            # trade instead — the record every consumer joins the order stream to
-            # (Inv-13) — so a clamped fill is never read as a partial of a larger
-            # order.
+            # Preserve announced size on the trade without republishing bus data.
             self._forced_exit_announced_quantity[event.order_id] = event.quantity
             event = replace(event, quantity=closable)
         self._track_order(event.order_id, event.side, event)
@@ -5640,23 +5111,9 @@ class Orchestrator:
         )
 
     def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> str | None:
-        """Return the block reason when the normalizer forbids this symbol, else None.
+        """Return a fail-safe block reason for the symbol, or None when healthy.
 
-        The returned string is suitable for rejection alerts:
-        ``SYMBOL_UNTRACKED`` for strict coverage, otherwise the ``DataHealth``
-        name. ``None`` means the symbol may be consumed.
-
-        CORRUPTED always halts trading for the symbol when a normalizer is wired.
-        GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
-        is enabled (strict paper/live policy).
-
-        ``HALTED`` blocks the tick without escalating macro state; LULD halts
-        are recoverable and ``DataHealth.HALTED → HEALTHY`` is the resume
-        path.  This sits alongside the orchestrator-side ``_halted_symbols``
-        edge tracker (which retains the cancel-resting + post-halt blackout
-        side effects) so the normalizer's view is *also* load-bearing here:
-        if the two drift, the more conservative gate wins.
-        """
+        Corruption degrades the platform; configured gaps do likewise."""
         if self._normalizer is None:
             return None
         health = self._normalizer.health(symbol)
@@ -5720,14 +5177,7 @@ class Orchestrator:
         *,
         reason: str,
     ) -> None:
-        """Submit a MARKET flatten for ``symbol`` before macro DEGRADED.
-
-        Best-effort: any submit exception is logged and surfaced via
-        WARNING alert but does not raise, so a single broken symbol
-        cannot block the DEGRADED transition (Inv-11 fail-safe).  The
-        order_id is content-addressed on ``(reason, symbol, sequence)``
-        so replays produce bit-identical IDs.
-        """
+        """Submit a market exit for one symbol during data-health degradation."""
         pos = self._positions.get(symbol)
         if pos.quantity == 0:
             return
