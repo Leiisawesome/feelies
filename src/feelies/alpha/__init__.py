@@ -19,7 +19,6 @@ Assembly flow (schema 1.1, SIGNAL / PORTFOLIO only):
      (``_on_bus_signal`` / ``_on_bus_sized_intent``).
 """
 
-from feelies.alpha.aggregation import AggregatedOrders, aggregate_intents
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
 from feelies.alpha.discovery import (
     discover_alpha_specs,
@@ -69,8 +68,6 @@ from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.validation import validate_alpha_set
 
 __all__ = [
-    "AggregatedOrders",
-    "aggregate_intents",
     "AlphaBudgetRiskWrapper",
     "AlphaContribution",
     "AlphaLifecycle",

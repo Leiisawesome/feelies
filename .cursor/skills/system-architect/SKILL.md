@@ -123,7 +123,7 @@ startup via `bootstrap.build_platform(config)`:
 | `BACKTEST_MODE` (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
 | `BACKTEST_MODE` (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
 | `PAPER_TRADING_MODE` | `MassiveLiveFeed` | `IBOrderRouter` (`broker/ib/`), composed via `build_paper_backend()` in `execution/paper_backend.py` | `WallClock` |
-| `LIVE_TRADING_MODE` | — | **Not yet implemented** — `bootstrap._create_backend()` raises `NotImplementedError` for `OperatingMode.LIVE`; `LiveOrderRouter` (`execution/live_router.py`) is a stub that raises `NotImplementedError` | — |
+| `LIVE_TRADING_MODE` | — | **Not yet implemented** — `bootstrap._create_backend()` raises `NotImplementedError` for `OperatingMode.LIVE`; no live-router API is shipped | — |
 
 `execution_mode: minimum_cost` is a third backtest mode: it routes
 through the passive-limit backend (`PassiveLimitOrderRouter`) so the

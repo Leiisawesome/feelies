@@ -94,27 +94,15 @@ dying at step 2b.
 
 ### Experiment Log
 
-Every experiment is registered before execution. The shipped dataclass
-(`src/feelies/research/experiment.py`; the module docstring notes that
-concrete `ExperimentTracker` implementations are future work) is:
+Every experiment is registered before execution. **No experiment-log API or
+storage implementation ships today.** Record the fields below in the workflow's
+versioned research document until an append-only implementation lands with a
+real consumer:
 
 ```
-ExperimentRecord:
+Experiment record (target spec):
   experiment_id: str
   hypothesis_id: str
-  config_snapshot: dict[str, Any]
-  result_summary: dict[str, Any]
-  timestamp_ns: int
-  tags: tuple[str, ...] = ()
-  metadata: dict[str, Any] = {}
-```
-
-**Not shipped:** the richer record below is the target spec — not yet
-implemented. Until it lands, the extra fields are carried in
-`tags` / `metadata`:
-
-```
-ExperimentRecord (target spec):
   author: str
   created: datetime
   status: "proposed" | "exploring" | "formalizing" | "backtesting" | "promoted" | "failed" | "abandoned"
@@ -146,8 +134,8 @@ Rules:
 - **"working" is banned as a status value** — it conflates the two
   validity axes (statistical vs execution) that `trap-quadrant`
   exists to separate.
-- This vocabulary is disjoint from `ExperimentRecord.status`
-  (per-experiment granularity, target spec above) and from the
+- This vocabulary is disjoint from the target experiment-record `status`
+  (per-experiment granularity, specified above) and from the
   `AlphaLifecycle` states (post-`alpha_id`; alpha-lifecycle skill).
   Do not mix the three.
 
@@ -156,9 +144,9 @@ Rules:
 Hypotheses are tracked independently from experiments. Multiple experiments
 may test the same hypothesis from different angles.
 
-The shipped dataclass (`src/feelies/research/hypothesis.py`;
-`HypothesisRegistry` is a Protocol stub — concrete implementations are
-future work) is:
+**No hypothesis-registry API or storage implementation ships today.** Record
+hypotheses in the workflow's versioned research document using this target
+shape:
 
 ```
 Hypothesis:
@@ -170,9 +158,8 @@ Hypothesis:
   metadata: dict[str, Any] = {}
 ```
 
-**Not shipped:** `related_experiments: list[experiment_id]` and
-`confidence: float (0–1)` are target-spec extensions — not yet
-implemented; carry them in `metadata` until they land.
+`related_experiments: list[experiment_id]` and `confidence: float (0–1)` are
+optional target extensions.
 
 A hypothesis is falsified when any registered falsification criterion is met.
 A hypothesis is supported (never "proven") when multiple independent
@@ -196,7 +183,7 @@ Every research notebook follows this structure:
 
 ### Rules
 
-1. **No production imports (guideline)** — notebooks import from a `research` package, never from `core`, `engine`, or `execution` packages. Today `feelies.research` ships the CPCV/DSR math plus Protocol stubs; the boundary is not yet enforced by an import linter
+1. **No production imports (guideline)** — notebooks import from a `research` package, never from `core`, `engine`, or `execution` packages. Today `feelies.research` ships CPCV/DSR math; the boundary is not yet enforced by an import linter
 2. **No hardcoded paths** — data paths resolved via a config or environment variable
 3. **Pinned data versions** — the data version hash is recorded in the notebook header
 4. **Seed everything** — all random operations use explicit seeds recorded in the header
@@ -274,8 +261,8 @@ Before a notebook artifact is considered formalized:
 | Artifact | Versioning Method | Storage |
 |----------|------------------|---------|
 | Notebooks | Git (committed with experiment ID in filename) | Repository |
-| Experiment log | Append-only structured file (JSON lines) — **planned**; today only the `ExperimentTracker` Protocol interface exists | Repository |
-| Hypothesis registry | Append-only structured file — **planned**; today only the `HypothesisRegistry` Protocol interface exists | Repository |
+| Experiment log | Append-only structured file (JSON lines) — **planned**; no API or storage implementation exists today | Repository |
+| Hypothesis registry | Append-only structured file — **planned**; no API or storage implementation exists today | Repository |
 | Sensor implementations (formalized) | `sensor_id` + `sensor_version` declared via `SensorSpec` (`feelies.sensors.impl`) — post-D.2, `FeatureDefinition` survives only as test scaffolding | Repository (feature-engine) |
 | Strategy configs | Versioned alongside strategy code | Repository |
 | Data snapshots (for reproduction) | Content-addressed hash — **planned**; no dedicated research-artefact store exists yet (`fold_pnl_curves_hash` on `CPCVEvidence` is a content-hash pointer only) | Data store (planned) |

@@ -4581,10 +4581,10 @@ class Orchestrator:
         is dead weight — which is how the strategy-slice book came to be never written
         on an entry fill.
 
-        Today every order carries exactly one ``strategy_id`` (no cross-alpha netting is
-        wired: :func:`~feelies.alpha.aggregation.aggregate_intents` has no caller), so
-        the record holds a single 100% contribution.  Routing attribution through the
-        ledger anyway means that if netting is ever added, a multi-contribution record
+        Today every order carries exactly one ``strategy_id``; cross-alpha order
+        netting is not implemented.  The record therefore holds a single 100%
+        contribution.  Routing attribution through the ledger anyway means that if
+        netting is ever added, a multi-contribution record
         splits the fill proportionally on its own rather than silently self-attributing
         a netted fill to one strategy.
 

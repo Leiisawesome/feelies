@@ -36,7 +36,8 @@ Three layers over L1 NBBO, with a kernel that sequences them:
   `check_sized_intent` (per-leg veto) on the composition path. Also *authors*
   exit orders, which is the subtle part; see §4.
 - **EXECUTION** — `ExecutionBackend` is the single mode seam (Inv-9). Routers:
-  `backtest_router`, `passive_limit_router`, `live_router`; `broker/ib/` for IB.
+  `backtest_router`, `passive_limit_router`; `broker/ib/` for IB. Live bootstrap
+  remains fail-fast.
 
 Everything crosses a synchronous typed event bus (Inv-7). There is no polling.
 
@@ -316,3 +317,9 @@ measurements, provenance, and open questions rather than rewriting its history.
 - **M09b — live-router status.** `LiveOrderRouter` is a fail-fast reserved stub,
   not a working router. Its constructor raises `NotImplementedError`; this
   clarification makes no API, retirement, or implementation-roadmap decision.
+
+## Retirement update (2026-08-11)
+
+`LiveOrderRouter` was retired after a repository-wide reference audit confirmed
+that it had no caller. `OperatingMode.LIVE` remains rejected by bootstrap, so this
+removes an unused API without changing the platform's fail-fast live behavior.

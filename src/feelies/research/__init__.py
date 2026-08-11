@@ -1,7 +1,6 @@
 """Deterministic research and promotion-significance utilities.
 
-CPCV and DSR produce the evidence consumed by promotion gates. Experiment
-and hypothesis modules currently define protocols only.
+CPCV and DSR produce the evidence consumed by promotion gates.
 """
 
 from feelies.research.cpcv import (
@@ -33,15 +32,11 @@ from feelies.research.dsr import (
     standard_normal_quantile,
     standardised_moments,
 )
-from feelies.research.experiment import ExperimentTracker
-from feelies.research.hypothesis import HypothesisRegistry
 
 __all__ = [
     "CPCVConfig",
     "CPCVSplit",
     "DSRComputation",
-    "ExperimentTracker",
-    "HypothesisRegistry",
     "apply_inv12_cost_stress",
     "assemble_path_returns",
     "assign_groups",

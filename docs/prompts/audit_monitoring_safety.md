@@ -1,8 +1,8 @@
 # Monitoring & safety-controls audit (Claude Code)
 
 Use this prompt in a **Claude Code** session with full repo access. Scope: feelies
-operational safety surface — the kill switch, alerting, health state, telemetry,
-structured logging, and the session recorder — with Inv-11 (fail-safe) as the lens.
+operational safety surface — the kill switch, alerting, ingestion health, telemetry,
+runtime logging, and the session recorder — with Inv-11 (fail-safe) as the lens.
 
 ---
 
@@ -63,8 +63,8 @@ targets — P0 only if code/tests claim they are live.
 
 ```
 runtime signals (PnL, latency, data health, fill drift, regime hazard)
-  → health state machine → alerting → kill_switch (halt / flatten)
-  → telemetry + structured_logging (provenance for incident review)
+  → DataHealth / MacroState / RiskLevel → alerting → kill_switch (halt / flatten)
+  → typed events + telemetry + stdlib logging (incident evidence)
   → paper_session_recorder (paper-run capture)
 ```
 
@@ -81,12 +81,12 @@ runtime signals (PnL, latency, data health, fill drift, regime hazard)
 ### Safety controls
 
 - `src/feelies/monitoring/kill_switch.py` — halt/flatten triggers and arming
-- `src/feelies/monitoring/health.py` — health state machine / degradation
 - `src/feelies/monitoring/alerting.py` — alert thresholds and routing
+- `src/feelies/ingestion/data_integrity.py`, `ingest_health.py` — actual data-health state
 
 ### Observability
 
-- `src/feelies/monitoring/telemetry.py`, `structured_logging.py`
+- `src/feelies/monitoring/telemetry.py`
 - `src/feelies/monitoring/horizon_metrics.py`, `in_memory.py`
 - `src/feelies/monitoring/paper_session_recorder.py`
 
@@ -95,8 +95,7 @@ runtime signals (PnL, latency, data health, fill drift, regime hazard)
 - `tests/monitoring/test_kill_switch.py`, `test_alerting.py`, `test_in_memory.py`,
   `test_sensor_metrics.py`
 - Health coverage lives partly outside `monitoring/`: `tests/ingestion/test_ingest_health.py`,
-  `tests/kernel/test_data_integrity_runtime.py`. Note: `monitoring/health.py` has **no
-  dedicated test module** — flag this coverage gap.
+  `tests/kernel/test_data_integrity_runtime.py`.
 - Integration: `tests/integration/test_paper_rth_safety.py`
 
 **Out of scope:** the upstream detectors themselves (regime/hazard/risk — audited
