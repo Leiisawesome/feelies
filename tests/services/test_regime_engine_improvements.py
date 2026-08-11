@@ -218,13 +218,6 @@ def test_get_regime_engine_rejects_unknown_kwarg() -> None:
         get_regime_engine("hmm_3state_fractional", not_a_valid_option=True)
 
 
-def test_get_regime_engine_spread_filter_alias() -> None:
-    from feelies.services.regime_engine import get_regime_engine
-
-    eng = get_regime_engine("hmm_3state_spread_filter")
-    assert type(eng).__name__ == "HMM3StateFractional"
-
-
 def test_checkpoint_includes_schema_version() -> None:
     engine = HMM3StateFractional(
         emission_params=[(-4.5, 0.3), (-3.5, 0.5), (-2.5, 0.7)],

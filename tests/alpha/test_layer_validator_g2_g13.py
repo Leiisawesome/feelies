@@ -1,4 +1,4 @@
-"""Tests for active gates G2–G13 in :mod:`feelies.alpha.layer_validator`.
+"""Tests for active gates G2–G12 in :mod:`feelies.alpha.layer_validator`.
 
 Each test uses a minimal valid SIGNAL spec template and mutates exactly
 the field under test so failure messages cite the specific gate.
@@ -12,8 +12,6 @@ Only SIGNAL and PORTFOLIO specs are loadable:
 * G7  — horizon registration   (horizon_seconds in registry)
 * G8  — no implicit lookahead  (no time/datetime/now refs in signal:)
 * G12 — cost arithmetic block  (delegated to CostArithmetic.from_spec)
-* G13 — warm-up documentation  (no-op for SIGNAL — sensor warm-up is
-        platform-owned via the SensorRegistry)
 
 """
 
@@ -300,18 +298,3 @@ def test_g12_ignores_alphas_without_a_cost_floor_bps_parameter() -> None:
         "entry_threshold_z": {"type": "float", "default": 0.8, "min": 0.5, "max": 3.0},
     }
     _validator().validate(spec, source="<test>")  # no raise — no cost_floor_bps declared
-
-
-# G13 warm-up documentation.
-
-
-def test_g13_signal_layer_no_op() -> None:
-    """SIGNAL alphas don't have inline features — G13 is skipped.
-
-    Sensor warm-up is owned by the platform's :class:`SensorRegistry`,
-    not the alpha YAML, so G13 has nothing to enforce for signal alphas.
-    """
-    _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
-        _signal_spec(),
-        source="<test>",
-    )

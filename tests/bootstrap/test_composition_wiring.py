@@ -18,8 +18,6 @@ from feelies.bootstrap import (
 )
 from feelies.composition.engine import CompositionEngine
 from feelies.core.platform_config import OperatingMode, PlatformConfig
-from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
-from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.risk.hazard_exit import HazardExitController
 from feelies.sensors.spec import SensorSpec
 from tests._fixtures.sensor_specs import ALL_FINGERPRINT_SENSOR_SPECS
@@ -252,8 +250,6 @@ class TestCompositionWiring:
         config = _make_config(tmp_path, symbols=("AAPL",))
         orchestrator, _ = build_platform(config)
         assert orchestrator._composition_engine is None
-        assert orchestrator._cross_sectional_tracker is None
-        assert orchestrator._composition_metrics_collector is None
         assert orchestrator._hazard_exit_controller is None
 
     def test_single_portfolio_alpha_wires_full_pipeline(self, tmp_path: Path) -> None:
@@ -267,11 +263,6 @@ class TestCompositionWiring:
         config = _make_config(tmp_path)
         orchestrator, _ = build_platform(config)
         assert isinstance(orchestrator._composition_engine, CompositionEngine)
-        assert isinstance(orchestrator._cross_sectional_tracker, CrossSectionalTracker)
-        assert isinstance(
-            orchestrator._composition_metrics_collector,
-            HorizonMetricsCollector,
-        )
         # No alpha enabled hazard_exit ->controller stays None.
         assert orchestrator._hazard_exit_controller is None
 

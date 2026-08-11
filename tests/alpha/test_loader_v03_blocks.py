@@ -190,44 +190,6 @@ def test_hazard_exit_unknown_key_rejected() -> None:
         )
 
 
-def test_hazard_exit_legacy_posterior_drop_threshold_renamed_with_warning(
-    caplog,
-) -> None:
-    """Translate the supported alias and emit a warning."""
-    import logging
-
-    with caplog.at_level(logging.WARNING, logger="feelies.alpha.loader"):
-        loaded = AlphaLoader().load_from_dict(
-            _spec(
-                hazard_exit={
-                    "enabled": True,
-                    "posterior_drop_threshold": 0.3,
-                }
-            ),
-            source="<test>",
-        )
-    assert loaded.manifest.hazard_exit == {
-        "enabled": True,
-        "hazard_score_threshold": 0.3,
-    }
-    assert any("legacy spelling" in r.message for r in caplog.records)
-
-
-def test_hazard_exit_legacy_and_canonical_simultaneous_rejected() -> None:
-    """If both spellings are present the loader refuses (ambiguous)."""
-    with pytest.raises(_LOAD_REJECTED, match="legacy key 'posterior_drop_threshold'"):
-        AlphaLoader().load_from_dict(
-            _spec(
-                hazard_exit={
-                    "enabled": True,
-                    "posterior_drop_threshold": 0.3,
-                    "hazard_score_threshold": 0.5,
-                }
-            ),
-            source="<test>",
-        )
-
-
 def test_hazard_exit_out_of_range_threshold_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="must be in"):
         AlphaLoader().load_from_dict(

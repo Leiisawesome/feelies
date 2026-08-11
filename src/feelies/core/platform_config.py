@@ -1,26 +1,15 @@
-"""Concrete Configuration implementation for the trading platform.
+"""YAML-loadable platform configuration with deterministic snapshots.
 
-Provides a YAML-loadable, validatable configuration that satisfies
-the ``Configuration`` protocol.  Carries all settings needed by the
-bootstrap layer to compose the system: trading universe, alpha spec
-paths, operating mode, regime engine selection, and parameter
-overrides.
-
-Invariants preserved:
-  - Inv 13 (provenance): every config is versioned, authored, and
-    snapshotable with a SHA-256 checksum.
-  - Inv 5 (deterministic replay): snapshot + event log → identical
-    output.
-"""
+Bootstrap consumes this concrete type to compose every operating mode."""
 
 from __future__ import annotations
 
 import copy
 import hashlib
 import importlib
-import logging
 import json
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
@@ -53,7 +42,6 @@ logger = logging.getLogger(__name__)
 class OperatingMode(Enum):
     BACKTEST = auto()
     PAPER = auto()
-    LIVE = auto()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -77,8 +65,6 @@ class PlatformConfig:
     # Optional kwargs forwarded to ``get_regime_engine(..., **options)`` at
     # bootstrap (e.g. ``transition_time_scaling_enabled: true``).
     regime_engine_options: dict[str, object] = field(default_factory=dict)
-    data_dir: Path | None = None
-    event_log_path: Path | None = None
 
     risk_max_position_per_symbol: int = 1000
     risk_max_gross_exposure_pct: float = 20.0
@@ -94,8 +80,6 @@ class PlatformConfig:
     disk_cache_ingestion_health_rows: tuple[tuple[str, str, str], ...] = ()
     # Treat a detected gap like corruption and stop processing that symbol.
     degrade_on_data_gap: bool = True
-    # Warn about unhealthy cache rows when strict manifest checks are disabled.
-    warn_on_unhealthy_disk_cache: bool = True
     # Worst DataHealth state observed per symbol during ingest or cache loading.
     ingest_terminal_symbol_health: tuple[tuple[str, str], ...] = ()
     # Require a terminal HEALTHY state for every backtest symbol.
@@ -116,7 +100,6 @@ class PlatformConfig:
     # Daily and intraday SSR inputs. Once active, SSR remains set for the session.
     ssr_active_symbols: tuple[str, ...] = ()
     ssr_trigger_condition_codes: tuple[int, ...] = ()
-    ssr_mode: str = "refuse_short"
 
     # Per-symbol locate tier: available, hard, or unavailable.
     borrow_availability: dict[str, str] = field(default_factory=dict)
@@ -146,8 +129,6 @@ class PlatformConfig:
     # Feed delay before quotes and trades reach the pipeline.
     market_data_latency_ns: int = DEFAULT_MARKET_DATA_LATENCY_NS
 
-    # Only margin_25k is supported; bootstrap rejects other account types.
-    account_type: str = "margin_25k"
     account_id: str = "default"
     # Maintenance floor below which a PDT-flagged account is barred from
     # opening new day trades (entries suppressed, exits always permitted).
@@ -168,15 +149,11 @@ class PlatformConfig:
     # Conservative IBKR retail defaults, including blended SmartRouter fees.
     cost_min_spread_bps: float = 0.3
     cost_commission_per_share: float = 0.0035
-    cost_exchange_per_share: float = 0.0005  # Deprecated: use taker/maker fields.
     cost_taker_exchange_per_share: float = 0.003
     cost_maker_exchange_per_share: float = 0.0
     # Through-fills are more adverse than queue-drain fills.
     cost_passive_adverse_selection_bps: float = 2.0
     cost_through_fill_adverse_selection_bps: float = 5.0
-    # Compatibility aliases; new configs should use the fields above.
-    cost_adverse_selection_through_bps: float = 5.0
-    cost_adverse_selection_drain_bps: float = 2.0
     cost_sell_regulatory_bps: float = 0.5
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
@@ -205,8 +182,6 @@ class PlatformConfig:
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
     passive_max_resting_ticks: int = 50
-    # Maker rebate per share — deprecated; maker fee now in cost model.
-    passive_rebate_per_share: float = 0.002
     # Shares traded at our level before a queue-drain fill.
     # 0 = disabled, use tick-based fill_delay_ticks instead.
     passive_queue_position_shares: int = 0
@@ -241,60 +216,10 @@ class PlatformConfig:
     session_flatten_enabled: bool = True
     session_flatten_seconds_before_close: int = 0
 
-    # Net standing alpha targets instead of trading only the arbitrated winner.
-    # Targets expire after net_staleness_k × their horizon.
-    #
-    # Still shadow-only, and measured rather than assumed.  Sweeping the
-    # ``bt_multialpha`` harness over all 15 cached APP sessions (7304 ticks with
-    # two live standing targets on one symbol) produced exactly one divergence,
-    # on 2026-06-03: winner-take-all wanted **flat** while the net wanted **long
-    # 50** — sig_benign_midcap_v1 won arbitration asking to close while
-    # sig_kyle_drift_v1 still held a standing long.
-    #
-    # That is a directional disagreement, not a rounding artefact, so flipping
-    # this changes what the book holds rather than being a no-op cleanup.
-    #
-    # But treat the sweep as a lower bound, not a clean bill of health: on that
-    # dataset only sig_benign_midcap_v1 ever takes a direction (kyle and hawkes
-    # emit FLAT exclusively), so the measured overlap is one real target against
-    # one zero — never a two-sided contest between opposing convictions, which is
-    # the case netting exists for and the case most likely to diverge.
-    #
-    # And note what this flag is *for*: netting applies to the standalone-SIGNAL
-    # path, where arbitration picks one winner per tick.  `configs/bt_multialpha.yaml`
-    # states plainly that standalone mode is "NOT FOR PRODUCTION / LIVE CAPITAL"
-    # and that production multi-alpha books must use a PORTFOLIO alpha with
-    # `depends_on_signals`, which routes through CompositionEngine and
-    # `check_sized_intent` instead and never consults the netter.  That path is
-    # covered (tests/integration/test_xsect_v1_e2e.py, test_mixed_mechanism_e2e.py).
-    #
-    # DECIDED 2026-08-08: the standalone multi-alpha path IS supported, so the
-    # netter stays.  Retiring it was the cheaper answer only under the opposite
-    # ruling; with the path supported, this shadow measures something the platform
-    # is expected to do, and the question narrows to two things — which semantics
-    # is wanted when the winner says flat while a live target disagrees, and
-    # evidence from a genuinely two-sided contest.
-    #
-    # The second is now measured rather than assumed, and the answer is that the
-    # cache cannot supply it.  Sweeping this harness over every cached
-    # symbol-session — 33 replayed across AAPL, APP, INTC, SNDU, SPY (4 more
-    # missing their data) — produced exactly **one** divergence in total, the
-    # APP 2026-06-03 case already on record, and it is still "one real target
-    # against one zero":
-    #
-    #     divergences = 1    two_sided = 0    one_vs_zero = 1
-    #
-    # Five symbols and twenty sessions this harness had never been pointed at
-    # yielded not one additional divergence, let alone a contested one.  So the
-    # shortage is a property of the alphas, not of the tape: only
-    # sig_benign_midcap_v1 ever takes a direction under these gates, and pointing
-    # the harness at more data does not manufacture a contest.  A second SIGNAL
-    # alpha has to take a side, which means a purpose-built research fixture alpha
-    # — the shipped ones are gated the way they are for their own reasons.
-    #
-    # The flag therefore stays OFF.  Deciding the flat-vs-live semantics on this
-    # evidence would be choosing between two behaviours only one of which has ever
-    # been observed.
+    # Optional standalone-SIGNAL target netting. It stays off by default: the
+    # cached cross-symbol sweep found one one-vs-zero divergence and no genuinely
+    # two-sided contests, so changing flat-vs-live semantics is not evidence-backed.
+    # Production multi-alpha books use the PORTFOLIO composition path instead.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
@@ -336,11 +261,7 @@ class PlatformConfig:
     # Default 0.5 (half a spread per full-depth multiple of excess).
     cost_market_impact_factor: float = 0.5
 
-    # Cap on the walk-the-book market-impact premium, expressed in multiples
-    # of the half-spread.  Threaded into the backtest routers (which otherwise
-    # default to 10).  Default 10.0 preserves prior router behaviour for
-    # callers that do not set it; platform.yaml tightens this to 4.0 for an
-    # L1-only retail book.
+    # Maximum walk-the-book premium in half-spreads.
     cost_max_impact_half_spreads: float = 10.0
 
     # Annualized hard-to-borrow fee in basis points for short-side fills.
@@ -382,12 +303,7 @@ class PlatformConfig:
     # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
     ex_date_calendar_path: Path | None = None
     backtest_enforce_ex_date_guard: bool = True
-    # Per-alpha realization factors shrinking disclosed edge toward observed edge,
-    # emitted by ``feelies.forensics.edge_calibration`` from a prior window and
-    # consumed by the B4 edge-vs-cost gate at boot.  None ⇒ every alpha gates on
-    # its full disclosed edge.  This is the only config route into that loop: a
-    # backtest run with calibration and a paper/live run without it gate on
-    # different edges, and live is the more permissive of the two (Inv-9).
+    # Optional prior-window edge-realization factors for the B4 cost gate.
     edge_calibration_path: Path | None = None
     market_id: str = "US_EQUITY"
     session_kind: str = "RTH"
@@ -401,7 +317,6 @@ class PlatformConfig:
     # Gross and per-name caps shape desired weights before downstream risk checks.
     composition_completeness_threshold: float = 0.80
     factor_model: str = "FF5_momentum_STR"
-    factor_loadings_refresh_seconds: int = 0
     factor_loadings_max_age_seconds: int = 7 * 24 * 3600
     factor_loadings_dir: Path | None = None
     sector_map_path: Path | None = None
@@ -423,8 +338,8 @@ class PlatformConfig:
     # influence trading decisions; backtests do not write transitions.
     promotion_ledger_path: Path | None = None
 
-    # ── PAPER/LIVE connections ───────────────────────────────────────
-    # Defaults target a local IB paper account; LIVE must set port 4001.
+    # ── PAPER connections ─────────────────────────────────────────────
+    # Defaults target a local IB paper account.
     ib_host: str = "127.0.0.1"
     ib_port: int = 4002  # 4002 = paper, 4001 = live
     ib_client_id: int = 1
@@ -454,12 +369,6 @@ class PlatformConfig:
             raise ConfigurationError("risk_max_drawdown_pct must be positive")
         if self.account_equity <= 0:
             raise ConfigurationError("account_equity must be positive")
-        _valid_account_types = {"margin_25k", "margin_under_25k", "cash"}
-        if self.account_type not in _valid_account_types:
-            raise ConfigurationError(
-                f"account_type must be one of {sorted(_valid_account_types)}, "
-                f"got {self.account_type!r}"
-            )
         if self.pdt_min_equity_usd <= 0:
             raise ConfigurationError("pdt_min_equity_usd must be positive")
         if self.backtest_fill_latency_ns < 0:
@@ -477,13 +386,6 @@ class PlatformConfig:
             raise ConfigurationError(
                 "halt_on_condition_codes and halt_off_condition_codes must be "
                 "disjoint (a code cannot mean both halt and resume)"
-            )
-        if self.ssr_mode != "refuse_short":
-            # Only the conservative refuse-short mode is supported.
-            raise ConfigurationError(
-                f"ssr_mode={self.ssr_mode!r} is not implemented; only "
-                "'refuse_short' is supported (the uptick-routed variant is "
-                "deferred)"
             )
         for sym, tier in self.borrow_availability.items():
             sym_u = str(sym).strip().upper()
@@ -702,8 +604,6 @@ class PlatformConfig:
                 f"composition_completeness_threshold must be in [0,1], "
                 f"got {self.composition_completeness_threshold}"
             )
-        if self.factor_loadings_refresh_seconds < 0:
-            raise ConfigurationError("factor_loadings_refresh_seconds must be non-negative")
         if self.factor_loadings_max_age_seconds <= 0:
             raise ConfigurationError("factor_loadings_max_age_seconds must be positive")
         if self.composition_lambda_tc < 0.0:
@@ -736,17 +636,7 @@ class PlatformConfig:
             raise ConfigurationError(f"sector_map_path does not exist: {self.sector_map_path}")
 
     def snapshot(self, *, ts_ns: int | None = None) -> ConfigSnapshot:
-        """Create an immutable provenance snapshot.
-
-        ``ts_ns`` stamps the snapshot's wall-time provenance.  Pass a
-        clock-derived value (``clock.now_ns()``) for a deterministic record
-        — bootstrap does exactly this with the injected ``Clock`` so a
-        backtest's snapshot is reproducible (Inv-10).  When omitted it falls
-        back to the ``WallClock`` primitive rather than a raw ``time``
-        read, keeping core free of direct wall-clock calls.  ``timestamp_ns``
-        is never folded into ``checksum`` (see ``_to_dict``), so it cannot
-        affect replay determinism (Inv-5) regardless of its source.
-        """
+        """Create an immutable checksum-stamped provenance snapshot."""
         data = self._to_dict()
         raw = json.dumps(data, sort_keys=True, default=str)
         checksum = hashlib.sha256(raw.encode()).hexdigest()
@@ -759,258 +649,75 @@ class PlatformConfig:
         )
 
     def _to_dict(self) -> dict[str, Any]:
-        # Hash path basenames, not machine-specific absolute locations.
-        return {
-            "version": self.version,
-            "author": self.author,
-            "symbols": sorted(self.symbols),
-            "mode": self.mode.name,
-            "alpha_spec_dir": self.alpha_spec_dir.name if self.alpha_spec_dir else None,
-            # Basename-only, like every other Path field above: two distinct
-            # alpha_specs entries that share a basename across directories
-            # collide in the checksum. Accepted tradeoff, not a bug — see the
-            # Path-normalisation rationale above.
-            "alpha_specs": sorted(p.name for p in self.alpha_specs),
-            "parameter_overrides": copy.deepcopy(self.parameter_overrides),
-            "regime_engine": self.regime_engine,
-            "regime_engine_options": dict(self.regime_engine_options),
-            "data_dir": self.data_dir.name if self.data_dir else None,
-            "event_log_path": self.event_log_path.name if self.event_log_path else None,
-            "risk_max_position_per_symbol": self.risk_max_position_per_symbol,
-            "risk_max_gross_exposure_pct": self.risk_max_gross_exposure_pct,
-            "risk_max_drawdown_pct": self.risk_max_drawdown_pct,
-            "risk_regime_vol_breakout_scale": self.risk_regime_vol_breakout_scale,
-            "risk_regime_compression_scale": self.risk_regime_compression_scale,
-            "risk_regime_normal_scale": self.risk_regime_normal_scale,
-            "require_healthy_disk_cache_manifests": (self.require_healthy_disk_cache_manifests),
-            "disk_cache_ingestion_health_rows": list(
-                self.disk_cache_ingestion_health_rows,
-            ),
-            "degrade_on_data_gap": self.degrade_on_data_gap,
-            "warn_on_unhealthy_disk_cache": self.warn_on_unhealthy_disk_cache,
-            "ingest_terminal_symbol_health": list(
-                self.ingest_terminal_symbol_health,
-            ),
-            "backtest_enforce_ingest_terminal_health": (
-                self.backtest_enforce_ingest_terminal_health
-            ),
-            "backtest_reject_zero_ingest_events": (self.backtest_reject_zero_ingest_events),
-            "strict_normalizer_symbol_coverage": (self.strict_normalizer_symbol_coverage),
-            "enable_rest_sequence_gap_detection": (self.enable_rest_sequence_gap_detection),
-            "halt_on_condition_codes": list(self.halt_on_condition_codes),
-            "halt_off_condition_codes": list(self.halt_off_condition_codes),
-            "halt_resolution_blackout_seconds": (self.halt_resolution_blackout_seconds),
-            "ssr_active_symbols": list(self.ssr_active_symbols),
-            "ssr_trigger_condition_codes": list(self.ssr_trigger_condition_codes),
-            "ssr_mode": self.ssr_mode,
-            "borrow_availability": dict(self.borrow_availability),
-            "moc_strategy_ids": list(self.moc_strategy_ids),
-            "moc_session_date": self.moc_session_date,
-            "moc_cutoff_et": self.moc_cutoff_et,
-            "official_close_et": self.official_close_et,
-            "early_close_dates": list(self.early_close_dates),
-            "early_close_moc_cutoff_et": self.early_close_moc_cutoff_et,
-            "early_close_official_close_et": self.early_close_official_close_et,
-            "rth_session_gating_enabled": self.rth_session_gating_enabled,
-            "rth_session_date": self.rth_session_date,
-            "rth_open_et": self.rth_open_et,
-            "rth_close_et": self.rth_close_et,
-            "early_close_rth_close_et": self.early_close_rth_close_et,
-            "market_holiday_dates": list(self.market_holiday_dates),
-            "no_entry_first_seconds": self.no_entry_first_seconds,
-            "account_equity": self.account_equity,
-            "account_type": self.account_type,
-            "account_id": self.account_id,
-            "pdt_min_equity_usd": self.pdt_min_equity_usd,
-            "risk_margin_intraday_buying_power_multiplier": (
-                self.risk_margin_intraday_buying_power_multiplier
-            ),
-            "risk_margin_overnight_buying_power_multiplier": (
-                self.risk_margin_overnight_buying_power_multiplier
-            ),
-            "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
-            "market_data_latency_ns": self.market_data_latency_ns,
-            "stop_loss_per_share": self.stop_loss_per_share,
-            "trail_activate_per_share": self.trail_activate_per_share,
-            "trail_pct": self.trail_pct,
-            "stop_loss_pct": self.stop_loss_pct,
-            "trail_activate_pct": self.trail_activate_pct,
-            "cost_min_spread_bps": self.cost_min_spread_bps,
-            "cost_commission_per_share": self.cost_commission_per_share,
-            "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
-            "cost_maker_exchange_per_share": self.cost_maker_exchange_per_share,
-            "cost_passive_adverse_selection_bps": (self.cost_passive_adverse_selection_bps),
-            "cost_through_fill_adverse_selection_bps": (
-                self.cost_through_fill_adverse_selection_bps
-            ),
-            "cost_adverse_selection_through_bps": (self.cost_adverse_selection_through_bps),
-            "cost_adverse_selection_drain_bps": (self.cost_adverse_selection_drain_bps),
-            "cost_sell_regulatory_bps": self.cost_sell_regulatory_bps,
-            "cost_stress_multiplier": self.cost_stress_multiplier,
-            "cost_min_commission": self.cost_min_commission,
-            "cost_max_commission_pct": self.cost_max_commission_pct,
-            "cost_finra_taf_per_share": self.cost_finra_taf_per_share,
-            "cost_finra_taf_max_per_order": self.cost_finra_taf_max_per_order,
-            "cost_min_commission_applies_to_per_share_only": (
-                self.cost_min_commission_applies_to_per_share_only
-            ),
-            "cost_spread_floor_taker_only": self.cost_spread_floor_taker_only,
-            "cost_stop_slippage_half_spreads": (self.cost_stop_slippage_half_spreads),
-            "execution_mode": self.execution_mode,
-            "cost_min_passive_bias_bps": self.cost_min_passive_bias_bps,
-            "cost_min_small_order_threshold_shares": (self.cost_min_small_order_threshold_shares),
-            "cost_min_half_spread_threshold": (self.cost_min_half_spread_threshold),
-            "cost_min_allow_passive_short_entry": (self.cost_min_allow_passive_short_entry),
-            "cost_min_passive_non_fill_probability": (self.cost_min_passive_non_fill_probability),
-            "realized_cost_alert_ratio": self.realized_cost_alert_ratio,
-            "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
-            "passive_max_resting_ticks": self.passive_max_resting_ticks,
-            "passive_queue_position_shares": self.passive_queue_position_shares,
-            "passive_fill_hazard_max": self.passive_fill_hazard_max,
-            "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
-            "platform_min_order_shares": self.platform_min_order_shares,
-            "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
-            "reversal_min_edge_cost_multiplier": (self.reversal_min_edge_cost_multiplier),
-            "position_manager_enable_trim": self.position_manager_enable_trim,
-            "position_manager_trim_min_fraction": (self.position_manager_trim_min_fraction),
-            "position_manager_trim_edge_gate_multiplier": (
-                self.position_manager_trim_edge_gate_multiplier
-            ),
-            "position_manager_urgency_exec": (self.position_manager_urgency_exec),
-            "session_flatten_enabled": self.session_flatten_enabled,
-            "session_flatten_seconds_before_close": (self.session_flatten_seconds_before_close),
-            "enable_portfolio_netting": self.enable_portfolio_netting,
-            "net_staleness_k": self.net_staleness_k,
-            "sizer_tilt_drive": self.sizer_tilt_drive,
-            "sizer_edge_weighting_enabled": self.sizer_edge_weighting_enabled,
-            "sizer_edge_ref_bps": self.sizer_edge_ref_bps,
-            "sizer_edge_floor": self.sizer_edge_floor,
-            "sizer_edge_cap": self.sizer_edge_cap,
-            "sizer_vol_targeting_enabled": self.sizer_vol_targeting_enabled,
-            "sizer_vol_target_bps": self.sizer_vol_target_bps,
-            "sizer_vol_floor": self.sizer_vol_floor,
-            "sizer_vol_cap": self.sizer_vol_cap,
-            "sizer_inventory_penalty_enabled": (self.sizer_inventory_penalty_enabled),
-            "sizer_inventory_floor": self.sizer_inventory_floor,
-            "sizer_tilt_floor": self.sizer_tilt_floor,
-            "sizer_tilt_cap": self.sizer_tilt_cap,
-            "signal_edge_cost_basis": self.signal_edge_cost_basis,
-            "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
-            "regime_min_discriminability": self.regime_min_discriminability,
-            "enforce_regime_state_scale_alignment": (self.enforce_regime_state_scale_alignment),
-            "cost_market_impact_factor": self.cost_market_impact_factor,
-            "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
-            "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
-            "cost_within_l1_impact_factor": self.cost_within_l1_impact_factor,
-            "cost_permanent_impact_coefficient": (self.cost_permanent_impact_coefficient),
-            "cost_moc_penalty_bps": self.cost_moc_penalty_bps,
-            "cost_stop_depth_depletion_factor": (self.cost_stop_depth_depletion_factor),
-            "passive_through_fill_size_cap_enabled": (self.passive_through_fill_size_cap_enabled),
-            "passive_require_trade_for_level_fill": (self.passive_require_trade_for_level_fill),
-            "borrow_default_tier": self.borrow_default_tier,
-            "realized_cost_escalation_enabled": (self.realized_cost_escalation_enabled),
-            "realized_cost_escalation_streak": (self.realized_cost_escalation_streak),
-            # Sensor settings participate in the deterministic checksum.
-            "session_open_ns": self.session_open_ns,
-            "horizons_seconds": sorted(self.horizons_seconds),
-            "sensor_specs": [
-                {
-                    "sensor_id": s.sensor_id,
-                    "sensor_version": s.sensor_version,
-                    "cls": f"{s.cls.__module__}.{s.cls.__qualname__}",
-                    "params": dict(s.params),
-                    "subscribes_to": sorted(t.__name__ for t in s.subscribes_to),
-                    "input_sensor_ids": list(s.input_sensor_ids),
-                    "min_history": s.min_history,
-                    "throttled_ms": s.throttled_ms,
-                    "stateful": s.stateful,
-                }
-                for s in self.sensor_specs
-            ],
-            "prune_unused_sensors": self.prune_unused_sensors,
-            "event_calendar_path": (
-                self.event_calendar_path.name if self.event_calendar_path else None
-            ),
-            "ex_date_calendar_path": (
-                self.ex_date_calendar_path.name if self.ex_date_calendar_path else None
-            ),
-            "backtest_enforce_ex_date_guard": self.backtest_enforce_ex_date_guard,
-            "edge_calibration_path": (
-                self.edge_calibration_path.name if self.edge_calibration_path else None
-            ),
-            "market_id": self.market_id,
-            "session_kind": self.session_kind,
-            "enforce_trend_mechanism": self.enforce_trend_mechanism,
-            # Composition settings participate in the deterministic checksum.
-            "composition_completeness_threshold": (self.composition_completeness_threshold),
-            "factor_model": self.factor_model,
-            "factor_loadings_refresh_seconds": (self.factor_loadings_refresh_seconds),
-            "factor_loadings_max_age_seconds": (self.factor_loadings_max_age_seconds),
-            "factor_loadings_dir": (
-                self.factor_loadings_dir.name if self.factor_loadings_dir else None
-            ),
-            "sector_map_path": (self.sector_map_path.name if self.sector_map_path else None),
-            "composition_lambda_tc": self.composition_lambda_tc,
-            "composition_lambda_risk": self.composition_lambda_risk,
-            "composition_max_universe_size": self.composition_max_universe_size,
-            # Omit defaults to preserve established snapshot checksums.
-            **(
-                {"composition_signal_max_age_seconds": self.composition_signal_max_age_seconds}
-                if self.composition_signal_max_age_seconds is not None
-                else {}
-            ),
-            **(
-                {"composition_optimizer_mode": self.composition_optimizer_mode}
-                if self.composition_optimizer_mode != "closed_form"
-                else {}
-            ),
-            # Omit default caps for the same checksum policy.
-            **(
-                {"composition_gross_cap_pct": self.composition_gross_cap_pct}
-                if self.composition_gross_cap_pct != 2.0
-                else {}
-            ),
-            **(
-                {"composition_per_name_cap_pct": self.composition_per_name_cap_pct}
-                if self.composition_per_name_cap_pct != 0.05
-                else {}
-            ),
-            "enforce_layer_gates": self.enforce_layer_gates,
-            "enforce_per_alpha_risk_budget": (self.enforce_per_alpha_risk_budget),
-            # Hash the ledger basename, not its machine-specific location.
-            "promotion_ledger_path": (
-                self.promotion_ledger_path.name if self.promotion_ledger_path else None
-            ),
-            "gate_thresholds_overrides": dict(sorted(self.gate_thresholds_overrides.items())),
-            # PAPER / LIVE connection settings — folded so config
-            # checksums change when an operator points the same
-            # platform at a different broker host or WS endpoint.
-            "ib_host": self.ib_host,
-            "ib_port": self.ib_port,
-            "ib_client_id": self.ib_client_id,
-            "massive_ws_url": self.massive_ws_url,
-        }
+        """Return the deterministic, machine-independent snapshot payload."""
+        data: dict[str, Any] = {}
+        for config_field in fields(self):
+            name = config_field.name
+            value = getattr(self, name)
+            if name == "cache_dir":
+                # Runtime cache placement is machine-specific, not provenance.
+                continue
+            if name == "sensor_specs":
+                value = [
+                    {
+                        "sensor_id": spec.sensor_id,
+                        "sensor_version": spec.sensor_version,
+                        "cls": f"{spec.cls.__module__}.{spec.cls.__qualname__}",
+                        "params": dict(spec.params),
+                        "subscribes_to": sorted(t.__name__ for t in spec.subscribes_to),
+                        "input_sensor_ids": list(spec.input_sensor_ids),
+                        "min_history": spec.min_history,
+                        "throttled_ms": spec.throttled_ms,
+                        "stateful": spec.stateful,
+                    }
+                    for spec in value
+                ]
+            elif name == "alpha_specs":
+                value = sorted(spec.name for spec in value)
+            elif isinstance(value, Path):
+                value = value.name
+            elif isinstance(value, Enum):
+                value = value.name
+            elif isinstance(value, frozenset):
+                value = sorted(value)
+            elif isinstance(value, tuple):
+                value = list(value)
+            else:
+                value = copy.deepcopy(value)
+            data[name] = value
+
+        # Retired keys remain checksum-only so existing replay artifacts stay valid.
+        data.update(
+            {
+                "data_dir": None,
+                "event_log_path": None,
+                "warn_on_unhealthy_disk_cache": True,
+                "factor_loadings_refresh_seconds": 0,
+                "cost_adverse_selection_through_bps": (
+                    self.cost_through_fill_adverse_selection_bps
+                ),
+                "cost_adverse_selection_drain_bps": (self.cost_passive_adverse_selection_bps),
+                "ssr_mode": "refuse_short",
+                "account_type": "margin_25k",
+            }
+        )
+
+        # Preserve established checksums by omitting selected default-only fields.
+        if self.composition_signal_max_age_seconds is None:
+            data.pop("composition_signal_max_age_seconds")
+        if self.composition_optimizer_mode == "closed_form":
+            data.pop("composition_optimizer_mode")
+        if self.composition_gross_cap_pct == 2.0:
+            data.pop("composition_gross_cap_pct")
+        if self.composition_per_name_cap_pct == 0.05:
+            data.pop("composition_per_name_cap_pct")
+        return data
 
     @classmethod
     def from_yaml(cls, path: str | Path, *, strict: bool = False) -> PlatformConfig:
-        """Load configuration from a YAML file.
+        """Load configuration from YAML with recursive parent overlays.
 
-        With ``strict=True`` an unrecognized top-level key raises
-        ``ConfigurationError`` instead of warning — opt-in fail-closed loading
-        for CI / operator runs that want a misspelled override to abort rather
-        than silently keep the default (default ``False`` preserves the
-        forward-compatible warn-and-load behaviour).
-
-        Raises ``ConfigurationError`` if the file is unreadable or
-        contains invalid structure (including loosely-typed scalars, see
-        :meth:`_check_yaml_keys_and_types`).
-
-        Note: this only parses + type-coerces the YAML.  It does NOT run the
-        semantic range checks in :meth:`validate` (e.g. "symbols non-empty",
-        "ratios in range") — callers (``bootstrap.build_platform``) must call
-        ``config.validate()`` before use.  Construction is kept separate from
-        validation so partially-specified configs can be assembled in tests.
-        """
+        Relative paths resolve against the child file and overlay dictionaries merge recursively."""
         path = Path(path)
         from feelies.core.config_yaml import load_yaml_mapping
 
@@ -1023,17 +730,6 @@ class PlatformConfig:
 
         if not isinstance(data, dict):
             raise ConfigurationError(f"{path}: root must be a YAML mapping")
-
-        # Warn when ignored cost aliases appear in operator config.
-        for deprecated in ("cost_exchange_per_share", "passive_rebate_per_share"):
-            if deprecated in data:
-                logger.warning(
-                    "platform.yaml %s sets deprecated field %r (ignored). "
-                    "Use cost_taker_exchange_per_share / "
-                    "cost_maker_exchange_per_share instead.",
-                    path,
-                    deprecated,
-                )
 
         # Reject loose scalar types and unknown keys before coercion hides mistakes.
         cls._check_yaml_keys_and_types(data, source=path, strict=strict)
@@ -1055,8 +751,6 @@ class PlatformConfig:
         alpha_specs_raw = data.get("alpha_specs", [])
         alpha_specs = [Path(p) for p in alpha_specs_raw]
 
-        data_dir_raw = data.get("data_dir")
-        event_log_raw = data.get("event_log_path")
         cache_dir_raw = data.get("cache_dir")
 
         terminal_raw = data.get("ingest_terminal_symbol_health")
@@ -1104,19 +798,9 @@ class PlatformConfig:
 
         taker_exch_raw = data.get("cost_taker_exchange_per_share")
         maker_exch_raw = data.get("cost_maker_exchange_per_share")
-        legacy_exch = data.get("cost_exchange_per_share")
-        if taker_exch_raw is None and legacy_exch is not None:
-            taker_exch_raw = legacy_exch
-        if maker_exch_raw is None and legacy_exch is not None:
-            maker_exch_raw = legacy_exch
 
-        # Resolve each adverse-selection alias pair while preserving explicit zero.
         passive_adverse_raw = data.get("cost_passive_adverse_selection_bps")
-        if passive_adverse_raw is None:
-            passive_adverse_raw = data.get("cost_adverse_selection_drain_bps")
         through_adverse_raw = data.get("cost_through_fill_adverse_selection_bps")
-        if through_adverse_raw is None:
-            through_adverse_raw = data.get("cost_adverse_selection_through_bps")
 
         regime_cal_raw = data.get("regime_calibration_max_quotes")
         if regime_cal_raw is None:
@@ -1179,8 +863,6 @@ class PlatformConfig:
             parameter_overrides=data.get("parameter_overrides", {}),
             regime_engine=data.get("regime_engine", "hmm_3state_fractional"),
             regime_engine_options=regime_engine_options,
-            data_dir=Path(data_dir_raw) if data_dir_raw else None,
-            event_log_path=Path(event_log_raw) if event_log_raw else None,
             risk_max_position_per_symbol=int(data.get("risk_max_position_per_symbol", 1000)),
             risk_max_gross_exposure_pct=float(data.get("risk_max_gross_exposure_pct", 20.0)),
             risk_max_drawdown_pct=float(data.get("risk_max_drawdown_pct", 5.0)),
@@ -1191,7 +873,6 @@ class PlatformConfig:
                 data.get("require_healthy_disk_cache_manifests", False)
             ),
             degrade_on_data_gap=bool(data.get("degrade_on_data_gap", True)),
-            warn_on_unhealthy_disk_cache=bool(data.get("warn_on_unhealthy_disk_cache", True)),
             ingest_terminal_symbol_health=ingest_terminal_symbol_health,
             backtest_enforce_ingest_terminal_health=bool(
                 data.get("backtest_enforce_ingest_terminal_health", False)
@@ -1214,7 +895,6 @@ class PlatformConfig:
             ssr_trigger_condition_codes=tuple(
                 int(x) for x in data.get("ssr_trigger_condition_codes", ())
             ),
-            ssr_mode=str(data.get("ssr_mode", "refuse_short")),
             borrow_availability={
                 str(k).upper(): str(v).lower()
                 for k, v in (data.get("borrow_availability") or {}).items()
@@ -1240,7 +920,6 @@ class PlatformConfig:
             market_holiday_dates=tuple(str(d) for d in data.get("market_holiday_dates", ())),
             no_entry_first_seconds=int(data.get("no_entry_first_seconds", 0)),
             account_equity=float(data.get("account_equity", 50_000.0)),
-            account_type=str(data.get("account_type", "margin_25k")),
             account_id=str(data.get("account_id", "default")),
             pdt_min_equity_usd=float(data.get("pdt_min_equity_usd", 25_000.0)),
             risk_margin_intraday_buying_power_multiplier=float(
@@ -1268,7 +947,6 @@ class PlatformConfig:
             trail_activate_pct=float(data.get("trail_activate_pct", 0.0)),
             cost_min_spread_bps=float(data.get("cost_min_spread_bps", 0.3)),
             cost_commission_per_share=float(data.get("cost_commission_per_share", 0.0035)),
-            cost_exchange_per_share=float(data.get("cost_exchange_per_share", 0.0005)),
             cost_taker_exchange_per_share=float(
                 taker_exch_raw if taker_exch_raw is not None else 0.003
             ),
@@ -1280,12 +958,6 @@ class PlatformConfig:
             ),
             cost_through_fill_adverse_selection_bps=float(
                 through_adverse_raw if through_adverse_raw is not None else 5.0
-            ),
-            cost_adverse_selection_through_bps=float(
-                through_adverse_raw if through_adverse_raw is not None else 5.0
-            ),
-            cost_adverse_selection_drain_bps=float(
-                passive_adverse_raw if passive_adverse_raw is not None else 2.0
             ),
             cost_sell_regulatory_bps=float(data.get("cost_sell_regulatory_bps", 0.5)),
             cost_stress_multiplier=float(data.get("cost_stress_multiplier", 1.0)),
@@ -1316,7 +988,6 @@ class PlatformConfig:
             realized_cost_alert_ratio=float(data.get("realized_cost_alert_ratio", 1.5)),
             passive_fill_delay_ticks=int(data.get("passive_fill_delay_ticks", 3)),
             passive_max_resting_ticks=int(data.get("passive_max_resting_ticks", 50)),
-            passive_rebate_per_share=float(data.get("passive_rebate_per_share", 0.002)),
             passive_queue_position_shares=int(data.get("passive_queue_position_shares", 0)),
             passive_fill_hazard_max=float(data.get("passive_fill_hazard_max", 0.5)),
             passive_cancel_fee_per_share=float(data.get("passive_cancel_fee_per_share", 0.0)),
@@ -1405,7 +1076,6 @@ class PlatformConfig:
                 data.get("composition_completeness_threshold", 0.80)
             ),
             factor_model=str(data.get("factor_model", "FF5_momentum_STR")),
-            factor_loadings_refresh_seconds=int(data.get("factor_loadings_refresh_seconds", 0)),
             factor_loadings_max_age_seconds=int(
                 data.get("factor_loadings_max_age_seconds", 7 * 24 * 3600)
             ),
@@ -1506,19 +1176,7 @@ class PlatformConfig:
         *,
         source: Path,
     ) -> dict[str, Any]:
-        """Parse the optional top-level ``gate_thresholds:`` block.
-
-        Keys must name fields of
-        :class:`feelies.alpha.promotion_evidence.GateThresholds`.
-        Per-key validation + type coercion is delegated to
-        :func:`feelies.alpha.promotion_evidence.parse_gate_thresholds_overrides`
-        — failures are re-raised as
-        :class:`~feelies.core.errors.ConfigurationError` so the
-        operator sees a single error class for every YAML parse
-        failure under this loader.
-
-        Returns an empty dict when the block is absent or empty.
-        """
+        """Parse and normalize the optional gate-threshold mapping."""
         if block is None:
             return {}
         if not isinstance(block, dict):
@@ -1542,26 +1200,7 @@ class PlatformConfig:
 
     @staticmethod
     def _parse_sensor_spec(entry: Any, *, source: Path) -> SensorSpec:
-        """Parse a single ``sensor_specs:`` entry from YAML.
-
-        Expected schema:
-
-        .. code-block:: yaml
-
-            sensor_specs:
-              - sensor_id: ofi_ewma
-                sensor_version: "1.0.0"
-                cls: feelies.sensors.impl.ofi_ewma.OfiEwmaSensor
-                params:
-                  half_life_ns: 5000000000
-                subscribes_to: [NBBOQuote]
-                input_sensor_ids: []
-                min_history: 100
-                throttled_ms: null
-
-        ``cls`` is an importable dotted path restricted to
-        ``feelies.sensors.impl.*`` to prevent arbitrary imports from config.
-        """
+        """Parse one sensor declaration and resolve its implementation class."""
         if not isinstance(entry, dict):
             raise ConfigurationError(
                 f"{source}: each sensor_specs entry must be a mapping, got {type(entry).__name__}"

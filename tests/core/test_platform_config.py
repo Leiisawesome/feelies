@@ -302,12 +302,6 @@ account_equity: 500000
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
         assert cfg.mode == OperatingMode.PAPER
 
-    def test_live_mode_parses(self, tmp_path: Path) -> None:
-        yaml_content = "symbols: [AAPL]\nmode: LIVE\nalpha_specs: [x.yaml]\n"
-        (tmp_path / "config.yaml").write_text(yaml_content)
-        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
-        assert cfg.mode == OperatingMode.LIVE
-
     def test_case_insensitive_mode(self, tmp_path: Path) -> None:
         yaml_content = "symbols: [AAPL]\nmode: backtest\nalpha_specs: [x.yaml]\n"
         (tmp_path / "config.yaml").write_text(yaml_content)
@@ -440,53 +434,6 @@ promotion_ledger_path: data/promotion/ledger.jsonl
         assert snap.data["promotion_ledger_path"] == "ledger.jsonl"
 
 
-class TestAdverseSelectionAliasResolution:
-    """Current and compatibility aliases resolve identically, including zero."""
-
-    def test_explicit_zero_passive_adverse_selection_survives(self, tmp_path: Path) -> None:
-        (tmp_path / "c.yaml").write_text(
-            "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_passive_adverse_selection_bps: 0.0\n"
-        )
-        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
-        assert cfg.cost_passive_adverse_selection_bps == 0.0
-        assert cfg.cost_adverse_selection_drain_bps == 0.0
-
-    def test_explicit_zero_through_fill_adverse_selection_survives(self, tmp_path: Path) -> None:
-        (tmp_path / "c.yaml").write_text(
-            "symbols: [AAPL]\nalpha_specs: [x.yaml]\n"
-            "cost_through_fill_adverse_selection_bps: 0.0\n"
-        )
-        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
-        assert cfg.cost_through_fill_adverse_selection_bps == 0.0
-        assert cfg.cost_adverse_selection_through_bps == 0.0
-
-    def test_legacy_alias_only_still_populates_both_names(self, tmp_path: Path) -> None:
-        (tmp_path / "c.yaml").write_text(
-            "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_adverse_selection_drain_bps: 3.5\n"
-        )
-        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
-        assert cfg.cost_adverse_selection_drain_bps == 3.5
-        assert cfg.cost_passive_adverse_selection_bps == 3.5
-
-    def test_current_name_wins_over_legacy_when_both_set(self, tmp_path: Path) -> None:
-        (tmp_path / "c.yaml").write_text(
-            "symbols: [AAPL]\nalpha_specs: [x.yaml]\n"
-            "cost_passive_adverse_selection_bps: 1.0\n"
-            "cost_adverse_selection_drain_bps: 9.0\n"
-        )
-        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
-        assert cfg.cost_passive_adverse_selection_bps == 1.0
-        assert cfg.cost_adverse_selection_drain_bps == 1.0
-
-    def test_neither_set_falls_back_to_defaults(self, tmp_path: Path) -> None:
-        (tmp_path / "c.yaml").write_text("symbols: [AAPL]\nalpha_specs: [x.yaml]\n")
-        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
-        assert cfg.cost_passive_adverse_selection_bps == 2.0
-        assert cfg.cost_adverse_selection_drain_bps == 2.0
-        assert cfg.cost_through_fill_adverse_selection_bps == 5.0
-        assert cfg.cost_adverse_selection_through_bps == 5.0
-
-
 # ── Risk regime scales + disk-cache manifest health ─────────────────
 
 
@@ -566,7 +513,7 @@ class TestBacktestIngestTerminalHealth:
         cfg = PlatformConfig(
             symbols=frozenset({"AAPL"}),
             alpha_specs=[Path("x.yaml")],
-            mode=OperatingMode.LIVE,
+            mode=OperatingMode.PAPER,
             backtest_enforce_ingest_terminal_health=True,
             ingest_terminal_symbol_health=(("AAPL", "HEALTHY"),),
         )

@@ -2,8 +2,7 @@
 
 Use this prompt in a **Claude Code** session with full repo access. Scope: feelies
 pre-deployment statistical validation — Combinatorial Purged Cross-Validation (`cpcv.py`),
-Deflated Sharpe Ratio (`dsr.py`), and the hypothesis/experiment tracking that feeds the
-promotion gates.
+Deflated Sharpe Ratio (`dsr.py`), and the evidence that feeds the promotion gates.
 
 ---
 
@@ -64,7 +63,7 @@ targets — P0 only if code/tests claim they are live.
 **Architecture (contractual):**
 
 ```
-hypothesis.py  → experiment.py (tracked runs)
+versioned research artifacts (manual preregistration; no tracker API ships)
 cpcv.py        → fold_sharpes, mean/median, p_value, fold_pnl_curves_hash → CPCVEvidence
 dsr.py         → observed_sharpe, trials_count, skew, kurtosis → dsr, dsr_p_value → DSREvidence
 → promotion_evidence.validate_cpcv / validate_dsr → gate thresholds
@@ -85,8 +84,6 @@ dsr.py         → observed_sharpe, trials_count, skew, kurtosis → dsr, dsr_p_
 
 - `src/feelies/research/cpcv.py` — combinatorial purged CV (folds, purge, embargo)
 - `src/feelies/research/dsr.py` — deflated Sharpe ratio
-- `src/feelies/research/hypothesis.py` — hypothesis registration / falsification rule
-- `src/feelies/research/experiment.py` — experiment tracking / provenance
 
 ### Evidence schemas (consumers)
 
@@ -137,8 +134,8 @@ detection (see `audit_forensics.md`), runtime trading logic.
 1. Any RNG (fold shuffling, bootstrap)? Seeded for deterministic replay (Inv-5)?
 2. `fold_pnl_curves_hash`: content-addressable pointer — does it actually cover the
    curves it claims? Round-trip integrity.
-3. `experiment.py` / `hypothesis.py`: is the falsification rule recorded **before**
-   results (Inv-2)? Any path to edit the hypothesis after seeing OOS?
+3. Do versioned research artifacts record the falsification rule **before** results
+   (Inv-2)? Can history distinguish preregistration from post-OOS edits?
 
 ### D. Statistical soundness
 

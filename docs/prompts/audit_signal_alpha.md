@@ -105,7 +105,7 @@ HorizonFeatureSnapshot + RegimeState
   by `audit_alpha_lifecycle.md`; here only G12/G16 as they bear on signal semantics)
 - `src/feelies/alpha/loader.py` — YAML → alpha construction (*touchpoint* — owned by
   `audit_alpha_lifecycle.md`)
-- `src/feelies/alpha/arbitration.py`, `aggregation.py` — multi-alpha conflict / combine
+- `src/feelies/alpha/arbitration.py` — per-signal ownership and conflict checks
 - `src/feelies/alpha/signal_layer_module.py`, `module.py` — loaded alpha surface
   (*touchpoints* — owned by `audit_alpha_lifecycle.md`; read for how `evaluate` and
   params reach the engine, defer structural critique)
@@ -118,7 +118,7 @@ HorizonFeatureSnapshot + RegimeState
 
 - `tests/signals/test_horizon_signal_engine.py`
 - `tests/alpha/test_cost_arithmetic_gate.py`, `test_gate_g16.py`, `test_gate_g16_props.py`
-- `tests/alpha/test_layer_validator_g2_g13.py`, `test_arbitration.py`, `test_aggregation.py`
+- `tests/alpha/test_layer_validator_g2_g13.py`, `test_arbitration.py`
 - `tests/alpha/test_sig_*.py` (per-alpha behavioral tests)
 - Determinism: `tests/determinism/test_signal_replay.py`,
   `tests/determinism/test_emit_signals_jsonl.py`
@@ -173,8 +173,8 @@ For **each** SIGNAL alpha:
 
 ### E. Multi-alpha interaction
 
-1. `arbitration.py` / `aggregation.py`: how are conflicting signals on the same symbol
-   resolved? Deterministic? Economically coherent?
+1. How does `arbitration.py` handle a signal whose strategy slice and aggregate book
+   disagree? Is the result deterministic and economically coherent?
 2. Can two alphas double-count the same mechanism (crowding into one L1 observable)?
 
 ### F. Test & validation gaps

@@ -63,7 +63,7 @@ def _signal_spec_with_mechanism(
     failure_signature: list | None = None,
     signal_src: str | None = None,
 ) -> dict:
-    """Build a minimal SIGNAL spec that satisfies G2-G13 + G16.
+    """Build a minimal SIGNAL spec that satisfies G2-G12 + G16.
 
     Override individual fields to flip exactly one rule under test.
     """

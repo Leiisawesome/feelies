@@ -186,7 +186,7 @@ and layer boundaries**.
 
 ### F. Bootstrap, wiring & mode parity (Inv-9)
 
-1. `bootstrap.py` constructs the component graph per mode (BACKTEST / PAPER / LIVE). Is
+1. `bootstrap.py` constructs the component graph per mode (BACKTEST / PAPER). Is
    the **only** divergence behind `ExecutionBackend`, or does mode selection branch core
    wiring (sensors, signals, risk, composition) in ways that could break parity?
 2. Single-writer wiring: is exactly one writer per event type wired, regardless of mode?
@@ -222,7 +222,7 @@ Each item: component, `file:line`, one-sentence fix, expected impact on determin
    `random`, singletons.
 3. Audit single-writer discipline per event type.
 4. Trace one event end-to-end for causality.
-5. Audit `bootstrap.py` mode wiring: diff the BACKTEST / PAPER / LIVE component graphs and
+5. Audit `bootstrap.py` mode wiring: diff the BACKTEST / PAPER component graphs and
    confirm divergence is confined to `ExecutionBackend`.
 6. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
 7. Run **read-only** checks only:

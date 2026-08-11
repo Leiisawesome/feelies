@@ -8,7 +8,7 @@ Mode-specific behavior is confined to two interfaces:
   - OrderRouter: simulated fills (backtest) vs broker API (live)
 
 Section VIII of the system diagram: the micro-state machine is identical
-across BACKTEST_MODE, PAPER_TRADING_MODE, and LIVE_TRADING_MODE.
+across BACKTEST_MODE and PAPER_TRADING_MODE.
 Only the source of MARKET_EVENT and ORDER_ACK differs.
 """
 

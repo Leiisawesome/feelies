@@ -1,8 +1,9 @@
 # Live execution & broker integration audit (Claude Code)
 
-Use this prompt in a **Claude Code** session with full repo access. Scope: feelies live
-order path — `live_router`, `paper_backend`, order-lifecycle state machine, the IB broker
-adapter, idempotency, and kill-switch safety — and its **parity with backtest** (Inv-9).
+Use this prompt in a **Claude Code** session with full repo access. Scope: feelies
+paper/live execution seam — `paper_backend`, order-lifecycle state machine, the IB
+broker adapter, idempotency, and kill-switch safety — and its **parity with backtest**
+(Inv-9). The platform ships only BACKTEST and PAPER operating modes; no live-capital router or macro state is shipped.
 
 ---
 
@@ -62,7 +63,8 @@ targets — P0 only if code/tests claim they are live.
 
 ```
 OrderRequest
-  → ExecutionBackend (paper/live) → live_router → broker (IB) adapter
+  → ExecutionBackend (paper; live bootstrap currently rejected)
+  → OrderRouter protocol → broker (IB) adapter
   → order_state SM (NEW → SUBMITTED → ACK → PARTIAL/FILLED/CANCELLED/REJECTED)
   → fills reconcile → PositionStore
   kill_switch / safety controls gate the whole path
@@ -85,7 +87,6 @@ OrderRequest
 ### Live path & seam
 
 - `src/feelies/execution/backend.py`, `paper_backend.py`
-- `src/feelies/execution/live_router.py`
 - `src/feelies/execution/order_state.py` — order-lifecycle state machine
 - `src/feelies/execution/trading_session.py` — session gating
 

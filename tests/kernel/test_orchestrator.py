@@ -1801,15 +1801,6 @@ class TestOrchestratorTradingSessionLifecycle:
                 False,
                 True,
             ),
-            (
-                "run_live",
-                MacroState.LIVE_TRADING_MODE,
-                "session_start:live",
-                "CMD_LIVE_DEPLOY",
-                "SESSION_FEED_COMPLETE",
-                False,
-                False,
-            ),
         ],
     )
     def test_success_preserves_exact_events_and_pipeline_entry_state(
@@ -1895,13 +1886,6 @@ class TestOrchestratorTradingSessionLifecycle:
                 "CMD_PAPER_DEPLOY",
                 "PAPER_PIPELINE_FAIL:RuntimeError",
             ),
-            (
-                "run_live",
-                MacroState.LIVE_TRADING_MODE,
-                "session_start:live",
-                "CMD_LIVE_DEPLOY",
-                "LIVE_PIPELINE_FAIL:RuntimeError",
-            ),
         ],
     )
     def test_pipeline_failure_preserves_exact_events(
@@ -1955,7 +1939,6 @@ class TestOrchestratorTradingSessionLifecycle:
         [
             ("run_backtest", "BACKTEST_COMPLETE", MacroState.DEGRADED),
             ("run_paper", "SESSION_FEED_COMPLETE", MacroState.PAPER_TRADING_MODE),
-            ("run_live", "SESSION_FEED_COMPLETE", MacroState.LIVE_TRADING_MODE),
         ],
     )
     def test_completion_veto_preserves_mode_specific_exception_boundary(
@@ -1989,8 +1972,8 @@ class TestOrchestratorMacroLifecycleRemediation:
         orch = _build_orchestrator(clock)
         _boot_to_ready(orch)
         orch._macro.transition(
-            MacroState.LIVE_TRADING_MODE,
-            trigger="CMD_LIVE_DEPLOY",
+            MacroState.PAPER_TRADING_MODE,
+            trigger="CMD_PAPER_DEPLOY",
         )
         orch._macro.transition(
             MacroState.RISK_LOCKDOWN,
@@ -2025,8 +2008,8 @@ class TestOrchestratorMacroLifecycleRemediation:
         re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
         re.transition(RiskLevel.LOCKED, trigger="t")
         orch._macro.transition(
-            MacroState.LIVE_TRADING_MODE,
-            trigger="CMD_LIVE_DEPLOY",
+            MacroState.PAPER_TRADING_MODE,
+            trigger="CMD_PAPER_DEPLOY",
         )
         orch._macro.transition(
             MacroState.RISK_LOCKDOWN,
@@ -2043,13 +2026,6 @@ class TestOrchestratorMacroLifecycleRemediation:
         orch = _build_orchestrator(clock)
         _boot_to_ready(orch)
         orch.run_paper()
-        assert orch.macro_state == MacroState.READY
-
-    def test_run_live_empty_feed_returns_ready(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(clock)
-        _boot_to_ready(orch)
-        orch.run_live()
         assert orch.macro_state == MacroState.READY
 
     def test_run_backtest_refuses_active_kill_switch(self) -> None:
@@ -2069,7 +2045,7 @@ class TestOrchestratorMacroLifecycleRemediation:
         with pytest.raises(SessionEntryBlockedError, match="risk escalation"):
             orch.run_backtest()
 
-    def test_live_mode_force_flatten_reaches_macro_risk_lockdown(self) -> None:
+    def test_paper_mode_force_flatten_reaches_macro_risk_lockdown(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         quote = _make_quote()
@@ -2081,7 +2057,7 @@ class TestOrchestratorMacroLifecycleRemediation:
             risk_engine=_StubRiskEngine(RiskAction.FORCE_FLATTEN),
         )
         _boot_to_ready(orch)
-        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._macro.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
         orch._process_tick(quote)
         assert orch.macro_state == MacroState.RISK_LOCKDOWN
         assert orch.risk_level == RiskLevel.LOCKED
@@ -2228,7 +2204,7 @@ class TestResetRiskEscalation:
 
     def test_raises_during_active_trading(self) -> None:
         orch = self._orch_at(RiskLevel.WARNING)
-        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._macro.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
         with pytest.raises(RuntimeError, match="active trading"):
             orch.reset_risk_escalation(audit_token="tok")
 
@@ -2457,8 +2433,8 @@ class TestEdgeCostGate:
             cost_model=cost_model,
         )
         _publish_signal_on_quote(bus, signal)
-        orch._signal_min_edge_cost_ratio = edge_cost_ratio
         _boot_to_backtest(orch)
+        orch._signal_min_edge_cost_ratio = edge_cost_ratio
         return orch
 
     def test_order_suppressed_when_edge_below_threshold(self) -> None:
@@ -3514,8 +3490,8 @@ class TestReversalEdgeGuard:
             cost_model=DefaultCostModel(DefaultCostModelConfig()),
         )
         _publish_signal_on_quote(bus, signal)
-        orch._reversal_min_edge_cost_multiplier = multiplier
         _boot_to_backtest(orch)
+        orch._reversal_min_edge_cost_multiplier = multiplier
         return orch, bus, orders, alerts
 
     @staticmethod

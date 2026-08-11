@@ -283,10 +283,8 @@ at construction.
 Each sensor declares its minimum warm-up requirement via
 `SensorSpec.min_history` (`sensors/spec.py`), consulted by the sensor
 through `params`. Layer gate **G8** is the AST no-implicit-lookahead
-scan on inline `signal:` code; layer gate **G13** is the warm-up
-documentation gate, currently a no-op for the surviving SIGNAL /
-PORTFOLIO layers post-D.2 (`alpha/layer_validator.py`) — neither gate
-checks warm-up budgets against sensors.
+scan on inline `signal:` code. G13 is a reserved numbering slot because
+warm-up is platform-owned; alpha gates do not check sensor warm-up budgets.
 
 The aggregator sets `warm` / `stale` **per `feature_id`** via each
 feature's `finalize()` (`features/aggregator.py`); there is no global

@@ -1166,8 +1166,6 @@ composition_completeness_threshold: 0.80
 # Factor model for portfolio neutralization.
 factor_model: "FF5_momentum_STR"        # or "none" to disable
 
-# Factor loadings refresh cadence (in seconds). 0 = static at bootstrap.
-factor_loadings_refresh_seconds: 3600
 # Maximum accepted age for factor loadings at bootstrap. Default: 7 days.
 factor_loadings_max_age_seconds: 604800
 
@@ -1280,7 +1278,7 @@ each require careful unit testing and locked test vectors).
 **Deliverables:**
 - `src/feelies/signals/engine.py` — `HorizonSignalEngine`.
 - `src/feelies/signals/regime_gate.py` — DSL evaluator.
-- `src/feelies/alpha/layer_validator.py` — gates G1–G13 active.
+- `src/feelies/alpha/layer_validator.py` — active gates G1–G12 (G13 reserved).
 - One reference SIGNAL alpha (`alphas/sig_benign_midcap_v1/`) per the
   canonical example in `.cursor/skills/feature-engine/SKILL.md`.
 
@@ -1771,9 +1769,8 @@ approximation at intraday scale. (b) is a separate future proposal.
 
 **RESOLVED → (a).** End-of-day factor loadings refreshed daily from the
 chosen provider (Q6). Intraday factor exposures are computed against
-static loadings within a session. The `factor_loadings_refresh_seconds`
-field in `platform.yaml` (§9) defaults to `3600` but is set to `0`
-(static-at-bootstrap) for deterministic backtests.
+static loadings within a session; intraday refresh is not a shipped
+configuration surface.
 
 ### Q6 — What is the reference factor model provider?
 
@@ -1913,7 +1910,7 @@ log.
 | **3** | Evidence over intuition | `cost_arithmetic.edge_source` field (§8.2) requires a citation (empirical backtest path, paper reference, or theoretical derivation). "Guess" is an explicit refusal condition in the microstructure-alpha authoring skill. Existing promotion gates (paper → live) are unchanged. | **PRESERVED** |
 | **4** | Decay is the default | `forensics/multi_horizon_attribution.py` (§6.10) emits per-alpha rolling-30d realized IC; `monitoring/horizon_metrics.py` (§6.9) alerts at `< 50%` and CRITICAL at `< 25%` of in-sample IC. Existing DECAYING/RETIRED status transitions in `research/hypothesis_status.py` remain authoritative. | **STRENGTHENED** |
 | **5** | Deterministic replay | §12.1–§12.4: proof sketches for `HorizonTick`, `HorizonFeatureSnapshot`, `CrossSectionalContext` determinism. 4-level parity hash CI (Fills / Signals / HorizonFeatureSnapshots / SensorReadings) replaces the existing 1-level check. Non-determinism risk inventory in §12.5 enumerates and mitigates every known source. | **STRENGTHENED** |
-| **6** | Causality enforced | Gate G8 (`alpha/layer_validator.py`) statically rejects implicit lookahead; G13 is presently a no-op for surviving layers. `HorizonAggregator` (§6.3) only consumes `SensorReading` events whose timestamp is `≤ HorizonTick.timestamp_ns`; reading the buffer at boundary close cannot see the future by construction. `HorizonTick.timestamp_ns` carries the *boundary* timestamp, not the *triggering event's* timestamp (§7.4) — this is the load-bearing detail. | **PRESERVED** |
+| **6** | Causality enforced | Gate G8 (`alpha/layer_validator.py`) statically rejects implicit lookahead; G13 is a reserved numbering slot because warm-up is platform-owned. `HorizonAggregator` (§6.3) only consumes `SensorReading` events whose timestamp is `≤ HorizonTick.timestamp_ns`; reading the buffer at boundary close cannot see the future by construction. `HorizonTick.timestamp_ns` carries the *boundary* timestamp, not the *triggering event's* timestamp (§7.4) — this is the load-bearing detail. | **PRESERVED** |
 | **7** | Event-driven, typed schemas | All five new event types (§5) are frozen `dataclass(kw_only=True)` instances inheriting `Event`, matching the existing convention. No untyped dict messages cross any layer boundary. The synchronous in-process bus is unchanged. | **PRESERVED** |
 | **8** | Layer separation | The refactor is *itself* an extension of layer separation: the previously-monolithic `features/`+`signals/` per-tick path is split into four typed layers (sensors → features → signals → composition), each with its own protocol ABC, registry, and event contract. Gates G4 (sensor catalog), G14 (data scope), and the typed-registry DAG resolver (`alpha/registry.py` extension, §6.6) prevent cross-layer leakage. | **STRENGTHENED** |
 | **9** | Backtest/live parity | `ExecutionBackend` is **not touched** (§2.4 non-goal, §11.4 contract). `HorizonScheduler` derives boundaries from event-time, not wall-clock — so the same event log produces the same horizon-tick stream in backtest and replay. Live mode's `HorizonScheduler` consumes the same wall-clock-stamped events from `MassiveLiveFeed` and produces boundaries with identical semantics. The mode-swap discipline is preserved. | **PRESERVED** |

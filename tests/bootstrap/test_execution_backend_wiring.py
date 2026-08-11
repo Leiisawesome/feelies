@@ -8,7 +8,7 @@ import pytest
 
 from feelies.bootstrap import _create_backend
 from feelies.core.clock import SimulatedClock
-from feelies.core.platform_config import OperatingMode
+from feelies.core.platform_config import PlatformConfig
 from feelies.execution.cost_model import DefaultCostModel
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -20,14 +20,15 @@ def test_create_backend_passive_paths_forward_market_impact_factor(
     """``cost_market_impact_factor`` must reach PassiveLimitOrderRouter (not default)."""
     clock = SimulatedClock()
     log = InMemoryEventLog()
+    config = PlatformConfig(
+        execution_mode=execution_mode,
+        cost_market_impact_factor=0.33,
+    )
     bundle = _create_backend(
-        OperatingMode.BACKTEST,
+        config,
         log,
         clock,
         cost_model=DefaultCostModel(),
-        execution_mode=execution_mode,
-        market_impact_factor=0.33,
     )
-    router = bundle.backtest_router
-    assert router is not None
+    router = bundle.backend.order_router
     assert router._market_impact_factor == Decimal("0.33")

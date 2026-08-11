@@ -13,7 +13,7 @@ Both are **boundary actions** writing versioned durable state (promotion
 ledger + calibration JSON); the *next* run reads that state at load, so
 replay within any single run stays bit-identical (Inv-5).
 
-Wiring point: call :func:`reconcile_session` from a PAPER/LIVE session-end /
+Wiring point: call :func:`reconcile_session` from a PAPER session-end /
 EOD job with (a) the rolling fill window from the trade journal, (b) the LIVE
 alpha lifecycles, (c) the disclosed edges from the loaded alphas, and (d) the
 ``EdgeCalibrationStore`` pointed at the same path the platform config's

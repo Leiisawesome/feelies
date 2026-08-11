@@ -150,7 +150,7 @@ def _sensor_registry(bus: EventBus) -> SensorRegistry:
 def _signal_layer(registry: AlphaRegistry, bus: EventBus | None = None) -> Any:
     """Compose the engine exactly the way ``build_platform`` does."""
     resolved_bus = bus if bus is not None else EventBus()
-    _seq, engine = _create_signal_layer(
+    engine = _create_signal_layer(
         registry=registry,
         bus=resolved_bus,
         clock=SimulatedClock(),

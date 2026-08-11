@@ -110,7 +110,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `sensors/`, `features/` | sensor |
 | `services/`, `signals/regime_gate.py` | regime |
 | `signals/horizon_engine.py`, `signals/horizon_protocol.py` | signal_alpha |
-| `alpha/cost_arithmetic.py`, `arbitration.py`, `aggregation.py` | signal_alpha |
+| `alpha/cost_arithmetic.py`, `arbitration.py` | signal_alpha |
 | `alpha/lifecycle.py`, `promotion_ledger.py`, `registry.py`, `loader.py`, `validation.py`, `discovery.py`, `layer_validator.py`, `module.py`, `signal_layer_module.py` | alpha_lifecycle |
 | `alpha/promotion_evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
 | `alpha/portfolio_layer_module.py` | composition |
@@ -123,7 +123,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `risk/position_sizer.py`, `edge_weighted_sizer.py` | position_management (sizing economics) |
 | `execution/` (backtest fill/cost/routers) | execution_fills |
 | `execution/intent.py`, `position_manager.py`, `portfolio_netter.py` | position_management |
-| `execution/live_router.py`, `paper_backend.py`, `order_state.py`, `trading_session.py` | live_execution |
+| `execution/paper_backend.py`, `order_state.py`, `trading_session.py` | live_execution |
 | `broker/` | live_execution |
 | `forensics/` | forensics |
 | `research/` | research_validation |

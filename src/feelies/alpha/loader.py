@@ -915,11 +915,6 @@ class AlphaLoader:
         }
     )
 
-    # Translate known aliases with a warning instead of silently ignoring them.
-    _HAZARD_EXIT_LEGACY_KEYS: dict[str, str] = {
-        "posterior_drop_threshold": "hazard_score_threshold",
-    }
-
     def _parse_hazard_exit_block(
         self,
         block: Any,
@@ -928,8 +923,7 @@ class AlphaLoader:
     ) -> dict[str, Any] | None:
         """Parse the optional ``hazard_exit:`` block.
 
-        Unknown keys raise :class:`AlphaLoadError`. Known aliases are
-        renamed with a warning.
+        Unknown keys raise :class:`AlphaLoadError`.
 
         Value types are coerced and range-checked so bootstrap can
         trust the parsed block:
@@ -956,35 +950,14 @@ class AlphaLoader:
                 f"{source}: 'hazard_exit' must be a mapping, got {type(block).__name__}"
             )
 
-        normalized: dict[str, Any] = {}
-        for key, value in block.items():
-            if key in self._HAZARD_EXIT_LEGACY_KEYS:
-                new_key = self._HAZARD_EXIT_LEGACY_KEYS[key]
-                logger.warning(
-                    "%s: hazard_exit.%s is a legacy spelling of "
-                    "hazard_exit.%s; rename to %s in the YAML to silence "
-                    "this warning",
-                    source,
-                    key,
-                    new_key,
-                    new_key,
-                )
-                if new_key in block:
-                    raise AlphaLoadError(
-                        f"{source}: hazard_exit declares both {key!r} "
-                        f"and {new_key!r}; remove the legacy key {key!r}"
-                    )
-                normalized[new_key] = value
-            elif key in self._HAZARD_EXIT_KNOWN_KEYS:
-                normalized[key] = value
-            else:
+        for key in block:
+            if key not in self._HAZARD_EXIT_KNOWN_KEYS:
                 raise AlphaLoadError(
                     f"{source}: hazard_exit block carries unknown key "
                     f"{key!r}; supported keys are "
-                    f"{sorted(self._HAZARD_EXIT_KNOWN_KEYS)} "
-                    f"(legacy accepted with warning: "
-                    f"{sorted(self._HAZARD_EXIT_LEGACY_KEYS)})"
+                    f"{sorted(self._HAZARD_EXIT_KNOWN_KEYS)}"
                 )
+        normalized = dict(block)
 
         if "hazard_score_threshold" in normalized:
             try:

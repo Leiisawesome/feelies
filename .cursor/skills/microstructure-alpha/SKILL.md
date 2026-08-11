@@ -386,10 +386,8 @@ hazard_exit:
   hard_exit_age_seconds: 1800    # int > 0; null → 2 × expected_half_life_seconds
 ```
 
-`posterior_drop_threshold` is accepted as a legacy spelling of
-`hazard_score_threshold` (the detector's `hazard_score` IS a
-normalized posterior drop) and rewritten with a WARN at load time;
-use the canonical name in new specs.
+`hazard_score_threshold` is the only accepted threshold key; obsolete or
+misspelled keys fail load as unknown schema fields.
 
 Suppression at the **controller** layer is per
 `(strategy_id, symbol, reason)`, cleared when the position returns

@@ -30,10 +30,8 @@ class MacroState(Enum):
     INIT = auto()
     DATA_SYNC = auto()
     READY = auto()
-    RESEARCH_MODE = auto()
     BACKTEST_MODE = auto()
     PAPER_TRADING_MODE = auto()
-    LIVE_TRADING_MODE = auto()
     DEGRADED = auto()
     RISK_LOCKDOWN = auto()
     SHUTDOWN = auto()
@@ -57,20 +55,12 @@ _MACRO_TRANSITIONS: dict[MacroState, frozenset[MacroState]] = {
     # ── READY (hub state — dispatches to operational modes) ─────
     MacroState.READY: frozenset(
         {
-            MacroState.RESEARCH_MODE,  # CMD_RESEARCH
             MacroState.BACKTEST_MODE,  # CMD_BACKTEST
             MacroState.PAPER_TRADING_MODE,  # CMD_PAPER_DEPLOY
-            MacroState.LIVE_TRADING_MODE,  # CMD_LIVE_DEPLOY
             MacroState.SHUTDOWN,  # CMD_SHUTDOWN
         }
     ),
     # ── Operational modes ───────────────────────────────────────
-    MacroState.RESEARCH_MODE: frozenset(
-        {
-            MacroState.READY,  # JOB_COMPLETE
-            MacroState.DEGRADED,  # CRITICAL_ERROR
-        }
-    ),
     MacroState.BACKTEST_MODE: frozenset(
         {
             MacroState.READY,  # reproducibility verified
@@ -82,13 +72,6 @@ _MACRO_TRANSITIONS: dict[MacroState, frozenset[MacroState]] = {
             MacroState.READY,  # performance validation / manual halt
             MacroState.RISK_LOCKDOWN,  # risk breach
             MacroState.DEGRADED,  # execution drift anomaly
-        }
-    ),
-    MacroState.LIVE_TRADING_MODE: frozenset(
-        {
-            MacroState.READY,  # manual halt
-            MacroState.RISK_LOCKDOWN,  # risk breach
-            MacroState.DEGRADED,  # data drift
         }
     ),
     # ── Recovery / terminal states ──────────────────────────────
@@ -112,7 +95,6 @@ TRADING_MODES: frozenset[MacroState] = frozenset(
     {
         MacroState.BACKTEST_MODE,
         MacroState.PAPER_TRADING_MODE,
-        MacroState.LIVE_TRADING_MODE,
     }
 )
 

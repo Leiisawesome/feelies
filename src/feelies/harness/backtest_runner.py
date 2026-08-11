@@ -9,11 +9,6 @@ Usage:
 For a no-API-key smoke test of the orchestration pipeline, use the
 end-to-end suite directly: ``pytest tests/integration/test_phase4_e2e.py``.
 
-Offline replay from gzipped JSONL disk cache (no Massive API key)::
-
-    Import and call ``main_cache_replay`` from this module (see
-    ``parse_cache_replay_args``).  Populate cache first with a normal API
-    run using ``--cache-dir``; see ``feelies.storage.cache_replay``.
 """
 
 from __future__ import annotations
@@ -41,9 +36,7 @@ from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive
 from feelies.harness.backtest_cli import (
     ConfigNotFoundError,
     add_backtest_api_arguments,
-    add_common_backtest_arguments,
     apply_backtest_cli_overrides,
-    disable_backtest_jsonl_emit_flags,
     load_platform_config,
     resolve_backtest_symbols,
 )
@@ -272,21 +265,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     add_backtest_api_arguments(p)
     return p.parse_args(argv)
-
-
-def parse_cache_replay_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """CLI for :func:`main_cache_replay` — disk cache only, no API."""
-    p = argparse.ArgumentParser(
-        description=(
-            "Replay a backtest using only gzipped JSONL cache files "
-            "(see DiskEventCache layout under ~/.feelies/cache by default)."
-        ),
-    )
-    add_common_backtest_arguments(p)
-    p.add_argument("--date", type=str, required=True, help="YYYY-MM-DD")
-    args = p.parse_args(argv)
-    disable_backtest_jsonl_emit_flags(args)
-    return args
 
 
 def ingest_data(
@@ -1020,84 +998,3 @@ def main(argv: list[str] | None = None) -> int:
     _force_utf8_console()
     _configure_logging_for_cli()
     return run_backtest_api(parse_args(argv))
-
-
-def main_cache_replay(argv: list[str] | None = None) -> int:
-    """Entry point: replay from DiskEventCache JSONL.gz only (no Massive API)."""
-    _force_utf8_console()
-    _configure_logging_for_cli()
-    _warn_if_unpinned_hash_seed()
-    args = parse_cache_replay_args(argv)
-
-    config = _load_backtest_config(args)
-    if config is None:
-        return 1
-
-    symbols = resolve_backtest_symbols(config)
-    if not symbols:
-        print(
-            "ERROR: No symbols specified (use --symbol or set in platform.yaml)",
-            file=sys.stderr,
-        )
-        return 1
-
-    start_date = args.date
-    end_date = args.end_date or start_date
-    date_range = start_date if start_date == end_date else f"{start_date} to {end_date}"
-    symbol_str = ", ".join(symbols)
-    run_t0 = time.monotonic()
-
-    print(f"\n  Cache replay: {symbol_str}  |  {date_range}", flush=True)
-    print(f"  {_RULE_LIGHT}", flush=True)
-
-    step_t = _step("Loading disk cache (JSONL.gz only)")
-    print(flush=True)
-
-    from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_disk_cache
-
-    cache_path = Path(args.cache_dir) if args.cache_dir else None
-
-    try:
-        event_log, ingest_result, day_meta = load_event_log_from_disk_cache(
-            symbols,
-            start_date,
-            end_date,
-            cache_dir=cache_path,
-            require_healthy_ingestion_manifests=(config.require_healthy_disk_cache_manifests),
-        )
-    except CacheReplayError as exc:
-        print(f"\n  ERROR: {exc}", file=sys.stderr)
-        return 1
-
-    dt_load = time.monotonic() - step_t
-    print(
-        f"  OK - {ingest_result.events_ingested:,} events (disk cache only) [{dt_load:.1f}s]",
-        flush=True,
-    )
-
-    day_sources = list(day_meta)
-    prep = prepare_backtest_event_log(config, event_log)
-    rc = _enforce_ingest_event_mix(
-        config,
-        prep.event_log,
-        source_label="loaded from disk cache",
-        n_quotes=prep.n_quotes,
-        n_trades=prep.n_trades,
-    )
-    if rc != 0:
-        return rc
-
-    config = _attach_day_source_provenance(config, symbols, day_sources)
-
-    return _run_backtest_phases_2_7(
-        args,
-        event_log,
-        ingest_result,
-        day_sources,
-        config,
-        symbols,
-        symbol_str,
-        date_range,
-        run_t0,
-        prep=prep,
-    ).exit_code

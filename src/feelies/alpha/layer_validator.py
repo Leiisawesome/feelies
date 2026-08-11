@@ -326,7 +326,6 @@ class LayerValidator:
         self._check_g10_universe_disclosure(spec, source)
         self._check_g11_factor_neutralization_disclosure(spec, source)
         self._check_g12_cost_arithmetic_disclosure(spec, source)
-        self._check_g13_warm_up_documentation(spec, source)
 
         # Data-scope and fill-assumption gates.
         self._check_g14_data_scope(spec, source)
@@ -757,10 +756,6 @@ class LayerValidator:
                 f"Raise cost_floor_bps.min to at least "
                 f"{cost.cost_total_bps!r}."
             )
-
-    def _check_g13_warm_up_documentation(self, spec: dict[str, Any], source: str) -> None:
-        """No-op: surviving layers declare no inline features."""
-        del spec, source  # all surviving layers are no-ops
 
     # ── AST-scan helpers (G5 / G8) ───────────────────────────────────
 

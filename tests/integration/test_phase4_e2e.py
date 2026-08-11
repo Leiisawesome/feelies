@@ -28,8 +28,6 @@ from feelies.core.events import (
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
-from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
-from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.sensors.impl.book_imbalance import BookImbalanceSensor
 from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor
 from feelies.sensors.impl.micro_price import MicroPriceSensor
@@ -329,11 +327,6 @@ def test_phase4_e2e_signal_and_portfolio_layers_register() -> None:
 def test_phase4_e2e_composition_layer_is_wired() -> None:
     orchestrator, _s, _i, _o = _build()
     assert isinstance(orchestrator._composition_engine, CompositionEngine)
-    assert isinstance(orchestrator._cross_sectional_tracker, CrossSectionalTracker)
-    assert isinstance(
-        orchestrator._composition_metrics_collector,
-        HorizonMetricsCollector,
-    )
     # No alpha opted into hazard_exit → controller stays None (Inv-A).
     assert orchestrator._hazard_exit_controller is None
 

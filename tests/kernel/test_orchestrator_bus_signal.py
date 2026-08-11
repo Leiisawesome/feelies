@@ -462,7 +462,7 @@ class TestBusDrivenSignalProducesOrder:
 
         BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
         orch.boot(_MinimalConfig())
-        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._macro.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
         orch._micro.reset(trigger="session_start:test")
         orch._process_tick(quote)
 

@@ -16,7 +16,7 @@ from datetime import date
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from feelies.alpha.discovery import load_and_register
 from feelies.alpha.fill_attribution import FillAttributionLedger
@@ -138,32 +138,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class _BackendBundle:
-    """Per-mode backend composition + auxiliary handles for the entry script.
-
-    ``backend`` is the orchestrator-facing facade.  ``backtest_router``
-    is returned for BACKTEST so the bootstrap can subscribe its
-    ``on_quote`` to the bus (Inv-D ordering).  ``live_feed`` and
-    ``ib_connection`` are returned for PAPER / LIVE so
-    ``scripts/run_paper.py`` can drive their lifecycles.  Unused
-    handles are ``None`` per mode.
-    """
+    """Backend plus PAPER-only handles used by the entry script."""
 
     backend: ExecutionBackend
-    backtest_router: BacktestOrderRouter | PassiveLimitOrderRouter | None
     live_feed: "MassiveLiveFeed | None" = None
     ib_connection: "IBGatewayConnection | None" = None
 
 
 class StaleFactorLoadingsError(RuntimeError):
-    """Raised when factor loadings are missing or stale at bootstrap.
-
-    Fail-stop: every symbol in any loaded
-    PORTFOLIO alpha's effective universe MUST have a fresh loadings
-    row (within ``factor_loadings_max_age_seconds``) — otherwise the
-    composition pipeline would silently neutralize against a stale
-    factor model.  Inv-11 fail-safe: refuse to boot rather than emit
-    quietly-wrong sized intents.
-    """
+    """Raised when required factor loadings are missing or stale."""
 
 
 class UniverseScaleError(RuntimeError):
@@ -228,10 +211,7 @@ def build_platform(
     if event_log is None:
         # Live feeds log arrival order, which need not be timestamp-monotonic.
         # Replays retain strict ordering.
-        enforce_market_order = config.mode not in (
-            OperatingMode.PAPER,
-            OperatingMode.LIVE,
-        )
+        enforce_market_order = config.mode != OperatingMode.PAPER
         event_log = InMemoryEventLog(enforce_market_order=enforce_market_order)
     _enforce_ex_date_replay_guard(
         config,
@@ -240,7 +220,7 @@ def build_platform(
     )
 
     clock = _select_clock(config.mode)
-    config = _ensure_session_open_ns_for_live_modes(config, clock)
+    config = _ensure_session_open_ns_for_paper(config, clock)
     bus = EventBus()
 
     regime_engine = _create_regime_engine(
@@ -303,26 +283,20 @@ def build_platform(
     # Isolate risk alerts so they cannot shift orchestrator event IDs.
     _seq_thread_safe = config.mode != OperatingMode.BACKTEST
     risk_alert_seq = SequenceGenerator(thread_safe=_seq_thread_safe)
-    # Refuse account types whose PDT behavior is not modeled.
-    account_type = AccountType(config.account_type)
-    if account_type is not AccountType.MARGIN_25K:
-        raise NotImplementedError(
-            f"account_type={config.account_type!r} is not implemented; "
-            "only 'margin_25k' is wired (BT-4). Set account_type: margin_25k."
-        )
     pdt_constraint = PDTConstraint(
         PDTConfig(
-            account_type=account_type,
+            account_type=AccountType.MARGIN_25K,
             account_id=config.account_id,
             min_equity=_decimal(config.pdt_min_equity_usd),
         )
     )
     buying_power_config = BuyingPowerConfig(
-        account_type=config.account_type,
+        account_type="margin_25k",
         intraday_multiplier=_decimal(config.risk_margin_intraday_buying_power_multiplier),
         overnight_multiplier=_decimal(config.risk_margin_overnight_buying_power_multiplier),
     )
     trading_session_bounds = _resolve_trading_session_bounds(config)
+    moc_bounds = _resolve_moc_bounds(config)
     # One read path for regime: consumers read what was published, never the
     # live engine (see feelies.services.regime_state_cache).
     regime_states = RegimeStateCache(bus=bus)
@@ -336,8 +310,8 @@ def build_platform(
         buying_power_config=buying_power_config,
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
-        # Warn in PAPER/LIVE when an entry gate is not wired.
-        warn_on_inert_entry_gates=config.mode in (OperatingMode.PAPER, OperatingMode.LIVE),
+        # Warn in PAPER when an entry gate is not wired.
+        warn_on_inert_entry_gates=config.mode == OperatingMode.PAPER,
     )
 
     cost_model = DefaultCostModel(
@@ -350,8 +324,6 @@ def build_platform(
             through_fill_adverse_selection_bps=_decimal(
                 config.cost_through_fill_adverse_selection_bps
             ),
-            adverse_selection_through_bps=_decimal(config.cost_adverse_selection_through_bps),
-            adverse_selection_drain_bps=_decimal(config.cost_adverse_selection_drain_bps),
             sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
             stress_multiplier=_decimal(config.cost_stress_multiplier),
             min_commission=_decimal(config.cost_min_commission),
@@ -365,14 +337,8 @@ def build_platform(
             spread_floor_taker_only=config.cost_spread_floor_taker_only,
         )
     )
-    # Every router requires an explicit cost model; None is a wiring bug.
-    assert cost_model is not None, "cost_model construction returned None"
-
-    # PAPER/LIVE share one normalizer between the feed and orchestrator.
-    if normalizer is None and config.mode in (
-        OperatingMode.PAPER,
-        OperatingMode.LIVE,
-    ):
+    # PAPER shares one normalizer between the feed and orchestrator.
+    if normalizer is None and config.mode == OperatingMode.PAPER:
         normalizer = MassiveNormalizer(
             clock=clock,
             halt_on_codes=frozenset(config.halt_on_condition_codes),
@@ -381,28 +347,20 @@ def build_platform(
         normalizer.register_symbols(config.symbols)
 
     bundle = _create_backend(
-        config.mode,
+        config,
         event_log,
         clock,
-        fill_latency_ns=config.backtest_fill_latency_ns,
-        market_data_latency_ns=config.market_data_latency_ns,
         cost_model=cost_model,
-        execution_mode=config.execution_mode,
-        passive_fill_delay_ticks=config.passive_fill_delay_ticks,
-        passive_max_resting_ticks=config.passive_max_resting_ticks,
-        passive_queue_position_shares=config.passive_queue_position_shares,
-        passive_fill_hazard_max=config.passive_fill_hazard_max,
-        passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
-        market_impact_factor=config.cost_market_impact_factor,
-        max_impact_half_spreads=config.cost_max_impact_half_spreads,
-        stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
         normalizer=normalizer,
-        config=config,
+        moc_bounds=moc_bounds,
+        session_bounds=trading_session_bounds,
     )
     backend = bundle.backend
-    backtest_router = bundle.backtest_router
-
-    if backtest_router is not None:
+    if config.mode == OperatingMode.BACKTEST:
+        backtest_router = cast(
+            BacktestOrderRouter | PassiveLimitOrderRouter,
+            backend.order_router,
+        )
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))
 
     # Subscribe the router before sensors so fills retain their triggering quote.
@@ -442,7 +400,7 @@ def build_platform(
     )
     position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
     # Live tilted sizing may exceed the base size, so surface it at startup.
-    if config.sizer_tilt_drive and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE):
+    if config.sizer_tilt_drive and config.mode == OperatingMode.PAPER:
         logger.warning(
             "bootstrap: sizer_tilt_drive=true in %s mode — the position "
             "sizer can size SIGNAL-path orders above the single-factor "
@@ -464,14 +422,7 @@ def build_platform(
         metric_collector._store_raw_events = False
 
     # Create metrics first so sensor monitoring subscribes during composition.
-    (
-        sensor_seq,
-        horizon_seq,
-        snapshot_seq,
-        sensor_registry,
-        horizon_scheduler,
-        _,  # horizon_aggregator — already bus-attached inside _create_sensor_layer
-    ) = _create_sensor_layer(
+    sensor_registry, horizon_scheduler = _create_sensor_layer(
         config,
         bus,
         metric_collector=metric_collector,
@@ -481,7 +432,7 @@ def build_platform(
     _built_horizon_features = _build_horizon_features(config)
 
     # Subscribe signals after aggregation and fail fast on missing sensor inputs.
-    signal_seq, horizon_signal_engine = _create_signal_layer(
+    horizon_signal_engine = _create_signal_layer(
         registry=registry,
         bus=bus,
         clock=clock,
@@ -493,12 +444,7 @@ def build_platform(
     )
 
     # Subscribe composition after SIGNAL so synchronization observes updated caches.
-    (
-        composition_engine,
-        cross_sectional_tracker,
-        composition_metrics,
-        _unused_hazard_from_composition,
-    ) = _create_composition_layer(
+    composition_engine = _create_composition_layer(
         config=config,
         bus=bus,
         registry=registry,
@@ -512,7 +458,7 @@ def build_platform(
     # subscribes) when neither is configured, so default deployments are
     # unaffected.  Attached before the alpha-driven authors so a stop and a
     # hazard spike on the same dispatch resolve in a fixed order (Inv-5).
-    stop_exit_controller = _create_stop_exit_controller(
+    _create_stop_exit_controller(
         bus=bus,
         config=config,
         position_store=position_store,
@@ -529,16 +475,7 @@ def build_platform(
         thread_safe_sequences=_seq_thread_safe,
     )
 
-    # Stage-0 dual-permission: wire the two risk-layer authors beside the hazard
-    # controller for any decoupled SIGNAL alpha — the bounded-deferral cap (timed
-    # EXIT at the §2.3 min() deadline) and the exit composer (fail-closed
-    # error-path EXIT, clean-transition HOLD).  Both return None (and never
-    # subscribe) when no alpha is decoupled, so default deployments stay
-    # bit-identical (Inv-5).
-    #
-    # The cap is attached **first** so that on a dispatch where both consume the
-    # same SafetyStateChange, the episode anchor is recorded before the composer
-    # decides — a fixed, replayable subscriber order (Inv-5).
+    # Attach the cap before the composer to keep subscriber order deterministic.
     deferral_cap_controller = _create_deferral_cap_controller(
         bus=bus,
         registry=registry,
@@ -588,17 +525,11 @@ def build_platform(
                 str(config.edge_calibration_path)
             ).factors()
 
-    # Inv-9: the B4 gate compares a *calibrated* edge against modeled round-trip
-    # cost.  Calibration factors shrink disclosed edge toward observed, so a
-    # deployment that gates without them admits strictly more trades than the
-    # backtest that validated it — the divergence resolves toward more exposure,
-    # which is the direction Inv-11 forbids.  Only the backtest harness could
-    # supply factors before ``edge_calibration_path`` existed as a config field,
-    # so this combination was previously unreachable to notice.
+    # PAPER warns when its active cost gate lacks the backtest calibration haircut.
     if (
         config.signal_min_edge_cost_ratio > 0
         and not resolved_edge_factors
-        and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE)
+        and config.mode == OperatingMode.PAPER
     ):
         logger.warning(
             "B4 edge-vs-cost gate is active (signal_min_edge_cost_ratio=%s) but no "
@@ -634,19 +565,12 @@ def build_platform(
         sensor_registry=sensor_registry,
         horizon_scheduler=horizon_scheduler,
         horizon_signal_engine=horizon_signal_engine,
-        sensor_sequence_generator=sensor_seq,
-        horizon_sequence_generator=horizon_seq,
-        snapshot_sequence_generator=snapshot_seq,
-        signal_sequence_generator=signal_seq,
         regime_hazard_detector=regime_hazard_detector,
         hazard_sequence_generator=hazard_seq,
         composition_engine=composition_engine,
-        cross_sectional_tracker=cross_sectional_tracker,
-        composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
-        stop_exit_controller=stop_exit_controller,
-        exit_composer=exit_composer,
-        deferral_cap_controller=deferral_cap_controller,
+        trading_session_bounds=trading_session_bounds,
+        moc_bounds_configured=moc_bounds is not None,
         edge_calibration_factors=resolved_edge_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
@@ -665,16 +589,12 @@ def build_platform(
     )
 
     # Stamp the snapshot from the injected clock so a backtest's provenance
-    # record is deterministic (SimulatedClock); only PAPER/LIVE read wall time
+    # record is deterministic (SimulatedClock); only PAPER reads wall time
     # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
     config_snapshot = config.snapshot(ts_ns=clock.now_ns())
     orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
 
-    # Attach the PAPER/LIVE live-feed + IB connection handles to the
-    # orchestrator so the entry script (``scripts/run_paper.py``) can
-    # drive their lifecycles without re-resolving the bundle.  These
-    # are NEVER used by the orchestrator itself — pure operator
-    # plumbing.  For BACKTEST mode both attributes are ``None``.
+    # Expose PAPER lifecycle handles to the operator entry script.
     orchestrator.live_feed = bundle.live_feed  # type: ignore[attr-defined]
     orchestrator.ib_connection = bundle.ib_connection  # type: ignore[attr-defined]
 
@@ -720,27 +640,9 @@ def _wire_decouple_revocation_hook(
     exit_composer: ExitComposer | None,
     deferral_cap_controller: DeferralCapController | None,
 ) -> None:
-    """Connect lifecycle revocation to the composer's immediate flatten (§2.5).
+    """Route lifecycle revocation to the Stage-0 exit authors.
 
-    Inv-11 revocation symmetry: removing a decoupled alpha's Stage-0
-    authorization — quarantine, de-promotion, or decommission — must flatten any
-    open deferred book **on the transition**, not at the old
-    ``max_hold_after_safe_off`` / age ceiling.  The lifecycle emits a typed
-    :class:`~feelies.alpha.lifecycle.LifecycleRevocation`; this binds that to
-    :meth:`~feelies.risk.exit_composer.ExitComposer.revoke_and_flatten` so the
-    deferral never outlives its authorization.  The same transition
-    :meth:`~feelies.risk.deferral_cap.DeferralCapController.revoke`\\ s the
-    bounded-deferral cap so it stops bounding the revoked slice — otherwise a
-    later ``Trade`` at/after the old deadline could publish a second, duplicate
-    cap-driven exit for the slice the composer already flattened.
-
-    No-op when no alpha is decoupled (no composer): a non-decoupled alpha keeps
-    its SIGNAL-layer ``gate_close_flat`` and has no deferred book to revoke.
-
-    The flatten is stamped with the *transition's own* ``timestamp_ns`` rather
-    than a fresh clock read, so the emitted order is a pure function of the
-    lifecycle event and replays identically (Inv-5, Inv-10).
-    """
+    The event timestamp is preserved so flattening remains replay-deterministic."""
     if exit_composer is None:
         return
 
@@ -762,19 +664,11 @@ def _select_clock(mode: OperatingMode) -> Clock:
     return WallClock()
 
 
-def _ensure_session_open_ns_for_live_modes(
+def _ensure_session_open_ns_for_paper(
     config: PlatformConfig,
     clock: Clock,
 ) -> PlatformConfig:
-    """Anchor horizon boundaries for PAPER/LIVE when YAML omits ``session_open_ns``.
-
-    H10 forbids lazy-binding from the first market event in non-backtest
-    modes because arrival ordering would make boundary indices
-    non-deterministic.  When the operator omits ``session_open_ns`` we
-    pin the anchor to composition-time wall clock so ``run_paper.py`` (and
-    future live entry scripts) boot successfully without requiring a
-    hand-authored epoch in ``platform.yaml``.
-    """
+    """Anchor PAPER horizon boundaries to the current RTH open when absent."""
     if config.mode == OperatingMode.BACKTEST:
         return config
     if config.session_open_ns is not None:
@@ -794,17 +688,7 @@ def _ensure_session_open_ns_for_live_modes(
 def _build_platform_gate_thresholds(
     config: PlatformConfig,
 ) -> GateThresholds | None:
-    """Build platform promotion thresholds when overrides are configured.
-
-    Return ``None`` when there are no overrides so the registry can retain
-    its distinct "no platform overrides" state.
-
-    Re-validation is intentional even though
-    :class:`PlatformConfig` already validated the keys at YAML parse
-    time — direct ``PlatformConfig(...)`` constructions skip
-    :meth:`PlatformConfig.from_yaml` entirely, so this is the single
-    place that enforces validity for *every* code path.
-    """
+    """Resolve platform gate thresholds and report invalid overrides once."""
     overrides = config.gate_thresholds_overrides
     if not overrides:
         return None
@@ -879,19 +763,7 @@ def _load_alphas(
 
 
 def _enforce_decouple_symbol_scope(config: PlatformConfig, registry: AlphaRegistry) -> None:
-    """Cross-alpha Stage-0 scope invariant at load (design rev 5 §3.3 / §3.4).
-
-    The per-spec loader/G17 cannot see whether *another* strategy also trades a
-    decoupled alpha's symbol, so this runs once over the whole registered set.
-    This platform's decoupling backstop caps are strategy-slice-scoped (the
-    :class:`~feelies.risk.deferral_cap.DeferralCapController` and
-    :class:`~feelies.risk.exit_composer.ExitComposer` read the per-strategy
-    :class:`~feelies.portfolio.strategy_position_store.StrategyPositionStore`), so
-    a decoupled alpha may share a symbol with another strategy — the guard is a
-    no-op here.  It is wired regardless so the invariant is *enforced at load*
-    (not merely recorded) and bites immediately if a future change ever routes a
-    symbol-net cap as the backstop.
-    """
+    """Reject decoupled SIGNAL alphas that exceed the supported symbol scope."""
     entries: list[tuple[str, frozenset[str], bool]] = []
     for alpha_id in sorted(registry.alpha_ids()):
         manifest = registry.get(alpha_id).manifest
@@ -943,119 +815,76 @@ def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:
 
 
 def _create_backend(
-    mode: OperatingMode,
+    config: PlatformConfig,
     event_log: InMemoryEventLog,
     clock: Clock,
     *,
     cost_model: DefaultCostModel,
-    fill_latency_ns: int = 0,
-    market_data_latency_ns: int = 0,
-    execution_mode: str = "market",
-    passive_fill_delay_ticks: int = 3,
-    passive_max_resting_ticks: int = 50,
-    passive_queue_position_shares: int = 0,
-    passive_fill_hazard_max: float = 0.5,
-    passive_cancel_fee_per_share: float = 0.0,
-    market_impact_factor: float = 0.5,
-    max_impact_half_spreads: float = 10.0,
-    stop_slippage_half_spreads: float = 2.0,
     normalizer: MarketDataNormalizer | None = None,
-    config: PlatformConfig | None = None,
+    moc_bounds: MocSessionBounds | None = None,
+    session_bounds: TradingSessionBounds | None = None,
 ) -> _BackendBundle:
-    """Compose the per-mode :class:`ExecutionBackend` + auxiliary handles."""
-    backend: ExecutionBackend
-    router: BacktestOrderRouter | PassiveLimitOrderRouter | None
-    moc_bounds: MocSessionBounds | None = (
-        _resolve_moc_bounds(config) if config is not None else None
-    )
-    trading_session_bounds: TradingSessionBounds | None = (
-        _resolve_trading_session_bounds(config) if config is not None else None
-    )
-    # Thread identical execution-realism settings into both backtest routers.
-    within_l1_impact_factor = config.cost_within_l1_impact_factor if config is not None else 0.0
-    permanent_impact_coefficient = (
-        config.cost_permanent_impact_coefficient if config is not None else 0.0
-    )
-    stop_depth_depletion_factor = (
-        config.cost_stop_depth_depletion_factor if config is not None else 1.0
-    )
-    moc_penalty_bps = config.cost_moc_penalty_bps if config is not None else 0.0
-    through_fill_size_cap_enabled = (
-        config.passive_through_fill_size_cap_enabled if config is not None else False
-    )
-    require_trade_for_level_fill = (
-        config.passive_require_trade_for_level_fill if config is not None else False
-    )
-    if mode == OperatingMode.BACKTEST:
-        # Minimum-cost routing needs one backend that can fill limits and markets.
-        if execution_mode in ("passive_limit", "minimum_cost"):
-            backend, router = build_passive_limit_backend(
+    """Compose the configured backend and its operator-facing handles."""
+    if moc_bounds is None:
+        moc_bounds = _resolve_moc_bounds(config)
+    if session_bounds is None:
+        session_bounds = _resolve_trading_session_bounds(config)
+    if config.mode == OperatingMode.BACKTEST:
+        if config.execution_mode in ("passive_limit", "minimum_cost"):
+            backend, _ = build_passive_limit_backend(
                 event_log,
                 clock,
-                latency_ns=fill_latency_ns,
-                market_data_latency_ns=market_data_latency_ns,
+                latency_ns=config.backtest_fill_latency_ns,
+                market_data_latency_ns=config.market_data_latency_ns,
                 cost_model=cost_model,
-                market_impact_factor=market_impact_factor,
-                max_impact_half_spreads=max_impact_half_spreads,
-                fill_delay_ticks=passive_fill_delay_ticks,
-                max_resting_ticks=passive_max_resting_ticks,
-                queue_position_shares=passive_queue_position_shares,
-                cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
-                fill_hazard_max=_decimal(passive_fill_hazard_max),
-                stop_slippage_half_spreads=stop_slippage_half_spreads,
-                within_l1_impact_factor=within_l1_impact_factor,
-                permanent_impact_coefficient=permanent_impact_coefficient,
-                stop_depth_depletion_factor=stop_depth_depletion_factor,
-                through_fill_size_cap_enabled=through_fill_size_cap_enabled,
-                require_trade_for_level_fill=require_trade_for_level_fill,
+                market_impact_factor=config.cost_market_impact_factor,
+                max_impact_half_spreads=config.cost_max_impact_half_spreads,
+                fill_delay_ticks=config.passive_fill_delay_ticks,
+                max_resting_ticks=config.passive_max_resting_ticks,
+                queue_position_shares=config.passive_queue_position_shares,
+                cancel_fee_per_share=_decimal(config.passive_cancel_fee_per_share),
+                fill_hazard_max=_decimal(config.passive_fill_hazard_max),
+                stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
+                within_l1_impact_factor=config.cost_within_l1_impact_factor,
+                permanent_impact_coefficient=config.cost_permanent_impact_coefficient,
+                stop_depth_depletion_factor=config.cost_stop_depth_depletion_factor,
+                through_fill_size_cap_enabled=(config.passive_through_fill_size_cap_enabled),
+                require_trade_for_level_fill=config.passive_require_trade_for_level_fill,
                 moc_bounds=moc_bounds,
-                moc_penalty_bps=moc_penalty_bps,
-                trading_session_bounds=trading_session_bounds,
+                moc_penalty_bps=config.cost_moc_penalty_bps,
+                trading_session_bounds=session_bounds,
             )
-            return _BackendBundle(backend=backend, backtest_router=router)
+            return _BackendBundle(backend=backend)
 
-        backend, router = build_backtest_backend(
+        backend, _ = build_backtest_backend(
             event_log,
             clock,
-            latency_ns=fill_latency_ns,
-            market_data_latency_ns=market_data_latency_ns,
+            latency_ns=config.backtest_fill_latency_ns,
+            market_data_latency_ns=config.market_data_latency_ns,
             cost_model=cost_model,
-            market_impact_factor=market_impact_factor,
-            max_impact_half_spreads=max_impact_half_spreads,
-            stop_slippage_half_spreads=stop_slippage_half_spreads,
-            within_l1_impact_factor=within_l1_impact_factor,
-            permanent_impact_coefficient=permanent_impact_coefficient,
-            stop_depth_depletion_factor=stop_depth_depletion_factor,
-            max_resting_ticks=passive_max_resting_ticks,
+            market_impact_factor=config.cost_market_impact_factor,
+            max_impact_half_spreads=config.cost_max_impact_half_spreads,
+            stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
+            within_l1_impact_factor=config.cost_within_l1_impact_factor,
+            permanent_impact_coefficient=config.cost_permanent_impact_coefficient,
+            stop_depth_depletion_factor=config.cost_stop_depth_depletion_factor,
+            max_resting_ticks=config.passive_max_resting_ticks,
             moc_bounds=moc_bounds,
-            moc_penalty_bps=moc_penalty_bps,
-            trading_session_bounds=trading_session_bounds,
+            moc_penalty_bps=config.cost_moc_penalty_bps,
+            trading_session_bounds=session_bounds,
         )
-        return _BackendBundle(backend=backend, backtest_router=router)
+        return _BackendBundle(backend=backend)
 
-    if mode == OperatingMode.PAPER:
-        if config is None:
-            raise ConfigurationError(
-                "PAPER mode requires a PlatformConfig argument to "
-                "_create_backend (bug in bootstrap composition)"
-            )
+    if config.mode == OperatingMode.PAPER:
         api_key = (os.environ.get("MASSIVE_API_KEY") or "").strip()
         if not api_key:
             raise ConfigurationError("MASSIVE_API_KEY env var is required for OperatingMode.PAPER")
-        if normalizer is None:
-            raise ConfigurationError(
-                "PAPER mode requires a MassiveNormalizer instance "
-                "(bootstrap auto-constructs one — this is a bug)"
-            )
         if not isinstance(normalizer, MassiveNormalizer):
+            actual = "None" if normalizer is None else type(normalizer).__name__
             raise ConfigurationError(
-                "PAPER mode requires a MassiveNormalizer instance, got "
-                f"{type(normalizer).__name__}"
+                f"PAPER mode requires a MassiveNormalizer instance, got {actual}"
             )
-        # Lazy import: the paper backend pulls in the optional IB stack
-        # (``ibapi``).  Importing it at module load forced BACKTEST-only script
-        # entry points (run_backtest.py, smoke_pipeline.py) to require the
-        # ``ib`` extra; deferring it here keeps pure-backtest runs dependency-light.
+        # Keep the optional IB stack out of BACKTEST-only imports.
         from feelies.execution.paper_backend import build_paper_backend
 
         backend, live_feed, ib_conn = build_paper_backend(
@@ -1070,15 +899,11 @@ def _create_backend(
         )
         return _BackendBundle(
             backend=backend,
-            backtest_router=None,
             live_feed=live_feed,
             ib_connection=ib_conn,
         )
 
-    raise NotImplementedError(
-        f"ExecutionBackend for mode {mode.name} is not yet implemented. "
-        f"Live router is future work."
-    )
+    raise AssertionError(f"Unhandled operating mode: {config.mode!r}")
 
 
 def _decimal(value: float) -> Decimal:
@@ -1086,17 +911,7 @@ def _decimal(value: float) -> Decimal:
 
 
 def _derive_session_id(config: PlatformConfig) -> str:
-    """Build a deterministic session id from platform config.
-
-    The session id is folded into every ``HorizonTick.session_id``
-    field; consumers use it for forensic grouping. Format:
-
-        f"{market_id}_{session_kind}_{date}"
-
-    where ``date`` is derived from ``session_open_ns`` when set, else
-    ``"UNANCHORED"`` (signalling the scheduler will lazy-bind on the
-    first event).
-    """
+    """Build the deterministic horizon session identifier."""
     if config.session_open_ns is None:
         date_str = "UNANCHORED"
     else:
@@ -1323,30 +1138,8 @@ def _create_sensor_layer(
     *,
     metric_collector: InMemoryMetricCollector | None = None,
     thread_safe_sequences: bool = True,
-) -> tuple[
-    SequenceGenerator,
-    SequenceGenerator,
-    SequenceGenerator,
-    SensorRegistry | None,
-    HorizonScheduler | None,
-    HorizonAggregator | None,
-]:
-    """Compose the sensor layer.
-
-    Returns a 6-tuple ``(sensor_seq, horizon_seq, snapshot_seq,
-    sensor_registry, horizon_scheduler, horizon_aggregator)``.
-
-    Even when no sensors are configured we still return fresh
-    ``SequenceGenerator`` instances so the orchestrator has stable
-    counters to reference; they simply never advance in that case.
-    The registry, scheduler and aggregator are returned as ``None``
-    when the config has no sensors (registry) or no horizons
-    (scheduler / aggregator), so the orchestrator's dispatch helpers
-    short-circuit for free.
-
-    Subscription order is governed by the module-level docstring and
-    is the *single* place this is documented authoritatively.
-    """
+) -> tuple[SensorRegistry | None, HorizonScheduler | None]:
+    """Compose and attach the sensor layer; return dispatch-facing components."""
     sensor_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
     horizon_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
     snapshot_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
@@ -1463,14 +1256,7 @@ def _create_sensor_layer(
             len(_active_features),
         )
 
-    return (
-        sensor_seq,
-        horizon_seq,
-        snapshot_seq,
-        sensor_registry,
-        horizon_scheduler,
-        horizon_aggregator,
-    )
+    return sensor_registry, horizon_scheduler
 
 
 def _create_hazard_detector(
@@ -1478,19 +1264,9 @@ def _create_hazard_detector(
     *,
     thread_safe_sequences: bool = True,
 ) -> tuple[SequenceGenerator, RegimeHazardDetector | None]:
-    """Construct a :class:`RegimeHazardDetector` iff any alpha opts in.
+    """Create the shared hazard sequence and opt-in detector.
 
-    Returns ``(hazard_seq, detector_or_None)``.  The sequence generator
-    is always returned so the orchestrator has a stable counter
-    reference even when no alpha uses hazard exits — the empty counter
-    advances zero times in that case, preserving parity.
-
-    Activation rule (§20.7.1): the detector is only constructed when
-    at least one registered alpha's manifest declares
-    ``hazard_exit.enabled: true``. This keeps default deployments free of
-    hazard-related cost and ensures Level-5
-    parity hash baselines are not generated by accident.
-    """
+    The detector remains absent unless at least one alpha enables hazard exits."""
     hazard_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     def _opts_in(manifest_block: dict[str, object] | None) -> bool:
@@ -1524,34 +1300,13 @@ def _create_signal_layer(
     regime_min_discriminability: float = 0.0,
     metric_collector: InMemoryMetricCollector | None = None,
     thread_safe_sequences: bool = True,
-) -> tuple[SequenceGenerator, HorizonSignalEngine | None]:
-    """Compose :class:`HorizonSignalEngine` when SIGNAL alphas exist.
-
-    Returns ``(signal_seq, engine_or_None)``.  The sequence generator
-    is always returned (so the orchestrator has a stable counter
-    reference even when the engine is absent, preserving identical output).
-
-    SIGNAL-alpha sensor dependencies are resolved against
-    ``sensor_registry``'s declared spec ids before the engine is
-    attached.  When ``sensor_registry is None`` the engine still
-    receives the empty sensor universe; loaders that declared
-    ``depends_on_sensors`` will fail validation at boot via
-    :class:`feelies.alpha.registry.UnresolvedDependencyError`.
-
-    H3 / M2: after the sensor-id check, an additional validation
-    verifies that every ``depends_on_sensors`` entry is reachable by
-    either a registered ``HorizonFeature`` (surfaced in
-    ``HorizonFeatureSnapshot.values``) or the engine's sensor cache
-    (raw ``SensorReading`` pass-through via gate DSL).  Entries that
-    fall into neither set are logged as warnings so the operator
-    surfaces the gap at boot rather than via silent ``None`` at
-    runtime.
-    """
+) -> HorizonSignalEngine | None:
+    """Compose and attach the SIGNAL engine when SIGNAL alphas exist."""
     signal_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
 
     signal_alphas = registry.signal_alphas()
     if not signal_alphas:
-        return signal_seq, None
+        return None
 
     if sensor_registry is None:
         known_sensor_ids: frozenset[str] = frozenset()
@@ -1619,13 +1374,7 @@ def _create_signal_layer(
                 expected_half_life_seconds=module.expected_half_life_seconds,
                 consumed_features=consumed_feature_ids,
                 required_warm_feature_ids=warm_ids,
-                # Stage-0 opt-in, carried from the validated manifest block.  This
-                # flag is the *sole* selector for every decoupling behaviour: the
-                # engine's gate-close FLAT suppression reads it, and both risk-layer
-                # authors (`_create_deferral_cap_controller`, `_create_exit_composer`)
-                # filter their alpha set on it.  Dropping it here silently reverts a
-                # promoted alpha to `gate_close_flat` with no deferral ceilings at
-                # runtime, so it must stay wired to the loader's value.
+                # The validated opt-in drives gate suppression and exit authors.
                 decouple_gate_close=module.decouple_gate_close,
             )
         )
@@ -1634,7 +1383,7 @@ def _create_signal_layer(
         "HorizonSignalEngine composed: %d SIGNAL alpha(s) attached",
         len(engine.signals),
     )
-    return signal_seq, engine
+    return engine
 
 
 def _union_portfolio_upstream_strategy_ids(
@@ -1674,20 +1423,15 @@ def _create_composition_layer(
     strategy_positions: StrategyPositionStore,
     clock: Clock,
     thread_safe_sequences: bool = True,
-) -> tuple[
-    CompositionEngine | None,
-    CrossSectionalTracker | None,
-    HorizonMetricsCollector | None,
-    HazardExitController | None,
-]:
+) -> CompositionEngine | None:
     """Compose the portfolio pipeline in deterministic bus order.
 
-    Returns four ``None`` values when no portfolio alpha exists. Oversized
-    universes and stale configured factor loadings fail stop before wiring.
+    Returns ``None`` when no portfolio alpha exists. Oversized universes and
+    stale configured factor loadings fail stop before wiring.
     """
     portfolio_alphas = registry.portfolio_alphas()
     if not portfolio_alphas:
-        return None, None, None, None
+        return None
 
     portfolio_modules = [m for m in portfolio_alphas if isinstance(m, LoadedPortfolioLayerModule)]
     if not portfolio_modules:
@@ -1699,7 +1443,7 @@ def _create_composition_layer(
             "PORTFOLIO alphas registered but none are "
             "LoadedPortfolioLayerModule instances; skipping composition wiring"
         )
-        return None, None, None, None
+        return None
 
     universe: set[str] = set()
     horizons: set[int] = set()
@@ -1831,12 +1575,7 @@ def _create_composition_layer(
         decay_enabled,
     )
 
-    return (
-        engine,
-        cross_sectional_tracker,
-        horizon_metrics,
-        None,
-    )
+    return engine
 
 
 def _create_stop_exit_controller(
@@ -1847,16 +1586,7 @@ def _create_stop_exit_controller(
     trading_session_bounds: TradingSessionBounds | None,
     thread_safe_sequences: bool = True,
 ) -> StopExitController | None:
-    """Build the platform stop-loss / session-flatten controller, or ``None``.
-
-    Returns ``None`` when neither control is configured, so a deployment with
-    stops and session flatten off never subscribes and stays bit-identical to one
-    predating the controller (Inv-5).
-
-    The controller gets its own sequence family: sharing the kernel's would make
-    every downstream event id shift the moment a stop fires, and sharing the
-    hazard family would couple two independent authors' id streams.
-    """
+    """Attach platform stop and session-flatten exits when configured."""
     policy = StopExitPolicy(
         stop_loss_per_share=config.stop_loss_per_share,
         trail_activate_per_share=config.trail_activate_per_share,
@@ -1899,21 +1629,7 @@ def _create_hazard_exit_controller(
     fallback_universe: Iterable[str],
     thread_safe_sequences: bool = True,
 ) -> HazardExitController | None:
-    """Build a :class:`HazardExitController` from any active alpha's opt-in.
-
-    Scan all active alphas so SIGNAL and PORTFOLIO policies are both wired.
-
-    The HM-1 default applies here: when an alpha omits
-    ``hard_exit_age_seconds`` we derive ``2 × expected_half_life_seconds``
-    from its mechanism declaration (when positive) so age-based hard
-    exits are usable for short-half-life alphas without requiring
-    operators to copy-paste the math into every YAML.
-
-    Per-alpha ``universe`` falls back to ``fallback_universe`` (the
-    platform-wide symbols) for SIGNAL modules, which don't expose a
-    per-alpha universe — the PORTFOLIO-only universe attribute is only
-    surfaced by :class:`LoadedPortfolioLayerModule`.
-    """
+    """Attach hazard-exit policies declared by SIGNAL or PORTFOLIO alphas."""
     fallback = tuple(sorted(fallback_universe))
 
     candidates = [
@@ -2001,20 +1717,7 @@ def _create_exit_composer(
     fallback_universe: Iterable[str],
     thread_safe_sequences: bool = True,
 ) -> ExitComposer | None:
-    """Build a :class:`ExitComposer` for every decoupled SIGNAL alpha (§3.3).
-
-    Scan the composed :class:`HorizonSignalEngine` for registrations whose
-    ``decouple_gate_close`` flag is set — the Stage-0 opt-in threaded from the
-    alpha config.  With none decoupled the composer is not created and nothing
-    subscribes to the bus, so default deployments are bit-identical (Inv-5); the
-    Stage-1/Phase-4 config surface is what flips the flag on.
-
-    The composer reads the **strategy-slice** store (not the symbol-net
-    ``PositionStore``) so a flatten never crosses into another strategy's slice
-    on a shared symbol.  SIGNAL modules don't expose a per-alpha universe, so the
-    policy universe falls back to the platform-wide symbols — mirroring
-    :func:`_create_hazard_exit_controller`.
-    """
+    """Attach the Stage-0 exit composer for decoupled SIGNAL alphas."""
     if horizon_signal_engine is None:
         return None
     decoupled = [s for s in horizon_signal_engine.signals if s.decouple_gate_close]
@@ -2056,22 +1759,7 @@ def _create_deferral_cap_controller(
     session_flatten_seconds_before_close: int,
     thread_safe_sequences: bool = True,
 ) -> DeferralCapController | None:
-    """Build the bounded-deferral cap for every decoupled SIGNAL alpha (§2.3).
-
-    This is the author that makes Stage-0 decoupling a *bounded deferral* rather
-    than a removal of today's gate-close flatten: it holds the episode's
-    ``min(opened_at + hard_exit_age_seconds, first_safe_off +
-    max_hold_after_safe_off, session_flatten)`` deadline and forces the EXIT.
-    Without it the composer's clean-transition HOLD would have no timed
-    counterpart and the declared ceilings would never bind (Inv-11).
-
-    Decoupled alphas are read from the **same source** as
-    :func:`_create_exit_composer` — ``RegisteredSignal.decouple_gate_close`` — so
-    the two authors can never cover different sets; the per-episode ceilings then
-    come from that alpha's validated ``safety_exit_policy`` manifest block.  With
-    none decoupled nothing is created and nothing subscribes, so default
-    deployments stay bit-identical (Inv-5).
-    """
+    """Attach bounded-deferral exits for decoupled SIGNAL alphas."""
     if horizon_signal_engine is None:
         return None
     decoupled = [s for s in horizon_signal_engine.signals if s.decouple_gate_close]
@@ -2156,21 +1844,9 @@ def _enforce_factor_loadings_freshness(
     *,
     clock: Clock,
 ) -> None:
-    """Fail-stop on missing or stale loadings rows.
+    """Require a fresh factor row for every composition symbol.
 
-    The neutralizer accepts ``loadings_dir is None`` (no-op pass-through),
-    so the freshness check only fires when an operator explicitly
-    points at a loadings file.  When fired, every symbol in
-    ``universe_sorted`` MUST appear in ``loadings.json`` and the file's
-    effective age must be within ``factor_loadings_max_age_seconds`` —
-    else we raise rather than silently neutralize against a stale or
-    partial factor model (Inv-11).
-
-    Prefer the file's ``_meta.as_of_ns`` because it is reproducible; use
-    filesystem mtime only when metadata is absent. Compare against
-    ``session_open_ns`` when available, otherwise the injected clock in
-    PAPER/LIVE. BACKTEST refuses to guess without a session anchor.
-    """
+    The check is fail-stop and uses the injected clock for deterministic age."""
     if config.factor_loadings_dir is None:
         return
     import json

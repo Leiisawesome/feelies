@@ -46,9 +46,7 @@ from feelies.harness.backtest_runner import (  # noqa: E402
     _enforce_ingest_event_mix,
     _run_backtest_phases_2_7,
     main,
-    main_cache_replay,
     parse_args,
-    parse_cache_replay_args,
 )
 
 __all__ = [
@@ -75,9 +73,7 @@ __all__ = [
     "compute_config_hash",
     "compute_parity_hash",
     "main",
-    "main_cache_replay",
     "parse_args",
-    "parse_cache_replay_args",
     "prepare_backtest_event_log",
 ]
 

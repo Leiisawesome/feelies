@@ -67,15 +67,12 @@ class _PendingOrder:
     request: OrderRequest
     side: Side
     limit_price: Decimal
-    submit_time_ns: int
     # ACKNOWLEDGED ack timestamp captured at submit so subsequent acks
     # (CANCELLED on timeout / explicit cancel) can be floored at it to
     # preserve monotonic per-order ack ordering even when ``clock.now_ns()``
     # has not yet advanced past the post timestamp.
     ack_timestamp_ns: int = 0
-    # Per-order queue threshold captured at post time.  Allows callers
-    # to override the default via ``set_queue_ahead`` if they need a
-    # per-order sampled position rather than a global assumption.
+    # Queue threshold captured from the configured global assumption.
     queue_ahead_shares: int = 0
     ticks_at_level: int = 0
     total_ticks: int = 0
@@ -138,7 +135,6 @@ class PassiveLimitOrderRouter:
         self._max_impact_half_spreads = to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
         )
-        self._fill_delay_ticks = fill_delay_ticks
         self._max_resting_ticks = max_resting_ticks
         self._queue_position_shares = queue_position_shares
         self._cancel_fee_per_share = cancel_fee_per_share
@@ -498,7 +494,6 @@ class PassiveLimitOrderRouter:
             request=request,
             side=request.side,
             limit_price=limit_price,
-            submit_time_ns=ack_ts,
             ack_timestamp_ns=ack_ts,
             queue_ahead_shares=self._queue_position_shares,
         )
@@ -516,19 +511,6 @@ class PassiveLimitOrderRouter:
                 request_sequence=request.sequence,
             )
         )
-
-    def set_queue_ahead(self, order_id: str, shares: int) -> bool:
-        """Override the queue-ahead threshold for a specific resting order.
-
-        Allows per-order queue-position sampling (e.g. drawn from an
-        exchange-specific distribution) rather than the global default.
-        Returns True if the order was found.
-        """
-        pending = self._resting_orders.get(order_id)
-        if pending is None:
-            return False
-        pending.queue_ahead_shares = shares
-        return True
 
     # ── Resting order fill checking ──────────────────────────────
 
@@ -986,20 +968,3 @@ class PassiveLimitOrderRouter:
     def resting_symbols(self) -> frozenset[str]:
         """Symbols with at least one resting limit order."""
         return frozenset(self._resting_by_symbol.keys())
-
-    @property
-    def requires_trade_feed(self) -> bool:
-        """True when ``on_trade()`` must be wired for correct fills.
-
-        When the queue-position mode is enabled (``queue_position_shares > 0``
-        at construction, or any order has a non-zero per-order threshold),
-        level fills only fire when accumulated trade volume reaches the
-        threshold. Without a trade feed, those orders never fill by queue drain;
-        callers should wire
-        ``on_trade`` when this is True.
-
-        Also true when ``require_trade_for_level_fill`` is enabled: drain fills
-        require at least one print at the level, so the trade feed must be
-        wired or passive orders only ever fill on through-trades.
-        """
-        return self._queue_position_shares > 0 or self._require_trade_for_level_fill

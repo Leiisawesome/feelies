@@ -61,7 +61,7 @@ Implemented via `Orchestrator.unlock_from_lockdown()`:
 2. `MacroState` transitions: `RISK_LOCKDOWN → READY`
 3. `RiskLevel` SM resets to `NORMAL` (only transition that loosens)
 4. System re-enters `READY`; operator must explicitly call
-   `run_live()` / `run_paper()` to resume trading
+   `run_paper()` to resume trading
 
 > **NOT YET IMPLEMENTED**: graduated recovery (25% throttle, tightened
 > circuit breakers, 30-minute elevated monitoring). Currently recovery

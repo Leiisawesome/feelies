@@ -63,7 +63,7 @@ Five state machines govern all system behaviour:
 
 | Machine | States | Scope |
 |---|---|---|
-| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → RESEARCH or BACKTEST/PAPER/LIVE → DEGRADED; PAPER/LIVE → RISK_LOCKDOWN on SIGNAL-path breach; RISK_LOCKDOWN → READY (unlock) or SHUTDOWN | System-wide |
+| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → BACKTEST/PAPER → DEGRADED; PAPER → RISK_LOCKDOWN on SIGNAL-path breach; RISK_LOCKDOWN → READY (unlock) or SHUTDOWN | System-wide |
 | **Micro** (tick pipeline) | WAITING → MARKET_EVENT → STATE_UPDATE → SENSOR → AGGREGATOR → SIGNAL → COMPOSITION → RISK → ORDER → ACK → POSITION → LOG | Per-tick |
 | **Order** lifecycle | CREATED → SUBMITTED → ACKNOWLEDGED → FILLED/CANCELLED/REJECTED/EXPIRED | Per-order |
 | **Risk** escalation | NORMAL → WARNING → BREACH → FORCED_FLATTEN → LOCKED | Monotonic safety |
@@ -104,7 +104,7 @@ feelies/
 │   ├── risk/                     # Risk engine, escalation SM, sizer, hazard-exit controller
 │   ├── execution/                # Backend abstraction, intent translator, order SM, routers, paper_backend
 │   ├── harness/                  # Backtest CLI preparation, runner, reports, JSONL, parity helpers
-│   ├── broker/                   # External-broker adapters (PAPER/LIVE): `broker/ib/` — IB Gateway connection + router
+│   ├── broker/                   # External-broker adapter (PAPER): `broker/ib/` — IB Gateway connection + router
 │   ├── portfolio/                # Position store, per-strategy + cross-sectional trackers
 │   ├── storage/                  # Event log, disk cache, bundled reference YAML/JSON
 │   ├── monitoring/               # Metrics (incl. horizon metrics), alerting, kill switch
@@ -166,7 +166,7 @@ pip install -e ".[dev,massive]"
 # reference factor loadings, also install the [portfolio] extra:
 pip install -e ".[dev,massive,portfolio]"
 
-# To enable PAPER (and future LIVE) mode — adds the Interactive Brokers
+# To enable PAPER mode — adds the Interactive Brokers
 # Gateway adapter (ibapi) used by ``IBOrderRouter``:
 pip install -e ".[dev,massive,ib]"
 
@@ -181,8 +181,7 @@ disabled.
 
 The `[ib]` extra pulls `nautilus-ibapi` (the community mirror of the
 official `ibapi` TWS API) plus `protobuf`. It is required only when
-launching `OperatingMode.PAPER` (or `LIVE`, once implemented); BACKTEST
-runs never import it.
+launching `OperatingMode.PAPER`; BACKTEST runs never import it.
 
 All commands in this repo should be run via `uv run <cmd>` when using the
 `uv`-managed virtual environment (e.g. `uv run pytest`, `uv run python
@@ -445,7 +444,7 @@ signal: |
       )
 ```
 
-The `LayerValidator` calls gates G1–G17 at load time; G13 is presently a no-op.
+The `LayerValidator` enforces active gates G1–G12 and G14–G17 at load time; G13 is a reserved numbering slot.
 See [`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the gate table.
 
 ### Hypothesis authoring
@@ -464,7 +463,7 @@ and research lifecycle / mutation discipline in
 cost model, alpha discovery, horizons, and v0.3 strict-mode flags:
 
 ```yaml
-mode: BACKTEST                            # BACKTEST | PAPER | LIVE
+mode: BACKTEST                            # BACKTEST | PAPER
 symbols: [AAPL, MSFT, NVDA]
 alpha_spec_dir: alphas/                   # Scanned for *.alpha.yaml at boot
 regime_engine: hmm_3state_fractional
@@ -497,7 +496,8 @@ risk_max_drawdown_pct: 5.0
 
 # IB US Equity Tiered cost model
 cost_commission_per_share: 0.0035
-cost_exchange_per_share: 0.0005
+cost_taker_exchange_per_share: 0.003
+cost_maker_exchange_per_share: 0.0
 cost_min_commission: 0.35
 cost_max_commission_pct: 1.0
 
@@ -505,7 +505,6 @@ cost_max_commission_pct: 1.0
 execution_mode: passive_limit             # market | passive_limit
 passive_fill_delay_ticks: 3
 passive_max_resting_ticks: 50
-passive_rebate_per_share: 0.002
 ```
 
 ## Design Invariants
@@ -633,7 +632,7 @@ producing the *same* canonical `NBBOQuote` / `Trade` event types via
    `~/.feelies/cache/`. `ReplayFeed` then iterates the log in timestamp
    order, with `SimulatedClock` advancing to each event's timestamp
    (Inv-6, causality).
-2. **Live stream (PAPER / LIVE)** — `MassiveLiveFeed` connects to the
+2. **Live stream (PAPER)** — `MassiveLiveFeed` connects to the
    Massive WebSocket, normalises frames into the same event types, and
    yields them in arrival order. Between frames it emits `IdleTick`
    sentinels so the orchestrator can drain asynchronous broker fills

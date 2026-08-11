@@ -60,7 +60,6 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/signal_layer_module.py": "audit_alpha_lifecycle",
     "alpha/cost_arithmetic.py": "audit_signal_alpha",
     "alpha/arbitration.py": "audit_signal_alpha",
-    "alpha/aggregation.py": "audit_signal_alpha",
     "alpha/portfolio_layer_module.py": "audit_composition",
     "alpha/fill_attribution.py": "audit_forensics",
     "alpha/risk_wrapper.py": "audit_risk_engine",
@@ -81,7 +80,6 @@ _FILE_OWNERS: dict[str, str] = {
     "execution/position_manager.py": "audit_position_management",
     "execution/portfolio_netter.py": "audit_position_management",
     "execution/sized_intent_legs.py": "audit_position_management",
-    "execution/live_router.py": "audit_live_execution",
     "execution/paper_backend.py": "audit_live_execution",
     "execution/order_state.py": "audit_live_execution",
     "execution/trading_session.py": "audit_live_execution",
@@ -98,7 +96,6 @@ _FILE_OWNERS: dict[str, str] = {
     "execution/tick_size.py": "audit_execution_fills",
     "execution/regulatory/borrow_availability.py": "audit_execution_fills",
     "execution/regulatory/pdt_constraint.py": "audit_execution_fills",
-    "execution/realism_profile.py": "audit_execution_fills",
     # ── cli/ ────────────────────────────────────────────────────────
     "cli/backtest.py": "audit_harness_cli",
     "cli/env.py": "audit_harness_cli",

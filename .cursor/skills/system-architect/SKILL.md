@@ -54,7 +54,7 @@ no silent transitions (Inv-13).
 
 | Machine | Enum | File | States | Scope |
 |---------|------|------|--------|-------|
-| Macro lifecycle | `MacroState` | `kernel/macro.py` | INIT → DATA_SYNC → READY → {RESEARCH, BACKTEST, PAPER_TRADING, LIVE_TRADING}_MODE → DEGRADED → RISK_LOCKDOWN → SHUTDOWN | System-wide |
+| Macro lifecycle | `MacroState` | `kernel/macro.py` | INIT → DATA_SYNC → READY → {BACKTEST, PAPER_TRADING}_MODE → DEGRADED → RISK_LOCKDOWN → SHUTDOWN | System-wide |
 | Micro pipeline | `MicroState` | `kernel/micro.py` | M0 ‥ M10 backbone + Phase-2/3/4 sub-states (see below) | Per-tick |
 | Order lifecycle | `OrderState` | `execution/order_state.py` | CREATED → SUBMITTED → ACKNOWLEDGED → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, REJECTED, EXPIRED, CANCELLED} | Per-order |
 | Risk escalation | `RiskLevel` | `risk/escalation.py` | NORMAL → WARNING → BREACH_DETECTED → FORCED_FLATTEN → LOCKED | Monotonic safety |
@@ -123,7 +123,9 @@ startup via `bootstrap.build_platform(config)`:
 | `BACKTEST_MODE` (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
 | `BACKTEST_MODE` (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
 | `PAPER_TRADING_MODE` | `MassiveLiveFeed` | `IBOrderRouter` (`broker/ib/`), composed via `build_paper_backend()` in `execution/paper_backend.py` | `WallClock` |
-| `LIVE_TRADING_MODE` | — | **Not yet implemented** — `bootstrap._create_backend()` raises `NotImplementedError` for `OperatingMode.LIVE`; `LiveOrderRouter` (`execution/live_router.py`) is a stub that raises `NotImplementedError` | — |
+
+`LIVE` capital is an alpha-lifecycle state, not an operating mode; no live-capital
+backend or macro state is shipped.
 
 `execution_mode: minimum_cost` is a third backtest mode: it routes
 through the passive-limit backend (`PassiveLimitOrderRouter`) so the
@@ -211,7 +213,7 @@ protocols. Composition happens at startup via
 | `LoadedSignalLayerModule` | `alpha/signal_layer_module.py` | Schema-1.1 SIGNAL alpha runtime |
 | `LoadedPortfolioLayerModule` | `alpha/portfolio_layer_module.py` | Schema-1.1 PORTFOLIO alpha runtime |
 | `AlphaLoader` | `alpha/loader.py` | Discovers and loads `*.alpha.yaml`; rejects `LEGACY_SIGNAL` |
-| `LayerValidator` | `alpha/layer_validator.py` | Calls gates G1–G17 at load time; G13 is presently a no-op |
+| `LayerValidator` | `alpha/layer_validator.py` | Enforces active gates G1–G12 and G14–G17; G13 is reserved |
 | `AlphaRegistry` | `alpha/registry.py` | Tracks active modules + per-alpha lifecycle (F-5 threshold merge) |
 | `AlphaLifecycle` | `alpha/lifecycle.py` | 5-state machine (RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED) + LIVE @ SCALED self-loop (F-6) |
 | `PromotionLedger` | `alpha/promotion_ledger.py` | Append-only JSONL audit trail (F-1) |
@@ -247,7 +249,7 @@ gate-specific subclass.
 | G10 | PORTFOLIO universe presence (Phase-4) | Always blocks |
 | G11 | PORTFOLIO factor-neutralization disclosure (Phase-4) | Always blocks |
 | G12 | Cost-arithmetic margin_ratio ≥ 1.5 (Inv-12) | Always blocks |
-| G13 | Warm-up documentation (`_check_g13_warm_up_documentation`; surviving SIGNAL/PORTFOLIO layers declare no inline features) | No-op (called for stable numeric order) |
+| G13 | Reserved numbering slot (warm-up is platform-owned) | No runtime check |
 | G14 | Data dependency declaration | Always blocks |
 | G15 | Router whitelist | Always blocks |
 | G16 | Mechanism-horizon binding (taxonomy + half-life envelope + horizon ratio + fingerprint sensors + stress-family exit-only + family caps) | Always blocks |
@@ -256,7 +258,7 @@ gate-specific subclass.
 `PlatformConfig.enforce_layer_gates` (default `true`) toggles **only G1
 and G3** between hard-blocking and WARNING-only. Every other implemented
 check (G2, G4–G12, G14–G17) **always blocks** when applicable, regardless
-of the flag. G13 is called in sequence but presently a no-op.
+of the flag. G13 remains reserved and has no runtime plumbing.
 
 `PlatformConfig.enforce_trend_mechanism` (default `true` since
 Workstream E) additionally rejects schema-1.1 SIGNAL/PORTFOLIO alphas
