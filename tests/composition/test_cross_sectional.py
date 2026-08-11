@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import math
 
-from feelies.composition.cross_sectional import CrossSectionalRanker, cap_family_vectors
+from feelies.composition.cross_sectional import (
+    CrossSectionalRanker,
+    SleeveRankResult,
+    cap_family_vectors,
+)
 from feelies.core.events import (
     CrossSectionalContext,
     Signal,
@@ -55,6 +59,20 @@ def _make_ctx(signals: dict[str, Signal | None], *, ts_ns: int = 2_000) -> Cross
     )
 
 
+def _combined_weights(result: SleeveRankResult) -> dict[str, float]:
+    """Per-symbol weight summed across every mechanism sleeve.
+
+    ``rank_sleeves`` standardizes each family separately; the engine recombines
+    the sleeves into one book. These tests assert on that combined view, which
+    is what downstream construction actually consumes.
+    """
+    combined: dict[str, float] = {}
+    for vector in result.weights_by_mech.values():
+        for symbol, weight in vector.items():
+            combined[symbol] = combined.get(symbol, 0.0) + weight
+    return combined
+
+
 def test_zscore_centers_to_zero_and_clips():
     ranker = CrossSectionalRanker(clip=4.0)
     ctx = _make_ctx(
@@ -64,24 +82,29 @@ def test_zscore_centers_to_zero_and_clips():
             "TSLA": _make_signal(symbol="TSLA", direction=SignalDirection.SHORT, edge_bps=10),
         }
     )
-    result = ranker.rank(ctx)
-    assert sum(result.weights.values()) == 0.0 or math.isclose(
-        sum(result.weights.values()),
-        0.0,
-        abs_tol=1e-9,
-    )
+    weights = _combined_weights(ranker.rank_sleeves(ctx))
+    assert math.isclose(sum(weights.values()), 0.0, abs_tol=1e-9)
 
 
 def test_none_signal_yields_zero_weight():
+    """A symbol with no signal holds (weight 0) without biasing the moments.
+
+    Three symbols so the surviving cross-section is non-degenerate: with only
+    one active name ``_standardize`` returns zeros for everyone (std == 0) and
+    the assertion would pass without testing the active-set carve-out at all.
+    """
     ranker = CrossSectionalRanker()
     ctx = _make_ctx(
         {
-            "AAPL": _make_signal(symbol="AAPL", direction=SignalDirection.LONG),
+            "AAPL": _make_signal(symbol="AAPL", direction=SignalDirection.LONG, edge_bps=10),
             "MSFT": None,
+            "TSLA": _make_signal(symbol="TSLA", direction=SignalDirection.SHORT, edge_bps=10),
         }
     )
-    result = ranker.rank(ctx)
-    assert result.weights["MSFT"] == 0.0
+    weights = _combined_weights(ranker.rank_sleeves(ctx))
+    assert weights["MSFT"] == 0.0
+    assert weights["AAPL"] != 0.0
+    assert weights["TSLA"] != 0.0
 
 
 def test_decay_weighting_shrinks_old_signals():
@@ -105,7 +128,7 @@ def test_decay_weighting_shrinks_old_signals():
         {"AAPL": sig_old, "MSFT": sig_fresh},
         ts_ns=61_000_000_000,
     )
-    result = ranker.rank(ctx)
+    result = ranker.rank_sleeves(ctx)
     assert math.isclose(result.decay_factors["AAPL"], math.exp(-1.0))
     assert math.isclose(result.decay_factors["MSFT"], 1.0)
 
@@ -122,8 +145,8 @@ def test_decay_override_disables_decay_for_one_call():
     )
     ctx = _make_ctx({"AAPL": sig_old, "MSFT": None}, ts_ns=61_000_000_000)
 
-    on = ranker.rank(ctx)
-    off = ranker.rank(ctx, decay_weighting_enabled=False)
+    on = ranker.rank_sleeves(ctx)
+    off = ranker.rank_sleeves(ctx, decay_weighting_enabled=False)
     assert math.isclose(on.decay_factors["AAPL"], math.exp(-1.0))
     assert math.isclose(off.decay_factors["AAPL"], 1.0)
 
@@ -139,8 +162,8 @@ def test_decay_override_enables_decay_when_instance_off():
     )
     ctx = _make_ctx({"AAPL": sig_old, "MSFT": None}, ts_ns=61_000_000_000)
 
-    default = ranker.rank(ctx)
-    forced_on = ranker.rank(ctx, decay_weighting_enabled=True)
+    default = ranker.rank_sleeves(ctx)
+    forced_on = ranker.rank_sleeves(ctx, decay_weighting_enabled=True)
     assert math.isclose(default.decay_factors["AAPL"], 1.0)
     assert math.isclose(forced_on.decay_factors["AAPL"], math.exp(-1.0))
 
@@ -156,7 +179,7 @@ def test_decay_override_none_uses_instance_flag():
     )
     ctx = _make_ctx({"AAPL": sig_old, "MSFT": None}, ts_ns=61_000_000_000)
     assert math.isclose(
-        ranker.rank(ctx, decay_weighting_enabled=None).decay_factors["AAPL"],
+        ranker.rank_sleeves(ctx, decay_weighting_enabled=None).decay_factors["AAPL"],
         math.exp(-1.0),
     )
 
@@ -179,32 +202,38 @@ def test_liquidity_stress_is_exit_only():
             ),
         }
     )
-    result = ranker.rank(ctx)
+    result = ranker.rank_sleeves(ctx)
     assert result.raw_scores["AAPL"] == 0.0
+    # Every sleeve seeds the whole universe at 0.0, so membership proves nothing.
+    # ``decay_factors == 0.0`` is the marker that no contribution was gathered at
+    # all — a gathered-then-zeroed signal would carry a decay of 1.0 and would
+    # have joined the sleeve's standardization moments.
+    assert result.decay_factors["AAPL"] == 0.0
+    assert "AAPL" not in result.mechanism_by_symbol
+    assert all(vector["AAPL"] == 0.0 for vector in result.weights_by_mech.values())
 
 
-def test_mechanism_cap_scales_overrepresented_family():
+def test_resolve_caps_takes_the_tighter_of_family_and_global():
+    """``min(per_family, global)`` — neither declaration may be exceeded.
+
+    The ranker no longer scales weights itself; it only resolves the caps the
+    engine then enforces via ``cap_family_vectors``. This pins the resolution.
+    """
     ranker = CrossSectionalRanker(mechanism_max_share_of_gross=0.5)
-    sigs = {
-        s: _make_signal(
-            symbol=s,
-            direction=SignalDirection.LONG,
-            edge_bps=10.0,
-            mech=TrendMechanism.KYLE_INFO,
-        )
-        for s in ("A", "B", "C")
-    }
-    sigs["D"] = _make_signal(
-        symbol="D",
-        direction=SignalDirection.SHORT,
-        edge_bps=10.0,
-        mech=TrendMechanism.INVENTORY,
+
+    per_family, default_cap = ranker.resolve_caps(
+        {TrendMechanism.KYLE_INFO: 0.8, TrendMechanism.INVENTORY: 0.2},
+        None,
     )
-    ctx = _make_ctx(sigs)
-    result = ranker.rank(ctx)
-    breakdown = result.mechanism_breakdown
-    if TrendMechanism.KYLE_INFO in breakdown:
-        assert breakdown[TrendMechanism.KYLE_INFO] <= 0.5 + 1e-9
+    assert default_cap == 0.5
+    # The looser family declaration is clamped to the global; the tighter stands.
+    assert per_family[TrendMechanism.KYLE_INFO] == 0.5
+    assert per_family[TrendMechanism.INVENTORY] == 0.2
+
+    # An explicit global overrides the instance default for both.
+    per_family, default_cap = ranker.resolve_caps({TrendMechanism.KYLE_INFO: 0.8}, 0.3)
+    assert default_cap == 0.3
+    assert per_family[TrendMechanism.KYLE_INFO] == 0.3
 
 
 # ── Simultaneous mechanism-cap convergence ──────────────────────────────
@@ -245,33 +274,6 @@ def test_cap_family_vectors_converges_for_simultaneous_multi_family_breach():
     assert math.isclose(sum(breakdown.values()), 1.0, abs_tol=1e-9)
 
 
-def test_apply_mechanism_cap_converges_for_simultaneous_multi_family_breach():
-    """Same scenario through the legacy single-signal-per-symbol cap path
-    (``CrossSectionalRanker._apply_mechanism_cap``, reached via ``rank()``
-    for any future alpha that calls the ranker directly)."""
-    ranker = CrossSectionalRanker()
-    fams = (
-        TrendMechanism.KYLE_INFO,
-        TrendMechanism.INVENTORY,
-        TrendMechanism.HAWKES_SELF_EXCITE,
-        TrendMechanism.SCHEDULED_FLOW,
-    )
-    weights = {"A": 0.35, "B": 0.30, "C": 0.30, "D": 0.05}
-    mechanism_by_symbol = {"A": fams[0], "B": fams[1], "C": fams[2], "D": fams[3]}
-    caps = {f: 0.25 for f in fams}
-
-    _scaled, breakdown = ranker._apply_mechanism_cap(  # noqa: SLF001 -- exercising the fix directly
-        weights, mechanism_by_symbol, (caps, 1.0)
-    )
-
-    assert breakdown, "expected a non-empty realised breakdown"
-    for mech, share in breakdown.items():
-        assert share <= caps[mech] + 1e-9, (
-            f"{mech.name} share {share} exceeds its cap {caps[mech]} — "
-            "multi-family cap convergence regressed"
-        )
-
-
 def test_deterministic_replay():
     ranker = CrossSectionalRanker(decay_weighting_enabled=True)
     ctx = _make_ctx(
@@ -280,7 +282,8 @@ def test_deterministic_replay():
             for i, s in enumerate(("AAPL", "MSFT", "GOOG", "TSLA"))
         }
     )
-    a = ranker.rank(ctx)
-    b = ranker.rank(ctx)
-    assert a.weights == b.weights
+    a = ranker.rank_sleeves(ctx)
+    b = ranker.rank_sleeves(ctx)
+    assert a.weights_by_mech == b.weights_by_mech
     assert a.raw_scores == b.raw_scores
+    assert a.decay_factors == b.decay_factors

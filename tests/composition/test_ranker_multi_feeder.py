@@ -63,7 +63,7 @@ def test_rank_sums_feeder_marginal_raw_scores() -> None:
         completeness=1.0,
     )
     ranker = CrossSectionalRanker(decay_weighting_enabled=False)
-    result = ranker.rank(
+    result = ranker.rank_sleeves(
         ctx,
         feeder_strategy_ids=(
             "sig_inventory_revert_v1",
@@ -72,6 +72,14 @@ def test_rank_sums_feeder_marginal_raw_scores() -> None:
     )
     # LONG: +3 ; SHORT: -0.5 * 10 = -5  → raw_total -2
     assert result.raw_scores["AAPL"] == pytest.approx(-2.0)
+    # The two feeders declare different families, so each opens its own sleeve
+    # rather than collapsing into one pre-standardization score.
+    assert set(result.weights_by_mech) == {
+        TrendMechanism.INVENTORY,
+        TrendMechanism.KYLE_INFO,
+    }
+    # Provenance follows the largest-|raw| contribution: |-5| > |+3|.
+    assert result.mechanism_by_symbol["AAPL"] == TrendMechanism.KYLE_INFO
 
 
 def test_multi_feeder_exit_only_mechanism_excluded_from_active() -> None:
@@ -136,13 +144,24 @@ def test_multi_feeder_exit_only_mechanism_excluded_from_active() -> None:
         completeness=1.0,
     )
     ranker = CrossSectionalRanker(decay_weighting_enabled=False, clip=4.0)
-    result = ranker.rank(
+    result = ranker.rank_sleeves(
         ctx,
         feeder_strategy_ids=("stress_alpha", "kyle_g", "kyle_m"),
     )
     assert result.decay_factors["AAPL"] == 0.0
     assert result.raw_scores["AAPL"] == 0.0
-    assert result.weights["AAPL"] == 0.0
-    assert result.mechanism_by_symbol["AAPL"] == TrendMechanism.LIQUIDITY_STRESS
-    assert result.weights["GOOG"] == pytest.approx(-1.0)
-    assert result.weights["MSFT"] == pytest.approx(1.0)
+
+    # AAPL contributed nothing, so the KYLE sleeve standardizes over GOOG/MSFT
+    # alone and lands on ±1.0. If the exit-only feeder had joined ``active``
+    # with raw 0.0 it would drag the mean to 0 over three names and these move.
+    kyle = result.weights_by_mech[TrendMechanism.KYLE_INFO]
+    assert kyle["AAPL"] == 0.0
+    assert kyle["GOOG"] == pytest.approx(-1.0)
+    assert kyle["MSFT"] == pytest.approx(1.0)
+
+    # Documented divergence from the retired ``rank()``: that path recorded the
+    # exit-only family in ``mechanism_by_symbol`` for a symbol it had scored to
+    # zero. ``rank_sleeves`` gathers no contribution at all, so the symbol has
+    # no provenance entry — nothing downstream attributes gross to a family
+    # that put none of it on the book.
+    assert "AAPL" not in result.mechanism_by_symbol

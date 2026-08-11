@@ -5,7 +5,7 @@ from __future__ import annotations
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
-from feelies.composition.cross_sectional import CrossSectionalRanker, cap_family_vectors
+from feelies.composition.cross_sectional import cap_family_vectors
 from feelies.core.events import TrendMechanism
 
 _ALL_FAMILIES = tuple(TrendMechanism)
@@ -64,30 +64,6 @@ def test_cap_family_vectors_never_exceeds_declared_cap(
     vectors = {mech: {f"SYM_{mech.name}": gross[mech]} for mech in families}
 
     _scaled, breakdown = cap_family_vectors(vectors, (caps, 1.0))
-
-    for mech, share in breakdown.items():
-        assert share <= caps[mech] + _CAP_TOLERANCE, (
-            f"{mech.name} share {share} exceeds cap {caps[mech]} "
-            f"(families={[f.name for f in families]}, caps={ {k.name: v for k, v in caps.items()} }, "
-            f"gross={ {k.name: v for k, v in gross.items()} })"
-        )
-
-
-@settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow])
-@given(drawn=_families_caps_and_gross())
-def test_apply_mechanism_cap_never_exceeds_declared_cap(
-    drawn: tuple[
-        tuple[TrendMechanism, ...], dict[TrendMechanism, float], dict[TrendMechanism, float]
-    ],
-) -> None:
-    families, caps, gross = drawn
-    ranker = CrossSectionalRanker()
-    weights = {f"SYM_{mech.name}": gross[mech] for mech in families}
-    mechanism_by_symbol = {f"SYM_{mech.name}": mech for mech in families}
-
-    _scaled, breakdown = ranker._apply_mechanism_cap(  # noqa: SLF001 -- exercising the fix directly
-        weights, mechanism_by_symbol, (caps, 1.0)
-    )
 
     for mech, share in breakdown.items():
         assert share <= caps[mech] + _CAP_TOLERANCE, (
