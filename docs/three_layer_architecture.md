@@ -1166,8 +1166,6 @@ composition_completeness_threshold: 0.80
 # Factor model for portfolio neutralization.
 factor_model: "FF5_momentum_STR"        # or "none" to disable
 
-# Factor loadings refresh cadence (in seconds). 0 = static at bootstrap.
-factor_loadings_refresh_seconds: 3600
 # Maximum accepted age for factor loadings at bootstrap. Default: 7 days.
 factor_loadings_max_age_seconds: 604800
 
@@ -1771,9 +1769,8 @@ approximation at intraday scale. (b) is a separate future proposal.
 
 **RESOLVED → (a).** End-of-day factor loadings refreshed daily from the
 chosen provider (Q6). Intraday factor exposures are computed against
-static loadings within a session. The `factor_loadings_refresh_seconds`
-field in `platform.yaml` (§9) defaults to `3600` but is set to `0`
-(static-at-bootstrap) for deterministic backtests.
+static loadings within a session; intraday refresh is not a shipped
+configuration surface.
 
 ### Q6 — What is the reference factor model provider?
 

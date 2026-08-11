@@ -300,26 +300,20 @@ def build_platform(
     # Isolate risk alerts so they cannot shift orchestrator event IDs.
     _seq_thread_safe = config.mode != OperatingMode.BACKTEST
     risk_alert_seq = SequenceGenerator(thread_safe=_seq_thread_safe)
-    # Refuse account types whose PDT behavior is not modeled.
-    account_type = AccountType(config.account_type)
-    if account_type is not AccountType.MARGIN_25K:
-        raise NotImplementedError(
-            f"account_type={config.account_type!r} is not implemented; "
-            "only 'margin_25k' is wired (BT-4). Set account_type: margin_25k."
-        )
     pdt_constraint = PDTConstraint(
         PDTConfig(
-            account_type=account_type,
+            account_type=AccountType.MARGIN_25K,
             account_id=config.account_id,
             min_equity=_decimal(config.pdt_min_equity_usd),
         )
     )
     buying_power_config = BuyingPowerConfig(
-        account_type=config.account_type,
+        account_type="margin_25k",
         intraday_multiplier=_decimal(config.risk_margin_intraday_buying_power_multiplier),
         overnight_multiplier=_decimal(config.risk_margin_overnight_buying_power_multiplier),
     )
     trading_session_bounds = _resolve_trading_session_bounds(config)
+    moc_bounds = _resolve_moc_bounds(config)
     # One read path for regime: consumers read what was published, never the
     # live engine (see feelies.services.regime_state_cache).
     regime_states = RegimeStateCache(bus=bus)
@@ -347,8 +341,6 @@ def build_platform(
             through_fill_adverse_selection_bps=_decimal(
                 config.cost_through_fill_adverse_selection_bps
             ),
-            adverse_selection_through_bps=_decimal(config.cost_adverse_selection_through_bps),
-            adverse_selection_drain_bps=_decimal(config.cost_adverse_selection_drain_bps),
             sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
             stress_multiplier=_decimal(config.cost_stress_multiplier),
             min_commission=_decimal(config.cost_min_commission),
@@ -362,9 +354,6 @@ def build_platform(
             spread_floor_taker_only=config.cost_spread_floor_taker_only,
         )
     )
-    # Every router requires an explicit cost model; None is a wiring bug.
-    assert cost_model is not None, "cost_model construction returned None"
-
     # PAPER shares one normalizer between the feed and orchestrator.
     if normalizer is None and config.mode == OperatingMode.PAPER:
         normalizer = MassiveNormalizer(
@@ -375,23 +364,13 @@ def build_platform(
         normalizer.register_symbols(config.symbols)
 
     bundle = _create_backend(
-        config.mode,
+        config,
         event_log,
         clock,
-        fill_latency_ns=config.backtest_fill_latency_ns,
-        market_data_latency_ns=config.market_data_latency_ns,
         cost_model=cost_model,
-        execution_mode=config.execution_mode,
-        passive_fill_delay_ticks=config.passive_fill_delay_ticks,
-        passive_max_resting_ticks=config.passive_max_resting_ticks,
-        passive_queue_position_shares=config.passive_queue_position_shares,
-        passive_fill_hazard_max=config.passive_fill_hazard_max,
-        passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
-        market_impact_factor=config.cost_market_impact_factor,
-        max_impact_half_spreads=config.cost_max_impact_half_spreads,
-        stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
         normalizer=normalizer,
-        config=config,
+        moc_bounds=moc_bounds,
+        session_bounds=trading_session_bounds,
     )
     backend = bundle.backend
     backtest_router = bundle.backtest_router
@@ -487,12 +466,7 @@ def build_platform(
     )
 
     # Subscribe composition after SIGNAL so synchronization observes updated caches.
-    (
-        composition_engine,
-        cross_sectional_tracker,
-        composition_metrics,
-        _unused_hazard_from_composition,
-    ) = _create_composition_layer(
+    composition_engine = _create_composition_layer(
         config=config,
         bus=bus,
         registry=registry,
@@ -506,7 +480,7 @@ def build_platform(
     # subscribes) when neither is configured, so default deployments are
     # unaffected.  Attached before the alpha-driven authors so a stop and a
     # hazard spike on the same dispatch resolve in a fixed order (Inv-5).
-    stop_exit_controller = _create_stop_exit_controller(
+    _create_stop_exit_controller(
         bus=bus,
         config=config,
         position_store=position_store,
@@ -628,19 +602,12 @@ def build_platform(
         sensor_registry=sensor_registry,
         horizon_scheduler=horizon_scheduler,
         horizon_signal_engine=horizon_signal_engine,
-        sensor_sequence_generator=sensor_seq,
-        horizon_sequence_generator=horizon_seq,
-        snapshot_sequence_generator=snapshot_seq,
-        signal_sequence_generator=signal_seq,
         regime_hazard_detector=regime_hazard_detector,
         hazard_sequence_generator=hazard_seq,
         composition_engine=composition_engine,
-        cross_sectional_tracker=cross_sectional_tracker,
-        composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
-        stop_exit_controller=stop_exit_controller,
-        exit_composer=exit_composer,
-        deferral_cap_controller=deferral_cap_controller,
+        trading_session_bounds=trading_session_bounds,
+        moc_bounds_configured=moc_bounds is not None,
         edge_calibration_factors=resolved_edge_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
@@ -936,119 +903,76 @@ def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:
 
 
 def _create_backend(
-    mode: OperatingMode,
+    config: PlatformConfig,
     event_log: InMemoryEventLog,
     clock: Clock,
     *,
     cost_model: DefaultCostModel,
-    fill_latency_ns: int = 0,
-    market_data_latency_ns: int = 0,
-    execution_mode: str = "market",
-    passive_fill_delay_ticks: int = 3,
-    passive_max_resting_ticks: int = 50,
-    passive_queue_position_shares: int = 0,
-    passive_fill_hazard_max: float = 0.5,
-    passive_cancel_fee_per_share: float = 0.0,
-    market_impact_factor: float = 0.5,
-    max_impact_half_spreads: float = 10.0,
-    stop_slippage_half_spreads: float = 2.0,
     normalizer: MarketDataNormalizer | None = None,
-    config: PlatformConfig | None = None,
+    moc_bounds: MocSessionBounds | None = None,
+    session_bounds: TradingSessionBounds | None = None,
 ) -> _BackendBundle:
-    """Compose the per-mode :class:`ExecutionBackend` + auxiliary handles."""
-    backend: ExecutionBackend
-    router: BacktestOrderRouter | PassiveLimitOrderRouter | None
-    moc_bounds: MocSessionBounds | None = (
-        _resolve_moc_bounds(config) if config is not None else None
-    )
-    trading_session_bounds: TradingSessionBounds | None = (
-        _resolve_trading_session_bounds(config) if config is not None else None
-    )
-    # Thread identical execution-realism settings into both backtest routers.
-    within_l1_impact_factor = config.cost_within_l1_impact_factor if config is not None else 0.0
-    permanent_impact_coefficient = (
-        config.cost_permanent_impact_coefficient if config is not None else 0.0
-    )
-    stop_depth_depletion_factor = (
-        config.cost_stop_depth_depletion_factor if config is not None else 1.0
-    )
-    moc_penalty_bps = config.cost_moc_penalty_bps if config is not None else 0.0
-    through_fill_size_cap_enabled = (
-        config.passive_through_fill_size_cap_enabled if config is not None else False
-    )
-    require_trade_for_level_fill = (
-        config.passive_require_trade_for_level_fill if config is not None else False
-    )
-    if mode == OperatingMode.BACKTEST:
-        # Minimum-cost routing needs one backend that can fill limits and markets.
-        if execution_mode in ("passive_limit", "minimum_cost"):
-            backend, router = build_passive_limit_backend(
+    """Compose the configured backend and its operator-facing handles."""
+    if moc_bounds is None:
+        moc_bounds = _resolve_moc_bounds(config)
+    if session_bounds is None:
+        session_bounds = _resolve_trading_session_bounds(config)
+    if config.mode == OperatingMode.BACKTEST:
+        if config.execution_mode in ("passive_limit", "minimum_cost"):
+            backend, passive_router = build_passive_limit_backend(
                 event_log,
                 clock,
-                latency_ns=fill_latency_ns,
-                market_data_latency_ns=market_data_latency_ns,
+                latency_ns=config.backtest_fill_latency_ns,
+                market_data_latency_ns=config.market_data_latency_ns,
                 cost_model=cost_model,
-                market_impact_factor=market_impact_factor,
-                max_impact_half_spreads=max_impact_half_spreads,
-                fill_delay_ticks=passive_fill_delay_ticks,
-                max_resting_ticks=passive_max_resting_ticks,
-                queue_position_shares=passive_queue_position_shares,
-                cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
-                fill_hazard_max=_decimal(passive_fill_hazard_max),
-                stop_slippage_half_spreads=stop_slippage_half_spreads,
-                within_l1_impact_factor=within_l1_impact_factor,
-                permanent_impact_coefficient=permanent_impact_coefficient,
-                stop_depth_depletion_factor=stop_depth_depletion_factor,
-                through_fill_size_cap_enabled=through_fill_size_cap_enabled,
-                require_trade_for_level_fill=require_trade_for_level_fill,
+                market_impact_factor=config.cost_market_impact_factor,
+                max_impact_half_spreads=config.cost_max_impact_half_spreads,
+                fill_delay_ticks=config.passive_fill_delay_ticks,
+                max_resting_ticks=config.passive_max_resting_ticks,
+                queue_position_shares=config.passive_queue_position_shares,
+                cancel_fee_per_share=_decimal(config.passive_cancel_fee_per_share),
+                fill_hazard_max=_decimal(config.passive_fill_hazard_max),
+                stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
+                within_l1_impact_factor=config.cost_within_l1_impact_factor,
+                permanent_impact_coefficient=config.cost_permanent_impact_coefficient,
+                stop_depth_depletion_factor=config.cost_stop_depth_depletion_factor,
+                through_fill_size_cap_enabled=(config.passive_through_fill_size_cap_enabled),
+                require_trade_for_level_fill=config.passive_require_trade_for_level_fill,
                 moc_bounds=moc_bounds,
-                moc_penalty_bps=moc_penalty_bps,
-                trading_session_bounds=trading_session_bounds,
+                moc_penalty_bps=config.cost_moc_penalty_bps,
+                trading_session_bounds=session_bounds,
             )
-            return _BackendBundle(backend=backend, backtest_router=router)
+            return _BackendBundle(backend=backend, backtest_router=passive_router)
 
-        backend, router = build_backtest_backend(
+        backend, market_router = build_backtest_backend(
             event_log,
             clock,
-            latency_ns=fill_latency_ns,
-            market_data_latency_ns=market_data_latency_ns,
+            latency_ns=config.backtest_fill_latency_ns,
+            market_data_latency_ns=config.market_data_latency_ns,
             cost_model=cost_model,
-            market_impact_factor=market_impact_factor,
-            max_impact_half_spreads=max_impact_half_spreads,
-            stop_slippage_half_spreads=stop_slippage_half_spreads,
-            within_l1_impact_factor=within_l1_impact_factor,
-            permanent_impact_coefficient=permanent_impact_coefficient,
-            stop_depth_depletion_factor=stop_depth_depletion_factor,
-            max_resting_ticks=passive_max_resting_ticks,
+            market_impact_factor=config.cost_market_impact_factor,
+            max_impact_half_spreads=config.cost_max_impact_half_spreads,
+            stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
+            within_l1_impact_factor=config.cost_within_l1_impact_factor,
+            permanent_impact_coefficient=config.cost_permanent_impact_coefficient,
+            stop_depth_depletion_factor=config.cost_stop_depth_depletion_factor,
+            max_resting_ticks=config.passive_max_resting_ticks,
             moc_bounds=moc_bounds,
-            moc_penalty_bps=moc_penalty_bps,
-            trading_session_bounds=trading_session_bounds,
+            moc_penalty_bps=config.cost_moc_penalty_bps,
+            trading_session_bounds=session_bounds,
         )
-        return _BackendBundle(backend=backend, backtest_router=router)
+        return _BackendBundle(backend=backend, backtest_router=market_router)
 
-    if mode == OperatingMode.PAPER:
-        if config is None:
-            raise ConfigurationError(
-                "PAPER mode requires a PlatformConfig argument to "
-                "_create_backend (bug in bootstrap composition)"
-            )
+    if config.mode == OperatingMode.PAPER:
         api_key = (os.environ.get("MASSIVE_API_KEY") or "").strip()
         if not api_key:
             raise ConfigurationError("MASSIVE_API_KEY env var is required for OperatingMode.PAPER")
-        if normalizer is None:
-            raise ConfigurationError(
-                "PAPER mode requires a MassiveNormalizer instance "
-                "(bootstrap auto-constructs one — this is a bug)"
-            )
         if not isinstance(normalizer, MassiveNormalizer):
+            actual = "None" if normalizer is None else type(normalizer).__name__
             raise ConfigurationError(
-                "PAPER mode requires a MassiveNormalizer instance, got "
-                f"{type(normalizer).__name__}"
+                f"PAPER mode requires a MassiveNormalizer instance, got {actual}"
             )
-        # Lazy import: the paper backend pulls in the optional IB stack
-        # (``ibapi``).  Importing it at module load forced BACKTEST-only script
-        # entry points (run_backtest.py, smoke_pipeline.py) to require the
-        # ``ib`` extra; deferring it here keeps pure-backtest runs dependency-light.
+        # Keep the optional IB stack out of BACKTEST-only imports.
         from feelies.execution.paper_backend import build_paper_backend
 
         backend, live_feed, ib_conn = build_paper_backend(
@@ -1068,7 +992,7 @@ def _create_backend(
             ib_connection=ib_conn,
         )
 
-    raise AssertionError(f"Unhandled operating mode: {mode!r}")
+    raise AssertionError(f"Unhandled operating mode: {config.mode!r}")
 
 
 def _decimal(value: float) -> Decimal:
@@ -1664,20 +1588,15 @@ def _create_composition_layer(
     strategy_positions: StrategyPositionStore,
     clock: Clock,
     thread_safe_sequences: bool = True,
-) -> tuple[
-    CompositionEngine | None,
-    CrossSectionalTracker | None,
-    HorizonMetricsCollector | None,
-    HazardExitController | None,
-]:
+) -> CompositionEngine | None:
     """Compose the portfolio pipeline in deterministic bus order.
 
-    Returns four ``None`` values when no portfolio alpha exists. Oversized
-    universes and stale configured factor loadings fail stop before wiring.
+    Returns ``None`` when no portfolio alpha exists. Oversized universes and
+    stale configured factor loadings fail stop before wiring.
     """
     portfolio_alphas = registry.portfolio_alphas()
     if not portfolio_alphas:
-        return None, None, None, None
+        return None
 
     portfolio_modules = [m for m in portfolio_alphas if isinstance(m, LoadedPortfolioLayerModule)]
     if not portfolio_modules:
@@ -1689,7 +1608,7 @@ def _create_composition_layer(
             "PORTFOLIO alphas registered but none are "
             "LoadedPortfolioLayerModule instances; skipping composition wiring"
         )
-        return None, None, None, None
+        return None
 
     universe: set[str] = set()
     horizons: set[int] = set()
@@ -1821,12 +1740,7 @@ def _create_composition_layer(
         decay_enabled,
     )
 
-    return (
-        engine,
-        cross_sectional_tracker,
-        horizon_metrics,
-        None,
-    )
+    return engine
 
 
 def _create_stop_exit_controller(

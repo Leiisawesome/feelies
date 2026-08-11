@@ -26,8 +26,6 @@ from feelies.core.events import (
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
-from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
-from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.risk.hazard_exit import HazardExitController
 from feelies.sensors.impl.hawkes_intensity import HawkesIntensitySensor
 from feelies.sensors.impl.trade_through_rate import TradeThroughRateSensor
@@ -288,11 +286,6 @@ def test_xsect_v1_e2e_all_three_alphas_register() -> None:
 def test_xsect_v1_e2e_composition_layer_is_wired() -> None:
     orchestrator, _s, _i, _o = _build()
     assert isinstance(orchestrator._composition_engine, CompositionEngine)
-    assert isinstance(orchestrator._cross_sectional_tracker, CrossSectionalTracker)
-    assert isinstance(
-        orchestrator._composition_metrics_collector,
-        HorizonMetricsCollector,
-    )
     # The Hawkes alpha opts into hazard exits.
     assert isinstance(orchestrator._hazard_exit_controller, HazardExitController)
 

@@ -2433,8 +2433,8 @@ class TestEdgeCostGate:
             cost_model=cost_model,
         )
         _publish_signal_on_quote(bus, signal)
-        orch._signal_min_edge_cost_ratio = edge_cost_ratio
         _boot_to_backtest(orch)
+        orch._signal_min_edge_cost_ratio = edge_cost_ratio
         return orch
 
     def test_order_suppressed_when_edge_below_threshold(self) -> None:
@@ -3490,8 +3490,8 @@ class TestReversalEdgeGuard:
             cost_model=DefaultCostModel(DefaultCostModelConfig()),
         )
         _publish_signal_on_quote(bus, signal)
-        orch._reversal_min_edge_cost_multiplier = multiplier
         _boot_to_backtest(orch)
+        orch._reversal_min_edge_cost_multiplier = multiplier
         return orch, bus, orders, alerts
 
     @staticmethod

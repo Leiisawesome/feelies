@@ -122,10 +122,9 @@ class TestCreateBackendPaperBranch:
         normalizer = MassiveNormalizer(clock=clock)
         with pytest.raises(ConfigurationError, match="MASSIVE_API_KEY"):
             _create_backend(
-                OperatingMode.PAPER,
+                config,
                 InMemoryEventLog(),
                 clock,
-                config=config,
                 normalizer=normalizer,
                 cost_model=DefaultCostModel(),
             )
@@ -138,27 +137,10 @@ class TestCreateBackendPaperBranch:
         config = _minimal_paper_config()
         with pytest.raises(ConfigurationError, match="MassiveNormalizer"):
             _create_backend(
-                OperatingMode.PAPER,
+                config,
                 InMemoryEventLog(),
                 SimulatedClock(),
-                config=config,
                 normalizer=None,
-                cost_model=DefaultCostModel(),
-            )
-
-    def test_missing_config_raises_configuration_error(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("MASSIVE_API_KEY", "k")
-        clock = SimulatedClock()
-        with pytest.raises(ConfigurationError, match="PlatformConfig"):
-            _create_backend(
-                OperatingMode.PAPER,
-                InMemoryEventLog(),
-                clock,
-                config=None,
-                normalizer=MassiveNormalizer(clock=clock),
                 cost_model=DefaultCostModel(),
             )
 
@@ -181,10 +163,9 @@ class TestCreateBackendPaperBranch:
                 sentinel_ib,
             )
             bundle = _create_backend(
-                OperatingMode.PAPER,
+                config,
                 InMemoryEventLog(),
                 clock,
-                config=config,
                 normalizer=normalizer,
                 cost_model=DefaultCostModel(),
             )
@@ -213,10 +194,9 @@ class TestCreateBackendPaperBranch:
         with patch("feelies.execution.paper_backend.build_paper_backend") as mock_build:
             mock_build.return_value = (object(), object(), object())
             _create_backend(
-                OperatingMode.PAPER,
+                config,
                 InMemoryEventLog(),
                 clock,
-                config=config,
                 normalizer=normalizer,
                 cost_model=DefaultCostModel(),
             )
@@ -240,10 +220,9 @@ class TestCreateBackendPaperBranch:
         clock = SimulatedClock()
         with pytest.raises(ConfigurationError, match="MASSIVE_API_KEY"):
             _create_backend(
-                OperatingMode.PAPER,
+                config,
                 InMemoryEventLog(),
                 clock,
-                config=config,
                 normalizer=MassiveNormalizer(clock=clock),
                 cost_model=DefaultCostModel(),
             )
