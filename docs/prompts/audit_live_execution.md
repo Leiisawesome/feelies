@@ -3,7 +3,7 @@
 Use this prompt in a **Claude Code** session with full repo access. Scope: feelies
 paper/live execution seam — `paper_backend`, order-lifecycle state machine, the IB
 broker adapter, idempotency, and kill-switch safety — and its **parity with backtest**
-(Inv-9). Bootstrap currently rejects `OperatingMode.LIVE`; no live router is shipped.
+(Inv-9). The platform ships only BACKTEST and PAPER operating modes; no live-capital router or macro state is shipped.
 
 ---
 

@@ -1,6 +1,6 @@
 """Micro-state machine for deterministic tick processing (Section III–IV).
 
-Runs inside BACKTEST_MODE, PAPER_TRADING_MODE, and LIVE_TRADING_MODE.
+Runs inside BACKTEST_MODE and PAPER_TRADING_MODE.
 The same machine runs identically in all three modes (invariant 9).
 
 Hard rules:

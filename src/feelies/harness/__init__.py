@@ -27,7 +27,6 @@ from feelies.harness.backtest_runner import (
     BacktestRunOutcome,
     BusRecorder,
     main,
-    main_cache_replay,
     run_backtest_api,
 )
 
@@ -49,7 +48,6 @@ __all__ = [
     "live_data_version",
     "load_platform_config",
     "main",
-    "main_cache_replay",
     "prepare_backtest_event_log",
     "resolve_backtest_symbols",
     "run_backtest_api",

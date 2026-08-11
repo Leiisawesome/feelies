@@ -53,7 +53,6 @@ logger = logging.getLogger(__name__)
 class OperatingMode(Enum):
     BACKTEST = auto()
     PAPER = auto()
-    LIVE = auto()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -168,7 +167,6 @@ class PlatformConfig:
     # Conservative IBKR retail defaults, including blended SmartRouter fees.
     cost_min_spread_bps: float = 0.3
     cost_commission_per_share: float = 0.0035
-    cost_exchange_per_share: float = 0.0005  # Deprecated: use taker/maker fields.
     cost_taker_exchange_per_share: float = 0.003
     cost_maker_exchange_per_share: float = 0.0
     # Through-fills are more adverse than queue-drain fills.
@@ -205,8 +203,6 @@ class PlatformConfig:
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
     passive_max_resting_ticks: int = 50
-    # Maker rebate per share — deprecated; maker fee now in cost model.
-    passive_rebate_per_share: float = 0.002
     # Shares traded at our level before a queue-drain fill.
     # 0 = disabled, use tick-based fill_delay_ticks instead.
     passive_queue_position_shares: int = 0
@@ -423,8 +419,8 @@ class PlatformConfig:
     # influence trading decisions; backtests do not write transitions.
     promotion_ledger_path: Path | None = None
 
-    # ── PAPER/LIVE connections ───────────────────────────────────────
-    # Defaults target a local IB paper account; LIVE must set port 4001.
+    # ── PAPER connections ─────────────────────────────────────────────
+    # Defaults target a local IB paper account.
     ib_host: str = "127.0.0.1"
     ib_port: int = 4002  # 4002 = paper, 4001 = live
     ib_client_id: int = 1
@@ -982,7 +978,7 @@ class PlatformConfig:
                 self.promotion_ledger_path.name if self.promotion_ledger_path else None
             ),
             "gate_thresholds_overrides": dict(sorted(self.gate_thresholds_overrides.items())),
-            # PAPER / LIVE connection settings — folded so config
+            # PAPER connection settings — folded so config
             # checksums change when an operator points the same
             # platform at a different broker host or WS endpoint.
             "ib_host": self.ib_host,
@@ -1023,17 +1019,6 @@ class PlatformConfig:
 
         if not isinstance(data, dict):
             raise ConfigurationError(f"{path}: root must be a YAML mapping")
-
-        # Warn when ignored cost aliases appear in operator config.
-        for deprecated in ("cost_exchange_per_share", "passive_rebate_per_share"):
-            if deprecated in data:
-                logger.warning(
-                    "platform.yaml %s sets deprecated field %r (ignored). "
-                    "Use cost_taker_exchange_per_share / "
-                    "cost_maker_exchange_per_share instead.",
-                    path,
-                    deprecated,
-                )
 
         # Reject loose scalar types and unknown keys before coercion hides mistakes.
         cls._check_yaml_keys_and_types(data, source=path, strict=strict)
@@ -1104,11 +1089,6 @@ class PlatformConfig:
 
         taker_exch_raw = data.get("cost_taker_exchange_per_share")
         maker_exch_raw = data.get("cost_maker_exchange_per_share")
-        legacy_exch = data.get("cost_exchange_per_share")
-        if taker_exch_raw is None and legacy_exch is not None:
-            taker_exch_raw = legacy_exch
-        if maker_exch_raw is None and legacy_exch is not None:
-            maker_exch_raw = legacy_exch
 
         # Resolve each adverse-selection alias pair while preserving explicit zero.
         passive_adverse_raw = data.get("cost_passive_adverse_selection_bps")
@@ -1268,7 +1248,6 @@ class PlatformConfig:
             trail_activate_pct=float(data.get("trail_activate_pct", 0.0)),
             cost_min_spread_bps=float(data.get("cost_min_spread_bps", 0.3)),
             cost_commission_per_share=float(data.get("cost_commission_per_share", 0.0035)),
-            cost_exchange_per_share=float(data.get("cost_exchange_per_share", 0.0005)),
             cost_taker_exchange_per_share=float(
                 taker_exch_raw if taker_exch_raw is not None else 0.003
             ),
@@ -1316,7 +1295,6 @@ class PlatformConfig:
             realized_cost_alert_ratio=float(data.get("realized_cost_alert_ratio", 1.5)),
             passive_fill_delay_ticks=int(data.get("passive_fill_delay_ticks", 3)),
             passive_max_resting_ticks=int(data.get("passive_max_resting_ticks", 50)),
-            passive_rebate_per_share=float(data.get("passive_rebate_per_share", 0.002)),
             passive_queue_position_shares=int(data.get("passive_queue_position_shares", 0)),
             passive_fill_hazard_max=float(data.get("passive_fill_hazard_max", 0.5)),
             passive_cancel_fee_per_share=float(data.get("passive_cancel_fee_per_share", 0.0)),

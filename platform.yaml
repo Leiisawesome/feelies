@@ -31,7 +31,6 @@ strict_normalizer_symbol_coverage: false
 enable_rest_sequence_gap_detection: false
 
 regime_engine: hmm_3state_fractional
-# Alias: hmm_3state_spread_filter (same implementation).
 
 # Optional engine settings. Time scaling expresses regime dwell in seconds
 # instead of ticks; tune its reference interval per quote-rate cohort.

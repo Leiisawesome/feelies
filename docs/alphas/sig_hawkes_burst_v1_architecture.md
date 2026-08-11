@@ -97,7 +97,7 @@ flowchart TD
 
 **`hazard_exit` block (this SIGNAL alpha):** `bootstrap._create_hazard_detector` turns on **`RegimeHazardDetector`** when **any** registered alpha’s manifest has **`hazard_exit.enabled: true`**, so **`RegimeHazardSpike`** events can be published on regime transitions. Since audit **P0 H-1**, **`HazardExitController`** is built by **`bootstrap._create_hazard_exit_controller`**, which scans **all active alphas** (SIGNAL **and** PORTFOLIO) for the opt-in — this alpha’s flag therefore wires **both** the detector and a live exit policy, even in a SIGNAL-only deployment. (Historically the controller was constructed only from `portfolio_modules` inside `_create_composition_layer`, leaving SIGNAL opt-ins with spikes on the bus and nothing listening.)
 
-The policy threshold is read from the canonical key **`hazard_score_threshold`** (this YAML declares **0.30**). The historical spelling **`posterior_drop_threshold`** was renamed by audit **P1 H-2** — bootstrap only ever read `hazard_score_threshold`, so the legacy key was silently ignored and the controller fell back to its **0.85** default. The loader still accepts the legacy name (normalised with a WARN), but new specs should use the canonical spelling. When **`hard_exit_age_seconds`** is omitted (as here), the **HM-1** default derives it as **`2 × expected_half_life_seconds`** = **60 s** from the `trend_mechanism:` block.
+The policy threshold is read from the canonical key **`hazard_score_threshold`** (this YAML declares **0.30**). The historical spelling **`posterior_drop_threshold`** was renamed by audit **P1 H-2** and is no longer accepted; strict loading prevents it from silently falling back to the controller's **0.85** default. When **`hard_exit_age_seconds`** is omitted (as here), the **HM-1** default derives it as **`2 × expected_half_life_seconds`** = **60 s** from the `trend_mechanism:` block.
 
 **Orthogonality:** **`regime_gate`** controls **Layer-2 signal emission** (ON/OFF latch + FLAT on OFF). **Hazard exits** (when a controller policy exists) flatten **open risk** from **`RegimeHazardSpike`** — a different path from the gate DSL.
 
@@ -182,7 +182,7 @@ Control Hawkes tuple estimation, OFI decay, spread window, vol window, etc. Thes
 
 - **`HazardExitController`** policies are registered by **`bootstrap._create_hazard_exit_controller`** for **every** active alpha that opts in — SIGNAL or PORTFOLIO (audit **P0 H-1**). This alpha therefore gets a live `HazardPolicy` with `strategy_id="sig_hawkes_burst_v1"`; per-alpha universe falls back to the platform-wide symbol list for SIGNAL modules.
 
-- **`hazard_score_threshold: 0.30`** — the live exit trigger (spikes with `hazard_score >= 0.30` flatten the position once `min_age_seconds` is satisfied). The legacy spelling `posterior_drop_threshold` is normalised to this key by the loader with a WARN (audit **P1 H-2**); before that rename the declared 0.30 was silently ignored in favour of the 0.85 default.
+- **`hazard_score_threshold: 0.30`** — the live exit trigger (spikes with `hazard_score >= 0.30` flatten the position once `min_age_seconds` is satisfied). Obsolete spellings are rejected so the declared threshold cannot silently fall back to the 0.85 default.
 
 - **`hard_exit_age_seconds`** is not declared, so the **HM-1** default applies: `2 × expected_half_life_seconds` = **60 s** age-based hard exit.
 

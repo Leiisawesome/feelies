@@ -205,8 +205,8 @@ Behavior:
 - When an alpha omits `hard_exit_age_seconds`, the default is
   `2 × expected_half_life_seconds` from its mechanism declaration
   (HM-1)
-- The legacy `posterior_drop_threshold` YAML key is normalized to
-  `hazard_score_threshold` at load time with a WARNING (audit P1 H-2)
+- `hazard_score_threshold` is the sole accepted YAML threshold key;
+  unknown spellings fail load
 - Bit-identical replay (Inv-5) — verified by the Level-1 + Level-4
   hazard-exit replay tests
 - The controller never closes a position on its own initiative

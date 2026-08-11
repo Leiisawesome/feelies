@@ -116,21 +116,12 @@ Inv-11): `BasicRiskEngine._regime_scaling()` uses
 `min(self._regime_factors.values())`. The resulting EV is then
 clamped with `min(EV, 1.0)`.
 
-### Extensibility
+### Engine scope
 
-New state taxonomies are added by:
-
-1. Implementing `RegimeEngine` with the desired states
-2. Registering via `register_engine(name, engine_cls)`
-3. Selecting in `PlatformConfig.regime_engine` by name
-4. Updating consumer scaling-factor maps (risk config, sizer config)
-
-The platform does not require exactly 3 states. Any `n_states ≥ 2`
-is valid. Today, `_ENGINE_REGISTRY` in `services/regime_engine.py`
-exposes two names (`hmm_3state_fractional`, `hmm_3state_spread_filter`)
-both backed by `HMM3StateFractional`; alternative `RegimeEngine`
-implementations can be added via `register_engine(name, engine_cls)`.
-
+`hmm_3state_fractional` is the platform's single built-in engine. A new
+state taxonomy must land with its real configuration and consumer scaling
+maps; unused implementations and speculative registry hooks are not retained.
+The `RegimeEngine` protocol keeps those integrations structurally testable.
 ---
 
 ## Writer / Reader Contract

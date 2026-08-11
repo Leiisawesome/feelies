@@ -13,7 +13,7 @@ import itertools
 import logging
 import time
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
@@ -115,7 +115,6 @@ from feelies.execution.position_manager import (
 from feelies.execution.trading_session import (
     TradingSessionBounds,
     in_session_flatten_window,
-    session_flatten_deadline_ns,
 )
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
@@ -887,8 +886,8 @@ class Orchestrator:
     def _require_safe_session_entry(self) -> None:
         """Fail closed before operational macro modes (Inv-11).
 
-        Applies to ``run_research``, ``run_backtest``, ``run_paper``, and
-        ``run_live`` — kill switch and risk escalation must both allow entry.
+        Applies to ``run_backtest`` and ``run_paper`` — kill switch and risk
+        escalation must both allow entry.
         """
         if self._kill_switch is not None and self._kill_switch.is_active:
             raise SessionEntryBlockedError(
@@ -1296,23 +1295,6 @@ class Orchestrator:
             reset_portfolio_consumption=True,
         )
 
-    def run_live(self) -> None:
-        """G2 → G6 → pipeline.
-
-        Guard: human approval and risk review; kill switch inactive.
-        Inv-3: R4 (LOCKED) forbids this — must pass through G2 first,
-        which is structurally guaranteed (G8 → G2 → G6).
-        Normal completion (feed iterator exhausted without exception)
-        returns macro to **READY**. Exceptions transition to **DEGRADED**.
-        """
-        self._run_deployment_session(
-            mode=MacroState.LIVE_TRADING_MODE,
-            session_name="live",
-            command_trigger="CMD_LIVE_DEPLOY",
-            failure_trigger_prefix="LIVE_PIPELINE_FAIL",
-            reset_portfolio_consumption=False,
-        )
-
     def _run_deployment_session(
         self,
         *,
@@ -1347,32 +1329,6 @@ class Orchestrator:
                 MacroState.READY,
                 trigger="SESSION_FEED_COMPLETE",
             )
-
-    def run_research(self, job: Callable[[], None]) -> None:
-        """G2 → G3 → job() → G2.
-
-        Research mode does not run the tick pipeline.  The caller
-        provides a job (backtest variant, data exploration, etc.)
-        that executes within the RESEARCH_MODE macro state.
-        """
-        self._macro.assert_state(MacroState.READY)
-        self._require_safe_session_entry()
-        self._pipeline_abort_requested = False
-        self._macro.transition(MacroState.RESEARCH_MODE, trigger="CMD_RESEARCH")
-        try:
-            job()
-            if self._macro.state == MacroState.RESEARCH_MODE:
-                self._macro.transition(
-                    MacroState.READY,
-                    trigger="JOB_COMPLETE",
-                )
-        except Exception as exc:
-            if self._macro.state == MacroState.RESEARCH_MODE:
-                self._macro.transition(
-                    MacroState.DEGRADED,
-                    trigger=f"CRITICAL_ERROR:{type(exc).__name__}",
-                )
-            raise
 
     def halt(self) -> None:
         """CMD_STOP: any trading mode → G2.
@@ -2246,7 +2202,7 @@ class Orchestrator:
             verdict = replace(verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
 
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
-        # Backtests simulate flatten because RISK_LOCKDOWN exists only in PAPER/LIVE.
+        # Backtests simulate flatten because RISK_LOCKDOWN exists only in PAPER.
         if verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
                 self._append_signal_order_trace(
@@ -3226,20 +3182,6 @@ class Orchestrator:
                 )
             )
         return failures, residual
-
-    def _session_flatten_deadline_ns(self, quote: NBBOQuote) -> int | None:
-        """Exchange-time ns at/after which the session flattens, or None.
-
-        Thin binding of this orchestrator's session configuration to
-        :func:`~feelies.execution.trading_session.session_flatten_deadline_ns`,
-        which owns the arithmetic beside the bounds it reads.
-        """
-        return session_flatten_deadline_ns(
-            self._trading_session_bounds,
-            enabled=self._session_flatten_enabled,
-            seconds_before_close=self._session_flatten_seconds_before_close,
-            at_ns=quote.exchange_timestamp_ns,
-        )
 
     def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
         """True once the quote crosses the session-flatten deadline.

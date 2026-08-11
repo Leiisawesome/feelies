@@ -92,8 +92,8 @@ The third reads already-normalized events from `EventLog`.
 | Source | Massive API | Implementation | Feeds Into | Used By Mode |
 |--------|-------------|----------------|------------|--------------|
 | Historical backfill | REST `/v3/quotes`, `/v3/trades` | `MassiveHistoricalIngestor` (`ingestion/massive_ingestor.py`) | `EventLog` (for later replay) | None directly — populates storage |
-| Live stream | WebSocket (`Q.*`, `T.*`) | `MassiveLiveFeed` (`ingestion/massive_ws.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `PAPER_TRADING_MODE`, `LIVE_TRADING_MODE` |
-| Replay | `EventLog.replay()` | `ReplayFeed` (`ingestion/replay_feed.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `BACKTEST_MODE`, `RESEARCH_MODE` |
+| Live stream | WebSocket (`Q.*`, `T.*`) | `MassiveLiveFeed` (`ingestion/massive_ws.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `PAPER_TRADING_MODE` |
+| Replay | `EventLog.replay()` | `ReplayFeed` (`ingestion/replay_feed.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `BACKTEST_MODE` |
 
 **Layer-1 / Layer-2 anchoring**: ingested `NBBOQuote` and `Trade`
 events are consumed by the Layer-1 sensor framework
@@ -196,7 +196,7 @@ handlers consult `normalizer.health(symbol)`: `CORRUPTED` forces macro
 `GAP_DETECTED` the same way. Offline replay without a normalizer relies on
 `DiskEventCache` checksums plus optional `require_healthy_disk_cache_manifests`.
 
-> **Backtest vs live health-gate parity (by design).** Only PAPER / LIVE
+> **Backtest vs streaming health-gate parity (by design).** Only PAPER
 > construct a `MassiveNormalizer`, so the runtime `DataHealth` gate
 > (`Orchestrator._data_health_blocks_trading`) is *inert in BACKTEST*
 > (`normalizer is None` short-circuits to "not blocked"). Backtest instead

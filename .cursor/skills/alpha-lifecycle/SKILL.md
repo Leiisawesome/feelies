@@ -121,19 +121,16 @@ GATE_EVIDENCE_REQUIREMENTS: Mapping[GateId, tuple[type, ...]]
 
 ### Construction-Time Invariants
 
-`alpha/promotion_evidence.py` enforces three matrix-completeness
-checks at module import:
+`alpha/promotion_evidence.py` enforces two matrix-completeness checks at
+module import:
 
 - `_check_matrix_completeness` — every `GateId` member has an entry
-- `_check_validator_coverage` — every required type has BOTH a
-  registered validator AND a metadata `kind` string
-- `_check_reconstructor_coverage` — every metadata kind has a
-  registered reconstructor for round-tripping through
-  `evidence_to_metadata` / `metadata_to_evidence`
+- `_check_validator_coverage` — every required type has both a registered
+  validator and a metadata `kind` string
 
-A contributor adding a new gate or evidence type without wiring all
-three triggers a hard **import failure** — the platform refuses to
-boot.
+Metadata reconstruction is schema-driven from each evidence dataclass's tuple
+and enum defaults, so it needs no per-type codec registry. A contributor adding
+an incomplete gate still triggers a hard **import failure**.
 
 ### Evidence Schemas
 
@@ -438,7 +435,6 @@ escalation per epoch.
 |---------|-----------|----------|
 | Gate-matrix incomplete | `_check_matrix_completeness` at import | Hard import failure |
 | Validator missing | `_check_validator_coverage` at import | Hard import failure |
-| Reconstructor missing | `_check_reconstructor_coverage` at import | Hard import failure |
 | Ledger-write failure | `StateMachine.on_transition` callback raises | Atomic SM rollback (Inv-13 + Inv-11) |
 | Ledger schema-version mismatch | Read-time check | Bail with exit code 2 |
 | Threshold-override grammar violation | `parse_gate_thresholds_overrides` | Reject alpha load |

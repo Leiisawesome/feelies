@@ -39,7 +39,7 @@ _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
         "side-channel); all event timestamps use the injected clock, not this"
     ),
     # "bootstrap.py" is intentionally absent: factor-loadings freshness uses
-    # session_open_ns (BACKTEST) or the injected Clock (PAPER/LIVE), never a
+    # session_open_ns (BACKTEST) or the injected Clock (PAPER), never a
     # raw wall-clock read (Inv-5 / Inv-10).
     "harness/backtest_runner.py": "backtest run wall-time / progress reporting (not in the event stream)",
     "harness/backtest_prep.py": "backtest-prep progress timing (not in the event stream)",

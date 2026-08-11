@@ -126,7 +126,7 @@ class BasicRiskEngine:
         self._buying_power_phase = BuyingPowerPhase.INTRADAY
         self._trading_session_bounds = trading_session_bounds
         self._account_id = account_id
-        # Warn once when PAPER/LIVE omits an expected entry gate; tests opt out.
+        # Warn once when PAPER omits an expected entry gate; tests opt out.
         if warn_on_inert_entry_gates:
             inert = [
                 name

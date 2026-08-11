@@ -59,39 +59,16 @@ class TestMacroHappyPaths:
         sm.transition(MacroState.SHUTDOWN, trigger="CMD_SHUTDOWN")
         assert sm.state == MacroState.SHUTDOWN
 
-    def test_ready_to_research_and_back(self, clock: SimulatedClock) -> None:
-        sm = create_macro_state_machine(clock)
-        _advance_to_ready(sm, clock)
-
-        sm.transition(MacroState.RESEARCH_MODE, trigger="CMD_RESEARCH")
-        assert sm.state == MacroState.RESEARCH_MODE
-
-        sm.transition(MacroState.READY, trigger="JOB_COMPLETE")
-        assert sm.state == MacroState.READY
-
     def test_ready_to_paper_trading(self, clock: SimulatedClock) -> None:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
         sm.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
         assert sm.state == MacroState.PAPER_TRADING_MODE
 
-    def test_ready_to_live_trading(self, clock: SimulatedClock) -> None:
-        sm = create_macro_state_machine(clock)
-        _advance_to_ready(sm, clock)
-        sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
-        assert sm.state == MacroState.LIVE_TRADING_MODE
-
     def test_paper_to_ready(self, clock: SimulatedClock) -> None:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
         sm.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
-        sm.transition(MacroState.READY, trigger="CMD_STOP")
-        assert sm.state == MacroState.READY
-
-    def test_live_to_ready(self, clock: SimulatedClock) -> None:
-        sm = create_macro_state_machine(clock)
-        _advance_to_ready(sm, clock)
-        sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
         sm.transition(MacroState.READY, trigger="CMD_STOP")
         assert sm.state == MacroState.READY
 
@@ -117,25 +94,11 @@ class TestMacroDegradedPaths:
         sm.transition(MacroState.DEGRADED, trigger="INTEGRITY_VIOLATION")
         assert sm.state == MacroState.DEGRADED
 
-    def test_research_to_degraded(self, clock: SimulatedClock) -> None:
-        sm = create_macro_state_machine(clock)
-        _advance_to_ready(sm, clock)
-        sm.transition(MacroState.RESEARCH_MODE, trigger="CMD_RESEARCH")
-        sm.transition(MacroState.DEGRADED, trigger="CRITICAL_ERROR")
-        assert sm.state == MacroState.DEGRADED
-
     def test_paper_to_degraded(self, clock: SimulatedClock) -> None:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
         sm.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
         sm.transition(MacroState.DEGRADED, trigger="EXECUTION_DRIFT")
-        assert sm.state == MacroState.DEGRADED
-
-    def test_live_to_degraded(self, clock: SimulatedClock) -> None:
-        sm = create_macro_state_machine(clock)
-        _advance_to_ready(sm, clock)
-        sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
-        sm.transition(MacroState.DEGRADED, trigger="DATA_DRIFT")
         assert sm.state == MacroState.DEGRADED
 
     def test_degraded_to_ready_recovery(self, clock: SimulatedClock) -> None:
@@ -163,17 +126,10 @@ class TestMacroRiskLockdown:
         sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
         assert sm.state == MacroState.RISK_LOCKDOWN
 
-    def test_live_to_risk_lockdown(self, clock: SimulatedClock) -> None:
-        sm = create_macro_state_machine(clock)
-        _advance_to_ready(sm, clock)
-        sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
-        sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
-        assert sm.state == MacroState.RISK_LOCKDOWN
-
     def test_lockdown_to_ready_human_unlock(self, clock: SimulatedClock) -> None:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
-        sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        sm.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
         sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
         sm.transition(MacroState.READY, trigger="FORCED_FLATTEN_COMPLETE")
         assert sm.state == MacroState.READY
@@ -181,7 +137,7 @@ class TestMacroRiskLockdown:
     def test_lockdown_to_shutdown(self, clock: SimulatedClock) -> None:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
-        sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        sm.transition(MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER_DEPLOY")
         sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
         sm.transition(MacroState.SHUTDOWN, trigger="CMD_SHUTDOWN")
         assert sm.state == MacroState.SHUTDOWN
@@ -210,19 +166,18 @@ class TestMacroIllegalTransitions:
         for target in MacroState:
             assert not sm.can_transition(target)
 
-    def test_backtest_to_live_illegal(self, clock: SimulatedClock) -> None:
+    def test_backtest_to_paper_illegal(self, clock: SimulatedClock) -> None:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
         sm.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
         with pytest.raises(IllegalTransition):
-            sm.transition(MacroState.LIVE_TRADING_MODE, trigger="JUMP")
+            sm.transition(MacroState.PAPER_TRADING_MODE, trigger="JUMP")
 
 
 class TestMacroTradingModes:
     def test_trading_modes_frozenset(self) -> None:
         assert MacroState.BACKTEST_MODE in TRADING_MODES
         assert MacroState.PAPER_TRADING_MODE in TRADING_MODES
-        assert MacroState.LIVE_TRADING_MODE in TRADING_MODES
         assert MacroState.READY not in TRADING_MODES
         assert MacroState.INIT not in TRADING_MODES
 

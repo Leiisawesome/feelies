@@ -1156,11 +1156,10 @@ free-form reason; the operator is the audit substrate)."""
 
 @dataclass(frozen=True)
 class _EvidenceRegistration:
-    """Validation and metadata codecs registered for one evidence type."""
+    """Stable metadata kind and validator for one evidence type."""
 
     kind: str
     validator: Any
-    reconstructor: Any
 
 
 def required_evidence_types(gate_id: GateId) -> tuple[_EvidenceType, ...]:
@@ -1348,110 +1347,38 @@ gate FAIL (exit 3).  Keep this in sync with the co-keys any lifecycle
 writer merges into evidence metadata."""
 
 
-def _reconstruct_research_acceptance(
+def _reconstruct_evidence(
+    evidence_type: _EvidenceType,
     payload: Mapping[str, Any],
-) -> ResearchAcceptanceEvidence:
-    return ResearchAcceptanceEvidence(**payload)
-
-
-def _reconstruct_cpcv(payload: Mapping[str, Any]) -> CPCVEvidence:
+) -> object:
+    """Restore tuple and enum fields from JSON using dataclass defaults."""
     fixed = dict(payload)
-    fixed["fold_sharpes"] = tuple(payload.get("fold_sharpes", ()))
-    return CPCVEvidence(**fixed)
-
-
-def _reconstruct_dsr(payload: Mapping[str, Any]) -> DSREvidence:
-    return DSREvidence(**payload)
-
-
-def _reconstruct_paper_window(
-    payload: Mapping[str, Any],
-) -> PaperWindowEvidence:
-    return PaperWindowEvidence(**payload)
-
-
-def _reconstruct_capital_stage(
-    payload: Mapping[str, Any],
-) -> CapitalStageEvidence:
-    fixed = dict(payload)
-    raw_tier = payload.get("tier", CapitalStageTier.SMALL_CAPITAL.value)
-    fixed["tier"] = CapitalStageTier(raw_tier)
-    return CapitalStageEvidence(**fixed)
-
-
-def _reconstruct_quarantine_trigger(
-    payload: Mapping[str, Any],
-) -> QuarantineTriggerEvidence:
-    fixed = dict(payload)
-    fixed["microstructure_metrics_breached"] = tuple(
-        payload.get("microstructure_metrics_breached", ())
-    )
-    fixed["crowding_symptoms"] = tuple(payload.get("crowding_symptoms", ()))
-    return QuarantineTriggerEvidence(**fixed)
-
-
-def _reconstruct_revalidation(
-    payload: Mapping[str, Any],
-) -> RevalidationEvidence:
-    return RevalidationEvidence(**payload)
-
-
-def _reconstruct_conditional_cvar(
-    payload: Mapping[str, Any],
-) -> ConditionalCVaREvidence:
-    fixed = dict(payload)
-    fixed["path_cvar_deltas"] = tuple(payload.get("path_cvar_deltas", ()))
-    return ConditionalCVaREvidence(**fixed)
-
-
-def _reconstruct_turnover_bound(
-    payload: Mapping[str, Any],
-) -> TurnoverBoundEvidence:
-    return TurnoverBoundEvidence(**payload)
-
-
-def _reconstruct_quote_freeze_backstop(
-    payload: Mapping[str, Any],
-) -> QuoteFreezeBackstopEvidence:
-    return QuoteFreezeBackstopEvidence(**payload)
+    for evidence_field in fields(evidence_type):
+        default = evidence_field.default
+        if isinstance(default, tuple):
+            fixed[evidence_field.name] = tuple(payload.get(evidence_field.name, default))
+        elif isinstance(default, Enum):
+            raw = payload.get(evidence_field.name, default.value)
+            fixed[evidence_field.name] = type(default)(raw)
+    return evidence_type(**fixed)
 
 
 _EVIDENCE_REGISTRY: Mapping[_EvidenceType, _EvidenceRegistration] = {
     ResearchAcceptanceEvidence: _EvidenceRegistration(
-        "research_acceptance",
-        validate_research_acceptance,
-        _reconstruct_research_acceptance,
+        "research_acceptance", validate_research_acceptance
     ),
-    CPCVEvidence: _EvidenceRegistration("cpcv", validate_cpcv, _reconstruct_cpcv),
-    DSREvidence: _EvidenceRegistration("dsr", validate_dsr, _reconstruct_dsr),
-    PaperWindowEvidence: _EvidenceRegistration(
-        "paper_window", validate_paper_window, _reconstruct_paper_window
-    ),
-    CapitalStageEvidence: _EvidenceRegistration(
-        "capital_stage", validate_capital_stage, _reconstruct_capital_stage
-    ),
+    CPCVEvidence: _EvidenceRegistration("cpcv", validate_cpcv),
+    DSREvidence: _EvidenceRegistration("dsr", validate_dsr),
+    PaperWindowEvidence: _EvidenceRegistration("paper_window", validate_paper_window),
+    CapitalStageEvidence: _EvidenceRegistration("capital_stage", validate_capital_stage),
     QuarantineTriggerEvidence: _EvidenceRegistration(
-        "quarantine_trigger",
-        validate_quarantine_trigger,
-        _reconstruct_quarantine_trigger,
+        "quarantine_trigger", validate_quarantine_trigger
     ),
-    RevalidationEvidence: _EvidenceRegistration(
-        "revalidation", validate_revalidation, _reconstruct_revalidation
-    ),
-    ConditionalCVaREvidence: _EvidenceRegistration(
-        "conditional_cvar",
-        validate_conditional_cvar,
-        _reconstruct_conditional_cvar,
-    ),
-    TurnoverBoundEvidence: _EvidenceRegistration(
-        "turnover_bound",
-        validate_turnover_bound,
-        _reconstruct_turnover_bound,
-    ),
+    RevalidationEvidence: _EvidenceRegistration("revalidation", validate_revalidation),
+    ConditionalCVaREvidence: _EvidenceRegistration("conditional_cvar", validate_conditional_cvar),
+    TurnoverBoundEvidence: _EvidenceRegistration("turnover_bound", validate_turnover_bound),
     QuoteFreezeBackstopEvidence: _EvidenceRegistration(
-        "quote_freeze_backstop",
-        validate_quote_freeze_backstop,
-        _reconstruct_quote_freeze_backstop,
+        "quote_freeze_backstop", validate_quote_freeze_backstop
     ),
 }
 """Single registration source for validation and metadata round-tripping.
@@ -1506,7 +1433,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
         )
 
     evidences: list[object] = []
-    for registration in _EVIDENCE_REGISTRY.values():
+    for evidence_type, registration in _EVIDENCE_REGISTRY.items():
         kind = registration.kind
         if kind not in metadata:
             continue
@@ -1515,7 +1442,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
             raise ValueError(
                 f"metadata[{kind!r}] must be an object, got {type(payload).__name__!r}"
             )
-        evidences.append(registration.reconstructor(payload))
+        evidences.append(_reconstruct_evidence(evidence_type, payload))
 
     unknown = sorted(
         k for k in metadata.keys() if k not in RESERVED_METADATA_KEYS and k not in KIND_TO_TYPE
@@ -1825,22 +1752,6 @@ def _check_validator_coverage() -> None:
                 )
 
 
-def _check_reconstructor_coverage() -> None:
-    """Enforce that every kind has a reconstructor (so
-    :func:`metadata_to_evidence` is closed over the same set of
-    evidence types as :func:`evidence_to_metadata`).
-    """
-    missing = sorted(
-        ev_type.__name__
-        for ev_type, registration in _EVIDENCE_REGISTRY.items()
-        if not callable(registration.reconstructor)
-    )
-    if missing:
-        raise RuntimeError(
-            f"metadata_to_evidence is missing reconstructors for evidence types: {missing}"
-        )
-
-
 def _check_threshold_direction_coverage() -> None:
     """Enforce that every :class:`GateThresholds` field is classified in
     :data:`_GATE_THRESHOLD_DIRECTIONS`.
@@ -1860,7 +1771,6 @@ def _check_threshold_direction_coverage() -> None:
 
 _check_matrix_completeness()
 _check_validator_coverage()
-_check_reconstructor_coverage()
 _check_threshold_direction_coverage()
 
 

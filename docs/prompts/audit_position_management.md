@@ -124,7 +124,7 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
   `_select_bus_signal`, `_check_stop_exit` (fixed + trailing),
   `_signal_passes_edge_cost_gate` (B4), `_reversal_passes_combined_edge_gate` (B5),
   `_execute_reverse`, `_emergency_flatten_all`, `_force_flatten_symbol_on_degrade`,
-  `_session_flatten_deadline_ns` / `_in_session_flatten_window` (G-6),
+  `_in_session_flatten_window` / `execution.trading_session.session_flatten_deadline_ns` (G-6),
   `_escalate_unfilled_working_exits` / `_submit_working_exit_fallback` (G-3),
   `_record_net_shadow` / `_record_portfolio_net_shadow` (G-5),
   `_on_bus_hazard_order`, `_maybe_flip_buying_power_at_rth_close`

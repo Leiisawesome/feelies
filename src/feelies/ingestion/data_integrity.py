@@ -1,7 +1,7 @@
 """Per-symbol data integrity state machine (Section VII of the system diagram).
 
 Each symbol stream maintains its own health state.
-If CORRUPTED during LIVE_TRADING_MODE, the global macro state
+If CORRUPTED during PAPER_TRADING_MODE, the global macro state
 transitions to DEGRADED — execution stops.
 """
 

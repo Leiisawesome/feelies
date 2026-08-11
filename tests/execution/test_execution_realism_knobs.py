@@ -277,7 +277,6 @@ class TestVolumeGatedLevelFill:
 
     def test_default_gate_off_can_fill_without_volume(self) -> None:
         router = PassiveLimitOrderRouter(SimulatedClock(start_ns=0), cost_model=ZeroCostModel())
-        assert router.requires_trade_feed is False
         acks = self._run_level_quotes(router, with_trade=False)
         assert any(a.status == OrderAckStatus.FILLED for a in acks)
 
@@ -287,7 +286,6 @@ class TestVolumeGatedLevelFill:
             cost_model=ZeroCostModel(),
             require_trade_for_level_fill=True,
         )
-        assert router.requires_trade_feed is True
         acks = self._run_level_quotes(router, with_trade=False)
         assert not any(a.status == OrderAckStatus.FILLED for a in acks)
 

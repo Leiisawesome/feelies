@@ -478,7 +478,7 @@ Test predictive power of OFI on next-bucket return.
 | Cross-sectional construction | `PortfolioAlpha` + `CompositionEngine` | `composition/protocol.py`, `composition/engine.py` |
 | L1 quote / trade input | `NBBOQuote` / `Trade` | `core/events.py` |
 | Backtest execution | `Orchestrator.run_backtest()` | `kernel/orchestrator.py` |
-| Research execution | `Orchestrator.run_research(job)` | `kernel/orchestrator.py` |
+| Research execution | Direct pure functions; `feelies backtest` for pipeline experiments | `research/`, `harness/backtest_runner.py` |
 | Deterministic time | `SimulatedClock` | `core/clock.py` |
 | Config provenance | `Configuration.snapshot()` | `core/config.py` |
 | Promotion lifecycle | `AlphaLifecycle` + F-2 gate matrix + F-1 ledger | `alpha/lifecycle.py`, `alpha/promotion_evidence.py`, `alpha/promotion_ledger.py` |

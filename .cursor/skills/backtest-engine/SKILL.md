@@ -318,8 +318,8 @@ under replay. Entry and signal-driven exit orders post at the near BBO
 Unfilled orders are cancelled after `passive_max_resting_ticks` quotes.
 Stop-loss and emergency exits always use MARKET orders for immediate
 fill (invariant 11). Passive fills charge zero spread cost; maker
-rebates come from the cost model's `cost_maker_exchange_per_share`
-(`passive_rebate_per_share` is deprecated and ignored).
+maker economics come from the cost model's canonical
+`cost_maker_exchange_per_share` field.
 
 The stochastic probability-based fill model (slippage functions,
 adverse selection adjustment, partial fills) described below and in

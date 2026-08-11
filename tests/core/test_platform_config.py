@@ -302,12 +302,6 @@ account_equity: 500000
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
         assert cfg.mode == OperatingMode.PAPER
 
-    def test_live_mode_parses(self, tmp_path: Path) -> None:
-        yaml_content = "symbols: [AAPL]\nmode: LIVE\nalpha_specs: [x.yaml]\n"
-        (tmp_path / "config.yaml").write_text(yaml_content)
-        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
-        assert cfg.mode == OperatingMode.LIVE
-
     def test_case_insensitive_mode(self, tmp_path: Path) -> None:
         yaml_content = "symbols: [AAPL]\nmode: backtest\nalpha_specs: [x.yaml]\n"
         (tmp_path / "config.yaml").write_text(yaml_content)
@@ -566,7 +560,7 @@ class TestBacktestIngestTerminalHealth:
         cfg = PlatformConfig(
             symbols=frozenset({"AAPL"}),
             alpha_specs=[Path("x.yaml")],
-            mode=OperatingMode.LIVE,
+            mode=OperatingMode.PAPER,
             backtest_enforce_ingest_terminal_health=True,
             ingest_terminal_symbol_health=(("AAPL", "HEALTHY"),),
         )

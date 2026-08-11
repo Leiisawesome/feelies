@@ -4,7 +4,7 @@
 SIGNAL-path order *above* the single-factor baseline.  It is off by
 default and promoting it is meant to be a conscious, per-deployment
 choice.  ``build_platform`` logs a one-shot WARNING when it reaches
-PAPER/LIVE so an accidental carry-over from a research config is visible
+PAPER so an accidental carry-over from a research config is visible
 rather than silent.
 """
 

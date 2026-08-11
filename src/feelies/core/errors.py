@@ -85,6 +85,6 @@ class OrchestratorPipelineAbortError(FeeliesError):
 
 
 class SessionEntryBlockedError(FeeliesError):
-    """Cannot enter RESEARCH/BACKTEST/PAPER/LIVE — kill switch or risk interlock."""
+    """Cannot enter BACKTEST/PAPER — kill switch or risk interlock."""
 
     failure_mode: ClassVar[FailureMode] = FailureMode.CRASH

@@ -24,18 +24,10 @@ Additionally:
 
 ## Infrastructure Entry Point
 
-Research execution is supported by the orchestrator's
-`Orchestrator.run_research(job: Callable[[], None])`:
-
-1. Assert macro state is READY
-2. Transition macro: READY → RESEARCH_MODE (`CMD_RESEARCH`)
-3. Execute the caller-supplied `job()` callable
-4. On success: RESEARCH_MODE → READY (`JOB_COMPLETE`)
-5. On exception: RESEARCH_MODE → DEGRADED (trigger `CRITICAL_ERROR:<ExceptionTypeName>` — parameterized with the exception class name)
-
-Research mode does **not** run the micro-state tick pipeline. The `job`
-callable has full access to the feature engine, event log, and other
-components but does not submit orders or interact with `OrderRouter`.
+Research is deliberately outside the orchestrator macro lifecycle. Run pure
+research functions directly, and use the canonical `feelies backtest` path when
+an experiment needs the production tick pipeline. No separate research macro
+state or callable wrapper is shipped.
 
 For deterministic experiment replay, use `SimulatedClock` (`core/clock.py`).
 For configuration provenance, use `Configuration.snapshot()`

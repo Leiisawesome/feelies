@@ -143,7 +143,7 @@ class _BackendBundle:
     ``backend`` is the orchestrator-facing facade.  ``backtest_router``
     is returned for BACKTEST so the bootstrap can subscribe its
     ``on_quote`` to the bus (Inv-D ordering).  ``live_feed`` and
-    ``ib_connection`` are returned for PAPER / LIVE so
+    ``ib_connection`` are returned for PAPER so
     ``scripts/run_paper.py`` can drive their lifecycles.  Unused
     handles are ``None`` per mode.
     """
@@ -228,10 +228,7 @@ def build_platform(
     if event_log is None:
         # Live feeds log arrival order, which need not be timestamp-monotonic.
         # Replays retain strict ordering.
-        enforce_market_order = config.mode not in (
-            OperatingMode.PAPER,
-            OperatingMode.LIVE,
-        )
+        enforce_market_order = config.mode != OperatingMode.PAPER
         event_log = InMemoryEventLog(enforce_market_order=enforce_market_order)
     _enforce_ex_date_replay_guard(
         config,
@@ -240,7 +237,7 @@ def build_platform(
     )
 
     clock = _select_clock(config.mode)
-    config = _ensure_session_open_ns_for_live_modes(config, clock)
+    config = _ensure_session_open_ns_for_paper(config, clock)
     bus = EventBus()
 
     regime_engine = _create_regime_engine(
@@ -336,8 +333,8 @@ def build_platform(
         buying_power_config=buying_power_config,
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
-        # Warn in PAPER/LIVE when an entry gate is not wired.
-        warn_on_inert_entry_gates=config.mode in (OperatingMode.PAPER, OperatingMode.LIVE),
+        # Warn in PAPER when an entry gate is not wired.
+        warn_on_inert_entry_gates=config.mode == OperatingMode.PAPER,
     )
 
     cost_model = DefaultCostModel(
@@ -368,11 +365,8 @@ def build_platform(
     # Every router requires an explicit cost model; None is a wiring bug.
     assert cost_model is not None, "cost_model construction returned None"
 
-    # PAPER/LIVE share one normalizer between the feed and orchestrator.
-    if normalizer is None and config.mode in (
-        OperatingMode.PAPER,
-        OperatingMode.LIVE,
-    ):
+    # PAPER shares one normalizer between the feed and orchestrator.
+    if normalizer is None and config.mode == OperatingMode.PAPER:
         normalizer = MassiveNormalizer(
             clock=clock,
             halt_on_codes=frozenset(config.halt_on_condition_codes),
@@ -442,7 +436,7 @@ def build_platform(
     )
     position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
     # Live tilted sizing may exceed the base size, so surface it at startup.
-    if config.sizer_tilt_drive and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE):
+    if config.sizer_tilt_drive and config.mode == OperatingMode.PAPER:
         logger.warning(
             "bootstrap: sizer_tilt_drive=true in %s mode — the position "
             "sizer can size SIGNAL-path orders above the single-factor "
@@ -598,7 +592,7 @@ def build_platform(
     if (
         config.signal_min_edge_cost_ratio > 0
         and not resolved_edge_factors
-        and config.mode in (OperatingMode.PAPER, OperatingMode.LIVE)
+        and config.mode == OperatingMode.PAPER
     ):
         logger.warning(
             "B4 edge-vs-cost gate is active (signal_min_edge_cost_ratio=%s) but no "
@@ -665,12 +659,12 @@ def build_platform(
     )
 
     # Stamp the snapshot from the injected clock so a backtest's provenance
-    # record is deterministic (SimulatedClock); only PAPER/LIVE read wall time
+    # record is deterministic (SimulatedClock); only PAPER reads wall time
     # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
     config_snapshot = config.snapshot(ts_ns=clock.now_ns())
     orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
 
-    # Attach the PAPER/LIVE live-feed + IB connection handles to the
+    # Attach the PAPER live-feed + IB connection handles to the
     # orchestrator so the entry script (``scripts/run_paper.py``) can
     # drive their lifecycles without re-resolving the bundle.  These
     # are NEVER used by the orchestrator itself — pure operator
@@ -762,18 +756,17 @@ def _select_clock(mode: OperatingMode) -> Clock:
     return WallClock()
 
 
-def _ensure_session_open_ns_for_live_modes(
+def _ensure_session_open_ns_for_paper(
     config: PlatformConfig,
     clock: Clock,
 ) -> PlatformConfig:
-    """Anchor horizon boundaries for PAPER/LIVE when YAML omits ``session_open_ns``.
+    """Anchor horizon boundaries for PAPER when YAML omits ``session_open_ns``.
 
     H10 forbids lazy-binding from the first market event in non-backtest
     modes because arrival ordering would make boundary indices
     non-deterministic.  When the operator omits ``session_open_ns`` we
-    pin the anchor to composition-time wall clock so ``run_paper.py`` (and
-    future live entry scripts) boot successfully without requiring a
-    hand-authored epoch in ``platform.yaml``.
+    pin the anchor to composition-time wall clock so ``run_paper.py`` boots
+    successfully without requiring a hand-authored epoch in ``platform.yaml``.
     """
     if config.mode == OperatingMode.BACKTEST:
         return config
@@ -1075,10 +1068,7 @@ def _create_backend(
             ib_connection=ib_conn,
         )
 
-    raise NotImplementedError(
-        f"ExecutionBackend for mode {mode.name} is not yet implemented. "
-        f"Live router is future work."
-    )
+    raise AssertionError(f"Unhandled operating mode: {mode!r}")
 
 
 def _decimal(value: float) -> Decimal:
@@ -2169,7 +2159,7 @@ def _enforce_factor_loadings_freshness(
     Prefer the file's ``_meta.as_of_ns`` because it is reproducible; use
     filesystem mtime only when metadata is absent. Compare against
     ``session_open_ns`` when available, otherwise the injected clock in
-    PAPER/LIVE. BACKTEST refuses to guess without a session anchor.
+    PAPER. BACKTEST refuses to guess without a session anchor.
     """
     if config.factor_loadings_dir is None:
         return

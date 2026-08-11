@@ -116,7 +116,7 @@ def test_backtest_without_session_open_ns_refuses_to_boot(tmp_path: Path) -> Non
 
 
 def test_paper_mode_without_session_open_ns_uses_injected_clock(tmp_path: Path) -> None:
-    # PAPER/LIVE have no session_open_ns anchor in general, but a real wall
+    # PAPER has no session_open_ns anchor in general, but a real wall
     # clock is a meaningful "now" for a live deployment — routed through the
     # injected Clock (Inv-10) rather than a raw time.time() call.
     loadings_dir = tmp_path / "loadings"

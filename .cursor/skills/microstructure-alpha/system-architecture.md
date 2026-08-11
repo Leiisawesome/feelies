@@ -72,7 +72,6 @@ Shared tick pipeline; mode swap is only `ExecutionBackend`:
 
 | Mode | Clock | Orders |
 |------|-------|--------|
-| RESEARCH | `SimulatedClock` | None (`run_research`) |
 | BACKTEST | `SimulatedClock` | Simulated router |
 | PAPER | `WallClock` | IB Gateway |
 
