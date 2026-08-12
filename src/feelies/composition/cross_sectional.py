@@ -103,6 +103,38 @@ def _solve_family_cap_scales(
     return None
 
 
+def _aligned_mean_edge(
+    contribs: list[tuple["TrendMechanism | None", float, float, float]],
+    net_raw: float,
+) -> float:
+    """|raw|-weighted mean disclosed edge over contributors aligned with *net_raw*.
+
+    ``contribs`` is ``(mechanism, raw, decay, edge_bps)`` per contributing signal.
+    Only contributors whose raw score carries the same sign as the symbol's net
+    raw are counted: an offsetting signal argues for the *opposite* position, so
+    letting its edge into the mean would credit the leg with conviction that was
+    cancelled out.  Same rule as ``PortfolioNetter.net``.
+
+    Returns ``0.0`` when the symbol nets flat or nothing aligns — which the B4
+    gate reads fail-safe, since a zero edge cannot clear a positive cost bar.
+
+    Determinism (Inv-5): accumulation follows ``contribs`` order, which the
+    caller builds by iterating ``feeder_strategy_ids`` in its given order.
+    """
+    if net_raw == 0.0:
+        return 0.0
+    sign = 1.0 if net_raw > 0.0 else -1.0
+    weight = 0.0
+    total = 0.0
+    for _mech, raw, _decay, edge in contribs:
+        if raw == 0.0 or (raw > 0.0) != (sign > 0.0):
+            continue
+        w = abs(raw)
+        weight += w
+        total += edge * w
+    return total / weight if weight > 0.0 else 0.0
+
+
 @dataclass(frozen=True)
 class SleeveRankResult:
     """Per-mechanism standardized sleeves and combined provenance.
@@ -121,6 +153,12 @@ class SleeveRankResult:
     raw_scores: dict[str, float]
     decay_factors: dict[str, float]
     mechanism_by_symbol: dict[str, TrendMechanism] = field(default_factory=dict)
+    #: Disclosed edge in bps per symbol, |raw|-weighted over contributors aligned
+    #: with that symbol's net direction. Computed here because z-scoring destroys
+    #: the units: a standardized weight is an ordering, not an expected return.
+    #: Offsetting contributors are excluded so a cancelled-out pair cannot
+    #: inflate the estimate -- the same rule ``PortfolioNetter.net`` applies.
+    edge_bps_by_symbol: dict[str, float] = field(default_factory=dict)
 
 
 class CrossSectionalRanker:
@@ -221,7 +259,13 @@ class CrossSectionalRanker:
             else bool(decay_weighting_enabled)
         )
         whitelist = frozenset(consumes_mechanisms) if consumes_mechanisms else None
-        raw_by_mech, raw_scores, decay_factors, mechanism_by_symbol = self._gather_raw_by_mech(
+        (
+            raw_by_mech,
+            raw_scores,
+            decay_factors,
+            mechanism_by_symbol,
+            edge_by_symbol,
+        ) = self._gather_raw_by_mech(
             ctx,
             tuple(feeder_strategy_ids),
             decay_enabled,
@@ -235,6 +279,7 @@ class CrossSectionalRanker:
             raw_scores=raw_scores,
             decay_factors=decay_factors,
             mechanism_by_symbol=mechanism_by_symbol,
+            edge_bps_by_symbol=edge_by_symbol,
         )
 
     def _raw_and_decay(
@@ -276,6 +321,7 @@ class CrossSectionalRanker:
         dict[str, float],
         dict[str, float],
         dict[str, TrendMechanism],
+        dict[str, float],
     ]:
         """Per-(family, symbol) signed raw contribution + combined provenance.
 
@@ -289,10 +335,11 @@ class CrossSectionalRanker:
         raw_scores: dict[str, float] = {}
         decay_factors: dict[str, float] = {}
         mechanism_by_symbol: dict[str, TrendMechanism] = {}
+        edge_by_symbol: dict[str, float] = {}
         use_multi = bool(feeder_strategy_ids) and bool(ctx.signals_by_strategy_by_symbol)
 
         for symbol in ctx.universe:
-            contribs: list[tuple[TrendMechanism | None, float, float]] = []
+            contribs: list[tuple[TrendMechanism | None, float, float, float]] = []
             if use_multi:
                 row = ctx.signals_by_strategy_by_symbol.get(symbol, {})
                 for sid in feeder_strategy_ids:
@@ -303,14 +350,14 @@ class CrossSectionalRanker:
                     if not self._is_allowed(mech, whitelist) or mech in _EXIT_ONLY_MECHANISMS:
                         continue
                     raw, decay = self._raw_and_decay(sig, ctx, decay_enabled)
-                    contribs.append((mech, raw, decay))
+                    contribs.append((mech, raw, decay, float(sig.edge_estimate_bps)))
             else:
                 sig = ctx.signals_by_symbol.get(symbol)
                 if sig is not None:
                     mech = sig.trend_mechanism
                     if self._is_allowed(mech, whitelist) and mech not in _EXIT_ONLY_MECHANISMS:
                         raw, decay = self._raw_and_decay(sig, ctx, decay_enabled)
-                        contribs.append((mech, raw, decay))
+                        contribs.append((mech, raw, decay, float(sig.edge_estimate_bps)))
 
             if not contribs:
                 raw_scores[symbol] = 0.0
@@ -319,13 +366,15 @@ class CrossSectionalRanker:
 
             local_raw: dict[TrendMechanism | None, float] = {}
             local_decay: dict[TrendMechanism | None, float] = {}
-            for mech, raw, decay in contribs:
+            for mech, raw, decay, _edge in contribs:
                 local_raw[mech] = local_raw.get(mech, 0.0) + raw
                 local_decay[mech] = min(local_decay.get(mech, 1.0), decay)
             for mech, raw in local_raw.items():
                 raw_by_mech.setdefault(mech, {})[symbol] = raw
-            raw_scores[symbol] = sum(local_raw.values())
+            net_raw = sum(local_raw.values())
+            raw_scores[symbol] = net_raw
             decay_factors[symbol] = min(local_decay.values())
+            edge_by_symbol[symbol] = _aligned_mean_edge(contribs, net_raw)
             best_mech: TrendMechanism | None = None
             best_abs = -1.0
             for mech, raw in local_raw.items():
@@ -337,7 +386,7 @@ class CrossSectionalRanker:
             if best_mech is not None:
                 mechanism_by_symbol[symbol] = best_mech
 
-        return raw_by_mech, raw_scores, decay_factors, mechanism_by_symbol
+        return raw_by_mech, raw_scores, decay_factors, mechanism_by_symbol, edge_by_symbol
 
     # ── Internals ────────────────────────────────────────────────────
 

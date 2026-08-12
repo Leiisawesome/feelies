@@ -431,8 +431,17 @@ class CompositionEngine:
         )
         factor_exposures = self._neutralizer.compute_exposures(final_weights, ctx.universe)
 
+        # Carry each leg's disclosed edge from the ranker, where the units were
+        # still bps. Downstream it cannot be recovered: the weights that produced
+        # target_usd are z-scores, i.e. an ordering rather than an expected
+        # return. The Inv-12 B4 gate and passive/MOC routing both need it.
         target_positions = {
-            s: TargetPosition(symbol=s, target_usd=v) for s, v in sorted(target_usd.items())
+            s: TargetPosition(
+                symbol=s,
+                target_usd=v,
+                expected_edge_bps=sleeves.edge_bps_by_symbol.get(s, 0.0),
+            )
+            for s, v in sorted(target_usd.items())
         }
         # Digest the canonical decision inputs.
         decision_basis_hash = _compute_decision_basis_hash(

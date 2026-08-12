@@ -48,7 +48,7 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.cost_model import ZeroCostModel
+from feelies.execution.cost_model import DefaultCostModel, ZeroCostModel
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
@@ -976,3 +976,151 @@ class TestPortfolioLegAdmissionGates:
         _orch, bus, _pos, orders = self._orch_with_flat_book()
         bus.publish(_make_intent(targets={"AAPL": 15_000.0}))
         assert [(o.side, o.quantity) for o in orders] == [(Side.BUY, 100)]
+
+
+class TestPortfolioLegEdgeCostGate:
+    """Inv-12 B4 reaches PORTFOLIO legs via ``TargetPosition.expected_edge_bps``.
+
+    The composition path used to bypass B4 entirely, because a leg had no edge
+    to gate on: ``CrossSectionalRanker`` folds each signal's
+    ``edge_estimate_bps`` into a raw score and ``_standardize`` z-scores it into
+    an ordering. The edge is now captured while the units are still bps and
+    carried on ``TargetPosition``.
+
+    ``_build_orchestrator`` deliberately does not wire a cost model, so B4 is
+    disarmed in the rest of this file; these tests arm it explicitly.
+    """
+
+    @staticmethod
+    def _orch(min_ratio: float) -> tuple[Orchestrator, EventBus, list[OrderRequest]]:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 0, "150.00")
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(), order_router=bt_router, mode="BACKTEST"
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=backend,
+            risk_engine=BasicRiskEngine(
+                RiskConfig(
+                    account_equity=Decimal("1000000"),
+                    max_position_per_symbol=10_000_000,
+                    max_gross_exposure_pct=200.0,
+                )
+            ),
+            position_store=positions,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            account_equity=Decimal("1000000"),
+            cost_model=DefaultCostModel(),
+        )
+        _boot_to_backtest(orch)
+        orch._signal_min_edge_cost_ratio = min_ratio
+        return orch, bus, _capture_orders(bus)
+
+    @staticmethod
+    def _intent_with_edge(edge_bps: float) -> SizedPositionIntent:
+        return SizedPositionIntent(
+            timestamp_ns=1000,
+            correlation_id="intent:edge",
+            sequence=1,
+            strategy_id="test_portfolio_alpha",
+            target_positions={
+                "AAPL": TargetPosition(
+                    symbol="AAPL", target_usd=15_000.0, expected_edge_bps=edge_bps
+                )
+            },
+        )
+
+    def test_leg_with_no_disclosed_edge_is_refused(self) -> None:
+        """0.0 fails closed: no edge cannot clear a positive cost bar."""
+        orch, bus, orders = self._orch(1.5)
+        orch._flush_pending_sized_intents(
+            correlation_id="c", quote=_make_quote(bid="149.50", ask="150.50")
+        )
+        orch._pending_sized_intents.append(self._intent_with_edge(0.0))
+        orch._flush_pending_sized_intents(
+            correlation_id="c", quote=_make_quote(bid="149.50", ask="150.50")
+        )
+        assert orders == []
+
+    def test_leg_with_ample_edge_is_admitted(self) -> None:
+        """Guard against a gate that refuses everything and looks 'safe'."""
+        orch, bus, orders = self._orch(1.5)
+        orch._pending_sized_intents.append(self._intent_with_edge(5000.0))
+        orch._flush_pending_sized_intents(
+            correlation_id="c", quote=_make_quote(bid="149.50", ask="150.50")
+        )
+        assert [(o.symbol, o.side) for o in orders] == [("AAPL", Side.BUY)]
+
+    def test_reducing_leg_is_never_edge_gated(self) -> None:
+        """A cost bar may suppress an entry, never an unwind (Inv-11)."""
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 200, "150.00")
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(), order_router=bt_router, mode="BACKTEST"
+            ),
+            risk_engine=BasicRiskEngine(
+                RiskConfig(
+                    account_equity=Decimal("1000000"),
+                    max_position_per_symbol=10_000_000,
+                    max_gross_exposure_pct=200.0,
+                )
+            ),
+            position_store=positions,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            account_equity=Decimal("1000000"),
+            cost_model=DefaultCostModel(),
+        )
+        _boot_to_backtest(orch)
+        orch._signal_min_edge_cost_ratio = 1.5
+        orders = _capture_orders(bus)
+        # Flatten, zero disclosed edge -- the shape that would fail as an entry.
+        orch._pending_sized_intents.append(
+            SizedPositionIntent(
+                timestamp_ns=1000,
+                correlation_id="intent:unwind",
+                sequence=1,
+                strategy_id="test_portfolio_alpha",
+                target_positions={
+                    "AAPL": TargetPosition(symbol="AAPL", target_usd=0.0, expected_edge_bps=0.0)
+                },
+            )
+        )
+        orch._flush_pending_sized_intents(
+            correlation_id="c", quote=_make_quote(bid="149.50", ask="150.50")
+        )
+        assert [(o.side, o.quantity) for o in orders] == [(Side.SELL, 200)]
+
+    def test_opening_leg_without_a_quote_is_refused_when_the_gate_is_armed(self) -> None:
+        """Cannot price the round trip => do not open (Inv-11 fail-safe).
+
+        This is the out-of-tick submit path. Refusing is the conservative read:
+        "economics unverifiable" resolves to less exposure, not more.
+        """
+        orch, bus, orders = self._orch(1.5)
+        orch._submit_portfolio_leg_without_micro_walk(
+            self._intent_with_edge(5000.0), "c", quote=None
+        )
+        assert orders == []
+
+    def test_missing_quote_does_not_refuse_when_the_gate_is_disarmed(self) -> None:
+        """A deployment that never enabled B4 must not lose every opening leg.
+
+        Regression: the quote check originally ran *before* the armed check, so
+        an unpriceable-but-inert gate suppressed everything.
+        """
+        orch, bus, orders = self._orch(0.0)  # ratio 0 disables B4
+        orch._submit_portfolio_leg_without_micro_walk(self._intent_with_edge(0.0), "c", quote=None)
+        assert [(o.symbol, o.side) for o in orders] == [("AAPL", Side.BUY)]

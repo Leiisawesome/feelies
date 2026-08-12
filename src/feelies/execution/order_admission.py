@@ -26,31 +26,33 @@ position, which is the failure Inv-11 exists to prevent.  The book is the
 authority; ``test_zero_target_reversal_is_a_flatten_not_an_opening`` pins it.
 
 Scope (deliberate).  This module owns the **Inv-11 admission** gates: they can
-only ever suppress an order, never enlarge or reroute one.  The Inv-12 B4
-edge/cost gate and passive/MOC route resolution are *not* here, and cannot
-currently be unified across both paths — not for want of plumbing, but because
-**a composition leg has no edge estimate to gate on.**
+only ever suppress an order, never enlarge or reroute one.  Everything here is
+pure — no clock, no bus, no position store, no cost model.  The caller evaluates
+the environment (is the symbol in a halt blackout? is SSR active?) and passes
+booleans, which keeps the policy testable without a kernel.
 
-Both are edge-conditioned: ``_signal_passes_edge_cost_gate`` compares
-``signal.edge_estimate_bps`` against modelled round-trip cost, and
-``_resolve_order_route`` takes ``edge_bps`` to choose passive versus aggressive.
-On the composition path the per-symbol edge does not survive construction —
-``CrossSectionalRanker`` folds it into a raw score
-(``raw = sign x strength x edge_estimate_bps``) and ``_standardize`` z-scores
-that into a *relative rank*.  A weight of +1.2 is a cross-sectional ordering,
-not an expected return in bps, and :class:`~feelies.core.events.TargetPosition`
-carries only ``symbol`` / ``target_usd`` / ``urgency``.
+The Inv-12 B4 edge/cost gate is **not** here, because pricing a round trip needs
+the live quote and the cost model.  It is applied by the kernel to both paths
+from one implementation (``Orchestrator._edge_clears_round_trip_cost``); the two
+suppression tokens it can raise on a PORTFOLIO leg are defined above so the
+operator-visible vocabulary stays in one file.
 
-So closing that asymmetry is a specification change — ``TargetPosition`` would
-have to carry a per-symbol expected edge that the composition pipeline does not
-presently compute — not a port of existing code.  Substituting the alpha's
-static ``cost_arithmetic.edge_estimate_bps`` would be worse than no gate: one
-constant per alpha compared against per-leg cost either always passes or always
-fails, while looking like a gate.  Recorded in ``configs/bt_multialpha.yaml``.
+That gate reaches composition legs only because
+:class:`~feelies.core.events.TargetPosition` now carries
+``expected_edge_bps``.  It has to: ``CrossSectionalRanker`` folds each signal's
+``edge_estimate_bps`` into a raw score and ``_standardize`` z-scores that into a
+*relative rank*, so a final weight of +1.2 is a cross-sectional ordering, not an
+expected return.  The edge is therefore captured while the units are still bps
+(``_aligned_mean_edge``) and propagated.  Deliberately **not** substituted with
+the alpha's static ``cost_arithmetic.edge_estimate_bps``: one constant per alpha
+against per-leg cost either always passes or always fails, which is worse than
+no gate because it looks like one.
 
-Everything in this module is pure: no clock, no bus, no position store.  The
-caller evaluates the environment (is the symbol in a halt blackout? is SSR
-active?) and passes booleans, which keeps the policy testable without a kernel.
+Still asymmetric: composition legs route MARKET unconditionally rather than
+resolving a passive/MOC route.  ``_resolve_order_route`` is also edge-conditioned
+and could now be fed, but changing a leg's ``order_type`` moves
+``EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH`` and changes fill economics, so it is a
+separate, argued change.  Recorded in ``configs/bt_multialpha.yaml``.
 """
 
 from __future__ import annotations
@@ -68,6 +70,11 @@ BLOCK_SESSION_FLATTEN_WINDOW: str = "session_flatten_window"
 BLOCK_SSR: str = "ssr_suppressed"
 BLOCK_LOCATE_UNAVAILABLE: str = "locate_unavailable"
 BLOCK_BELOW_MIN_ORDER_SHARES: str = "quantity_below_platform_min_order_shares"
+# Inv-12 B4 on a PORTFOLIO leg. Applied by the kernel rather than
+# admission_block_reason: pricing round-trip cost needs the live quote and the
+# cost model, neither of which belongs in this pure module.
+BLOCK_EDGE_BELOW_COST: str = "portfolio_leg_edge_below_min_edge_cost_ratio"
+BLOCK_EDGE_UNPRICEABLE: str = "portfolio_leg_edge_unpriceable_no_quote"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -212,6 +219,8 @@ def admission_block_reason(
 
 __all__ = [
     "BLOCK_BELOW_MIN_ORDER_SHARES",
+    "BLOCK_EDGE_BELOW_COST",
+    "BLOCK_EDGE_UNPRICEABLE",
     "BLOCK_HALT_BLACKOUT",
     "BLOCK_LOCATE_UNAVAILABLE",
     "BLOCK_SESSION_FLATTEN_WINDOW",

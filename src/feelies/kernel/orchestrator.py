@@ -90,6 +90,8 @@ from feelies.execution.intent import (
 )
 from feelies.execution.order_admission import (
     BLOCK_BELOW_MIN_ORDER_SHARES,
+    BLOCK_EDGE_BELOW_COST,
+    BLOCK_EDGE_UNPRICEABLE,
     BLOCK_LOCATE_UNAVAILABLE,
     BLOCK_SSR,
     ExposureDelta,
@@ -1286,8 +1288,14 @@ class Orchestrator:
         self,
         *,
         correlation_id: str,
+        quote: NBBOQuote | None = None,
     ) -> None:
-        """Drain horizon-buffered PORTFOLIO intents under micro M5–M10 before M3."""
+        """Drain horizon-buffered PORTFOLIO intents under micro M5–M10 before M3.
+
+        *quote* is the tick that triggered the flush. It is what lets the B4
+        edge/cost gate price a leg; without it the gate cannot run and opening
+        legs are refused fail-safe (Inv-11).
+        """
         if not self._pending_sized_intents:
             return
         first_intent = True
@@ -1316,12 +1324,14 @@ class Orchestrator:
                     self._submit_portfolio_leg_without_micro_walk(
                         intent,
                         correlation_id,
+                        quote=quote,
                     )
                     while self._pending_sized_intents:
                         nxt = self._pending_sized_intents.popleft()
                         self._submit_portfolio_leg_without_micro_walk(
                             nxt,
                             correlation_id,
+                            quote=quote,
                         )
                     return
             else:
@@ -1353,6 +1363,7 @@ class Orchestrator:
                 orders,
                 intent=intent,
                 correlation_id=correlation_id,
+                quote=quote,
             )
             orders = self._filter_portfolio_orders_for_pending_conflicts(
                 orders,
@@ -1408,6 +1419,8 @@ class Orchestrator:
         self,
         intent: SizedPositionIntent,
         correlation_id: str,
+        *,
+        quote: NBBOQuote | None = None,
     ) -> None:
         """Fail-safe submit when micro cannot enter ``RISK_CHECK`` (should be rare)."""
         sized = self._risk_engine.check_sized_intent(intent, self._positions)
@@ -1421,6 +1434,7 @@ class Orchestrator:
             orders,
             intent=intent,
             correlation_id=correlation_id,
+            quote=quote,
         )
         orders = self._filter_portfolio_orders_for_pending_conflicts(
             orders,
@@ -1636,7 +1650,7 @@ class Orchestrator:
         # Optional sensor and horizon stages.
         self._dispatch_sensor_layer(quote, cid)
         self._maybe_transition_cross_sectional_bookend(cid)
-        self._flush_pending_sized_intents(correlation_id=cid)
+        self._flush_pending_sized_intents(correlation_id=cid, quote=quote)
 
         # FEATURE_COMPUTE is a state-machine bookend; bus subscribers did the work.
         self._micro.transition(
@@ -2167,6 +2181,48 @@ class Orchestrator:
             },
         )
 
+    def _edge_clears_round_trip_cost(
+        self,
+        *,
+        strategy_id: str,
+        edge_estimate_bps: float,
+        symbol: str,
+        entry_side: Side,
+        quantity: int,
+        quote: NBBOQuote,
+        is_taker_entry: bool,
+        is_short_entry: bool,
+    ) -> tuple[bool, float, float]:
+        """Inv-12 B4 in one place: does calibrated edge clear modelled cost?
+
+        Returns ``(passes, effective_edge_bps, realization_factor)`` so callers
+        can report *why* without re-deriving the arithmetic.  Both order paths
+        run this: the SIGNAL path via
+        :meth:`_signal_passes_edge_cost_gate` (which owns the forensic alert),
+        the PORTFOLIO path via :meth:`_portfolio_leg_clears_edge_gate`, whose
+        legs carry ``TargetPosition.expected_edge_bps`` instead of a ``Signal``.
+        """
+        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
+            return True, edge_estimate_bps, 1.0
+        rt_cost_bps = self._round_trip_cost_bps(
+            symbol=symbol,
+            entry_side=entry_side,
+            quantity=quantity,
+            quote=quote,
+            is_taker_entry=is_taker_entry,
+            is_short_entry=is_short_entry,
+        )
+        # Gate on realization-calibrated edge; missing factors default to one.
+        factor = self._edge_calibration_factors.get(strategy_id, 1.0)
+        effective_edge_bps = edge_estimate_bps * factor
+        passes = entry_edge_clears_cost(
+            edge_bps=effective_edge_bps,
+            rt_cost_bps=rt_cost_bps,
+            min_ratio=self._signal_min_edge_cost_ratio,
+            basis=self._signal_edge_cost_basis,
+        )
+        return passes, effective_edge_bps, factor
+
     def _signal_passes_edge_cost_gate(
         self,
         signal: Signal,
@@ -2181,9 +2237,9 @@ class Orchestrator:
         detail: str,
     ) -> bool:
         """Return whether calibrated edge clears modeled round-trip cost."""
-        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
-            return True
-        rt_cost_bps = self._round_trip_cost_bps(
+        passes, effective_edge_bps, factor = self._edge_clears_round_trip_cost(
+            strategy_id=signal.strategy_id,
+            edge_estimate_bps=signal.edge_estimate_bps,
             symbol=symbol,
             entry_side=entry_side,
             quantity=quantity,
@@ -2191,15 +2247,7 @@ class Orchestrator:
             is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
         )
-        # Gate on realization-calibrated edge; missing factors default to one.
-        factor = self._edge_calibration_factors.get(signal.strategy_id, 1.0)
-        effective_edge_bps = signal.edge_estimate_bps * factor
-        if entry_edge_clears_cost(
-            edge_bps=effective_edge_bps,
-            rt_cost_bps=rt_cost_bps,
-            min_ratio=self._signal_min_edge_cost_ratio,
-            basis=self._signal_edge_cost_basis,
-        ):
+        if passes:
             return True
         gate_detail = (
             detail
@@ -3460,6 +3508,7 @@ class Orchestrator:
         *,
         intent: SizedPositionIntent,
         correlation_id: str,
+        quote: NBBOQuote | None = None,
     ) -> list[OrderRequest]:
         """Drop PORTFOLIO legs refused by the shared Inv-11 admission gates.
 
@@ -3496,6 +3545,13 @@ class Orchestrator:
                 exempt_from_min_size=not delta.opens_or_increases_exposure,
             )
             if block is None:
+                block = self._portfolio_leg_edge_block(
+                    order,
+                    intent=intent,
+                    delta=delta,
+                    quote=quote,
+                )
+            if block is None:
                 filtered.append(order)
                 continue
             self._publish_alert(
@@ -3515,6 +3571,66 @@ class Orchestrator:
                 },
             )
         return filtered
+
+    def _portfolio_leg_edge_block(
+        self,
+        order: OrderRequest,
+        *,
+        intent: SizedPositionIntent,
+        delta: ExposureDelta,
+        quote: NBBOQuote | None,
+    ) -> str | None:
+        """Inv-12 B4 for a PORTFOLIO leg, or ``None`` to admit.
+
+        Reducing legs are never gated: a cost bar may suppress an entry, never
+        an unwind (Inv-11), which is the same carve-out the SIGNAL path makes
+        for exits.
+
+        Without a quote the gate cannot be priced at all -- the round-trip cost
+        model needs a live spread. An opening leg is then refused rather than
+        waved through: this is the out-of-tick submit path, and "cannot verify
+        the economics" resolves to less exposure, not more.
+
+        The leg's edge is ``TargetPosition.expected_edge_bps``, carried from the
+        ranker because the composition weights are z-scores and no longer in bps.
+        A leg with no disclosed edge cannot clear a positive cost bar, so 0.0
+        fails closed on its own.
+        """
+        if not delta.opens_or_increases_exposure:
+            return None
+        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
+            # Gate disarmed by configuration: there is nothing to price, so a
+            # missing quote is not a refusal. Checking the quote first would
+            # suppress every opening leg on deployments that never enabled B4.
+            return None
+        if quote is None:
+            return BLOCK_EDGE_UNPRICEABLE
+        target = intent.target_positions.get(order.symbol)
+        edge_bps = target.expected_edge_bps if target is not None else 0.0
+        passes, effective_bps, factor = self._edge_clears_round_trip_cost(
+            strategy_id=intent.strategy_id,
+            edge_estimate_bps=edge_bps,
+            symbol=order.symbol,
+            entry_side=order.side,
+            quantity=order.quantity,
+            quote=quote,
+            is_taker_entry=order.order_type is OrderType.MARKET,
+            is_short_entry=delta.opens_or_increases_short,
+        )
+        if passes:
+            return None
+        logger.debug(
+            "PORTFOLIO leg %s %s %d refused by B4: disclosed %.2f bps x "
+            "realization %.3f = %.2f effective (strategy=%s)",
+            order.symbol,
+            order.side.name,
+            order.quantity,
+            edge_bps,
+            factor,
+            effective_bps,
+            intent.strategy_id,
+        )
+        return BLOCK_EDGE_BELOW_COST
 
     def _filter_portfolio_orders_for_pending_conflicts(
         self,

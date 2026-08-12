@@ -35,24 +35,31 @@
 #     ``platform_min_order_shares``.  Those five now run for both paths from one
 #     policy (``feelies.execution.order_admission``).
 #
-#     What remains is one gap, not two.  Composition legs bypass the Inv-12 B4
-#     edge/cost gate *and* route MARKET unconditionally for the same reason:
-#     both decisions are edge-conditioned, and a composition leg has no edge.
-#     ``CrossSectionalRanker`` folds each signal's ``edge_estimate_bps`` into a
-#     raw score and then z-scores it into a relative rank; ``TargetPosition``
-#     carries only ``symbol`` / ``target_usd`` / ``urgency``.  A weight of +1.2
-#     is an ordering, not an expected return in bps.
-#
-#     Closing it is therefore a specification change — ``TargetPosition`` must
-#     carry a per-symbol expected edge the pipeline does not currently compute —
-#     not a port of the standalone code.  Do not substitute the alpha's static
+#     The Inv-12 B4 edge/cost gate now runs on composition legs too.  That
+#     needed a specification change, not plumbing: ``CrossSectionalRanker``
+#     folds each signal's ``edge_estimate_bps`` into a raw score and then
+#     z-scores it into a relative rank, so a final weight is an ordering, not an
+#     expected return in bps.  The edge is captured while the units are still
+#     bps (``_aligned_mean_edge``, magnitude-weighted over contributors aligned
+#     with the symbol's net direction) and carried on
+#     ``TargetPosition.expected_edge_bps``.  Deliberately NOT the alpha's static
 #     ``cost_arithmetic.edge_estimate_bps``: one constant per alpha against
 #     per-leg cost either always passes or always fails, which is worse than no
 #     gate because it looks like one.
 #
+#     One asymmetry remains: composition legs route MARKET unconditionally
+#     instead of resolving a passive/MOC route.  ``_resolve_order_route`` is
+#     edge-conditioned too and could now be fed, but changing a leg's
+#     ``order_type`` moves ``EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH`` and changes
+#     fill economics, so it wants its own argued change rather than riding along.
+#
+#     Not closed by any of this: the composition path still cannot emit a
+#     tradeable intent on the cached corpus (see the measurement above).  Gating
+#     it correctly and being able to exercise it are different problems.
+#
 # So: neither path is currently production-blessed for a multi-alpha book.
-# Standalone is lossy; composition is unexercised and under-gated.  Choosing
-# between them is an open decision, not a settled one.
+# Standalone is lossy; composition is correctly gated as of 2026-08-12 but still
+# unexercised on real data.  Choosing between them is an open decision.
 #
 # Usage:
 #   uv run python scripts/run_backtest.py --config configs/bt_multialpha.yaml \
