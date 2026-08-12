@@ -124,9 +124,7 @@ def _ycont(b: dict) -> float | None:
     return y if sfi > 0.0 else -y
 
 
-def contrast_material(
-    elev: Sequence[float], base: Sequence[float]
-) -> tuple[float | None, bool]:
+def contrast_material(elev: Sequence[float], base: Sequence[float]) -> tuple[float | None, bool]:
     """Mean(elev) − mean(base); material iff contrast > 0 and > 1 SE of diff."""
     me, se_e, ne = _mean_se(elev)
     mb, se_b, nb = _mean_se(base)
@@ -221,16 +219,12 @@ def stage0_integrity(extract: dict, census_art: dict) -> dict[str, Any]:
         }
         for fld, val in from_bnd.items():
             if c[fld] != val:
-                mismatches.append(
-                    f"{key}: boundary-derived {fld}={val!r} != cell={c[fld]!r}"
-                )
+                mismatches.append(f"{key}: boundary-derived {fld}={val!r} != cell={c[fld]!r}")
         for field in STAGE0_FIELDS:
             extract_val = c[field]
             census_val = cc[field]
             if extract_val != census_val:
-                mismatches.append(
-                    f"{key}: {field} extract={extract_val!r} census={census_val!r}"
-                )
+                mismatches.append(f"{key}: {field} extract={extract_val!r} census={census_val!r}")
         checked += 1
 
     app_n = len(primary_eligible([c for c in extract["cells"] if c["symbol"] == "APP"]))
@@ -435,16 +429,8 @@ def stage_23(app: list[dict], rmbs: list[dict], deployable: list[str]) -> dict[s
             continue
         eps = primary_eligible(cells)
         both = [y for _s, b in eps if (y := _ycont(b)) is not None]
-        longs = [
-            y
-            for _s, b in eps
-            if b["side"] == "LONG" and (y := _ycont(b)) is not None
-        ]
-        shorts = [
-            y
-            for _s, b in eps
-            if b["side"] == "SHORT" and (y := _ycont(b)) is not None
-        ]
+        longs = [y for _s, b in eps if b["side"] == "LONG" and (y := _ycont(b)) is not None]
+        shorts = [y for _s, b in eps if b["side"] == "SHORT" and (y := _ycont(b)) is not None]
         m_all, se_all, n_all = _mean_se(both)
         m_l, _se_l, n_l = _mean_se(longs)
         m_s, _se_s, n_s = _mean_se(shorts)

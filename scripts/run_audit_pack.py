@@ -12,7 +12,6 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path

@@ -3,6 +3,28 @@ schema_version: "1.1"
 layer: SIGNAL
 alpha_id: sig_benign_midcap_v1
 version: "1.0.0"
+
+# Research-only: blocks PAPER/LIVE promotion; backtests are unaffected.
+#
+# Decided 2026-08-12 on the re-measurement in the cost-arithmetic block below.
+# Over 15 tradeable cached APP sessions, at the size this alpha's own
+# capital_allocation_pct funds, it realizes gross -2.77 across 149 fills --
+# indistinguishable from zero -- and nets -376.45 after 373.68 in fees.
+#
+# The earlier +383.40 gross came from runs where platform_min_order_shares
+# inflated every target to 50 shares, ~2.4x what the risk budget sanctioned.
+# That made the story "gross-positive, cost-negative" (a real edge lost to the
+# spread, arguably fixable by cheaper execution). At the funded size there is no
+# gross edge to lose, which is a different and worse finding: Inv-1 asks what
+# causal force is being exploited, and this data does not evidence one at this
+# scale.
+#
+# NOT a claim that the mechanism is wrong. It is one symbol over 15 sessions,
+# and the cache holds no second mid-cap to generalize against (AAPL and SPY sit
+# outside the declared universe and produced 4 and 0 fills). The cap says
+# "not promotable on this evidence", not "disproven" -- lifting it needs data,
+# not reanalysis.
+lifecycle_state: RESEARCH
 description: |
   Kyle-style informed-flow footprint on L1 (OFI + micro-price vs mid)
   in the benign / normal microstructure regime for mid-cap names.

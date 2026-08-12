@@ -90,7 +90,9 @@ def main() -> None:
                 raise SystemExit(f"{alpha_id}: {label} failed: {errs}")
         path = out / f"{alpha_id}_daily_returns.json"
         if args.dry_run:
-            print(f"[dry-run] would write {path} mean_sharpe={cpcv.mean_sharpe:.2f} dsr={dsr.dsr:.2f}")
+            print(
+                f"[dry-run] would write {path} mean_sharpe={cpcv.mean_sharpe:.2f} dsr={dsr.dsr:.2f}"
+            )
             continue
         path.write_text(
             json.dumps({**meta, "alpha_id": alpha_id, "returns": returns}, indent=2) + "\n",

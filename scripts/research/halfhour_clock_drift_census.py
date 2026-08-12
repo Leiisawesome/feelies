@@ -426,9 +426,7 @@ def run_cell_from_events(
         offset_s = (asof_ns - session_open) // _NS
         dt_et = datetime.fromtimestamp(asof_ns / 1e9, tz=_TZ_ET)
         et_secs = dt_et.hour * 3600 + dt_et.minute * 60 + dt_et.second
-        in_session_window = (
-            offset_s >= NO_ENTRY_FIRST_SECONDS and et_secs <= cutoff_secs
-        )
+        in_session_window = offset_s >= NO_ENTRY_FIRST_SECONDS and et_secs <= cutoff_secs
         if not in_session_window:
             continue
 
@@ -459,9 +457,7 @@ def run_cell_from_events(
         rvz = values.get("realized_vol_30s_zscore")
         w_hh = values.get("scheduled_flow_window_active")
 
-        quintile_ok, _ = ofi_quintile_side(
-            ofi=ofi, pctl=pctl, rvz=rvz, p_breakout=p_breakout
-        )
+        quintile_ok, _ = ofi_quintile_side(ofi=ofi, pctl=pctl, rvz=rvz, p_breakout=p_breakout)
         if quintile_ok:
             cotravel_eligible += 1
             if w_hh is not None and w_hh < 0.5:
@@ -517,9 +513,7 @@ def run_cell_from_events(
     res.calendar_warm_fraction_in_window = (
         cal_warm_in_window / res.n_in_window if res.n_in_window else None
     )
-    res.calendar_missing_rate = (
-        cal_missing_in_window / res.n_in_window if res.n_in_window else 0.0
-    )
+    res.calendar_missing_rate = cal_missing_in_window / res.n_in_window if res.n_in_window else 0.0
     if leakage_shares:
         res.leakage_share_mean = sum(leakage_shares) / len(leakage_shares)
         res.leakage_bug_flag = any(s > LEAKAGE_BUG_SHARE for s in leakage_shares)
@@ -569,15 +563,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     for sym in GRID_SYMBOLS:
         sym_cells = [c for c in cells if c.symbol == sym]
         eps_all = sum(c.episodes_in_window for c in sym_cells)
-        eps_viable = sum(
-            c.episodes_in_window for c in sym_cells if c.viable_long
-        )
-        eps_viable_long = sum(
-            c.episodes_in_window_long for c in sym_cells if c.viable_long
-        )
-        edge_empty = all(
-            (c.episodes_in_window if c.viable_long else 0) == 0 for c in sym_cells
-        )
+        eps_viable = sum(c.episodes_in_window for c in sym_cells if c.viable_long)
+        eps_viable_long = sum(c.episodes_in_window_long for c in sym_cells if c.viable_long)
+        edge_empty = all((c.episodes_in_window if c.viable_long else 0) == 0 for c in sym_cells)
         per_symbol[sym] = {
             "episodes_in_window_all": eps_all,
             "episodes_in_window_viable_region": eps_viable,
@@ -595,9 +583,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for s in GRID_SYMBOLS
         if not per_symbol[s]["edge_region_empty"] and not per_symbol[s]["warm_drop"]
     ]
-    pooled = sum(
-        per_symbol[s]["episodes_in_window_viable_region"] for s in deployable
-    )
+    pooled = sum(per_symbol[s]["episodes_in_window_viable_region"] for s in deployable)
     emptiness = all(per_symbol[s]["edge_region_empty"] for s in GRID_SYMBOLS)
     park_power = pooled < POWER_FLOOR
 
@@ -611,9 +597,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         verdict = "PROCEED_CENSUS"
 
     out = {
-        "protocol": (
-            "sig_halfhour_clock_drift_h900_v1_validation_protocol.md step 1 (frozen)"
-        ),
+        "protocol": ("sig_halfhour_clock_drift_h900_v1_validation_protocol.md step 1 (frozen)"),
         "instrument": "halfhour_clock_drift_census.py (Phase-A; §1.1 predicate exact)",
         "run_parameters": {
             "kappa": KAPPA_FROZEN,

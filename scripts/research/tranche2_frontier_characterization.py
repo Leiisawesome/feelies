@@ -251,12 +251,8 @@ def materialize(raw: dict[str, Any]) -> dict[str, Any]:
                 else:
                     k = _r4(floor / sig_med)
                 entry[f"kappa_req_{variant}"] = k
-                entry[f"feasible_{variant}_ceiling_0_30"] = (
-                    k is not None and k <= KAPPA_CEILING
-                )
-                entry[f"open_central_0_16_{variant}"] = (
-                    k is not None and k <= KAPPA_CENTRAL
-                )
+                entry[f"feasible_{variant}_ceiling_0_30"] = k is not None and k <= KAPPA_CEILING
+                entry[f"open_central_0_16_{variant}"] = k is not None and k <= KAPPA_CENTRAL
                 if variant == "passive":
                     kappa_p[str(h)] = k
                     entry["open_go_bar_0_12"] = k is not None and k <= GO_KAPPA
@@ -343,9 +339,7 @@ def _list_cs_primary(client: Any) -> list[str]:
     return out
 
 
-def _grouped_day(
-    client: Any, day: str
-) -> tuple[dict[str, float], dict[str, float]]:
+def _grouped_day(client: Any, day: str) -> tuple[dict[str, float], dict[str, float]]:
     """Return (close_by_ticker, dollar_volume_by_ticker) for grouped daily."""
     aggs = client.get_grouped_daily_aggs(day, adjusted=True, include_otc=False)
     closes: dict[str, float] = {}
@@ -364,9 +358,7 @@ def _grouped_day(
 def _daily_bars(
     client: Any, ticker: str, start: str, end: str
 ) -> tuple[list[str], list[float], list[float]]:
-    aggs = client.get_aggs(
-        ticker, 1, "day", start, end, adjusted=True, sort="asc", limit=50000
-    )
+    aggs = client.get_aggs(ticker, 1, "day", start, end, adjusted=True, sort="asc", limit=50000)
     dates: list[str] = []
     closes: list[float] = []
     volumes: list[float] = []
@@ -411,8 +403,6 @@ def _sip_ns(q: Any) -> int | None:
 def _sample_session_quotes(client: Any, ticker: str, day: str) -> dict[str, Any]:
     """Time-stratified RTH quote sample → mid/bid/spread series."""
     day_dt = date.fromisoformat(day)
-    # Inclusive UTC-ish bounds via date strings accepted by the client.
-    start = f"{day}"
     # list_quotes timestamp filters: use ns bounds for RTH in ET.
     open_et = datetime(day_dt.year, day_dt.month, day_dt.day, 9, 30, tzinfo=_TZ_ET)
     close_et = datetime(day_dt.year, day_dt.month, day_dt.day, 16, 0, tzinfo=_TZ_ET)

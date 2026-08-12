@@ -240,7 +240,9 @@ def apply_warm_drop_rule(
 
 def sigma_min_bps(symbol: str, *, short: bool = False) -> float:
     """σ₁₈₀₀ floor = single-stress floor / κ_frozen."""
-    floor = FLOOR_SHORT_BPS[symbol] if short and symbol in FLOOR_SHORT_BPS else FLOOR_LONG_BPS[symbol]
+    floor = (
+        FLOOR_SHORT_BPS[symbol] if short and symbol in FLOOR_SHORT_BPS else FLOOR_LONG_BPS[symbol]
+    )
     return floor / KAPPA_FROZEN
 
 
@@ -334,9 +336,7 @@ def run_cell_from_events(
         path = EVENT_CALENDAR_DIR / f"{date_str}.yaml"
         if not path.is_file():
             return _calendar_missing_cell(events, symbol, date_str)
-        source = load_event_calendar(
-            path, expected_session_date=date.fromisoformat(date_str)
-        )
+        source = load_event_calendar(path, expected_session_date=date.fromisoformat(date_str))
         committed_hash = source.hash()
         from scripts.research.derive_hour_only_algo_clock_calendars import (
             derive_hour_only_calendar,
@@ -499,9 +499,7 @@ def run_cell_from_events(
         rvz = values.get("realized_vol_30s_zscore")
         w_hr = values.get("scheduled_flow_window_active")
 
-        quintile_ok, _ = ofi_quintile_side(
-            ofi=ofi, pctl=pctl, rvz=rvz, p_breakout=p_breakout
-        )
+        quintile_ok, _ = ofi_quintile_side(ofi=ofi, pctl=pctl, rvz=rvz, p_breakout=p_breakout)
         if quintile_ok:
             cotravel_eligible += 1
             if w_hr is not None and w_hr < 0.5:
@@ -557,9 +555,7 @@ def run_cell_from_events(
     res.calendar_warm_fraction_in_window = (
         cal_warm_in_window / res.n_in_window if res.n_in_window else None
     )
-    res.calendar_missing_rate = (
-        cal_missing_in_window / res.n_in_window if res.n_in_window else 0.0
-    )
+    res.calendar_missing_rate = cal_missing_in_window / res.n_in_window if res.n_in_window else 0.0
     if leakage_shares:
         res.leakage_share_mean = sum(leakage_shares) / len(leakage_shares)
         res.leakage_bug_flag = any(s > LEAKAGE_BUG_SHARE for s in leakage_shares)
@@ -656,9 +652,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ]
     # Evidence-only cannot be "edge empty rescue" for empty D — scored below.
     pooled = sum(per_symbol[s]["episodes_in_hour_viable_region"] for s in pool_symbols)
-    pooled_halfhour = sum(
-        per_symbol[s]["episodes_halfhour_viable_region"] for s in pool_symbols
-    )
+    pooled_halfhour = sum(per_symbol[s]["episodes_halfhour_viable_region"] for s in pool_symbols)
     d_only = sum(per_symbol[s]["episodes_in_hour_viable_region"] for s in deployable)
     emptiness = all(per_symbol[s]["edge_region_empty"] for s in DEPLOYABLE_SYMBOLS)
     park_power = pooled < POWER_FLOOR
@@ -683,9 +677,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         verdict = "PROCEED_CENSUS"
 
     out = {
-        "protocol": (
-            "sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md step 1 (frozen)"
-        ),
+        "protocol": ("sig_hour_checkpoint_drift_h1800_v1_validation_protocol.md step 1 (frozen)"),
         "instrument": "hour_checkpoint_drift_census.py (Phase-A; §1.1 predicate exact, both arms)",
         "run_parameters": {
             "kappa": KAPPA_FROZEN,

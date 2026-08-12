@@ -79,10 +79,13 @@ jobs:
         run: uv sync --all-extras --locked
 
       - name: Lint
-        run: uv run ruff check src/ tests/
+        # scripts/ added 2026-08-12. It had been outside every gate and had
+        # accumulated five errors nobody saw — CI linted src/ and tests/ only,
+        # so a directory that ships operator entry points drifted unchecked.
+        run: uv run ruff check src/ tests/ scripts/
 
       - name: Format
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/ scripts/
 
       - name: Types
         run: uv run mypy src/feelies
@@ -110,3 +113,70 @@ jobs:
         env:
           PYTHONHASHSEED: random
         run: uv run pytest tests/determinism/ -q
+
+  parity-oracle:
+    # The APP/2026-03-26 replay baseline — the strongest regression guard in the
+    # repo, and until 2026-08-12 the one thing CI never ran.
+    #
+    # It pins the trade parity hash, net PnL and fill count. It is marked
+    # `functional` because it needs a populated disk cache, so `check` above
+    # deselects it; only its cache-free config-hash assertion ran. A change could
+    # therefore move the parity hash with CI fully green, and one did (the
+    # min-order-floor commit) — caught by hand, not here.
+    #
+    # FEELIES_REQUIRE_BASELINE_CACHE=1 turns a cache miss from a green skip into
+    # a failure, so this job cannot pass without actually replaying.
+    name: parity oracle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Fork PRs get no secrets, so the cache can be neither restored-with-key nor
+    # repopulated. Skipping is stated rather than silently passing.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      PYTHONHASHSEED: "0"
+      FEELIES_REQUIRE_BASELINE_CACHE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Sync all extras
+        run: uv sync --all-extras --locked
+
+      - name: Restore APP baseline event cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.feelies/cache
+          # A historical session never changes, so the key is static. Bump the
+          # suffix to force a refetch if the normalizer's on-disk format moves.
+          key: feelies-eventcache-APP-2026-03-26-v1
+
+      - name: Populate cache on miss
+        # Fetching needs the Massive key. If the cache missed and no key is
+        # configured, fail here with the reason rather than letting the next
+        # step report a confusing replay error.
+        run: |
+          if [ -f "$HOME/.feelies/cache/APP/2026-03-26.jsonl.gz" ]; then
+            echo "cache hit — skipping fetch"
+            exit 0
+          fi
+          if [ -z "${MASSIVE_API_KEY}" ]; then
+            echo "::error::APP/2026-03-26 event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
+            exit 1
+          fi
+          uv run feelies backtest --config configs/bt_app.yaml \
+            --symbol APP --date 2026-03-26 >/dev/null
+        env:
+          MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
+
+      - name: Replay the locked APP baseline
+        # `-m ""` clears the default marker filter so the functional test is
+        # selected; without it this job would pass by deselecting its own subject.
+        run: uv run pytest tests/acceptance/test_backtest_app_baseline.py -q -m ""
