@@ -23,12 +23,12 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
 )
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     EVIDENCE_SCHEMA_VERSION,
     PROMOTE_CAPITAL_TIER_TRIGGER,
     CapitalStageEvidence,
@@ -41,7 +41,7 @@ from feelies.alpha.promotion_evidence import (
     RevalidationEvidence,
     metadata_to_evidence,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.core.clock import SimulatedClock
 from feelies.features.definition import FeatureDefinition

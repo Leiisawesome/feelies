@@ -16,7 +16,7 @@ Coverage axes:
     evidence still commits the demotion, with a logged warning)
   * registry-level forwarding of ``structured_evidence``
   * round-trip metadata payload through
-    :func:`feelies.alpha.promotion_evidence.metadata_to_evidence`
+    :func:`feelies.promotion.evidence.metadata_to_evidence`
 """
 
 from __future__ import annotations
@@ -26,14 +26,14 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
     GateRequirements,
     PromotionEvidence,
 )
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     EVIDENCE_SCHEMA_VERSION,
     CapitalStageEvidence,
     CapitalStageTier,
@@ -46,7 +46,7 @@ from feelies.alpha.promotion_evidence import (
     RevalidationEvidence,
     metadata_to_evidence,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.core.clock import SimulatedClock
 from feelies.features.definition import FeatureDefinition
@@ -375,7 +375,7 @@ class TestQuarantineStructured:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
         _walk_to_live(lc)
 
-        with caplog.at_level(logging.WARNING, logger="feelies.alpha.lifecycle"):
+        with caplog.at_level(logging.WARNING, logger="feelies.promotion.lifecycle"):
             lc.quarantine(
                 "net_alpha < 0 for 12 days",
                 structured_evidence=[_quarantine_evidence_real()],
@@ -387,7 +387,7 @@ class TestQuarantineStructured:
         assert not any(
             "spurious" in rec.getMessage()
             for rec in caplog.records
-            if rec.name == "feelies.alpha.lifecycle"
+            if rec.name == "feelies.promotion.lifecycle"
         )
 
     def test_spurious_trigger_evidence_logs_warning_but_commits(
@@ -401,7 +401,7 @@ class TestQuarantineStructured:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
         _walk_to_live(lc)
 
-        with caplog.at_level(logging.WARNING, logger="feelies.alpha.lifecycle"):
+        with caplog.at_level(logging.WARNING, logger="feelies.promotion.lifecycle"):
             lc.quarantine(
                 "manual override",
                 structured_evidence=[_quarantine_evidence_spurious()],
@@ -411,7 +411,7 @@ class TestQuarantineStructured:
         assert any(
             "suspicious" in rec.getMessage()
             for rec in caplog.records
-            if rec.name == "feelies.alpha.lifecycle"
+            if rec.name == "feelies.promotion.lifecycle"
         )
 
     def test_metadata_carries_reason_and_evidence_payload(
@@ -539,7 +539,7 @@ class TestCapitalStageEvidenceValidatorOnly:
     """Exercise capital-stage evidence without a lifecycle transition."""
 
     def test_capital_stage_validator_remains_callable(self) -> None:
-        from feelies.alpha.promotion_evidence import GateId, validate_gate
+        from feelies.promotion.evidence import GateId, validate_gate
 
         good = CapitalStageEvidence(
             tier=CapitalStageTier.SMALL_CAPITAL,

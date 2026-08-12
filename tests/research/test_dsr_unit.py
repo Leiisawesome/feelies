@@ -23,7 +23,7 @@ import statistics
 
 import pytest
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     DSREvidence,
     GateThresholds,
     validate_dsr,

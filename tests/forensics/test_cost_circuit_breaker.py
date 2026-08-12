@@ -5,17 +5,17 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
     GateRequirements,
     PromotionEvidence,
 )
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     QuarantineTriggerEvidence,
     metadata_to_evidence,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import Side
 from feelies.forensics.cost_circuit_breaker import (

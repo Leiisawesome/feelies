@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
 )
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     CPCVEvidence,
     DSREvidence,
     EVIDENCE_SCHEMA_VERSION,
@@ -27,7 +27,7 @@ from feelies.alpha.promotion_evidence import (
     ResearchAcceptanceEvidence,
     metadata_to_evidence,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.cli.main import EXIT_OK, main as cli_main
 from feelies.core.clock import SimulatedClock
 from feelies.research.cpcv import (

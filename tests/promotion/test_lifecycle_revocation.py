@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
     LifecycleRevocation,

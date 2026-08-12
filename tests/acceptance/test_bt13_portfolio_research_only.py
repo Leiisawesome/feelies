@@ -15,9 +15,9 @@ from feelies.alpha.discovery import (
     discover_alpha_specs,
     discover_research_alpha_specs,
 )
-from feelies.alpha.lifecycle import AlphaLifecycle, AlphaLifecycleState
+from feelies.promotion.lifecycle import AlphaLifecycle, AlphaLifecycleState
 from feelies.alpha.loader import AlphaLoader
-from feelies.alpha.promotion_evidence import GateThresholds
+from feelies.promotion.evidence import GateThresholds
 from feelies.core.clock import SimulatedClock
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]

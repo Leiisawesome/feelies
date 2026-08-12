@@ -28,7 +28,7 @@ inline design-target notes, or **Design Targets** section before escalating.
 | Topic | Skill | Code |
 |-------|-------|------|
 | Parity hashes L1–L6 | `testing-validation` | `tests/determinism/parity_manifest.py` |
-| Promotion F-1..F-6 | `alpha-lifecycle` | `src/feelies/alpha/promotion_evidence.py` |
+| Promotion F-1..F-6 | `alpha-lifecycle` | `src/feelies/promotion/evidence.py` |
 | Layer topology / SMs | `system-architect` | `src/feelies/kernel/` |
 
 Full index: `.cursor/skills/README.md`.

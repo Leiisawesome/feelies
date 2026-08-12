@@ -9,7 +9,7 @@ SIGNAL → PORTFOLIO and cross-cutting concerns.
 | Topic | Canonical skill | Code anchor |
 |-------|-----------------|-------------|
 | Locked parity hashes (L1–L6) | [testing-validation](testing-validation/SKILL.md) | `tests/determinism/parity_manifest.py` |
-| Promotion / gate matrix (F-1..F-6) | [alpha-lifecycle](alpha-lifecycle/SKILL.md) | `src/feelies/alpha/promotion_evidence.py` |
+| Promotion / gate matrix (F-1..F-6) | [alpha-lifecycle](alpha-lifecycle/SKILL.md) | `src/feelies/promotion/evidence.py` |
 | Layer topology & state machines | [system-architect](system-architect/SKILL.md) | `src/feelies/kernel/` |
 
 Always-applied platform rules live in `.cursor/rules/platform-invariants.mdc`.
@@ -33,7 +33,7 @@ other agent config files.
 | Execution (sim) | [backtest-engine](backtest-engine/SKILL.md) | `execution/backtest_router.py`, `harness/` | Replay, fills, `feelies backtest` |
 | Execution (live) | [live-execution](live-execution/SKILL.md) | `execution/`, `broker/ib/` | Orders, reconciliation, kill switch |
 | Data | [data-engineering](data-engineering/SKILL.md) | `ingestion/`, `storage/` | Massive ingest, `EventLog`, `DataHealth` |
-| Lifecycle | [alpha-lifecycle](alpha-lifecycle/SKILL.md) | `alpha/lifecycle.py`, `cli/promote.py` | Promotion, quarantine, `feelies promote` |
+| Lifecycle | [alpha-lifecycle](alpha-lifecycle/SKILL.md) | `promotion/lifecycle.py`, `cli/promote.py` | Promotion, quarantine, `feelies promote` |
 | Forensics | [post-trade-forensics](post-trade-forensics/SKILL.md) | `forensics/` | Decay, quarantine evidence |
 | Research | [research-workflow](research-workflow/SKILL.md) | `research/` | Notebook → alpha handoff |
 | Quality | [testing-validation](testing-validation/SKILL.md) | `tests/determinism/`, `tests/acceptance/` | Parity hashes, acceptance gates |

@@ -285,7 +285,7 @@ sim-vs-live divergence, parity hashes). The alpha-lifecycle skill owns
 
 Construction-time gate-matrix invariants (`_check_matrix_completeness`,
 `_check_validator_coverage`, `_check_reconstructor_coverage`) are enforced
-at import in `alpha/promotion_evidence.py` — a missing validator blocks
+at import in `promotion/evidence.py` — a missing validator blocks
 platform boot.
 
 ### Testing-specific promotion gates

@@ -23,7 +23,7 @@ from dataclasses import FrozenInstanceError, dataclass
 
 import pytest
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     EVIDENCE_SCHEMA_VERSION,
     GATE_EVIDENCE_REQUIREMENTS,
     KIND_TO_TYPE,
@@ -54,7 +54,7 @@ from feelies.alpha.promotion_evidence import (
     validate_research_acceptance,
     validate_revalidation,
 )
-from feelies.alpha.promotion_ledger import (
+from feelies.promotion.ledger import (
     PromotionLedger,
     PromotionLedgerEntry,
 )
@@ -858,7 +858,7 @@ class TestEvidenceToMetadata:
         # branch already covers non-dataclass inputs, but make sure the
         # internal helper still rejects non-dataclasses if called
         # directly via our supported-type registry.
-        from feelies.alpha.promotion_evidence import (
+        from feelies.promotion.evidence import (
             _evidence_to_jsonable,
         )
 
@@ -1296,7 +1296,7 @@ class TestMetadataToEvidenceReservedCoKeys:
             )
 
     def test_reason_is_a_reserved_co_key(self) -> None:
-        from feelies.alpha.promotion_evidence import RESERVED_METADATA_KEYS
+        from feelies.promotion.evidence import RESERVED_METADATA_KEYS
 
         assert "reason" in RESERVED_METADATA_KEYS
         assert "schema_version" in RESERVED_METADATA_KEYS
@@ -1308,7 +1308,7 @@ class TestPerAlphaFloorHelper:
     """
 
     def test_min_floor_loosening_rejected(self) -> None:
-        from feelies.alpha.promotion_evidence import (
+        from feelies.promotion.evidence import (
             GateThresholdFloorError,
             assert_per_alpha_overrides_respect_floor,
         )
@@ -1322,7 +1322,7 @@ class TestPerAlphaFloorHelper:
             )
 
     def test_max_ceiling_loosening_rejected(self) -> None:
-        from feelies.alpha.promotion_evidence import (
+        from feelies.promotion.evidence import (
             GateThresholdFloorError,
             assert_per_alpha_overrides_respect_floor,
         )
@@ -1336,7 +1336,7 @@ class TestPerAlphaFloorHelper:
             )
 
     def test_tightening_and_unpinned_and_free_all_allowed(self) -> None:
-        from feelies.alpha.promotion_evidence import assert_per_alpha_overrides_respect_floor
+        from feelies.promotion.evidence import assert_per_alpha_overrides_respect_floor
 
         floor = apply_gate_thresholds_overrides(
             GateThresholds(),
@@ -1358,7 +1358,7 @@ class TestPerAlphaFloorHelper:
         # Regression for the misleadingly-named ``small_max_hit_rate_residual_pp``
         # (a *floor*, pass condition residual >= threshold): lowering it
         # (more negative) loosens the gate and must be rejected.
-        from feelies.alpha.promotion_evidence import (
+        from feelies.promotion.evidence import (
             GateThresholdFloorError,
             assert_per_alpha_overrides_respect_floor,
         )
@@ -1382,7 +1382,7 @@ class TestPerAlphaFloorHelper:
     def test_every_threshold_field_has_a_direction(self) -> None:
         from dataclasses import fields
 
-        from feelies.alpha.promotion_evidence import _GATE_THRESHOLD_DIRECTIONS
+        from feelies.promotion.evidence import _GATE_THRESHOLD_DIRECTIONS
 
         classified = set(_GATE_THRESHOLD_DIRECTIONS)
         actual = {f.name for f in fields(GateThresholds)}

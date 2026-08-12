@@ -20,14 +20,14 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     AUTHORIZE_DECOUPLE_TRIGGER,
     ConditionalCVaREvidence,
     QuoteFreezeBackstopEvidence,
     TurnoverBoundEvidence,
     evidence_to_metadata,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger, PromotionLedgerEntry
+from feelies.promotion.ledger import PromotionLedger, PromotionLedgerEntry
 from feelies.cli.main import (
     EXIT_OK,
     EXIT_VALIDATION_FAILED,

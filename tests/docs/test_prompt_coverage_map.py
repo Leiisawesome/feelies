@@ -20,6 +20,7 @@ _PACKAGE_OWNERS: dict[str, str | None] = {
     "services": "audit_regime",
     "signals": None,  # split: regime gate vs horizon engine
     "alpha": None,  # split 5 ways — see README coverage map
+    "promotion": "audit_alpha_lifecycle",  # split out of alpha/ 2026-08-12
     "composition": "audit_composition",
     "portfolio": None,  # split: composition vs position_management
     "risk": "audit_risk_engine",  # overrides: sizers
@@ -47,9 +48,6 @@ _FILE_OWNERS: dict[str, str] = {
     "signals/horizon_engine.py": "audit_signal_alpha",
     "signals/horizon_protocol.py": "audit_signal_alpha",
     # ── alpha/ ──────────────────────────────────────────────────────
-    "alpha/lifecycle.py": "audit_alpha_lifecycle",
-    "alpha/promotion_ledger.py": "audit_alpha_lifecycle",
-    "alpha/promotion_evidence.py": "audit_alpha_lifecycle",
     "alpha/registry.py": "audit_alpha_lifecycle",
     "alpha/loader.py": "audit_alpha_lifecycle",
     "alpha/dependency_graph.py": "audit_alpha_lifecycle",

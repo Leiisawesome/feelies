@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping, Sequence
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
     GateRequirements,
@@ -31,14 +31,14 @@ from feelies.alpha.lifecycle import (
     PromotionEvidence,
 )
 from feelies.alpha.module import AlphaModule
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     CapitalStageEvidence,
     GateThresholdFloorError,
     GateThresholds,
     apply_gate_thresholds_overrides,
     assert_per_alpha_overrides_respect_floor,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
 from feelies.features.definition import FeatureDefinition
@@ -343,7 +343,7 @@ class AlphaRegistry:
         Provide either compatibility ``evidence`` or typed
         ``structured_evidence``. Supplying both or
         neither raises :class:`ValueError`.  See
-        :class:`~feelies.alpha.lifecycle.AlphaLifecycle` docstring for
+        :class:`~feelies.promotion.lifecycle.AlphaLifecycle` docstring for
         the contract.
 
         Raises ``KeyError`` if alpha not registered.
@@ -404,7 +404,7 @@ class AlphaRegistry:
         """Move a LIVE alpha to QUARANTINED state.
 
         Optional ``structured_evidence`` (typically a
-        :class:`feelies.alpha.promotion_evidence.QuarantineTriggerEvidence`)
+        :class:`feelies.promotion.evidence.QuarantineTriggerEvidence`)
         is recorded on the ledger entry alongside the free-form
         ``reason``.  Per Inv-11 (fail-safe), the demotion is committed
         even when the trigger evidence looks spurious — the validator

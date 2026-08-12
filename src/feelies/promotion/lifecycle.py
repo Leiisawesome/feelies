@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     AUTHORIZE_DECOUPLE_TRIGGER,
     PROMOTE_CAPITAL_TIER_TRIGGER,
     CapitalStageEvidence,
@@ -39,7 +39,7 @@ from feelies.alpha.promotion_evidence import (
     evidence_to_metadata,
     validate_gate,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger, PromotionLedgerEntry
+from feelies.promotion.ledger import PromotionLedger, PromotionLedgerEntry
 from feelies.core.clock import Clock
 from feelies.core.state_machine import StateMachine, TransitionRecord
 

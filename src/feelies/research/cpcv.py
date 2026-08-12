@@ -19,7 +19,7 @@ import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from feelies.alpha.promotion_evidence import CPCVEvidence
+from feelies.promotion.evidence import CPCVEvidence
 
 __all__ = [
     "CPCVConfig",

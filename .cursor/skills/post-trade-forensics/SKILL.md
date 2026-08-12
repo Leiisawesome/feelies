@@ -43,7 +43,7 @@ default). Additionally:
 > **Implementation status**: what ships today is the
 > `MultiHorizonAttributor`, the `DecayDetector`
 > (`forensics/decay_detector.py`), and the quarantine-evidence schema
-> (`alpha/promotion_evidence.py`). The broader Compare / Monitor /
+> (`promotion/evidence.py`). The broader Compare / Monitor /
 > Detect tables below and the daily health-report JSON are operator
 > playbook — not automated (`src/feelies/forensics/__init__.py`:
 > "concrete analyzers are future work").
@@ -362,7 +362,7 @@ reduce, retire).
 | State changes | `StateTransition` | `core/events.py` — SM audit trail |
 | Mechanism lineage | `Signal.trend_mechanism` + `SizedPositionIntent.mechanism_breakdown` | `core/events.py` |
 | Hazard exits | `OrderRequest.reason ∈ {HAZARD_SPIKE, HARD_EXIT_AGE}` | `core/events.py` |
-| Promotion history | `PromotionLedger` (read-only) | `alpha/promotion_ledger.py` |
+| Promotion history | `PromotionLedger` (read-only) | `promotion/ledger.py` |
 
 `TradeRecord` carries the full decision chain
 (`order_id`, `symbol`, `strategy_id`, `side`, `signal_timestamp_ns`,

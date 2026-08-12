@@ -34,9 +34,11 @@ src/feelies/          Core library
   sensors/            Layer-1 sensor framework
   features/           Horizon aggregator
   signals/            Layer-2 horizon signal engine + regime gate DSL
+  alpha/              Alpha YAML load + validate (G1-G17), registry, runtime
+  promotion/          Lifecycle, promotion gates, evidence, ledger (offline)
   composition/        Layer-3 portfolio construction
   risk/               Risk engine, sizer, hazard exits
-  execution/          Execution backends, order routers
+  execution/          Execution backends, order routers, admission gates
   harness/             Backtest CLI preparation, runner, reports, JSONL, parity helpers
   broker/ib/          IB Gateway adapter (paper/live)
   research/           CPCV, DSR, experiment tracking

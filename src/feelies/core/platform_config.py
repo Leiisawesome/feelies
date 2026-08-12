@@ -1196,7 +1196,7 @@ class PlatformConfig:
         # Imported lazily to avoid a hard dependency cycle between
         # core.platform_config and alpha.promotion_evidence at import
         # time (alpha modules import core.events / core.config).
-        from feelies.alpha.promotion_evidence import (
+        from feelies.promotion.evidence import (
             parse_gate_thresholds_overrides,
         )
 

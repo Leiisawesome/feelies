@@ -503,7 +503,7 @@ live:
 
 Optional per-alpha override of the platform `GateThresholds` consumed
 by `validate_gate(...)` in
-[`src/feelies/alpha/promotion_evidence.py`](../src/feelies/alpha/promotion_evidence.py).
+[`src/feelies/promotion/evidence.py`](../src/feelies/promotion/evidence.py).
 The block is **opt-in via field presence** — absent or empty block
 ⇒ no per-alpha override and the alpha promotes against the platform
 defaults.  When supplied, the loader stores the validated overrides

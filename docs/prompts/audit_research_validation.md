@@ -87,7 +87,7 @@ dsr.py         → observed_sharpe, trials_count, skew, kurtosis → dsr, dsr_p_
 
 ### Evidence schemas (consumers)
 
-- `src/feelies/alpha/promotion_evidence.py` — `CPCVEvidence`, `DSREvidence`,
+- `src/feelies/promotion/evidence.py` — `CPCVEvidence`, `DSREvidence`,
   `validate_cpcv`, `validate_dsr`, default `GateThresholds`
 
 ### Tests (spec + gap analysis)

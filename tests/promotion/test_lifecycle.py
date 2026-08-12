@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
     GateRequirements,
@@ -15,7 +15,7 @@ from feelies.alpha.lifecycle import (
     check_paper_gate,
     check_revalidation_gate,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.core.clock import SimulatedClock
 
 

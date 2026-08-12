@@ -14,7 +14,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from feelies.alpha.promotion_evidence import validate_cpcv, validate_dsr
+from feelies.promotion.evidence import validate_cpcv, validate_dsr
 from tests.research.test_promotion_pipeline_e2e import (
     _build_cpcv_from_returns,
     _build_dsr_from_returns,

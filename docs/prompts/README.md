@@ -111,8 +111,8 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `services/`, `signals/regime_gate.py` | regime |
 | `signals/horizon_engine.py`, `signals/horizon_protocol.py` | signal_alpha |
 | `alpha/cost_arithmetic.py`, `arbitration.py` | signal_alpha |
-| `alpha/lifecycle.py`, `promotion_ledger.py`, `registry.py`, `loader.py`, `validation.py`, `discovery.py`, `layer_validator.py`, `module.py`, `signal_layer_module.py` | alpha_lifecycle |
-| `alpha/promotion_evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
+| `promotion/lifecycle.py`, `promotion_ledger.py`, `registry.py`, `loader.py`, `validation.py`, `discovery.py`, `layer_validator.py`, `module.py`, `signal_layer_module.py` | alpha_lifecycle |
+| `promotion/evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
 | `alpha/portfolio_layer_module.py` | composition |
 | `alpha/fill_attribution.py` | forensics |
 | `alpha/risk_wrapper.py` | risk_engine |
@@ -146,7 +146,7 @@ dive, the others treat them as touchpoints:
 |-------------|-------|-------------|
 | `signals/horizon_engine.py` | signal_alpha | regime (gate integration), kernel (M4 ordering) |
 | `core/state_machine.py` | core_clock_config | kernel, alpha_lifecycle |
-| `alpha/promotion_evidence.py` | alpha_lifecycle | research_validation, forensics |
+| `promotion/evidence.py` | alpha_lifecycle | research_validation, forensics |
 | `monitoring/kill_switch.py` | monitoring_safety | live_execution |
 | `core/inv12_stress.py` | core_clock_config | execution_fills |
 | `execution/order_state.py`, `trading_session.py` | live_execution | execution_fills |
