@@ -30,10 +30,12 @@
 #     ``_standardize`` returns zero weight whenever only one name is active
 #     (std == 0).  Composition needs >= ceil(0.8N) symbols carrying fresh,
 #     differently-scored signals at the same boundary.
-#   * The composition path is also the *less* gated of the two: its legs skip
-#     the halt blackout, session-flatten window, SSR, locate/borrow, the Inv-12
-#     B4 edge/cost gate and ``platform_min_order_shares``, and route MARKET
-#     unconditionally.  The standalone path applies all six.
+#   * The composition path used to be the *less* gated of the two: its legs
+#     skipped the halt blackout, session-flatten window, SSR, locate/borrow and
+#     ``platform_min_order_shares``.  Those five now run for both paths from one
+#     policy (``feelies.execution.order_admission``).  Two differences remain:
+#     composition legs still bypass the Inv-12 B4 edge/cost gate and still route
+#     MARKET unconditionally rather than resolving a passive/MOC route.
 #
 # So: neither path is currently production-blessed for a multi-alpha book.
 # Standalone is lossy; composition is unexercised and under-gated.  Choosing

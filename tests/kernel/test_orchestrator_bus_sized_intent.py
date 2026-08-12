@@ -862,3 +862,117 @@ class TestFiltering:
 
         _ = orch
         assert captured == []
+
+
+class TestPortfolioLegAdmissionGates:
+    """PORTFOLIO legs pass the same Inv-11 admission gates as SIGNAL orders.
+
+    Before ``_filter_portfolio_orders_for_admission`` existed, a composition leg
+    reached ``order_router.submit`` without meeting the halt blackout, the
+    session-flatten window, SSR, locate availability or the minimum-order floor
+    -- all five of which the standalone path applies. The path the configs
+    described as production-bound was the *less* gated one, which is the wrong
+    direction under Inv-11.
+
+    These tests drive the real bus -> ``_on_bus_sized_intent`` -> submit path.
+    The determinism baseline ``EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH`` cannot
+    cover this: it pins ``BasicRiskEngine.check_sized_intent`` directly and
+    never enters the kernel, so the filter is invisible to it.
+
+    Each blocking test is paired with a same-shape reducing leg that must still
+    admit under the identical hostile environment -- a gate that refused an
+    unwind would be a worse defect than the one being fixed.
+    """
+
+    def _orch_with_flat_book(
+        self,
+    ) -> tuple[Orchestrator, EventBus, MemoryPositionStore, list[OrderRequest]]:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 0, "150.00")
+        orch = _build_orchestrator(clock, bus=bus, position_store=positions)
+        _boot_to_backtest(orch)
+        return orch, bus, positions, _capture_orders(bus)
+
+    def _orch_with_long_book(
+        self, quantity: int = 200
+    ) -> tuple[Orchestrator, EventBus, MemoryPositionStore, list[OrderRequest]]:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", quantity, "150.00")
+        orch = _build_orchestrator(clock, bus=bus, position_store=positions)
+        _boot_to_backtest(orch)
+        return orch, bus, positions, _capture_orders(bus)
+
+    # ── SSR ──────────────────────────────────────────────────────────
+
+    def test_ssr_blocks_a_short_opening_leg(self) -> None:
+        orch, bus, _pos, orders = self._orch_with_flat_book()
+        orch._ssr_active = {"AAPL"}
+        # Negative target_usd from a flat book opens short exposure.
+        bus.publish(_make_intent(targets={"AAPL": -15_000.0}))
+        assert orders == [], "SSR must refuse a PORTFOLIO leg that opens short"
+
+    def test_ssr_admits_a_cover(self) -> None:
+        """Reg-SHO restricts short *sales*; buying back is always allowed."""
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", -200, "150.00")
+        orch = _build_orchestrator(clock, bus=bus, position_store=positions)
+        _boot_to_backtest(orch)
+        orders = _capture_orders(bus)
+        orch._ssr_active = {"AAPL"}
+        bus.publish(_make_intent(targets={"AAPL": 0.0}))
+        assert [o.side for o in orders] == [Side.BUY]
+
+    # ── Locate availability ──────────────────────────────────────────
+
+    def test_unavailable_locate_blocks_a_short_opening_leg(self) -> None:
+        from feelies.execution.regulatory import BorrowTier
+
+        orch, bus, _pos, orders = self._orch_with_flat_book()
+        orch._borrow_tier = {"AAPL": BorrowTier.UNAVAILABLE}
+        bus.publish(_make_intent(targets={"AAPL": -15_000.0}))
+        assert orders == [], "no locate must refuse a PORTFOLIO short entry"
+
+    # ── Halt blackout ────────────────────────────────────────────────
+
+    def test_halt_blackout_blocks_an_opening_leg_but_not_an_unwind(self) -> None:
+        orch, bus, _pos, orders = self._orch_with_flat_book()
+        orch._halt_blackout_until_ns = {"AAPL": 10_000}
+        bus.publish(_make_intent(targets={"AAPL": 15_000.0}, timestamp_ns=5_000))
+        assert orders == [], "halt blackout must refuse a PORTFOLIO entry"
+
+        orch2, bus2, _pos2, orders2 = self._orch_with_long_book()
+        orch2._halt_blackout_until_ns = {"AAPL": 10_000}
+        bus2.publish(_make_intent(targets={"AAPL": 0.0}, timestamp_ns=5_000))
+        assert [o.side for o in orders2] == [Side.SELL], (
+            "a halt blackout must never trap an open PORTFOLIO position (Inv-11)"
+        )
+
+    # ── Minimum order size ───────────────────────────────────────────
+
+    def test_min_order_shares_blocks_a_small_opening_leg_but_not_an_exit(self) -> None:
+        orch, bus, _pos, orders = self._orch_with_flat_book()
+        orch._min_order_shares = 50
+        # 150 USD at a 150.00 mark is 1 share -- far below the floor.
+        bus.publish(_make_intent(targets={"AAPL": 150.0}))
+        assert orders == [], "sub-minimum PORTFOLIO entry must be suppressed"
+
+        orch2, bus2, _pos2, orders2 = self._orch_with_long_book(quantity=3)
+        orch2._min_order_shares = 50
+        bus2.publish(_make_intent(targets={"AAPL": 0.0}))
+        assert [o.quantity for o in orders2] == [3], (
+            "a 3-share residual must stay closable under a 50-share floor (Inv-11)"
+        )
+
+    # ── The benign case still trades ─────────────────────────────────
+
+    def test_clean_environment_admits_the_leg(self) -> None:
+        """Guard against a filter that blocks everything and looks 'safe'."""
+        _orch, bus, _pos, orders = self._orch_with_flat_book()
+        bus.publish(_make_intent(targets={"AAPL": 15_000.0}))
+        assert [(o.side, o.quantity) for o in orders] == [(Side.BUY, 100)]

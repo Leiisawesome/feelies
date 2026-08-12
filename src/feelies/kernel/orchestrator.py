@@ -88,6 +88,14 @@ from feelies.execution.intent import (
     SignalPositionTranslator,
     TradingIntent,
 )
+from feelies.execution.order_admission import (
+    BLOCK_BELOW_MIN_ORDER_SHARES,
+    BLOCK_LOCATE_UNAVAILABLE,
+    BLOCK_SSR,
+    ExposureDelta,
+    admission_block_reason,
+    blocks_for_min_size,
+)
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.execution.portfolio_netter import (
     DesiredTargetBook,
@@ -1351,6 +1359,11 @@ class Orchestrator:
                 )
                 continue
 
+            orders = self._filter_portfolio_orders_for_admission(
+                orders,
+                intent=intent,
+                correlation_id=correlation_id,
+            )
             orders = self._filter_portfolio_orders_for_pending_conflicts(
                 orders,
                 intent=intent,
@@ -1414,6 +1427,11 @@ class Orchestrator:
         orders: list[OrderRequest] = list(sized.orders)
         if not orders:
             return
+        orders = self._filter_portfolio_orders_for_admission(
+            orders,
+            intent=intent,
+            correlation_id=correlation_id,
+        )
         orders = self._filter_portfolio_orders_for_pending_conflicts(
             orders,
             intent=intent,
@@ -1817,59 +1835,34 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        # Block new entries after a halt; exits remain available.
-        if intent.intent in _ENTRY_OPENING_INTENTS and self._in_halt_blackout(
-            intent.symbol, quote.timestamp_ns
-        ):
+        # Session, halt, and Reg-SHO admission — one shared policy with the
+        # PORTFOLIO path (`feelies.execution.order_admission`).  This path
+        # answers "does it open exposure?" from the intent matrix; composition
+        # answers it from the leg's exposure delta.  Quantity is withheld here
+        # because risk scaling has not been applied yet; the minimum-size gate
+        # runs in `_try_build_order_from_intent` off the same predicate.
+        block = admission_block_reason(
+            opens_exposure=intent.intent in _ENTRY_OPENING_INTENTS,
+            opens_short=is_short_sale_intent(intent),
+            in_halt_blackout=self._in_halt_blackout(intent.symbol, quote.timestamp_ns),
+            in_session_flatten_window=self._in_session_flatten_window(quote),
+            ssr_active=intent.symbol.upper() in self._ssr_active,
+            locate_unavailable=(self._borrow_tier_for(intent.symbol) == BorrowTier.UNAVAILABLE),
+        )
+        if block is not None:
+            # Alerts are per-gate forensic markers, not part of the decision.
+            if block == BLOCK_SSR:
+                self._emit_ssr_suppression_alert(intent, cid)
+            elif block == BLOCK_LOCATE_UNAVAILABLE:
+                self._emit_locate_unavailable_alert(intent, cid)
             self._finish_no_order(
                 quote,
                 signal,
                 intent,
                 t_wall_start,
                 cid,
-                ("halt_resolution_blackout", f"symbol={intent.symbol}"),
-                "halt_resolution_blackout",
-            )
-            return
-
-        # Refuse new entries inside the session-flatten window.
-        if intent.intent in _ENTRY_OPENING_INTENTS and self._in_session_flatten_window(quote):
-            self._finish_no_order(
-                quote,
-                signal,
-                intent,
-                t_wall_start,
-                cid,
-                ("session_flatten_window", f"symbol={intent.symbol}"),
-                "session_flatten_window",
-            )
-            return
-
-        # Under SSR, refuse new short exposure but permit buys and covers.
-        if self._ssr_blocks_intent(intent):
-            self._emit_ssr_suppression_alert(intent, cid)
-            self._finish_no_order(
-                quote,
-                signal,
-                intent,
-                t_wall_start,
-                cid,
-                ("ssr_suppressed", f"symbol={intent.symbol}"),
-                "ssr_suppressed",
-            )
-            return
-
-        # Reject unavailable locates; hard-to-borrow entries carry fees.
-        if self._borrow_blocks_intent(intent):
-            self._emit_locate_unavailable_alert(intent, cid)
-            self._finish_no_order(
-                quote,
-                signal,
-                intent,
-                t_wall_start,
-                cid,
-                ("locate_unavailable", f"symbol={intent.symbol}"),
-                "locate_unavailable",
+                (block, f"symbol={intent.symbol}"),
+                block,
             )
             return
 
@@ -2667,11 +2660,20 @@ class Orchestrator:
         the end-of-session flatten emission so the two can never disagree about
         when the window opens.
         """
+        return self._in_session_flatten_window_at(quote.exchange_timestamp_ns)
+
+    def _in_session_flatten_window_at(self, at_ns: int) -> bool:
+        """Event-time form of :meth:`_in_session_flatten_window`.
+
+        The PORTFOLIO path admits legs outside a quote callback, so it carries
+        the boundary's own event time rather than a quote (Inv-10: no wall
+        clock on the decision path).
+        """
         return in_session_flatten_window(
             self._trading_session_bounds,
             enabled=self._session_flatten_enabled,
             seconds_before_close=self._session_flatten_seconds_before_close,
-            at_ns=quote.exchange_timestamp_ns,
+            at_ns=at_ns,
         )
 
     def _compute_target_quantity(
@@ -3263,8 +3265,8 @@ class Orchestrator:
         )
         if quantity <= 0:
             return None, "rounded_quantity_after_risk_scaling_le_zero"
-        if not is_exit_or_stop and quantity < self._min_order_shares:
-            return None, "quantity_below_platform_min_order_shares"
+        if blocks_for_min_size(quantity, self._min_order_shares, exempt=is_exit_or_stop):
+            return None, BLOCK_BELOW_MIN_ORDER_SHARES
 
         # Only hard-tier short sales carry the HTB fee flag;
         # ``OrderRequest.is_short``; ``available`` omits HTB even when
@@ -3478,6 +3480,68 @@ class Orchestrator:
             order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
             for sm, _, order in self._active_orders.values()
         )
+
+    def _filter_portfolio_orders_for_admission(
+        self,
+        orders: list[OrderRequest],
+        *,
+        intent: SizedPositionIntent,
+        correlation_id: str,
+    ) -> list[OrderRequest]:
+        """Drop PORTFOLIO legs refused by the shared Inv-11 admission gates.
+
+        Until this filter existed the composition path reached
+        ``order_router.submit`` without passing the halt blackout, the
+        session-flatten window, SSR, locate availability or the minimum-order
+        floor — every one of which the standalone SIGNAL path applies.  The
+        policy is :func:`~feelies.execution.order_admission.admission_block_reason`;
+        this method only supplies the environment and the per-leg exposure
+        delta.
+
+        The delta is re-read from the live book rather than carried from
+        ``plan_leg``: a leg is admitted against the book as it stands now, not
+        as it stood when the intent was priced.
+
+        Reducing legs are exempt from every gate by construction (the policy
+        conditions each one on the order adding exposure), so a PORTFOLIO
+        unwind can never be refused by a halt or an SSR flag.
+        """
+        filtered: list[OrderRequest] = []
+        for order in orders:
+            current = self._positions.get(order.symbol).quantity
+            signed = order.quantity if order.side is Side.BUY else -order.quantity
+            delta = ExposureDelta(current_quantity=current, signed_quantity=signed)
+            block = admission_block_reason(
+                opens_exposure=delta.opens_or_increases_exposure,
+                opens_short=delta.opens_or_increases_short,
+                in_halt_blackout=self._in_halt_blackout(order.symbol, intent.timestamp_ns),
+                in_session_flatten_window=self._in_session_flatten_window_at(intent.timestamp_ns),
+                ssr_active=order.symbol.upper() in self._ssr_active,
+                locate_unavailable=(self._borrow_tier_for(order.symbol) == BorrowTier.UNAVAILABLE),
+                quantity=order.quantity,
+                min_order_shares=self._min_order_shares,
+                exempt_from_min_size=not delta.opens_or_increases_exposure,
+            )
+            if block is None:
+                filtered.append(order)
+                continue
+            self._publish_alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                severity=AlertSeverity.WARNING,
+                alert_name="portfolio_leg_admission_blocked",
+                message=f"PORTFOLIO leg refused by {block}: {order.symbol!r} {order.side.name} {order.quantity} (strategy={intent.strategy_id!r}, position={current}).",
+                context={
+                    "order_id": order.order_id,
+                    "symbol": order.symbol,
+                    "strategy_id": intent.strategy_id,
+                    "block_reason": block,
+                    "side": order.side.name,
+                    "quantity": order.quantity,
+                    "position_quantity": current,
+                },
+            )
+        return filtered
 
     def _filter_portfolio_orders_for_pending_conflicts(
         self,

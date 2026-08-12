@@ -77,6 +77,7 @@ _FILE_OWNERS: dict[str, str] = {
     "risk/edge_weighted_sizer.py": "audit_position_management",
     # ── execution/ ──────────────────────────────────────────────────
     "execution/intent.py": "audit_position_management",
+    "execution/order_admission.py": "audit_position_management",
     "execution/position_manager.py": "audit_position_management",
     "execution/portfolio_netter.py": "audit_position_management",
     "execution/sized_intent_legs.py": "audit_position_management",
