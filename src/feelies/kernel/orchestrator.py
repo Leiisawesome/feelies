@@ -95,6 +95,8 @@ from feelies.execution.order_admission import (
     ExposureDelta,
     admission_block_reason,
     blocks_for_min_size,
+    exposure_delta_from_intent,
+    side_for_intent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.execution.portfolio_netter import (
@@ -125,7 +127,6 @@ from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
     build_borrow_table,
     htb_fee_applies,
-    is_short_sale_intent,
     parse_borrow_tier,
 )
 from feelies.ingestion.data_integrity import (
@@ -205,17 +206,6 @@ _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
         OrderState.CANCELLED,
         OrderState.REJECTED,
         OrderState.EXPIRED,
-    }
-)
-
-# Exposure-increasing intents are blocked after a halt; exits remain allowed.
-_ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset(
-    {
-        TradingIntent.ENTRY_LONG,
-        TradingIntent.ENTRY_SHORT,
-        TradingIntent.SCALE_UP,
-        TradingIntent.REVERSE_LONG_TO_SHORT,
-        TradingIntent.REVERSE_SHORT_TO_LONG,
     }
 )
 
@@ -1841,9 +1831,10 @@ class Orchestrator:
         # answers it from the leg's exposure delta.  Quantity is withheld here
         # because risk scaling has not been applied yet; the minimum-size gate
         # runs in `_try_build_order_from_intent` off the same predicate.
+        delta = exposure_delta_from_intent(intent)
         block = admission_block_reason(
-            opens_exposure=intent.intent in _ENTRY_OPENING_INTENTS,
-            opens_short=is_short_sale_intent(intent),
+            opens_exposure=delta.opens_or_increases_exposure,
+            opens_short=delta.opens_or_increases_short,
             in_halt_blackout=self._in_halt_blackout(intent.symbol, quote.timestamp_ns),
             in_session_flatten_window=self._in_session_flatten_window(quote),
             ssr_active=intent.symbol.upper() in self._ssr_active,
@@ -3271,7 +3262,7 @@ class Orchestrator:
         # Only hard-tier short sales carry the HTB fee flag;
         # ``OrderRequest.is_short``; ``available`` omits HTB even when
         # cost_htb_borrow_annual_bps is configured.
-        short_sale = is_short_sale_intent(intent)
+        short_sale = exposure_delta_from_intent(intent).opens_or_increases_short
         tier = self._borrow_tier_for(intent.symbol)
         is_short = htb_fee_applies(tier, short_sale)
 
@@ -3388,29 +3379,8 @@ class Orchestrator:
 
     @staticmethod
     def _side_from_intent(intent: OrderIntent) -> Side:
-        """Derive order Side from TradingIntent."""
-        if intent.intent in (
-            TradingIntent.ENTRY_LONG,
-            TradingIntent.REVERSE_SHORT_TO_LONG,
-        ):
-            return Side.BUY
-
-        if intent.intent in (
-            TradingIntent.ENTRY_SHORT,
-            TradingIntent.REVERSE_LONG_TO_SHORT,
-        ):
-            return Side.SELL
-
-        if intent.intent == TradingIntent.EXIT:
-            return Side.SELL if intent.current_quantity > 0 else Side.BUY
-
-        if intent.intent == TradingIntent.SCALE_UP:
-            return Side.BUY if intent.current_quantity >= 0 else Side.SELL
-
-        raise ValueError(
-            f"Cannot determine Side for intent {intent.intent!r}. "
-            f"Fail-safe: aborting order construction."
-        )
+        """Derive order Side from TradingIntent (see ``side_for_intent``)."""
+        return side_for_intent(intent)
 
     # ── Order lifecycle tracking (Inv-4) ────────────────────────────
 
@@ -5018,12 +4988,6 @@ class Orchestrator:
         """Locate tier for ``symbol``; omitted symbols use the default tier."""
         return self._borrow_tier.get(symbol.upper(), self._borrow_default_tier)
 
-    def _borrow_blocks_intent(self, intent: OrderIntent) -> bool:
-        """True when locate is unavailable and this intent is a short sale."""
-        return self._borrow_tier_for(
-            intent.symbol
-        ) == BorrowTier.UNAVAILABLE and is_short_sale_intent(intent)
-
     def _emit_locate_unavailable_alert(
         self,
         intent: OrderIntent,
@@ -5115,12 +5079,6 @@ class Orchestrator:
                 "order_id": order.order_id,
             },
         )
-
-    def _ssr_blocks_intent(self, intent: OrderIntent) -> bool:
-        """True when SSR (refuse_short) must refuse this short-opening order."""
-        if intent.symbol.upper() not in self._ssr_active:
-            return False
-        return is_short_sale_intent(intent)
 
     def _emit_ssr_suppression_alert(
         self,

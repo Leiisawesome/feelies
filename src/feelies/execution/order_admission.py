@@ -11,23 +11,19 @@ The *policy* lives in :func:`admission_block_reason` and is stated over two
 booleans — does this order open/increase exposure, and does it open/increase
 short exposure — so both paths run the same decision in the same order.
 
-How each path answers those two questions is deliberately left to an adapter,
-because the two do **not** agree everywhere:
+Both paths answer those questions from one basis: :class:`ExposureDelta`, the
+signed position before the order plus the order's signed size.  Composition
+carries it on every :class:`~feelies.execution.sized_intent_legs.PlannedLeg`;
+standalone derives it via :func:`exposure_delta_from_intent`.
 
-* Standalone answers from its intent matrix (``_ENTRY_OPENING_INTENTS`` /
-  ``is_short_sale_intent``).
-* Composition answers from :class:`ExposureDelta`, the signed position before
-  the order plus the order's signed size, which every
-  :class:`~feelies.execution.sized_intent_legs.PlannedLeg` already carries.
-
-They diverge on exactly one reachable case: a ``REVERSE_*`` intent whose
-``target_quantity`` is ``0`` (the sizer returned zero against an open position).
-The enum calls that an opening; in exposure terms it is a pure flatten to zero,
-which Inv-11 says must never be refused.  The exposure basis is the better
-answer, but switching standalone onto it would change live suppression
-behaviour, so it is recorded rather than silently applied —
-``test_intent_and_exposure_bases_diverge_only_on_zero_target_reversal`` pins the
-divergence, and resolving it is a separate decision.
+An earlier revision let standalone answer from ``TradingIntent`` membership
+instead.  That disagreed with the book on one reachable case: a ``REVERSE_*``
+whose ``target_quantity`` is ``0`` (the sizer returned zero against an open
+position) trades ``|qty|`` shares and lands *flat*.  The enum classified it as
+an opening, so a halt blackout, the session-flatten window, SSR or a missing
+locate could refuse a pure flatten — a safety control trapping an open
+position, which is the failure Inv-11 exists to prevent.  The book is the
+authority; ``test_zero_target_reversal_is_a_flatten_not_an_opening`` pins it.
 
 Scope (deliberate).  This module owns the **Inv-11 admission** gates: they can
 only ever suppress an order, never enlarge or reroute one.  The Inv-12 B4
@@ -46,8 +42,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from feelies.execution.intent import OrderIntent
 from feelies.core.events import Side
+from feelies.execution.intent import OrderIntent, TradingIntent
 
 # ── Stable suppression tokens ────────────────────────────────────────────
 # These strings reach the signal-order trace and the no-order reason path, so
@@ -101,15 +97,39 @@ class ExposureDelta:
         return self.post_quantity < min(self.current_quantity, 0)
 
 
-def exposure_delta_from_intent(intent: OrderIntent, side: Side) -> ExposureDelta:
+def side_for_intent(intent: OrderIntent) -> Side:
+    """Order side for a :class:`OrderIntent`.
+
+    Pure function of the intent, so both the exposure basis and the kernel's
+    order construction resolve a side the same way.
+    """
+    kind = intent.intent
+    if kind in (TradingIntent.ENTRY_LONG, TradingIntent.REVERSE_SHORT_TO_LONG):
+        return Side.BUY
+    if kind in (TradingIntent.ENTRY_SHORT, TradingIntent.REVERSE_LONG_TO_SHORT):
+        return Side.SELL
+    if kind is TradingIntent.EXIT:
+        return Side.SELL if intent.current_quantity > 0 else Side.BUY
+    if kind is TradingIntent.SCALE_UP:
+        return Side.BUY if intent.current_quantity >= 0 else Side.SELL
+    raise ValueError(
+        f"Cannot determine Side for intent {kind!r}. Fail-safe: aborting order construction."
+    )
+
+
+def exposure_delta_from_intent(intent: OrderIntent) -> ExposureDelta:
     """Derive the exposure delta an :class:`OrderIntent` would produce.
 
     ``OrderIntent.target_quantity`` is the *unsigned trade size* (see the matrix
     on :class:`~feelies.execution.intent.SignalPositionTranslator`), so the
-    signed delta is that size carrying the resolved side.  Reproduces every row
-    of that matrix; used to compare the two admission bases in
-    ``tests/execution/test_order_admission.py``, not on the standalone hot path.
+    signed delta is that size carrying the resolved side.
+
+    This is the single admission basis: what the order does to the book, not
+    which enum arm produced it.  The enum classification disagrees on one case
+    (a ``REVERSE_*`` with ``target_quantity == 0``, which trades ``|qty|``
+    shares and lands flat); the book is the authority there.
     """
+    side = side_for_intent(intent)
     signed = intent.target_quantity if side is Side.BUY else -intent.target_quantity
     return ExposureDelta(
         current_quantity=intent.current_quantity,

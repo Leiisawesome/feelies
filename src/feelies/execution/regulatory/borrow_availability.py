@@ -12,8 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from enum import Enum
 
-from feelies.core.events import SignalDirection
-from feelies.execution.intent import OrderIntent, TradingIntent
+from feelies.execution.intent import OrderIntent
 
 _VALID_TIER_LABELS: frozenset[str] = frozenset(
     {
@@ -56,19 +55,19 @@ def build_borrow_table(raw: Mapping[str, str]) -> dict[str, BorrowTier]:
 def is_short_sale_intent(intent: OrderIntent) -> bool:
     """True when the order would open or increase SHORT exposure.
 
-    Shared by SSR and borrow-availability gates: only these
-    intents are short *sales* subject to Reg-SHO / locate constraints.  Buys,
-    covers, and long-side exits are never short sales.
+    Only short *sales* are subject to Reg-SHO / locate constraints.  Buys,
+    covers, partial covers and long-side exits are never short sales.
+
+    Delegates to the platform's single admission basis
+    (:func:`~feelies.execution.order_admission.exposure_delta_from_intent`) so
+    this and the order gates can never disagree about what a short sale is.
+    An earlier standalone implementation keyed on the ``TradingIntent`` arm and
+    called a zero-target ``REVERSE_LONG_TO_SHORT`` a short sale even though it
+    trades to flat.
     """
-    if intent.intent in (
-        TradingIntent.ENTRY_SHORT,
-        TradingIntent.REVERSE_LONG_TO_SHORT,
-    ):
-        return True
-    return (
-        intent.intent == TradingIntent.SCALE_UP
-        and intent.signal.direction == SignalDirection.SHORT
-    )
+    from feelies.execution.order_admission import exposure_delta_from_intent
+
+    return exposure_delta_from_intent(intent).opens_or_increases_short
 
 
 def htb_fee_applies(tier: BorrowTier, short_sale: bool) -> bool:

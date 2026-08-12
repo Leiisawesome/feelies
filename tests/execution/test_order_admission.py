@@ -29,6 +29,7 @@ from feelies.execution.order_admission import (
     ExposureDelta,
     admission_block_reason,
     exposure_delta_from_intent,
+    side_for_intent,
 )
 from feelies.execution.regulatory import is_short_sale_intent
 from feelies.portfolio.position_store import Position
@@ -78,27 +79,20 @@ def _side_for(intent_kind: TradingIntent, direction: SignalDirection, qty: int) 
 @pytest.mark.parametrize("direction", list(SignalDirection))
 @pytest.mark.parametrize("qty", [-250, -100, -50, -1, 0, 1, 50, 100, 250])
 @pytest.mark.parametrize("target", [0, 1, 50, 100, 250])
-def test_intent_and_exposure_bases_diverge_only_on_zero_target_reversal(
+def test_exposure_basis_matches_legacy_enum_except_zero_target_reversal(
     direction: SignalDirection,
     qty: int,
     target: int,
 ) -> None:
-    """Map the whole intent matrix against the exposure basis.
+    """Map the whole intent matrix against the legacy enum classification.
 
-    The two admission adapters must agree everywhere except one case, and this
-    enumerates the cross-product rather than sampling cases someone thought of.
+    The enum arms (``_ENTRY_OPENING_INTENTS``) were the admission basis before
+    the exposure delta replaced them. They agree everywhere except the
+    zero-target reversal, and this enumerates the cross-product rather than
+    sampling cases someone thought of.
 
-    The exception: a ``REVERSE_*`` whose ``target_quantity`` is 0 -- the sizer
-    returned zero against an open position, so ``|qty| + 0`` shares are traded
-    and the book lands on flat. The enum classifies it as an opening (it is in
-    ``_ENTRY_OPENING_INTENTS``); in exposure terms it is a pure flatten, which
-    Inv-11 says must never be refused by a halt blackout, the session-flatten
-    window, SSR or a missing locate.
-
-    The exposure basis is the better answer. Standalone is deliberately *not*
-    switched onto it here: that would unblock suppressions that fire today, and
-    this change is scoped to gating the composition path, not to changing
-    standalone semantics. Pinned so the divergence is a decision on the record.
+    The surviving difference is the *point* of the change, not a defect: the
+    exposure basis ships, the enum classification does not.
     """
     intent = SignalPositionTranslator().translate(
         _signal(direction), Position(symbol="AAPL", quantity=qty), target
@@ -106,34 +100,74 @@ def test_intent_and_exposure_bases_diverge_only_on_zero_target_reversal(
     if intent.intent is TradingIntent.NO_ACTION:
         return  # no order is built, so no gate runs
 
-    side = _side_for(intent.intent, direction, qty)
-    delta = exposure_delta_from_intent(intent, side)
+    assert side_for_intent(intent) == _side_for(intent.intent, direction, qty)
+    delta = exposure_delta_from_intent(intent)
     assert delta.current_quantity == qty
 
     is_zero_target_reversal = (
         intent.intent in (TradingIntent.REVERSE_LONG_TO_SHORT, TradingIntent.REVERSE_SHORT_TO_LONG)
         and target == 0
     )
-    enum_says_opening = intent.intent in _ENTRY_OPENING_INTENTS
-
     if is_zero_target_reversal:
-        # The documented divergence, asserted in both directions so it cannot
-        # quietly disappear or quietly widen.
-        assert delta.post_quantity == 0
-        assert enum_says_opening
-        assert not delta.opens_or_increases_exposure
-        assert not delta.opens_or_increases_short
-        assert is_short_sale_intent(intent) == (direction is SignalDirection.SHORT)
-        return
+        return  # covered explicitly below
 
-    assert delta.opens_or_increases_exposure == enum_says_opening, (
+    assert delta.opens_or_increases_exposure == (intent.intent in _ENTRY_OPENING_INTENTS), (
         f"exposure basis disagrees for {intent.intent.name} "
         f"(qty={qty}, target={target}, post={delta.post_quantity})"
     )
-    assert delta.opens_or_increases_short == is_short_sale_intent(intent), (
-        f"short basis disagrees for {intent.intent.name} "
-        f"(qty={qty}, target={target}, post={delta.post_quantity})"
+    # ``is_short_sale_intent`` now delegates to this basis, so it must agree.
+    assert delta.opens_or_increases_short == is_short_sale_intent(intent)
+
+
+@pytest.mark.parametrize("direction", [SignalDirection.LONG, SignalDirection.SHORT])
+@pytest.mark.parametrize("qty", [-250, -50, 50, 250])
+def test_zero_target_reversal_is_a_flatten_not_an_opening(
+    direction: SignalDirection,
+    qty: int,
+) -> None:
+    """A ``REVERSE_*`` sized to zero trades to flat and must never be refused.
+
+    Reachable: the sizer returns 0 (low strength, low regime factor, or a price
+    that makes the budget round to nothing) while a position is open on the
+    other side. ``translate`` then produces ``REVERSE_*`` with
+    ``target_quantity = |qty| + 0``, which trades the whole position away.
+
+    The legacy enum basis classified that as an opening, so a halt blackout,
+    the session-flatten window, SSR or a missing locate could refuse it --
+    a safety control trapping an open position, exactly the failure Inv-11
+    exists to prevent. Every environment flag is hostile here; it still admits.
+    """
+    opposing = SignalDirection.LONG if qty < 0 else SignalDirection.SHORT
+    if direction is not opposing:
+        return  # only the opposite-side case produces a reversal
+
+    intent = SignalPositionTranslator().translate(
+        _signal(direction), Position(symbol="AAPL", quantity=qty), 0
     )
+    assert intent.intent in (
+        TradingIntent.REVERSE_LONG_TO_SHORT,
+        TradingIntent.REVERSE_SHORT_TO_LONG,
+    )
+    assert intent.target_quantity == abs(qty)
+
+    delta = exposure_delta_from_intent(intent)
+    assert delta.post_quantity == 0, "a zero-target reversal lands the book flat"
+    assert not delta.opens_or_increases_exposure
+    assert not delta.opens_or_increases_short
+    # The legacy basis disagreed, which is why this case is pinned.
+    assert intent.intent in _ENTRY_OPENING_INTENTS
+
+    assert (
+        admission_block_reason(
+            opens_exposure=delta.opens_or_increases_exposure,
+            opens_short=delta.opens_or_increases_short,
+            in_halt_blackout=True,
+            in_session_flatten_window=True,
+            ssr_active=True,
+            locate_unavailable=True,
+        )
+        is None
+    ), "a flatten must survive every admission gate (Inv-11)"
 
 
 def test_flatten_to_zero_is_not_an_opening() -> None:

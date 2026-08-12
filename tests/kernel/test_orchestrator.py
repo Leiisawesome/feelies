@@ -41,6 +41,11 @@ from feelies.execution.cost_model import (
     ZeroCostModel,
 )
 from feelies.execution.intent import OrderIntent, TradingIntent
+from feelies.execution.order_admission import (
+    BLOCK_SSR,
+    admission_block_reason,
+    exposure_delta_from_intent,
+)
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
@@ -4331,8 +4336,16 @@ def _ssr_intent(
     direction: SignalDirection,
     *,
     current_quantity: int = 0,
+    target_quantity: int = 10,
     symbol: str = "AAPL",
 ) -> OrderIntent:
+    """Build an OrderIntent for the SSR cases.
+
+    ``target_quantity`` is the *unsigned trade size*, so a REVERSE_* must be
+    given a size that actually crosses zero (``|current| + new``). The default
+    10 predates the exposure basis and describes a partial reduction, not a
+    reversal -- pass an explicit size for the REVERSE_* cases.
+    """
     sig = Signal(
         timestamp_ns=1000,
         correlation_id="c",
@@ -4347,44 +4360,62 @@ def _ssr_intent(
         intent=intent,
         symbol=symbol,
         strategy_id="s",
-        target_quantity=10,
+        target_quantity=target_quantity,
         current_quantity=current_quantity,
         signal=sig,
     )
 
 
 class TestSSRBlocksIntent:
-    """SSR blocks only orders that open or increase a short."""
+    """SSR blocks only orders that open or increase a short.
 
-    def _orch(self) -> Orchestrator:
-        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
-        _boot_to_backtest(orch)
-        orch._ssr_active = {"AAPL"}
-        return orch
+    Asserts through the shared admission decision rather than a kernel
+    predicate wrapper: the wrappers ``_ssr_blocks_intent`` /
+    ``_borrow_blocks_intent`` were retired once both order paths moved onto
+    ``feelies.execution.order_admission``, and keeping tests pointed at a
+    method production no longer calls would have gone green regardless of
+    whether SSR actually gated anything.
+    """
+
+    @staticmethod
+    def _blocked(intent: OrderIntent, *, ssr_active: bool = True) -> bool:
+        delta = exposure_delta_from_intent(intent)
+        return (
+            admission_block_reason(
+                opens_exposure=delta.opens_or_increases_exposure,
+                opens_short=delta.opens_or_increases_short,
+                in_halt_blackout=False,
+                in_session_flatten_window=False,
+                ssr_active=ssr_active,
+                locate_unavailable=False,
+            )
+            == BLOCK_SSR
+        )
 
     def test_inactive_symbol_never_blocked(self) -> None:
-        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
-        _boot_to_backtest(orch)  # _ssr_active empty
-        assert not orch._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
+            ssr_active=False,
         )
 
     def test_entry_short_blocked(self) -> None:
-        assert self._orch()._ssr_blocks_intent(
+        assert self._blocked(
             _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
         )
 
     def test_reverse_long_to_short_blocked(self) -> None:
-        assert self._orch()._ssr_blocks_intent(
+        assert self._blocked(
             _ssr_intent(
                 TradingIntent.REVERSE_LONG_TO_SHORT,
                 SignalDirection.SHORT,
                 current_quantity=50,
+                # Cross the whole long and open 10 short: 50 + 10.
+                target_quantity=60,
             ),
         )
 
     def test_scale_up_short_blocked(self) -> None:
-        assert self._orch()._ssr_blocks_intent(
+        assert self._blocked(
             _ssr_intent(
                 TradingIntent.SCALE_UP,
                 SignalDirection.SHORT,
@@ -4393,12 +4424,12 @@ class TestSSRBlocksIntent:
         )
 
     def test_entry_long_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(TradingIntent.ENTRY_LONG, SignalDirection.LONG),
         )
 
     def test_exit_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(
                 TradingIntent.EXIT,
                 SignalDirection.FLAT,
@@ -4407,7 +4438,7 @@ class TestSSRBlocksIntent:
         )
 
     def test_scale_up_long_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(
                 TradingIntent.SCALE_UP,
                 SignalDirection.LONG,
@@ -4416,11 +4447,12 @@ class TestSSRBlocksIntent:
         )
 
     def test_reverse_short_to_long_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(
                 TradingIntent.REVERSE_SHORT_TO_LONG,
                 SignalDirection.LONG,
                 current_quantity=-50,
+                target_quantity=60,
             ),
         )
 
