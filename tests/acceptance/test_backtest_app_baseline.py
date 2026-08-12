@@ -167,10 +167,38 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # now the only decision path, so the flag left the config surface and the
 # snapshot lost a key.  No configured value changed and no trade-path behaviour
 # moved — the flag's production default was already ``True``.
-_BASELINE_CONFIG_HASH = "16517106390472bcf90892fe144b09562e798a46c9069380e1600153bce31720"
-_BASELINE_TRADE_PARITY_HASH = "7f2e88cdab857b005be6a3a78e6965ec3260c519a0c7593106b52bafeec37a81"
-_BASELINE_NET_PNL = Decimal("363.34")
-_BASELINE_FILL_COUNT = 21
+# Re-baselined 2026-08-12 -- ``platform_min_order_shares`` stopped inflating sized
+# targets.  This is a deliberate behaviour change, not drift, and it moves every
+# constant below.
+#
+# The floor used to raise any nonzero sized target up to itself
+# (``_compute_target_quantity``).  platform.yaml set it to 50; at 50,000 equity
+# and APP near $396 this alpha's declared ``capital_allocation_pct: 25.0`` asks
+# for 15-31 shares depending on strength, so *every* target was raised to 50.
+# The floor, not the risk budget, decided position size -- any allocation below
+# ~39.6% produced an identical 50-share order -- and the book carried 2.4x the
+# size the alpha had declared.  A control that autonomously *increases* exposure
+# beyond a declared risk budget is a loosening, and Inv-11 reserves loosening for
+# a human.  The floor is now a venue lot-size veto only (1 share, US equities)
+# and never raises a target; economic viability is the B4 gate's job.
+#
+# Measured sweep on this exact cell, floor -> (shares, net):
+#     1 or 10 -> (394, $103.93)   25 -> (512, $173.56)   50 -> (960, $363.34)
+# Fill count is 20 at every floor: the clamp never gated *whether* the alpha
+# traded, only how much.
+#
+# So the prior 363.34 was the alpha trading 960 shares against a budget that
+# sanctioned 394.  103.93 is what ``capital_allocation_pct: 25.0`` actually buys
+# on this session.  Gross 468.80 -> 149.05, fees 105.46 -> 45.12.  The trade
+# journal loses one record (21 -> 20): the old run left one order submitted and
+# unfilled, the new one does not.  ``config_hash`` moves because
+# ``platform_min_order_shares`` is part of the config snapshot.  Note this
+# constant pins the raw ``from_yaml`` snapshot; the operator report prints the
+# post-CLI-override hash, which is a different value for the same run.
+_BASELINE_CONFIG_HASH = "e4073f3517ce6232dfc067228e991b8477b1de93b8cb582b2ffc9f62cafa0e6b"
+_BASELINE_TRADE_PARITY_HASH = "0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3"
+_BASELINE_NET_PNL = Decimal("103.93")
+_BASELINE_FILL_COUNT = 20
 
 
 def _load_runner():

@@ -192,7 +192,11 @@ class PlatformConfig:
     # Cancel fee charged per share when a resting order times out (default 0).
     passive_cancel_fee_per_share: float = 0.0
 
-    # Minimum order size gate: orders below this number of shares are suppressed.
+    # Venue lot-size floor: orders below this many shares are suppressed at
+    # construction. It never raises a sized target — the alpha's declared
+    # risk_budget is the sizing authority, and a floor that inflated a target
+    # would be an autonomous loosening of it (Inv-11). Economic viability is the
+    # B4 gate's job (``signal_min_edge_cost_ratio``), not a flat share count.
     platform_min_order_shares: int = 1
 
     # Suppress orders whose calibrated edge does not cover this multiple of

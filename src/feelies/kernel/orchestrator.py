@@ -2690,27 +2690,30 @@ class Orchestrator:
         if mid_price <= 0:
             return 0
 
-        target = self._position_sizer.compute_target_quantity(
+        # The alpha's declared risk budget is the sizing authority: this result
+        # is never inflated.  ``platform_min_order_shares`` used to raise any
+        # nonzero target up to the floor, which made the floor the binding
+        # constraint and ``capital_allocation_pct`` inert — at 50k equity and
+        # APP near $396 a 25% budget asks for 15-31 shares and every one of them
+        # was raised to 50, so the platform traded 2.4x what the budget
+        # sanctioned.  A control that autonomously *increases* exposure over a
+        # declared budget is a loosening, and Inv-11 reserves those for a human.
+        # The floor is now a venue lot-size veto only (see platform.yaml).
+        return self._position_sizer.compute_target_quantity(
             signal=signal,
             risk_budget=risk_budget,
             symbol_price=mid_price,
             account_equity=self._account_equity,
         )
 
-        # Clamp nonzero targets to the minimum viable order; risk may scale them down.
-        if 0 < target < self._min_order_shares:
-            target = self._min_order_shares
-
-        return target
-
     def _record_size_shadow(self, signal: Signal, quote: NBBOQuote) -> None:
         """Compare the edge/vol/inventory-tilted target with the base.
 
         For each real sized signal, compute the tilted target and append a
         :class:`SizeDivergence` when it differs from the live single-factor
-        base target. It runs before the minimum-order clamp and risk engine and
-        has no order, bus, journal, or parity effects. It is a no-op unless a sink is
-        wired and at least one tilt factor is enabled.
+        base target. It runs before the risk engine and has no order, bus,
+        journal, or parity effects. It is a no-op unless a sink is wired and at
+        least one tilt factor is enabled.
         """
         sizer = self._size_shadow_sizer
         sink = self._size_shadow_sink

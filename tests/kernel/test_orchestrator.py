@@ -4685,3 +4685,81 @@ class TestBorrowAvailability:
         bt_router.on_quote(q)
         orch._process_tick(q)
         assert position_store.get("AAPL").quantity > 0
+
+
+class TestRiskBudgetIsTheSizingAuthority:
+    """``capital_allocation_pct`` decides position size; the floor never inflates it.
+
+    ``platform_min_order_shares`` used to raise any nonzero sized target up to
+    itself. With platform.yaml's 50 and a 50,000 book, a 25% allocation on a
+    ~$400 name asks for 15-31 shares, so every target became exactly 50 --
+    identical for *any* allocation below ~39.6%. The declared risk budget was
+    inert and the book ran 2.4x what it sanctioned.
+
+    The 2026-08 review measured that by hand (5% and 50% allocations produced
+    identical targets) but nothing pinned it, so the clamp survived. These tests
+    pin the property, not the anecdote.
+    """
+
+    @staticmethod
+    def _orch_with_budget(pct: float, *, min_order_shares: int) -> Orchestrator:
+        from types import SimpleNamespace
+
+        from feelies.alpha.module import AlphaRiskBudget
+
+        budget = AlphaRiskBudget(
+            max_position_per_symbol=500,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=2.0,
+            capital_allocation_pct=pct,
+        )
+        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
+        orch._alpha_registry = SimpleNamespace(  # type: ignore[attr-defined]
+            get=lambda sid: SimpleNamespace(manifest=SimpleNamespace(risk_budget=budget))
+        )
+        orch._account_equity = Decimal("50000")
+        orch._min_order_shares = min_order_shares
+        return orch
+
+    @staticmethod
+    def _signal() -> Signal:
+        return Signal(
+            timestamp_ns=1000,
+            correlation_id="c",
+            sequence=1,
+            symbol="AAPL",
+            strategy_id="alpha_a",
+            direction=SignalDirection.LONG,
+            strength=1.0,
+            edge_estimate_bps=10.0,
+        )
+
+    def test_allocation_changes_the_target(self) -> None:
+        """Different budgets must produce different sizes -- the whole point."""
+        quote = _make_quote(bid="399.50", ask="400.50")
+        small = self._orch_with_budget(5.0, min_order_shares=50)
+        large = self._orch_with_budget(50.0, min_order_shares=50)
+
+        small_target = small._compute_target_quantity(self._signal(), quote)
+        large_target = large._compute_target_quantity(self._signal(), quote)
+
+        # 50000 * 5% / 400 = 6 ; 50000 * 50% / 400 = 62
+        assert small_target == 6
+        assert large_target == 62
+        assert small_target != large_target, (
+            "capital_allocation_pct is inert -- a min-order floor is overriding the "
+            "declared risk budget again"
+        )
+
+    def test_floor_never_raises_a_sized_target(self) -> None:
+        """A target below the floor stays below it (Inv-11: no autonomous loosening).
+
+        Raising a target to meet a floor increases exposure beyond what the
+        alpha declared. Suppressing the order is a defensible answer; inflating
+        it is not.
+        """
+        quote = _make_quote(bid="399.50", ask="400.50")
+        orch = self._orch_with_budget(5.0, min_order_shares=1000)
+        target = orch._compute_target_quantity(self._signal(), quote)
+        assert target == 6, "sized target was inflated toward min_order_shares"
+        assert target < orch._min_order_shares

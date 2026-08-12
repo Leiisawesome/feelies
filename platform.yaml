@@ -137,7 +137,21 @@ cost_moc_penalty_bps: 3.0
 # Permanent impact stays off until calibrated from fills.
 cost_permanent_impact_coefficient: 0.0
 
-platform_min_order_shares: 50
+# Venue lot-size floor. Orders below this many shares are suppressed at
+# construction; it never *raises* a sized target.
+#
+# Was 50, which made it the binding sizing constraint rather than a venue
+# constraint: at 50,000 equity and APP near $396 a 25% capital_allocation_pct
+# asks for 15-31 shares, and every one was clamped up to 50 -- so every alpha
+# got the same 50-share target whatever its declared budget, and the book ran
+# 2.4x the sanctioned size. A control that autonomously increases exposure over
+# a declared risk budget is a loosening, which Inv-11 reserves for a human.
+#
+# 50 was never a venue minimum (US equities trade in 1-share lots); it was an
+# economic viability heuristic. That job belongs to the Inv-12 B4 gate
+# (signal_min_edge_cost_ratio), which suppresses orders whose edge does not
+# cover modelled round-trip cost -- edge-aware, where a flat share count is not.
+platform_min_order_shares: 1
 
 # Explicit no-op overrides; PAPER/LIVE often set promotion_ledger_path.
 gate_thresholds: {}
