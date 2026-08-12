@@ -3589,7 +3589,11 @@ class Orchestrator:
         Without a quote the gate cannot be priced at all -- the round-trip cost
         model needs a live spread. An opening leg is then refused rather than
         waved through: this is the out-of-tick submit path, and "cannot verify
-        the economics" resolves to less exposure, not more.
+        the economics" resolves to less exposure, not more.  The flush carries
+        one quote (the tick that triggered it), but a PORTFOLIO intent is
+        cross-sectional and routinely spans symbols, so a quote for a different
+        symbol is treated as no quote: pricing a leg off another name's spread,
+        mid and L1 sizes would make the capital decision non-symbol-local.
 
         The leg's edge is ``TargetPosition.expected_edge_bps``, carried from the
         ranker because the composition weights are z-scores and no longer in bps.
@@ -3603,7 +3607,7 @@ class Orchestrator:
             # missing quote is not a refusal. Checking the quote first would
             # suppress every opening leg on deployments that never enabled B4.
             return None
-        if quote is None:
+        if quote is None or quote.symbol != order.symbol:
             return BLOCK_EDGE_UNPRICEABLE
         target = intent.target_positions.get(order.symbol)
         edge_bps = target.expected_edge_bps if target is not None else 0.0
