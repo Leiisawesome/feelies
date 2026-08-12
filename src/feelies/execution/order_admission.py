@@ -27,11 +27,26 @@ authority; ``test_zero_target_reversal_is_a_flatten_not_an_opening`` pins it.
 
 Scope (deliberate).  This module owns the **Inv-11 admission** gates: they can
 only ever suppress an order, never enlarge or reroute one.  The Inv-12 B4
-edge/cost gate and passive/MOC route resolution are *not* here — both need the
-quote, the signal and the maker/taker determination, and both belong to order
-*construction* rather than admission.  Extending coverage to them is a separate
-change; until then the composition path remains ungated on those two, which is
-recorded in ``configs/bt_multialpha.yaml``.
+edge/cost gate and passive/MOC route resolution are *not* here, and cannot
+currently be unified across both paths — not for want of plumbing, but because
+**a composition leg has no edge estimate to gate on.**
+
+Both are edge-conditioned: ``_signal_passes_edge_cost_gate`` compares
+``signal.edge_estimate_bps`` against modelled round-trip cost, and
+``_resolve_order_route`` takes ``edge_bps`` to choose passive versus aggressive.
+On the composition path the per-symbol edge does not survive construction —
+``CrossSectionalRanker`` folds it into a raw score
+(``raw = sign x strength x edge_estimate_bps``) and ``_standardize`` z-scores
+that into a *relative rank*.  A weight of +1.2 is a cross-sectional ordering,
+not an expected return in bps, and :class:`~feelies.core.events.TargetPosition`
+carries only ``symbol`` / ``target_usd`` / ``urgency``.
+
+So closing that asymmetry is a specification change — ``TargetPosition`` would
+have to carry a per-symbol expected edge that the composition pipeline does not
+presently compute — not a port of existing code.  Substituting the alpha's
+static ``cost_arithmetic.edge_estimate_bps`` would be worse than no gate: one
+constant per alpha compared against per-leg cost either always passes or always
+fails, while looking like a gate.  Recorded in ``configs/bt_multialpha.yaml``.
 
 Everything in this module is pure: no clock, no bus, no position store.  The
 caller evaluates the environment (is the symbol in a halt blackout? is SSR

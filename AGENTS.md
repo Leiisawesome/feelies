@@ -55,10 +55,34 @@ uv run feelies promote gate-matrix --json
 # Smoke pipeline
 uv run python scripts/smoke_pipeline.py
 
-# APP backtest baseline (disk cache for APP/2026-03-26 required)
-uv run pytest tests/acceptance/test_backtest_app_baseline.py
+# APP backtest baseline — the parity oracle. NOT covered by CI (see below).
+FEELIES_REQUIRE_BASELINE_CACHE=1 uv run pytest \
+  tests/acceptance/test_backtest_app_baseline.py -m ""
 uv run feelies backtest --config configs/bt_app.yaml --symbol APP --date 2026-03-26
 ```
+
+### The parity oracle does not run itself
+
+`tests/acceptance/test_backtest_app_baseline.py` pins the trade parity hash, net
+PnL and fill count for APP/2026-03-26. It is the strongest regression guard in
+the repo, and until 2026-08-12 it had three independent ways to report success
+without executing:
+
+- `@pytest.mark.functional` deselects it from CI (`-m "not functional and not
+  paper_rth"`);
+- the same marker deselects it from the fast local run above;
+- and a disk-cache miss called `pytest.skip`, which pytest reports green.
+
+Only `test_app_baseline_config_contract_hash` runs in CI — it has no cache
+dependency, so it catches a changed *config* snapshot but nothing about the
+replay. A change can move the parity hash, net PnL and fill count with CI fully
+green.
+
+So: **run the command above by hand before claiming a change is parity-safe**,
+with `-m ""` to select the functional test and
+`FEELIES_REQUIRE_BASELINE_CACHE=1` so a missing cache fails instead of skipping.
+Without the env var, "2 passed" and "1 passed 1 skipped" look nearly identical
+in a truncated log.
 
 Paper RTH (IB Gateway + `MASSIVE_API_KEY` + RTH):
 

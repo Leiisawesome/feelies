@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import sys
 import time
 from decimal import Decimal
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -226,6 +228,42 @@ def _net_pnl_from_orchestrator(orchestrator: Orchestrator, recorder) -> Decimal:
     return gross_pnl - fees
 
 
+def _missing_cache(exc: Exception) -> NoReturn:
+    """Skip on a cache miss -- unless the caller demanded the oracle actually run.
+
+    This test is the platform's parity oracle, and until 2026-08-12 it had three
+    independent ways to report success without executing:
+
+      * ``@pytest.mark.functional`` deselects it from CI
+        (``-m "not functional and not paper_rth"``);
+      * the same marker deselects it from the documented fast local run
+        (``-m "not functional and not slow"``);
+      * and a cache miss skipped, which pytest reports green.
+
+    So "the suite is green" never implied the baseline was checked. Setting
+    ``FEELIES_REQUIRE_BASELINE_CACHE=1`` converts the skip into a failure, which
+    is what makes "I verified parity" a checkable claim rather than an assertion.
+    Default stays a skip so a contributor without the cache is not blocked.
+    """
+    hint = (
+        f"Disk cache miss for {_BASELINE_SYMBOL}/{_BASELINE_DATE} — populate with:\n"
+        "  uv run python scripts/run_backtest.py "
+        f"--config {_BASELINE_CONFIG} --symbol {_BASELINE_SYMBOL} "
+        f"--date {_BASELINE_DATE}\n"
+        f"  ({exc})"
+    )
+    if os.environ.get("FEELIES_REQUIRE_BASELINE_CACHE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        pytest.fail(
+            "FEELIES_REQUIRE_BASELINE_CACHE is set, so the parity oracle must "
+            f"run rather than skip.\n{hint}"
+        )
+    pytest.skip(hint)
+
+
 @pytest.fixture(scope="module")
 def runner():
     return _load_runner()
@@ -259,13 +297,7 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
             _BASELINE_DATE,
         )
     except CacheReplayError as exc:
-        pytest.skip(
-            "Disk cache miss for APP/2026-03-26 — populate with:\n"
-            "  uv run python scripts/run_backtest.py "
-            f"--config {_BASELINE_CONFIG} --symbol {_BASELINE_SYMBOL} "
-            f"--date {_BASELINE_DATE}\n"
-            f"  ({exc})"
-        )
+        _missing_cache(exc)
 
     config = PlatformConfig.from_yaml(_BASELINE_CONFIG)
     symbols = sorted(config.symbols)

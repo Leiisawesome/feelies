@@ -33,9 +33,22 @@
 #   * The composition path used to be the *less* gated of the two: its legs
 #     skipped the halt blackout, session-flatten window, SSR, locate/borrow and
 #     ``platform_min_order_shares``.  Those five now run for both paths from one
-#     policy (``feelies.execution.order_admission``).  Two differences remain:
-#     composition legs still bypass the Inv-12 B4 edge/cost gate and still route
-#     MARKET unconditionally rather than resolving a passive/MOC route.
+#     policy (``feelies.execution.order_admission``).
+#
+#     What remains is one gap, not two.  Composition legs bypass the Inv-12 B4
+#     edge/cost gate *and* route MARKET unconditionally for the same reason:
+#     both decisions are edge-conditioned, and a composition leg has no edge.
+#     ``CrossSectionalRanker`` folds each signal's ``edge_estimate_bps`` into a
+#     raw score and then z-scores it into a relative rank; ``TargetPosition``
+#     carries only ``symbol`` / ``target_usd`` / ``urgency``.  A weight of +1.2
+#     is an ordering, not an expected return in bps.
+#
+#     Closing it is therefore a specification change — ``TargetPosition`` must
+#     carry a per-symbol expected edge the pipeline does not currently compute —
+#     not a port of the standalone code.  Do not substitute the alpha's static
+#     ``cost_arithmetic.edge_estimate_bps``: one constant per alpha against
+#     per-leg cost either always passes or always fails, which is worse than no
+#     gate because it looks like one.
 #
 # So: neither path is currently production-blessed for a multi-alpha book.
 # Standalone is lossy; composition is unexercised and under-gated.  Choosing
