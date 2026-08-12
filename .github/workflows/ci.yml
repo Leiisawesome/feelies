@@ -179,4 +179,13 @@ jobs:
       - name: Replay the locked APP baseline
         # `-m ""` clears the default marker filter so the functional test is
         # selected; without it this job would pass by deselecting its own subject.
+        #
+        # No MASSIVE_API_KEY here on purpose: the replay reads the disk cache and
+        # needs no network, so withholding the key keeps the fetch path confined
+        # to the step above. Verified locally with the key unset and .env removed.
+        #
+        # The test asserts the input tape's data_version *before* the parity
+        # constants. If the fetch step above ever pulls a session that differs
+        # from the one the baseline was minted on, this fails as "input tape
+        # changed" rather than as parity drift — do not answer that by re-pinning.
         run: uv run pytest tests/acceptance/test_backtest_app_baseline.py -q -m ""

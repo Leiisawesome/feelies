@@ -27,6 +27,7 @@ from feelies.harness import (
     compute_parity_hash,
     prepare_backtest_event_log,
 )
+from feelies.harness.backtest_report import cache_data_version
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_disk_cache
 
@@ -199,6 +200,9 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # post-CLI-override hash, which is a different value for the same run.
 _BASELINE_CONFIG_HASH = "e4073f3517ce6232dfc067228e991b8477b1de93b8cb582b2ffc9f62cafa0e6b"
 _BASELINE_TRADE_PARITY_HASH = "0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3"
+# Content-bound identifier for the input tape (per-day event counts + ingestion
+# health). Distinct from the parity hashes: this pins what went *in*.
+_BASELINE_DATA_VERSION = "cache:2364ef7fe41c27d9"
 _BASELINE_NET_PNL = Decimal("103.93")
 _BASELINE_FILL_COUNT = 20
 
@@ -311,6 +315,28 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
         )
         for m in day_meta
     ]
+
+    # Pin the *input tape* before pinning anything derived from it.
+    #
+    # The `parity oracle` CI job refetches this session from Massive when its
+    # actions/cache entry misses. If the vendor ever returns a different event
+    # count or ingestion health, every downstream assertion moves — and a bare
+    # parity-hash failure reads as "the code regressed" when the truth is "the
+    # data changed". Asserting the content-bound data_version first makes that
+    # distinction the failure message rather than something to work out
+    # afterwards, and it is exactly the case parity_manifest.py warns about:
+    # a moved hash is either a real behaviour change or a fact about the inputs.
+    #
+    # If this fires, do NOT re-pin the parity constants. Establish which tape is
+    # correct first.
+    assert cache_data_version(day_sources) == _BASELINE_DATA_VERSION, (
+        "APP/2026-03-26 input tape changed — event count or ingestion health "
+        f"differs from the corpus the baseline was minted on.\n"
+        f"  Expected: {_BASELINE_DATA_VERSION}\n"
+        f"  Actual:   {cache_data_version(day_sources)}\n"
+        "The parity constants below describe the expected tape; re-pinning them "
+        "to match a different one would silently retire the baseline."
+    )
 
     prep = prepare_backtest_event_log(config, event_log)
     rc = runner._enforce_ingest_event_mix(
