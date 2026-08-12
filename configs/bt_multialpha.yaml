@@ -5,11 +5,39 @@
 # cost-survival in the backtest report, and exit-hijack regression checks via
 # ``scripts/compare_multialpha_runs.py``.
 #
-# NOT FOR PRODUCTION / LIVE CAPITAL: standalone mode allows at most one order
-# walk per tick and arbitrates overlapping SIGNAL alphas lossily.  Production
-# multi-alpha books must use a PORTFOLIO alpha with ``depends_on_signals`` so
-# ``CompositionEngine`` emits ``SizedPositionIntent`` and
-# ``RiskEngine.check_sized_intent`` decomposes per-leg orders.
+# RESEARCH HARNESS, NOT A CAPITAL CONFIG: standalone mode allows at most one
+# order walk per tick and arbitrates overlapping SIGNAL alphas lossily — the
+# winner takes the tick and the other alphas' conviction is discarded, not
+# blended.  That limitation is real and is what this config exists to measure.
+#
+# It does NOT follow that the PORTFOLIO composition path is the production
+# answer.  An earlier revision of this comment said production multi-alpha books
+# "must" use a PORTFOLIO alpha with ``depends_on_signals``; that was asserted,
+# never measured, and the repository decided otherwise (BT-13):
+#
+#   * No config here loads a PORTFOLIO alpha — not platform.yaml, not any
+#     bt_*.yaml, not either paper_*.yaml.
+#   * Both PORTFOLIO alphas are ``lifecycle_state: RESEARCH`` under
+#     alphas/research/, and pro_kyle_benign_v1's own notes read
+#     "Decommissioned from production discovery" — IR = IC·sqrt(N) at N=3 does
+#     not justify the composition layer at this capital scale.
+#   * Measured 2026-08-12 on the cached corpus: a purpose-built 2-symbol
+#     PORTFOLIO alpha over {APP, AAPL} on 2026-03-26 formed 78 cross-sectional
+#     contexts and emitted 78 SizedPositionIntents, every one of them degenerate
+#     (empty ``target_positions``), for 0 orders and 0 fills.  Completeness never
+#     exceeded 0.5 against a 0.80 threshold; forcing the threshold to its 0.5
+#     schema floor let 12 through and still produced zero targets, because
+#     ``_standardize`` returns zero weight whenever only one name is active
+#     (std == 0).  Composition needs >= ceil(0.8N) symbols carrying fresh,
+#     differently-scored signals at the same boundary.
+#   * The composition path is also the *less* gated of the two: its legs skip
+#     the halt blackout, session-flatten window, SSR, locate/borrow, the Inv-12
+#     B4 edge/cost gate and ``platform_min_order_shares``, and route MARKET
+#     unconditionally.  The standalone path applies all six.
+#
+# So: neither path is currently production-blessed for a multi-alpha book.
+# Standalone is lossy; composition is unexercised and under-gated.  Choosing
+# between them is an open decision, not a settled one.
 #
 # Usage:
 #   uv run python scripts/run_backtest.py --config configs/bt_multialpha.yaml \

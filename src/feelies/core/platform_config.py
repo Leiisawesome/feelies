@@ -219,7 +219,10 @@ class PlatformConfig:
     # Optional standalone-SIGNAL target netting. It stays off by default: the
     # cached cross-symbol sweep found one one-vs-zero divergence and no genuinely
     # two-sided contests, so changing flat-vs-live semantics is not evidence-backed.
-    # Production multi-alpha books use the PORTFOLIO composition path instead.
+    # This is not a redirection to the PORTFOLIO composition path: that path is
+    # unexercised on the cached corpus (BT-13; see configs/bt_multialpha.yaml for
+    # the measurement) and no shipped config loads a PORTFOLIO alpha. Both
+    # multi-alpha aggregators are off; which one earns capital is undecided.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 

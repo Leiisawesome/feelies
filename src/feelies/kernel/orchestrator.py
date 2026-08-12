@@ -4712,8 +4712,7 @@ class Orchestrator:
                     logger.debug(
                         "orchestrator: %d standalone SIGNAL candidate(s) from %d "
                         "alpha id(s) on flat book (%s); all gate-close FLAT — "
-                        "no order impact.  Prefer PORTFOLIO aggregation for "
-                        "production multi-alpha books.",
+                        "no order impact.",
                         len(buf),
                         len(ids),
                         ids,
@@ -4723,8 +4722,14 @@ class Orchestrator:
                 logger.warning(
                     "orchestrator: %d standalone SIGNAL candidate(s) from %d "
                     "alpha id(s) fired on the same tick (%s); arbitrating via "
-                    "%s.  Prefer a PORTFOLIO alpha listing these ids in "
-                    "depends_on_signals for full multi-alpha aggregation.",
+                    "%s — the winner takes the tick and the other alphas' "
+                    "conviction is discarded, not blended.  Routing these ids "
+                    "through a PORTFOLIO alpha's depends_on_signals would "
+                    "aggregate rather than arbitrate, but that path is "
+                    "unexercised on the cached corpus and its legs skip the "
+                    "SSR, locate, halt-blackout, B4 edge/cost and "
+                    "min-order-shares gates this one applies; it is not a "
+                    "drop-in remedy.  See configs/bt_multialpha.yaml.",
                     len(buf),
                     len(ids),
                     ids,
