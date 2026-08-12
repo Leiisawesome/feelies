@@ -3,6 +3,28 @@ schema_version: "1.1"
 layer: SIGNAL
 alpha_id: sig_benign_midcap_v1
 version: "1.0.0"
+
+# Research-only: blocks PAPER/LIVE promotion; backtests are unaffected.
+#
+# Decided 2026-08-12 on the re-measurement in the cost-arithmetic block below.
+# Over 15 tradeable cached APP sessions, at the size this alpha's own
+# capital_allocation_pct funds, it realizes gross -2.77 across 149 fills --
+# indistinguishable from zero -- and nets -376.45 after 373.68 in fees.
+#
+# The earlier +383.40 gross came from runs where platform_min_order_shares
+# inflated every target to 50 shares, ~2.4x what the risk budget sanctioned.
+# That made the story "gross-positive, cost-negative" (a real edge lost to the
+# spread, arguably fixable by cheaper execution). At the funded size there is no
+# gross edge to lose, which is a different and worse finding: Inv-1 asks what
+# causal force is being exploited, and this data does not evidence one at this
+# scale.
+#
+# NOT a claim that the mechanism is wrong. It is one symbol over 15 sessions,
+# and the cache holds no second mid-cap to generalize against (AAPL and SPY sit
+# outside the declared universe and produced 4 and 0 fills). The cap says
+# "not promotable on this evidence", not "disproven" -- lifting it needs data,
+# not reanalysis.
+lifecycle_state: RESEARCH
 description: |
   Kyle-style informed-flow footprint on L1 (OFI + micro-price vs mid)
   in the benign / normal microstructure regime for mid-cap names.
@@ -133,29 +155,64 @@ regime_gate:
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 #
-# MEASURED 2026-08-09 — the disclosed edge below is not what this alpha realizes.
-# Replaying all 15 tradeable cached APP sessions independently (so no drawdown
-# lockout carries between them), under configs/bt_sig_benign_midcap.yaml:
+# RE-MEASURED 2026-08-12 — the 2026-08-09 figures below described a position
+# size this alpha never declared, so they are superseded.
 #
-#     fills               154
-#     gross realized   +383.40
-#     fees            1,003.57
-#     NET               -620.17     fees = 2.62x gross
-#     net per fill        -4.03
-#     net-positive          7/15 sessions
+# `platform_min_order_shares: 50` used to raise every sized target up to 50,
+# and this alpha's `capital_allocation_pct: 25.0` asks for only 15-31 shares at
+# 50k equity and APP near $396.  So the measured book was ~2.4x the sanctioned
+# size.  The floor no longer inflates targets; these are the same 15 tradeable
+# cached APP sessions, replayed independently (no drawdown lockout carries
+# between them) under configs/bt_sig_benign_midcap.yaml, at the size the risk
+# budget actually authorises:
 #
-# The edge-calibration artifact from the same data puts realized edge at
-# -75.10 bps against the 9.0 disclosed here.  Gross-positive, cost-negative: the
-# alpha finds the footprint it claims and then hands the proceeds to the spread,
-# which is exactly the failure Inv-12 and the B4 gate exist to catch.
+#                        SANCTIONED (2026-08-12)   INFLATED (2026-08-09)
+#     fills                        149                     154
+#     shares                     2,378                  ~7,700
+#     gross realized             -2.77                +383.40
+#     fees                      373.68               1,003.57
+#     NET                      -376.45                -620.17
+#     net per fill               -2.53                   -4.03
+#     net-positive             7 of 15                 7 of 15
+#
+# The verdict is unchanged — net-negative across the corpus, not promotable —
+# but the *diagnosis* changes materially, and the new one is worse.
+#
+# At the inflated size the story was "gross-positive, cost-negative": the alpha
+# found the footprint it claims and handed the proceeds to the spread.  At the
+# sanctioned size gross realized is -2.77 over 149 fills, i.e. indistinguishable
+# from zero.  There is no gross edge for the fees to eat.  This is not "good
+# signal, bad execution"; it is no measurable signal at the scale this alpha is
+# funded for.
+#
+# Caveat, load-bearing: these are NOT the same trades at a smaller size.  Order
+# quantity feeds the passive-limit fill model (queue position, partial fills,
+# whether a resting order fills at all), so halving the size changes which
+# orders fill and when.  Gross did not scale linearly — linear scaling from
+# +383.40 would have predicted roughly +157, not -2.77 — so the difference is a
+# different realized path, not arithmetic.  Do not interpolate between the two
+# columns.
+#
+# The -75.10 bps realized-edge figure quoted in the 2026-08-09 note came from an
+# edge-calibration artifact built on the inflated runs.  It has NOT been
+# recomputed here and should be treated as stale, not as evidence at this size.
+#
+# `edge_estimate_bps: 9.0` below is left as declared.  Re-disclosing an alpha's
+# edge is an authoring decision with G12/Inv-12 consequences, not a measurement
+# side effect; the gap between 9.0 and what is realized is the finding, and it
+# is wider now, not narrower.
 #
 # The 9.0 above is entry_threshold_z 1.5 x edge_per_z_bps 6.0 from the config
 # overrides, which are *tighter* than this spec's defaults (0.8 / 4.0).  The
 # result is from the more selective configuration, not a loose one.
 #
 # Consequences worth knowing before promoting:
-#   * 6 of 15 sessions breach risk_budget.max_drawdown_pct on their own (worst
-#     single-session loss 371.01 against a 125.00 budget at 25% of 50k equity).
+#   * At the inflated size, 6 of 15 sessions breached risk_budget.max_drawdown_pct
+#     on their own (worst single-session loss 371.01 against a 125.00 budget at
+#     25% of 50k equity).  At the sanctioned size the worst single session is
+#     -185.59 (2026-06-04), so the per-session breach count is lower — but that
+#     is a consequence of trading less, not of trading better, and the drawdown
+#     consequences below still apply once a lockout latches.
 #     Over a contiguous window the budget latches on day 1 and the alpha is
 #     rejected for the rest of the run — 3 fills over 2026-06-01..06-12.  That
 #     lockout is the risk engine working, not a defect, but it also means the

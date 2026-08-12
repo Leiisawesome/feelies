@@ -11,7 +11,7 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Protocol, Sequence, runtime_checkable
 
-from feelies.alpha.promotion_evidence import QuarantineTriggerEvidence
+from feelies.promotion.evidence import QuarantineTriggerEvidence
 from feelies.forensics.cost_survival import per_alpha_cost_survival
 from feelies.forensics.decay_detector import DecayDetector
 from feelies.storage.trade_journal import TradeRecord

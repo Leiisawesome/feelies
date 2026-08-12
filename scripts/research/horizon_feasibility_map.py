@@ -76,6 +76,7 @@ def dates_for(symbol: str) -> tuple[str, ...]:
         return tuple(sorted(DATES + DATES_EXPANSION))
     return DATES
 
+
 # ── Cost constants (00c pinned profile; spec §4.2 / adjudication D.1-D.2)
 
 FILL_SHARES = 80  # top-of-book reference fill (spec §4.2)
@@ -267,8 +268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     out = {
         "task": (
-            "FQ-9 OPERATIVE-grid horizon-feasibility map "
-            "(census legality; no forward returns/IC)"
+            "FQ-9 OPERATIVE-grid horizon-feasibility map (census legality; no forward returns/IC)"
         ),
         "grid": {
             "name": "operative",

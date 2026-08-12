@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.promotion_ledger import (
+from feelies.promotion.ledger import (
     LEDGER_SCHEMA_VERSION,
     PromotionLedger,
     PromotionLedgerEntry,

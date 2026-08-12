@@ -26,12 +26,12 @@ from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
     _DefaultPortfolioConstructor,
 )
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     GateThresholds,
     apply_gate_thresholds_overrides,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
-from feelies.alpha.lifecycle import LifecycleRevocation
+from feelies.promotion.ledger import PromotionLedger
+from feelies.promotion.lifecycle import LifecycleRevocation
 from feelies.alpha.dependency_graph import (
     consumed_features_for_signal_registration,
     maybe_prune_unused_sensors,

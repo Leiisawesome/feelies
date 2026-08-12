@@ -546,11 +546,24 @@ class TargetPosition:
     ``target_usd`` is the signed dollar exposure (positive = long,
     negative = short).  ``urgency`` is a 0..1 hint to the risk/execution
     layer about how aggressively to close any gap to target.
+
+    ``expected_edge_bps`` is the leg's disclosed edge, carried so the Inv-12 B4
+    cost gate and passive/MOC route resolution can evaluate a PORTFOLIO leg the
+    same way they evaluate a standalone SIGNAL order.  It cannot be recovered
+    downstream: :class:`~feelies.composition.cross_sectional.CrossSectionalRanker`
+    folds each contributing signal's ``edge_estimate_bps`` into a raw score and
+    then z-scores it, so a final weight is a cross-sectional *ordering*, not an
+    expected return.  The magnitude-weighted mean over aligned contributors is
+    computed while the units are still bps and propagated here.
+
+    ``0.0`` means "no edge disclosed" and is treated fail-safe by the gate: an
+    opening leg with no edge cannot clear a positive cost bar (Inv-11).
     """
 
     symbol: str
     target_usd: float
     urgency: float = 0.5
+    expected_edge_bps: float = 0.0
 
 
 # ── Horizon and composition events ──────────────────────────────────────

@@ -1,7 +1,7 @@
 """Deterministic Deflated Sharpe Ratio evidence.
 
 This stdlib-only implementation follows Bailey and López de Prado's DSR/PSR
-procedure and emits :class:`feelies.alpha.promotion_evidence.DSREvidence`.
+procedure and emits :class:`feelies.promotion.evidence.DSREvidence`.
 
 Platform naming differs from the paper: ``dsr`` is the Sharpe excess
 ``observed - E[max under the null]``. The paper's probability-valued DSR is
@@ -21,7 +21,7 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from feelies.alpha.promotion_evidence import DSREvidence
+from feelies.promotion.evidence import DSREvidence
 from feelies.research.cpcv import sharpe_ratio
 
 __all__ = [

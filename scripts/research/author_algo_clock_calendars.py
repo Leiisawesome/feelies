@@ -148,7 +148,10 @@ def _format_scalar(value: Any) -> str:
         ":" in text
         or text == ""
         or text.lower() in {"null", "true", "false", "yes", "no"}
-        or any(c in text for c in ("#", "{", "}", "[", "]", ",", "&", "*", "?", "|", ">", "!", "%", "@", "`"))
+        or any(
+            c in text
+            for c in ("#", "{", "}", "[", "]", ",", "&", "*", "?", "|", ">", "!", "%", "@", "`")
+        )
     ):
         return _yaml_quote(text)
     return text
@@ -239,7 +242,9 @@ def author_all(
 def calendar_hashes(out_dir: Path, dates: Sequence[str] = DATES_ALL) -> dict[str, str]:
     """Load authored YAMLs and return ``EventCalendar.hash`` per date."""
     return {
-        d: load_event_calendar(out_dir / f"{d}.yaml", expected_session_date=date.fromisoformat(d)).hash()
+        d: load_event_calendar(
+            out_dir / f"{d}.yaml", expected_session_date=date.fromisoformat(d)
+        ).hash()
         for d in dates
     }
 

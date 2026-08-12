@@ -9,7 +9,7 @@ Covers :mod:`feelies.research.decouple_gates`:
   * :func:`build_turnover_bound_evidence` — pass and churn-beyond-bound.
 
 The gate arithmetic is exercised through the *builders*, then validated with the
-real :func:`feelies.alpha.promotion_evidence.validate_conditional_cvar` /
+real :func:`feelies.promotion.evidence.validate_conditional_cvar` /
 ``validate_turnover_bound`` so the harness and gate stay in lock-step.
 """
 
@@ -19,7 +19,7 @@ import math
 
 import pytest
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     GateThresholds,
     validate_conditional_cvar,
     validate_turnover_bound,

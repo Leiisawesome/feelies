@@ -582,3 +582,21 @@ realized exposure downstream; this is the documented risk-engine contract bounda
    (freshness wall-clock fallback, sector-map provenance) are only reachable once an
    operator configures these — worth knowing whether that is a near-term or
    hypothetical scenario.
+
+---
+
+## Retirement update (2026-08-11)
+
+`CrossSectionalRanker._apply_mechanism_cap` — named in the P0 above and in the
+Section 5 derivation — has been removed, along with `rank()`, `_rank_legacy`,
+`_rank_multi_feeder`, `_finalize_mechanism_breakdown` and `RankResult`. A
+repository-wide caller audit confirmed the whole family was reachable only from
+tests: production composition calls `rank_sleeves()`, and family capping is
+applied by `cap_family_vectors` on the recombined book and again at emit time.
+
+This does not reverse the audit's finding. The convergence defect was real and
+was fixed in both paths (the direct solve in `_solve_family_cap_scales`); what is
+retired is the second, unreachable copy of the cap-enforcement primitive. The
+`cap_family_vectors` half remains, and the property tests that pin its
+convergence bound are unchanged. Line references in the body above point at the
+pre-retirement file and are preserved as written.

@@ -55,10 +55,43 @@ uv run feelies promote gate-matrix --json
 # Smoke pipeline
 uv run python scripts/smoke_pipeline.py
 
-# APP backtest baseline (disk cache for APP/2026-03-26 required)
-uv run pytest tests/acceptance/test_backtest_app_baseline.py
+# APP backtest baseline — the parity oracle.
+FEELIES_REQUIRE_BASELINE_CACHE=1 uv run pytest \
+  tests/acceptance/test_backtest_app_baseline.py -m ""
 uv run feelies backtest --config configs/bt_app.yaml --symbol APP --date 2026-03-26
 ```
+
+### The parity oracle
+
+`tests/acceptance/test_backtest_app_baseline.py` pins the trade parity hash, net
+PnL and fill count for APP/2026-03-26 — the strongest regression guard in the
+repo. Until 2026-08-12 it had three independent ways to report success without
+executing:
+
+- `@pytest.mark.functional` deselected it from CI (`-m "not functional and not
+  paper_rth"`);
+- the same marker deselects it from the fast local run above;
+- and a disk-cache miss called `pytest.skip`, which pytest reports green.
+
+Only `test_app_baseline_config_contract_hash` ran in CI — no cache dependency,
+so it caught a changed *config* snapshot but nothing about the replay. A change
+could move the parity hash, net PnL and fill count with CI fully green, and one
+did (the min-order-floor commit); it was caught by hand.
+
+Both halves are now closed. `FEELIES_REQUIRE_BASELINE_CACHE=1` turns the skip
+into a failure, and the `parity oracle` CI job restores the event cache and runs
+the replay with that variable set, so it cannot pass without replaying.
+
+Two things to know about that job:
+
+- it is **skipped on fork PRs**, which get no secrets and so can neither restore
+  a keyed cache nor refetch — the skip is explicit, not a silent pass;
+- on a cache miss it refetches using the `MASSIVE_API_KEY` secret, and **fails
+  with a stated reason** if that secret is absent.
+
+Still run the command above by hand when you want the answer before pushing —
+`-m ""` selects the functional test, and without the env var "2 passed" and
+"1 passed 1 skipped" look nearly identical in a truncated log.
 
 Paper RTH (IB Gateway + `MASSIVE_API_KEY` + RTH):
 

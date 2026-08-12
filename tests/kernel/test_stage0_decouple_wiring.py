@@ -31,7 +31,7 @@ from typing import Any
 import pytest
 
 from feelies.alpha.cost_arithmetic import CostArithmetic
-from feelies.alpha.lifecycle import AlphaLifecycleState, LifecycleRevocation
+from feelies.promotion.lifecycle import AlphaLifecycleState, LifecycleRevocation
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
 from feelies.alpha.registry import AlphaRegistry
 from feelies.bootstrap import (

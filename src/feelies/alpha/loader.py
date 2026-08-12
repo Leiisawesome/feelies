@@ -31,7 +31,7 @@ from feelies.alpha.module import (
     AlphaRiskBudget,
     ParameterDef,
 )
-from feelies.alpha.promotion_evidence import parse_gate_thresholds_overrides
+from feelies.promotion.evidence import parse_gate_thresholds_overrides
 from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
     _CompiledPortfolioConstructor,
@@ -1173,7 +1173,7 @@ class AlphaLoader:
         Returns the type-coerced override dict (or ``None`` when the
         block is absent or carries an empty / missing
         ``gate_thresholds:`` sub-block).  Override keys are validated
-        against :class:`feelies.alpha.promotion_evidence.GateThresholds`
+        against :class:`feelies.promotion.evidence.GateThresholds`
         field names — unknown keys raise :class:`AlphaLoadError` with
         the source path so the operator gets a concrete YAML location.
 

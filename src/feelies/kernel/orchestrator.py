@@ -88,6 +88,18 @@ from feelies.execution.intent import (
     SignalPositionTranslator,
     TradingIntent,
 )
+from feelies.execution.order_admission import (
+    BLOCK_BELOW_MIN_ORDER_SHARES,
+    BLOCK_EDGE_BELOW_COST,
+    BLOCK_EDGE_UNPRICEABLE,
+    BLOCK_LOCATE_UNAVAILABLE,
+    BLOCK_SSR,
+    ExposureDelta,
+    admission_block_reason,
+    blocks_for_min_size,
+    exposure_delta_from_intent,
+    side_for_intent,
+)
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.execution.portfolio_netter import (
     DesiredTargetBook,
@@ -117,7 +129,6 @@ from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
     build_borrow_table,
     htb_fee_applies,
-    is_short_sale_intent,
     parse_borrow_tier,
 )
 from feelies.ingestion.data_integrity import (
@@ -197,17 +208,6 @@ _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
         OrderState.CANCELLED,
         OrderState.REJECTED,
         OrderState.EXPIRED,
-    }
-)
-
-# Exposure-increasing intents are blocked after a halt; exits remain allowed.
-_ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset(
-    {
-        TradingIntent.ENTRY_LONG,
-        TradingIntent.ENTRY_SHORT,
-        TradingIntent.SCALE_UP,
-        TradingIntent.REVERSE_LONG_TO_SHORT,
-        TradingIntent.REVERSE_SHORT_TO_LONG,
     }
 )
 
@@ -1288,8 +1288,14 @@ class Orchestrator:
         self,
         *,
         correlation_id: str,
+        quote: NBBOQuote | None = None,
     ) -> None:
-        """Drain horizon-buffered PORTFOLIO intents under micro M5–M10 before M3."""
+        """Drain horizon-buffered PORTFOLIO intents under micro M5–M10 before M3.
+
+        *quote* is the tick that triggered the flush. It is what lets the B4
+        edge/cost gate price a leg; without it the gate cannot run and opening
+        legs are refused fail-safe (Inv-11).
+        """
         if not self._pending_sized_intents:
             return
         first_intent = True
@@ -1318,12 +1324,14 @@ class Orchestrator:
                     self._submit_portfolio_leg_without_micro_walk(
                         intent,
                         correlation_id,
+                        quote=quote,
                     )
                     while self._pending_sized_intents:
                         nxt = self._pending_sized_intents.popleft()
                         self._submit_portfolio_leg_without_micro_walk(
                             nxt,
                             correlation_id,
+                            quote=quote,
                         )
                     return
             else:
@@ -1351,6 +1359,12 @@ class Orchestrator:
                 )
                 continue
 
+            orders = self._filter_portfolio_orders_for_admission(
+                orders,
+                intent=intent,
+                correlation_id=correlation_id,
+                quote=quote,
+            )
             orders = self._filter_portfolio_orders_for_pending_conflicts(
                 orders,
                 intent=intent,
@@ -1405,6 +1419,8 @@ class Orchestrator:
         self,
         intent: SizedPositionIntent,
         correlation_id: str,
+        *,
+        quote: NBBOQuote | None = None,
     ) -> None:
         """Fail-safe submit when micro cannot enter ``RISK_CHECK`` (should be rare)."""
         sized = self._risk_engine.check_sized_intent(intent, self._positions)
@@ -1414,6 +1430,12 @@ class Orchestrator:
         orders: list[OrderRequest] = list(sized.orders)
         if not orders:
             return
+        orders = self._filter_portfolio_orders_for_admission(
+            orders,
+            intent=intent,
+            correlation_id=correlation_id,
+            quote=quote,
+        )
         orders = self._filter_portfolio_orders_for_pending_conflicts(
             orders,
             intent=intent,
@@ -1628,7 +1650,7 @@ class Orchestrator:
         # Optional sensor and horizon stages.
         self._dispatch_sensor_layer(quote, cid)
         self._maybe_transition_cross_sectional_bookend(cid)
-        self._flush_pending_sized_intents(correlation_id=cid)
+        self._flush_pending_sized_intents(correlation_id=cid, quote=quote)
 
         # FEATURE_COMPUTE is a state-machine bookend; bus subscribers did the work.
         self._micro.transition(
@@ -1817,59 +1839,35 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        # Block new entries after a halt; exits remain available.
-        if intent.intent in _ENTRY_OPENING_INTENTS and self._in_halt_blackout(
-            intent.symbol, quote.timestamp_ns
-        ):
+        # Session, halt, and Reg-SHO admission — one shared policy with the
+        # PORTFOLIO path (`feelies.execution.order_admission`).  This path
+        # answers "does it open exposure?" from the intent matrix; composition
+        # answers it from the leg's exposure delta.  Quantity is withheld here
+        # because risk scaling has not been applied yet; the minimum-size gate
+        # runs in `_try_build_order_from_intent` off the same predicate.
+        delta = exposure_delta_from_intent(intent)
+        block = admission_block_reason(
+            opens_exposure=delta.opens_or_increases_exposure,
+            opens_short=delta.opens_or_increases_short,
+            in_halt_blackout=self._in_halt_blackout(intent.symbol, quote.timestamp_ns),
+            in_session_flatten_window=self._in_session_flatten_window(quote),
+            ssr_active=intent.symbol.upper() in self._ssr_active,
+            locate_unavailable=(self._borrow_tier_for(intent.symbol) == BorrowTier.UNAVAILABLE),
+        )
+        if block is not None:
+            # Alerts are per-gate forensic markers, not part of the decision.
+            if block == BLOCK_SSR:
+                self._emit_ssr_suppression_alert(intent, cid)
+            elif block == BLOCK_LOCATE_UNAVAILABLE:
+                self._emit_locate_unavailable_alert(intent, cid)
             self._finish_no_order(
                 quote,
                 signal,
                 intent,
                 t_wall_start,
                 cid,
-                ("halt_resolution_blackout", f"symbol={intent.symbol}"),
-                "halt_resolution_blackout",
-            )
-            return
-
-        # Refuse new entries inside the session-flatten window.
-        if intent.intent in _ENTRY_OPENING_INTENTS and self._in_session_flatten_window(quote):
-            self._finish_no_order(
-                quote,
-                signal,
-                intent,
-                t_wall_start,
-                cid,
-                ("session_flatten_window", f"symbol={intent.symbol}"),
-                "session_flatten_window",
-            )
-            return
-
-        # Under SSR, refuse new short exposure but permit buys and covers.
-        if self._ssr_blocks_intent(intent):
-            self._emit_ssr_suppression_alert(intent, cid)
-            self._finish_no_order(
-                quote,
-                signal,
-                intent,
-                t_wall_start,
-                cid,
-                ("ssr_suppressed", f"symbol={intent.symbol}"),
-                "ssr_suppressed",
-            )
-            return
-
-        # Reject unavailable locates; hard-to-borrow entries carry fees.
-        if self._borrow_blocks_intent(intent):
-            self._emit_locate_unavailable_alert(intent, cid)
-            self._finish_no_order(
-                quote,
-                signal,
-                intent,
-                t_wall_start,
-                cid,
-                ("locate_unavailable", f"symbol={intent.symbol}"),
-                "locate_unavailable",
+                (block, f"symbol={intent.symbol}"),
+                block,
             )
             return
 
@@ -2183,6 +2181,48 @@ class Orchestrator:
             },
         )
 
+    def _edge_clears_round_trip_cost(
+        self,
+        *,
+        strategy_id: str,
+        edge_estimate_bps: float,
+        symbol: str,
+        entry_side: Side,
+        quantity: int,
+        quote: NBBOQuote,
+        is_taker_entry: bool,
+        is_short_entry: bool,
+    ) -> tuple[bool, float, float]:
+        """Inv-12 B4 in one place: does calibrated edge clear modelled cost?
+
+        Returns ``(passes, effective_edge_bps, realization_factor)`` so callers
+        can report *why* without re-deriving the arithmetic.  Both order paths
+        run this: the SIGNAL path via
+        :meth:`_signal_passes_edge_cost_gate` (which owns the forensic alert),
+        the PORTFOLIO path via :meth:`_portfolio_leg_clears_edge_gate`, whose
+        legs carry ``TargetPosition.expected_edge_bps`` instead of a ``Signal``.
+        """
+        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
+            return True, edge_estimate_bps, 1.0
+        rt_cost_bps = self._round_trip_cost_bps(
+            symbol=symbol,
+            entry_side=entry_side,
+            quantity=quantity,
+            quote=quote,
+            is_taker_entry=is_taker_entry,
+            is_short_entry=is_short_entry,
+        )
+        # Gate on realization-calibrated edge; missing factors default to one.
+        factor = self._edge_calibration_factors.get(strategy_id, 1.0)
+        effective_edge_bps = edge_estimate_bps * factor
+        passes = entry_edge_clears_cost(
+            edge_bps=effective_edge_bps,
+            rt_cost_bps=rt_cost_bps,
+            min_ratio=self._signal_min_edge_cost_ratio,
+            basis=self._signal_edge_cost_basis,
+        )
+        return passes, effective_edge_bps, factor
+
     def _signal_passes_edge_cost_gate(
         self,
         signal: Signal,
@@ -2197,9 +2237,9 @@ class Orchestrator:
         detail: str,
     ) -> bool:
         """Return whether calibrated edge clears modeled round-trip cost."""
-        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
-            return True
-        rt_cost_bps = self._round_trip_cost_bps(
+        passes, effective_edge_bps, factor = self._edge_clears_round_trip_cost(
+            strategy_id=signal.strategy_id,
+            edge_estimate_bps=signal.edge_estimate_bps,
             symbol=symbol,
             entry_side=entry_side,
             quantity=quantity,
@@ -2207,15 +2247,7 @@ class Orchestrator:
             is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
         )
-        # Gate on realization-calibrated edge; missing factors default to one.
-        factor = self._edge_calibration_factors.get(signal.strategy_id, 1.0)
-        effective_edge_bps = signal.edge_estimate_bps * factor
-        if entry_edge_clears_cost(
-            edge_bps=effective_edge_bps,
-            rt_cost_bps=rt_cost_bps,
-            min_ratio=self._signal_min_edge_cost_ratio,
-            basis=self._signal_edge_cost_basis,
-        ):
+        if passes:
             return True
         gate_detail = (
             detail
@@ -2667,11 +2699,20 @@ class Orchestrator:
         the end-of-session flatten emission so the two can never disagree about
         when the window opens.
         """
+        return self._in_session_flatten_window_at(quote.exchange_timestamp_ns)
+
+    def _in_session_flatten_window_at(self, at_ns: int) -> bool:
+        """Event-time form of :meth:`_in_session_flatten_window`.
+
+        The PORTFOLIO path admits legs outside a quote callback, so it carries
+        the boundary's own event time rather than a quote (Inv-10: no wall
+        clock on the decision path).
+        """
         return in_session_flatten_window(
             self._trading_session_bounds,
             enabled=self._session_flatten_enabled,
             seconds_before_close=self._session_flatten_seconds_before_close,
-            at_ns=quote.exchange_timestamp_ns,
+            at_ns=at_ns,
         )
 
     def _compute_target_quantity(
@@ -2697,27 +2738,30 @@ class Orchestrator:
         if mid_price <= 0:
             return 0
 
-        target = self._position_sizer.compute_target_quantity(
+        # The alpha's declared risk budget is the sizing authority: this result
+        # is never inflated.  ``platform_min_order_shares`` used to raise any
+        # nonzero target up to the floor, which made the floor the binding
+        # constraint and ``capital_allocation_pct`` inert — at 50k equity and
+        # APP near $396 a 25% budget asks for 15-31 shares and every one of them
+        # was raised to 50, so the platform traded 2.4x what the budget
+        # sanctioned.  A control that autonomously *increases* exposure over a
+        # declared budget is a loosening, and Inv-11 reserves those for a human.
+        # The floor is now a venue lot-size veto only (see platform.yaml).
+        return self._position_sizer.compute_target_quantity(
             signal=signal,
             risk_budget=risk_budget,
             symbol_price=mid_price,
             account_equity=self._account_equity,
         )
 
-        # Clamp nonzero targets to the minimum viable order; risk may scale them down.
-        if 0 < target < self._min_order_shares:
-            target = self._min_order_shares
-
-        return target
-
     def _record_size_shadow(self, signal: Signal, quote: NBBOQuote) -> None:
         """Compare the edge/vol/inventory-tilted target with the base.
 
         For each real sized signal, compute the tilted target and append a
         :class:`SizeDivergence` when it differs from the live single-factor
-        base target. It runs before the minimum-order clamp and risk engine and
-        has no order, bus, journal, or parity effects. It is a no-op unless a sink is
-        wired and at least one tilt factor is enabled.
+        base target. It runs before the risk engine and has no order, bus,
+        journal, or parity effects. It is a no-op unless a sink is wired and at
+        least one tilt factor is enabled.
         """
         sizer = self._size_shadow_sizer
         sink = self._size_shadow_sink
@@ -3263,13 +3307,13 @@ class Orchestrator:
         )
         if quantity <= 0:
             return None, "rounded_quantity_after_risk_scaling_le_zero"
-        if not is_exit_or_stop and quantity < self._min_order_shares:
-            return None, "quantity_below_platform_min_order_shares"
+        if blocks_for_min_size(quantity, self._min_order_shares, exempt=is_exit_or_stop):
+            return None, BLOCK_BELOW_MIN_ORDER_SHARES
 
         # Only hard-tier short sales carry the HTB fee flag;
         # ``OrderRequest.is_short``; ``available`` omits HTB even when
         # cost_htb_borrow_annual_bps is configured.
-        short_sale = is_short_sale_intent(intent)
+        short_sale = exposure_delta_from_intent(intent).opens_or_increases_short
         tier = self._borrow_tier_for(intent.symbol)
         is_short = htb_fee_applies(tier, short_sale)
 
@@ -3386,29 +3430,8 @@ class Orchestrator:
 
     @staticmethod
     def _side_from_intent(intent: OrderIntent) -> Side:
-        """Derive order Side from TradingIntent."""
-        if intent.intent in (
-            TradingIntent.ENTRY_LONG,
-            TradingIntent.REVERSE_SHORT_TO_LONG,
-        ):
-            return Side.BUY
-
-        if intent.intent in (
-            TradingIntent.ENTRY_SHORT,
-            TradingIntent.REVERSE_LONG_TO_SHORT,
-        ):
-            return Side.SELL
-
-        if intent.intent == TradingIntent.EXIT:
-            return Side.SELL if intent.current_quantity > 0 else Side.BUY
-
-        if intent.intent == TradingIntent.SCALE_UP:
-            return Side.BUY if intent.current_quantity >= 0 else Side.SELL
-
-        raise ValueError(
-            f"Cannot determine Side for intent {intent.intent!r}. "
-            f"Fail-safe: aborting order construction."
-        )
+        """Derive order Side from TradingIntent (see ``side_for_intent``)."""
+        return side_for_intent(intent)
 
     # ── Order lifecycle tracking (Inv-4) ────────────────────────────
 
@@ -3478,6 +3501,140 @@ class Orchestrator:
             order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
             for sm, _, order in self._active_orders.values()
         )
+
+    def _filter_portfolio_orders_for_admission(
+        self,
+        orders: list[OrderRequest],
+        *,
+        intent: SizedPositionIntent,
+        correlation_id: str,
+        quote: NBBOQuote | None = None,
+    ) -> list[OrderRequest]:
+        """Drop PORTFOLIO legs refused by the shared Inv-11 admission gates.
+
+        Until this filter existed the composition path reached
+        ``order_router.submit`` without passing the halt blackout, the
+        session-flatten window, SSR, locate availability or the minimum-order
+        floor — every one of which the standalone SIGNAL path applies.  The
+        policy is :func:`~feelies.execution.order_admission.admission_block_reason`;
+        this method only supplies the environment and the per-leg exposure
+        delta.
+
+        The delta is re-read from the live book rather than carried from
+        ``plan_leg``: a leg is admitted against the book as it stands now, not
+        as it stood when the intent was priced.
+
+        Reducing legs are exempt from every gate by construction (the policy
+        conditions each one on the order adding exposure), so a PORTFOLIO
+        unwind can never be refused by a halt or an SSR flag.
+        """
+        filtered: list[OrderRequest] = []
+        for order in orders:
+            current = self._positions.get(order.symbol).quantity
+            signed = order.quantity if order.side is Side.BUY else -order.quantity
+            delta = ExposureDelta(current_quantity=current, signed_quantity=signed)
+            block = admission_block_reason(
+                opens_exposure=delta.opens_or_increases_exposure,
+                opens_short=delta.opens_or_increases_short,
+                in_halt_blackout=self._in_halt_blackout(order.symbol, intent.timestamp_ns),
+                in_session_flatten_window=self._in_session_flatten_window_at(intent.timestamp_ns),
+                ssr_active=order.symbol.upper() in self._ssr_active,
+                locate_unavailable=(self._borrow_tier_for(order.symbol) == BorrowTier.UNAVAILABLE),
+                quantity=order.quantity,
+                min_order_shares=self._min_order_shares,
+                exempt_from_min_size=not delta.opens_or_increases_exposure,
+            )
+            if block is None:
+                block = self._portfolio_leg_edge_block(
+                    order,
+                    intent=intent,
+                    delta=delta,
+                    quote=quote,
+                )
+            if block is None:
+                filtered.append(order)
+                continue
+            self._publish_alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                severity=AlertSeverity.WARNING,
+                alert_name="portfolio_leg_admission_blocked",
+                message=f"PORTFOLIO leg refused by {block}: {order.symbol!r} {order.side.name} {order.quantity} (strategy={intent.strategy_id!r}, position={current}).",
+                context={
+                    "order_id": order.order_id,
+                    "symbol": order.symbol,
+                    "strategy_id": intent.strategy_id,
+                    "block_reason": block,
+                    "side": order.side.name,
+                    "quantity": order.quantity,
+                    "position_quantity": current,
+                },
+            )
+        return filtered
+
+    def _portfolio_leg_edge_block(
+        self,
+        order: OrderRequest,
+        *,
+        intent: SizedPositionIntent,
+        delta: ExposureDelta,
+        quote: NBBOQuote | None,
+    ) -> str | None:
+        """Inv-12 B4 for a PORTFOLIO leg, or ``None`` to admit.
+
+        Reducing legs are never gated: a cost bar may suppress an entry, never
+        an unwind (Inv-11), which is the same carve-out the SIGNAL path makes
+        for exits.
+
+        Without a quote the gate cannot be priced at all -- the round-trip cost
+        model needs a live spread. An opening leg is then refused rather than
+        waved through: this is the out-of-tick submit path, and "cannot verify
+        the economics" resolves to less exposure, not more.  The flush carries
+        one quote (the tick that triggered it), but a PORTFOLIO intent is
+        cross-sectional and routinely spans symbols, so a quote for a different
+        symbol is treated as no quote: pricing a leg off another name's spread,
+        mid and L1 sizes would make the capital decision non-symbol-local.
+
+        The leg's edge is ``TargetPosition.expected_edge_bps``, carried from the
+        ranker because the composition weights are z-scores and no longer in bps.
+        A leg with no disclosed edge cannot clear a positive cost bar, so 0.0
+        fails closed on its own.
+        """
+        if not delta.opens_or_increases_exposure:
+            return None
+        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
+            # Gate disarmed by configuration: there is nothing to price, so a
+            # missing quote is not a refusal. Checking the quote first would
+            # suppress every opening leg on deployments that never enabled B4.
+            return None
+        if quote is None or quote.symbol != order.symbol:
+            return BLOCK_EDGE_UNPRICEABLE
+        target = intent.target_positions.get(order.symbol)
+        edge_bps = target.expected_edge_bps if target is not None else 0.0
+        passes, effective_bps, factor = self._edge_clears_round_trip_cost(
+            strategy_id=intent.strategy_id,
+            edge_estimate_bps=edge_bps,
+            symbol=order.symbol,
+            entry_side=order.side,
+            quantity=order.quantity,
+            quote=quote,
+            is_taker_entry=order.order_type is OrderType.MARKET,
+            is_short_entry=delta.opens_or_increases_short,
+        )
+        if passes:
+            return None
+        logger.debug(
+            "PORTFOLIO leg %s %s %d refused by B4: disclosed %.2f bps x "
+            "realization %.3f = %.2f effective (strategy=%s)",
+            order.symbol,
+            order.side.name,
+            order.quantity,
+            edge_bps,
+            factor,
+            effective_bps,
+            intent.strategy_id,
+        )
+        return BLOCK_EDGE_BELOW_COST
 
     def _filter_portfolio_orders_for_pending_conflicts(
         self,
@@ -4712,8 +4869,7 @@ class Orchestrator:
                     logger.debug(
                         "orchestrator: %d standalone SIGNAL candidate(s) from %d "
                         "alpha id(s) on flat book (%s); all gate-close FLAT — "
-                        "no order impact.  Prefer PORTFOLIO aggregation for "
-                        "production multi-alpha books.",
+                        "no order impact.",
                         len(buf),
                         len(ids),
                         ids,
@@ -4723,8 +4879,14 @@ class Orchestrator:
                 logger.warning(
                     "orchestrator: %d standalone SIGNAL candidate(s) from %d "
                     "alpha id(s) fired on the same tick (%s); arbitrating via "
-                    "%s.  Prefer a PORTFOLIO alpha listing these ids in "
-                    "depends_on_signals for full multi-alpha aggregation.",
+                    "%s — the winner takes the tick and the other alphas' "
+                    "conviction is discarded, not blended.  Routing these ids "
+                    "through a PORTFOLIO alpha's depends_on_signals would "
+                    "aggregate rather than arbitrate, but that path is "
+                    "unexercised on the cached corpus and its legs skip the "
+                    "SSR, locate, halt-blackout, B4 edge/cost and "
+                    "min-order-shares gates this one applies; it is not a "
+                    "drop-in remedy.  See configs/bt_multialpha.yaml.",
                     len(buf),
                     len(ids),
                     ids,
@@ -4949,12 +5111,6 @@ class Orchestrator:
         """Locate tier for ``symbol``; omitted symbols use the default tier."""
         return self._borrow_tier.get(symbol.upper(), self._borrow_default_tier)
 
-    def _borrow_blocks_intent(self, intent: OrderIntent) -> bool:
-        """True when locate is unavailable and this intent is a short sale."""
-        return self._borrow_tier_for(
-            intent.symbol
-        ) == BorrowTier.UNAVAILABLE and is_short_sale_intent(intent)
-
     def _emit_locate_unavailable_alert(
         self,
         intent: OrderIntent,
@@ -5046,12 +5202,6 @@ class Orchestrator:
                 "order_id": order.order_id,
             },
         )
-
-    def _ssr_blocks_intent(self, intent: OrderIntent) -> bool:
-        """True when SSR (refuse_short) must refuse this short-opening order."""
-        if intent.symbol.upper() not in self._ssr_active:
-            return False
-        return is_short_sale_intent(intent)
 
     def _emit_ssr_suppression_alert(
         self,

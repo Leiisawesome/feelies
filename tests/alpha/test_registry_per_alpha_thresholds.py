@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import pytest
 
-from feelies.alpha.lifecycle import AlphaLifecycle, AlphaLifecycleState
+from feelies.promotion.lifecycle import AlphaLifecycle, AlphaLifecycleState
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     GateThresholds,
     ResearchAcceptanceEvidence,
     apply_gate_thresholds_overrides,

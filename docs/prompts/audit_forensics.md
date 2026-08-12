@@ -88,15 +88,15 @@ fills + Signal provenance (trend_mechanism, expected_half_life, regime)
 
 ### Trigger surface
 
-- `src/feelies/alpha/promotion_evidence.py` — `QuarantineTriggerEvidence`,
+- `src/feelies/promotion/evidence.py` — `QuarantineTriggerEvidence`,
   `validate_quarantine_trigger`
-- `src/feelies/alpha/lifecycle.py` — `quarantine` path (fail-safe commit)
+- `src/feelies/promotion/lifecycle.py` — `quarantine` path (fail-safe commit)
 
 ### Tests (spec + gap analysis)
 
 - `tests/forensics/test_tca.py`
 - Acceptance: `tests/acceptance/test_decay_divergence.py`
-- Cross-ref: `tests/alpha/test_promotion_evidence.py` (quarantine-trigger validator)
+- Cross-ref: `tests/promotion/test_promotion_evidence.py` (quarantine-trigger validator)
 
 **Out of scope:** lifecycle SM mechanics (see `audit_alpha_lifecycle.md`), CPCV/DSR
 pre-deployment stats (see `audit_research_validation.md`), live execution.
@@ -176,7 +176,7 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
 6. Run **read-only** checks only:
    - `uv run pytest tests/forensics/test_tca.py tests/acceptance/test_decay_divergence.py -q`
-   - `uv run pytest tests/alpha/test_promotion_evidence.py -q -k quarantine`
+   - `uv run pytest tests/promotion/test_promotion_evidence.py -q -k quarantine`
    Do not modify production code.
 
 ---

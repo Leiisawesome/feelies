@@ -1,7 +1,7 @@
 """Stage-0 ``decouple_caps_only`` promotion gate (dual-permission Phase 6).
 
-Covers the gate surface added to :mod:`feelies.alpha.promotion_evidence` and the
-:meth:`feelies.alpha.lifecycle.AlphaLifecycle.authorize_decouple` write path:
+Covers the gate surface added to :mod:`feelies.promotion.evidence` and the
+:meth:`feelies.promotion.lifecycle.AlphaLifecycle.authorize_decouple` write path:
 
   * the three evidence dataclasses (frozen, kw-only);
   * each validator's individual failure modes (mid-marks, un-stressed fills,
@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import AlphaLifecycle, AlphaLifecycleState
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.lifecycle import AlphaLifecycle, AlphaLifecycleState
+from feelies.promotion.evidence import (
     AUTHORIZE_DECOUPLE_TRIGGER,
     GATE_EVIDENCE_REQUIREMENTS,
     ConditionalCVaREvidence,
@@ -36,7 +36,7 @@ from feelies.alpha.promotion_evidence import (
     validate_quote_freeze_backstop,
     validate_turnover_bound,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger, PromotionLedgerEntry
+from feelies.promotion.ledger import PromotionLedger, PromotionLedgerEntry
 from feelies.core.clock import SimulatedClock
 
 # ─────────────────────────────────────────────────────────────────────
@@ -330,6 +330,6 @@ class TestAuthorizeDecouple:
             config_version="v1",
             authorized_by="pm",
         )
-        from feelies.alpha.promotion_evidence import CapitalStageTier
+        from feelies.promotion.evidence import CapitalStageTier
 
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL

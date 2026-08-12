@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from feelies.alpha.loader import AlphaLoader
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     GateId,
     GateThresholds,
     validate_cpcv,

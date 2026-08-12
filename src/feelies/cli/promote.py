@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     AUTHORIZE_DECOUPLE_TRIGGER,
     EVIDENCE_SCHEMA_VERSION,
     GATE_EVIDENCE_REQUIREMENTS,
@@ -47,7 +47,7 @@ from feelies.alpha.promotion_evidence import (
     metadata_to_evidence,
     validate_gate,
 )
-from feelies.alpha.promotion_ledger import (
+from feelies.promotion.ledger import (
     LEDGER_SCHEMA_VERSION,
     PromotionLedger,
     PromotionLedgerEntry,
@@ -259,7 +259,7 @@ def _capital_tier_from_entries(
     The forensic-only consumer contract is preserved: this helper
     only reads ledger entries (no clock reads, no live state).  The
     algorithm matches
-    :py:attr:`feelies.alpha.lifecycle.AlphaLifecycle.current_capital_tier`
+    :py:attr:`feelies.promotion.lifecycle.AlphaLifecycle.current_capital_tier`
     so a ledger replay agrees with the live state machine.
     """
     rows = list(entries)

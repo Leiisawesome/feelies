@@ -263,9 +263,9 @@ Before a notebook artifact is considered formalized:
 ### Provenance Chain
 
 What ships today: promotion provenance is the F-1 promotion ledger
-(append-only JSONL, `src/feelies/alpha/promotion_ledger.py`) plus the
+(append-only JSONL, `src/feelies/promotion/ledger.py`) plus the
 F-2 structured-evidence metadata persisted on each ledger entry
-(`src/feelies/alpha/promotion_evidence.py`). There is no
+(`src/feelies/promotion/evidence.py`). There is no
 `promoted_artifact` type in the codebase.
 
 **Not shipped:** the consolidated chain below is a design target — not yet

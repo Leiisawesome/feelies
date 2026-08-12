@@ -491,9 +491,7 @@ def _ofi_integrated_ab(
     for h in sorted(horizons):
         feats.append(SensorPassthroughFeature("ofi_ewma", h))
         feats.append(
-            HorizonWindowedFeature(
-                "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore"
-            )
+            HorizonWindowedFeature("ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore")
         )
         feats.append(
             HorizonWindowedFeature(
@@ -512,9 +510,7 @@ def _ofi_integrated_ab(
     for variant in ("ofi_ewma_zscore", "ofi_integrated"):
         for h in sorted(horizons):
             p = _collect_pairs(snaps, mids, variant, h)
-            edge = (
-                long_short_edge_bps(p.values, p.fwd) if len(p.values) >= 5 else None
-            )
+            edge = long_short_edge_bps(p.values, p.fwd) if len(p.values) >= 5 else None
             rows.append(
                 _Row(
                     symbol=symbol,
@@ -936,7 +932,9 @@ def _h12_halfhour_clock(
         pairs[stratum].fwd.append(y)
 
     rows: list[_Row] = [
-        _h12_rank_row(symbol, date, "in_window_extreme", pairs["in_window_extreme"], with_edge=True),
+        _h12_rank_row(
+            symbol, date, "in_window_extreme", pairs["in_window_extreme"], with_edge=True
+        ),
         _h12_rank_row(
             symbol, date, "out_window_extreme", pairs["out_window_extreme"], with_edge=True
         ),
@@ -1096,9 +1094,7 @@ def _h13_hour_checkpoint(
 
     rows: list[_Row] = [
         _h13_rank_row(symbol, date, "in_hour_extreme", pairs["in_hour_extreme"], with_edge=True),
-        _h13_rank_row(
-            symbol, date, "halfhour_extreme", pairs["halfhour_extreme"], with_edge=True
-        ),
+        _h13_rank_row(symbol, date, "halfhour_extreme", pairs["halfhour_extreme"], with_edge=True),
     ]
     e = rows[0]
     b = rows[1]
@@ -1176,14 +1172,8 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
             assert r.pairs is not None
             pooled_values.extend(r.pairs.values)
             pooled_fwd.extend(r.pairs.fwd)
-        edge = (
-            long_short_edge_bps(pooled_values, pooled_fwd)
-            if len(pooled_values) >= 5
-            else None
-        )
-        pooled_pairs = (
-            _Pairs(values=pooled_values, fwd=pooled_fwd) if pair_rows else None
-        )
+        edge = long_short_edge_bps(pooled_values, pooled_fwd) if len(pooled_values) >= 5 else None
+        pooled_pairs = _Pairs(values=pooled_values, fwd=pooled_fwd) if pair_rows else None
 
         pooled.append(
             _Row(

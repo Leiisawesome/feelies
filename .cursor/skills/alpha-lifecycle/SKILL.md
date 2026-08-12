@@ -46,7 +46,7 @@ Additionally:
 
 ## The 5-State Lifecycle SM
 
-`feelies.alpha.lifecycle.AlphaLifecycle` (`alpha/lifecycle.py`) wraps
+`feelies.promotion.lifecycle.AlphaLifecycle` (`promotion/lifecycle.py`) wraps
 the generic `StateMachine[AlphaLifecycleState]` with gate dispatch
 and ledger callbacks.
 
@@ -104,7 +104,7 @@ forensic-layer auto-trigger can never be blocked by the validator.
 
 ## F-2: Declarative Gate Matrix
 
-`alpha/promotion_evidence.py` exposes the canonical mapping:
+`promotion/evidence.py` exposes the canonical mapping:
 
 ```python
 GATE_EVIDENCE_REQUIREMENTS: Mapping[GateId, tuple[type, ...]]
@@ -121,7 +121,7 @@ GATE_EVIDENCE_REQUIREMENTS: Mapping[GateId, tuple[type, ...]]
 
 ### Construction-Time Invariants
 
-`alpha/promotion_evidence.py` enforces two matrix-completeness checks at
+`promotion/evidence.py` enforces two matrix-completeness checks at
 module import:
 
 - `_check_matrix_completeness` — every `GateId` member has an entry
@@ -221,7 +221,7 @@ once at registration and immutable thereafter.
 
 ## F-1: Promotion Ledger
 
-`alpha/promotion_ledger.py` provides an append-only JSONL audit log
+`promotion/ledger.py` provides an append-only JSONL audit log
 recording every committed lifecycle transition.
 
 ```python
@@ -338,7 +338,7 @@ distinguishes the escalation from the LIVE → QUARANTINED demotion
 
 `PROMOTE_CAPITAL_TIER_TRIGGER` lives in `promotion_evidence.py`
 (re-exported from `feelies.alpha`) rather than in
-`feelies.alpha.lifecycle` so the writer (lifecycle) and readers (CLI
+`feelies.promotion.lifecycle` so the writer (lifecycle) and readers (CLI
 / forensics) share a single source of truth without re-introducing a
 layering edge.
 

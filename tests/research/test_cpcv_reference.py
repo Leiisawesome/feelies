@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import statistics
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     GateThresholds,
     validate_cpcv,
 )

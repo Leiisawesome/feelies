@@ -624,7 +624,6 @@ def run_risk_rejection_scenario(alpha_yaml_paths: list[Path]) -> bool:
     check gate refuses any fill that would exceed 1 share.  Every
     RiskVerdict in this run should be REJECT.
     """
-    import hashlib
 
     print("\n── RISK REJECTION SCENARIO ─────────────────────────────────────")
 

@@ -296,7 +296,7 @@ additionally drains acks on every `IdleTick` and at shutdown.
 The `feelies` console-script (registered via `[project.scripts]` in
 `pyproject.toml`; equivalently reachable as `python -m feelies` or
 `python -m feelies.cli`) is the read-only operator surface for the
-append-only **promotion-evidence ledger** (`src/feelies/alpha/promotion_ledger.py`)
+append-only **promotion-evidence ledger** (`src/feelies/promotion/ledger.py`)
 written by `AlphaLifecycle` on every committed lifecycle transition.
 
 ```bash

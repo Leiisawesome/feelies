@@ -86,9 +86,7 @@ def is_hour_algo_clock_mark(window: CalendarWindow, session_date: date) -> bool:
 
 def derive_hour_only_calendar(source: EventCalendar) -> EventCalendar:
     """Return the H13 injection view — ``:00`` ALGO_CLOCK subset only."""
-    kept = tuple(
-        w for w in source.windows if is_hour_algo_clock_mark(w, source.session_date)
-    )
+    kept = tuple(w for w in source.windows if is_hour_algo_clock_mark(w, source.session_date))
     # Preserve sort contract of EventCalendar loader.
     kept = tuple(sorted(kept, key=lambda w: (w.start_ns, w.kind.value, w.window_id)))
     return EventCalendar(session_date=source.session_date, windows=kept)
@@ -103,9 +101,7 @@ def load_hour_only_calendar(
     path = calendar_dir / f"{date_str}.yaml"
     if not path.is_file():
         return None
-    source = load_event_calendar(
-        path, expected_session_date=date.fromisoformat(date_str)
-    )
+    source = load_event_calendar(path, expected_session_date=date.fromisoformat(date_str))
     return derive_hour_only_calendar(source)
 
 

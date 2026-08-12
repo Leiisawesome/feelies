@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import AlphaLifecycle, AlphaLifecycleState
+from feelies.promotion.lifecycle import AlphaLifecycle, AlphaLifecycleState
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.bus.event_bus import EventBus

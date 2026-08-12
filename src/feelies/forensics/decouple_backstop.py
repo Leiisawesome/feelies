@@ -9,7 +9,7 @@ wall-clock backstop of last resort (design rev 5 §2.3).
 This module reconstructs, from per-episode forced-exit records, whether every
 quote-freeze episode still exited by the session-flatten bound, and projects the
 result into
-:class:`~feelies.alpha.promotion_evidence.QuoteFreezeBackstopEvidence` — the
+:class:`~feelies.promotion.evidence.QuoteFreezeBackstopEvidence` — the
 third leg of the Stage-0 promotion gate.  A position stranded past
 ``session_flatten`` is a defect, not a pass.
 
@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from feelies.alpha.promotion_evidence import QuoteFreezeBackstopEvidence
+from feelies.promotion.evidence import QuoteFreezeBackstopEvidence
 
 __all__ = [
     "QuoteFreezeEpisode",

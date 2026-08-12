@@ -12,17 +12,17 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import (
+from feelies.promotion.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
 )
 from feelies.alpha.loader import AlphaLoader
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     KIND_TO_TYPE,
     ResearchAcceptanceEvidence,
     metadata_to_evidence,
 )
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import TrendMechanism

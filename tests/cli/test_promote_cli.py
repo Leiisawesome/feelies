@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     EVIDENCE_SCHEMA_VERSION,
     CapitalStageTier,
     CapitalStageEvidence,
@@ -29,7 +29,7 @@ from feelies.alpha.promotion_evidence import (
     ResearchAcceptanceEvidence,
     evidence_to_metadata,
 )
-from feelies.alpha.promotion_ledger import (
+from feelies.promotion.ledger import (
     LEDGER_SCHEMA_VERSION,
     PromotionLedger,
     PromotionLedgerEntry,

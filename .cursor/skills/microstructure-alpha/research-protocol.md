@@ -481,5 +481,5 @@ Test predictive power of OFI on next-bucket return.
 | Research execution | Direct pure functions; `feelies backtest` for pipeline experiments | `research/`, `harness/backtest_runner.py` |
 | Deterministic time | `SimulatedClock` | `core/clock.py` |
 | Config provenance | `Configuration.snapshot()` | `core/config.py` |
-| Promotion lifecycle | `AlphaLifecycle` + F-2 gate matrix + F-1 ledger | `alpha/lifecycle.py`, `alpha/promotion_evidence.py`, `alpha/promotion_ledger.py` |
+| Promotion lifecycle | `AlphaLifecycle` + F-2 gate matrix + F-1 ledger | `promotion/lifecycle.py`, `promotion/evidence.py`, `promotion/ledger.py` |
 | Operator forensic CLI | `feelies promote ...` | `cli/promote.py` |

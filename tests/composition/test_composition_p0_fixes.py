@@ -158,18 +158,22 @@ def test_consumes_whitelist_excludes_undeclared_family() -> None:
     }
     ctx = _ctx(sigs)
 
-    base = ranker.rank(ctx)
+    base = ranker.rank_sleeves(ctx)
     assert base.raw_scores["MSFT"] != 0.0
     assert TrendMechanism.INVENTORY in base.mechanism_by_symbol.values()
+    assert TrendMechanism.INVENTORY in base.weights_by_mech
 
-    filtered = ranker.rank(ctx, consumes_mechanisms=(TrendMechanism.KYLE_INFO,))
+    filtered = ranker.rank_sleeves(ctx, consumes_mechanisms=(TrendMechanism.KYLE_INFO,))
     # The undeclared INVENTORY symbol is excluded fail-safe.
     assert filtered.raw_scores["MSFT"] == 0.0
-    assert filtered.weights["MSFT"] == 0.0
     assert "MSFT" not in filtered.mechanism_by_symbol
     assert TrendMechanism.INVENTORY not in filtered.mechanism_by_symbol.values()
+    # The whole family sleeve is gone, not merely zeroed.
+    assert TrendMechanism.INVENTORY not in filtered.weights_by_mech
+    kyle = filtered.weights_by_mech[TrendMechanism.KYLE_INFO]
+    assert kyle["MSFT"] == 0.0
     # The declared family still participates.
-    assert any(filtered.weights[s] != 0.0 for s in ("AAPL", "NVDA"))
+    assert any(kyle[s] != 0.0 for s in ("AAPL", "NVDA"))
 
 
 def test_consumes_whitelist_drops_only_undeclared_feeder_contribution() -> None:
@@ -190,7 +194,7 @@ def test_consumes_whitelist_drops_only_undeclared_feeder_contribution() -> None:
     }
     ctx = _ctx({"AAPL": kyle, "MSFT": msft, "NVDA": None}, by_strategy=by_strategy)
 
-    filtered = ranker.rank(
+    filtered = ranker.rank_sleeves(
         ctx,
         feeder_strategy_ids=("s_inv", "s_kyle"),
         consumes_mechanisms=(TrendMechanism.KYLE_INFO,),
@@ -199,6 +203,7 @@ def test_consumes_whitelist_drops_only_undeclared_feeder_contribution() -> None:
     # (which alone would dominate at -250) is dropped.
     assert filtered.raw_scores["AAPL"] == pytest.approx(10.0)
     assert filtered.mechanism_by_symbol["AAPL"] == TrendMechanism.KYLE_INFO
+    assert TrendMechanism.INVENTORY not in filtered.weights_by_mech
 
 
 # Decision-basis hash coverage.

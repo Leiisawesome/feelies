@@ -9,7 +9,7 @@ Covers :mod:`feelies.forensics.decouple_backstop`:
   * builder input validation + determinism (Inv-5).
 
 The reconstructed evidence is validated with the real
-:func:`feelies.alpha.promotion_evidence.validate_quote_freeze_backstop` so the
+:func:`feelies.promotion.evidence.validate_quote_freeze_backstop` so the
 forensic builder and the gate stay in lock-step.
 """
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from feelies.alpha.promotion_evidence import validate_quote_freeze_backstop
+from feelies.promotion.evidence import validate_quote_freeze_backstop
 from feelies.forensics.decouple_backstop import (
     QuoteFreezeEpisode,
     build_quote_freeze_backstop_evidence,

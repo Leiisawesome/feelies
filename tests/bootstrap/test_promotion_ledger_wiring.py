@@ -9,7 +9,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.ledger import PromotionLedger
 from feelies.bootstrap import build_platform
 from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig

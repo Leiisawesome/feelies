@@ -192,7 +192,11 @@ class PlatformConfig:
     # Cancel fee charged per share when a resting order times out (default 0).
     passive_cancel_fee_per_share: float = 0.0
 
-    # Minimum order size gate: orders below this number of shares are suppressed.
+    # Venue lot-size floor: orders below this many shares are suppressed at
+    # construction. It never raises a sized target — the alpha's declared
+    # risk_budget is the sizing authority, and a floor that inflated a target
+    # would be an autonomous loosening of it (Inv-11). Economic viability is the
+    # B4 gate's job (``signal_min_edge_cost_ratio``), not a flat share count.
     platform_min_order_shares: int = 1
 
     # Suppress orders whose calibrated edge does not cover this multiple of
@@ -219,7 +223,10 @@ class PlatformConfig:
     # Optional standalone-SIGNAL target netting. It stays off by default: the
     # cached cross-symbol sweep found one one-vs-zero divergence and no genuinely
     # two-sided contests, so changing flat-vs-live semantics is not evidence-backed.
-    # Production multi-alpha books use the PORTFOLIO composition path instead.
+    # This is not a redirection to the PORTFOLIO composition path: that path is
+    # unexercised on the cached corpus (BT-13; see configs/bt_multialpha.yaml for
+    # the measurement) and no shipped config loads a PORTFOLIO alpha. Both
+    # multi-alpha aggregators are off; which one earns capital is undecided.
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
@@ -1189,7 +1196,7 @@ class PlatformConfig:
         # Imported lazily to avoid a hard dependency cycle between
         # core.platform_config and alpha.promotion_evidence at import
         # time (alpha modules import core.events / core.config).
-        from feelies.alpha.promotion_evidence import (
+        from feelies.promotion.evidence import (
             parse_gate_thresholds_overrides,
         )
 

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.lifecycle import GateRequirements, PromotionEvidence
-from feelies.alpha.promotion_ledger import PromotionLedger
+from feelies.promotion.lifecycle import GateRequirements, PromotionEvidence
+from feelies.promotion.ledger import PromotionLedger
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.core.clock import SimulatedClock
 from feelies.features.definition import FeatureDefinition, WarmUpSpec
@@ -187,7 +187,7 @@ class TestAlphaRegistryLifecycle:
     def test_promote_raises_when_lifecycle_disabled(
         self, registry: AlphaRegistry, mock_alpha: MockAlpha
     ) -> None:
-        from feelies.alpha.lifecycle import PromotionEvidence
+        from feelies.promotion.lifecycle import PromotionEvidence
 
         registry.register(mock_alpha)
         evidence = PromotionEvidence(
@@ -201,7 +201,7 @@ class TestAlphaRegistryLifecycle:
     def test_promote_raises_when_alpha_not_registered(self) -> None:
         from feelies.core.clock import SimulatedClock
 
-        from feelies.alpha.lifecycle import GateRequirements, PromotionEvidence
+        from feelies.promotion.lifecycle import GateRequirements, PromotionEvidence
 
         clock = SimulatedClock(start_ns=0)
         registry = AlphaRegistry(clock=clock, gate_requirements=GateRequirements())
@@ -230,7 +230,7 @@ class TestAlphaRegistryLifecycle:
     def test_quarantine_raises_when_alpha_not_registered(self) -> None:
         from feelies.core.clock import SimulatedClock
 
-        from feelies.alpha.lifecycle import GateRequirements
+        from feelies.promotion.lifecycle import GateRequirements
 
         clock = SimulatedClock(start_ns=0)
         registry = AlphaRegistry(clock=clock, gate_requirements=GateRequirements())
@@ -240,7 +240,7 @@ class TestAlphaRegistryLifecycle:
     def test_decommission_raises_when_alpha_not_registered(self) -> None:
         from feelies.core.clock import SimulatedClock
 
-        from feelies.alpha.lifecycle import GateRequirements
+        from feelies.promotion.lifecycle import GateRequirements
 
         clock = SimulatedClock(start_ns=0)
         registry = AlphaRegistry(clock=clock, gate_requirements=GateRequirements())
@@ -258,7 +258,7 @@ class TestAlphaRegistryLifecycle:
     def test_full_lifecycle_promotion_flow(self, mock_alpha: MockAlpha) -> None:
         from feelies.core.clock import SimulatedClock
 
-        from feelies.alpha.lifecycle import (
+        from feelies.promotion.lifecycle import (
             AlphaLifecycleState,
             GateRequirements,
             PromotionEvidence,
@@ -320,7 +320,7 @@ class TestAlphaRegistryLifecycle:
     def test_promote_from_live_returns_error(self, mock_alpha: MockAlpha) -> None:
         from feelies.core.clock import SimulatedClock
 
-        from feelies.alpha.lifecycle import (
+        from feelies.promotion.lifecycle import (
             GateRequirements,
             PromotionEvidence,
         )

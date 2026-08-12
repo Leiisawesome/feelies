@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.promotion_evidence import GateThresholds
+from feelies.promotion.evidence import GateThresholds
 from feelies.bootstrap import _build_platform_gate_thresholds, build_platform
 from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote

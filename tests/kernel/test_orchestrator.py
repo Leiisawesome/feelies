@@ -41,6 +41,11 @@ from feelies.execution.cost_model import (
     ZeroCostModel,
 )
 from feelies.execution.intent import OrderIntent, TradingIntent
+from feelies.execution.order_admission import (
+    BLOCK_SSR,
+    admission_block_reason,
+    exposure_delta_from_intent,
+)
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
@@ -4331,8 +4336,16 @@ def _ssr_intent(
     direction: SignalDirection,
     *,
     current_quantity: int = 0,
+    target_quantity: int = 10,
     symbol: str = "AAPL",
 ) -> OrderIntent:
+    """Build an OrderIntent for the SSR cases.
+
+    ``target_quantity`` is the *unsigned trade size*, so a REVERSE_* must be
+    given a size that actually crosses zero (``|current| + new``). The default
+    10 predates the exposure basis and describes a partial reduction, not a
+    reversal -- pass an explicit size for the REVERSE_* cases.
+    """
     sig = Signal(
         timestamp_ns=1000,
         correlation_id="c",
@@ -4347,44 +4360,62 @@ def _ssr_intent(
         intent=intent,
         symbol=symbol,
         strategy_id="s",
-        target_quantity=10,
+        target_quantity=target_quantity,
         current_quantity=current_quantity,
         signal=sig,
     )
 
 
 class TestSSRBlocksIntent:
-    """SSR blocks only orders that open or increase a short."""
+    """SSR blocks only orders that open or increase a short.
 
-    def _orch(self) -> Orchestrator:
-        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
-        _boot_to_backtest(orch)
-        orch._ssr_active = {"AAPL"}
-        return orch
+    Asserts through the shared admission decision rather than a kernel
+    predicate wrapper: the wrappers ``_ssr_blocks_intent`` /
+    ``_borrow_blocks_intent`` were retired once both order paths moved onto
+    ``feelies.execution.order_admission``, and keeping tests pointed at a
+    method production no longer calls would have gone green regardless of
+    whether SSR actually gated anything.
+    """
+
+    @staticmethod
+    def _blocked(intent: OrderIntent, *, ssr_active: bool = True) -> bool:
+        delta = exposure_delta_from_intent(intent)
+        return (
+            admission_block_reason(
+                opens_exposure=delta.opens_or_increases_exposure,
+                opens_short=delta.opens_or_increases_short,
+                in_halt_blackout=False,
+                in_session_flatten_window=False,
+                ssr_active=ssr_active,
+                locate_unavailable=False,
+            )
+            == BLOCK_SSR
+        )
 
     def test_inactive_symbol_never_blocked(self) -> None:
-        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
-        _boot_to_backtest(orch)  # _ssr_active empty
-        assert not orch._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
+            ssr_active=False,
         )
 
     def test_entry_short_blocked(self) -> None:
-        assert self._orch()._ssr_blocks_intent(
+        assert self._blocked(
             _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
         )
 
     def test_reverse_long_to_short_blocked(self) -> None:
-        assert self._orch()._ssr_blocks_intent(
+        assert self._blocked(
             _ssr_intent(
                 TradingIntent.REVERSE_LONG_TO_SHORT,
                 SignalDirection.SHORT,
                 current_quantity=50,
+                # Cross the whole long and open 10 short: 50 + 10.
+                target_quantity=60,
             ),
         )
 
     def test_scale_up_short_blocked(self) -> None:
-        assert self._orch()._ssr_blocks_intent(
+        assert self._blocked(
             _ssr_intent(
                 TradingIntent.SCALE_UP,
                 SignalDirection.SHORT,
@@ -4393,12 +4424,12 @@ class TestSSRBlocksIntent:
         )
 
     def test_entry_long_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(TradingIntent.ENTRY_LONG, SignalDirection.LONG),
         )
 
     def test_exit_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(
                 TradingIntent.EXIT,
                 SignalDirection.FLAT,
@@ -4407,7 +4438,7 @@ class TestSSRBlocksIntent:
         )
 
     def test_scale_up_long_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(
                 TradingIntent.SCALE_UP,
                 SignalDirection.LONG,
@@ -4416,11 +4447,12 @@ class TestSSRBlocksIntent:
         )
 
     def test_reverse_short_to_long_allowed(self) -> None:
-        assert not self._orch()._ssr_blocks_intent(
+        assert not self._blocked(
             _ssr_intent(
                 TradingIntent.REVERSE_SHORT_TO_LONG,
                 SignalDirection.LONG,
                 current_quantity=-50,
+                target_quantity=60,
             ),
         )
 
@@ -4653,3 +4685,81 @@ class TestBorrowAvailability:
         bt_router.on_quote(q)
         orch._process_tick(q)
         assert position_store.get("AAPL").quantity > 0
+
+
+class TestRiskBudgetIsTheSizingAuthority:
+    """``capital_allocation_pct`` decides position size; the floor never inflates it.
+
+    ``platform_min_order_shares`` used to raise any nonzero sized target up to
+    itself. With platform.yaml's 50 and a 50,000 book, a 25% allocation on a
+    ~$400 name asks for 15-31 shares, so every target became exactly 50 --
+    identical for *any* allocation below ~39.6%. The declared risk budget was
+    inert and the book ran 2.4x what it sanctioned.
+
+    The 2026-08 review measured that by hand (5% and 50% allocations produced
+    identical targets) but nothing pinned it, so the clamp survived. These tests
+    pin the property, not the anecdote.
+    """
+
+    @staticmethod
+    def _orch_with_budget(pct: float, *, min_order_shares: int) -> Orchestrator:
+        from types import SimpleNamespace
+
+        from feelies.alpha.module import AlphaRiskBudget
+
+        budget = AlphaRiskBudget(
+            max_position_per_symbol=500,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=2.0,
+            capital_allocation_pct=pct,
+        )
+        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
+        orch._alpha_registry = SimpleNamespace(  # type: ignore[attr-defined]
+            get=lambda sid: SimpleNamespace(manifest=SimpleNamespace(risk_budget=budget))
+        )
+        orch._account_equity = Decimal("50000")
+        orch._min_order_shares = min_order_shares
+        return orch
+
+    @staticmethod
+    def _signal() -> Signal:
+        return Signal(
+            timestamp_ns=1000,
+            correlation_id="c",
+            sequence=1,
+            symbol="AAPL",
+            strategy_id="alpha_a",
+            direction=SignalDirection.LONG,
+            strength=1.0,
+            edge_estimate_bps=10.0,
+        )
+
+    def test_allocation_changes_the_target(self) -> None:
+        """Different budgets must produce different sizes -- the whole point."""
+        quote = _make_quote(bid="399.50", ask="400.50")
+        small = self._orch_with_budget(5.0, min_order_shares=50)
+        large = self._orch_with_budget(50.0, min_order_shares=50)
+
+        small_target = small._compute_target_quantity(self._signal(), quote)
+        large_target = large._compute_target_quantity(self._signal(), quote)
+
+        # 50000 * 5% / 400 = 6 ; 50000 * 50% / 400 = 62
+        assert small_target == 6
+        assert large_target == 62
+        assert small_target != large_target, (
+            "capital_allocation_pct is inert -- a min-order floor is overriding the "
+            "declared risk budget again"
+        )
+
+    def test_floor_never_raises_a_sized_target(self) -> None:
+        """A target below the floor stays below it (Inv-11: no autonomous loosening).
+
+        Raising a target to meet a floor increases exposure beyond what the
+        alpha declared. Suppressing the order is a defensible answer; inflating
+        it is not.
+        """
+        quote = _make_quote(bid="399.50", ask="400.50")
+        orch = self._orch_with_budget(5.0, min_order_shares=1000)
+        target = orch._compute_target_quantity(self._signal(), quote)
+        assert target == 6, "sized target was inflated toward min_order_shares"
+        assert target < orch._min_order_shares

@@ -215,9 +215,9 @@ protocols. Composition happens at startup via
 | `AlphaLoader` | `alpha/loader.py` | Discovers and loads `*.alpha.yaml`; rejects `LEGACY_SIGNAL` |
 | `LayerValidator` | `alpha/layer_validator.py` | Enforces active gates G1–G12 and G14–G17; G13 is reserved |
 | `AlphaRegistry` | `alpha/registry.py` | Tracks active modules + per-alpha lifecycle (F-5 threshold merge) |
-| `AlphaLifecycle` | `alpha/lifecycle.py` | 5-state machine (RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED) + LIVE @ SCALED self-loop (F-6) |
-| `PromotionLedger` | `alpha/promotion_ledger.py` | Append-only JSONL audit trail (F-1) |
-| `validate_gate` + `GATE_EVIDENCE_REQUIREMENTS` | `alpha/promotion_evidence.py` | F-2 declarative gate matrix |
+| `AlphaLifecycle` | `promotion/lifecycle.py` | 5-state machine (RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED) + LIVE @ SCALED self-loop (F-6) |
+| `PromotionLedger` | `promotion/ledger.py` | Append-only JSONL audit trail (F-1) |
+| `validate_gate` + `GATE_EVIDENCE_REQUIREMENTS` | `promotion/evidence.py` | F-2 declarative gate matrix |
 | `feelies promote` | `cli/promote.py` | F-3 read-only operator CLI |
 
 Per-alpha `GateThresholds` overrides merge over `platform.yaml`

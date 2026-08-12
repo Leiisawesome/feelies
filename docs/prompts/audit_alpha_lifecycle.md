@@ -84,10 +84,10 @@ feelies promote {inspect,list,replay-evidence,validate,gate-matrix}  [read-only,
 
 ### Lifecycle & evidence
 
-- `src/feelies/alpha/lifecycle.py` — 5-state SM + F-6 capital-tier self-loop
-- `src/feelies/alpha/promotion_evidence.py` — evidence schemas, gate matrix,
+- `src/feelies/promotion/lifecycle.py` — 5-state SM + F-6 capital-tier self-loop
+- `src/feelies/promotion/evidence.py` — evidence schemas, gate matrix,
   `validate_gate`, threshold merge helpers, `PROMOTE_CAPITAL_TIER_TRIGGER`
-- `src/feelies/alpha/promotion_ledger.py` — append-only JSONL, schema version
+- `src/feelies/promotion/ledger.py` — append-only JSONL, schema version
 - `src/feelies/alpha/registry.py` — `_resolve_gate_thresholds`, registration-time merge
 - `src/feelies/core/state_machine.py` — generic SM + `on_transition` callback
 
@@ -106,8 +106,8 @@ feelies promote {inspect,list,replay-evidence,validate,gate-matrix}  [read-only,
 
 ### Tests (spec + gap analysis)
 
-- `tests/alpha/test_lifecycle.py`, `test_lifecycle_f4.py`, `test_lifecycle_f6.py`
-- `tests/alpha/test_promotion_evidence.py`, `test_promotion_ledger.py`
+- `tests/promotion/test_lifecycle.py`, `test_lifecycle_f4.py`, `test_lifecycle_f6.py`
+- `tests/promotion/test_promotion_evidence.py`, `test_promotion_ledger.py`
 - `tests/alpha/test_registry.py`, `test_registry_per_alpha_thresholds.py`
 - `tests/alpha/test_layer_validator_g2_g13.py`, `test_gate_g16.py`, `test_gate_g16_props.py`
 - `tests/alpha/test_loader_promotion_block.py`, `test_loader_v03_blocks.py`,
@@ -208,7 +208,7 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 4. Audit the threshold merge and layer validator.
 5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
 6. Run **read-only** checks only:
-   - `uv run pytest tests/alpha/test_lifecycle.py tests/alpha/test_lifecycle_f6.py tests/alpha/test_promotion_evidence.py tests/alpha/test_promotion_ledger.py -q`
+   - `uv run pytest tests/promotion/test_lifecycle.py tests/promotion/test_lifecycle_f6.py tests/promotion/test_promotion_evidence.py tests/promotion/test_promotion_ledger.py -q`
    - `uv run pytest tests/alpha/test_layer_validator_g2_g13.py tests/alpha/test_gate_g16.py tests/alpha/test_registry_per_alpha_thresholds.py -q`
    - `uv run feelies promote gate-matrix --json`
    Do not modify production code or the ledger.

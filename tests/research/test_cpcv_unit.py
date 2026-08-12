@@ -7,7 +7,7 @@ import random
 
 import pytest
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     CPCVEvidence,
     GateThresholds,
     validate_cpcv,

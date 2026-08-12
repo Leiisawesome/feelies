@@ -1247,7 +1247,7 @@ def evidence_to_metadata(*evidences: object) -> dict[str, Any]:
     """Project structured evidence into a JSON-safe metadata dict.
 
     Produces a payload suitable for embedding directly into
-    :attr:`feelies.alpha.promotion_ledger.PromotionLedgerEntry.metadata`.
+    :attr:`feelies.promotion.ledger.PromotionLedgerEntry.metadata`.
     The payload always carries:
 
       * ``"schema_version"`` — :data:`EVIDENCE_SCHEMA_VERSION`
@@ -1255,7 +1255,7 @@ def evidence_to_metadata(*evidences: object) -> dict[str, Any]:
         string from :data:`_EVIDENCE_REGISTRY`
       * any nested :class:`tuple` is serialised as a list (round-trips
         via JSON), :class:`Decimal` is left in place — the ledger's
-        :func:`feelies.alpha.promotion_ledger._json_default` hook
+        :func:`feelies.promotion.ledger._json_default` hook
         already handles it.
 
     Raises :class:`TypeError` if any evidence is not a known type.
@@ -1332,12 +1332,12 @@ evidence sections in a ledger entry's ``metadata`` and therefore must be
 * ``schema_version`` — the payload version stamp written by
   :func:`evidence_to_metadata`.
 * ``reason`` — the free-form operator string that
-  :meth:`feelies.alpha.lifecycle.AlphaLifecycle.quarantine` (and
+  :meth:`feelies.promotion.lifecycle.AlphaLifecycle.quarantine` (and
   ``decommission``) always writes alongside any structured evidence
   (``{"reason": ...}`` merged with ``evidence_to_metadata(*evs)``).
 * ``config_version`` / ``authorized_by`` — the config-provenance and
   human-signoff co-keys that
-  :meth:`feelies.alpha.lifecycle.AlphaLifecycle.authorize_decouple` merges
+  :meth:`feelies.promotion.lifecycle.AlphaLifecycle.authorize_decouple` merges
   alongside the Stage-0 ``decouple_caps_only`` gate evidence (Inv-11 / Inv-13).
 
 Without this allow-list, replaying a quarantine-with-evidence entry
@@ -1395,7 +1395,7 @@ KIND_TO_TYPE: Mapping[str, _EvidenceType] = {
 Stable ``"kind"`` string → evidence dataclass type.  Used by
 :func:`metadata_to_evidence` and the replay-evidence CLI to reconstruct
 typed evidence dataclasses from the JSON metadata persisted on a
-:class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`."""
+:class:`feelies.promotion.ledger.PromotionLedgerEntry`."""
 
 
 def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:

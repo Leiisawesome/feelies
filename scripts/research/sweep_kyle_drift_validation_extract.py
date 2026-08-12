@@ -265,9 +265,7 @@ def extract_cell(cache: DiskEventCache, symbol: str, date: str) -> dict[str, obj
         eligible = False
         side: str | None = None
         if is_grid and in_window and all_warm:
-            ok, side = census.is_entry_eligible(
-                sfi=sfi, pctl=pctl, rvz=rvz, p_breakout=p_breakout
-            )
+            ok, side = census.is_entry_eligible(sfi=sfi, pctl=pctl, rvz=rvz, p_breakout=p_breakout)
             if ok:
                 eligible = True
                 episodes += 1
@@ -317,9 +315,7 @@ def extract_cell(cache: DiskEventCache, symbol: str, date: str) -> dict[str, obj
         "n_boundaries": len(boundary_rows),
         "n_in_window": n_in_window,
         "n_warm_eligible": n_warm_eligible,
-        "sfi_warm_fraction_in_window": (
-            sfi_warm_in_window / n_in_window if n_in_window else None
-        ),
+        "sfi_warm_fraction_in_window": (sfi_warm_in_window / n_in_window if n_in_window else None),
         "sigma900_bps": sigma900,
         "sigma900_n_returns": len(rets),
         "viable_long": viable_long,
@@ -353,9 +349,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     symbols = tuple(s.strip() for s in args.symbols.split(",")) if args.symbols else census.SYMBOLS
-    date_filter = (
-        frozenset(d.strip() for d in args.dates.split(",")) if args.dates else None
-    )
+    date_filter = frozenset(d.strip() for d in args.dates.split(",")) if args.dates else None
 
     cache = DiskEventCache(args.cache_dir)
     cells: list[dict[str, object]] = []
@@ -375,9 +369,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             cells.append(cell)
 
     out = {
-        "protocol": (
-            "sig_sweep_kyle_drift_h900_v1_validation_protocol.md step 2 extraction"
-        ),
+        "protocol": ("sig_sweep_kyle_drift_h900_v1_validation_protocol.md step 2 extraction"),
         "instrument": (
             "sweep_kyle_drift_census.py constants imported; additive kyle_lambda_60s "
             "v2.0.0 + forward returns — episode predicate untouched"

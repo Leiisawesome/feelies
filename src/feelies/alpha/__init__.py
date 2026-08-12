@@ -17,6 +17,11 @@ Assembly flow (schema 1.1, SIGNAL / PORTFOLIO only):
   4. The orchestrator runs each layer on its event-time boundary
      (``HorizonTick`` / ``CrossSectionalContext``) via bus subscribers
      (``_on_bus_signal`` / ``_on_bus_sized_intent``).
+
+Lifecycle, promotion gates, evidence schemas and the promotion ledger are
+NOT here — they moved to :mod:`feelies.promotion` (2026-08-12). This package
+is load-time and runtime only. ``AlphaRegistry`` depends on that package;
+nothing there depends back on this one.
 """
 
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
@@ -30,38 +35,12 @@ from feelies.alpha.fill_attribution import (
     AttributionRecord,
     FillAttributionLedger,
 )
-from feelies.alpha.lifecycle import (
-    AlphaLifecycle,
-    AlphaLifecycleState,
-    GateRequirements,
-    LifecycleRevocation,
-    PromotionEvidence,
-)
 from feelies.alpha.loader import AlphaLoadError, AlphaLoader
 from feelies.alpha.module import (
     AlphaManifest,
     AlphaModule,
     AlphaRiskBudget,
     ParameterDef,
-)
-from feelies.alpha.promotion_evidence import (
-    GATE_EVIDENCE_REQUIREMENTS,
-    KIND_TO_TYPE,
-    PROMOTE_CAPITAL_TIER_TRIGGER,
-    CapitalStageEvidence,
-    CapitalStageTier,
-    CPCVEvidence,
-    DSREvidence,
-    GateId,
-    GateThresholds,
-    PaperWindowEvidence,
-    QuarantineTriggerEvidence,
-    ResearchAcceptanceEvidence,
-    RevalidationEvidence,
-    evidence_to_metadata,
-    metadata_to_evidence,
-    required_evidence_types,
-    validate_gate,
 )
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
@@ -70,8 +49,6 @@ from feelies.alpha.validation import validate_alpha_set
 __all__ = [
     "AlphaBudgetRiskWrapper",
     "AlphaContribution",
-    "AlphaLifecycle",
-    "AlphaLifecycleState",
     "AlphaLoadError",
     "AlphaLoader",
     "AlphaManifest",
@@ -80,32 +57,12 @@ __all__ = [
     "AlphaRegistryError",
     "AlphaRiskBudget",
     "AttributionRecord",
-    "CapitalStageEvidence",
-    "CapitalStageTier",
-    "CPCVEvidence",
     "discover_alpha_specs",
     "discover_research_alpha_specs",
-    "DSREvidence",
     "EdgeWeightedArbitrator",
-    "evidence_to_metadata",
     "FillAttributionLedger",
-    "GATE_EVIDENCE_REQUIREMENTS",
-    "GateId",
-    "GateRequirements",
-    "GateThresholds",
-    "KIND_TO_TYPE",
-    "LifecycleRevocation",
     "load_and_register",
-    "metadata_to_evidence",
-    "PaperWindowEvidence",
     "ParameterDef",
-    "PROMOTE_CAPITAL_TIER_TRIGGER",
-    "PromotionEvidence",
-    "QuarantineTriggerEvidence",
-    "required_evidence_types",
-    "ResearchAcceptanceEvidence",
-    "RevalidationEvidence",
     "SignalArbitrator",
     "validate_alpha_set",
-    "validate_gate",
 ]

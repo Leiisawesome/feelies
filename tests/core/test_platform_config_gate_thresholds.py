@@ -1,7 +1,7 @@
 """``PlatformConfig.gate_thresholds`` block tests.
 
 Pins the YAML / dataclass surface of platform-level
-:class:`feelies.alpha.promotion_evidence.GateThresholds` overrides:
+:class:`feelies.promotion.evidence.GateThresholds` overrides:
 
   * **Default** — ``gate_thresholds_overrides`` is ``{}`` and
     ``snapshot()`` records an empty mapping (no determinism drift on

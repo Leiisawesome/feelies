@@ -27,7 +27,7 @@ from __future__ import annotations
 import statistics
 from collections.abc import Sequence
 
-from feelies.alpha.promotion_evidence import (
+from feelies.promotion.evidence import (
     ConditionalCVaREvidence,
     TurnoverBoundEvidence,
 )
@@ -272,7 +272,7 @@ def build_turnover_bound_evidence(
     """Build the turnover-bound falsifier (design rev 5 §2.7 / §3.5, Inv-12).
 
     ``observed_ratio = deferral_round_trips / baseline_round_trips``.  The gate
-    (in :func:`~feelies.alpha.promotion_evidence.validate_turnover_bound`) rejects
+    (in :func:`~feelies.promotion.evidence.validate_turnover_bound`) rejects
     an alpha whose deferral churns beyond its ``declared_max_ratio`` — or whose
     declared bound itself exceeds the platform ceiling.
 
