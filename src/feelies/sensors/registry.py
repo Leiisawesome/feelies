@@ -184,7 +184,10 @@ class SensorRegistry:
         self._specs_by_id.setdefault(spec.sensor_id, []).append(spec)
 
         # Index filtered registration order and subscribe once per event type.
-        for event_type in spec.subscribes_to:
+        # A programmatic SensorSpec may repeat an event type. The former
+        # scan-based dispatch still visited that spec once, so keep the indexed
+        # path behaviorally identical while preserving declaration order.
+        for event_type in dict.fromkeys(spec.subscribes_to):
             self._bindings_by_event_type.setdefault(event_type, []).append(binding)
             if event_type not in self._subscribed_types:
                 self._bus.subscribe(event_type, self._on_event)

@@ -99,19 +99,24 @@ def resolve_trading_session_bounds(
     market_holiday_dates: tuple[str, ...] = (),
 ) -> TradingSessionBounds:
     """Build RTH bounds for a single calendar session date."""
-    close_et = early_close_rth_close_et if early_close else rth_close_et
+    early_close_date_set = frozenset(early_close_dates)
+    market_holiday_date_set = frozenset(market_holiday_dates)
+    session_key = session_date.isoformat()
+    effective_early_close = early_close or session_key in early_close_date_set
+    effective_holiday = is_holiday or session_key in market_holiday_date_set
+    close_et = early_close_rth_close_et if effective_early_close else rth_close_et
     return TradingSessionBounds(
         session_date=session_date,
         rth_open_ns=et_clock_to_ns(session_date, rth_open_et),
         rth_close_ns=et_clock_to_ns(session_date, close_et),
-        is_holiday=is_holiday,
-        is_early_close=early_close,
+        is_holiday=effective_holiday,
+        is_early_close=effective_early_close,
         no_entry_first_seconds=no_entry_first_seconds,
         rth_open_et=rth_open_et,
         rth_close_et=rth_close_et,
         early_close_rth_close_et=early_close_rth_close_et,
-        market_holiday_dates=frozenset(market_holiday_dates),
-        early_close_dates=frozenset(early_close_dates),
+        market_holiday_dates=market_holiday_date_set,
+        early_close_dates=early_close_date_set,
     )
 
 

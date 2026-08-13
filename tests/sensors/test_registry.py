@@ -277,3 +277,21 @@ def test_subscribe_once_per_event_type() -> None:
     bus.subscribe(SensorReading, readings.append)
     bus.publish(make_quote())
     assert sorted(r.sensor_id for r in readings) == ["s0", "s1", "s2", "s3", "s4"]
+
+
+def test_duplicate_event_type_in_one_spec_dispatches_once() -> None:
+    """Indexed routing preserves the former scan-based one-update behavior."""
+    registry, bus, readings = _make_registry()
+    registry.register(
+        SensorSpec(
+            sensor_id="deduped",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote, NBBOQuote),
+            params={"sensor_id": "deduped"},
+        )
+    )
+
+    bus.publish(make_quote())
+
+    assert [r.sensor_id for r in readings] == ["deduped"]
