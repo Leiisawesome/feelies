@@ -11,10 +11,8 @@ events on the bus and records, **per strategy_id**, the latest:
 * completeness              (forwarded from the ``CrossSectionalContext``
   most recently observed for the same horizon)
 
-The tracker maintains **only the latest snapshot per strategy_id** —
-historical state belongs to the forensics layer
-(:mod:`feelies.forensics.multi_horizon_attribution`).  Callers query
-the latest snapshot via :meth:`snapshot`.
+The tracker maintains **only the latest snapshot per strategy_id**. Callers
+query that snapshot via :meth:`snapshot`; durable history belongs to journals.
 
 Determinism (Inv-5)
 -------------------

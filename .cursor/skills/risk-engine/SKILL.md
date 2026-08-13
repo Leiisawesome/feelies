@@ -319,10 +319,10 @@ Computed per-trade and aggregated at strategy + portfolio level.
 Rolling windows (1 hr, session, daily) for monitoring.
 
 **See:** this skill computes real-time attribution
-for operational risk. The post-trade-forensics skill performs deeper
-forensic attribution over multi-day windows including per-mechanism
-decomposition (`MultiHorizonAttributor`) — same framework, longer
-window, different purpose.
+for operational risk. The post-trade-forensics skill owns durable
+`TradeRecord` / event-log analysis over multi-day windows; grouped
+per-mechanism decomposition remains an operator query, not a second runtime
+attribution engine.
 
 ### Reconciliation
 

@@ -30,21 +30,14 @@ import os
 import platform as _platform
 from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
+from importlib.util import find_spec
 from typing import Any, Mapping
 
-# Optional [portfolio] extras — typed as ``Any`` so strict mypy accepts
-# the ImportError branch without pretending ``numpy`` / ``cvxpy`` exist.
+# Optional [portfolio] extras. Presence detection is cheap; importing CVXPY is
+# deferred until an authorized solver-backed optimizer is actually requested.
 cp: Any = None
 _np: Any = None
-try:  # pragma: no cover - optional extra
-    import cvxpy as _cp
-    import numpy as _numpy
-
-    cp = _cp
-    _np = _numpy
-    _HAS_CVXPY = True
-except ImportError:  # pragma: no cover
-    _HAS_CVXPY = False
+_HAS_CVXPY = find_spec("cvxpy") is not None
 
 
 _logger = logging.getLogger(__name__)
@@ -86,6 +79,23 @@ class UnvalidatedSolverPlatformError(RuntimeError):
 
 
 _ECOS_VALIDATED_PLATFORMS_ENV = "FEELIES_ECOS_VALIDATED_PLATFORMS"
+
+
+def _load_solver_dependencies() -> None:
+    """Import the optional solver stack only for an authorized ECOS run."""
+    global cp, _np
+    if cp is not None and _np is not None:
+        return
+    try:  # pragma: no cover - exercised only with the optional extra
+        import cvxpy as _cp
+        import numpy as _numpy
+    except ImportError as exc:  # pragma: no cover
+        raise MissingOptionalDependencyError(
+            "TurnoverOptimizer: require_solver=True but cvxpy is not "
+            "installed.  pip install 'feelies[portfolio]'"
+        ) from exc
+    cp = _cp
+    _np = _numpy
 
 
 def _current_platform_tag() -> str:
@@ -170,6 +180,8 @@ class TurnoverOptimizer:
                 f"'{_current_platform_tag()}' (comma-separate multiple platforms) "
                 "to confirm you have done so."
             )
+        if require_solver:
+            _load_solver_dependencies()
         self._capital = float(capital_usd)
         self._gross_cap = float(gross_cap_pct)
         self._per_name_cap = float(per_name_cap_pct)

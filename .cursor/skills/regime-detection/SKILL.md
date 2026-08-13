@@ -357,9 +357,8 @@ imports, never mutates the snapshot.
 
 ### Forensic Consumers
 
-Post-trade-forensics reads `RegimeState` events from the audit log
-to compute the `RegimeBucket` axis of `MultiHorizonAttributor` and
-to audit regime classification accuracy over time.
+Post-trade-forensics reads `RegimeState` events from the audit log to audit
+classification accuracy and support operator-side PnL grouping by regime.
 
 ---
 

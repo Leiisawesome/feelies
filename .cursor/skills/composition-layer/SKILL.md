@@ -292,9 +292,9 @@ class SizedPositionIntent(Event):
     disclosed_cost_total_bps_by_symbol: dict[str, float]
 ```
 
-The `mechanism_breakdown` is the audit trail for G16 caps and the
-input axis to `MultiHorizonAttributor` for per-mechanism PnL
-decomposition. **Mechanism concentration** (the realised gross-share
+The `mechanism_breakdown` is the durable audit axis for G16 caps and
+operator-side per-mechanism PnL grouping over persisted intent/trade
+provenance. **Mechanism concentration** (the realised gross-share
 of any single family) drives the post-trade crowding diagnostic. The
 pre-trade counterpart — the capacity & crowding envelope every
 candidate declares at proposal time (ADV ceiling, Sharpe-max vs

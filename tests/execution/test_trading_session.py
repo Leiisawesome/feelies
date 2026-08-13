@@ -161,6 +161,15 @@ def test_flatten_window_disabled_is_never_open() -> None:
     )
 
 
+def test_resolve_same_session_reuses_precomputed_bounds() -> None:
+    session_date = date(2026, 1, 15)
+    bounds = resolve_trading_session_bounds(session_date)
+
+    resolved = bounds.resolve_for_timestamp(et_clock_to_ns(session_date, "12:00"))
+
+    assert resolved is bounds
+
+
 def test_flatten_deadline_rebinds_per_replayed_day() -> None:
     """A multi-day replay must not pin every day to the booted session date.
 

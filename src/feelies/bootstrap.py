@@ -42,18 +42,6 @@ from feelies.alpha.registry import AlphaRegistry
 from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.bus.event_bus import EventBus
-from feelies.composition.cross_sectional import CrossSectionalRanker
-from feelies.composition.engine import (
-    CompositionEngine,
-    RegisteredPortfolioAlpha,
-)
-from feelies.composition.factor_neutralizer import (
-    FactorNeutralizer,
-    MissingFactorLoadingsError,
-)
-from feelies.composition.sector_matcher import SectorMatcher
-from feelies.composition.synchronizer import UniverseSynchronizer
-from feelies.composition.turnover_optimizer import TurnoverOptimizer
 from feelies.core.clock import Clock, SimulatedClock, WallClock
 from feelies.core.events import Alert, AlertSeverity, NBBOQuote
 from feelies.core.errors import ConfigurationError
@@ -130,6 +118,7 @@ from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
 if TYPE_CHECKING:
     from feelies.broker.ib import IBGatewayConnection
+    from feelies.composition.engine import CompositionEngine
     from feelies.execution.portfolio_netter import NetDivergence
     from feelies.ingestion.massive_ws import MassiveLiveFeed
 
@@ -1432,6 +1421,19 @@ def _create_composition_layer(
     portfolio_alphas = registry.portfolio_alphas()
     if not portfolio_alphas:
         return None
+
+    # Keep the optional Layer-3 implementation outside SIGNAL-only startup.
+    # In particular, importing the turnover optimizer must not initialize the
+    # CVXPY solver stack when there is no portfolio alpha to compose.
+    from feelies.composition.cross_sectional import CrossSectionalRanker
+    from feelies.composition.engine import CompositionEngine, RegisteredPortfolioAlpha
+    from feelies.composition.factor_neutralizer import (
+        FactorNeutralizer,
+        MissingFactorLoadingsError,
+    )
+    from feelies.composition.sector_matcher import SectorMatcher
+    from feelies.composition.synchronizer import UniverseSynchronizer
+    from feelies.composition.turnover_optimizer import TurnoverOptimizer
 
     portfolio_modules = [m for m in portfolio_alphas if isinstance(m, LoadedPortfolioLayerModule)]
     if not portfolio_modules:

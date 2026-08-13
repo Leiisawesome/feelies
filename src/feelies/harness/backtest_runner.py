@@ -65,14 +65,21 @@ from feelies.kernel.signal_order_trace import (
 )
 from feelies.core.clock import SimulatedClock, WallClock
 from feelies.core.events import (
+    Alert,
+    CrossSectionalContext,
     Event,
+    HorizonFeatureSnapshot,
+    HorizonTick,
     MetricEvent,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
+    PositionUpdate,
+    RegimeHazardSpike,
     SensorReading,
     Signal,
+    SizedPositionIntent,
     Trade,
 )
 from feelies.core.errors import ConfigurationError
@@ -198,18 +205,46 @@ class BusRecorder:
     # the report path reads ``recorder.events``; all consumers use
     # ``recorder.of_type(X)`` which goes through ``by_type``.
     by_type: dict[type, list[Event]] = field(default_factory=lambda: defaultdict(list))
-    # Event types to skip storing entirely.  Pass ``{SensorReading}`` when
-    # ``--emit-sensor-readings-jsonl`` is not requested: that eliminates a
-    # second large list (~10 M entries) whose realloc can also spike latency.
-    skip_types: frozenset[type] = field(default_factory=frozenset)
 
     def __call__(self, event: Event) -> None:
-        t = type(event)
-        if t not in self.skip_types:
-            self.by_type[t].append(event)
+        self.by_type[type(event)].append(event)
 
     def of_type(self, t: type[T]) -> list[T]:
         return self.by_type[t]  # type: ignore[return-value]
+
+
+def _recorder_event_types(args: argparse.Namespace) -> tuple[type[Event], ...]:
+    """Events consumed by the report or an explicitly enabled JSONL stream."""
+    event_types: list[type[Event]] = [
+        Alert,
+        HorizonFeatureSnapshot,
+        OrderAck,
+        OrderRequest,
+        PositionUpdate,
+        Signal,
+    ]
+    optional = (
+        ("emit_sensor_readings_jsonl", SensorReading),
+        ("emit_horizon_ticks_jsonl", HorizonTick),
+        ("emit_hazard_spikes_jsonl", RegimeHazardSpike),
+        ("emit_cross_sectional_jsonl", CrossSectionalContext),
+        ("emit_sized_intents_jsonl", SizedPositionIntent),
+    )
+    for flag, event_type in optional:
+        if getattr(args, flag, False):
+            event_types.append(event_type)
+    return tuple(event_types)
+
+
+def _attach_backtest_recorder(
+    orchestrator: Orchestrator,
+    args: argparse.Namespace,
+) -> BusRecorder:
+    """Subscribe only to event types retained by this backtest invocation."""
+    recorder = BusRecorder()
+    for event_type in _recorder_event_types(args):
+        orchestrator._bus.subscribe(event_type, recorder)
+    return recorder
 
 
 # ── Progress reporter ────────────────────────────────────────────────
@@ -696,18 +731,9 @@ def _run_backtest_phases_2_7(
     print(f"  OK - {alpha_count} alpha(s) registered [{dt:.1f}s]", flush=True)
 
     # Attach the recorder.
-    # Skip storing SensorReadings unless the caller requested
-    # --emit-sensor-readings-jsonl: those ~10 M entries cause the same
-    # Windows VirtualAlloc realloc spike we eliminated from ``events``.
-    _skip: set[type] = set()
-    if not getattr(args, "emit_sensor_readings_jsonl", False):
-        _skip.add(SensorReading)
-    # Skip NBBOQuote and MetricEvent from the BusRecorder: quotes are indexed
-    # lightly via QuoteReplayObserver; metrics use dedicated subscribers.
-    _skip.add(NBBOQuote)
-    _skip.add(MetricEvent)
-    recorder = BusRecorder(skip_types=frozenset(_skip))
-    orchestrator._bus.subscribe_all(recorder)
+    # Retain only report inputs and explicitly requested parity streams.
+    # Quotes and metrics use dedicated lightweight subscribers.
+    recorder = _attach_backtest_recorder(orchestrator, args)
 
     # Dedicated latency recorder — captures only tick_to_decision_latency_ns
     # MetricEvents so the report can compute p95/p99 and locate the spike

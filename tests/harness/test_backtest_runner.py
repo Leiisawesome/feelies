@@ -8,7 +8,17 @@ import sys
 import time
 from pathlib import Path
 
-from feelies.harness.backtest_runner import _run_backtest_phases_2_7
+from feelies.core.events import (
+    CrossSectionalContext,
+    HorizonFeatureSnapshot,
+    SensorReading,
+    Signal,
+    StateTransition,
+)
+from feelies.harness.backtest_runner import (
+    _recorder_event_types,
+    _run_backtest_phases_2_7,
+)
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.orchestrator import Orchestrator
 
@@ -51,6 +61,25 @@ def _cache_args() -> argparse.Namespace:
         emit_sized_intents_jsonl=False,
         emit_hazard_exits_jsonl=False,
     )
+
+
+def test_recorder_event_types_are_minimal_and_flag_driven() -> None:
+    args = _cache_args()
+
+    default_types = _recorder_event_types(args)
+
+    assert Signal in default_types
+    assert HorizonFeatureSnapshot in default_types
+    assert SensorReading not in default_types
+    assert CrossSectionalContext not in default_types
+    assert StateTransition not in default_types
+
+    args.emit_sensor_readings_jsonl = True
+    args.emit_cross_sectional_jsonl = True
+    flagged_types = _recorder_event_types(args)
+
+    assert SensorReading in flagged_types
+    assert CrossSectionalContext in flagged_types
 
 
 def _build_phase_inputs(mod, tmp_path: Path):

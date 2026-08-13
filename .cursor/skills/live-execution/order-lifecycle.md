@@ -189,8 +189,8 @@ origin layer for forensic attribution and per-strategy quarantine:
 | `"HAZARD_SPIKE"` | `HazardExitController` consuming `RegimeHazardSpike` | bus-published; submitted by `_on_bus_hazard_order()` outside the M0–M10 walk |
 | `"HARD_EXIT_AGE"` | `HazardExitController` time-cap branch | bus-published; submitted by `_on_bus_hazard_order()` outside the M0–M10 walk |
 
-Post-trade-forensics consumes these via the `MultiHorizonAttributor`
-and `OrderRequest`-keyed `TradeRecord` joins.
+Post-trade-forensics consumes these through `OrderRequest`-keyed
+`TradeRecord` and event-log joins.
 
 > **Future**: LRU-based deduplication cache for live mode, keyed by
 > order ID, to prevent accidental double-submission.

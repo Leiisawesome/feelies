@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any
 
 from feelies.bus.event_bus import EventBus
@@ -38,6 +39,17 @@ _logger = logging.getLogger(__name__)
 # A throttle bookkeeping entry keyed by (sensor_id, symbol).
 # Stored as nanoseconds to avoid float drift across runs.
 _ThrottleKey = tuple[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _SensorBinding:
+    """Registration-time join of a spec and its hot-path runtime objects."""
+
+    spec: SensorSpec
+    sensor: Sensor
+    provenance: SensorProvenance
+    throttle_ns: int
+    state_by_symbol: dict[str, dict[str, Any]]
 
 
 def _is_finite_value(value: Any) -> bool:
@@ -77,9 +89,8 @@ class SensorRegistry:
         "_symbols",
         "_specs",
         "_specs_by_id",
-        "_sensors",
-        "_provenance",
-        "_state",
+        "_bindings_by_key",
+        "_bindings_by_event_type",
         "_throttle_last_ns",
         "_subscribed_types",
         "_publish_target",
@@ -102,9 +113,8 @@ class SensorRegistry:
         self._symbols = symbols
         self._specs: list[SensorSpec] = []
         self._specs_by_id: dict[str, list[SensorSpec]] = {}
-        self._sensors: dict[tuple[str, str], Sensor] = {}
-        self._provenance: dict[tuple[str, str], SensorProvenance] = {}
-        self._state: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._bindings_by_key: dict[tuple[str, str], _SensorBinding] = {}
+        self._bindings_by_event_type: dict[type[Event], list[_SensorBinding]] = {}
         self._throttle_last_ns: dict[_ThrottleKey, int] = {}
         self._subscribed_types: set[type[Event]] = set()
         self._publish_target: list[SensorReading] | None = None
@@ -126,7 +136,7 @@ class SensorRegistry:
         ``input_sensor_id`` is not yet registered.
         """
         key = spec.key
-        if key in self._sensors:
+        if key in self._bindings_by_key:
             raise DuplicateSensorRegistrationError(
                 f"sensor {key[0]!r} version {key[1]!r} already registered"
             )
@@ -162,20 +172,23 @@ class SensorRegistry:
             input_event_kinds=tuple(sorted(t.__name__ for t in spec.subscribes_to)),
         )
 
-        self._sensors[key] = sensor
-        self._provenance[key] = provenance
+        binding = _SensorBinding(
+            spec=spec,
+            sensor=sensor,
+            provenance=provenance,
+            throttle_ns=(spec.throttled_ms or 0) * 1_000_000,
+            state_by_symbol={symbol: sensor.initial_state() for symbol in self._symbols},
+        )
+        self._bindings_by_key[key] = binding
         self._specs.append(spec)
         self._specs_by_id.setdefault(spec.sensor_id, []).append(spec)
 
-        # Subscribe-once per event type.
+        # Index filtered registration order and subscribe once per event type.
         for event_type in spec.subscribes_to:
+            self._bindings_by_event_type.setdefault(event_type, []).append(binding)
             if event_type not in self._subscribed_types:
                 self._bus.subscribe(event_type, self._on_event)
                 self._subscribed_types.add(event_type)
-
-        # Pre-allocate symbol state so the first event performs no allocation.
-        for symbol in self._symbols:
-            self._state[(spec.sensor_id, spec.sensor_version, symbol)] = sensor.initial_state()
 
     # ── Public introspection ─────────────────────────────────────────
 
@@ -197,10 +210,10 @@ class SensorRegistry:
     def _on_event(self, event: Event) -> None:
         """Bus handler — fans event out to every interested sensor.
 
-        Iteration order: ``self._specs`` is preserved insertion order,
-        which after bootstrap is also topological order across
-        sensors.  Determinism (Inv-C) is therefore guaranteed without
-        additional sorting on the hot path.
+        Registration-time event indexes preserve the filtered insertion order,
+        which after bootstrap is also topological order across sensors.
+        Determinism (Inv-C) is therefore guaranteed without scanning unrelated
+        sensor specs or sorting on the hot path.
         """
         if not isinstance(event, (NBBOQuote, Trade)):
             return
@@ -219,18 +232,13 @@ class SensorRegistry:
 
         published: list[SensorReading] | None = self._publish_target
 
-        for spec in self._specs:
-            if type(event) not in spec.subscribes_to:
-                continue
-
+        for binding in self._bindings_by_event_type.get(type(event), ()):
+            spec = binding.spec
             throttle_key: _ThrottleKey = (spec.sensor_id, symbol)
             inside_throttle_window = False
-            if spec.throttled_ms is not None and spec.throttled_ms > 0:
+            if binding.throttle_ns > 0:
                 last_ns = self._throttle_last_ns.get(throttle_key)
-                if (
-                    last_ns is not None
-                    and (event.timestamp_ns - last_ns) < spec.throttled_ms * 1_000_000
-                ):
+                if last_ns is not None and (event.timestamp_ns - last_ns) < binding.throttle_ns:
                     if not spec.stateful:
                         # Stateless sensors are skipped entirely
                         # inside the throttle window (original behaviour).
@@ -239,10 +247,9 @@ class SensorRegistry:
                     # is suppressed inside the throttle window.
                     inside_throttle_window = True
 
-            sensor = self._sensors[spec.key]
-            state = self._state[(spec.sensor_id, spec.sensor_version, symbol)]
+            state = binding.state_by_symbol[symbol]
             try:
-                raw = sensor.update(event, state, spec.params)
+                raw = binding.sensor.update(event, state, spec.params)
             except Exception:
                 _logger.exception(
                     "sensor %s/%s raised on event for symbol %s",
@@ -275,7 +282,7 @@ class SensorRegistry:
             if inside_throttle_window:
                 continue
 
-            reading = self._stamp(raw, spec=spec, event=event, symbol=symbol)
+            reading = self._stamp(raw, binding=binding, event=event, symbol=symbol)
             self._throttle_last_ns[throttle_key] = event.timestamp_ns
 
             self._bus.publish(reading)
@@ -293,7 +300,7 @@ class SensorRegistry:
         self,
         emission: SensorEmission | SensorReading,
         *,
-        spec: SensorSpec,
+        binding: _SensorBinding,
         event: Event,
         symbol: str,
     ) -> SensorReading:
@@ -308,6 +315,7 @@ class SensorRegistry:
         ``parent_correlation_id`` is set to the originating market-data
         event's ``correlation_id`` to preserve the parent-child trace.
         """
+        spec = binding.spec
         if isinstance(emission, SensorReading) and emission.correlation_id != "placeholder":
             # Sensors should leave correlation_id as "placeholder";
             # the registry is the sole authority that sets real IDs.
@@ -323,7 +331,7 @@ class SensorRegistry:
             exchange_timestamp_ns=event.timestamp_ns,
             sequence=seq,
         )
-        provenance = self._provenance[spec.key]
+        provenance = binding.provenance
         return SensorReading(
             timestamp_ns=event.timestamp_ns,
             correlation_id=correlation_id,

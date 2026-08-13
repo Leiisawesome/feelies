@@ -54,6 +54,10 @@ class TradingSessionBounds:
     def resolve_for_timestamp(self, ts_ns: int) -> "TradingSessionBounds":
         """Resolve the effective RTH bounds for an event timestamp."""
         session_date = session_date_from_ns(ts_ns)
+        if session_date == self.session_date:
+            # The common single-session path is already fully resolved.
+            return self
+
         early = self.is_early_close or (session_date.isoformat() in self.early_close_dates)
         holiday = self.is_holiday or (session_date.isoformat() in self.market_holiday_dates)
         close_et = self.early_close_rth_close_et if early else self.rth_close_et

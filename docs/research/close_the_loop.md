@@ -9,7 +9,7 @@ $34.79 in fees; the fleet "+$83.28" was two fee-bleeders plus one lucky
 3-fill sample).
 
 The platform already *measures* realized edge (`forensics/decay_detector`,
-`fill_attribution`, `multi_horizon_attribution`) but never *acted* on it —
+`fill_attribution`, and `cost_survival`) but never *acted* on it —
 the loop was open. This is the plan to close it.
 
 ## Four layers
@@ -20,7 +20,6 @@ the loop was open. This is the plan to close it.
 | **Automate** | Auto-quarantine a persistently cost-failing LIVE alpha | **shipped** — `forensics/cost_circuit_breaker.py` |
 | **Calibrate** | Haircut `edge_estimate_bps` by realized/disclosed ratio | **shipped** — `forensics/edge_calibration.py` |
 | **Gate** | B4 gate on the *lower confidence bound* of realized edge | **shipped** — `orchestrator` B4 reads the calibration factor |
-| **Wire** | Session-end boundary job (automate + calibrate) | **shipped** — `forensics/session_reconcile.py` |
 
 ## Measure — `cost_survival.py`
 
@@ -101,32 +100,11 @@ an alpha whose realized edge has decayed is gated on the shrunken estimate.
 **Empty factors → 1.0 → identical behaviour** (parity-preserving); a present
 factor is a versioned input fixed within a replay (Inv-5).
 
-## Wire — `session_reconcile.py`
-
-`reconcile_session(records, disclosed_edges, lifecycles, calibration_store)`
-is the **session/epoch-boundary** job that closes the loop in one call:
-
-1. **Automate** — runs the cost circuit-breaker and quarantines LIVE
-   bleeders (durable ledger write).
-2. **Calibrate** — rebuilds the edge factors and writes them to the
-   `EdgeCalibrationStore` at `config.edge_calibration_path`.
-
-The *next* run's B4 gate reads those factors at construction. Determinism is
-preserved because both writes are versioned durable state read at load, never
-per-tick.
-
-```python
-# session-end / EOD job (PAPER/LIVE)
-records = list(trade_journal.query(start_ns=window_start))   # rolling window
-reconcile_session(
-    records,
-    disclosed_edges=disclosed_edges_from_registry(alpha_registry),
-    lifecycles=live_lifecycles,
-    calibration_store=EdgeCalibrationStore(config.edge_calibration_path),
-    calibration_version=session_id,
-    correlation_id=run_id,
-)
-```
+The former `session_reconcile.py` convenience wrapper was retired because no
+production scheduler or CLI invoked it. Operational workflows call the owned
+boundaries explicitly: `feelies forensics circuit-breaker` evaluates or applies
+quarantine, while backtest `--emit-edge-calibration` builds the versioned
+factors consumed by the next run.
 
 ## Reproduce on a real backtest (the two-pass)
 
@@ -159,6 +137,6 @@ factor ~0) is gated out, so its fee bleed stops.
   `forward_ic` harness is the seed) and disclose a confidence interval at
   load, so G12 also gates on a lower bound — removing optimism at the source,
   not just at runtime.
-- **Live call-site**: invoke `reconcile_session` from the operational
-  session-end scheduler (the function is wired and tested; only the live
-  cron/hook is environment-specific).
+- **Live call-site**: schedule the circuit-breaker and edge-calibration
+  operations explicitly at session end if automated PAPER/LIVE reconciliation
+  becomes an operator requirement.

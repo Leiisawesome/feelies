@@ -50,7 +50,7 @@ def _run(*, stateful: bool) -> tuple[int, list[SensorReading]]:
     # 5 quotes at t = 0, 10, 20, 30, 40 ms — all within one 100 ms window.
     for i in range(5):
         bus.publish(make_quote(ts_ns=i * 10 * _MS))
-    update_count = reg._state[("counting", "1.0.0", "AAPL")]["count"]
+    update_count = reg._bindings_by_key[("counting", "1.0.0")].state_by_symbol["AAPL"]["count"]
     return update_count, readings
 
 

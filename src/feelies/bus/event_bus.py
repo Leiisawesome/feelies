@@ -62,7 +62,9 @@ class EventBus:
         Order: type-specific handlers (registration order),
         then global handlers (registration order).
         """
-        for handler in self._handlers.get(type(event), []):
-            handler(event)
+        handlers = self._handlers.get(type(event))
+        if handlers is not None:
+            for handler in handlers:
+                handler(event)
         for handler in self._global_handlers:
             handler(event)

@@ -272,6 +272,67 @@ def test_boundary_asof_excludes_post_boundary_reading_from_window_snapshot() -> 
     assert snap.stale == {"ofi_last": False}
 
 
+def test_freshness_index_handles_late_and_cold_readings_causally() -> None:
+    """Late warm data is indexed; future and cold data never mask staleness."""
+    bus = EventBus()
+    agg = HorizonAggregator(
+        bus=bus,
+        horizon_features={"sum_feat": _SumFeature()},
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=600,
+        sequence_generator=SequenceGenerator(),
+    )
+
+    # Arrival order differs from event-time order. The 20s warm observation is
+    # still the latest causal reading at the 25s boundary; the cold 24s and
+    # future 40s observations must not win freshness lookup.
+    agg.on_sensor_reading(_reading(ts_ns=20_000_000_000, value=1.0))
+    agg.on_sensor_reading(_reading(ts_ns=40_000_000_000, value=2.0))
+    agg.on_sensor_reading(_reading(ts_ns=10_000_000_000, value=3.0))
+    agg.on_sensor_reading(_reading(ts_ns=24_000_000_000, value=4.0, warm=False))
+
+    assert (
+        agg._latest_warm_reading_ns_at_or_before(
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            asof_ns=25_000_000_000,
+        )
+        == 20_000_000_000
+    )
+    assert (
+        agg._latest_warm_reading_ns_at_or_before(
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            asof_ns=9_000_000_000,
+        )
+        is None
+    )
+
+
+def test_freshness_index_does_not_reintroduce_retired_late_history() -> None:
+    bus = EventBus()
+    agg = HorizonAggregator(
+        bus=bus,
+        horizon_features={"sum_feat": _SumFeature()},
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=10,
+        sequence_generator=SequenceGenerator(),
+    )
+
+    agg.on_sensor_reading(_reading(ts_ns=1_000_000_000, value=1.0))
+    agg.on_sensor_reading(_reading(ts_ns=30_000_000_000, value=2.0))
+    agg.on_sensor_reading(_reading(ts_ns=5_000_000_000, value=3.0))
+
+    assert (
+        agg._latest_warm_reading_ns_at_or_before(
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            asof_ns=9_000_000_000,
+        )
+        is None
+    )
+
+
 def test_active_mode_second_horizon_reports_stale_when_no_new_readings() -> None:
     bus = EventBus()
     captured: list[HorizonFeatureSnapshot] = []
@@ -348,26 +409,6 @@ def test_per_symbol_state_isolation() -> None:
     by_symbol = {s.symbol: s for s in captured}
     assert by_symbol["AAPL"].values == {"sum_feat": 3.0}
     assert by_symbol["MSFT"].values == {"sum_feat": 10.0}
-
-
-def test_buffer_eviction_evicts_old_readings() -> None:
-    bus = EventBus()
-    agg = HorizonAggregator(
-        bus=bus,
-        symbols=frozenset({"AAPL"}),
-        sensor_buffer_seconds=10,
-        sequence_generator=SequenceGenerator(),
-    )
-
-    base_ns = 1_000_000_000
-    for i in range(5):
-        agg.on_sensor_reading(_reading(ts_ns=base_ns + i * 1_000_000_000, value=float(i)))
-    assert agg.buffer_size(symbol="AAPL", sensor_id="ofi_ewma") == 5
-
-    # Fast-forward 30s; everything older than (now - 10s) is evicted.
-    agg.on_sensor_reading(_reading(ts_ns=base_ns + 30_000_000_000, value=99.0))
-    remaining = agg.buffer_size(symbol="AAPL", sensor_id="ofi_ewma")
-    assert remaining == 1
 
 
 def test_snapshot_sequence_isolated_from_tick_sequence() -> None:
@@ -613,8 +654,8 @@ def test_multi_version_reading_only_warns_when_no_feature_consumes_sensor(
     caplog: Any,
 ) -> None:
     """A sensor_id with zero consuming features is unaffected by a second
-    live version — buffers alone are version-keyed (S8) — so this remains a
-    warning, not a hard failure."""
+    live version because no version-blind feature state consumes it, so this
+    remains a warning rather than a hard failure."""
     import logging
 
     bus = EventBus()

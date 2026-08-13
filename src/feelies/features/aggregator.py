@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict, deque
+from bisect import bisect_left, bisect_right, insort_right
+from collections import defaultdict
 from collections.abc import Mapping as MappingABC
 from typing import Any, Mapping, Sequence
 
@@ -38,18 +39,55 @@ _logger = logging.getLogger(__name__)
 _NS_PER_SECOND = 1_000_000_000
 
 
+class _WarmTimestampIndex:
+    """Bounded causal lookup for one ``(symbol, sensor_id)`` stream."""
+
+    __slots__ = ("_cutoff_ns", "_start", "_timestamps")
+
+    def __init__(self) -> None:
+        self._timestamps: list[int] = []
+        self._cutoff_ns = -1
+        self._start = 0
+
+    def observe(self, timestamp_ns: int, *, warm: bool, cutoff_ns: int) -> None:
+        """Record a warm timestamp and retire history before ``cutoff_ns``."""
+        timestamps = self._timestamps
+        start = self._start
+        cutoff_ns = max(cutoff_ns, self._cutoff_ns)
+        self._cutoff_ns = cutoff_ns
+        if warm and timestamp_ns >= cutoff_ns:
+            if not timestamps or timestamp_ns >= timestamps[-1]:
+                timestamps.append(timestamp_ns)
+            else:
+                # Late events are rare but legal; keep causal lookup correct.
+                insort_right(timestamps, timestamp_ns, lo=start)
+
+        start = bisect_left(timestamps, cutoff_ns, lo=start)
+        # Avoid an O(n) prefix shift on every quote. Compact only after a
+        # meaningful retired prefix has accumulated.
+        if start >= 4096 and start * 2 >= len(timestamps):
+            del timestamps[:start]
+            start = 0
+        self._start = start
+
+    def latest_at_or_before(self, asof_ns: int) -> int | None:
+        """Return the newest retained timestamp causal for ``asof_ns``."""
+        idx = bisect_right(self._timestamps, asof_ns, lo=self._start) - 1
+        if idx < self._start:
+            return None
+        return self._timestamps[idx]
+
+
 class MultiVersionFeatureDispatchError(RuntimeError):
     """Raised when two live ``sensor_version``s of one ``sensor_id`` both
     deliver readings to a feature that consumes it.
 
     Feature ``observe()`` dispatch is version-blind by design — state is
     keyed by ``(feature_id, horizon_seconds, symbol)``, never
-    ``sensor_version`` — so folding
-    two concurrent estimators into one state would silently corrupt it. A
-    ``sensor_id`` with no consuming feature is unaffected (the sensor-reading
-    buffers alone are version-keyed for forensic isolation, S8); an A/B
-    sensor-version deployment must give each version its own feature
-    registration rather than relying on dispatch to separate them.
+    ``sensor_version``. Mixing two estimators would silently corrupt it. Versions
+    may coexist when no feature consumes their ``sensor_id``. An A/B deployment
+    must give each consumed version its own feature registration rather than
+    relying on dispatch to separate them.
     """
 
 
@@ -61,12 +99,11 @@ class HorizonAggregator:
     - ``bus``: shared platform :class:`EventBus`.
     - ``horizon_features``: mapping ``feature_id -> HorizonFeature``.
       An empty dict enables passive mode with empty snapshots.
-    - ``symbols``: per-symbol universe, used both for buffer
-      pre-allocation and for ``HorizonTick(scope='UNIVERSE')`` fan-out
-      iteration.
+    - ``symbols``: per-symbol universe used for per-feature state pre-allocation
+      and ``HorizonTick(scope='UNIVERSE')`` fan-out iteration.
     - ``sensor_buffer_seconds``: trailing window in seconds retained
-      in each sensor-reading ring buffer.  Should equal
-      ``2 * max(horizons_seconds)`` per the plan; the bootstrap layer
+      by the warm-reading freshness index. Should equal
+      ``2 * max(horizons_seconds)``; the bootstrap layer
       computes this so the aggregator does not need to inspect
       :class:`PlatformConfig` directly.
     - ``sequence_generator``: dedicated ``_snapshot_seq`` generator.
@@ -80,11 +117,10 @@ class HorizonAggregator:
         "_symbols_sorted",
         "_buffer_window_ns",
         "_sequence_generator",
-        "_buffers",
         "_feature_state",
         "_feature_params",
         "_last_snapshot_boundary",
-        "_last_reading_ns",
+        "_warm_timestamps",
         "_observed_versions",
         "_multi_version_warned",
         "_subscribed",
@@ -169,12 +205,6 @@ class HorizonAggregator:
                             _sid,
                         )
 
-        # Version-isolated reading buffers support inspection and reconciliation;
-        # features own separate computational state.
-        self._buffers: dict[tuple[str, str, str], deque[tuple[int, SensorReading]]] = defaultdict(
-            deque
-        )
-
         # Horizon belongs in the state key because one feature may serve many horizons.
         self._feature_state: dict[tuple[str, int, str], dict[str, Any]] = {}
         for feature in self._features_sorted:
@@ -192,11 +222,11 @@ class HorizonAggregator:
         # Last emitted boundary per horizon and symbol; -1 admits boundary zero.
         self._last_snapshot_boundary: dict[tuple[int, str], int] = {}
 
-        # Track usable-data freshness. Cold or late readings cannot advance it.
-        self._last_reading_ns: dict[tuple[str, str], int] = {}
+        # Index warm event-time history once; horizon snapshots query it causally.
+        self._warm_timestamps: dict[tuple[str, str], _WarmTimestampIndex] = {}
 
         # Feature dispatch is version-blind, so only one active version may feed
-        # a consumed sensor ID. Unconsumed versions remain isolated in buffers.
+        # a consumed sensor ID. Unconsumed versions may safely coexist.
         self._observed_versions: dict[tuple[str, str], set[str]] = defaultdict(set)
         self._multi_version_warned: set[tuple[str, str]] = set()
 
@@ -237,20 +267,13 @@ class HorizonAggregator:
 
     def _on_sensor_reading(self, reading: SensorReading) -> None:
         symbol = reading.symbol
-        # Sensor version isolates concurrent versions in separate buffers.
-        key = (symbol, reading.sensor_id, reading.sensor_version)
-        buf = self._buffers[key]
-        buf.append((reading.timestamp_ns, reading))
-        # Only newer warm readings refresh usable-data time.
-        if reading.warm:
-            sid_key = (symbol, reading.sensor_id)
-            prev = self._last_reading_ns.get(sid_key)
-            if prev is None or reading.timestamp_ns > prev:
-                self._last_reading_ns[sid_key] = reading.timestamp_ns
-        # Anchor eviction to this event so late arrivals cannot prune newer history.
         cutoff = reading.timestamp_ns - self._buffer_window_ns
-        while buf and buf[0][0] < cutoff:
-            buf.popleft()
+        sid_key = (symbol, reading.sensor_id)
+        freshness = self._warm_timestamps.get(sid_key)
+        if freshness is None:
+            freshness = _WarmTimestampIndex()
+            self._warm_timestamps[sid_key] = freshness
+        freshness.observe(reading.timestamp_ns, warm=reading.warm, cutoff_ns=cutoff)
 
         # Refuse multiple versions when version-blind feature state would mix them.
         version_seen = self._observed_versions[(symbol, reading.sensor_id)]
@@ -422,18 +445,8 @@ class HorizonAggregator:
         asof_ns: int,
     ) -> int | None:
         """Latest warm sensor timestamp that is causal for this boundary."""
-        cached = self._last_reading_ns.get((symbol, sensor_id))
-        if cached is not None and cached <= asof_ns:
-            return cached
-
-        latest: int | None = None
-        for (buf_symbol, buf_sensor_id, _version), buf in self._buffers.items():
-            if buf_symbol != symbol or buf_sensor_id != sensor_id:
-                continue
-            for ts_ns, reading in buf:
-                if reading.warm and ts_ns <= asof_ns and (latest is None or ts_ns > latest):
-                    latest = ts_ns
-        return latest
+        index = self._warm_timestamps.get((symbol, sensor_id))
+        return None if index is None else index.latest_at_or_before(asof_ns)
 
     # Monitoring.
     def _emit_snapshot_metric(self, *, snapshot: HorizonFeatureSnapshot) -> None:
@@ -470,26 +483,6 @@ class HorizonAggregator:
                 metric_type=MetricType.GAUGE,
                 tags={"horizon_seconds": str(snapshot.horizon_seconds)},
             )
-        )
-
-    # ── Introspection helpers (used by tests / forensics) ────────────
-
-    def buffer_size(
-        self, *, symbol: str, sensor_id: str, sensor_version: str | None = None
-    ) -> int:
-        """Number of readings currently retained for ``(symbol, sensor_id[, version])``.
-
-        When ``sensor_version`` is ``None`` (default), returns the total
-        count across all versions of ``sensor_id`` for backward
-        compatibility with tests that pre-date the version-keyed buffer
-        change (S8).
-        """
-        if sensor_version is not None:
-            return len(self._buffers.get((symbol, sensor_id, sensor_version), ()))
-        return sum(
-            len(buf)
-            for (sym, sid, _ver), buf in self._buffers.items()
-            if sym == symbol and sid == sensor_id
         )
 
     def is_passive(self) -> bool:
