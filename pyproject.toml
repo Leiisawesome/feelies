@@ -63,6 +63,11 @@ ib = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# OneDrive/Windows: hardlinks from the uv cache into .venv often fail
+# (EXDEV / "Failed to hardlink files"). Copy instead of warning on every run.
+[tool.uv]
+link-mode = "copy"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/feelies"]
 
