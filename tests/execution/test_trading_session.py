@@ -161,6 +161,32 @@ def test_flatten_window_disabled_is_never_open() -> None:
     )
 
 
+def test_resolve_same_session_reuses_precomputed_bounds() -> None:
+    session_date = date(2026, 1, 15)
+    bounds = resolve_trading_session_bounds(session_date)
+
+    resolved = bounds.resolve_for_timestamp(et_clock_to_ns(session_date, "12:00"))
+
+    assert resolved is bounds
+
+
+def test_same_session_calendar_entries_are_precomputed_before_fast_path() -> None:
+    session_date = date(2026, 11, 27)
+    session_key = session_date.isoformat()
+    bounds = resolve_trading_session_bounds(
+        session_date,
+        early_close_dates=(session_key,),
+        market_holiday_dates=(session_key,),
+    )
+
+    resolved = bounds.resolve_for_timestamp(et_clock_to_ns(session_date, "12:00"))
+
+    assert resolved is bounds
+    assert bounds.is_early_close is True
+    assert bounds.is_holiday is True
+    assert bounds.rth_close_ns == et_clock_to_ns(session_date, "13:00")
+
+
 def test_flatten_deadline_rebinds_per_replayed_day() -> None:
     """A multi-day replay must not pin every day to the booted session date.
 

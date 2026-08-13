@@ -54,6 +54,10 @@ class TradingSessionBounds:
     def resolve_for_timestamp(self, ts_ns: int) -> "TradingSessionBounds":
         """Resolve the effective RTH bounds for an event timestamp."""
         session_date = session_date_from_ns(ts_ns)
+        if session_date == self.session_date:
+            # The common single-session path is already fully resolved.
+            return self
+
         early = self.is_early_close or (session_date.isoformat() in self.early_close_dates)
         holiday = self.is_holiday or (session_date.isoformat() in self.market_holiday_dates)
         close_et = self.early_close_rth_close_et if early else self.rth_close_et
@@ -95,19 +99,24 @@ def resolve_trading_session_bounds(
     market_holiday_dates: tuple[str, ...] = (),
 ) -> TradingSessionBounds:
     """Build RTH bounds for a single calendar session date."""
-    close_et = early_close_rth_close_et if early_close else rth_close_et
+    early_close_date_set = frozenset(early_close_dates)
+    market_holiday_date_set = frozenset(market_holiday_dates)
+    session_key = session_date.isoformat()
+    effective_early_close = early_close or session_key in early_close_date_set
+    effective_holiday = is_holiday or session_key in market_holiday_date_set
+    close_et = early_close_rth_close_et if effective_early_close else rth_close_et
     return TradingSessionBounds(
         session_date=session_date,
         rth_open_ns=et_clock_to_ns(session_date, rth_open_et),
         rth_close_ns=et_clock_to_ns(session_date, close_et),
-        is_holiday=is_holiday,
-        is_early_close=early_close,
+        is_holiday=effective_holiday,
+        is_early_close=effective_early_close,
         no_entry_first_seconds=no_entry_first_seconds,
         rth_open_et=rth_open_et,
         rth_close_et=rth_close_et,
         early_close_rth_close_et=early_close_rth_close_et,
-        market_holiday_dates=frozenset(market_holiday_dates),
-        early_close_dates=frozenset(early_close_dates),
+        market_holiday_dates=market_holiday_date_set,
+        early_close_dates=early_close_date_set,
     )
 
 

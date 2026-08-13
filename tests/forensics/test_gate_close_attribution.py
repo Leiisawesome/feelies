@@ -13,14 +13,9 @@ These tests prove that concretely end to end:
    ``(strategy_id, symbol)`` episode, since it carries the trade's
    ``correlation_id`` instead).
 3. Mis-joins fail loudly rather than fabricating attribution.
-4. A downstream forensic query (:class:`MultiHorizonAttributor`) over a decoupled
-   flatten's :class:`TradeRecord` still attributes the PnL to the mechanism the
-   gate close carried — attribution does not vanish on promotion.
 """
 
 from __future__ import annotations
-
-from decimal import Decimal
 
 import pytest
 
@@ -37,14 +32,12 @@ from feelies.forensics.gate_close_attribution import (
     from_gate_close_flat,
     reconstruct_from_safety_flatten,
 )
-from feelies.forensics.multi_horizon_attribution import MultiHorizonAttributor
 from feelies.risk.deferral_cap import DEFERRAL_REASON_MAX_HOLD, DEFERRAL_REASON_SESSION_FLATTEN
 from feelies.risk.exit_composer import (
     EXIT_COMPOSER_REASON_DECOUPLING_REVOKED,
     EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED,
     EXIT_COMPOSER_SOURCE_LAYER,
 )
-from feelies.storage.trade_journal import TradeRecord
 from tests.determinism.test_decoupled_safety_replay import _drive_engine
 
 _ALPHA_ID = "sig_decouple_probe_v1"
@@ -248,56 +241,3 @@ def test_reconstruct_tolerates_deferral_correlation_mismatch() -> None:
     # Does not raise despite the correlation_id differing.
     migrated = reconstruct_from_safety_flatten(order, safety)
     assert migrated.reason == "clean_transition"
-
-
-# ── End-to-end: a forensic query attributes a decoupled flatten ──────────
-
-
-def test_multi_horizon_attributor_buckets_decoupled_flatten_pnl() -> None:
-    """A decoupled flatten's TradeRecord still attributes to its mechanism.
-
-    The reconstructed gate-close provenance supplies ``trend_mechanism`` for the
-    flatten trade, so the mechanism axis places its PnL under KYLE_INFO instead of
-    dropping it into ``unattributed`` — the forensic query survives promotion.
-    """
-    safety = _promoted_safety_event()
-    migrated = reconstruct_from_safety_flatten(
-        _composer_order(safety, reason=EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED),
-        safety,
-    )
-    flatten_trade = TradeRecord(
-        order_id="probe-composer",
-        symbol=_SYMBOL,
-        strategy_id=_ALPHA_ID,
-        side=Side.SELL,
-        requested_quantity=100,
-        filled_quantity=100,
-        fill_price=Decimal("151.00"),
-        signal_timestamp_ns=safety.timestamp_ns,
-        submit_timestamp_ns=safety.timestamp_ns,
-        fill_timestamp_ns=safety.timestamp_ns,
-        cost_bps=Decimal("1.0"),
-        fees=Decimal("0.50"),
-        realized_pnl=Decimal("100.00"),
-        correlation_id=safety.correlation_id,
-        # Provenance recovered from the gate-close attribution reconstruction.
-        trend_mechanism=migrated.trend_mechanism,
-        expected_half_life_seconds=migrated.expected_half_life_seconds,
-        regime_state="vol_breakout",
-        metadata={
-            "order_reason": EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED,
-            "order_source_layer": "RISK",
-        },
-    )
-
-    report = MultiHorizonAttributor(
-        horizon_by_strategy={_ALPHA_ID: 300},
-    ).attribute([flatten_trade])
-
-    # The PnL is attributed to the mechanism, not lost to unattributed.
-    key = (_ALPHA_ID, TrendMechanism.KYLE_INFO)
-    assert key in report.mechanism
-    assert report.mechanism[key].realized_pnl_share == pytest.approx(100.0)
-    assert _ALPHA_ID not in report.unattributed
-    # Regime axis is populated from the fill-time regime label.
-    assert (_ALPHA_ID, "vol_breakout") in report.regime

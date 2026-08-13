@@ -38,35 +38,30 @@ default). Additionally:
 
 ---
 
-## Multi-Horizon Attribution (`MultiHorizonAttributor`)
+## Attribution surfaces
 
-> **Implementation status**: what ships today is the
-> `MultiHorizonAttributor`, the `DecayDetector`
-> (`forensics/decay_detector.py`), and the quarantine-evidence schema
-> (`promotion/evidence.py`). The broader Compare / Monitor /
-> Detect tables below and the daily health-report JSON are operator
-> playbook — not automated (`src/feelies/forensics/__init__.py`:
-> "concrete analyzers are future work").
+> **Implementation status**: `TradeRecord` is the durable source of fill-time
+> strategy, mechanism, regime, cost, fee, and realized-PnL provenance.
+> `DecayDetector`, the backtest TCA/cost-survival report, and the
+> quarantine-evidence schema ship today. The former in-memory
+> `MultiHorizonAttributor` was retired because no production, CLI, or research
+> workflow consumed it. The broader Compare / Monitor / Detect tables and the
+> daily health-report JSON below remain operator playbook, not automation.
 
-`forensics/multi_horizon_attribution.py` decomposes realized PnL
-along three orthogonal axes:
+For mechanism- or regime-level work, group records returned by
+`TradeJournal.query()` on the immutable fields already stamped at fill time:
 
-| Axis | Bucket type | Source |
-|------|-------------|--------|
-| Horizon | `HorizonBucket` | caller-supplied `horizon_by_strategy` map — buckets key on `(strategy_id, horizon_seconds)` (`Signal` carries no `boundary_index`) |
-| Mechanism | `MechanismBucket` | `mechanism_breakdown` from the per-strategy `CrossSectionalSnapshot` (closed `TrendMechanism` enum) |
-| Regime | `RegimeBucket` | `RegimeEngine.current_state(symbol)` argmax at FILL time |
+| Axis | Durable source |
+|------|----------------|
+| Horizon | loaded alpha manifest's `horizon_seconds`, joined by `strategy_id` |
+| Mechanism | `TradeRecord.trend_mechanism` |
+| Regime | `TradeRecord.regime_state` |
 
-Output is a `MultiHorizonReport` carrying `HorizonBucket`
-(pnl / fees / gross notional / trade count), `MechanismBucket`
-(pnl share / gross share), and `RegimeBucket` (pnl / trade count)
-only. Per-bucket hit rate, slippage residual, and a
-`mechanism_concentration` diagnostic from realized vs intended
-`mechanism_breakdown` are **design targets** — not yet on the report
-(see `DecayDetector` and the backtest TCA report for what exists
-today).
+Do not perform live engine lookups during forensics. A new reusable attribution
+query must have an operator-facing consumer and deterministic report contract
+before being declared shipped.
 
-The attributor is the primary tool for diagnosing "what's decaying":
+These axes diagnose "what's decaying":
 
 - KYLE_INFO PnL falls while INVENTORY holds → permanent-impact decay,
   not microstructure-wide
@@ -151,7 +146,7 @@ alpha_erosion = gross_alpha_backtest - net_alpha_live
 | Entry threshold | Rolling ROC, optimal cutoff drift | AUC degradation > 5% |
 | Position-sizing scalar | Realized vs assumed vol | > 25% persistent divergence |
 | Cost-model parameters | Realized vs modeled cost dist | KS p < 0.05 |
-| `expected_half_life_seconds` (G16) | Realized half-life from `MultiHorizonAttributor` | > 1.5× envelope |
+| `expected_half_life_seconds` (G16) | Realized holding-time distribution from `TradeRecord` timestamps | > 1.5× envelope |
 
 Drift detection protocol: re-estimate on rolling forward window (no
 look-ahead), compare to deployed (frozen) values, if drift exceeds

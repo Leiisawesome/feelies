@@ -126,9 +126,9 @@ counterparty — see the archetype rider in
 
 The mechanism is propagated end-to-end on `Signal.trend_mechanism` and
 `Signal.expected_half_life_seconds`, surfaced in
-`SizedPositionIntent.mechanism_breakdown`, and consumed by
-`MultiHorizonAttributor` for per-mechanism PnL decomposition (see
-post-trade-forensics).
+`SizedPositionIntent.mechanism_breakdown`, and retained with durable
+`TradeRecord` / event-log provenance for operator-side grouped attribution
+(see post-trade-forensics).
 
 ---
 

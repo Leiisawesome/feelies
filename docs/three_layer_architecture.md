@@ -425,8 +425,6 @@ src/feelies/
 ├── storage/                   (unchanged)
 ├── monitoring/
 │   └── horizon_metrics.py     ← NEW: per-horizon IC tracking
-├── forensics/
-│   └── multi_horizon_attribution.py  ← NEW: per-horizon, per-regime P&L decomp
 ├── research/                  (unchanged)
 ├── services/                  (unchanged)
 └── bootstrap.py               ← EXTEND: wire sensors, features, composition
@@ -841,16 +839,10 @@ below configured threshold for a given alpha.
 
 ### 6.10 `src/feelies/forensics/` (EXTENDED)
 
-**Add:** `multi_horizon_attribution.py` — decomposes P&L into:
-
-- Gross alpha (per horizon)
-- TC drag (spread + impact + fees, per horizon)
-- Factor bleed (unintended exposure, per factor)
-- Timing slippage (signal-to-fill delta)
-- Net alpha
-- Realized-vs-expected IC (per alpha, per horizon, per regime)
-
-Output consumed by the research mutation workflow (`.cursor/skills/research-workflow/SKILL.md`).
+The speculative multi-horizon attribution report was retired because no
+production, CLI, or research workflow consumed it. Durable `TradeRecord`
+provenance remains the source for a future operator-facing attribution query;
+do not declare that capability shipped until such a consumer exists.
 
 **Estimation:** 1 week.
 
@@ -1302,7 +1294,6 @@ shipping `CrossSectionalContext`; turnover-aware construction producing
 - `src/feelies/composition/` module complete.
 - `src/feelies/portfolio/cross_sectional_tracker.py`.
 - `src/feelies/monitoring/horizon_metrics.py`.
-- `src/feelies/forensics/multi_horizon_attribution.py`.
 - Reference PORTFOLIO alpha consuming the Phase 3 SIGNAL alpha.
 
 **Test gates:**
@@ -1595,8 +1586,8 @@ re-merge.
 
 ### 14.3 Forensics output
 
-The `forensics/multi_horizon_attribution.py` report is the primary input
-to the research mutation workflow (`.cursor/skills/research-workflow/SKILL.md`). It MUST produce, per alpha:
+An operator-facing attribution query, when implemented, should consume durable
+`TradeRecord` provenance and produce, per alpha:
 
 - Per-regime IC (on, off, transitional)
 - Per-horizon IC (primary, ± one horizon)
@@ -1605,8 +1596,8 @@ to the research mutation workflow (`.cursor/skills/research-workflow/SKILL.md`).
 - P&L decomposition (gross, TC, factor bleed, slippage, net)
 - Parity hash deltas across runs (forensic only, flags non-determinism)
 
-Output format: JSON + Markdown summary, written to
-`forensics/reports/<date>/<alpha_id>.json`.
+The retired in-memory report had no consumer; this section is a requirement,
+not a claim of shipped behavior.
 
 ---
 
@@ -1908,7 +1899,7 @@ log.
 | **1** | Structural mechanism required | `mechanism:` and `structural_actor:` are mandatory YAML fields for SIGNAL/PORTFOLIO (§8.2). Gates G2/G3 in `alpha/layer_validator.py` reject load if they are absent or unparseable. Authoring discipline (`.cursor/skills/microstructure-alpha/SKILL.md`) requires naming an actor before promotion. | **STRENGTHENED** |
 | **2** | Falsifiability before testing | `falsification_criteria:` field extended (§8.2) with three sub-blocks: `statistical`, `structural_invalidators`, `regime_shift_invalidators`. Gates G10/G11 enforce that the criterion is mechanism-tied, not P&L-tied. | **STRENGTHENED** |
 | **3** | Evidence over intuition | `cost_arithmetic.edge_source` field (§8.2) requires a citation (empirical backtest path, paper reference, or theoretical derivation). "Guess" is an explicit refusal condition in the microstructure-alpha authoring skill. Existing promotion gates (paper → live) are unchanged. | **PRESERVED** |
-| **4** | Decay is the default | `forensics/multi_horizon_attribution.py` (§6.10) emits per-alpha rolling-30d realized IC; `monitoring/horizon_metrics.py` (§6.9) alerts at `< 50%` and CRITICAL at `< 25%` of in-sample IC. Existing DECAYING/RETIRED status transitions in `research/hypothesis_status.py` remain authoritative. | **STRENGTHENED** |
+| **4** | Decay is the default | `monitoring/horizon_metrics.py` (§6.9) owns per-horizon alerting. Existing DECAYING/RETIRED status transitions in `research/hypothesis_status.py` remain authoritative. | **STRENGTHENED** |
 | **5** | Deterministic replay | §12.1–§12.4: proof sketches for `HorizonTick`, `HorizonFeatureSnapshot`, `CrossSectionalContext` determinism. 4-level parity hash CI (Fills / Signals / HorizonFeatureSnapshots / SensorReadings) replaces the existing 1-level check. Non-determinism risk inventory in §12.5 enumerates and mitigates every known source. | **STRENGTHENED** |
 | **6** | Causality enforced | Gate G8 (`alpha/layer_validator.py`) statically rejects implicit lookahead; G13 is a reserved numbering slot because warm-up is platform-owned. `HorizonAggregator` (§6.3) only consumes `SensorReading` events whose timestamp is `≤ HorizonTick.timestamp_ns`; reading the buffer at boundary close cannot see the future by construction. `HorizonTick.timestamp_ns` carries the *boundary* timestamp, not the *triggering event's* timestamp (§7.4) — this is the load-bearing detail. | **PRESERVED** |
 | **7** | Event-driven, typed schemas | All five new event types (§5) are frozen `dataclass(kw_only=True)` instances inheriting `Event`, matching the existing convention. No untyped dict messages cross any layer boundary. The synchronous in-process bus is unchanged. | **PRESERVED** |
@@ -2226,9 +2217,8 @@ process**, distinct from regime-switching among recurrent states.
 SensorReading.value = score   # 0..1; > 0.95 = likely structural break
 ```
 
-**Use:** consumed primarily by `forensics/multi_horizon_attribution.py`
-for live alerting (§20.9). Optionally referenced in regime gate
-off-conditions: `structural_break_score < 0.95`.
+**Use:** optionally referenced in regime-gate off-conditions:
+`structural_break_score < 0.95`.
 
 **Warm-up:** `warm = True` after rolling reference window (default
 3600 s) is full.
@@ -2542,27 +2532,8 @@ Four new metrics added to `monitoring/horizon_metrics.py`:
 | `feelies.composition.weighted_avg_half_life_seconds` | gauge | portfolio_id | Book-level decay-rate health; alert WARN if < 30 s sustained 5 min (book has rolled into pure short-burst alpha) |
 | `feelies.alpha.structural_break_score` | gauge | alpha_id | Live page-Hinkley score on sensor distribution; alert WARN at > 0.95, CRITICAL at > 0.99 sustained 60 s |
 
-Forensics extension to `multi_horizon_attribution.py`: per-alpha
-attribution gains a `per_mechanism` axis when the alpha declares a
-`trend_mechanism.family`. The output JSON now includes:
-
-```json
-{
-  "alpha_id": "...",
-  "trend_mechanism": "HAWKES_SELF_EXCITE",
-  "expected_half_life_seconds": 45,
-  "realized_half_life_seconds_p50": 38,
-  "realized_half_life_seconds_p90": 72,
-  "hazard_exit_count": 14,
-  "hard_exit_age_count": 3,
-  "structural_break_alerts_30d": 0,
-  "...": "..."
-}
-```
-
-This gives the post-trade-forensics skill the per-mechanism stationarity
-and decay diagnostics needed for the essay's "assume your trend
-strategy will stop working" discipline.
+Per-mechanism attribution remains a future operator query over durable trade
+provenance; the former unconsumed in-memory implementation was retired.
 
 ### 20.10 Phased delivery (additive to v0.2 §10)
 
@@ -2575,7 +2546,7 @@ v0.2 contracts.
 | **1.1** | `core/events.py`: `TrendMechanism` enum, `RegimeHazardSpike` event, additive fields on `Signal` and `SizedPositionIntent`. `alpha/loader.py`: parse `trend_mechanism:` and `hazard_exit:` blocks (no enforcement yet). | +200 | 3 days |
 | **2.1** | `sensors/impl/hawkes_intensity.py`, `scheduled_flow_window.py`, `snr_drift_diffusion.py`, `structural_break_score.py`. `src/feelies/storage/reference/event_calendar/` adapter. Sensor unit + determinism + benchmark tests. | +800 (incl. tests) | 1.0 wk |
 | **3.1** | `alpha/layer_validator.py`: Gate G16 with all 9 binding rules (rule 7 is the AST-inspection-based stress-family-entry check; ~80 lines on its own). `services/regime_engine.py`: `RegimeHazardDetector` emitting `RegimeHazardSpike`. Property-based tests for G16 and hazard determinism. Reference SIGNAL alpha update with `trend_mechanism:` block. | +580 | 4–5 days |
-| **4.1** | `composition/cross_sectional.py`: decay-weighting and concentration enforcement. `risk/`: hazard-spike subscription and hard-exit-age check. `monitoring/horizon_metrics.py`: 4 new metrics. `forensics/multi_horizon_attribution.py`: `per_mechanism` axis. End-to-end test with mixed-mechanism reference universe. | +600 | 1.0 wk |
+| **4.1** | `composition/cross_sectional.py`: decay-weighting and concentration enforcement. `risk/`: hazard-spike subscription and hard-exit-age check. `monitoring/horizon_metrics.py`: 4 new metrics. End-to-end test with mixed-mechanism reference universe. | +600 | 1.0 wk |
 | **5.1** | Update Cursor authoring skills with mechanism taxonomy references (`.cursor/skills/microstructure-alpha/SKILL.md` for reasoning rules, `.cursor/skills/feature-engine/SKILL.md` for sensor/family catalogs, `.cursor/skills/research-workflow/SKILL.md` for mutation semantics). Migration note in `docs/migration/schema_1_0_to_1_1.md` for v0.2-strict alphas wanting v0.3 opt-in. Glossary extension (§20.13). | +150 | 2 days |
 
 **v0.3 net total:** ~2,250 lines, ~2 engineer-weeks. Unblocks every
@@ -2896,7 +2867,6 @@ src/feelies/composition/sector_matcher.py         | CREATE  | +120
 src/feelies/composition/turnover_optimizer.py     | CREATE  | +300
 src/feelies/portfolio/cross_sectional_tracker.py  | CREATE  | +150
 src/feelies/monitoring/horizon_metrics.py         | CREATE  | +200
-src/feelies/forensics/multi_horizon_attribution.py| CREATE  | +400
 alphas/research/pro_burst_revert_v1/*.yaml                 | EXISTS  | reference PORTFOLIO alpha (HAWKES_SELF_EXCITE + INVENTORY)
 alphas/research/pro_kyle_benign_v1/*.yaml                  | EXISTS  | reference PORTFOLIO alpha (KYLE_INFO)
 pyproject.toml                                    | EXTEND  | +5 (cvxpy extra)
@@ -2967,11 +2937,9 @@ tests/determinism/test_regime_hazard_replay.py    | CREATE  | +120 (Level-5 pari
 src/feelies/composition/cross_sectional.py        | EXTEND  | +120 (decay weighting + concentration enforcement)
 src/feelies/risk/hazard_exit.py                   | CREATE  | +180 (hazard-spike subscription, hard-exit-age)
 src/feelies/monitoring/horizon_metrics.py         | EXTEND  | +120 (4 new metrics)
-src/feelies/forensics/multi_horizon_attribution.py| EXTEND  | +180 (per_mechanism axis)
 tests/composition/test_decay_weighting.py         | CREATE  | +150
 tests/composition/test_mechanism_concentration.py | CREATE  | +130
 tests/risk/test_hazard_exit.py                    | CREATE  | +180
-tests/forensics/test_per_mechanism_attribution.py | CREATE  | +120
 tests/integration/test_mixed_mechanism_universe.py| CREATE  | +250 (e2e)
 ```
 

@@ -62,8 +62,8 @@ targets — P0 only if code/tests claim they are live.
 **Architecture (contractual):**
 
 ```
-fills + Signal provenance (trend_mechanism, expected_half_life, regime)
-  → MultiHorizonAttributor: PnL decomposed by mechanism family × regime × horizon
+fills + durable Signal / intent provenance (trend_mechanism, expected_half_life, regime)
+  → operator query: PnL grouped by mechanism family × regime × horizon
   → DecayDetector: expected vs realized slippage / hit-rate / net-alpha drift
   → QuarantineTriggerEvidence → operator/tooling calls `registry.quarantine(...)` (fail-safe commit; not auto-wired today)
 ```
@@ -81,7 +81,7 @@ fills + Signal provenance (trend_mechanism, expected_half_life, regime)
 
 ### Forensics core
 
-- `src/feelies/forensics/multi_horizon_attribution.py` — per-mechanism/regime/horizon PnL
+- `src/feelies/storage/trade_journal.py` — durable mechanism/regime fill provenance
 - `src/feelies/forensics/decay_detector.py` — drift detection
 - `src/feelies/forensics/analyzer.py` — orchestration / reporting
 - `src/feelies/alpha/fill_attribution.py` — fill → alpha lineage
