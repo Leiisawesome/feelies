@@ -218,5 +218,5 @@ guard as `powershell -ExecutionPolicy Bypass -File tools\arch\check_scope.ps1`.
 | `Not inside a git repository` | Wrong directory | `cd` to the repo root, the folder with `src\` in it |
 | `src\feelies not found` | Ran from `tools\arch` | `cd` back to the repo root |
 | `measure.py bus` reports 0 publish sites | CONFIG mismatch | Re-run step 6 and paste the discovered values |
-| `fatal: a branch named 'arch/target-design' already exists` | Re-running setup | Harmless; the script switches to it |
+| `fatal: a branch named 'arch/target-design' already exists` **and the script stops** | You have an old `setup.ps1`. PowerShell 5.1 turns redirected native stderr into a terminating error. | Replace `tools\arch\setup.ps1` with the current version and re-run. It is idempotent. |
 | Evidence JSON has Windows line endings in git diff | `core.autocrlf` | Harmless — evidence is read by the agent, not diffed |
