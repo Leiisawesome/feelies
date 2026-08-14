@@ -1,0 +1,109 @@
+{
+  "by_name": {
+    "on_alert_event": 1,
+    "on_event": 2,
+    "on_health_transition": 1,
+    "on_message": 2,
+    "on_quote": 3,
+    "on_transition": 7
+  },
+  "hits": [
+    {
+      "call": "bundle.ib_connection.on_alert_event",
+      "engine_hint": 0,
+      "line": 611,
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "call": "backtest_router.on_quote",
+      "engine_hint": 0,
+      "line": 353,
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "call": "self._moc.on_quote",
+      "engine_hint": 10,
+      "line": 144,
+      "path": "src/feelies/execution/backtest_router.py"
+    },
+    {
+      "call": "self._moc.on_quote",
+      "engine_hint": 10,
+      "line": 214,
+      "path": "src/feelies/execution/passive_limit_router.py"
+    },
+    {
+      "call": "self._normalizer.on_message",
+      "engine_hint": 1,
+      "line": 405,
+      "path": "src/feelies/ingestion/massive_ingestor.py"
+    },
+    {
+      "call": "sm.on_transition",
+      "engine_hint": 1,
+      "line": 721,
+      "path": "src/feelies/ingestion/massive_normalizer.py"
+    },
+    {
+      "call": "self._normalizer.on_health_transition",
+      "engine_hint": 1,
+      "line": 115,
+      "path": "src/feelies/ingestion/massive_ws.py"
+    },
+    {
+      "call": "self._normalizer.on_message",
+      "engine_hint": 1,
+      "line": 411,
+      "path": "src/feelies/ingestion/massive_ws.py"
+    },
+    {
+      "call": "self._macro.on_transition",
+      "engine_hint": 0,
+      "line": 554,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._micro.on_transition",
+      "engine_hint": 0,
+      "line": 555,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._risk_escalation.on_transition",
+      "engine_hint": 0,
+      "line": 556,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "sm.on_transition",
+      "engine_hint": 0,
+      "line": 4051,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._horizon_scheduler.on_event",
+      "engine_hint": 0,
+      "line": 1222,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._horizon_scheduler.on_event",
+      "engine_hint": 0,
+      "line": 1250,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._sm.on_transition",
+      "engine_hint": 5,
+      "line": 265,
+      "path": "src/feelies/promotion/lifecycle.py"
+    },
+    {
+      "call": "self._sm.on_transition",
+      "engine_hint": 5,
+      "line": 259,
+      "path": "src/feelies/promotion/lifecycle.py"
+    }
+  ],
+  "n": 16
+}

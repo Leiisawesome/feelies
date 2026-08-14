@@ -1,0 +1,250 @@
+{
+  "by_kind": {
+    "dir_listing": 1,
+    "env_read": 4,
+    "hash_builtin": 2,
+    "id_builtin": 10,
+    "threading": 17
+  },
+  "hits": [
+    {
+      "engine_hint": 5,
+      "kind": "id_builtin",
+      "line": 71,
+      "path": "src/feelies/alpha/dependency_graph.py",
+      "text": "recognised: set[int] = set()  # id() of ``X.values`` Attribute nodes resolved"
+    },
+    {
+      "engine_hint": 5,
+      "kind": "id_builtin",
+      "line": 82,
+      "path": "src/feelies/alpha/dependency_graph.py",
+      "text": "recognised.add(id(node.func.value))"
+    },
+    {
+      "engine_hint": 5,
+      "kind": "id_builtin",
+      "line": 97,
+      "path": "src/feelies/alpha/dependency_graph.py",
+      "text": "recognised.add(id(node.value))"
+    },
+    {
+      "engine_hint": 5,
+      "kind": "id_builtin",
+      "line": 111,
+      "path": "src/feelies/alpha/dependency_graph.py",
+      "text": "and id(node) not in recognised"
+    },
+    {
+      "engine_hint": 5,
+      "kind": "dir_listing",
+      "line": 30,
+      "path": "src/feelies/alpha/discovery.py",
+      "text": "for p in spec_dir.rglob(\"*.alpha.yaml\")"
+    },
+    {
+      "engine_hint": 0,
+      "kind": "env_read",
+      "line": 868,
+      "path": "src/feelies/bootstrap.py",
+      "text": "api_key = (os.environ.get(\"MASSIVE_API_KEY\") or \"\").strip()"
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 99,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._next_id_ready = threading.Event()"
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 100,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._next_id_lock = threading.Lock()"
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 107,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._msg_thread: threading.Thread | None = None"
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 108,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._writer_thread: threading.Thread | None = None"
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 109,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._shutdown_event = threading.Event()"
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 110,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._connect_failed = threading.Event()"
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 154,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._msg_thread = threading.Thread("
+    },
+    {
+      "engine_hint": 10,
+      "kind": "threading",
+      "line": 159,
+      "path": "src/feelies/broker/ib/connection.py",
+      "text": "self._writer_thread = threading.Thread("
+    },
+    {
+      "engine_hint": 6,
+      "kind": "env_read",
+      "line": 114,
+      "path": "src/feelies/composition/turnover_optimizer.py",
+      "text": "raw = os.environ.get(_ECOS_VALIDATED_PLATFORMS_ENV, \"\")"
+    },
+    {
+      "engine_hint": 0,
+      "kind": "threading",
+      "line": 49,
+      "path": "src/feelies/core/identifiers.py",
+      "text": "self._lock: threading.Lock | None = threading.Lock() if thread_safe else None"
+    },
+    {
+      "engine_hint": 12,
+      "kind": "id_builtin",
+      "line": 79,
+      "path": "src/feelies/harness/backtest_report.py",
+      "text": "counts.  Dedupe by ``id()`` so report totals match distinct horizon"
+    },
+    {
+      "engine_hint": 12,
+      "kind": "id_builtin",
+      "line": 88,
+      "path": "src/feelies/harness/backtest_report.py",
+      "text": "oid = id(s)"
+    },
+    {
+      "engine_hint": 12,
+      "kind": "env_read",
+      "line": 624,
+      "path": "src/feelies/harness/backtest_report.py",
+      "text": "lines.append(_kv(\"hash_seed\", os.environ.get(\"PYTHONHASHSEED\", \"<unset>\")))"
+    },
+    {
+      "engine_hint": 12,
+      "kind": "env_read",
+      "line": 567,
+      "path": "src/feelies/harness/backtest_runner.py",
+      "text": "seed = os.environ.get(\"PYTHONHASHSEED\")"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 26,
+      "path": "src/feelies/ingestion/massive_ingestor.py",
+      "text": "from concurrent.futures import ThreadPoolExecutor"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 311,
+      "path": "src/feelies/ingestion/massive_ingestor.py",
+      "text": "_lock: threading.Lock = threading.Lock()"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 332,
+      "path": "src/feelies/ingestion/massive_ingestor.py",
+      "text": "with ThreadPoolExecutor(max_workers=2) as pool:"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 81,
+      "path": "src/feelies/ingestion/massive_ws.py",
+      "text": "self._thread: threading.Thread | None = None"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 82,
+      "path": "src/feelies/ingestion/massive_ws.py",
+      "text": "self._stop_event = threading.Event()"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 136,
+      "path": "src/feelies/ingestion/massive_ws.py",
+      "text": "self._thread = threading.Thread("
+    },
+    {
+      "engine_hint": 0,
+      "kind": "id_builtin",
+      "line": 4840,
+      "path": "src/feelies/kernel/orchestrator.py",
+      "text": "actionable_ids = {id(s) for s in buf}"
+    },
+    {
+      "engine_hint": 0,
+      "kind": "id_builtin",
+      "line": 4842,
+      "path": "src/feelies/kernel/orchestrator.py",
+      "text": "if id(s) in actionable_ids:"
+    },
+    {
+      "engine_hint": 0,
+      "kind": "id_builtin",
+      "line": 4871,
+      "path": "src/feelies/kernel/orchestrator.py",
+      "text": "\"alpha id(s) on flat book (%s); all gate-close FLAT \u2014 \""
+    },
+    {
+      "engine_hint": 0,
+      "kind": "id_builtin",
+      "line": 4881,
+      "path": "src/feelies/kernel/orchestrator.py",
+      "text": "\"alpha id(s) fired on the same tick (%s); arbitrating via \""
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 5,
+      "path": "src/feelies/storage/memory_event_log.py",
+      "text": "Thread-safe via ``threading.Lock``."
+    },
+    {
+      "engine_hint": 1,
+      "kind": "threading",
+      "line": 62,
+      "path": "src/feelies/storage/memory_event_log.py",
+      "text": "self._lock = threading.Lock()"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "hash_builtin",
+      "line": 73,
+      "path": "src/feelies/storage/reference/corporate_actions/__init__.py",
+      "text": "def hash(self) -> str:"
+    },
+    {
+      "engine_hint": 1,
+      "kind": "hash_builtin",
+      "line": 129,
+      "path": "src/feelies/storage/reference/event_calendar/__init__.py",
+      "text": "def hash(self) -> str:"
+    }
+  ],
+  "n": 34
+}
