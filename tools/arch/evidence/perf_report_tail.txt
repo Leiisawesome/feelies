@@ -1,0 +1,142 @@
+  Composing platform (alphas, engines, risk) ...
+  OK - 1 alpha(s) registered [0.0s]
+  Booting orchestrator (integrity checks, warm-start) ...
+  OK - macro state: READY [0.1s]
+  Replaying 82,678 quotes through pipeline ...
+
+  Pipeline complete - 82,678 quotes in 17.9s (4,613 q/s)
+  Generating report ...
+  OK [0.0s]
+
+==============================================================
+  BACKTEST REPORT  |  sig_benign_midcap_v1
+  Symbol: APP  |  Date: 2026-03-26
+==============================================================
+
+  [DATA INGESTION]
+    Events ingested         249,540
+    Pages processed         0
+    Symbols with gaps       0
+    Duplicates filtered     0
+
+      APP 2026-03-26        266,754 (cache)
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [SIGNAL PIPELINE]
+    Quotes processed        82,678
+    Feature snapshots       1,092
+    Signals emitted         61
+      Long  (entry)         4
+      Short (entry)         8
+      Flat  (exit)          49
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [EXECUTION]
+    Orders submitted        21
+      Filled                20
+      Rejected              0
+      Pending / no ack      1
+    Shares traded           394
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [P&L]
+    Starting equity         $50,000.00
+    Gross P&L               $149.05
+      Realized              $149.05
+      Unrealized            $0.00
+    Fees                    $45.12
+    Net P&L                 $103.93
+    Final equity            $50,103.93
+    Return                  +0.21%
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [TRADE ANALYSIS]
+    Total fills             20
+      Entry fills           10
+      Closing fills         9
+      Scratch (break-even)  1
+    Open positions          0
+    Win rate                77.8% (7/9)
+    Avg winner              $26.59
+    Avg loser               -$18.54
+    Largest win             $97.38
+    Largest loss            -$21.08
+    P&L per share           $0.3783
+    Reversals               
+      Attempted             1
+      Executed (full)       0
+      Flat-exit only        1  (1 edge-guard)
+      Avg exit-leg realized -$16.00
+      Worst exit-leg realized-$16.00
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [RISK]
+    Max exposure            $12,224.23 (24.46%)
+    Max drawdown            -$51.16 (-0.10%)
+    Kill switch             NOT ACTIVATED
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [LATENCY]
+    Avg tick-to-decision    0.168 ms
+    p95 tick-to-decision    0.294 ms
+    p99 tick-to-decision    0.571 ms
+    Max tick-to-decision    16.070 ms
+      spike origin          APP tick #44937/82,678 @ 12:00:00.276 ET
+      correlation_id        APP:1774540800276075377:146956
+    Avg feature compute     0.000 ms
+    Avg signal evaluate     0.008 ms
+    Avg sensor fan-out      0.079 ms
+    Avg SM transition       0.029 ms
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [TCA (TRANSACTION COST ANALYSIS)]
+    Trades analysed         20
+    Mean cost               2.94 bps
+    p95 cost                5.99 bps
+    Mean edge               11.90 bps
+    p95 edge                138.36 bps
+    Positive-edge trades    35.0%
+    Edge covers 2× cost     35.0%
+
+    Order-size histogram    
+        1-100 shares        20 (100.0%)
+        101-500 shares      0 (0.0%)
+        501-2000 shares     0 (0.0%)
+        >2000 shares        0 (0.0%)
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [PER-ALPHA COST SURVIVAL]
+  strategy_id                fills         net  edge_bps  cost_bps  margin  cover%  verdict
+  sig_benign_midcap_v1          20     +103.93     11.90      2.94    4.05   35.0%  SURVIVES
+  FLEET                         20     +103.93  (gross +149.05, fees 45.12)
+  -> 1 SURVIVES
+  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  [PARITY]
+    Trade count             20
+    pnl_hash    (trades)    0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+    config_hash (cfg)       041e3f067903e93c02fa4759c8d928fba768c644d0b354ac76153f4f00583e2d
+    parity_hash (both)      3afb92edaddffbef1a71b8df072c0e6464095eebb4866b0ef0451d7e3244bcee
+    engine_version          0.1.0
+    code_version            0.1.0+d628ce781c36
+    data_version            cache:2364ef7fe41c27d9
+    edge_calibration        none
+    artifact_id (B-PROMO-04)dd7e7fc900e4d664a4b8858dd53e5a2bd54ecb58adbc09093f50282c897a0677
+    hash_seed               <unset>
+
+==============================================================
+
+
+  [VERIFICATION]
+    [PASS]  Events ingested       249540 events
+    [PASS]  Signals fired         61 signals
+    [PASS]  Fills occurred        20 fills
+    [PASS]  P&L computable        realized_pnl tracked
+    [PASS]  Trade journal         20 records
+    [PASS]  Macro state           READY
+    [PASS]  Kill switch           INACTIVE
+
+    Result: 7/7 checks passed.
+
+  Total elapsed: 18.1s
+

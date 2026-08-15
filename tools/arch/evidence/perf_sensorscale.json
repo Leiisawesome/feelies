@@ -1,0 +1,76 @@
+{
+  "measurement": {
+    "config": "configs/bt_app.yaml",
+    "date": "2026-03-26",
+    "mode": "sensorscale",
+    "note": "Replay runs with GC disabled and (on Windows) HIGH_PRIORITY_CLASS, because feelies.harness.backtest_runner sets both around orchestrator.run_backtest(). Numbers are therefore the harness's own conditions, not a bare interpreter's.",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 197 Stepping 2, GenuineIntel",
+    "python": "3.12.13",
+    "symbols": [
+      "APP"
+    ],
+    "tool": "tools/arch/perfmeasure.py",
+    "utc": "2026-08-15T12:52:04Z"
+  },
+  "sensorscale": {
+    "delta": {
+      "extra_sensors_on_quote": 9,
+      "extra_sensors_registered": 11,
+      "fills_preserved": true,
+      "marginal_ns_per_quote_per_quote_sensor": 22596.3,
+      "ns_per_quote_increase": 203366.9,
+      "parity_preserved": true,
+      "ratio": 2.541
+    },
+    "points": [
+      {
+        "fills": 20,
+        "leg": "pruned",
+        "n_events": 266754,
+        "n_quotes": 82678,
+        "ns_per_quote": 131934.1,
+        "parity_hash": "0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3",
+        "replay_ns": 10908048200,
+        "sensor_ids": [
+          "book_imbalance",
+          "ofi_ewma",
+          "realized_vol_30s",
+          "spread_z_30d"
+        ],
+        "sensors_declared": 15,
+        "sensors_on_quote": 4,
+        "sensors_registered": 4
+      },
+      {
+        "fills": 20,
+        "leg": "all_declared",
+        "n_events": 266754,
+        "n_quotes": 82678,
+        "ns_per_quote": 335301.0,
+        "parity_hash": "0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3",
+        "replay_ns": 27722013000,
+        "sensor_ids": [
+          "book_imbalance",
+          "hawkes_intensity",
+          "inventory_pressure",
+          "kyle_lambda_60s",
+          "liquidity_stress_score",
+          "micro_price",
+          "ofi_ewma",
+          "ofi_raw",
+          "quote_flicker_rate",
+          "quote_hazard_rate",
+          "quote_replenish_asymmetry",
+          "realized_vol_30s",
+          "scheduled_flow_window",
+          "spread_z_30d",
+          "trade_through_rate"
+        ],
+        "sensors_declared": 15,
+        "sensors_on_quote": 13,
+        "sensors_registered": 15
+      }
+    ]
+  }
+}

@@ -17,7 +17,11 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PREFIXES = ("", "src/feelies/", "tools/arch/", "tests/", "src/")
-CITATION = re.compile(r"`([\w./\-]+\.py)(?::(\d+|[A-Za-z_][\w]*))?`")
+# A line *range* is matched here even though `measure.py spotcheck` rejects one,
+# so an abbreviated range citation is rewritten rather than left in place because
+# the checker happens not to look at it.
+SUFFIX = r"\d+(?:-\d+)?|[A-Za-z_][\w]*"
+CITATION = re.compile(rf"`([\w./\-]+\.py)(?::({SUFFIX}))?`")
 
 
 def candidates(path: str) -> list[str]:
@@ -73,7 +77,7 @@ def main() -> int:
         for old in sorted(rewrites, key=len, reverse=True):
             text = text.replace(f"`{old}`", f"`{rewrites[old]}`")
             text = re.sub(
-                rf"`{re.escape(old)}:(\d+|[A-Za-z_]\w*)`",
+                rf"`{re.escape(old)}:({SUFFIX})`",
                 lambda m, new=rewrites[old]: f"`{new}:{m.group(1)}`",
                 text,
             )

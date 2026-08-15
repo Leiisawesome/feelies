@@ -508,7 +508,11 @@ def cmd_discover(_args):
     print("]")
 
 
-CITATION = re.compile(r"`([\w./\-]+\.py)(?::(\d+|[A-Za-z_][\w]*))?`")
+# Line ranges (``:86-88``) are matched too. Without the ``-\d+`` branch the whole
+# citation failed to match and was silently skipped, so a range citation whose path
+# did not resolve could never be reported -- a clean sample did not mean every
+# citation resolved.
+CITATION = re.compile(r"`([\w./\-]+\.py)(?::(\d+(?:-\d+)?|[A-Za-z_][\w]*))?`")
 
 
 def cmd_spotcheck(args):
@@ -533,12 +537,18 @@ def cmd_spotcheck(args):
         if not f.exists():
             failures.append((path, sym, "file missing"))
             continue
-        if sym and not sym.isdigit():
-            if sym not in f.read_text(encoding="utf-8", errors="replace"):
-                failures.append((path, sym, "symbol not found in file"))
-        elif sym and sym.isdigit():
-            if int(sym) > len(f.read_text(encoding="utf-8", errors="replace").splitlines()):
-                failures.append((path, sym, "line beyond EOF"))
+        if not sym:
+            continue
+        if re.fullmatch(r"\d+(?:-\d+)?", sym):
+            # Both endpoints of a range must land inside the file.
+            n_lines = len(f.read_text(encoding="utf-8", errors="replace").splitlines())
+            bounds = [int(x) for x in sym.split("-")]
+            if max(bounds) > n_lines:
+                failures.append((path, sym, f"line beyond EOF ({n_lines} lines)"))
+            elif len(bounds) == 2 and bounds[0] > bounds[1]:
+                failures.append((path, sym, "inverted line range"))
+        elif sym not in f.read_text(encoding="utf-8", errors="replace"):
+            failures.append((path, sym, "symbol not found in file"))
     print(f"spotcheck: {len(cites)} distinct citations, sampled {len(sample)}, "
           f"{len(failures)} failure(s)")
     for p, s, why in failures:
