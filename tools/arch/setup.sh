@@ -23,6 +23,10 @@ python3 tools/arch/measure.py all
 
 echo
 echo "==> commit the baseline"
-git add docs/architecture/target tools/arch
-git commit -m "arch: scaffold target-design review, baseline evidence" -q
+git add docs/architecture/target tools/arch .cursor/rules/arch-guardrail.mdc
+if git diff --cached --quiet; then
+    echo "nothing new to commit"
+else
+    git commit -m "arch: scaffold target-design review, baseline evidence" -q
+fi
 echo "done. Next: run Phase 0 (see RUNBOOK.md)."

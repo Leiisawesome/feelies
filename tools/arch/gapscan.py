@@ -195,15 +195,29 @@ def mode_branches() -> dict[str, Any]:
 # ------------------------------------------------------------- alpha leaks
 
 
+def _declared_alpha_ids() -> list[str]:
+    """Every ``alpha_id`` declared in alphas/**/*.alpha.yaml -- the field, not the
+    filename stem (a template file is named ``template_signal`` but declares
+    ``my_signal_alpha``)."""
+    ids: set[str] = set()
+    for f in sorted((ROOT / "alphas").rglob("*.alpha.yaml")):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^alpha_id:\s*([A-Za-z][\w]*)", line)
+            if m:
+                ids.add(m.group(1))
+                break
+    return sorted(ids)
+
+
 def alpha_literal_leaks() -> dict[str, Any]:
     """Alpha ids appearing as literals in core code (Inv-6 alpha-agnosticism)."""
-    ids = sorted(p.stem.replace(".alpha", "") for p in (ROOT / "alphas").rglob("*.alpha.yaml"))
+    ids = _declared_alpha_ids()
     hits: list[dict[str, str]] = []
     for path in sorted(SRC.rglob("*.py")):
         rel = path.relative_to(SRC).as_posix()
         for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             for aid in ids:
-                if aid in line:
+                if re.search(rf"[\"']{re.escape(aid)}[\"']", line):
                     hits.append(
                         {
                             "path": f"src/feelies/{rel}",
@@ -245,14 +259,25 @@ def gate_registry() -> dict[str, Any]:
 
 
 def event_versioning() -> dict[str, Any]:
-    """Which events carry a schema version and which are hot-path (Inv-10)."""
+    """Which events carry a schema version and which are hot-path (Inv-10).
+
+    Only classes in the ``Event`` inheritance tree count as events; enums and
+    plain value objects (``SensorProvenance``, ``TargetPosition``) are excluded.
+    A *schema* version is a ``schema_version`` field on the contract itself --
+    producer/estimator fields like ``sensor_version`` / ``feature_versions`` are
+    not schema versions (Phase 0's schema-vs-producer distinction).
+    """
     path = SRC / "core" / "events.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
+    event_classes: set[str] = {"Event"}
     events: dict[str, dict[str, Any]] = {}
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
         bases = {ast.unparse(b) for b in node.bases}
+        if node.name != "Event" and not (bases & event_classes):
+            continue
+        event_classes.add(node.name)
         fields = [
             item.target.id
             for item in node.body
@@ -262,7 +287,7 @@ def event_versioning() -> dict[str, Any]:
             "bases": sorted(bases),
             "line": node.lineno,
             "n_fields": len(fields),
-            "has_version_field": any("version" in f for f in fields),
+            "has_version_field": "schema_version" in fields,
         }
     return {
         "n_event_classes": len(events),

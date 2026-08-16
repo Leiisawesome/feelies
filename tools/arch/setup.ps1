@@ -93,7 +93,7 @@ if ($LASTEXITCODE -ne 0) { Die "measure.py failed. Fix before continuing -- bad 
 
 Write-Host ""
 Write-Host "==> commit the baseline"
-& git add docs/architecture/target tools/arch
+& git add docs/architecture/target tools/arch .cursor/rules/arch-guardrail.mdc
 if ($LASTEXITCODE -ne 0) { Die "git add failed." }
 
 # diff --cached --quiet: exit 0 means nothing staged, 1 means changes staged.

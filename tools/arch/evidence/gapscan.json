@@ -1,6 +1,8 @@
 {
   "alpha_leaks": {
     "known_alpha_ids": [
+      "my_portfolio_alpha",
+      "my_signal_alpha",
       "paper_smoke_v1",
       "pro_burst_revert_v1",
       "pro_kyle_benign_v1",
@@ -9,11 +11,9 @@
       "sig_hawkes_burst_v1",
       "sig_inventory_revert_v1",
       "sig_kyle_drift_v1",
-      "sig_moc_imbalance_v1",
-      "template_portfolio",
-      "template_signal"
+      "sig_moc_imbalance_v1"
     ],
-    "leak_count": 3,
+    "leak_count": 2,
     "leak_sites": [
       {
         "alpha_id": "sig_moc_imbalance_v1",
@@ -26,12 +26,6 @@
         "line": "910",
         "path": "src/feelies/core/platform_config.py",
         "text": "str(s) for s in data.get(\"moc_strategy_ids\", (\"sig_moc_imbalance_v1\",))"
-      },
-      {
-        "alpha_id": "sig_inventory_revert_v1",
-        "line": "10",
-        "path": "src/feelies/research/forward_ic.py",
-        "text": "``sig_inventory_revert_v1`` \u2014 does a positive"
       }
     ]
   },
@@ -422,14 +416,6 @@
         "line": 393,
         "n_fields": 5
       },
-      "AlertSeverity": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 377,
-        "n_fields": 0
-      },
       "CrossSectionalContext": {
         "bases": [
           "Event"
@@ -448,7 +434,7 @@
         "bases": [
           "Event"
         ],
-        "has_version_field": true,
+        "has_version_field": false,
         "line": 631,
         "n_fields": 10
       },
@@ -476,14 +462,6 @@
         "line": 364,
         "n_fields": 5
       },
-      "MetricType": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 357,
-        "n_fields": 0
-      },
       "NBBOQuote": {
         "bases": [
           "Event"
@@ -500,14 +478,6 @@
         "line": 294,
         "n_fields": 9
       },
-      "OrderAckStatus": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 248,
-        "n_fields": 0
-      },
       "OrderRequest": {
         "bases": [
           "Event"
@@ -515,14 +485,6 @@
         "has_version_field": false,
         "line": 266,
         "n_fields": 11
-      },
-      "OrderType": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 243,
-        "n_fields": 0
       },
       "PositionUpdate": {
         "bases": [
@@ -548,14 +510,6 @@
         "line": 146,
         "n_fields": 11
       },
-      "RiskAction": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 217,
-        "n_fields": 0
-      },
       "RiskVerdict": {
         "bases": [
           "Event"
@@ -572,27 +526,13 @@
         "line": 435,
         "n_fields": 10
       },
-      "SensorProvenance": {
-        "bases": [],
-        "has_version_field": false,
-        "line": 529,
-        "n_fields": 2
-      },
       "SensorReading": {
         "bases": [
           "Event"
         ],
-        "has_version_field": true,
+        "has_version_field": false,
         "line": 607,
         "n_fields": 8
-      },
-      "Side": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 238,
-        "n_fields": 0
       },
       "Signal": {
         "bases": [
@@ -601,14 +541,6 @@
         "has_version_field": false,
         "line": 176,
         "n_fields": 15
-      },
-      "SignalDirection": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 169,
-        "n_fields": 0
       },
       "SizedPositionIntent": {
         "bases": [
@@ -634,12 +566,6 @@
         "line": 118,
         "n_fields": 4
       },
-      "TargetPosition": {
-        "bases": [],
-        "has_version_field": false,
-        "line": 543,
-        "n_fields": 4
-      },
       "Trade": {
         "bases": [
           "Event"
@@ -647,51 +573,32 @@
         "has_version_field": false,
         "line": 92,
         "n_fields": 15
-      },
-      "TrendMechanism": {
-        "bases": [
-          "Enum"
-        ],
-        "has_version_field": false,
-        "line": 474,
-        "n_fields": 0
       }
     },
-    "n_event_classes": 31,
-    "with_version_field": [
-      "HorizonFeatureSnapshot",
-      "SensorReading"
-    ],
+    "n_event_classes": 21,
+    "with_version_field": [],
     "without_version_field": [
       "Alert",
-      "AlertSeverity",
       "CrossSectionalContext",
       "Event",
+      "HorizonFeatureSnapshot",
       "HorizonTick",
       "KillSwitchActivation",
       "MetricEvent",
-      "MetricType",
       "NBBOQuote",
       "OrderAck",
-      "OrderAckStatus",
       "OrderRequest",
-      "OrderType",
       "PositionUpdate",
       "RegimeHazardSpike",
       "RegimeState",
-      "RiskAction",
       "RiskVerdict",
       "SafetyStateChange",
-      "SensorProvenance",
-      "Side",
+      "SensorReading",
       "Signal",
-      "SignalDirection",
       "SizedPositionIntent",
       "StateTransition",
       "SymbolHalted",
-      "TargetPosition",
-      "Trade",
-      "TrendMechanism"
+      "Trade"
     ]
   },
   "gates": {
