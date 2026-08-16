@@ -1,0 +1,800 @@
+{
+  "alpha_leaks": {
+    "known_alpha_ids": [
+      "paper_smoke_v1",
+      "pro_burst_revert_v1",
+      "pro_kyle_benign_v1",
+      "sig_benign_midcap_v1",
+      "sig_contra_fixture_v1",
+      "sig_hawkes_burst_v1",
+      "sig_inventory_revert_v1",
+      "sig_kyle_drift_v1",
+      "sig_moc_imbalance_v1",
+      "template_portfolio",
+      "template_signal"
+    ],
+    "leak_count": 3,
+    "leak_sites": [
+      {
+        "alpha_id": "sig_moc_imbalance_v1",
+        "line": "108",
+        "path": "src/feelies/core/platform_config.py",
+        "text": "moc_strategy_ids: tuple[str, ...] = (\"sig_moc_imbalance_v1\",)"
+      },
+      {
+        "alpha_id": "sig_moc_imbalance_v1",
+        "line": "910",
+        "path": "src/feelies/core/platform_config.py",
+        "text": "str(s) for s in data.get(\"moc_strategy_ids\", (\"sig_moc_imbalance_v1\",))"
+      },
+      {
+        "alpha_id": "sig_inventory_revert_v1",
+        "line": "10",
+        "path": "src/feelies/research/forward_ic.py",
+        "text": "``sig_inventory_revert_v1`` \u2014 does a positive"
+      }
+    ]
+  },
+  "citations": {
+    "line_citations": [
+      {
+        "claimed_line": 289,
+        "engine": "E3",
+        "path": "src/feelies/bootstrap.py",
+        "resolves": true,
+        "token": "regime"
+      },
+      {
+        "claimed_line": 196,
+        "engine": "E4",
+        "path": "src/feelies/signals/horizon_engine.py",
+        "resolves": true,
+        "token": "regime"
+      },
+      {
+        "claimed_line": 75,
+        "engine": "E6",
+        "path": "src/feelies/composition/cross_sectional.py",
+        "resolves": true,
+        "token": "sort"
+      },
+      {
+        "claimed_line": 159,
+        "engine": "E5/E12",
+        "path": "src/feelies/forensics/cost_circuit_breaker.py",
+        "resolves": true,
+        "token": "QUARANTINE"
+      },
+      {
+        "claimed_line": 416,
+        "engine": "E11",
+        "path": "src/feelies/core/events.py",
+        "resolves": true,
+        "token": "published on the bus"
+      }
+    ],
+    "symbol_citations": [
+      {
+        "actual_def_lines": [
+          5014
+        ],
+        "claimed_line": 5014,
+        "claimed_line_text": "def _update_halt_state(self, trade: Trade) -> None:",
+        "engine": "E1",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_update_halt_state"
+      },
+      {
+        "actual_def_lines": [
+          5379
+        ],
+        "claimed_line": 5379,
+        "claimed_line_text": "def _verify_data_integrity(self) -> bool:",
+        "engine": "E1",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_verify_data_integrity"
+      },
+      {
+        "actual_def_lines": [
+          5423
+        ],
+        "claimed_line": 5423,
+        "claimed_line_text": "def _restore_feature_snapshots(self) -> None:",
+        "engine": "E2",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_restore_feature_snapshots"
+      },
+      {
+        "actual_def_lines": [
+          5454
+        ],
+        "claimed_line": 5454,
+        "claimed_line_text": "def _checkpoint_feature_snapshots(self) -> None:",
+        "engine": "E2",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_checkpoint_feature_snapshots"
+      },
+      {
+        "actual_def_lines": [
+          2335
+        ],
+        "claimed_line": 2335,
+        "claimed_line_text": "def _calibrate_regime_engine(self) -> None:",
+        "engine": "E3",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_calibrate_regime_engine"
+      },
+      {
+        "actual_def_lines": [
+          2432
+        ],
+        "claimed_line": 2432,
+        "claimed_line_text": "def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:",
+        "engine": "E3",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_update_regime"
+      },
+      {
+        "actual_def_lines": [
+          2501
+        ],
+        "claimed_line": 2501,
+        "claimed_line_text": "def _maybe_publish_hazard_spike(",
+        "engine": "E3",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_maybe_publish_hazard_spike"
+      },
+      {
+        "actual_def_lines": [
+          4556
+        ],
+        "claimed_line": 4556,
+        "claimed_line_text": "def _regime_label_for(self, symbol: str) -> str:",
+        "engine": "E3",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_regime_label_for"
+      },
+      {
+        "actual_def_lines": [
+          5460
+        ],
+        "claimed_line": 5460,
+        "claimed_line_text": "def _checkpoint_regime_snapshot(self) -> None:",
+        "engine": "E3",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_checkpoint_regime_snapshot"
+      },
+      {
+        "actual_def_lines": [
+          4831
+        ],
+        "claimed_line": 1676,
+        "claimed_line_text": "signal = self._select_bus_signal()",
+        "engine": "E4",
+        "kind": "call",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_select_bus_signal"
+      },
+      {
+        "actual_def_lines": [
+          4229
+        ],
+        "claimed_line": 4229,
+        "claimed_line_text": "def _reconcile_fills(",
+        "engine": "E7",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_reconcile_fills"
+      },
+      {
+        "actual_def_lines": [
+          4577
+        ],
+        "claimed_line": 4577,
+        "claimed_line_text": "def _distribute_fill_to_strategies(",
+        "engine": "E7",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_distribute_fill_to_strategies"
+      },
+      {
+        "actual_def_lines": [
+          4057
+        ],
+        "claimed_line": 4057,
+        "claimed_line_text": "def _record_fill_attribution(",
+        "engine": "E7",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_record_fill_attribution"
+      },
+      {
+        "actual_def_lines": [
+          2718
+        ],
+        "claimed_line": 2718,
+        "claimed_line_text": "def _compute_target_quantity(",
+        "engine": "E8",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_compute_target_quantity"
+      },
+      {
+        "actual_def_lines": [
+          2530
+        ],
+        "claimed_line": 2530,
+        "claimed_line_text": "def _escalate_risk(self, correlation_id: str) -> None:",
+        "engine": "E8",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_escalate_risk"
+      },
+      {
+        "actual_def_lines": [
+          2601
+        ],
+        "claimed_line": 2601,
+        "claimed_line_text": "def _emergency_flatten_all(",
+        "engine": "E8",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_emergency_flatten_all"
+      },
+      {
+        "actual_def_lines": [
+          782
+        ],
+        "claimed_line": 782,
+        "claimed_line_text": "def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:",
+        "engine": "E8",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_maybe_flip_buying_power_at_rth_close"
+      },
+      {
+        "actual_def_lines": [
+          2814
+        ],
+        "claimed_line": 2814,
+        "claimed_line_text": "def _plan_for_signal(",
+        "engine": "E9",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_plan_for_signal"
+      },
+      {
+        "actual_def_lines": [
+          3278
+        ],
+        "claimed_line": 3278,
+        "claimed_line_text": "def _try_build_order_from_intent(",
+        "engine": "E9",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_try_build_order_from_intent"
+      },
+      {
+        "actual_def_lines": [
+          3371
+        ],
+        "claimed_line": 3371,
+        "claimed_line_text": "def _resolve_order_route(",
+        "engine": "E9",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_resolve_order_route"
+      },
+      {
+        "actual_def_lines": [
+          3505
+        ],
+        "claimed_line": 3505,
+        "claimed_line_text": "def _filter_portfolio_orders_for_admission(",
+        "engine": "E9",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_filter_portfolio_orders_for_admission"
+      },
+      {
+        "actual_def_lines": [
+          2984
+        ],
+        "claimed_line": 2984,
+        "claimed_line_text": "def _execute_reverse(",
+        "engine": "E9",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_execute_reverse"
+      },
+      {
+        "actual_def_lines": [
+          3831
+        ],
+        "claimed_line": 3831,
+        "claimed_line_text": "def _submit_tracked_order(",
+        "engine": "E10",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_submit_tracked_order"
+      },
+      {
+        "actual_def_lines": [
+          3793
+        ],
+        "claimed_line": 3793,
+        "claimed_line_text": "def _poll_order_router_acks(",
+        "engine": "E10",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_poll_order_router_acks"
+      },
+      {
+        "actual_def_lines": [
+          4103
+        ],
+        "claimed_line": 4103,
+        "claimed_line_text": "def _apply_ack_to_order(self, ack: OrderAck) -> None:",
+        "engine": "E10",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_apply_ack_to_order"
+      },
+      {
+        "actual_def_lines": [
+          4086
+        ],
+        "claimed_line": 4086,
+        "claimed_line_text": "def _transition_order(",
+        "engine": "E10",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_transition_order"
+      },
+      {
+        "actual_def_lines": [
+          3936
+        ],
+        "claimed_line": 3936,
+        "claimed_line_text": "def _drain_async_fills(self, correlation_id: str) -> None:",
+        "engine": "E10",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "_drain_async_fills"
+      },
+      {
+        "actual_def_lines": [
+          3438
+        ],
+        "claimed_line": 3438,
+        "claimed_line_text": "def cancel_order(self, order_id: str, *, reason: str = \"operator\") -> bool:",
+        "engine": "E10",
+        "kind": "def",
+        "path": "src/feelies/kernel/orchestrator.py",
+        "resolves": true,
+        "symbol": "cancel_order"
+      }
+    ]
+  },
+  "events": {
+    "events": {
+      "Alert": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 393,
+        "n_fields": 5
+      },
+      "AlertSeverity": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 377,
+        "n_fields": 0
+      },
+      "CrossSectionalContext": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 655,
+        "n_fields": 7
+      },
+      "Event": {
+        "bases": [],
+        "has_version_field": false,
+        "line": 31,
+        "n_fields": 4
+      },
+      "HorizonFeatureSnapshot": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": true,
+        "line": 631,
+        "n_fields": 10
+      },
+      "HorizonTick": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 573,
+        "n_fields": 7
+      },
+      "KillSwitchActivation": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 411,
+        "n_fields": 2
+      },
+      "MetricEvent": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 364,
+        "n_fields": 5
+      },
+      "MetricType": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 357,
+        "n_fields": 0
+      },
+      "NBBOQuote": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 59,
+        "n_fields": 15
+      },
+      "OrderAck": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 294,
+        "n_fields": 9
+      },
+      "OrderAckStatus": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 248,
+        "n_fields": 0
+      },
+      "OrderRequest": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 266,
+        "n_fields": 11
+      },
+      "OrderType": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 243,
+        "n_fields": 0
+      },
+      "PositionUpdate": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 321,
+        "n_fields": 7
+      },
+      "RegimeHazardSpike": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 507,
+        "n_fields": 7
+      },
+      "RegimeState": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 146,
+        "n_fields": 11
+      },
+      "RiskAction": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 217,
+        "n_fields": 0
+      },
+      "RiskVerdict": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 225,
+        "n_fields": 5
+      },
+      "SafetyStateChange": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 435,
+        "n_fields": 10
+      },
+      "SensorProvenance": {
+        "bases": [],
+        "has_version_field": false,
+        "line": 529,
+        "n_fields": 2
+      },
+      "SensorReading": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": true,
+        "line": 607,
+        "n_fields": 8
+      },
+      "Side": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 238,
+        "n_fields": 0
+      },
+      "Signal": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 176,
+        "n_fields": 15
+      },
+      "SignalDirection": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 169,
+        "n_fields": 0
+      },
+      "SizedPositionIntent": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 682,
+        "n_fields": 11
+      },
+      "StateTransition": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 344,
+        "n_fields": 5
+      },
+      "SymbolHalted": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 118,
+        "n_fields": 4
+      },
+      "TargetPosition": {
+        "bases": [],
+        "has_version_field": false,
+        "line": 543,
+        "n_fields": 4
+      },
+      "Trade": {
+        "bases": [
+          "Event"
+        ],
+        "has_version_field": false,
+        "line": 92,
+        "n_fields": 15
+      },
+      "TrendMechanism": {
+        "bases": [
+          "Enum"
+        ],
+        "has_version_field": false,
+        "line": 474,
+        "n_fields": 0
+      }
+    },
+    "n_event_classes": 31,
+    "with_version_field": [
+      "HorizonFeatureSnapshot",
+      "SensorReading"
+    ],
+    "without_version_field": [
+      "Alert",
+      "AlertSeverity",
+      "CrossSectionalContext",
+      "Event",
+      "HorizonTick",
+      "KillSwitchActivation",
+      "MetricEvent",
+      "MetricType",
+      "NBBOQuote",
+      "OrderAck",
+      "OrderAckStatus",
+      "OrderRequest",
+      "OrderType",
+      "PositionUpdate",
+      "RegimeHazardSpike",
+      "RegimeState",
+      "RiskAction",
+      "RiskVerdict",
+      "SafetyStateChange",
+      "SensorProvenance",
+      "Side",
+      "Signal",
+      "SignalDirection",
+      "SizedPositionIntent",
+      "StateTransition",
+      "SymbolHalted",
+      "TargetPosition",
+      "Trade",
+      "TrendMechanism"
+    ]
+  },
+  "gates": {
+    "apparent_noop": [],
+    "enum_members": [],
+    "g_numbers_referenced": [
+      "G1",
+      "G2",
+      "G3",
+      "G4",
+      "G5",
+      "G6",
+      "G7",
+      "G8",
+      "G9",
+      "G10",
+      "G11",
+      "G12",
+      "G14",
+      "G15",
+      "G16",
+      "G17"
+    ],
+    "validator_lines": 1380
+  },
+  "mode_branches": {
+    "by_package": {
+      "<root>": 20,
+      "core": 2,
+      "forensics": 2,
+      "harness": 2,
+      "promotion": 1
+    },
+    "outside_by_package": {
+      "<root>": 20,
+      "core": 2,
+      "forensics": 2,
+      "harness": 2,
+      "promotion": 1
+    },
+    "outside_execution_and_broker": 27,
+    "sites": [
+      "src/feelies/bootstrap.py:183",
+      "src/feelies/bootstrap.py:190",
+      "src/feelies/bootstrap.py:203",
+      "src/feelies/bootstrap.py:222",
+      "src/feelies/bootstrap.py:273",
+      "src/feelies/bootstrap.py:303",
+      "src/feelies/bootstrap.py:330",
+      "src/feelies/bootstrap.py:348",
+      "src/feelies/bootstrap.py:392",
+      "src/feelies/bootstrap.py:410",
+      "src/feelies/bootstrap.py:521",
+      "src/feelies/bootstrap.py:651",
+      "src/feelies/bootstrap.py:661",
+      "src/feelies/bootstrap.py:821",
+      "src/feelies/bootstrap.py:867",
+      "src/feelies/bootstrap.py:870",
+      "src/feelies/bootstrap.py:1143",
+      "src/feelies/bootstrap.py:1180",
+      "src/feelies/bootstrap.py:1820",
+      "src/feelies/bootstrap.py:1882",
+      "src/feelies/core/platform_config.py:58",
+      "src/feelies/core/platform_config.py:447",
+      "src/feelies/forensics/cost_circuit_breaker.py:63",
+      "src/feelies/forensics/cost_circuit_breaker.py:172",
+      "src/feelies/harness/backtest_prep.py:141",
+      "src/feelies/harness/backtest_runner.py:190",
+      "src/feelies/promotion/lifecycle.py:570"
+    ],
+    "total": 27
+  },
+  "orchestrator": {
+    "class_name": "Orchestrator",
+    "file_lines": 5480,
+    "orchestrator_methods": 123,
+    "private_methods": 101,
+    "public_methods": 22,
+    "store_access": {
+      "_backend": {
+        "method_calls_through": 0,
+        "references": 14
+      },
+      "_positions": {
+        "method_calls_through": 23,
+        "references": 34
+      },
+      "_regime_engine": {
+        "method_calls_through": 3,
+        "references": 19
+      },
+      "_risk_engine": {
+        "method_calls_through": 7,
+        "references": 12
+      },
+      "_sensor_registry": {
+        "method_calls_through": 1,
+        "references": 3
+      },
+      "_strategy_positions": {
+        "method_calls_through": 13,
+        "references": 20
+      }
+    }
+  }
+}

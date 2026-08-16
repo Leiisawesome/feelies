@@ -1309,7 +1309,7 @@
       "handler": "HorizonMetricsCollector._on_context",
       "line": 87,
       "path": "src/feelies/monitoring/horizon_metrics.py",
-      "publishes_via": "HorizonMetricsCollector._publish_alert"
+      "publishes_via": "HorizonMetricsCollector._publish_metric"
     },
     {
       "event": "SizedPositionIntent",
