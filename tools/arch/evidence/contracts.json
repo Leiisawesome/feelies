@@ -1,0 +1,708 @@
+{
+  "dispatch": {
+    "call_site_counts": {
+      "publish": 48,
+      "subscribe": 32,
+      "subscribe_all": 0
+    },
+    "exact_type_dispatch": true,
+    "path": "src/feelies/bus/event_bus.py",
+    "public_methods": [
+      "subscribe",
+      "subscribe_all",
+      "publish"
+    ],
+    "subtype_dispatch": false
+  },
+  "dynamic_subscribe_sites": [
+    {
+      "call": "subscribe",
+      "event_type": "event_type",
+      "line": 246,
+      "path": "src/feelies/harness/backtest_runner.py",
+      "receiver": "orchestrator._bus",
+      "resolution": "subscribe_arg"
+    },
+    {
+      "call": "subscribe",
+      "event_type": "event_type",
+      "line": 193,
+      "path": "src/feelies/sensors/registry.py",
+      "receiver": "self._bus",
+      "resolution": "subscribe_arg"
+    }
+  ],
+  "event_classes": {
+    "Alert": {
+      "bases": [
+        "Event"
+      ],
+      "class": "Alert",
+      "field_names": [
+        "severity",
+        "layer",
+        "alert_name",
+        "message",
+        "context"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 393,
+      "n_fields": 5,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "CrossSectionalContext": {
+      "bases": [
+        "Event"
+      ],
+      "class": "CrossSectionalContext",
+      "field_names": [
+        "horizon_seconds",
+        "boundary_index",
+        "universe",
+        "signals_by_symbol",
+        "signals_by_strategy_by_symbol",
+        "snapshots_by_symbol",
+        "completeness"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 655,
+      "n_fields": 7,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "Event": {
+      "bases": [],
+      "class": "Event",
+      "field_names": [
+        "timestamp_ns",
+        "correlation_id",
+        "sequence",
+        "source_layer"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 31,
+      "n_fields": 4,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "HorizonFeatureSnapshot": {
+      "bases": [
+        "Event"
+      ],
+      "class": "HorizonFeatureSnapshot",
+      "field_names": [
+        "symbol",
+        "horizon_seconds",
+        "boundary_index",
+        "boundary_ts_ns",
+        "values",
+        "warm",
+        "stale",
+        "source_sensors",
+        "feature_versions",
+        "parent_correlation_id"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 631,
+      "n_fields": 10,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "HorizonTick": {
+      "bases": [
+        "Event"
+      ],
+      "class": "HorizonTick",
+      "field_names": [
+        "horizon_seconds",
+        "boundary_index",
+        "session_id",
+        "scope",
+        "boundary_timestamp_ns",
+        "symbol",
+        "boundary_ts_ns"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 573,
+      "n_fields": 7,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "KillSwitchActivation": {
+      "bases": [
+        "Event"
+      ],
+      "class": "KillSwitchActivation",
+      "field_names": [
+        "reason",
+        "activated_by"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 411,
+      "n_fields": 2,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "MetricEvent": {
+      "bases": [
+        "Event"
+      ],
+      "class": "MetricEvent",
+      "field_names": [
+        "layer",
+        "name",
+        "value",
+        "metric_type",
+        "tags"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 364,
+      "n_fields": 5,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "NBBOQuote": {
+      "bases": [
+        "Event"
+      ],
+      "class": "NBBOQuote",
+      "field_names": [
+        "symbol",
+        "bid",
+        "ask",
+        "bid_size",
+        "ask_size",
+        "bid_exchange",
+        "ask_exchange",
+        "exchange_timestamp_ns",
+        "conditions",
+        "indicators",
+        "sequence_number",
+        "tape",
+        "participant_timestamp_ns",
+        "trf_timestamp_ns",
+        "received_ns"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 59,
+      "n_fields": 15,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "OrderAck": {
+      "bases": [
+        "Event"
+      ],
+      "class": "OrderAck",
+      "field_names": [
+        "order_id",
+        "symbol",
+        "status",
+        "filled_quantity",
+        "fill_price",
+        "fees",
+        "cost_bps",
+        "reason",
+        "request_sequence"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 294,
+      "n_fields": 9,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "OrderRequest": {
+      "bases": [
+        "Event"
+      ],
+      "class": "OrderRequest",
+      "field_names": [
+        "order_id",
+        "symbol",
+        "side",
+        "order_type",
+        "quantity",
+        "limit_price",
+        "strategy_id",
+        "is_short",
+        "is_moc",
+        "g12_disclosed_cost_total_bps",
+        "reason"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 266,
+      "n_fields": 11,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "PositionUpdate": {
+      "bases": [
+        "Event"
+      ],
+      "class": "PositionUpdate",
+      "field_names": [
+        "symbol",
+        "quantity",
+        "avg_price",
+        "realized_pnl",
+        "unrealized_pnl",
+        "cumulative_fees",
+        "cost_bps"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 321,
+      "n_fields": 7,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "RegimeHazardSpike": {
+      "bases": [
+        "Event"
+      ],
+      "class": "RegimeHazardSpike",
+      "field_names": [
+        "symbol",
+        "engine_name",
+        "departing_state",
+        "departing_posterior_prev",
+        "departing_posterior_now",
+        "incoming_state",
+        "hazard_score"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 507,
+      "n_fields": 7,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "RegimeState": {
+      "bases": [
+        "Event"
+      ],
+      "class": "RegimeState",
+      "field_names": [
+        "symbol",
+        "engine_name",
+        "state_names",
+        "posteriors",
+        "dominant_state",
+        "dominant_name",
+        "horizon_seconds",
+        "stability",
+        "posterior_entropy_nats",
+        "calibrated",
+        "discriminability"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 146,
+      "n_fields": 11,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "RiskVerdict": {
+      "bases": [
+        "Event"
+      ],
+      "class": "RiskVerdict",
+      "field_names": [
+        "symbol",
+        "action",
+        "reason",
+        "scaling_factor",
+        "constraints"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 225,
+      "n_fields": 5,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "SafetyStateChange": {
+      "bases": [
+        "Event"
+      ],
+      "class": "SafetyStateChange",
+      "field_names": [
+        "symbol",
+        "strategy_id",
+        "safe",
+        "reason",
+        "trend_mechanism",
+        "regime_gate_state",
+        "consumed_features",
+        "expected_half_life_seconds",
+        "disclosed_cost_total_bps",
+        "disclosed_margin_ratio"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 435,
+      "n_fields": 10,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "SensorReading": {
+      "bases": [
+        "Event"
+      ],
+      "class": "SensorReading",
+      "field_names": [
+        "symbol",
+        "sensor_id",
+        "sensor_version",
+        "value",
+        "confidence",
+        "warm",
+        "provenance",
+        "parent_correlation_id"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 607,
+      "n_fields": 8,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "Signal": {
+      "bases": [
+        "Event"
+      ],
+      "class": "Signal",
+      "field_names": [
+        "symbol",
+        "strategy_id",
+        "direction",
+        "strength",
+        "edge_estimate_bps",
+        "disclosed_cost_total_bps",
+        "reversal_cost_estimate_bps",
+        "disclosed_margin_ratio",
+        "metadata",
+        "layer",
+        "horizon_seconds",
+        "regime_gate_state",
+        "consumed_features",
+        "trend_mechanism",
+        "expected_half_life_seconds"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 176,
+      "n_fields": 15,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "SizedPositionIntent": {
+      "bases": [
+        "Event"
+      ],
+      "class": "SizedPositionIntent",
+      "field_names": [
+        "strategy_id",
+        "layer",
+        "horizon_seconds",
+        "target_positions",
+        "factor_exposures",
+        "expected_turnover_usd",
+        "expected_gross_exposure_usd",
+        "mechanism_breakdown",
+        "disclosed_cost_total_bps_by_symbol",
+        "decision_basis_hash",
+        "solver_status"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 682,
+      "n_fields": 11,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "StateTransition": {
+      "bases": [
+        "Event"
+      ],
+      "class": "StateTransition",
+      "field_names": [
+        "machine_name",
+        "from_state",
+        "to_state",
+        "trigger",
+        "metadata"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 344,
+      "n_fields": 5,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "SymbolHalted": {
+      "bases": [
+        "Event"
+      ],
+      "class": "SymbolHalted",
+      "field_names": [
+        "symbol",
+        "halted",
+        "reason",
+        "blackout_until_ns"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 118,
+      "n_fields": 4,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    },
+    "Trade": {
+      "bases": [
+        "Event"
+      ],
+      "class": "Trade",
+      "field_names": [
+        "symbol",
+        "price",
+        "size",
+        "exchange",
+        "trade_id",
+        "exchange_timestamp_ns",
+        "conditions",
+        "decimal_size",
+        "sequence_number",
+        "tape",
+        "trf_id",
+        "trf_timestamp_ns",
+        "participant_timestamp_ns",
+        "correction",
+        "received_ns"
+      ],
+      "frozen": true,
+      "is_dataclass": true,
+      "line": 92,
+      "n_fields": 15,
+      "path": "src/feelies/core/events.py",
+      "slots": true
+    }
+  },
+  "event_classes_never_published": [],
+  "event_classes_outside_core_events": [],
+  "events_with_mutable_container_fields": {
+    "Alert": [
+      "context"
+    ],
+    "CrossSectionalContext": [
+      "signals_by_symbol",
+      "signals_by_strategy_by_symbol",
+      "snapshots_by_symbol"
+    ],
+    "HorizonFeatureSnapshot": [
+      "values",
+      "warm",
+      "stale",
+      "source_sensors",
+      "feature_versions"
+    ],
+    "MetricEvent": [
+      "tags"
+    ],
+    "RiskVerdict": [
+      "constraints"
+    ],
+    "Signal": [
+      "metadata"
+    ],
+    "SizedPositionIntent": [
+      "target_positions",
+      "factor_exposures",
+      "mechanism_breakdown",
+      "disclosed_cost_total_bps_by_symbol"
+    ],
+    "StateTransition": [
+      "metadata"
+    ]
+  },
+  "events_with_version_field": {},
+  "n_event_classes": 21,
+  "n_publish_sites": 48,
+  "n_subscribe_sites": 32,
+  "non_frozen_event_classes": [],
+  "published_never_subscribed": [
+    "KillSwitchActivation",
+    "OrderAck",
+    "PositionUpdate",
+    "RiskVerdict",
+    "StateTransition",
+    "SymbolHalted"
+  ],
+  "publishers_by_type": {
+    "Alert": [
+      "src/feelies/bootstrap.py:598",
+      "src/feelies/kernel/orchestrator.py:680",
+      "src/feelies/monitoring/horizon_metrics.py:322",
+      "src/feelies/risk/basic_risk.py:366",
+      "src/feelies/risk/basic_risk.py:583"
+    ],
+    "CrossSectionalContext": [
+      "src/feelies/composition/synchronizer.py:312"
+    ],
+    "HorizonFeatureSnapshot": [
+      "src/feelies/features/aggregator.py:347"
+    ],
+    "HorizonTick": [
+      "src/feelies/kernel/orchestrator.py:1223",
+      "src/feelies/kernel/orchestrator.py:1252"
+    ],
+    "KillSwitchActivation": [
+      "src/feelies/kernel/orchestrator.py:2585"
+    ],
+    "MetricEvent": [
+      "src/feelies/kernel/orchestrator.py:1484",
+      "src/feelies/kernel/orchestrator.py:1569",
+      "src/feelies/kernel/orchestrator.py:2114",
+      "src/feelies/kernel/orchestrator.py:2143",
+      "src/feelies/monitoring/horizon_metrics.py:299"
+    ],
+    "NBBOQuote": [
+      "src/feelies/kernel/orchestrator.py:1634"
+    ],
+    "OrderAck": [
+      "src/feelies/kernel/orchestrator.py:3828"
+    ],
+    "OrderRequest": [
+      "src/feelies/kernel/orchestrator.py:1399",
+      "src/feelies/kernel/orchestrator.py:1454",
+      "src/feelies/kernel/orchestrator.py:2061",
+      "src/feelies/kernel/orchestrator.py:2644",
+      "src/feelies/kernel/orchestrator.py:3223",
+      "src/feelies/kernel/orchestrator.py:3239",
+      "src/feelies/kernel/orchestrator.py:4012",
+      "src/feelies/kernel/orchestrator.py:5359",
+      "src/feelies/risk/deferral_cap.py:378",
+      "src/feelies/risk/exit_composer.py:486",
+      "src/feelies/risk/hazard_exit.py:253",
+      "src/feelies/risk/stop_exit.py:297"
+    ],
+    "PositionUpdate": [
+      "src/feelies/kernel/orchestrator.py:4268",
+      "src/feelies/kernel/orchestrator.py:4450"
+    ],
+    "RegimeHazardSpike": [
+      "src/feelies/kernel/orchestrator.py:2515"
+    ],
+    "RegimeState": [
+      "src/feelies/kernel/orchestrator.py:2476"
+    ],
+    "RiskVerdict": [
+      "src/feelies/kernel/orchestrator.py:1774",
+      "src/feelies/kernel/orchestrator.py:1903",
+      "src/feelies/kernel/orchestrator.py:3032",
+      "src/feelies/kernel/orchestrator.py:3174",
+      "src/feelies/kernel/orchestrator.py:4939"
+    ],
+    "SafetyStateChange": [
+      "src/feelies/signals/horizon_engine.py:540"
+    ],
+    "SensorReading": [
+      "src/feelies/sensors/registry.py:291"
+    ],
+    "Signal": [
+      "src/feelies/signals/horizon_engine.py:464",
+      "src/feelies/signals/horizon_engine.py:505"
+    ],
+    "SizedPositionIntent": [
+      "src/feelies/composition/engine.py:276",
+      "src/feelies/composition/engine.py:324"
+    ],
+    "StateTransition": [
+      "src/feelies/kernel/orchestrator.py:4696"
+    ],
+    "SymbolHalted": [
+      "src/feelies/kernel/orchestrator.py:5074"
+    ],
+    "Trade": [
+      "src/feelies/kernel/orchestrator.py:1200",
+      "src/feelies/kernel/orchestrator.py:1212"
+    ]
+  },
+  "subscribed_never_published": [],
+  "subscribers_by_type": {
+    "Alert": [
+      "src/feelies/kernel/orchestrator.py:563"
+    ],
+    "CrossSectionalContext": [
+      "src/feelies/composition/engine.py:197",
+      "src/feelies/monitoring/horizon_metrics.py:87",
+      "src/feelies/portfolio/cross_sectional_tracker.py:101"
+    ],
+    "HorizonFeatureSnapshot": [
+      "src/feelies/composition/synchronizer.py:128",
+      "src/feelies/signals/horizon_engine.py:198"
+    ],
+    "HorizonTick": [
+      "src/feelies/composition/synchronizer.py:130",
+      "src/feelies/features/aggregator.py:253"
+    ],
+    "MetricEvent": [
+      "src/feelies/harness/backtest_runner.py:747",
+      "src/feelies/kernel/orchestrator.py:559"
+    ],
+    "NBBOQuote": [
+      "src/feelies/bootstrap.py:353",
+      "src/feelies/harness/backtest_runner.py:765",
+      "src/feelies/risk/stop_exit.py:172"
+    ],
+    "OrderRequest": [
+      "src/feelies/kernel/orchestrator.py:585",
+      "src/feelies/monitoring/horizon_metrics.py:90"
+    ],
+    "RegimeHazardSpike": [
+      "src/feelies/monitoring/horizon_metrics.py:89",
+      "src/feelies/risk/hazard_exit.py:141"
+    ],
+    "RegimeState": [
+      "src/feelies/services/regime_state_cache.py:54",
+      "src/feelies/signals/horizon_engine.py:196"
+    ],
+    "SafetyStateChange": [
+      "src/feelies/risk/deferral_cap.py:237",
+      "src/feelies/risk/exit_composer.py:289"
+    ],
+    "SensorReading": [
+      "src/feelies/features/aggregator.py:252",
+      "src/feelies/signals/horizon_engine.py:197"
+    ],
+    "Signal": [
+      "src/feelies/composition/synchronizer.py:129",
+      "src/feelies/kernel/orchestrator.py:574"
+    ],
+    "SizedPositionIntent": [
+      "src/feelies/kernel/orchestrator.py:578",
+      "src/feelies/monitoring/horizon_metrics.py:88",
+      "src/feelies/portfolio/cross_sectional_tracker.py:102"
+    ],
+    "Trade": [
+      "src/feelies/risk/deferral_cap.py:238",
+      "src/feelies/risk/hazard_exit.py:142"
+    ],
+    "event_type": [
+      "src/feelies/harness/backtest_runner.py:246",
+      "src/feelies/sensors/registry.py:193"
+    ]
+  },
+  "unresolved_publish_sites": []
+}

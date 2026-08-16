@@ -1,0 +1,172 @@
+{
+  "M1_deliverables": {
+    "checked": 12,
+    "missing": []
+  },
+  "M2_f_items": {
+    "sections_found": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7"
+    ],
+    "detail": {
+      "F.1": {
+        "section_present": true,
+        "model_finding_none": false,
+        "engines_mentioned": [
+          "1",
+          "2",
+          "7"
+        ]
+      },
+      "F.2": {
+        "section_present": true,
+        "model_finding_none": false,
+        "engines_mentioned": [
+          "1",
+          "2",
+          "7"
+        ]
+      },
+      "F.3": {
+        "section_present": true,
+        "model_finding_none": false,
+        "engines_mentioned": [
+          "1",
+          "2",
+          "7"
+        ]
+      },
+      "F.4": {
+        "section_present": true,
+        "model_finding_none": true,
+        "engines_mentioned": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12"
+        ]
+      },
+      "F.5": {
+        "section_present": true,
+        "model_finding_none": true,
+        "engines_mentioned": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12"
+        ]
+      },
+      "F.6": {
+        "section_present": true,
+        "model_finding_none": false,
+        "engines_mentioned": [
+          "1",
+          "2",
+          "7"
+        ]
+      },
+      "F.7": {
+        "section_present": true,
+        "model_finding_none": true,
+        "engines_mentioned": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12"
+        ]
+      }
+    },
+    "eighth_responsibility": true
+  },
+  "M3_invariants": {
+    "C.1": [
+      "test_parity_oracle_under_random_hash_seed"
+    ],
+    "C.2": [
+      "A1",
+      "R7",
+      "test_alpha_output_is_pure_wrt_portfolio_state",
+      "test_sensor_throttle_uses_event_time"
+    ],
+    "C.3": [
+      "test_import_tiers_and_engine_independence"
+    ],
+    "C.4": [
+      "test_mode_branches_only_at_composition_root",
+      "test_mode_parity_with_identically_stubbed_backend"
+    ],
+    "C.5": [
+      "test_degradation_monotonicity",
+      "test_latency_budget_breach_reduces_exposure",
+      "test_per_alpha_budget_totality",
+      "test_position_read_fails_closed",
+      "test_reduction_is_always_permitted"
+    ],
+    "C.6": [
+      "test_accounting_conservation_identities_per_event",
+      "test_attribution_totality_and_reconciliation",
+      "test_composition_accounting_identity",
+      "test_single_owner_per_fact"
+    ],
+    "C.7": [
+      "test_no_alpha_shape_literal_outside_alphas_and_config"
+    ],
+    "C.8": [
+      "test_every_numeric_contract_field_declares_a_unit"
+    ],
+    "C.9": [
+      "test_decline_totality",
+      "test_no_exception_path_passes_a_gate_or_increases_exposure",
+      "test_no_fail_quiet_exception_handler",
+      "test_pathological_input_refused_with_named_gate"
+    ],
+    "C.10": [
+      "A2",
+      "test_governance_and_forensics_zero_reads_on_tick_path"
+    ],
+    "C.11": [
+      "test_event_schema_hash_pinned_and_version_coupled",
+      "test_schema_version_refusal_and_historical_replay"
+    ]
+  },
+  "M3_unenforced": [],
+  "M3_test_blocks": 50,
+  "M4_gaps": {
+    "total": 45,
+    "covered": 45,
+    "uncovered": []
+  },
+  "M5_register": {
+    "new_entries": 13,
+    "inherited_rows": 21
+  }
+}

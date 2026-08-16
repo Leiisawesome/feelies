@@ -1,0 +1,944 @@
+{
+  "cycles": [
+    [
+      "feelies.cli",
+      "feelies.cli.main"
+    ],
+    [
+      "feelies.core.inv12_stress",
+      "feelies.core.platform_config",
+      "feelies.promotion.evidence"
+    ]
+  ],
+  "edges": {
+    "feelies.__main__": [
+      "feelies.cli.main"
+    ],
+    "feelies.alpha": [
+      "feelies.alpha.arbitration",
+      "feelies.alpha.discovery",
+      "feelies.alpha.fill_attribution",
+      "feelies.alpha.loader",
+      "feelies.alpha.module",
+      "feelies.alpha.registry",
+      "feelies.alpha.risk_wrapper",
+      "feelies.alpha.validation"
+    ],
+    "feelies.alpha.arbitration": [
+      "feelies.core.events"
+    ],
+    "feelies.alpha.dependency_graph": [
+      "feelies.alpha.registry",
+      "feelies.core.errors",
+      "feelies.core.platform_config",
+      "feelies.features.protocol",
+      "feelies.signals.regime_gate"
+    ],
+    "feelies.alpha.discovery": [
+      "feelies.alpha.loader",
+      "feelies.alpha.registry"
+    ],
+    "feelies.alpha.fill_attribution": [
+      "feelies.core.events"
+    ],
+    "feelies.alpha.layer_validator": [
+      "feelies.alpha.cost_arithmetic",
+      "feelies.signals.regime_gate"
+    ],
+    "feelies.alpha.loader": [
+      "feelies.alpha.cost_arithmetic",
+      "feelies.alpha.layer_validator",
+      "feelies.alpha.module",
+      "feelies.alpha.portfolio_layer_module",
+      "feelies.alpha.signal_layer_module",
+      "feelies.core.events",
+      "feelies.promotion.evidence",
+      "feelies.services.regime_engine",
+      "feelies.signals.regime_gate"
+    ],
+    "feelies.alpha.module": [
+      "feelies.features.definition"
+    ],
+    "feelies.alpha.portfolio_layer_module": [
+      "feelies.alpha.module",
+      "feelies.composition.protocol",
+      "feelies.core.events",
+      "feelies.features.definition"
+    ],
+    "feelies.alpha.registry": [
+      "feelies.alpha.module",
+      "feelies.alpha.validation",
+      "feelies.core.clock",
+      "feelies.features.definition",
+      "feelies.promotion.evidence",
+      "feelies.promotion.ledger",
+      "feelies.promotion.lifecycle"
+    ],
+    "feelies.alpha.risk_wrapper": [
+      "feelies.alpha.module",
+      "feelies.alpha.registry",
+      "feelies.core.events",
+      "feelies.portfolio.position_store",
+      "feelies.portfolio.strategy_position_store",
+      "feelies.risk.basic_risk",
+      "feelies.risk.buying_power",
+      "feelies.risk.engine",
+      "feelies.risk.sized_intent_orders",
+      "feelies.risk.sized_intent_result"
+    ],
+    "feelies.alpha.signal_layer_module": [
+      "feelies.alpha.cost_arithmetic",
+      "feelies.alpha.module",
+      "feelies.core.events",
+      "feelies.features.definition",
+      "feelies.signals.horizon_protocol",
+      "feelies.signals.regime_gate"
+    ],
+    "feelies.alpha.validation": [
+      "feelies.alpha.module",
+      "feelies.features.definition"
+    ],
+    "feelies.bootstrap": [
+      "feelies.alpha.dependency_graph",
+      "feelies.alpha.discovery",
+      "feelies.alpha.fill_attribution",
+      "feelies.alpha.layer_validator",
+      "feelies.alpha.loader",
+      "feelies.alpha.portfolio_layer_module",
+      "feelies.alpha.registry",
+      "feelies.alpha.risk_wrapper",
+      "feelies.alpha.signal_layer_module",
+      "feelies.broker.ib",
+      "feelies.bus.event_bus",
+      "feelies.composition.cross_sectional",
+      "feelies.composition.engine",
+      "feelies.composition.factor_neutralizer",
+      "feelies.composition.sector_matcher",
+      "feelies.composition.synchronizer",
+      "feelies.composition.turnover_optimizer",
+      "feelies.core.clock",
+      "feelies.core.errors",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.core.platform_config",
+      "feelies.core.session_clock",
+      "feelies.execution.backend",
+      "feelies.execution.backtest_backend",
+      "feelies.execution.backtest_router",
+      "feelies.execution.cost_model",
+      "feelies.execution.intent",
+      "feelies.execution.moc_session",
+      "feelies.execution.paper_backend",
+      "feelies.execution.passive_limit_router",
+      "feelies.execution.portfolio_netter",
+      "feelies.execution.position_manager",
+      "feelies.execution.regulatory.pdt_constraint",
+      "feelies.execution.trading_session",
+      "feelies.features.aggregator",
+      "feelies.features.impl.horizon_windowed",
+      "feelies.features.impl.rolling_stats",
+      "feelies.features.impl.sensor_passthrough",
+      "feelies.features.protocol",
+      "feelies.forensics.edge_calibration",
+      "feelies.ingestion.massive_normalizer",
+      "feelies.ingestion.massive_ws",
+      "feelies.ingestion.normalizer",
+      "feelies.kernel.orchestrator",
+      "feelies.kernel.signal_order_trace",
+      "feelies.monitoring.horizon_metrics",
+      "feelies.monitoring.in_memory",
+      "feelies.portfolio.cross_sectional_tracker",
+      "feelies.portfolio.memory_position_store",
+      "feelies.portfolio.strategy_position_store",
+      "feelies.promotion.evidence",
+      "feelies.promotion.ledger",
+      "feelies.promotion.lifecycle",
+      "feelies.risk.basic_risk",
+      "feelies.risk.buying_power",
+      "feelies.risk.deferral_cap",
+      "feelies.risk.edge_weighted_sizer",
+      "feelies.risk.engine",
+      "feelies.risk.exit_composer",
+      "feelies.risk.hazard_exit",
+      "feelies.risk.position_sizer",
+      "feelies.risk.stop_exit",
+      "feelies.sensors.horizon_scheduler",
+      "feelies.sensors.impl.scheduled_flow_window",
+      "feelies.sensors.registry",
+      "feelies.services.regime_engine",
+      "feelies.services.regime_hazard_detector",
+      "feelies.services.regime_state_cache",
+      "feelies.signals.horizon_engine",
+      "feelies.storage.memory_event_log",
+      "feelies.storage.memory_feature_snapshot",
+      "feelies.storage.memory_trade_journal",
+      "feelies.storage.reference.corporate_actions",
+      "feelies.storage.reference.event_calendar"
+    ],
+    "feelies.broker.ib": [
+      "feelies.broker.ib.connection",
+      "feelies.broker.ib.contracts",
+      "feelies.broker.ib.router"
+    ],
+    "feelies.broker.ib.connection": [
+      "feelies.core.clock"
+    ],
+    "feelies.broker.ib.router": [
+      "feelies.broker.ib.connection",
+      "feelies.broker.ib.contracts",
+      "feelies.core.clock",
+      "feelies.core.events",
+      "feelies.core.identifiers"
+    ],
+    "feelies.bus": [
+      "feelies.bus.event_bus"
+    ],
+    "feelies.bus.event_bus": [
+      "feelies.core.events"
+    ],
+    "feelies.cli": [
+      "feelies.cli.main"
+    ],
+    "feelies.cli.__main__": [
+      "feelies.cli.main"
+    ],
+    "feelies.cli.backtest": [
+      "feelies.harness.backtest_cli",
+      "feelies.harness.backtest_runner"
+    ],
+    "feelies.cli.forensics": [
+      "feelies.bootstrap",
+      "feelies.core.errors",
+      "feelies.core.platform_config",
+      "feelies.forensics.cost_circuit_breaker",
+      "feelies.monitoring.paper_session_recorder",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.cli.main": [
+      "feelies.cli"
+    ],
+    "feelies.cli.promote": [
+      "feelies.core.errors",
+      "feelies.core.platform_config",
+      "feelies.promotion.evidence",
+      "feelies.promotion.ledger"
+    ],
+    "feelies.composition": [
+      "feelies.composition.protocol"
+    ],
+    "feelies.composition.cross_sectional": [
+      "feelies.core.events"
+    ],
+    "feelies.composition.engine": [
+      "feelies.bus.event_bus",
+      "feelies.composition.cross_sectional",
+      "feelies.composition.factor_neutralizer",
+      "feelies.composition.protocol",
+      "feelies.composition.sector_matcher",
+      "feelies.composition.turnover_optimizer",
+      "feelies.core.events",
+      "feelies.core.identifiers"
+    ],
+    "feelies.composition.protocol": [
+      "feelies.core.events"
+    ],
+    "feelies.composition.synchronizer": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers"
+    ],
+    "feelies.core": [
+      "feelies.core.clock",
+      "feelies.core.config",
+      "feelies.core.identifiers",
+      "feelies.core.serialization",
+      "feelies.core.state_machine"
+    ],
+    "feelies.core.config_yaml": [
+      "feelies.core.errors"
+    ],
+    "feelies.core.inv12_stress": [
+      "feelies.core.platform_config"
+    ],
+    "feelies.core.platform_config": [
+      "feelies.core.clock",
+      "feelies.core.config",
+      "feelies.core.config_yaml",
+      "feelies.core.errors",
+      "feelies.core.events",
+      "feelies.promotion.evidence",
+      "feelies.sensors.spec"
+    ],
+    "feelies.core.serialization": [
+      "feelies.core.events"
+    ],
+    "feelies.core.state_machine": [
+      "feelies.core.clock"
+    ],
+    "feelies.execution": [
+      "feelies.execution.backend",
+      "feelies.execution.order_state"
+    ],
+    "feelies.execution.backend": [
+      "feelies.core.events",
+      "feelies.ingestion.idle_tick"
+    ],
+    "feelies.execution.backtest_backend": [
+      "feelies.core.clock",
+      "feelies.execution.backend",
+      "feelies.execution.backtest_router",
+      "feelies.execution.cost_model",
+      "feelies.execution.moc_session",
+      "feelies.execution.passive_limit_router",
+      "feelies.execution.trading_session",
+      "feelies.ingestion.replay_feed",
+      "feelies.storage.event_log"
+    ],
+    "feelies.execution.backtest_router": [
+      "feelies.core.clock",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.execution.cost_model",
+      "feelies.execution.market_fill",
+      "feelies.execution.moc_fill",
+      "feelies.execution.moc_session",
+      "feelies.execution.trading_session"
+    ],
+    "feelies.execution.cost_model": [
+      "feelies.core.events"
+    ],
+    "feelies.execution.intent": [
+      "feelies.core.events",
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.execution.market_fill": [
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.execution._fill_helpers",
+      "feelies.execution.cost_model",
+      "feelies.execution.tick_size"
+    ],
+    "feelies.execution.min_cost_policy": [
+      "feelies.core.events",
+      "feelies.execution.cost_model"
+    ],
+    "feelies.execution.moc_fill": [
+      "feelies.core.clock",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.execution.cost_model",
+      "feelies.execution.moc_session"
+    ],
+    "feelies.execution.order_admission": [
+      "feelies.core.events",
+      "feelies.execution.intent"
+    ],
+    "feelies.execution.order_state": [
+      "feelies.core.clock",
+      "feelies.core.state_machine"
+    ],
+    "feelies.execution.paper_backend": [
+      "feelies.broker.ib",
+      "feelies.core.clock",
+      "feelies.execution.backend",
+      "feelies.ingestion.massive_normalizer",
+      "feelies.ingestion.massive_ws"
+    ],
+    "feelies.execution.passive_limit_router": [
+      "feelies.core.clock",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.execution.cost_model",
+      "feelies.execution.market_fill",
+      "feelies.execution.moc_fill",
+      "feelies.execution.moc_session",
+      "feelies.execution.tick_size",
+      "feelies.execution.trading_session"
+    ],
+    "feelies.execution.portfolio_netter": [
+      "feelies.execution.position_manager"
+    ],
+    "feelies.execution.position_manager": [
+      "feelies.core.events",
+      "feelies.execution.cost_model",
+      "feelies.execution.intent",
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.execution.regulatory": [
+      "feelies.execution.regulatory.borrow_availability",
+      "feelies.execution.regulatory.pdt_constraint"
+    ],
+    "feelies.execution.regulatory.borrow_availability": [
+      "feelies.execution.intent",
+      "feelies.execution.order_admission"
+    ],
+    "feelies.execution.sized_intent_legs": [
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.execution.tick_size": [
+      "feelies.core.events"
+    ],
+    "feelies.execution.trading_session": [
+      "feelies.core.events",
+      "feelies.execution.moc_session"
+    ],
+    "feelies.features": [
+      "feelies.features.aggregator",
+      "feelies.features.definition",
+      "feelies.features.protocol"
+    ],
+    "feelies.features.aggregator": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.features.protocol",
+      "feelies.monitoring.telemetry"
+    ],
+    "feelies.features.definition": [
+      "feelies.core.events"
+    ],
+    "feelies.features.impl.horizon_windowed": [
+      "feelies.core.events"
+    ],
+    "feelies.features.impl.rolling_stats": [
+      "feelies.core.events"
+    ],
+    "feelies.features.impl.sensor_passthrough": [
+      "feelies.core.events"
+    ],
+    "feelies.features.protocol": [
+      "feelies.core.events"
+    ],
+    "feelies.forensics": [
+      "feelies.forensics.analyzer",
+      "feelies.forensics.decay_detector",
+      "feelies.forensics.decouple_backstop",
+      "feelies.forensics.gate_close_attribution"
+    ],
+    "feelies.forensics.analyzer": [
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.forensics.cost_circuit_breaker": [
+      "feelies.forensics.cost_survival",
+      "feelies.forensics.decay_detector",
+      "feelies.promotion.evidence",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.forensics.cost_survival": [
+      "feelies.forensics.decay_detector",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.forensics.decay_detector": [
+      "feelies.forensics.analyzer",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.forensics.decouple_backstop": [
+      "feelies.promotion.evidence"
+    ],
+    "feelies.forensics.edge_calibration": [
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.forensics.gate_close_attribution": [
+      "feelies.core.events",
+      "feelies.risk.deferral_cap",
+      "feelies.risk.exit_composer",
+      "feelies.risk.hazard_exit"
+    ],
+    "feelies.harness": [
+      "feelies.harness.backtest_cli",
+      "feelies.harness.backtest_jsonl",
+      "feelies.harness.backtest_prep",
+      "feelies.harness.backtest_report",
+      "feelies.harness.backtest_runner"
+    ],
+    "feelies.harness.backtest_cli": [
+      "feelies.core.inv12_stress",
+      "feelies.core.platform_config"
+    ],
+    "feelies.harness.backtest_jsonl": [
+      "feelies.core.events",
+      "feelies.execution.portfolio_netter",
+      "feelies.harness.backtest_report",
+      "feelies.risk.edge_weighted_sizer"
+    ],
+    "feelies.harness.backtest_prep": [
+      "feelies.core.events",
+      "feelies.core.platform_config",
+      "feelies.storage.memory_event_log",
+      "feelies.storage.reference.corporate_actions"
+    ],
+    "feelies.harness.backtest_report": [
+      "feelies.core.events",
+      "feelies.core.platform_config",
+      "feelies.forensics.cost_survival",
+      "feelies.forensics.decay_detector",
+      "feelies.harness.backtest_prep",
+      "feelies.ingestion.massive_ingestor",
+      "feelies.kernel.macro",
+      "feelies.kernel.orchestrator",
+      "feelies.monitoring.in_memory",
+      "feelies.storage.cache_replay",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.harness.backtest_runner": [
+      "feelies.bootstrap",
+      "feelies.cli.env",
+      "feelies.core.clock",
+      "feelies.core.errors",
+      "feelies.core.events",
+      "feelies.core.platform_config",
+      "feelies.execution.portfolio_netter",
+      "feelies.forensics.edge_calibration",
+      "feelies.harness.backtest_cli",
+      "feelies.harness.backtest_jsonl",
+      "feelies.harness.backtest_prep",
+      "feelies.harness.backtest_report",
+      "feelies.ingestion.data_integrity",
+      "feelies.ingestion.ingest_health",
+      "feelies.ingestion.massive_ingestor",
+      "feelies.ingestion.massive_normalizer",
+      "feelies.kernel.macro",
+      "feelies.kernel.orchestrator",
+      "feelies.kernel.signal_order_trace",
+      "feelies.risk.edge_weighted_sizer",
+      "feelies.storage.cache_replay",
+      "feelies.storage.disk_event_cache",
+      "feelies.storage.event_resequence",
+      "feelies.storage.memory_event_log"
+    ],
+    "feelies.ingestion": [
+      "feelies.ingestion.data_integrity",
+      "feelies.ingestion.ingest_health",
+      "feelies.ingestion.massive_ingestor",
+      "feelies.ingestion.massive_normalizer",
+      "feelies.ingestion.massive_ws",
+      "feelies.ingestion.normalizer",
+      "feelies.ingestion.replay_feed"
+    ],
+    "feelies.ingestion.data_integrity": [
+      "feelies.core.clock",
+      "feelies.core.state_machine"
+    ],
+    "feelies.ingestion.ingest_health": [
+      "feelies.ingestion.data_integrity"
+    ],
+    "feelies.ingestion.massive_ingestor": [
+      "feelies.core.clock",
+      "feelies.core.errors",
+      "feelies.core.events",
+      "feelies.ingestion.data_integrity",
+      "feelies.ingestion.massive_normalizer",
+      "feelies.storage.event_log",
+      "feelies.storage.event_resequence",
+      "feelies.storage.memory_event_log"
+    ],
+    "feelies.ingestion.massive_normalizer": [
+      "feelies.core.clock",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.core.state_machine",
+      "feelies.ingestion.data_integrity",
+      "feelies.ingestion.ingest_health"
+    ],
+    "feelies.ingestion.massive_ws": [
+      "feelies.core.clock",
+      "feelies.core.events",
+      "feelies.ingestion.idle_tick",
+      "feelies.ingestion.massive_normalizer"
+    ],
+    "feelies.ingestion.normalizer": [
+      "feelies.core.events",
+      "feelies.ingestion.data_integrity"
+    ],
+    "feelies.ingestion.replay_feed": [
+      "feelies.core.clock",
+      "feelies.core.errors",
+      "feelies.core.events",
+      "feelies.storage.event_log",
+      "feelies.storage.event_resequence"
+    ],
+    "feelies.kernel": [
+      "feelies.kernel.macro",
+      "feelies.kernel.micro"
+    ],
+    "feelies.kernel.macro": [
+      "feelies.core.clock",
+      "feelies.core.state_machine"
+    ],
+    "feelies.kernel.micro": [
+      "feelies.core.clock",
+      "feelies.core.state_machine"
+    ],
+    "feelies.kernel.orchestrator": [
+      "feelies.alpha.arbitration",
+      "feelies.alpha.fill_attribution",
+      "feelies.alpha.registry",
+      "feelies.bus.event_bus",
+      "feelies.composition.engine",
+      "feelies.core.clock",
+      "feelies.core.config",
+      "feelies.core.errors",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.core.platform_config",
+      "feelies.core.state_machine",
+      "feelies.execution.backend",
+      "feelies.execution.cost_model",
+      "feelies.execution.intent",
+      "feelies.execution.min_cost_policy",
+      "feelies.execution.order_admission",
+      "feelies.execution.order_state",
+      "feelies.execution.portfolio_netter",
+      "feelies.execution.position_manager",
+      "feelies.execution.regulatory.borrow_availability",
+      "feelies.execution.trading_session",
+      "feelies.ingestion.data_integrity",
+      "feelies.ingestion.idle_tick",
+      "feelies.ingestion.normalizer",
+      "feelies.kernel.macro",
+      "feelies.kernel.micro",
+      "feelies.kernel.signal_order_trace",
+      "feelies.monitoring.alerting",
+      "feelies.monitoring.kill_switch",
+      "feelies.monitoring.paper_session_recorder",
+      "feelies.monitoring.telemetry",
+      "feelies.portfolio.lot_ledger",
+      "feelies.portfolio.position_store",
+      "feelies.portfolio.strategy_position_store",
+      "feelies.risk.buying_power",
+      "feelies.risk.deferral_cap",
+      "feelies.risk.edge_weighted_sizer",
+      "feelies.risk.engine",
+      "feelies.risk.escalation",
+      "feelies.risk.exit_composer",
+      "feelies.risk.hazard_exit",
+      "feelies.risk.position_sizer",
+      "feelies.risk.post_exit_position_view",
+      "feelies.risk.stop_exit",
+      "feelies.sensors.horizon_scheduler",
+      "feelies.sensors.registry",
+      "feelies.services.regime_engine",
+      "feelies.services.regime_hazard_detector",
+      "feelies.signals.horizon_engine",
+      "feelies.storage.event_log",
+      "feelies.storage.feature_snapshot",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.monitoring": [
+      "feelies.monitoring.alerting",
+      "feelies.monitoring.in_memory",
+      "feelies.monitoring.kill_switch",
+      "feelies.monitoring.telemetry"
+    ],
+    "feelies.monitoring.alerting": [
+      "feelies.core.events"
+    ],
+    "feelies.monitoring.horizon_metrics": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers"
+    ],
+    "feelies.monitoring.in_memory": [
+      "feelies.core.events"
+    ],
+    "feelies.monitoring.paper_session_recorder": [
+      "feelies.core.events",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.monitoring.telemetry": [
+      "feelies.core.events"
+    ],
+    "feelies.portfolio": [
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.portfolio.cross_sectional_tracker": [
+      "feelies.bus.event_bus",
+      "feelies.core.events"
+    ],
+    "feelies.portfolio.memory_position_store": [
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.portfolio.strategy_position_store": [
+      "feelies.portfolio.memory_position_store",
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.promotion.evidence": [
+      "feelies.core.inv12_stress"
+    ],
+    "feelies.promotion.lifecycle": [
+      "feelies.core.clock",
+      "feelies.core.state_machine",
+      "feelies.promotion.evidence",
+      "feelies.promotion.ledger"
+    ],
+    "feelies.research": [
+      "feelies.research.cpcv",
+      "feelies.research.decouple_gates",
+      "feelies.research.dsr"
+    ],
+    "feelies.research.cpcv": [
+      "feelies.promotion.evidence"
+    ],
+    "feelies.research.decouple_gates": [
+      "feelies.core.inv12_stress",
+      "feelies.promotion.evidence",
+      "feelies.research.cpcv"
+    ],
+    "feelies.research.dsr": [
+      "feelies.promotion.evidence",
+      "feelies.research.cpcv"
+    ],
+    "feelies.risk": [
+      "feelies.risk.buying_power",
+      "feelies.risk.escalation",
+      "feelies.risk.sized_intent_result"
+    ],
+    "feelies.risk.basic_risk": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.execution.regulatory.pdt_constraint",
+      "feelies.execution.sized_intent_legs",
+      "feelies.execution.trading_session",
+      "feelies.portfolio.position_store",
+      "feelies.risk.buying_power",
+      "feelies.risk.sized_intent_orders",
+      "feelies.risk.sized_intent_result",
+      "feelies.services.regime_state_cache"
+    ],
+    "feelies.risk.deferral_cap": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.core.session_clock",
+      "feelies.portfolio.strategy_position_store"
+    ],
+    "feelies.risk.edge_weighted_sizer": [
+      "feelies.alpha.module",
+      "feelies.core.events",
+      "feelies.risk.position_sizer"
+    ],
+    "feelies.risk.engine": [
+      "feelies.core.events",
+      "feelies.portfolio.position_store",
+      "feelies.risk.sized_intent_result"
+    ],
+    "feelies.risk.escalation": [
+      "feelies.core.clock",
+      "feelies.core.state_machine"
+    ],
+    "feelies.risk.exit_composer": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.portfolio.strategy_position_store"
+    ],
+    "feelies.risk.hazard_exit": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.risk.position_sizer": [
+      "feelies.alpha.module",
+      "feelies.core.events",
+      "feelies.services.regime_state_cache"
+    ],
+    "feelies.risk.post_exit_position_view": [
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.risk.sized_intent_orders": [
+      "feelies.core.events",
+      "feelies.execution.sized_intent_legs",
+      "feelies.portfolio.position_store",
+      "feelies.risk.sized_intent_result"
+    ],
+    "feelies.risk.sized_intent_result": [
+      "feelies.core.events"
+    ],
+    "feelies.risk.stop_exit": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.execution.trading_session",
+      "feelies.portfolio.position_store"
+    ],
+    "feelies.sensors": [
+      "feelies.sensors.errors",
+      "feelies.sensors.horizon_scheduler",
+      "feelies.sensors.protocol",
+      "feelies.sensors.registry",
+      "feelies.sensors.spec"
+    ],
+    "feelies.sensors.horizon_scheduler": [
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.monitoring.telemetry"
+    ],
+    "feelies.sensors.impl.book_imbalance": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.hawkes_intensity": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.inventory_pressure": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.kyle_lambda_60s": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.liquidity_stress_score": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.micro_price": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.ofi_ewma": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.ofi_raw": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.quote_flicker_rate": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.quote_hazard_rate": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.quote_replenish_asymmetry": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.realized_vol_30s": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.scheduled_flow_window": [
+      "feelies.core.events",
+      "feelies.sensors.protocol",
+      "feelies.storage.reference.event_calendar"
+    ],
+    "feelies.sensors.impl.snr_drift_diffusion": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.spread_z_30d": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.structural_break_score": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.sweep_flow_imbalance": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.trade_through_rate": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.impl.vpin_50bucket": [
+      "feelies.core.events",
+      "feelies.sensors.protocol"
+    ],
+    "feelies.sensors.protocol": [
+      "feelies.core.events"
+    ],
+    "feelies.sensors.registry": [
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.monitoring.telemetry",
+      "feelies.sensors.errors",
+      "feelies.sensors.protocol",
+      "feelies.sensors.spec"
+    ],
+    "feelies.sensors.spec": [
+      "feelies.core.events"
+    ],
+    "feelies.services": [
+      "feelies.services.regime_engine",
+      "feelies.services.regime_hazard_detector"
+    ],
+    "feelies.services.regime_engine": [
+      "feelies.core.events"
+    ],
+    "feelies.services.regime_hazard_detector": [
+      "feelies.core.events"
+    ],
+    "feelies.services.regime_state_cache": [
+      "feelies.bus.event_bus",
+      "feelies.core.events"
+    ],
+    "feelies.signals.horizon_engine": [
+      "feelies.alpha.cost_arithmetic",
+      "feelies.bus.event_bus",
+      "feelies.core.events",
+      "feelies.core.identifiers",
+      "feelies.monitoring.telemetry",
+      "feelies.signals.horizon_protocol",
+      "feelies.signals.regime_gate"
+    ],
+    "feelies.signals.horizon_protocol": [
+      "feelies.core.events"
+    ],
+    "feelies.storage": [
+      "feelies.storage.event_log",
+      "feelies.storage.feature_snapshot",
+      "feelies.storage.memory_event_log",
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.storage.cache_replay": [
+      "feelies.core.events",
+      "feelies.ingestion.massive_ingestor",
+      "feelies.storage.disk_event_cache",
+      "feelies.storage.event_resequence",
+      "feelies.storage.memory_event_log"
+    ],
+    "feelies.storage.disk_event_cache": [
+      "feelies.core.clock",
+      "feelies.core.events",
+      "feelies.core.serialization"
+    ],
+    "feelies.storage.event_log": [
+      "feelies.core.events"
+    ],
+    "feelies.storage.event_resequence": [
+      "feelies.core.events",
+      "feelies.core.identifiers"
+    ],
+    "feelies.storage.memory_event_log": [
+      "feelies.core.errors",
+      "feelies.core.events",
+      "feelies.storage.event_resequence"
+    ],
+    "feelies.storage.memory_feature_snapshot": [
+      "feelies.storage.feature_snapshot"
+    ],
+    "feelies.storage.memory_trade_journal": [
+      "feelies.storage.trade_journal"
+    ],
+    "feelies.storage.reference.corporate_actions": [
+      "feelies.core.events",
+      "feelies.storage.event_log"
+    ],
+    "feelies.storage.trade_journal": [
+      "feelies.core.events"
+    ]
+  },
+  "n_edges": 609,
+  "n_modules": 159
+}

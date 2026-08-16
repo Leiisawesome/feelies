@@ -1,0 +1,1017 @@
+{
+ "fails_today_counts": {
+  "no": 7,
+  "unknown": 7,
+  "yes": 36
+ },
+ "gap_count": 45,
+ "gap_to_tests": {
+  "G01": [
+   "S4"
+  ],
+  "G02": [
+   "S15",
+   "R3",
+   "X8"
+  ],
+  "G03": [
+   "X9",
+   "X11",
+   "H2"
+  ],
+  "G04": [
+   "S16",
+   "R6"
+  ],
+  "G05": [
+   "R2",
+   "R9"
+  ],
+  "G06": [
+   "R4"
+  ],
+  "G07": [
+   "S8",
+   "R5"
+  ],
+  "G08": [
+   "R1",
+   "R8"
+  ],
+  "G09": [
+   "S12"
+  ],
+  "G10": [
+   "S11",
+   "X2"
+  ],
+  "G11": [
+   "R2",
+   "C3"
+  ],
+  "G12": [
+   "S10",
+   "S13"
+  ],
+  "G13": [
+   "S2",
+   "S13",
+   "S15"
+  ],
+  "G14": [
+   "S2",
+   "S12",
+   "S13"
+  ],
+  "G15": [
+   "S12",
+   "C6",
+   "A3"
+  ],
+  "G16": [
+   "S2",
+   "A2"
+  ],
+  "G17": [
+   "S13",
+   "X6"
+  ],
+  "G18": [
+   "A2"
+  ],
+  "G19": [
+   "S12",
+   "C6"
+  ],
+  "G20": [
+   "S6",
+   "X1",
+   "X5",
+   "X7"
+  ],
+  "G21": [
+   "S2",
+   "S12",
+   "R8",
+   "C2",
+   "C5"
+  ],
+  "G22": [
+   "S2",
+   "X2"
+  ],
+  "G23": [
+   "S6",
+   "X1",
+   "X4",
+   "X6",
+   "X7"
+  ],
+  "G24": [
+   "S2",
+   "C4"
+  ],
+  "G25": [
+   "S3",
+   "A3"
+  ],
+  "G26": [
+   "S7"
+  ],
+  "G27": [
+   "S2",
+   "H4"
+  ],
+  "G28": [
+   "S11",
+   "X9"
+  ],
+  "G29": [
+   "R9"
+  ],
+  "G30": [
+   "S2",
+   "R4",
+   "C5"
+  ],
+  "G31": [],
+  "G32": [],
+  "G33": [
+   "C3"
+  ],
+  "G34": [
+   "C2",
+   "X11"
+  ],
+  "G35": [
+   "X1"
+  ],
+  "G36": [
+   "S6",
+   "R6",
+   "X6",
+   "X7"
+  ],
+  "G37": [
+   "S14"
+  ],
+  "G38": [
+   "S13",
+   "C4",
+   "X6"
+  ],
+  "G39": [
+   "S15",
+   "S17"
+  ],
+  "G40": [
+   "S2"
+  ],
+  "G41": [
+   "S5"
+  ],
+  "G42": [
+   "S5",
+   "R7"
+  ],
+  "G43": [
+   "X1",
+   "X10"
+  ],
+  "G44": [
+   "S5"
+  ],
+  "G45": [
+   "S5"
+  ]
+ },
+ "gaps": {
+  "G01": {
+   "blast_radius": "All 12 are `perf_counter_ns` timing instrumentation, never a decision input. The defect is that the allowlist does not b",
+   "engine_axis": "Axis A \u2014 clock",
+   "invariant": "Inv-10 clock abstraction",
+   "severity": "P2"
+  },
+  "G02": {
+   "blast_radius": "Delivery is exactly-once only because it is a synchronous call. The platform does redeliver by design (arbitration re-pu",
+   "engine_axis": "Axis A \u2014 bus",
+   "invariant": "Inv-7 typed event bus; Inv-1 replay",
+   "severity": "P1"
+  },
+  "G03": {
+   "blast_radius": "Live capital. A restart mid-submission re-derives the same stable `order_id` and can re-submit it; the broker may or may",
+   "engine_axis": "Engine 10 \u2014 identity",
+   "invariant": "Inv-11 fail-safe default",
+   "severity": "P0"
+  },
+  "G04": {
+   "blast_radius": "Contained today by process-per-run: every entry point constructs a fresh object. Breaks the moment two runs share a proc",
+   "engine_axis": "Axis A \u2014 state",
+   "invariant": "Inv-1 deterministic replay",
+   "severity": "P1"
+  },
+  "G05": {
+   "blast_radius": "`NBBOQuote` and `Trade` are the *inputs* \u2014 engine 1's canonical stream has no baseline of its own, so an ingestion-side ",
+   "engine_axis": "Axis A \u2014 parity",
+   "invariant": "Inv-5 deterministic replay",
+   "severity": "P1"
+  },
+  "G06": {
+   "blast_radius": "Two runs with different alpha parameters can share a config hash. The trade parity hash still moves, so the oracle catch",
+   "engine_axis": "Axis A \u2014 fingerprint",
+   "invariant": "Inv-13 full provenance",
+   "severity": "P1"
+  },
+  "G07": {
+   "blast_radius": "No consumer can detect a producer-shape change. Caught today only by `mypy --strict` at build time, which sees one versi",
+   "engine_axis": "Axis A \u2014 schema",
+   "invariant": "Inv-10 versioned contracts; CORE \u00a7J.6",
+   "severity": "P1"
+  },
+  "G08": {
+   "blast_radius": "No site is order-sensitive today. The residual is structural: CI's random-seed job covers `tests/determinism/` only, whi",
+   "engine_axis": "Axis A \u2014 hash order",
+   "invariant": "Inv-1, Inv-5",
+   "severity": "P2"
+  },
+  "G09": {
+   "blast_radius": "Sequences are per-object and never compared across objects, so no collision is possible today. The gap is that nothing r",
+   "engine_axis": "Axis A \u2014 sequencing",
+   "invariant": "Inv-5 deterministic replay",
+   "severity": "P2"
+  },
+  "G10": {
+   "blast_radius": "Publish cost is paid per event for no consumer. Each is separately addressable; `KillSwitchActivation` is the one with a",
+   "engine_axis": "Axis B \u2014 emissions",
+   "invariant": "Inv-7 typed bus",
+   "severity": "P1"
+  },
+  "G11": {
+   "blast_radius": "The platform's first contract is its least pinned. Every downstream hash depends on it",
+   "engine_axis": "Engine 1 \u2014 market data",
+   "invariant": "Inv-8 layer separation; Inv-13 provenance",
+   "severity": "P1"
+  },
+  "G12": {
+   "blast_radius": "Frozen-ness is advisory for the fields that carry the actual feature payload. Any holder can mutate a published event in",
+   "engine_axis": "Engine 2 \u2014 state/feature",
+   "invariant": "Inv-7 typed schemas",
+   "severity": "P1"
+  },
+  "G13": {
+   "blast_radius": "Dead in the shipped path \u2014 the store being empty means restore is a no-op. Becomes live the moment persistence is wired",
+   "engine_axis": "Engine 2 \u2014 state",
+   "invariant": "Inv-8 layer separation",
+   "severity": "P2"
+  },
+  "G14": {
+   "blast_radius": "The engine CORE \u00a7E most insists must be singular is authored in the module CORE \u00a7J names as the anti-pattern. Two parity",
+   "engine_axis": "Engine 3 \u2014 regime",
+   "invariant": "Inv-8; CORE \u00a7J.1 god orchestrator",
+   "severity": "P1"
+  },
+  "G15": {
+   "blast_radius": "With A=1 the reduction is an identity and cannot be wrong. It is the structural blocker to A>1, which is the platform's ",
+   "engine_axis": "Engine 4/6 \u2014 reduction",
+   "invariant": "Inv-8; CORE \u00a7F.6 single source of truth",
+   "severity": "P1"
+  },
+  "G16": {
+   "blast_radius": "Import-time only: no governance code executes per event (`hotpath.json:governance_evaluation` = 0 PROVEN, 0 per-event). ",
+   "engine_axis": "Engine 5 \u2014 governance",
+   "invariant": "Inv-8 layer separation",
+   "severity": "P2"
+  },
+  "G17": {
+   "blast_radius": "An alpha author reading `alphas/SCHEMA.md` cannot tell which of G1\u2013G17 ran. See *Documentation disagreements* \u2014 the glos",
+   "engine_axis": "Engine 5 \u2014 gate ladder",
+   "invariant": "Inv-13 auditable provenance",
+   "severity": "P1"
+  },
+  "G18": {
+   "blast_radius": "Demotion always commits, which is the exposure-reducing direction, so the safety outcome is correct. The authority bound",
+   "engine_axis": "Engine 5/12 \u2014 authority",
+   "invariant": "CORE \u00a7F.6 single source of truth",
+   "severity": "P1"
+  },
+  "G19": {
+   "blast_radius": "Three implementations of one rule; nothing asserts they agree. `src/feelies/composition/cross_sectional.py:75-79` holds ",
+   "engine_axis": "Engine 6 \u2014 composition",
+   "invariant": "CORE \u00a7F.6; Inv-8",
+   "severity": "P1"
+  },
+  "G20": {
+   "blast_radius": "PORTFOLIO layer only, and only when `_position_lookup` is wired. Reporting flat when actually long makes the optimizer s",
+   "engine_axis": "Engine 6 \u2192 7 read",
+   "invariant": "Inv-11 fail-safe default",
+   "severity": "P0"
+  },
+  "G21": {
+   "blast_radius": "Money is exactly `Decimal` throughout, so no rounding divergence. The risk is two writers to one book, and `PositionUpda",
+   "engine_axis": "Engine 7 \u2014 accounting",
+   "invariant": "CORE \u00a7F.6 single source of truth; Inv-8",
+   "severity": "P1"
+  },
+  "G22": {
+   "blast_radius": "Risk policy cannot be reviewed, tested or versioned as a unit. `risk/` additionally hosts 4 engine-9 exit authors",
+   "engine_axis": "Engine 8 \u2014 risk",
+   "invariant": "Inv-8; CORE \u00a7J.4 policy in mechanics",
+   "severity": "P1"
+  },
+  "G23": {
+   "blast_radius": "Aggregate limits still bind, so exposure is not unbounded. With A=1 per-alpha \u2248 aggregate and impact is near zero; the g",
+   "engine_axis": "Engine 8 \u2014 per-alpha budget",
+   "invariant": "Inv-11 fail-safe default",
+   "severity": "P0"
+  },
+  "G24": {
+   "blast_radius": "The most dispersed engine in the platform. Order-emission logic cannot be unit-tested without constructing the orchestra",
+   "engine_axis": "Engine 9 \u2014 execution decision",
+   "invariant": "Inv-8; CORE \u00a7J.1",
+   "severity": "P1"
+  },
+  "G25": {
+   "blast_radius": "Core config knows one alpha by name, on the MOC execution path. Overridable by config, so the default is the defect rath",
+   "engine_axis": "Engine 9 \u2014 alpha-agnosticism",
+   "invariant": "Inv-6 alpha-agnosticism",
+   "severity": "P1"
+  },
+  "G26": {
+   "blast_radius": "The 20 in `src/feelies/bootstrap.py` are the composition root choosing the seam, which is where mode branching belongs. ",
+   "engine_axis": "Engine 10 \u2014 mode seam",
+   "invariant": "Inv-9 backtest/live parity",
+   "severity": "P1"
+  },
+  "G27": {
+   "blast_radius": "Order state can be advanced from two modules. `execution/` itself is the cleanest seam instance in the platform (G26)",
+   "engine_axis": "Engine 10 \u2014 order state",
+   "invariant": "Inv-8; Inv-9",
+   "severity": "P1"
+  },
+  "G28": {
+   "blast_radius": "**The kill switch itself works** \u2014 it is read directly on the tick path and returns early (Phase 0 hop 4). Only the anno",
+   "engine_axis": "Engine 11 \u2014 safety",
+   "invariant": "Inv-11 fail-safe default",
+   "severity": "P1"
+  },
+  "G29": {
+   "blast_radius": "Safety and observability output is not replay-pinned. A change to alerting cannot break the oracle \u2014 which is also why i",
+   "engine_axis": "Engine 11 \u2014 parity",
+   "invariant": "Inv-5",
+   "severity": "P2"
+  },
+  "G30": {
+   "blast_radius": "A forensic conclusion cannot be tied to the run that produced it, so the decay\u2192quarantine loop rests on an unversioned a",
+   "engine_axis": "Engine 12 \u2014 forensics",
+   "invariant": "Inv-13 full provenance",
+   "severity": "P1"
+  },
+  "G31": {
+   "blast_radius": "Every layer forms its own view of \"the universe\". Disagreement between them is undetectable",
+   "engine_axis": "\u00a7F.1 \u2014 universe",
+   "invariant": "CORE \u00a7F.1; Inv-8",
+   "severity": "P1"
+  },
+  "G32": {
+   "blast_radius": "Unimplemented rather than misplaced. Intraday single-day replay is unaffected; any multi-day series crossing a corporate",
+   "engine_axis": "\u00a7F.2 \u2014 symbol identity",
+   "invariant": "Inv-13 provenance; Inv-1 replay",
+   "severity": "P1"
+  },
+  "G33": {
+   "blast_radius": "Two authorities on whether the market is tradeable. Halt handling is present and works; ownership is what is absent",
+   "engine_axis": "\u00a7F.3 \u2014 session/halt",
+   "invariant": "CORE \u00a7F.3; Inv-8",
+   "severity": "P1"
+  },
+  "G34": {
+   "blast_radius": "Reconciliation logic lives in the god object alongside everything else it does, and is the path that matters most on a l",
+   "engine_axis": "\u00a7F.4 \u2014 broker reconciliation",
+   "invariant": "CORE \u00a7F.4; Inv-8",
+   "severity": "P1"
+  },
+  "G35": {
+   "blast_radius": "Backtest is synchronous and cannot experience backpressure. Live ingestion has an unbounded queue with no specified beha",
+   "engine_axis": "\u00a7F.5 \u2014 backpressure",
+   "invariant": "Inv-11 fail-safe default",
+   "severity": "P1"
+  },
+  "G36": {
+   "blast_radius": "18 of 20 are on cold or clearly-benign paths (import fallbacks, `queue.Empty`, CLI parsing). The 2 on decision paths are",
+   "engine_axis": "\u00a7F.6 \u2014 exception propagation",
+   "invariant": "Inv-11; CORE \u00a7J.5 silent degradation",
+   "severity": "P1"
+  },
+  "G37": {
+   "blast_radius": "Enforcement is entirely static: G1 at YAML load (downgradable to a warning) plus `mypy --strict`. Neither can see a cros",
+   "engine_axis": "Axis C \u2014 boundaries",
+   "invariant": "Inv-8 layer separation",
+   "severity": "P1"
+  },
+  "G38": {
+   "blast_radius": "No operator can enumerate what would block a trade. `GATE_EVIDENCE_REQUIREMENTS` does enforce completeness over `GateId`",
+   "engine_axis": "Axis D \u2014 gate registry",
+   "invariant": "Inv-13 auditable; CORE \u00a7G enumerable gates",
+   "severity": "P1"
+  },
+  "G39": {
+   "blast_radius": "Objects are not valid after `__init__`; validity depends on bootstrap completing a sequence nothing checks. Post-hoc pri",
+   "engine_axis": "Axis B \u2014 construction",
+   "invariant": "Inv-3 contract-first boundaries",
+   "severity": "P1"
+  },
+  "G40": {
+   "blast_radius": "This is the aggregate of G11\u2013G14, G15, G21, G22, G24, G27 and G30 and is listed separately because \"shrink the orchestra",
+   "engine_axis": "Axis B \u2014 orchestrator",
+   "invariant": "CORE \u00a7J.1; Inv-8",
+   "severity": "P1"
+  },
+  "G41": {
+   "blast_radius": "Measured on the shipped 4-sensor backtest, which is the *best* case the repo can produce. Live has no measurement at all",
+   "engine_axis": "Axis E \u2014 total budget",
+   "invariant": "CORE \u00a7G measured latency budget",
+   "severity": "P1"
+  },
+  "G42": {
+   "blast_radius": "Engine 2 alone reaches ~277 \u00b5s at full registration. This is the single dominant cost and it grows linearly with the thi",
+   "engine_axis": "Engine 2 \u2014 scaling",
+   "invariant": "CORE \u00a7G; Inv-12 stress viability",
+   "severity": "P1"
+  },
+  "G43": {
+   "blast_radius": "A 4.2\u00d7 overrun (G41) is invisible to the running system in every mode. No degradation, no alert, no shed. See paragraph ",
+   "engine_axis": "Axis E \u2014 breach behaviour",
+   "invariant": "Inv-11 fail-safe default",
+   "severity": "P0"
+  },
+  "G44": {
+   "blast_radius": "Pure waste, and the lowest-risk item in the table: removing it changes nothing computed, so the parity hash must not mov",
+   "engine_axis": "Axis E \u2014 dead compute",
+   "invariant": "CORE \u00a7G justified net complexity",
+   "severity": "P2"
+  },
+  "G45": {
+   "blast_radius": "Each is a small constant cost, individually addressable. The wall-clock reads overlap G01; the 5 prohibitions at 0 are o",
+   "engine_axis": "Axis E \u2014 hot-path allow list",
+   "invariant": "CORE \u00a7G measured budget; Inv-1",
+   "severity": "P2"
+  }
+ },
+ "severity_counts": {
+  "P0": 4,
+  "P1": 33,
+  "P2": 8
+ },
+ "test_count": 50,
+ "tests": {
+  "A1": {
+   "fails_today": "no",
+   "gaps_named": [],
+   "name": "test_alpha_output_is_pure_wrt_portfolio_state",
+   "path": "tests/conformance/test_alpha_purity.py",
+   "wave": 1
+  },
+  "A2": {
+   "fails_today": "unknown",
+   "gaps_named": [
+    "G16",
+    "G18"
+   ],
+   "name": "test_governance_and_forensics_zero_reads_on_tick_path",
+   "path": "tests/conformance/test_cold_engines.py",
+   "wave": 2
+  },
+  "A3": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G15",
+    "G25"
+   ],
+   "name": "test_shape_adversarial_alpha_attaches_with_zero_core_edits",
+   "path": "tests/conformance/test_attachment_cost.py",
+   "wave": 4
+  },
+  "C1": {
+   "fails_today": "unknown",
+   "gaps_named": [],
+   "name": "test_null_alpha_analytic_reference",
+   "path": "tests/conformance/test_null_alpha_conservation.py",
+   "wave": 0
+  },
+  "C2": {
+   "fails_today": "unknown",
+   "gaps_named": [
+    "G21",
+    "G34"
+   ],
+   "name": "test_accounting_conservation_identities_per_event",
+   "path": "tests/conformance/test_accounting_identities.py",
+   "wave": 1
+  },
+  "C3": {
+   "fails_today": "unknown",
+   "gaps_named": [
+    "G11",
+    "G33"
+   ],
+   "name": "test_ingress_conservation_and_notification",
+   "path": "tests/conformance/test_ingress_conservation.py",
+   "wave": 2
+  },
+  "C4": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G24",
+    "G38"
+   ],
+   "name": "test_decline_totality",
+   "path": "tests/conformance/test_decline_totality.py",
+   "wave": 2
+  },
+  "C5": {
+   "fails_today": "unknown",
+   "gaps_named": [
+    "G21",
+    "G30"
+   ],
+   "name": "test_attribution_totality_and_reconciliation",
+   "path": "tests/conformance/test_attribution_totality.py",
+   "wave": 2
+  },
+  "C6": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G15",
+    "G19"
+   ],
+   "name": "test_composition_accounting_identity",
+   "path": "tests/conformance/test_composition_identity.py",
+   "wave": 3
+  },
+  "H1": {
+   "fails_today": "no",
+   "gaps_named": [],
+   "name": "test_passive_aggressive_fill_eligibility_parity",
+   "path": "tests/execution/test_router_fill_timing_parity.py",
+   "wave": 1
+  },
+  "H2": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G03"
+   ],
+   "name": "test_order_idempotency_across_restart_and_reconnect",
+   "path": "tests/conformance/test_order_idempotency.py",
+   "wave": 3
+  },
+  "H3": {
+   "fails_today": "unknown",
+   "gaps_named": [],
+   "name": "test_mode_parity_with_identically_stubbed_backend",
+   "path": "tests/conformance/test_mode_parity.py",
+   "wave": 4
+  },
+  "H4": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G27"
+   ],
+   "name": "test_order_state_machine_is_total",
+   "path": "tests/conformance/test_order_state_totality.py",
+   "wave": 2
+  },
+  "R1": {
+   "fails_today": "no",
+   "gaps_named": [
+    "G08"
+   ],
+   "name": "test_parity_oracle_under_random_hash_seed",
+   "path": ".github/workflows/ci.yml",
+   "wave": 1
+  },
+  "R2": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G05",
+    "G11"
+   ],
+   "name": "test_market_data_canonical_parity_baseline",
+   "path": "tests/determinism/test_market_data_canonical_replay.py",
+   "wave": 1
+  },
+  "R3": {
+   "fails_today": "unknown",
+   "gaps_named": [
+    "G02"
+   ],
+   "name": "test_registration_order_independence",
+   "path": "tests/determinism/test_registration_order_independence.py",
+   "wave": 2
+  },
+  "R4": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G06",
+    "G30"
+   ],
+   "name": "test_alpha_manifest_content_moves_the_fingerprint",
+   "path": "tests/conformance/test_fingerprint_totality.py",
+   "wave": 2
+  },
+  "R5": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G07"
+   ],
+   "name": "test_schema_version_refusal_and_historical_replay",
+   "path": "tests/conformance/test_schema_versioning.py",
+   "wave": 4
+  },
+  "R6": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G04",
+    "G36"
+   ],
+   "name": "test_recovery_determinism_under_injected_fault",
+   "path": "tests/conformance/test_recovery_determinism.py",
+   "wave": 3
+  },
+  "R7": {
+   "fails_today": "no",
+   "gaps_named": [
+    "G42"
+   ],
+   "name": "test_sensor_throttle_uses_event_time",
+   "path": "tests/determinism/test_throttle_time_base.py",
+   "wave": 2
+  },
+  "R8": {
+   "fails_today": "no",
+   "gaps_named": [
+    "G08",
+    "G21"
+   ],
+   "name": "test_position_store_ordering_is_seed_independent",
+   "path": "tests/determinism/test_store_ordering_seed_independence.py",
+   "wave": 2
+  },
+  "R9": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G05",
+    "G29"
+   ],
+   "name": "test_parity_surface_closure",
+   "path": "tests/determinism/test_parity_manifest.py",
+   "wave": 1
+  },
+  "S1": {
+   "fails_today": "yes",
+   "gaps_named": [],
+   "name": "test_conformance_registry_closure",
+   "path": "tests/conformance/test_registry_closure.py",
+   "wave": 0
+  },
+  "S10": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G12"
+   ],
+   "name": "test_frozen_events_carry_no_mutable_container",
+   "path": "tests/conformance/test_event_immutability.py",
+   "wave": 1
+  },
+  "S11": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G10",
+    "G28"
+   ],
+   "name": "test_every_published_type_has_a_subscriber",
+   "path": "tests/conformance/test_emission_registry.py",
+   "wave": 1
+  },
+  "S12": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G09",
+    "G14",
+    "G15",
+    "G19",
+    "G21"
+   ],
+   "name": "test_single_owner_per_fact",
+   "path": "tests/conformance/test_single_owner.py",
+   "wave": 1
+  },
+  "S13": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G12",
+    "G13",
+    "G14",
+    "G17",
+    "G38"
+   ],
+   "name": "test_gate_registry_enumeration_closure",
+   "path": "tests/conformance/test_gate_registry.py",
+   "wave": 1
+  },
+  "S14": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G37"
+   ],
+   "name": "test_forbidden_reads_matrix_closure",
+   "path": "tests/conformance/test_forbidden_reads.py",
+   "wave": 2
+  },
+  "S15": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G02",
+    "G13",
+    "G39"
+   ],
+   "name": "test_wiring_manifest_closure",
+   "path": "tests/conformance/test_wiring_manifest.py",
+   "wave": 1
+  },
+  "S16": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G04"
+   ],
+   "name": "test_reset_path_totality",
+   "path": "tests/conformance/test_reset_paths.py",
+   "wave": 2
+  },
+  "S17": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G39"
+   ],
+   "name": "test_no_post_construction_mutation_or_private_reach",
+   "path": "tests/conformance/test_construction_integrity.py",
+   "wave": 2
+  },
+  "S2": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G13",
+    "G14",
+    "G16",
+    "G21",
+    "G22",
+    "G24",
+    "G27",
+    "G30",
+    "G40"
+   ],
+   "name": "test_import_tiers_and_engine_independence",
+   "path": "tests/conformance/test_import_contracts.py",
+   "wave": 1
+  },
+  "S3": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G25"
+   ],
+   "name": "test_no_alpha_shape_literal_outside_alphas_and_config",
+   "path": "tests/conformance/test_alpha_agnosticism.py",
+   "wave": 1
+  },
+  "S4": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G01"
+   ],
+   "name": "test_no_wall_clock_read_on_hot_path",
+   "path": "tests/acceptance/test_no_walltime_outside_clock.py",
+   "wave": 1
+  },
+  "S5": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G41",
+    "G42",
+    "G44",
+    "G45"
+   ],
+   "name": "test_hot_path_allow_list",
+   "path": "tests/conformance/test_hot_path_allow_list.py",
+   "wave": 2
+  },
+  "S6": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G20",
+    "G23",
+    "G36"
+   ],
+   "name": "test_no_fail_quiet_exception_handler",
+   "path": "tests/conformance/test_exception_containment.py",
+   "wave": 1
+  },
+  "S7": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G26"
+   ],
+   "name": "test_mode_branches_only_at_composition_root",
+   "path": "tests/conformance/test_mode_seam.py",
+   "wave": 1
+  },
+  "S8": {
+   "fails_today": "no",
+   "gaps_named": [
+    "G07"
+   ],
+   "name": "test_event_schema_hash_pinned_and_version_coupled",
+   "path": "tests/conformance/test_schema_drift.py",
+   "wave": 1
+  },
+  "S9": {
+   "fails_today": "yes",
+   "gaps_named": [],
+   "name": "test_every_numeric_contract_field_declares_a_unit",
+   "path": "tests/conformance/test_unit_declaration.py",
+   "wave": 1
+  },
+  "X1": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G20",
+    "G23",
+    "G35",
+    "G43"
+   ],
+   "name": "test_degradation_monotonicity",
+   "path": "tests/conformance/test_degradation_monotonicity.py",
+   "wave": 3
+  },
+  "X10": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G43"
+   ],
+   "name": "test_latency_budget_breach_reduces_exposure",
+   "path": "tests/conformance/test_latency_budget.py",
+   "wave": 4
+  },
+  "X11": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G03",
+    "G34"
+   ],
+   "name": "test_reconciliation_divergence_reduces_exposure_and_emits",
+   "path": "tests/conformance/test_reconciliation.py",
+   "wave": 3
+  },
+  "X2": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G10",
+    "G22"
+   ],
+   "name": "test_risk_veto_is_monotone",
+   "path": "tests/conformance/test_risk_monotonicity.py",
+   "wave": 2
+  },
+  "X3": {
+   "fails_today": "no",
+   "gaps_named": [],
+   "name": "test_reduction_is_always_permitted",
+   "path": "tests/conformance/test_reduction_permitted.py",
+   "wave": 1
+  },
+  "X4": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G23"
+   ],
+   "name": "test_per_alpha_budget_totality",
+   "path": "tests/conformance/test_per_alpha_budget.py",
+   "wave": 3
+  },
+  "X5": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G20"
+   ],
+   "name": "test_position_read_fails_closed",
+   "path": "tests/conformance/test_position_read_fails_closed.py",
+   "wave": 3
+  },
+  "X6": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G17",
+    "G23",
+    "G36",
+    "G38"
+   ],
+   "name": "test_pathological_input_refused_with_named_gate",
+   "path": "tests/conformance/test_pathological_refusal.py",
+   "wave": 3
+  },
+  "X7": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G20",
+    "G23",
+    "G36"
+   ],
+   "name": "test_no_exception_path_passes_a_gate_or_increases_exposure",
+   "path": "tests/conformance/test_exception_containment.py",
+   "wave": 3
+  },
+  "X8": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G02"
+   ],
+   "name": "test_cascade_depth_is_bounded",
+   "path": "tests/conformance/test_cascade_depth.py",
+   "wave": 2
+  },
+  "X9": {
+   "fails_today": "yes",
+   "gaps_named": [
+    "G03",
+    "G28"
+   ],
+   "name": "test_kill_switch_fail_closed_durable_and_observable",
+   "path": "tests/conformance/test_kill_switch.py",
+   "wave": 2
+  }
+ },
+ "tests_by_wave": {
+  "0": [
+   "C1",
+   "S1"
+  ],
+  "1": [
+   "A1",
+   "C2",
+   "H1",
+   "R1",
+   "R2",
+   "R9",
+   "S2",
+   "S3",
+   "S4",
+   "S6",
+   "S7",
+   "S8",
+   "S9",
+   "S10",
+   "S11",
+   "S12",
+   "S13",
+   "S15",
+   "X3"
+  ],
+  "2": [
+   "A2",
+   "C3",
+   "C4",
+   "C5",
+   "H4",
+   "R3",
+   "R4",
+   "R7",
+   "R8",
+   "S5",
+   "S14",
+   "S16",
+   "S17",
+   "X2",
+   "X8",
+   "X9"
+  ],
+  "3": [
+   "C6",
+   "H2",
+   "R6",
+   "X1",
+   "X4",
+   "X5",
+   "X6",
+   "X7",
+   "X11"
+  ],
+  "4": [
+   "A3",
+   "H3",
+   "R5",
+   "X10"
+  ]
+ },
+ "unmapped": [
+  "G31",
+  "G32"
+ ]
+}

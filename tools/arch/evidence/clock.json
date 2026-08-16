@@ -1,0 +1,143 @@
+{
+  "by_engine_hint": {
+    "0": 2,
+    "1": 5,
+    "10": 4,
+    "12": 11
+  },
+  "hits": [
+    {
+      "call": "time.monotonic",
+      "engine_hint": 10,
+      "line": 166,
+      "path": "src/feelies/broker/ib/connection.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 10,
+      "line": 167,
+      "path": "src/feelies/broker/ib/connection.py"
+    },
+    {
+      "call": "time.time_ns",
+      "engine_hint": 0,
+      "line": 27,
+      "path": "src/feelies/core/clock.py"
+    },
+    {
+      "call": "time",
+      "engine_hint": 0,
+      "line": 43,
+      "path": "src/feelies/core/session_clock.py"
+    },
+    {
+      "call": "time",
+      "engine_hint": 10,
+      "line": 53,
+      "path": "src/feelies/execution/moc_session.py"
+    },
+    {
+      "call": "time",
+      "engine_hint": 10,
+      "line": 56,
+      "path": "src/feelies/execution/moc_session.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 75,
+      "path": "src/feelies/harness/backtest_prep.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 94,
+      "path": "src/feelies/harness/backtest_prep.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 83,
+      "path": "src/feelies/harness/backtest_prep.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 261,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 950,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 730,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 753,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 838,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 878,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 893,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 12,
+      "line": 984,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 1,
+      "line": 312,
+      "path": "src/feelies/ingestion/massive_ingestor.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 1,
+      "line": 317,
+      "path": "src/feelies/ingestion/massive_ingestor.py"
+    },
+    {
+      "call": "time.monotonic",
+      "engine_hint": 1,
+      "line": 322,
+      "path": "src/feelies/ingestion/massive_ingestor.py"
+    },
+    {
+      "call": "time",
+      "engine_hint": 1,
+      "line": 176,
+      "path": "src/feelies/storage/reference/event_calendar/__init__.py"
+    },
+    {
+      "call": "time",
+      "engine_hint": 1,
+      "line": 179,
+      "path": "src/feelies/storage/reference/event_calendar/__init__.py"
+    }
+  ],
+  "n": 22
+}

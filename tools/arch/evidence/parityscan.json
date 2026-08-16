@@ -1,0 +1,2555 @@
+{
+  "all_hashed_field_names": [
+    "ACKNOWLEDGED",
+    "ALLOW",
+    "BACKTEST_MODE",
+    "BREACH_DETECTED",
+    "BUY",
+    "CANCELLED",
+    "CANCEL_REQUESTED",
+    "CORRUPTED",
+    "CROSS_SECTIONAL",
+    "DATA_SYNC",
+    "FILLED",
+    "FLAT",
+    "FORCED_FLATTEN",
+    "GAP_DETECTED",
+    "HALTED",
+    "HEALTHY",
+    "HORIZON_AGGREGATE",
+    "HORIZON_CHECK",
+    "KYLE_INFO",
+    "LOCKED",
+    "LOG_AND_METRICS",
+    "LONG",
+    "MARKET",
+    "MARKET_EVENT_RECEIVED",
+    "NORMAL",
+    "ORDER_ACK",
+    "ORDER_DECISION",
+    "ORDER_SUBMIT",
+    "PARTIALLY_FILLED",
+    "POSITION_UPDATE",
+    "READY",
+    "REJECTED",
+    "RISK_CHECK",
+    "SELL",
+    "SENSOR_UPDATE",
+    "SHUTDOWN",
+    "SIGNAL_GATE",
+    "STATE_UPDATE",
+    "SUBMITTED",
+    "WAITING_FOR_MARKET_EVENT",
+    "WARNING",
+    "_bus",
+    "_halt_blackout_ns",
+    "_halt_off_codes",
+    "_halt_on_codes",
+    "_macro",
+    "_micro",
+    "_positions",
+    "_process_tick",
+    "_process_trade",
+    "action",
+    "actuation",
+    "alpha_id",
+    "append",
+    "append_batch",
+    "ask",
+    "attach",
+    "avg_entry_price",
+    "avg_price",
+    "bid",
+    "blackout_until_ns",
+    "boot",
+    "boundary_index",
+    "chdir",
+    "check_signal",
+    "check_sized_intent",
+    "completeness",
+    "consumed_features",
+    "correlation_id",
+    "cost",
+    "cost_bps",
+    "cumulative_fees",
+    "departing_posterior_now",
+    "departing_posterior_prev",
+    "departing_state",
+    "detect",
+    "direction",
+    "disclosed_cost_total_bps",
+    "disclosed_margin_ratio",
+    "dominant_name",
+    "dominant_state",
+    "edge_estimate_bps",
+    "encode",
+    "engine_name",
+    "expected_gross_exposure_usd",
+    "expected_half_life_seconds",
+    "expected_turnover_usd",
+    "extend",
+    "factor_exposures",
+    "fees",
+    "fill_price",
+    "filled_quantity",
+    "from_state",
+    "gate",
+    "get",
+    "halted",
+    "hazard_score",
+    "hexdigest",
+    "horizon_seconds",
+    "incoming_state",
+    "insert",
+    "items",
+    "join",
+    "layer",
+    "load",
+    "machine_name",
+    "manifest",
+    "manifest_fingerprint",
+    "mark",
+    "mechanism_breakdown",
+    "metadata",
+    "name",
+    "next",
+    "on_event",
+    "on_quote",
+    "on_transition",
+    "order_id",
+    "order_type",
+    "orders",
+    "parametrize",
+    "params",
+    "path",
+    "poll_acks",
+    "posterior_entropy_nats",
+    "posteriors",
+    "provenance_key",
+    "publish",
+    "qty_delta",
+    "quantity",
+    "query",
+    "realized_pnl",
+    "reason",
+    "regime_gate_state",
+    "register",
+    "reset",
+    "run_backtest",
+    "safe",
+    "scaling_factor",
+    "scope",
+    "sensor_id",
+    "sensor_readings",
+    "sensor_version",
+    "sequence",
+    "session_id",
+    "set_time",
+    "sha256",
+    "side",
+    "signal",
+    "signals_by_symbol",
+    "snapshots",
+    "snapshots_by_symbol",
+    "source_layer",
+    "stale",
+    "status",
+    "strategy_id",
+    "strategy_ids",
+    "strength",
+    "submit",
+    "subscribe",
+    "symbol",
+    "target_positions",
+    "target_usd",
+    "timestamp_ns",
+    "to_state",
+    "trade_journal",
+    "transition",
+    "trend_mechanism",
+    "trend_mechanism_enum",
+    "trigger",
+    "universe",
+    "unrealized_pnl",
+    "update",
+    "update_mark",
+    "urgency",
+    "value",
+    "values",
+    "warm"
+  ],
+  "declared_fields_by_event": {
+    "Alert": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "severity",
+      "layer",
+      "alert_name",
+      "message",
+      "context"
+    ],
+    "CrossSectionalContext": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "horizon_seconds",
+      "boundary_index",
+      "universe",
+      "signals_by_symbol",
+      "signals_by_strategy_by_symbol",
+      "snapshots_by_symbol",
+      "completeness"
+    ],
+    "Event": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer"
+    ],
+    "HorizonFeatureSnapshot": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "horizon_seconds",
+      "boundary_index",
+      "boundary_ts_ns",
+      "values",
+      "warm",
+      "stale",
+      "source_sensors",
+      "feature_versions",
+      "parent_correlation_id"
+    ],
+    "HorizonTick": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "horizon_seconds",
+      "boundary_index",
+      "session_id",
+      "scope",
+      "boundary_timestamp_ns",
+      "symbol",
+      "boundary_ts_ns"
+    ],
+    "KillSwitchActivation": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "reason",
+      "activated_by"
+    ],
+    "MetricEvent": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "layer",
+      "name",
+      "value",
+      "metric_type",
+      "tags"
+    ],
+    "NBBOQuote": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "bid",
+      "ask",
+      "bid_size",
+      "ask_size",
+      "bid_exchange",
+      "ask_exchange",
+      "exchange_timestamp_ns",
+      "conditions",
+      "indicators",
+      "sequence_number",
+      "tape",
+      "participant_timestamp_ns",
+      "trf_timestamp_ns",
+      "received_ns"
+    ],
+    "OrderAck": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "order_id",
+      "symbol",
+      "status",
+      "filled_quantity",
+      "fill_price",
+      "fees",
+      "cost_bps",
+      "reason",
+      "request_sequence"
+    ],
+    "OrderRequest": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "order_id",
+      "symbol",
+      "side",
+      "order_type",
+      "quantity",
+      "limit_price",
+      "strategy_id",
+      "is_short",
+      "is_moc",
+      "g12_disclosed_cost_total_bps",
+      "reason"
+    ],
+    "PositionUpdate": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "quantity",
+      "avg_price",
+      "realized_pnl",
+      "unrealized_pnl",
+      "cumulative_fees",
+      "cost_bps"
+    ],
+    "RegimeHazardSpike": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "engine_name",
+      "departing_state",
+      "departing_posterior_prev",
+      "departing_posterior_now",
+      "incoming_state",
+      "hazard_score"
+    ],
+    "RegimeState": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "engine_name",
+      "state_names",
+      "posteriors",
+      "dominant_state",
+      "dominant_name",
+      "horizon_seconds",
+      "stability",
+      "posterior_entropy_nats",
+      "calibrated",
+      "discriminability"
+    ],
+    "RiskVerdict": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "action",
+      "reason",
+      "scaling_factor",
+      "constraints"
+    ],
+    "SafetyStateChange": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "strategy_id",
+      "safe",
+      "reason",
+      "trend_mechanism",
+      "regime_gate_state",
+      "consumed_features",
+      "expected_half_life_seconds",
+      "disclosed_cost_total_bps",
+      "disclosed_margin_ratio"
+    ],
+    "SensorReading": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "sensor_id",
+      "sensor_version",
+      "value",
+      "confidence",
+      "warm",
+      "provenance",
+      "parent_correlation_id"
+    ],
+    "Signal": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "strategy_id",
+      "direction",
+      "strength",
+      "edge_estimate_bps",
+      "disclosed_cost_total_bps",
+      "reversal_cost_estimate_bps",
+      "disclosed_margin_ratio",
+      "metadata",
+      "layer",
+      "horizon_seconds",
+      "regime_gate_state",
+      "consumed_features",
+      "trend_mechanism",
+      "expected_half_life_seconds"
+    ],
+    "SizedPositionIntent": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "strategy_id",
+      "layer",
+      "horizon_seconds",
+      "target_positions",
+      "factor_exposures",
+      "expected_turnover_usd",
+      "expected_gross_exposure_usd",
+      "mechanism_breakdown",
+      "disclosed_cost_total_bps_by_symbol",
+      "decision_basis_hash",
+      "solver_status"
+    ],
+    "StateTransition": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "machine_name",
+      "from_state",
+      "to_state",
+      "trigger",
+      "metadata"
+    ],
+    "SymbolHalted": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "halted",
+      "reason",
+      "blackout_until_ns"
+    ],
+    "Trade": [
+      "timestamp_ns",
+      "correlation_id",
+      "sequence",
+      "source_layer",
+      "symbol",
+      "price",
+      "size",
+      "exchange",
+      "trade_id",
+      "exchange_timestamp_ns",
+      "conditions",
+      "decimal_size",
+      "sequence_number",
+      "tape",
+      "trf_id",
+      "trf_timestamp_ns",
+      "participant_timestamp_ns",
+      "correction",
+      "received_ns"
+    ]
+  },
+  "determinism_test_modules": [
+    "tests/determinism/test_cross_sectional_context_replay.py",
+    "tests/determinism/test_decoupled_safety_replay.py",
+    "tests/determinism/test_emit_hazard_spikes_jsonl.py",
+    "tests/determinism/test_emit_signals_jsonl.py",
+    "tests/determinism/test_forced_exit_attribution_replay.py",
+    "tests/determinism/test_hash_seed_independence.py",
+    "tests/determinism/test_hazard_exit_replay.py",
+    "tests/determinism/test_horizon_feature_snapshot_replay.py",
+    "tests/determinism/test_horizon_tick_replay.py",
+    "tests/determinism/test_legacy_sequence_isolation.py",
+    "tests/determinism/test_market_fill_replay.py",
+    "tests/determinism/test_multi_symbol_sensor_replay.py",
+    "tests/determinism/test_orchestrator_replay.py",
+    "tests/determinism/test_parity_manifest.py",
+    "tests/determinism/test_portfolio_order_replay.py",
+    "tests/determinism/test_position_pnl_replay.py",
+    "tests/determinism/test_reference_alpha_signal_fires_replay.py",
+    "tests/determinism/test_regime_hazard_replay.py",
+    "tests/determinism/test_regime_state_replay.py",
+    "tests/determinism/test_risk_verdict_replay.py",
+    "tests/determinism/test_sensor_reading_replay.py",
+    "tests/determinism/test_signal_fires_replay.py",
+    "tests/determinism/test_signal_replay.py",
+    "tests/determinism/test_sized_intent_replay.py",
+    "tests/determinism/test_sized_intent_solver_replay.py",
+    "tests/determinism/test_sized_intent_with_decay_replay.py",
+    "tests/determinism/test_state_transition_replay.py",
+    "tests/determinism/test_symbol_halted_replay.py",
+    "tests/determinism/test_transcendental_determinism.py",
+    "tests/determinism/test_v03_sensor_replay.py"
+  ],
+  "event_classes_with_no_hash_helper_annotation": [
+    "Alert",
+    "KillSwitchActivation",
+    "MetricEvent",
+    "NBBOQuote",
+    "SensorReading",
+    "Trade"
+  ],
+  "fields_in_no_parity_hash": {
+    "Alert": [
+      "severity",
+      "alert_name",
+      "message",
+      "context"
+    ],
+    "CrossSectionalContext": [
+      "signals_by_strategy_by_symbol"
+    ],
+    "HorizonFeatureSnapshot": [
+      "boundary_ts_ns",
+      "source_sensors",
+      "feature_versions",
+      "parent_correlation_id"
+    ],
+    "HorizonTick": [
+      "boundary_timestamp_ns",
+      "boundary_ts_ns"
+    ],
+    "KillSwitchActivation": [
+      "activated_by"
+    ],
+    "MetricEvent": [
+      "metric_type",
+      "tags"
+    ],
+    "NBBOQuote": [
+      "bid_size",
+      "ask_size",
+      "bid_exchange",
+      "ask_exchange",
+      "exchange_timestamp_ns",
+      "conditions",
+      "indicators",
+      "sequence_number",
+      "tape",
+      "participant_timestamp_ns",
+      "trf_timestamp_ns",
+      "received_ns"
+    ],
+    "OrderAck": [
+      "request_sequence"
+    ],
+    "OrderRequest": [
+      "limit_price",
+      "is_short",
+      "is_moc",
+      "g12_disclosed_cost_total_bps"
+    ],
+    "RegimeState": [
+      "state_names",
+      "stability",
+      "calibrated",
+      "discriminability"
+    ],
+    "RiskVerdict": [
+      "constraints"
+    ],
+    "SensorReading": [
+      "confidence",
+      "provenance",
+      "parent_correlation_id"
+    ],
+    "Signal": [
+      "reversal_cost_estimate_bps"
+    ],
+    "SizedPositionIntent": [
+      "disclosed_cost_total_bps_by_symbol",
+      "decision_basis_hash",
+      "solver_status"
+    ],
+    "Trade": [
+      "price",
+      "size",
+      "exchange",
+      "trade_id",
+      "exchange_timestamp_ns",
+      "conditions",
+      "decimal_size",
+      "sequence_number",
+      "tape",
+      "trf_id",
+      "trf_timestamp_ns",
+      "participant_timestamp_ns",
+      "correction",
+      "received_ns"
+    ]
+  },
+  "float_precision_histogram": {
+    "2": 1,
+    "6": 10
+  },
+  "hash_helpers": [
+    {
+      "float_precisions": [],
+      "function": "manifest_fingerprint",
+      "hashed_field_names": [
+        "encode",
+        "hexdigest",
+        "items",
+        "join",
+        "sha256"
+      ],
+      "line": 234,
+      "param_annotations": [],
+      "path": "tests/determinism/parity_manifest.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "append",
+        "attach",
+        "next",
+        "publish",
+        "subscribe"
+      ],
+      "line": 86,
+      "param_annotations": [],
+      "path": "tests/determinism/test_cross_sectional_context_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_context_stream",
+      "hashed_field_names": [
+        "append",
+        "boundary_index",
+        "completeness",
+        "correlation_id",
+        "encode",
+        "get",
+        "hexdigest",
+        "horizon_seconds",
+        "join",
+        "sequence",
+        "sha256",
+        "signals_by_symbol",
+        "snapshots_by_symbol",
+        "timestamp_ns",
+        "universe"
+      ],
+      "line": 118,
+      "param_annotations": [
+        "list[CrossSectionalContext]"
+      ],
+      "path": "tests/determinism/test_cross_sectional_context_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_cross_sectional_context_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 142,
+      "param_annotations": [],
+      "path": "tests/determinism/test_cross_sectional_context_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_context_hash",
+      "hashed_field_names": [],
+      "line": 157,
+      "param_annotations": [],
+      "path": "tests/determinism/test_cross_sectional_context_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_safety_stream",
+      "hashed_field_names": [
+        "append",
+        "consumed_features",
+        "correlation_id",
+        "disclosed_cost_total_bps",
+        "disclosed_margin_ratio",
+        "encode",
+        "expected_half_life_seconds",
+        "hexdigest",
+        "join",
+        "name",
+        "reason",
+        "regime_gate_state",
+        "safe",
+        "sequence",
+        "sha256",
+        "source_layer",
+        "strategy_id",
+        "symbol",
+        "timestamp_ns",
+        "trend_mechanism"
+      ],
+      "line": 200,
+      "param_annotations": [
+        "list[SafetyStateChange]"
+      ],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay_safety_state_change",
+      "hashed_field_names": [],
+      "line": 217,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay_risk_flatten",
+      "hashed_field_names": [
+        "append",
+        "publish",
+        "subscribe"
+      ],
+      "line": 308,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_order_stream",
+      "hashed_field_names": [
+        "append",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "join",
+        "name",
+        "order_id",
+        "order_type",
+        "quantity",
+        "reason",
+        "sequence",
+        "sha256",
+        "side",
+        "source_layer",
+        "strategy_id",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 340,
+      "param_annotations": [
+        "list[OrderRequest]"
+      ],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_safety_state_change_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 381,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_safety_hash",
+      "hashed_field_names": [],
+      "line": 396,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_risk_flatten_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 408,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_risk_flatten_hash",
+      "hashed_field_names": [],
+      "line": 423,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_non_promoted_signal_stream_bit_identical",
+      "hashed_field_names": [
+        "FLAT",
+        "KYLE_INFO",
+        "consumed_features",
+        "direction",
+        "disclosed_cost_total_bps",
+        "disclosed_margin_ratio",
+        "expected_half_life_seconds",
+        "name",
+        "reason",
+        "regime_gate_state",
+        "sequence",
+        "trend_mechanism"
+      ],
+      "line": 461,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_promotion_migrates_flat_from_signal_to_safety_stream",
+      "hashed_field_names": [
+        "FLAT",
+        "MARKET",
+        "SELL",
+        "actuation",
+        "correlation_id",
+        "direction",
+        "provenance_key",
+        "strategy_id",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 489,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_replay",
+      "hashed_field_names": [
+        "BACKTEST_MODE",
+        "MARKET",
+        "SELL",
+        "_macro",
+        "_micro",
+        "append",
+        "boot",
+        "cumulative_fees",
+        "encode",
+        "fees",
+        "filled_quantity",
+        "get",
+        "hexdigest",
+        "join",
+        "metadata",
+        "publish",
+        "quantity",
+        "query",
+        "realized_pnl",
+        "reset",
+        "sha256",
+        "strategy_id",
+        "strategy_ids",
+        "trade_journal",
+        "transition",
+        "update"
+      ],
+      "line": 118,
+      "param_annotations": [],
+      "path": "tests/determinism/test_forced_exit_attribution_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_forced_exit_attribution_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 236,
+      "param_annotations": [],
+      "path": "tests/determinism/test_forced_exit_attribution_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_attribution_hash",
+      "hashed_field_names": [],
+      "line": 249,
+      "param_annotations": [],
+      "path": "tests/determinism/test_forced_exit_attribution_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_probe",
+      "hashed_field_names": [
+        "chdir",
+        "insert",
+        "path"
+      ],
+      "line": 19,
+      "param_annotations": [],
+      "path": "tests/determinism/test_hash_seed_independence.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "append",
+        "attach",
+        "publish",
+        "subscribe"
+      ],
+      "line": 72,
+      "param_annotations": [],
+      "path": "tests/determinism/test_hazard_exit_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_order_stream",
+      "hashed_field_names": [
+        "append",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "join",
+        "name",
+        "order_id",
+        "order_type",
+        "quantity",
+        "reason",
+        "sequence",
+        "sha256",
+        "side",
+        "source_layer",
+        "strategy_id",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 120,
+      "param_annotations": [
+        "list[OrderRequest]"
+      ],
+      "path": "tests/determinism/test_hazard_exit_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_hazard_exit_order_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 139,
+      "param_annotations": [],
+      "path": "tests/determinism/test_hazard_exit_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_hazard_exit_hash",
+      "hashed_field_names": [],
+      "line": 157,
+      "param_annotations": [],
+      "path": "tests/determinism/test_hazard_exit_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_snapshot_stream",
+      "hashed_field_names": [
+        "append",
+        "boundary_index",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "horizon_seconds",
+        "items",
+        "join",
+        "sequence",
+        "sha256",
+        "stale",
+        "symbol",
+        "timestamp_ns",
+        "values",
+        "warm"
+      ],
+      "line": 58,
+      "param_annotations": [
+        "list[HorizonFeatureSnapshot]"
+      ],
+      "path": "tests/determinism/test_horizon_feature_snapshot_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "snapshots"
+      ],
+      "line": 76,
+      "param_annotations": [],
+      "path": "tests/determinism/test_horizon_feature_snapshot_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_snapshot_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 84,
+      "param_annotations": [],
+      "path": "tests/determinism/test_horizon_feature_snapshot_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_snapshot_hash",
+      "hashed_field_names": [],
+      "line": 100,
+      "param_annotations": [],
+      "path": "tests/determinism/test_horizon_feature_snapshot_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_horizon_tick_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 20,
+      "param_annotations": [],
+      "path": "tests/determinism/test_horizon_tick_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_hash",
+      "hashed_field_names": [],
+      "line": 35,
+      "param_annotations": [],
+      "path": "tests/determinism/test_horizon_tick_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "BUY",
+        "SELL",
+        "extend",
+        "on_quote",
+        "poll_acks",
+        "submit"
+      ],
+      "line": 53,
+      "param_annotations": [],
+      "path": "tests/determinism/test_market_fill_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_acks",
+      "hashed_field_names": [
+        "cost_bps",
+        "encode",
+        "fees",
+        "fill_price",
+        "filled_quantity",
+        "hexdigest",
+        "join",
+        "name",
+        "order_id",
+        "sequence",
+        "sha256",
+        "status",
+        "timestamp_ns"
+      ],
+      "line": 80,
+      "param_annotations": [
+        "list[OrderAck]"
+      ],
+      "path": "tests/determinism/test_market_fill_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_market_fill_replay_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 98,
+      "param_annotations": [],
+      "path": "tests/determinism/test_market_fill_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_market_fill_replay_is_deterministic",
+      "hashed_field_names": [],
+      "line": 113,
+      "param_annotations": [],
+      "path": "tests/determinism/test_market_fill_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "append",
+        "publish",
+        "register",
+        "subscribe"
+      ],
+      "line": 74,
+      "param_annotations": [],
+      "path": "tests/determinism/test_multi_symbol_sensor_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_multi_symbol_reading_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 105,
+      "param_annotations": [],
+      "path": "tests/determinism/test_multi_symbol_sensor_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_reading_hash",
+      "hashed_field_names": [],
+      "line": 119,
+      "param_annotations": [],
+      "path": "tests/determinism/test_multi_symbol_sensor_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_run",
+      "hashed_field_names": [
+        "_bus",
+        "append",
+        "append_batch",
+        "boot",
+        "run_backtest",
+        "subscribe"
+      ],
+      "line": 32,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_sha",
+      "hashed_field_names": [
+        "encode",
+        "hexdigest",
+        "join",
+        "sha256"
+      ],
+      "line": 58,
+      "param_annotations": [
+        "list[str]"
+      ],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_signals",
+      "hashed_field_names": [
+        "correlation_id",
+        "direction",
+        "edge_estimate_bps",
+        "layer",
+        "name",
+        "sequence",
+        "strategy_id",
+        "strength",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 62,
+      "param_annotations": [
+        "list[Signal]"
+      ],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_intents",
+      "hashed_field_names": [
+        "correlation_id",
+        "items",
+        "join",
+        "sequence",
+        "target_positions",
+        "timestamp_ns"
+      ],
+      "line": 73,
+      "param_annotations": [
+        "list[SizedPositionIntent]"
+      ],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_orders",
+      "hashed_field_names": [
+        "correlation_id",
+        "name",
+        "order_id",
+        "order_type",
+        "quantity",
+        "reason",
+        "sequence",
+        "side",
+        "source_layer",
+        "strategy_id",
+        "symbol"
+      ],
+      "line": 84,
+      "param_annotations": [
+        "list[OrderRequest]"
+      ],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_updates",
+      "hashed_field_names": [
+        "avg_price",
+        "correlation_id",
+        "quantity",
+        "realized_pnl",
+        "sequence",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 95,
+      "param_annotations": [
+        "list[PositionUpdate]"
+      ],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_full_orchestrator_replays_are_identical",
+      "hashed_field_names": [],
+      "line": 108,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_orchestrator_streams_match_locked_baseline",
+      "hashed_field_names": [],
+      "line": 125,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_wiring_actually_dispatches_an_intent",
+      "hashed_field_names": [],
+      "line": 136,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_run_stop_exit",
+      "hashed_field_names": [
+        "_bus",
+        "_positions",
+        "append",
+        "append_batch",
+        "boot",
+        "run_backtest",
+        "subscribe",
+        "update"
+      ],
+      "line": 189,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_full_orchestrator_stop_exit_replays_are_identical",
+      "hashed_field_names": [],
+      "line": 221,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_stop_exit_replay_produces_a_non_empty_order_and_fill_stream",
+      "hashed_field_names": [],
+      "line": 225,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_stop_exit_streams_match_locked_baseline",
+      "hashed_field_names": [],
+      "line": 291,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay_horizon_tick",
+      "hashed_field_names": [],
+      "line": 51,
+      "param_annotations": [],
+      "path": "tests/determinism/test_parity_manifest.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay_regime_state",
+      "hashed_field_names": [],
+      "line": 56,
+      "param_annotations": [],
+      "path": "tests/determinism/test_parity_manifest.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_regime_state_count_matches_manifest",
+      "hashed_field_names": [],
+      "line": 120,
+      "param_annotations": [],
+      "path": "tests/determinism/test_parity_manifest.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_manifest_fingerprint_matches_locked_value",
+      "hashed_field_names": [
+        "manifest_fingerprint"
+      ],
+      "line": 355,
+      "param_annotations": [],
+      "path": "tests/determinism/test_parity_manifest.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "check_sized_intent",
+        "extend",
+        "orders",
+        "publish"
+      ],
+      "line": 44,
+      "param_annotations": [],
+      "path": "tests/determinism/test_portfolio_order_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_order_stream",
+      "hashed_field_names": [
+        "append",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "join",
+        "name",
+        "order_id",
+        "order_type",
+        "quantity",
+        "reason",
+        "sequence",
+        "sha256",
+        "side",
+        "source_layer",
+        "strategy_id",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 67,
+      "param_annotations": [
+        "list[OrderRequest]"
+      ],
+      "path": "tests/determinism/test_portfolio_order_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_portfolio_order_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 86,
+      "param_annotations": [],
+      "path": "tests/determinism/test_portfolio_order_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_order_hash",
+      "hashed_field_names": [],
+      "line": 104,
+      "param_annotations": [],
+      "path": "tests/determinism/test_portfolio_order_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_position_stream",
+      "hashed_field_names": [
+        "append",
+        "avg_price",
+        "cost_bps",
+        "cumulative_fees",
+        "encode",
+        "hexdigest",
+        "join",
+        "quantity",
+        "realized_pnl",
+        "sequence",
+        "sha256",
+        "symbol",
+        "timestamp_ns",
+        "unrealized_pnl"
+      ],
+      "line": 63,
+      "param_annotations": [
+        "list[PositionUpdate]"
+      ],
+      "path": "tests/determinism/test_position_pnl_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "append",
+        "ask",
+        "avg_entry_price",
+        "bid",
+        "cost_bps",
+        "cumulative_fees",
+        "fees",
+        "fill_price",
+        "next",
+        "qty_delta",
+        "quantity",
+        "realized_pnl",
+        "symbol",
+        "unrealized_pnl",
+        "update",
+        "update_mark"
+      ],
+      "line": 74,
+      "param_annotations": [],
+      "path": "tests/determinism/test_position_pnl_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_position_pnl_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 117,
+      "param_annotations": [],
+      "path": "tests/determinism/test_position_pnl_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_pnl_hash",
+      "hashed_field_names": [],
+      "line": 131,
+      "param_annotations": [],
+      "path": "tests/determinism/test_position_pnl_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "publish"
+      ],
+      "line": 93,
+      "param_annotations": [],
+      "path": "tests/determinism/test_reference_alpha_signal_fires_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_reference_alpha_signal_fires_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 125,
+      "param_annotations": [],
+      "path": "tests/determinism/test_reference_alpha_signal_fires_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_reference_alpha_signal_hash",
+      "hashed_field_names": [],
+      "line": 140,
+      "param_annotations": [],
+      "path": "tests/determinism/test_reference_alpha_signal_fires_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "append",
+        "detect"
+      ],
+      "line": 102,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_hazard_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_spike_stream",
+      "hashed_field_names": [
+        "append",
+        "correlation_id",
+        "departing_posterior_now",
+        "departing_posterior_prev",
+        "departing_state",
+        "encode",
+        "engine_name",
+        "hazard_score",
+        "hexdigest",
+        "incoming_state",
+        "join",
+        "sequence",
+        "sha256",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 115,
+      "param_annotations": [
+        "list[RegimeHazardSpike]"
+      ],
+      "path": "tests/determinism/test_regime_hazard_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_hazard_hash",
+      "hashed_field_names": [],
+      "line": 132,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_hazard_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_hazard_count_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 150,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_hazard_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_hazard_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 157,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_hazard_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_regime_stream",
+      "hashed_field_names": [
+        "append",
+        "dominant_name",
+        "dominant_state",
+        "encode",
+        "engine_name",
+        "hexdigest",
+        "join",
+        "posterior_entropy_nats",
+        "posteriors",
+        "sequence",
+        "sha256",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 78,
+      "param_annotations": [
+        "list[RegimeState]"
+      ],
+      "path": "tests/determinism/test_regime_state_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_regime_state_hash",
+      "hashed_field_names": [],
+      "line": 90,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_state_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_regime_state_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 108,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_state_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "append",
+        "check_signal",
+        "update",
+        "update_mark"
+      ],
+      "line": 42,
+      "param_annotations": [],
+      "path": "tests/determinism/test_risk_verdict_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_verdict_stream",
+      "hashed_field_names": [
+        "action",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "join",
+        "name",
+        "reason",
+        "scaling_factor",
+        "sequence",
+        "sha256",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 86,
+      "param_annotations": [
+        "list[RiskVerdict]"
+      ],
+      "path": "tests/determinism/test_risk_verdict_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_verdict_hash",
+      "hashed_field_names": [],
+      "line": 95,
+      "param_annotations": [],
+      "path": "tests/determinism/test_risk_verdict_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_risk_verdict_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 108,
+      "param_annotations": [],
+      "path": "tests/determinism/test_risk_verdict_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_reading_stream",
+      "hashed_field_names": [
+        "append",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "join",
+        "sensor_id",
+        "sensor_version",
+        "sequence",
+        "sha256",
+        "symbol",
+        "timestamp_ns",
+        "value",
+        "warm"
+      ],
+      "line": 53,
+      "param_annotations": [
+        "list[Any]"
+      ],
+      "path": "tests/determinism/test_sensor_reading_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "sensor_readings"
+      ],
+      "line": 73,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sensor_reading_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_sensor_reading_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 82,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sensor_reading_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_reading_hash",
+      "hashed_field_names": [],
+      "line": 103,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sensor_reading_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "publish"
+      ],
+      "line": 131,
+      "param_annotations": [],
+      "path": "tests/determinism/test_signal_fires_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_signal_fires_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 144,
+      "param_annotations": [],
+      "path": "tests/determinism/test_signal_fires_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_signal_hash",
+      "hashed_field_names": [],
+      "line": 158,
+      "param_annotations": [],
+      "path": "tests/determinism/test_signal_fires_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "alpha_id",
+        "append",
+        "attach",
+        "consumed_features",
+        "cost",
+        "expected_half_life_seconds",
+        "gate",
+        "horizon_seconds",
+        "load",
+        "manifest",
+        "on_event",
+        "params",
+        "publish",
+        "register",
+        "signal",
+        "subscribe",
+        "trend_mechanism_enum"
+      ],
+      "line": 85,
+      "param_annotations": [
+        "str"
+      ],
+      "path": "tests/determinism/test_signal_replay.py"
+    },
+    {
+      "float_precisions": [
+        6
+      ],
+      "function": "_hash_signal_stream",
+      "hashed_field_names": [
+        "append",
+        "consumed_features",
+        "correlation_id",
+        "direction",
+        "disclosed_cost_total_bps",
+        "disclosed_margin_ratio",
+        "edge_estimate_bps",
+        "encode",
+        "expected_half_life_seconds",
+        "hexdigest",
+        "horizon_seconds",
+        "join",
+        "layer",
+        "name",
+        "regime_gate_state",
+        "sequence",
+        "sha256",
+        "strategy_id",
+        "strength",
+        "symbol",
+        "timestamp_ns",
+        "trend_mechanism"
+      ],
+      "line": 147,
+      "param_annotations": [
+        "list[Signal]"
+      ],
+      "path": "tests/determinism/test_signal_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_signal_hash",
+      "hashed_field_names": [],
+      "line": 169,
+      "param_annotations": [],
+      "path": "tests/determinism/test_signal_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_signal_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 190,
+      "param_annotations": [],
+      "path": "tests/determinism/test_signal_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_v03_reference_alpha_signal_baseline",
+      "hashed_field_names": [
+        "mark",
+        "parametrize"
+      ],
+      "line": 238,
+      "param_annotations": [
+        "str",
+        "str"
+      ],
+      "path": "tests/determinism/test_signal_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_v03_reference_alpha_replay_is_deterministic",
+      "hashed_field_names": [
+        "mark",
+        "parametrize"
+      ],
+      "line": 262,
+      "param_annotations": [
+        "str",
+        "str"
+      ],
+      "path": "tests/determinism/test_signal_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "publish"
+      ],
+      "line": 157,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_replay.py"
+    },
+    {
+      "float_precisions": [
+        2,
+        6
+      ],
+      "function": "_hash_intent_stream",
+      "hashed_field_names": [
+        "append",
+        "correlation_id",
+        "encode",
+        "expected_gross_exposure_usd",
+        "expected_turnover_usd",
+        "factor_exposures",
+        "hexdigest",
+        "horizon_seconds",
+        "join",
+        "layer",
+        "mechanism_breakdown",
+        "name",
+        "sequence",
+        "sha256",
+        "strategy_id",
+        "target_positions",
+        "target_usd",
+        "timestamp_ns",
+        "urgency"
+      ],
+      "line": 166,
+      "param_annotations": [
+        "list[SizedPositionIntent]"
+      ],
+      "path": "tests/determinism/test_sized_intent_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_intent_stream_matches_locked_baseline_decay_off",
+      "hashed_field_names": [],
+      "line": 198,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_intent_hash",
+      "hashed_field_names": [],
+      "line": 216,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_intent_count_matches_boundary_count",
+      "hashed_field_names": [],
+      "line": 226,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay_solver",
+      "hashed_field_names": [
+        "publish",
+        "target_positions"
+      ],
+      "line": 112,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_solver_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_solver_intent_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 128,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_solver_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_solver_two_replays_produce_identical_hash",
+      "hashed_field_names": [],
+      "line": 167,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_solver_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_solver_path_produces_non_empty_book",
+      "hashed_field_names": [],
+      "line": 176,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_solver_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_intent_stream_matches_locked_baseline_decay_on",
+      "hashed_field_names": [],
+      "line": 30,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_with_decay_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_intent_hash_with_decay",
+      "hashed_field_names": [],
+      "line": 45,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_with_decay_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_decay_changes_hash_vs_baseline",
+      "hashed_field_names": [],
+      "line": 57,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_with_decay_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_intent_count_matches_boundary_count_with_decay",
+      "hashed_field_names": [],
+      "line": 71,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_with_decay_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_transition_stream",
+      "hashed_field_names": [
+        "append",
+        "encode",
+        "from_state",
+        "hexdigest",
+        "items",
+        "join",
+        "machine_name",
+        "metadata",
+        "sequence",
+        "sha256",
+        "timestamp_ns",
+        "to_state",
+        "trigger"
+      ],
+      "line": 26,
+      "param_annotations": [
+        "list[StateTransition]"
+      ],
+      "path": "tests/determinism/test_state_transition_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "ACKNOWLEDGED",
+        "BACKTEST_MODE",
+        "BREACH_DETECTED",
+        "CANCELLED",
+        "CANCEL_REQUESTED",
+        "CORRUPTED",
+        "CROSS_SECTIONAL",
+        "DATA_SYNC",
+        "FILLED",
+        "FORCED_FLATTEN",
+        "GAP_DETECTED",
+        "HALTED",
+        "HEALTHY",
+        "HORIZON_AGGREGATE",
+        "HORIZON_CHECK",
+        "LOCKED",
+        "LOG_AND_METRICS",
+        "MARKET_EVENT_RECEIVED",
+        "NORMAL",
+        "ORDER_ACK",
+        "ORDER_DECISION",
+        "ORDER_SUBMIT",
+        "PARTIALLY_FILLED",
+        "POSITION_UPDATE",
+        "READY",
+        "REJECTED",
+        "RISK_CHECK",
+        "SENSOR_UPDATE",
+        "SHUTDOWN",
+        "SIGNAL_GATE",
+        "STATE_UPDATE",
+        "SUBMITTED",
+        "WAITING_FOR_MARKET_EVENT",
+        "WARNING",
+        "append",
+        "correlation_id",
+        "from_state",
+        "machine_name",
+        "metadata",
+        "next",
+        "on_transition",
+        "set_time",
+        "timestamp_ns",
+        "to_state",
+        "transition",
+        "trigger"
+      ],
+      "line": 36,
+      "param_annotations": [],
+      "path": "tests/determinism/test_state_transition_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_state_transition_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 146,
+      "param_annotations": [],
+      "path": "tests/determinism/test_state_transition_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_transition_hash",
+      "hashed_field_names": [],
+      "line": 161,
+      "param_annotations": [],
+      "path": "tests/determinism/test_state_transition_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "ALLOW",
+        "LONG",
+        "_halt_blackout_ns",
+        "_halt_off_codes",
+        "_halt_on_codes",
+        "_process_tick",
+        "_process_trade",
+        "append",
+        "on_quote",
+        "subscribe"
+      ],
+      "line": 59,
+      "param_annotations": [],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_sha",
+      "hashed_field_names": [
+        "encode",
+        "hexdigest",
+        "join",
+        "sha256"
+      ],
+      "line": 120,
+      "param_annotations": [
+        "list[str]"
+      ],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_halts",
+      "hashed_field_names": [
+        "blackout_until_ns",
+        "correlation_id",
+        "halted",
+        "reason",
+        "sequence",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 124,
+      "param_annotations": [
+        "list[SymbolHalted]"
+      ],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_orders",
+      "hashed_field_names": [
+        "correlation_id",
+        "name",
+        "order_id",
+        "quantity",
+        "sequence",
+        "side",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 134,
+      "param_annotations": [
+        "list[OrderRequest]"
+      ],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_acks",
+      "hashed_field_names": [
+        "fill_price",
+        "filled_quantity",
+        "name",
+        "order_id",
+        "sequence",
+        "status",
+        "timestamp_ns"
+      ],
+      "line": 144,
+      "param_annotations": [
+        "list[OrderAck]"
+      ],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_updates",
+      "hashed_field_names": [
+        "quantity",
+        "sequence",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 154,
+      "param_annotations": [
+        "list[PositionUpdate]"
+      ],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_halt_streams",
+      "hashed_field_names": [],
+      "line": 158,
+      "param_annotations": [],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_halt_streams_match_locked_baseline",
+      "hashed_field_names": [],
+      "line": 186,
+      "param_annotations": [],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_scenario_discriminates_halt_and_blackout_suppression",
+      "hashed_field_names": [],
+      "line": 197,
+      "param_annotations": [],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_hash_reading_stream",
+      "hashed_field_names": [
+        "append",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "join",
+        "sensor_id",
+        "sensor_version",
+        "sequence",
+        "sha256",
+        "symbol",
+        "timestamp_ns",
+        "value",
+        "warm"
+      ],
+      "line": 105,
+      "param_annotations": [
+        "list[Any]"
+      ],
+      "path": "tests/determinism/test_v03_sensor_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "_replay",
+      "hashed_field_names": [
+        "sensor_readings"
+      ],
+      "line": 124,
+      "param_annotations": [],
+      "path": "tests/determinism/test_v03_sensor_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_v03_sensor_reading_stream_matches_locked_baseline",
+      "hashed_field_names": [],
+      "line": 130,
+      "param_annotations": [],
+      "path": "tests/determinism/test_v03_sensor_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "test_two_replays_produce_identical_v03_hash",
+      "hashed_field_names": [],
+      "line": 147,
+      "param_annotations": [],
+      "path": "tests/determinism/test_v03_sensor_replay.py"
+    },
+    {
+      "float_precisions": [],
+      "function": "hash_horizon_tick_stream",
+      "hashed_field_names": [
+        "append",
+        "boundary_index",
+        "correlation_id",
+        "encode",
+        "hexdigest",
+        "horizon_seconds",
+        "join",
+        "scope",
+        "sequence",
+        "session_id",
+        "sha256",
+        "symbol",
+        "timestamp_ns"
+      ],
+      "line": 182,
+      "param_annotations": [
+        "tuple[HorizonTick, ...]"
+      ],
+      "path": "tests/fixtures/replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_XSECT_CONTEXT_COUNT",
+        "EXPECTED_XSECT_CONTEXT_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_cross_sectional_context_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_COUNT",
+        "EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH",
+        "EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_COUNT",
+        "EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_decoupled_safety_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_FORCED_EXIT_ATTRIBUTION_COUNT",
+        "EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_forced_exit_attribution_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT",
+        "EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_hazard_exit_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL3_SNAPSHOT_COUNT",
+        "EXPECTED_LEVEL3_SNAPSHOT_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_horizon_feature_snapshot_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL2_TICK_COUNT",
+        "EXPECTED_LEVEL2_TICK_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_horizon_tick_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_MARKET_FILL_ACK_COUNT",
+        "EXPECTED_MARKET_FILL_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_market_fill_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_MULTI_SYMBOL_READING_COUNT",
+        "EXPECTED_MULTI_SYMBOL_READING_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_multi_symbol_sensor_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_ORCHESTRATOR_STREAMS",
+        "EXPECTED_STOP_EXIT_STREAMS"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_orchestrator_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_MANIFEST_FINGERPRINT"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_parity_manifest.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL4_PORTFOLIO_ORDER_COUNT",
+        "EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_portfolio_order_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_POSITION_PNL_COUNT",
+        "EXPECTED_POSITION_PNL_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_position_pnl_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT",
+        "EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_reference_alpha_signal_fires_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL5_HAZARD_COUNT",
+        "EXPECTED_LEVEL5_HAZARD_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_hazard_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL6_REGIME_STATE_COUNT",
+        "EXPECTED_LEVEL6_REGIME_STATE_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_regime_state_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_RISK_VERDICT_COUNT",
+        "EXPECTED_RISK_VERDICT_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_risk_verdict_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL4_READING_COUNT",
+        "EXPECTED_LEVEL4_READING_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sensor_reading_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_SIGNAL_FIRES_COUNT",
+        "EXPECTED_SIGNAL_FIRES_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_signal_fires_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL2_SIGNAL_COUNT",
+        "EXPECTED_LEVEL2_SIGNAL_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_signal_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT",
+        "EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL3_SOLVER_COUNT",
+        "EXPECTED_LEVEL3_SOLVER_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_solver_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_LEVEL3_INTENT_DECAY_ON_COUNT",
+        "EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_sized_intent_with_decay_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_STATE_TRANSITION_COUNT",
+        "EXPECTED_STATE_TRANSITION_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_state_transition_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_HALT_ACK_COUNT",
+        "EXPECTED_HALT_ACK_HASH",
+        "EXPECTED_HALT_ORDER_COUNT",
+        "EXPECTED_HALT_ORDER_HASH",
+        "EXPECTED_HALT_POSITION_UPDATE_COUNT",
+        "EXPECTED_HALT_POSITION_UPDATE_HASH",
+        "EXPECTED_HALT_STREAMS",
+        "EXPECTED_SYMBOL_HALTED_COUNT",
+        "EXPECTED_SYMBOL_HALTED_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_symbol_halted_replay.py"
+    },
+    {
+      "expected_constants": [
+        "EXPECTED_V03_READING_COUNT",
+        "EXPECTED_V03_READING_HASH"
+      ],
+      "float_precisions": [],
+      "function": "(constants)",
+      "hashed_field_names": [],
+      "line": 0,
+      "param_annotations": [],
+      "path": "tests/determinism/test_v03_sensor_replay.py"
+    }
+  ],
+  "n_determinism_test_modules": 30,
+  "n_hash_helpers": 120
+}

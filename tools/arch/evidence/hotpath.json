@@ -1,0 +1,6319 @@
+{
+  "dead_compute": {
+    "metric_names_recorded_never_read": {
+      "n_recorded": 9,
+      "n_unread": 2,
+      "names": [
+        "feature.feelies.feature.snapshot.stale_fraction",
+        "scheduler.feelies.horizon.tick.emitted"
+      ],
+      "read_but_never_recorded": [
+        {
+          "read": "kernel.feature_compute_ns"
+        }
+      ],
+      "rows": [
+        {
+          "literal_record_sites_in_src": 1,
+          "metric": "feature.feelies.feature.snapshot.stale_fraction",
+          "name_sites_in_src": 1,
+          "read_by_src": false,
+          "read_by_tests": true,
+          "records_in_replay": 1092,
+          "records_per_quote": 0.0132
+        },
+        {
+          "literal_record_sites_in_src": 0,
+          "metric": "kernel.risk_check_ns",
+          "name_sites_in_src": 1,
+          "read_by_src": true,
+          "read_by_tests": false,
+          "records_in_replay": 22,
+          "records_per_quote": 0.0003
+        },
+        {
+          "literal_record_sites_in_src": 0,
+          "metric": "kernel.sensor_fanout_ns",
+          "name_sites_in_src": 3,
+          "read_by_src": true,
+          "read_by_tests": false,
+          "records_in_replay": 82678,
+          "records_per_quote": 1.0
+        },
+        {
+          "literal_record_sites_in_src": 0,
+          "metric": "kernel.signal_evaluate_ns",
+          "name_sites_in_src": 2,
+          "read_by_src": true,
+          "read_by_tests": false,
+          "records_in_replay": 58,
+          "records_per_quote": 0.0007
+        },
+        {
+          "literal_record_sites_in_src": 0,
+          "metric": "kernel.sm_transition_ns",
+          "name_sites_in_src": 3,
+          "read_by_src": true,
+          "read_by_tests": false,
+          "records_in_replay": 82678,
+          "records_per_quote": 1.0
+        },
+        {
+          "literal_record_sites_in_src": 1,
+          "metric": "kernel.tick_to_decision_latency_ns",
+          "name_sites_in_src": 4,
+          "read_by_src": true,
+          "read_by_tests": true,
+          "records_in_replay": 82678,
+          "records_per_quote": 1.0
+        },
+        {
+          "literal_record_sites_in_src": 1,
+          "metric": "scheduler.feelies.horizon.tick.emitted",
+          "name_sites_in_src": 1,
+          "read_by_src": false,
+          "read_by_tests": true,
+          "records_in_replay": 2184,
+          "records_per_quote": 0.0264
+        },
+        {
+          "literal_record_sites_in_src": 0,
+          "metric": "signal.feelies.signal.emitted",
+          "name_sites_in_src": 1,
+          "read_by_src": true,
+          "read_by_tests": true,
+          "records_in_replay": 12,
+          "records_per_quote": 0.0001
+        },
+        {
+          "literal_record_sites_in_src": 0,
+          "metric": "signal.feelies.signal.gate.transition",
+          "name_sites_in_src": 2,
+          "read_by_src": true,
+          "read_by_tests": true,
+          "records_in_replay": 98,
+          "records_per_quote": 0.0012
+        }
+      ]
+    },
+    "public_methods_zero_call_sites_in_src": {
+      "methods": [
+        {
+          "called_by_tests": false,
+          "cls": "CostArithmetic",
+          "kind": "property",
+          "method": "declared_round_trip_cost_bps",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/cost_arithmetic.py:78"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "CostArithmetic",
+          "kind": "property",
+          "method": "computed_margin_ratio",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/cost_arithmetic.py:100"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LoadedPortfolioLayerModule",
+          "kind": "property",
+          "method": "consumes_mechanisms",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/portfolio_layer_module.py:101"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "LoadedPortfolioLayerModule",
+          "kind": "property",
+          "method": "mechanism_caps",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/portfolio_layer_module.py:109"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LoadedPortfolioLayerModule",
+          "kind": "property",
+          "method": "factor_neutralization_disclosed",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/portfolio_layer_module.py:118"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlphaRegistry",
+          "kind": "method",
+          "method": "unregister",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/registry.py:171"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "AlphaRegistry",
+          "kind": "method",
+          "method": "has_signal_alphas",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/registry.py:216"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlphaRegistry",
+          "kind": "method",
+          "method": "promote",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/alpha/registry.py:330"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlphaRegistry",
+          "kind": "method",
+          "method": "lifecycle_states",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/registry.py:438"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "AlphaBudgetRiskWrapper",
+          "kind": "method",
+          "method": "checkpoint_risk_state",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/risk_wrapper.py:299"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "AlphaBudgetRiskWrapper",
+          "kind": "method",
+          "method": "restore_risk_state",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/risk_wrapper.py:308"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "AlphaBudgetRiskWrapper",
+          "kind": "method",
+          "method": "refresh_high_water_mark",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/alpha/risk_wrapper.py:315"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlphaBudgetRiskWrapper",
+          "kind": "method",
+          "method": "set_buying_power_phase",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/alpha/risk_wrapper.py:349"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LoadedSignalLayerModule",
+          "kind": "property",
+          "method": "signal_source",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/signal_layer_module.py:122"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LoadedSignalLayerModule",
+          "kind": "property",
+          "method": "trend_mechanism_enum",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/alpha/signal_layer_module.py:152"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "IBGatewayConnection",
+          "kind": "method",
+          "method": "nextValidId",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/broker/ib/connection.py:353"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "IBGatewayConnection",
+          "kind": "method",
+          "method": "orderStatus",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/broker/ib/connection.py:367"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "IBOrderRouter",
+          "kind": "method",
+          "method": "cancel_order",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/broker/ib/router.py:176"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "EventBus",
+          "kind": "method",
+          "method": "subscribe_all",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/bus/event_bus.py:55"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "CompositionEngine",
+          "kind": "property",
+          "method": "alphas",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/composition/engine.py:183"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "FactorNeutralizer",
+          "kind": "property",
+          "method": "factor_model",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/composition/factor_neutralizer.py:89"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "BacktestOrderRouter",
+          "kind": "method",
+          "method": "cancel_order",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/execution/backtest_router.py:320"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "BacktestOrderRouter",
+          "kind": "method",
+          "method": "expire_pending_moc",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/execution/backtest_router.py:337"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "PassiveLimitOrderRouter",
+          "kind": "method",
+          "method": "passive_fill_stats",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/execution/passive_limit_router.py:739"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "PassiveLimitOrderRouter",
+          "kind": "method",
+          "method": "cancel_order",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/execution/passive_limit_router.py:915"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "PassiveLimitOrderRouter",
+          "kind": "method",
+          "method": "expire_pending_moc",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/execution/passive_limit_router.py:949"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "PassiveLimitOrderRouter",
+          "kind": "property",
+          "method": "resting_order_count",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/execution/passive_limit_router.py:964"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "PassiveLimitOrderRouter",
+          "kind": "method",
+          "method": "resting_symbols",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/execution/passive_limit_router.py:968"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "DesiredTargetBook",
+          "kind": "method",
+          "method": "symbols",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/execution/portfolio_netter.py:135"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "TradingSessionBounds",
+          "kind": "method",
+          "method": "is_within_rth",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/execution/trading_session.py:82"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HorizonAggregator",
+          "kind": "method",
+          "method": "on_sensor_reading",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/features/aggregator.py:258"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HorizonAggregator",
+          "kind": "method",
+          "method": "on_horizon_tick",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/features/aggregator.py:262"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HorizonAggregator",
+          "kind": "method",
+          "method": "is_passive",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/features/aggregator.py:488"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "FeatureComputation",
+          "kind": "method",
+          "method": "update_trade",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/features/definition.py:74"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "_Quarantinable",
+          "kind": "property",
+          "method": "is_live",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/forensics/cost_circuit_breaker.py:63"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "MassiveNormalizer",
+          "kind": "property",
+          "method": "unparseable_elements",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/ingestion/massive_normalizer.py:744"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "MassiveNormalizer",
+          "kind": "property",
+          "method": "oversized_frames",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/ingestion/massive_normalizer.py:753"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "MassiveNormalizer",
+          "kind": "property",
+          "method": "anonymous_malformed_frames",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/ingestion/massive_normalizer.py:763"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "MassiveLiveFeed",
+          "kind": "property",
+          "method": "events_dropped",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/ingestion/massive_ws.py:118"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "property",
+          "method": "micro_state",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:700"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "property",
+          "method": "arbitration_collisions",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:704"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "property",
+          "method": "risk_level",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:709"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "property",
+          "method": "lot_ledger",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:721"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "property",
+          "method": "edge_calibration_factors",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:734"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "set_paper_session_recorder",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:746"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "run_paper",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:974"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "halt",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:1019"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "recover_from_degraded",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:1030"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "unlock_from_lockdown",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/kernel/orchestrator.py:1046"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "reset_risk_escalation",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/kernel/orchestrator.py:1076"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "shutdown",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/kernel/orchestrator.py:1101"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "Orchestrator",
+          "kind": "method",
+          "method": "cancel_order",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/kernel/orchestrator.py:3438"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlertManager",
+          "kind": "method",
+          "method": "active_alerts",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/alerting.py:45"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlertManager",
+          "kind": "method",
+          "method": "acknowledge",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/alerting.py:49"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "InMemoryMetricCollector",
+          "kind": "property",
+          "method": "summaries",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/in_memory.py:91"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "InMemoryMetricCollector",
+          "kind": "method",
+          "method": "events_by_layer",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/in_memory.py:98"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "InMemoryAlertManager",
+          "kind": "method",
+          "method": "active_alerts",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/in_memory.py:142"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "InMemoryAlertManager",
+          "kind": "method",
+          "method": "acknowledge",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/in_memory.py:145"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "InMemoryAlertManager",
+          "kind": "property",
+          "method": "all_alerts",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/in_memory.py:150"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "PaperSessionRecorder",
+          "kind": "method",
+          "method": "write_metadata",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/paper_session_recorder.py:119"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "PaperSessionRecorder",
+          "kind": "method",
+          "method": "write_fills",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/monitoring/paper_session_recorder.py:145"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "CrossSectionalTracker",
+          "kind": "method",
+          "method": "all_snapshots",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/portfolio/cross_sectional_tracker.py:109"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LotLedger",
+          "kind": "method",
+          "method": "lots",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/portfolio/lot_ledger.py:119"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LotLedger",
+          "kind": "method",
+          "method": "open_lot_count",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/portfolio/lot_ledger.py:123"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LotLedger",
+          "kind": "method",
+          "method": "net_quantity",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/portfolio/lot_ledger.py:126"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LotLedger",
+          "kind": "method",
+          "method": "oldest_open_age_ns",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/portfolio/lot_ledger.py:130"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LotLedger",
+          "kind": "method",
+          "method": "realized_pnl_fifo",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/portfolio/lot_ledger.py:137"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "LotLedger",
+          "kind": "method",
+          "method": "symbols",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/portfolio/lot_ledger.py:141"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "StrategyPositionStore",
+          "kind": "method",
+          "method": "as_aggregate",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/portfolio/strategy_position_store.py:236"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "PromotionLedger",
+          "kind": "method",
+          "method": "latest_for",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/promotion/ledger.py:185"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlphaLifecycle",
+          "kind": "method",
+          "method": "authorize_decouple",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/promotion/lifecycle.py:484"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "AlphaLifecycle",
+          "kind": "property",
+          "method": "is_live",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/promotion/lifecycle.py:570"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "CPCVConfig",
+          "kind": "property",
+          "method": "n_combinations",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/research/cpcv.py:76"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "CPCVConfig",
+          "kind": "property",
+          "method": "n_paths",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/research/cpcv.py:83"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "BasicRiskEngine",
+          "kind": "method",
+          "method": "set_buying_power_phase",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/risk/basic_risk.py:149"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "BasicRiskEngine",
+          "kind": "property",
+          "method": "buying_power_phase",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/risk/basic_risk.py:154"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "BasicRiskEngine",
+          "kind": "method",
+          "method": "refresh_high_water_mark",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/risk/basic_risk.py:783"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "DeferralCapController",
+          "kind": "property",
+          "method": "policies",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/risk/deferral_cap.py:201"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "ExitComposer",
+          "kind": "property",
+          "method": "policies",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/risk/exit_composer.py:274"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HazardExitController",
+          "kind": "property",
+          "method": "policies",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/risk/hazard_exit.py:126"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "StopExitController",
+          "kind": "property",
+          "method": "policy",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/risk/stop_exit.py:160"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HorizonScheduler",
+          "kind": "method",
+          "method": "bind_session_open",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/sensors/horizon_scheduler.py:145"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "SweepFlowImbalanceSensor",
+          "kind": "property",
+          "method": "drop_correction_records",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/sensors/impl/sweep_flow_imbalance.py:149"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "SweepFlowImbalanceSensor",
+          "kind": "property",
+          "method": "class_a_core_ids",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/sensors/impl/sweep_flow_imbalance.py:153"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "SweepFlowImbalanceSensor",
+          "kind": "property",
+          "method": "overlay_ids",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/sensors/impl/sweep_flow_imbalance.py:157"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "SweepFlowImbalanceSensor",
+          "kind": "property",
+          "method": "iso_id",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/sensors/impl/sweep_flow_imbalance.py:161"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "SweepFlowImbalanceSensor",
+          "kind": "method",
+          "method": "filter_params",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/sensors/impl/sweep_flow_imbalance.py:164"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "SweepFlowImbalanceSensor",
+          "kind": "method",
+          "method": "is_eligible",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/sensors/impl/sweep_flow_imbalance.py:178"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "SensorRegistry",
+          "kind": "method",
+          "method": "collect_into",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/sensors/registry.py:439"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "RegimeEngine",
+          "kind": "property",
+          "method": "n_states",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/services/regime_engine.py:72"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HMM3StateFractional",
+          "kind": "property",
+          "method": "n_states",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/services/regime_engine.py:237"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HMM3StateFractional",
+          "kind": "property",
+          "method": "calibrated",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/services/regime_engine.py:241"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HMM3StateFractional",
+          "kind": "property",
+          "method": "discriminability",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/services/regime_engine.py:246"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "HMM3StateFractional",
+          "kind": "method",
+          "method": "discriminability_for_symbol",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/services/regime_engine.py:255"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "HMM3StateFractional",
+          "kind": "method",
+          "method": "calibrate",
+          "reached_by_name_literal": true,
+          "site": "src/feelies/services/regime_engine.py:268"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "RegimeHazardDetector",
+          "kind": "property",
+          "method": "hysteresis_threshold",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/services/regime_hazard_detector.py:73"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "RegimeStateCache",
+          "kind": "method",
+          "method": "for_engine",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/services/regime_state_cache.py:63"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "RegimeStateCache",
+          "kind": "method",
+          "method": "forget",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/services/regime_state_cache.py:108"
+        },
+        {
+          "called_by_tests": false,
+          "cls": "HorizonSignalEngine",
+          "kind": "method",
+          "method": "forget",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/signals/horizon_engine.py:629"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "EventLog",
+          "kind": "method",
+          "method": "last_sequence",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/storage/event_log.py:54"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "FeatureSnapshotStore",
+          "kind": "method",
+          "method": "list_snapshots",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/storage/feature_snapshot.py:70"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "InMemoryEventLog",
+          "kind": "method",
+          "method": "last_sequence",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/storage/memory_event_log.py:147"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "InMemoryFeatureSnapshotStore",
+          "kind": "method",
+          "method": "list_snapshots",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/storage/memory_feature_snapshot.py:60"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "ExDateCalendar",
+          "kind": "property",
+          "method": "hash",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/storage/reference/corporate_actions/__init__.py:73"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "EventCalendar",
+          "kind": "method",
+          "method": "hash",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/storage/reference/event_calendar/__init__.py:129"
+        },
+        {
+          "called_by_tests": true,
+          "cls": "TradeRecord",
+          "kind": "property",
+          "method": "net_pnl",
+          "reached_by_name_literal": false,
+          "site": "src/feelies/storage/trade_journal.py:56"
+        }
+      ],
+      "n_properties": 122,
+      "n_public_methods": 564,
+      "n_zero_call": 106,
+      "n_zero_call_anywhere": 21
+    },
+    "unread_event_fields": {
+      "fields": [
+        {
+          "event": "NBBOQuote",
+          "field": "participant_timestamp_ns",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:86"
+        },
+        {
+          "event": "NBBOQuote",
+          "field": "trf_timestamp_ns",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:87"
+        },
+        {
+          "event": "NBBOQuote",
+          "field": "received_ns",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:88"
+        },
+        {
+          "event": "Trade",
+          "field": "trade_id",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:104"
+        },
+        {
+          "event": "Trade",
+          "field": "trf_timestamp_ns",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:111"
+        },
+        {
+          "event": "Trade",
+          "field": "participant_timestamp_ns",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:112"
+        },
+        {
+          "event": "Trade",
+          "field": "received_ns",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:114"
+        },
+        {
+          "event": "SymbolHalted",
+          "field": "halted",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:133"
+        },
+        {
+          "event": "SymbolHalted",
+          "field": "blackout_until_ns",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:135"
+        },
+        {
+          "event": "RegimeState",
+          "field": "stability",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:160"
+        },
+        {
+          "event": "Signal",
+          "field": "reversal_cost_estimate_bps",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:203"
+        },
+        {
+          "event": "MetricEvent",
+          "field": "metric_type",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:370"
+        },
+        {
+          "event": "KillSwitchActivation",
+          "field": "activated_by",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:420"
+        },
+        {
+          "event": "SensorProvenance",
+          "field": "input_event_kinds",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:539"
+        },
+        {
+          "event": "SensorReading",
+          "field": "parent_correlation_id",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:627"
+        },
+        {
+          "event": "HorizonFeatureSnapshot",
+          "field": "source_sensors",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:649"
+        },
+        {
+          "event": "HorizonFeatureSnapshot",
+          "field": "feature_versions",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:650"
+        },
+        {
+          "event": "HorizonFeatureSnapshot",
+          "field": "parent_correlation_id",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:651"
+        },
+        {
+          "event": "CrossSectionalContext",
+          "field": "snapshots_by_symbol",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:677"
+        },
+        {
+          "event": "SizedPositionIntent",
+          "field": "decision_basis_hash",
+          "read_by": "nothing",
+          "site": "src/feelies/core/events.py:707"
+        }
+      ],
+      "n_fields_scanned": 179,
+      "n_read_only_by_name_literal": 8,
+      "n_unread": 20,
+      "read_only_by_name_literal": [
+        {
+          "event": "NBBOQuote",
+          "field": "bid_exchange",
+          "name_literal_sites_in_src": 2,
+          "site": "src/feelies/core/events.py:79"
+        },
+        {
+          "event": "NBBOQuote",
+          "field": "ask_exchange",
+          "name_literal_sites_in_src": 2,
+          "site": "src/feelies/core/events.py:80"
+        },
+        {
+          "event": "NBBOQuote",
+          "field": "indicators",
+          "name_literal_sites_in_src": 2,
+          "site": "src/feelies/core/events.py:83"
+        },
+        {
+          "event": "NBBOQuote",
+          "field": "tape",
+          "name_literal_sites_in_src": 4,
+          "site": "src/feelies/core/events.py:85"
+        },
+        {
+          "event": "Trade",
+          "field": "decimal_size",
+          "name_literal_sites_in_src": 1,
+          "site": "src/feelies/core/events.py:107"
+        },
+        {
+          "event": "Trade",
+          "field": "tape",
+          "name_literal_sites_in_src": 4,
+          "site": "src/feelies/core/events.py:109"
+        },
+        {
+          "event": "Trade",
+          "field": "trf_id",
+          "name_literal_sites_in_src": 3,
+          "site": "src/feelies/core/events.py:110"
+        },
+        {
+          "event": "RegimeState",
+          "field": "discriminability",
+          "name_literal_sites_in_src": 2,
+          "site": "src/feelies/core/events.py:163"
+        }
+      ]
+    }
+  },
+  "hot_functions": {
+    "src/feelies/alpha/arbitration.py:140:arbitrate": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 140,
+      "file": "src/feelies/alpha/arbitration.py",
+      "func": "arbitrate",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 140
+    },
+    "src/feelies/alpha/arbitration.py:18:_signal_reduces_book": {
+      "band": "rare",
+      "calls_per_quote": 0.00016,
+      "def_line": 18,
+      "file": "src/feelies/alpha/arbitration.py",
+      "func": "_signal_reduces_book",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 13,
+      "profile_line": 18
+    },
+    "src/feelies/alpha/arbitration.py:31:standalone_signal_actionable_for_strategy": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 31,
+      "file": "src/feelies/alpha/arbitration.py",
+      "func": "standalone_signal_actionable_for_strategy",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 31
+    },
+    "src/feelies/alpha/arbitration.py:59:is_redundant_gate_close_flat": {
+      "band": "rare",
+      "calls_per_quote": 0.00074,
+      "def_line": 59,
+      "file": "src/feelies/alpha/arbitration.py",
+      "func": "is_redundant_gate_close_flat",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 61,
+      "profile_line": 59
+    },
+    "src/feelies/alpha/cost_arithmetic.py:73:cost_total_bps": {
+      "band": "rare",
+      "calls_per_quote": 0.00133,
+      "def_line": 73,
+      "file": "src/feelies/alpha/cost_arithmetic.py",
+      "func": "cost_total_bps",
+      "hits": {},
+      "match": "near",
+      "ncalls": 110,
+      "profile_line": 72
+    },
+    "src/feelies/alpha/fill_attribution.py:141:largest_remainder_split": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 141,
+      "file": "src/feelies/alpha/fill_attribution.py",
+      "func": "largest_remainder_split",
+      "hits": {
+        "sorting": 1
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 141
+    },
+    "src/feelies/alpha/fill_attribution.py:183:split_fees": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 183,
+      "file": "src/feelies/alpha/fill_attribution.py",
+      "func": "split_fees",
+      "hits": {
+        "decimal_arithmetic": 3
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 183
+    },
+    "src/feelies/alpha/fill_attribution.py:212:_largest_remainder_allocate": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 212,
+      "file": "src/feelies/alpha/fill_attribution.py",
+      "func": "_largest_remainder_allocate",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 212
+    },
+    "src/feelies/alpha/fill_attribution.py:62:record": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 62,
+      "file": "src/feelies/alpha/fill_attribution.py",
+      "func": "record",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 62
+    },
+    "src/feelies/alpha/fill_attribution.py:66:allocate_fill": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 66,
+      "file": "src/feelies/alpha/fill_attribution.py",
+      "func": "allocate_fill",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 66
+    },
+    "src/feelies/alpha/registry.py:185:get": {
+      "band": "rare",
+      "calls_per_quote": 0.00122,
+      "def_line": 185,
+      "file": "src/feelies/alpha/registry.py",
+      "func": "get",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 101,
+      "profile_line": 185
+    },
+    "src/feelies/alpha/registry.py:220:portfolio_alphas": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 220,
+      "file": "src/feelies/alpha/registry.py",
+      "func": "portfolio_alphas",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 220
+    },
+    "src/feelies/alpha/registry.py:227:has_portfolio_alphas": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 227,
+      "file": "src/feelies/alpha/registry.py",
+      "func": "has_portfolio_alphas",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 227
+    },
+    "src/feelies/alpha/risk_wrapper.py:132:_check_alpha_drawdown": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 132,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "_check_alpha_drawdown",
+      "hits": {
+        "string_formatting": 2
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 132
+    },
+    "src/feelies/alpha/risk_wrapper.py:178:check_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 178,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "check_order",
+      "hits": {
+        "string_formatting": 2
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 178
+    },
+    "src/feelies/alpha/risk_wrapper.py:270:_alpha_equity_and_exposure": {
+      "band": "rare",
+      "calls_per_quote": 0.00052,
+      "def_line": 270,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "_alpha_equity_and_exposure",
+      "hits": {
+        "decimal_arithmetic": 4
+      },
+      "match": "exact",
+      "ncalls": 43,
+      "profile_line": 270
+    },
+    "src/feelies/alpha/risk_wrapper.py:315:refresh_high_water_mark": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 315,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "refresh_high_water_mark",
+      "hits": {
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 315
+    },
+    "src/feelies/alpha/risk_wrapper.py:333:record_fill": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 333,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "record_fill",
+      "hits": {
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 333
+    },
+    "src/feelies/alpha/risk_wrapper.py:349:set_buying_power_phase": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 349,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "set_buying_power_phase",
+      "hits": {
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 349
+    },
+    "src/feelies/alpha/risk_wrapper.py:365:_signal_reduces_position": {
+      "band": "rare",
+      "calls_per_quote": 0.00027,
+      "def_line": 365,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "_signal_reduces_position",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 22,
+      "profile_line": 365
+    },
+    "src/feelies/alpha/risk_wrapper.py:63:check_signal": {
+      "band": "rare",
+      "calls_per_quote": 0.00027,
+      "def_line": 63,
+      "file": "src/feelies/alpha/risk_wrapper.py",
+      "func": "check_signal",
+      "hits": {
+        "string_formatting": 2
+      },
+      "match": "exact",
+      "ncalls": 22,
+      "profile_line": 63
+    },
+    "src/feelies/alpha/signal_layer_module.py:225:evaluate": {
+      "band": "rare",
+      "calls_per_quote": 0.00111,
+      "def_line": 225,
+      "file": "src/feelies/alpha/signal_layer_module.py",
+      "func": "evaluate",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 92,
+      "profile_line": 225
+    },
+    "src/feelies/alpha/signal_layer_module.py:90:manifest": {
+      "band": "per_event",
+      "calls_per_quote": 1.00123,
+      "def_line": 90,
+      "file": "src/feelies/alpha/signal_layer_module.py",
+      "func": "manifest",
+      "hits": {},
+      "match": "near",
+      "ncalls": 82780,
+      "profile_line": 89
+    },
+    "src/feelies/bus/event_bus.py:59:publish": {
+      "band": "per_event",
+      "calls_per_quote": 17.06593,
+      "def_line": 59,
+      "file": "src/feelies/bus/event_bus.py",
+      "func": "publish",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1410977,
+      "profile_line": 59
+    },
+    "src/feelies/core/clock.py:42:now_ns": {
+      "band": "per_event",
+      "calls_per_quote": 13.02588,
+      "def_line": 42,
+      "file": "src/feelies/core/clock.py",
+      "func": "now_ns",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1076954,
+      "profile_line": 42
+    },
+    "src/feelies/core/clock.py:45:set_time": {
+      "band": "per_event",
+      "calls_per_quote": 3.01813,
+      "def_line": 45,
+      "file": "src/feelies/core/clock.py",
+      "func": "set_time",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 249533,
+      "profile_line": 45
+    },
+    "src/feelies/core/events.py:601:asof_timestamp_ns": {
+      "band": "frequent",
+      "calls_per_quote": 0.05283,
+      "def_line": 601,
+      "file": "src/feelies/core/events.py",
+      "func": "asof_timestamp_ns",
+      "hits": {},
+      "match": "near",
+      "ncalls": 4368,
+      "profile_line": 600
+    },
+    "src/feelies/core/identifiers.py:18:derive_order_id": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 18,
+      "file": "src/feelies/core/identifiers.py",
+      "func": "derive_order_id",
+      "hits": {
+        "serialization": 3
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 18
+    },
+    "src/feelies/core/identifiers.py:51:next": {
+      "band": "per_event",
+      "calls_per_quote": 14.08815,
+      "def_line": 51,
+      "file": "src/feelies/core/identifiers.py",
+      "func": "next",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1164780,
+      "profile_line": 51
+    },
+    "src/feelies/core/identifiers.py:9:make_correlation_id": {
+      "band": "per_event",
+      "calls_per_quote": 4.07797,
+      "def_line": 9,
+      "file": "src/feelies/core/identifiers.py",
+      "func": "make_correlation_id",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 337158,
+      "profile_line": 9
+    },
+    "src/feelies/core/state_machine.py:132:bind_timing_sink": {
+      "band": "per_event",
+      "calls_per_quote": 2.0,
+      "def_line": 132,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "bind_timing_sink",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 165356,
+      "profile_line": 132
+    },
+    "src/feelies/core/state_machine.py:141:state": {
+      "band": "per_event",
+      "calls_per_quote": 3.04699,
+      "def_line": 141,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "state",
+      "hits": {},
+      "match": "near",
+      "ncalls": 251919,
+      "profile_line": 140
+    },
+    "src/feelies/core/state_machine.py:148:on_transition": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 148,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "on_transition",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 148
+    },
+    "src/feelies/core/state_machine.py:157:can_transition": {
+      "band": "per_event",
+      "calls_per_quote": 8.00711,
+      "def_line": 157,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "can_transition",
+      "hits": {
+        "per_event_set_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 662012,
+      "profile_line": 157
+    },
+    "src/feelies/core/state_machine.py:161:transition": {
+      "band": "per_event",
+      "calls_per_quote": 8.00686,
+      "def_line": 161,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "transition",
+      "hits": {
+        "per_event_dict_construction": 1,
+        "wall_clock_read": 2
+      },
+      "match": "exact",
+      "ncalls": 661991,
+      "profile_line": 161
+    },
+    "src/feelies/core/state_machine.py:201:reset": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 201,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "reset",
+      "hits": {
+        "per_event_dict_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 201
+    },
+    "src/feelies/core/state_machine.py:233:assert_state": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 233,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "assert_state",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 233
+    },
+    "src/feelies/core/state_machine.py:90:__init__": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 90,
+      "file": "src/feelies/core/state_machine.py",
+      "func": "__init__",
+      "hits": {
+        "per_event_dict_construction": 1,
+        "per_event_set_construction": 2,
+        "sorting": 1,
+        "string_formatting": 3
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 90
+    },
+    "src/feelies/execution/cost_model.py:120:compute": {
+      "band": "rare",
+      "calls_per_quote": 0.00053,
+      "def_line": 120,
+      "file": "src/feelies/execution/cost_model.py",
+      "func": "compute",
+      "hits": {
+        "decimal_arithmetic": 23
+      },
+      "match": "exact",
+      "ncalls": 44,
+      "profile_line": 120
+    },
+    "src/feelies/execution/cost_model.py:282:_within_l1_premium": {
+      "band": "rare",
+      "calls_per_quote": 0.00016,
+      "def_line": 282,
+      "file": "src/feelies/execution/cost_model.py",
+      "func": "_within_l1_premium",
+      "hits": {
+        "decimal_arithmetic": 6
+      },
+      "match": "exact",
+      "ncalls": 13,
+      "profile_line": 282
+    },
+    "src/feelies/execution/cost_model.py:306:estimate_aggressive_taker_cost_bps": {
+      "band": "rare",
+      "calls_per_quote": 0.00016,
+      "def_line": 306,
+      "file": "src/feelies/execution/cost_model.py",
+      "func": "estimate_aggressive_taker_cost_bps",
+      "hits": {
+        "decimal_arithmetic": 9
+      },
+      "match": "exact",
+      "ncalls": 13,
+      "profile_line": 306
+    },
+    "src/feelies/execution/cost_model.py:415:estimate_round_trip_cost_bps": {
+      "band": "rare",
+      "calls_per_quote": 0.00015,
+      "def_line": 415,
+      "file": "src/feelies/execution/cost_model.py",
+      "func": "estimate_round_trip_cost_bps",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 12,
+      "profile_line": 415
+    },
+    "src/feelies/execution/cost_model.py:454:_leg_bps": {
+      "band": "rare",
+      "calls_per_quote": 0.00029,
+      "def_line": 454,
+      "file": "src/feelies/execution/cost_model.py",
+      "func": "_leg_bps",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 24,
+      "profile_line": 454
+    },
+    "src/feelies/execution/market_fill.py:117:base_impact_premium": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 117,
+      "file": "src/feelies/execution/market_fill.py",
+      "func": "base_impact_premium",
+      "hits": {
+        "decimal_arithmetic": 6
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 117
+    },
+    "src/feelies/execution/market_fill.py:149:_apply_premium": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 149,
+      "file": "src/feelies/execution/market_fill.py",
+      "func": "_apply_premium",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 149
+    },
+    "src/feelies/execution/market_fill.py:158:append_market_fill_acks": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 158,
+      "file": "src/feelies/execution/market_fill.py",
+      "func": "append_market_fill_acks",
+      "hits": {
+        "decimal_arithmetic": 8
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 158
+    },
+    "src/feelies/execution/market_fill.py:86:_clamp_fill_price_to_limit": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 86,
+      "file": "src/feelies/execution/market_fill.py",
+      "func": "_clamp_fill_price_to_limit",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 86
+    },
+    "src/feelies/execution/moc_fill.py:114:on_quote": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 114,
+      "file": "src/feelies/execution/moc_fill.py",
+      "func": "on_quote",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 114
+    },
+    "src/feelies/execution/moc_fill.py:57:submit": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 57,
+      "file": "src/feelies/execution/moc_fill.py",
+      "func": "submit",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 57
+    },
+    "src/feelies/execution/moc_session.py:41:session_date_from_ns": {
+      "band": "per_event",
+      "calls_per_quote": 1.09156,
+      "def_line": 41,
+      "file": "src/feelies/execution/moc_session.py",
+      "func": "session_date_from_ns",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 90248,
+      "profile_line": 41
+    },
+    "src/feelies/execution/order_admission.py:112:opens_or_increases_short": {
+      "band": "rare",
+      "calls_per_quote": 0.0005,
+      "def_line": 112,
+      "file": "src/feelies/execution/order_admission.py",
+      "func": "opens_or_increases_short",
+      "hits": {},
+      "match": "near",
+      "ncalls": 41,
+      "profile_line": 111
+    },
+    "src/feelies/execution/order_admission.py:122:side_for_intent": {
+      "band": "rare",
+      "calls_per_quote": 0.00074,
+      "def_line": 122,
+      "file": "src/feelies/execution/order_admission.py",
+      "func": "side_for_intent",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 61,
+      "profile_line": 122
+    },
+    "src/feelies/execution/order_admission.py:142:exposure_delta_from_intent": {
+      "band": "rare",
+      "calls_per_quote": 0.0005,
+      "def_line": 142,
+      "file": "src/feelies/execution/order_admission.py",
+      "func": "exposure_delta_from_intent",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 41,
+      "profile_line": 142
+    },
+    "src/feelies/execution/order_admission.py:162:blocks_for_min_size": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 162,
+      "file": "src/feelies/execution/order_admission.py",
+      "func": "blocks_for_min_size",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 162
+    },
+    "src/feelies/execution/order_admission.py:178:admission_block_reason": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 178,
+      "file": "src/feelies/execution/order_admission.py",
+      "func": "admission_block_reason",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 178
+    },
+    "src/feelies/execution/order_admission.py:92:post_quantity": {
+      "band": "rare",
+      "calls_per_quote": 0.00075,
+      "def_line": 92,
+      "file": "src/feelies/execution/order_admission.py",
+      "func": "post_quantity",
+      "hits": {},
+      "match": "near",
+      "ncalls": 62,
+      "profile_line": 91
+    },
+    "src/feelies/execution/order_admission.py:97:opens_or_increases_exposure": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 97,
+      "file": "src/feelies/execution/order_admission.py",
+      "func": "opens_or_increases_exposure",
+      "hits": {},
+      "match": "near",
+      "ncalls": 21,
+      "profile_line": 96
+    },
+    "src/feelies/execution/order_state.py:84:create_order_state_machine": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 84,
+      "file": "src/feelies/execution/order_state.py",
+      "func": "create_order_state_machine",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 84
+    },
+    "src/feelies/execution/passive_limit_router.py:204:bind_position_qty": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 204,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "bind_position_qty",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 204
+    },
+    "src/feelies/execution/passive_limit_router.py:210:on_quote": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 210,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "on_quote",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 210
+    },
+    "src/feelies/execution/passive_limit_router.py:218:on_trade": {
+      "band": "per_event",
+      "calls_per_quote": 2.01822,
+      "def_line": 218,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "on_trade",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 166862,
+      "profile_line": 218
+    },
+    "src/feelies/execution/passive_limit_router.py:249:_rth_reject_entry_if_needed": {
+      "band": "rare",
+      "calls_per_quote": 0.00028,
+      "def_line": 249,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_rth_reject_entry_if_needed",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 23,
+      "profile_line": 249
+    },
+    "src/feelies/execution/passive_limit_router.py:263:submit": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 263,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "submit",
+      "hits": {
+        "string_formatting": 3
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 263
+    },
+    "src/feelies/execution/passive_limit_router.py:312:poll_acks": {
+      "band": "per_event",
+      "calls_per_quote": 1.00027,
+      "def_line": 312,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "poll_acks",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82700,
+      "profile_line": 312
+    },
+    "src/feelies/execution/passive_limit_router.py:319:_submit_aggressive_market": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 319,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_submit_aggressive_market",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 319
+    },
+    "src/feelies/execution/passive_limit_router.py:367:_flush_deferred_aggressive": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 367,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_flush_deferred_aggressive",
+      "hits": {
+        "dataclass_replace": 1,
+        "decimal_arithmetic": 1,
+        "string_formatting": 4
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 367
+    },
+    "src/feelies/execution/passive_limit_router.py:441:_execute_market_fill": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 441,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_execute_market_fill",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 441
+    },
+    "src/feelies/execution/passive_limit_router.py:473:_post_passive": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 473,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_post_passive",
+      "hits": {
+        "per_event_dict_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 473
+    },
+    "src/feelies/execution/passive_limit_router.py:517:_check_resting_orders": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 517,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_check_resting_orders",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 517
+    },
+    "src/feelies/execution/passive_limit_router.py:617:_evaluate_fill": {
+      "band": "frequent",
+      "calls_per_quote": 0.02748,
+      "def_line": 617,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_evaluate_fill",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 2272,
+      "profile_line": 617
+    },
+    "src/feelies/execution/passive_limit_router.py:663:_fill_hazard": {
+      "band": "rare",
+      "calls_per_quote": 0.00383,
+      "def_line": 663,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_fill_hazard",
+      "hits": {
+        "decimal_arithmetic": 7
+      },
+      "match": "exact",
+      "ncalls": 317,
+      "profile_line": 663
+    },
+    "src/feelies/execution/passive_limit_router.py:699:_seeded_uniform": {
+      "band": "rare",
+      "calls_per_quote": 0.00041,
+      "def_line": 699,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_seeded_uniform",
+      "hits": {
+        "decimal_arithmetic": 2,
+        "serialization": 3,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 34,
+      "profile_line": 699
+    },
+    "src/feelies/execution/passive_limit_router.py:722:_record_fill": {
+      "band": "rare",
+      "calls_per_quote": 0.00023,
+      "def_line": 722,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_record_fill",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 19,
+      "profile_line": 722
+    },
+    "src/feelies/execution/passive_limit_router.py:788:_emit_passive_fill": {
+      "band": "rare",
+      "calls_per_quote": 0.00023,
+      "def_line": 788,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_emit_passive_fill",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 19,
+      "profile_line": 788
+    },
+    "src/feelies/execution/passive_limit_router.py:864:_cancel_fees": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 864,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_cancel_fees",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 864
+    },
+    "src/feelies/execution/passive_limit_router.py:872:_append_cancel_ack": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 872,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_append_cancel_ack",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 872
+    },
+    "src/feelies/execution/passive_limit_router.py:915:cancel_order": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 915,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "cancel_order",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 915
+    },
+    "src/feelies/execution/passive_limit_router.py:937:_remove_resting": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 937,
+      "file": "src/feelies/execution/passive_limit_router.py",
+      "func": "_remove_resting",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 937
+    },
+    "src/feelies/execution/position_manager.py:153:primary_leg": {
+      "band": "rare",
+      "calls_per_quote": 0.00097,
+      "def_line": 153,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "primary_leg",
+      "hits": {},
+      "match": "near",
+      "ncalls": 80,
+      "profile_line": 152
+    },
+    "src/feelies/execution/position_manager.py:158:total_quantity": {
+      "band": "rare",
+      "calls_per_quote": 0.00027,
+      "def_line": 158,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "total_quantity",
+      "hits": {},
+      "match": "near",
+      "ncalls": 22,
+      "profile_line": 157
+    },
+    "src/feelies/execution/position_manager.py:189:_sign": {
+      "band": "rare",
+      "calls_per_quote": 0.00126,
+      "def_line": 189,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "_sign",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 104,
+      "profile_line": 189
+    },
+    "src/feelies/execution/position_manager.py:203:plan": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 203,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "plan",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 203
+    },
+    "src/feelies/execution/position_manager.py:269:_additive": {
+      "band": "rare",
+      "calls_per_quote": 0.00013,
+      "def_line": 269,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "_additive",
+      "hits": {},
+      "match": "near",
+      "ncalls": 11,
+      "profile_line": 268
+    },
+    "src/feelies/execution/position_manager.py:286:_reverse_plan": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 286,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "_reverse_plan",
+      "hits": {},
+      "match": "near",
+      "ncalls": 1,
+      "profile_line": 285
+    },
+    "src/feelies/execution/position_manager.py:333:plan": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 333,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "plan",
+      "hits": {
+        "decimal_arithmetic": 2,
+        "per_event_dict_construction": 3
+      },
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 333
+    },
+    "src/feelies/execution/position_manager.py:451:round_trip_cost_bps": {
+      "band": "rare",
+      "calls_per_quote": 0.00015,
+      "def_line": 451,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "round_trip_cost_bps",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 12,
+      "profile_line": 451
+    },
+    "src/feelies/execution/position_manager.py:488:entry_edge_clears_cost": {
+      "band": "rare",
+      "calls_per_quote": 0.00012,
+      "def_line": 488,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "entry_edge_clears_cost",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 10,
+      "profile_line": 488
+    },
+    "src/feelies/execution/position_manager.py:500:reversal_edge_gate": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 500,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "reversal_edge_gate",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 500
+    },
+    "src/feelies/execution/position_manager.py:517:desired_from_signal": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 517,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "desired_from_signal",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 517
+    },
+    "src/feelies/execution/position_manager.py:546:order_intent_from_plan": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 546,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "order_intent_from_plan",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 546
+    },
+    "src/feelies/execution/position_manager.py:561:_oi": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 561,
+      "file": "src/feelies/execution/position_manager.py",
+      "func": "_oi",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 561
+    },
+    "src/feelies/execution/regulatory/borrow_availability.py:73:htb_fee_applies": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 73,
+      "file": "src/feelies/execution/regulatory/borrow_availability.py",
+      "func": "htb_fee_applies",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 73
+    },
+    "src/feelies/execution/regulatory/pdt_constraint.py:121:should_suppress_entry": {
+      "band": "rare",
+      "calls_per_quote": 0.00012,
+      "def_line": 121,
+      "file": "src/feelies/execution/regulatory/pdt_constraint.py",
+      "func": "should_suppress_entry",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 10,
+      "profile_line": 121
+    },
+    "src/feelies/execution/regulatory/pdt_constraint.py:142:_prune": {
+      "band": "rare",
+      "calls_per_quote": 0.00012,
+      "def_line": 142,
+      "file": "src/feelies/execution/regulatory/pdt_constraint.py",
+      "func": "_prune",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 10,
+      "profile_line": 142
+    },
+    "src/feelies/execution/regulatory/pdt_constraint.py:151:_trading_date": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 151,
+      "file": "src/feelies/execution/regulatory/pdt_constraint.py",
+      "func": "_trading_date",
+      "hits": {},
+      "match": "near",
+      "ncalls": 20,
+      "profile_line": 150
+    },
+    "src/feelies/execution/regulatory/pdt_constraint.py:61:record_fill": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 61,
+      "file": "src/feelies/execution/regulatory/pdt_constraint.py",
+      "func": "record_fill",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 61
+    },
+    "src/feelies/execution/sized_intent_legs.py:38:resolve_mark": {
+      "band": "rare",
+      "calls_per_quote": 0.00037,
+      "def_line": 38,
+      "file": "src/feelies/execution/sized_intent_legs.py",
+      "func": "resolve_mark",
+      "hits": {
+        "decimal_arithmetic": 2,
+        "dynamic_dispatch": 2,
+        "logging_with_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 31,
+      "profile_line": 38
+    },
+    "src/feelies/execution/tick_size.py:27:tick_size": {
+      "band": "rare",
+      "calls_per_quote": 0.00048,
+      "def_line": 27,
+      "file": "src/feelies/execution/tick_size.py",
+      "func": "tick_size",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 40,
+      "profile_line": 27
+    },
+    "src/feelies/execution/tick_size.py:34:snap_fill_price": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 34,
+      "file": "src/feelies/execution/tick_size.py",
+      "func": "snap_fill_price",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 34
+    },
+    "src/feelies/execution/tick_size.py:41:snap_limit_price": {
+      "band": "rare",
+      "calls_per_quote": 0.00047,
+      "def_line": 41,
+      "file": "src/feelies/execution/tick_size.py",
+      "func": "snap_limit_price",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 39,
+      "profile_line": 41
+    },
+    "src/feelies/execution/trading_session.py:123:should_suppress_entry": {
+      "band": "rare",
+      "calls_per_quote": 0.00036,
+      "def_line": 123,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "should_suppress_entry",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 30,
+      "profile_line": 123
+    },
+    "src/feelies/execution/trading_session.py:147:session_flatten_deadline_ns": {
+      "band": "frequent",
+      "calls_per_quote": 0.09083,
+      "def_line": 147,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "session_flatten_deadline_ns",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 7510,
+      "profile_line": 147
+    },
+    "src/feelies/execution/trading_session.py:180:in_session_flatten_window": {
+      "band": "frequent",
+      "calls_per_quote": 0.09083,
+      "def_line": 180,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "in_session_flatten_window",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 7510,
+      "profile_line": 180
+    },
+    "src/feelies/execution/trading_session.py:197:opens_or_increases_signed": {
+      "band": "rare",
+      "calls_per_quote": 0.00127,
+      "def_line": 197,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "opens_or_increases_signed",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 105,
+      "profile_line": 197
+    },
+    "src/feelies/execution/trading_session.py:208:order_opens_or_increases": {
+      "band": "rare",
+      "calls_per_quote": 0.00051,
+      "def_line": 208,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "order_opens_or_increases",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 42,
+      "profile_line": 208
+    },
+    "src/feelies/execution/trading_session.py:228:bind_position_qty": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 228,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "bind_position_qty",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 228
+    },
+    "src/feelies/execution/trading_session.py:231:should_suppress": {
+      "band": "rare",
+      "calls_per_quote": 0.00051,
+      "def_line": 231,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "should_suppress",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 42,
+      "profile_line": 231
+    },
+    "src/feelies/execution/trading_session.py:50:covers_ns": {
+      "band": "rare",
+      "calls_per_quote": 0.00036,
+      "def_line": 50,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "covers_ns",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 30,
+      "profile_line": 50
+    },
+    "src/feelies/execution/trading_session.py:54:resolve_for_timestamp": {
+      "band": "per_event",
+      "calls_per_quote": 1.0912,
+      "def_line": 54,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "resolve_for_timestamp",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 90218,
+      "profile_line": 54
+    },
+    "src/feelies/execution/trading_session.py:78:no_entry_before_ns": {
+      "band": "rare",
+      "calls_per_quote": 0.00036,
+      "def_line": 78,
+      "file": "src/feelies/execution/trading_session.py",
+      "func": "no_entry_before_ns",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 30,
+      "profile_line": 78
+    },
+    "src/feelies/features/aggregator.py:268:_on_sensor_reading": {
+      "band": "per_event",
+      "calls_per_quote": 3.99739,
+      "def_line": 268,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "_on_sensor_reading",
+      "hits": {
+        "logging_with_formatting": 1,
+        "per_event_dict_construction": 1,
+        "sorting": 3,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 330496,
+      "profile_line": 268
+    },
+    "src/feelies/features/aggregator.py:326:_on_horizon_tick": {
+      "band": "frequent",
+      "calls_per_quote": 0.02642,
+      "def_line": 326,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "_on_horizon_tick",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 2184,
+      "profile_line": 326
+    },
+    "src/feelies/features/aggregator.py:353:_build_snapshot": {
+      "band": "frequent",
+      "calls_per_quote": 0.01321,
+      "def_line": 353,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "_build_snapshot",
+      "hits": {
+        "logging_with_formatting": 1,
+        "per_event_dict_construction": 6,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1092,
+      "profile_line": 353
+    },
+    "src/feelies/features/aggregator.py:440:_latest_warm_reading_ns_at_or_before": {
+      "band": "frequent",
+      "calls_per_quote": 0.10566,
+      "def_line": 440,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "_latest_warm_reading_ns_at_or_before",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 8736,
+      "profile_line": 440
+    },
+    "src/feelies/features/aggregator.py:452:_emit_snapshot_metric": {
+      "band": "frequent",
+      "calls_per_quote": 0.01321,
+      "def_line": 452,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "_emit_snapshot_metric",
+      "hits": {
+        "per_event_dict_construction": 1,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1092,
+      "profile_line": 452
+    },
+    "src/feelies/features/aggregator.py:47:__init__": {
+      "band": "rare",
+      "calls_per_quote": 5e-05,
+      "def_line": 47,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "__init__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 4,
+      "profile_line": 47
+    },
+    "src/feelies/features/aggregator.py:52:observe": {
+      "band": "per_event",
+      "calls_per_quote": 3.99739,
+      "def_line": 52,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "observe",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 330496,
+      "profile_line": 52
+    },
+    "src/feelies/features/aggregator.py:73:latest_at_or_before": {
+      "band": "frequent",
+      "calls_per_quote": 0.10566,
+      "def_line": 73,
+      "file": "src/feelies/features/aggregator.py",
+      "func": "latest_at_or_before",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 8736,
+      "profile_line": 73
+    },
+    "src/feelies/features/impl/horizon_windowed.py:134:_welford_add": {
+      "band": "per_event",
+      "calls_per_quote": 14.98724,
+      "def_line": 134,
+      "file": "src/feelies/features/impl/horizon_windowed.py",
+      "func": "_welford_add",
+      "hits": {},
+      "match": "near",
+      "ncalls": 1239115,
+      "profile_line": 133
+    },
+    "src/feelies/features/impl/horizon_windowed.py:141:_welford_remove": {
+      "band": "per_event",
+      "calls_per_quote": 14.15747,
+      "def_line": 141,
+      "file": "src/feelies/features/impl/horizon_windowed.py",
+      "func": "_welford_remove",
+      "hits": {},
+      "match": "near",
+      "ncalls": 1170511,
+      "profile_line": 140
+    },
+    "src/feelies/features/impl/horizon_windowed.py:178:_evict_before": {
+      "band": "per_event",
+      "calls_per_quote": 15.02686,
+      "def_line": 178,
+      "file": "src/feelies/features/impl/horizon_windowed.py",
+      "func": "_evict_before",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1242391,
+      "profile_line": 178
+    },
+    "src/feelies/features/impl/horizon_windowed.py:188:_scalarize": {
+      "band": "per_event",
+      "calls_per_quote": 14.98724,
+      "def_line": 188,
+      "file": "src/feelies/features/impl/horizon_windowed.py",
+      "func": "_scalarize",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1239115,
+      "profile_line": 188
+    },
+    "src/feelies/features/impl/horizon_windowed.py:219:observe": {
+      "band": "per_event",
+      "calls_per_quote": 14.9902,
+      "def_line": 219,
+      "file": "src/feelies/features/impl/horizon_windowed.py",
+      "func": "observe",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1239360,
+      "profile_line": 219
+    },
+    "src/feelies/features/impl/horizon_windowed.py:241:finalize": {
+      "band": "frequent",
+      "calls_per_quote": 0.03962,
+      "def_line": 241,
+      "file": "src/feelies/features/impl/horizon_windowed.py",
+      "func": "finalize",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 3276,
+      "profile_line": 241
+    },
+    "src/feelies/features/impl/rolling_stats.py:133:finalize": {
+      "band": "frequent",
+      "calls_per_quote": 0.01321,
+      "def_line": 133,
+      "file": "src/feelies/features/impl/rolling_stats.py",
+      "func": "finalize",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1092,
+      "profile_line": 133
+    },
+    "src/feelies/features/impl/rolling_stats.py:92:observe": {
+      "band": "per_event",
+      "calls_per_quote": 4.99673,
+      "def_line": 92,
+      "file": "src/feelies/features/impl/rolling_stats.py",
+      "func": "observe",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 413120,
+      "profile_line": 92
+    },
+    "src/feelies/features/impl/sensor_passthrough.py:66:observe": {
+      "band": "per_event",
+      "calls_per_quote": 19.98694,
+      "def_line": 66,
+      "file": "src/feelies/features/impl/sensor_passthrough.py",
+      "func": "observe",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1652480,
+      "profile_line": 66
+    },
+    "src/feelies/features/impl/sensor_passthrough.py:81:finalize": {
+      "band": "frequent",
+      "calls_per_quote": 0.05283,
+      "def_line": 81,
+      "file": "src/feelies/features/impl/sensor_passthrough.py",
+      "func": "finalize",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 4368,
+      "profile_line": 81
+    },
+    "src/feelies/harness/backtest_prep.py:55:__call__": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 55,
+      "file": "src/feelies/harness/backtest_prep.py",
+      "func": "__call__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 55
+    },
+    "src/feelies/harness/backtest_prep.py:77:__call__": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 77,
+      "file": "src/feelies/harness/backtest_prep.py",
+      "func": "__call__",
+      "hits": {
+        "string_formatting": 6,
+        "wall_clock_read": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 77
+    },
+    "src/feelies/harness/backtest_runner.py:209:__call__": {
+      "band": "frequent",
+      "calls_per_quote": 0.01496,
+      "def_line": 209,
+      "file": "src/feelies/harness/backtest_runner.py",
+      "func": "__call__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1237,
+      "profile_line": 209
+    },
+    "src/feelies/harness/backtest_runner.py:743:_on_metric_event": {
+      "band": "per_event",
+      "calls_per_quote": 1.00097,
+      "def_line": 743,
+      "file": "src/feelies/harness/backtest_runner.py",
+      "func": "_on_metric_event",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82758,
+      "profile_line": 743
+    },
+    "src/feelies/ingestion/replay_feed.py:29:market_data_visible_at_ns": {
+      "band": "per_event",
+      "calls_per_quote": 3.01822,
+      "def_line": 29,
+      "file": "src/feelies/ingestion/replay_feed.py",
+      "func": "market_data_visible_at_ns",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 249540,
+      "profile_line": 29
+    },
+    "src/feelies/ingestion/replay_feed.py:68:events": {
+      "band": "per_event",
+      "calls_per_quote": 3.01823,
+      "def_line": 68,
+      "file": "src/feelies/ingestion/replay_feed.py",
+      "func": "events",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 249541,
+      "profile_line": 68
+    },
+    "src/feelies/kernel/orchestrator.py:1153:_run_pipeline": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 1153,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_run_pipeline",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 1153
+    },
+    "src/feelies/kernel/orchestrator.py:1179:_process_trade": {
+      "band": "per_event",
+      "calls_per_quote": 2.01822,
+      "def_line": 1179,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_process_trade",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 166862,
+      "profile_line": 1179
+    },
+    "src/feelies/kernel/orchestrator.py:1183:_process_trade_inner": {
+      "band": "per_event",
+      "calls_per_quote": 2.01822,
+      "def_line": 1183,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_process_trade_inner",
+      "hits": {
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 166862,
+      "profile_line": 1183
+    },
+    "src/feelies/kernel/orchestrator.py:1225:_dispatch_sensor_layer": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 1225,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_dispatch_sensor_layer",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 1225
+    },
+    "src/feelies/kernel/orchestrator.py:1272:_maybe_transition_cross_sectional_bookend": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 1272,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_maybe_transition_cross_sectional_bookend",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 1272
+    },
+    "src/feelies/kernel/orchestrator.py:1287:_flush_pending_sized_intents": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 1287,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_flush_pending_sized_intents",
+      "hits": {
+        "logging_with_formatting": 1,
+        "per_event_set_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 1287
+    },
+    "src/feelies/kernel/orchestrator.py:1460:_process_tick": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 1460,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_process_tick",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 1460
+    },
+    "src/feelies/kernel/orchestrator.py:1519:_process_tick_inner": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 1519,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_process_tick_inner",
+      "hits": {
+        "dataclass_replace": 4,
+        "decimal_arithmetic": 1,
+        "dynamic_dispatch": 1,
+        "per_event_dict_construction": 1,
+        "per_event_set_construction": 1,
+        "string_formatting": 10,
+        "wall_clock_read": 7
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 1519
+    },
+    "src/feelies/kernel/orchestrator.py:2092:_finalize_tick": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 2092,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_finalize_tick",
+      "hits": {
+        "dynamic_dispatch": 1,
+        "per_event_dict_construction": 1,
+        "per_event_set_construction": 2,
+        "wall_clock_read": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 2092
+    },
+    "src/feelies/kernel/orchestrator.py:2184:_edge_clears_round_trip_cost": {
+      "band": "rare",
+      "calls_per_quote": 0.00012,
+      "def_line": 2184,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_edge_clears_round_trip_cost",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 10,
+      "profile_line": 2184
+    },
+    "src/feelies/kernel/orchestrator.py:2226:_signal_passes_edge_cost_gate": {
+      "band": "rare",
+      "calls_per_quote": 0.00012,
+      "def_line": 2226,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_signal_passes_edge_cost_gate",
+      "hits": {
+        "string_formatting": 4
+      },
+      "match": "exact",
+      "ncalls": 10,
+      "profile_line": 2226
+    },
+    "src/feelies/kernel/orchestrator.py:2266:_round_trip_cost_bps": {
+      "band": "rare",
+      "calls_per_quote": 0.00015,
+      "def_line": 2266,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_round_trip_cost_bps",
+      "hits": {
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 12,
+      "profile_line": 2266
+    },
+    "src/feelies/kernel/orchestrator.py:2295:_reversal_passes_combined_edge_gate": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 2295,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_reversal_passes_combined_edge_gate",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 2295
+    },
+    "src/feelies/kernel/orchestrator.py:230:_order_owns_one_slice": {
+      "band": "rare",
+      "calls_per_quote": 0.0005,
+      "def_line": 230,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_order_owns_one_slice",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 41,
+      "profile_line": 230
+    },
+    "src/feelies/kernel/orchestrator.py:2432:_update_regime": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 2432,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_update_regime",
+      "hits": {
+        "dynamic_dispatch": 3
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 2432
+    },
+    "src/feelies/kernel/orchestrator.py:2480:_trade_path_may_emit_horizon_ticks": {
+      "band": "per_event",
+      "calls_per_quote": 2.01822,
+      "def_line": 2480,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_trade_path_may_emit_horizon_ticks",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 166862,
+      "profile_line": 2480
+    },
+    "src/feelies/kernel/orchestrator.py:2492:_reset_regime_session_state": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 2492,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_reset_regime_session_state",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 2492
+    },
+    "src/feelies/kernel/orchestrator.py:2501:_maybe_publish_hazard_spike": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 2501,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_maybe_publish_hazard_spike",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 2501
+    },
+    "src/feelies/kernel/orchestrator.py:265:_trade_journal_legs": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 265,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_trade_journal_legs",
+      "hits": {
+        "per_event_dict_construction": 3
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 265
+    },
+    "src/feelies/kernel/orchestrator.py:2695:_in_session_flatten_window": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 2695,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_in_session_flatten_window",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 2695
+    },
+    "src/feelies/kernel/orchestrator.py:2704:_in_session_flatten_window_at": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 2704,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_in_session_flatten_window_at",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 2704
+    },
+    "src/feelies/kernel/orchestrator.py:2718:_compute_target_quantity": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 2718,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_compute_target_quantity",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 2718
+    },
+    "src/feelies/kernel/orchestrator.py:2757:_record_size_shadow": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 2757,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_record_size_shadow",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 2757
+    },
+    "src/feelies/kernel/orchestrator.py:2814:_plan_for_signal": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 2814,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_plan_for_signal",
+      "hits": {
+        "dataclass_replace": 1,
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 2814
+    },
+    "src/feelies/kernel/orchestrator.py:2904:_record_net_shadow": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 2904,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_record_net_shadow",
+      "hits": {
+        "dynamic_dispatch": 1,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 2904
+    },
+    "src/feelies/kernel/orchestrator.py:2984:_execute_reverse": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 2984,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_execute_reverse",
+      "hits": {
+        "dataclass_replace": 4,
+        "per_event_dict_construction": 1,
+        "per_event_set_construction": 2,
+        "string_formatting": 13
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 2984
+    },
+    "src/feelies/kernel/orchestrator.py:3278:_try_build_order_from_intent": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 3278,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_try_build_order_from_intent",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 3278
+    },
+    "src/feelies/kernel/orchestrator.py:3371:_resolve_order_route": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 3371,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_resolve_order_route",
+      "hits": {
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 3371
+    },
+    "src/feelies/kernel/orchestrator.py:3432:_side_from_intent": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 3432,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_side_from_intent",
+      "hits": {},
+      "match": "near",
+      "ncalls": 20,
+      "profile_line": 3431
+    },
+    "src/feelies/kernel/orchestrator.py:3498:_has_pending_order_for_symbol": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 3498,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_has_pending_order_for_symbol",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 3498
+    },
+    "src/feelies/kernel/orchestrator.py:3752:_cancel_resting_for_symbol": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 3752,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_cancel_resting_for_symbol",
+      "hits": {
+        "dynamic_dispatch": 1,
+        "per_event_set_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 3752
+    },
+    "src/feelies/kernel/orchestrator.py:3772:_settle_router_acks": {
+      "band": "per_event",
+      "calls_per_quote": 1.00027,
+      "def_line": 3772,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_settle_router_acks",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82700,
+      "profile_line": 3772
+    },
+    "src/feelies/kernel/orchestrator.py:3793:_poll_order_router_acks": {
+      "band": "per_event",
+      "calls_per_quote": 1.00027,
+      "def_line": 3793,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_poll_order_router_acks",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82700,
+      "profile_line": 3793
+    },
+    "src/feelies/kernel/orchestrator.py:3825:_publish_and_apply_order_acks": {
+      "band": "per_event",
+      "calls_per_quote": 1.00027,
+      "def_line": 3825,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_publish_and_apply_order_acks",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82700,
+      "profile_line": 3825
+    },
+    "src/feelies/kernel/orchestrator.py:3831:_submit_tracked_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 3831,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_submit_tracked_order",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 3831
+    },
+    "src/feelies/kernel/orchestrator.py:3936:_drain_async_fills": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 3936,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_drain_async_fills",
+      "hits": {
+        "per_event_dict_construction": 1,
+        "wall_clock_read": 2
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 3936
+    },
+    "src/feelies/kernel/orchestrator.py:3955:_escalate_unfilled_working_exits": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 3955,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_escalate_unfilled_working_exits",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 3955
+    },
+    "src/feelies/kernel/orchestrator.py:4028:_reconcile_resting_fills": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 4028,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_reconcile_resting_fills",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 4028
+    },
+    "src/feelies/kernel/orchestrator.py:4038:_track_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 4038,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_track_order",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 4038
+    },
+    "src/feelies/kernel/orchestrator.py:4057:_record_fill_attribution": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 4057,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_record_fill_attribution",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 4057
+    },
+    "src/feelies/kernel/orchestrator.py:4086:_transition_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 4086,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_transition_order",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 4086
+    },
+    "src/feelies/kernel/orchestrator.py:4103:_apply_ack_to_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00051,
+      "def_line": 4103,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_apply_ack_to_order",
+      "hits": {
+        "per_event_dict_construction": 2,
+        "string_formatting": 4
+      },
+      "match": "exact",
+      "ncalls": 42,
+      "profile_line": 4103
+    },
+    "src/feelies/kernel/orchestrator.py:4229:_reconcile_fills": {
+      "band": "per_event",
+      "calls_per_quote": 1.00027,
+      "def_line": 4229,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_reconcile_fills",
+      "hits": {
+        "dynamic_dispatch": 1,
+        "logging_with_formatting": 1,
+        "per_event_dict_construction": 4,
+        "string_formatting": 6
+      },
+      "match": "exact",
+      "ncalls": 82700,
+      "profile_line": 4229
+    },
+    "src/feelies/kernel/orchestrator.py:4556:_regime_label_for": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 4556,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_regime_label_for",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 4556
+    },
+    "src/feelies/kernel/orchestrator.py:4675:_prune_terminal_orders": {
+      "band": "per_event",
+      "calls_per_quote": 1.00027,
+      "def_line": 4675,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_prune_terminal_orders",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82700,
+      "profile_line": 4675
+    },
+    "src/feelies/kernel/orchestrator.py:4694:_emit_state_transition": {
+      "band": "per_event",
+      "calls_per_quote": 8.00687,
+      "def_line": 4694,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_emit_state_transition",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 661992,
+      "profile_line": 4694
+    },
+    "src/feelies/kernel/orchestrator.py:4709:_on_metric_event": {
+      "band": "per_event",
+      "calls_per_quote": 1.00097,
+      "def_line": 4709,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_on_metric_event",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82758,
+      "profile_line": 4709
+    },
+    "src/feelies/kernel/orchestrator.py:4714:_on_alert_event": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 4714,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_on_alert_event",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 4714
+    },
+    "src/feelies/kernel/orchestrator.py:4721:_on_bus_signal": {
+      "band": "rare",
+      "calls_per_quote": 0.00074,
+      "def_line": 4721,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_on_bus_signal",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 61,
+      "profile_line": 4721
+    },
+    "src/feelies/kernel/orchestrator.py:4783:_is_consumed_by_portfolio": {
+      "band": "rare",
+      "calls_per_quote": 0.00074,
+      "def_line": 4783,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_is_consumed_by_portfolio",
+      "hits": {
+        "dynamic_dispatch": 2,
+        "per_event_set_construction": 2
+      },
+      "match": "exact",
+      "ncalls": 61,
+      "profile_line": 4783
+    },
+    "src/feelies/kernel/orchestrator.py:4807:_standalone_signal_actionable_for_strategy_ownership": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 4807,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_standalone_signal_actionable_for_strategy_ownership",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 4807
+    },
+    "src/feelies/kernel/orchestrator.py:4824:_filter_standalone_signals_by_strategy_ownership": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 4824,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_filter_standalone_signals_by_strategy_ownership",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 4824
+    },
+    "src/feelies/kernel/orchestrator.py:4831:_select_bus_signal": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 4831,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_select_bus_signal",
+      "hits": {
+        "logging_with_formatting": 2,
+        "per_event_set_construction": 3,
+        "sorting": 3
+      },
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 4831
+    },
+    "src/feelies/kernel/orchestrator.py:4919:_on_bus_hazard_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 4919,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_on_bus_hazard_order",
+      "hits": {
+        "dataclass_replace": 1,
+        "logging_with_formatting": 2,
+        "per_event_dict_construction": 2,
+        "per_event_set_construction": 1,
+        "string_formatting": 2
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 4919
+    },
+    "src/feelies/kernel/orchestrator.py:5014:_update_halt_state": {
+      "band": "per_event",
+      "calls_per_quote": 2.01822,
+      "def_line": 5014,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_update_halt_state",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 166862,
+      "profile_line": 5014
+    },
+    "src/feelies/kernel/orchestrator.py:5058:_in_halt_blackout": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 5058,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_in_halt_blackout",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 5058
+    },
+    "src/feelies/kernel/orchestrator.py:5089:_update_ssr_state": {
+      "band": "per_event",
+      "calls_per_quote": 2.01822,
+      "def_line": 5089,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_update_ssr_state",
+      "hits": {
+        "per_event_dict_construction": 1,
+        "per_event_set_construction": 1,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 166862,
+      "profile_line": 5089
+    },
+    "src/feelies/kernel/orchestrator.py:5110:_borrow_tier_for": {
+      "band": "rare",
+      "calls_per_quote": 0.00051,
+      "def_line": 5110,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_borrow_tier_for",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 42,
+      "profile_line": 5110
+    },
+    "src/feelies/kernel/orchestrator.py:5263:_data_health_blocks_trading": {
+      "band": "per_event",
+      "calls_per_quote": 3.01822,
+      "def_line": 5263,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_data_health_blocks_trading",
+      "hits": {
+        "per_event_set_construction": 3,
+        "string_formatting": 3
+      },
+      "match": "exact",
+      "ncalls": 249540,
+      "profile_line": 5263
+    },
+    "src/feelies/kernel/orchestrator.py:589:_append_signal_order_trace": {
+      "band": "rare",
+      "calls_per_quote": 0.00069,
+      "def_line": 589,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_append_signal_order_trace",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 57,
+      "profile_line": 589
+    },
+    "src/feelies/kernel/orchestrator.py:618:_finish_no_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00045,
+      "def_line": 618,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_finish_no_order",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 37,
+      "profile_line": 618
+    },
+    "src/feelies/kernel/orchestrator.py:638:_trace_buffered_signals_arbitration": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 638,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_trace_buffered_signals_arbitration",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 638
+    },
+    "src/feelies/kernel/orchestrator.py:669:_publish_alert": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 669,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_publish_alert",
+      "hits": {
+        "per_event_dict_construction": 2
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 669
+    },
+    "src/feelies/kernel/orchestrator.py:753:_require_safe_session_entry": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 753,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_require_safe_session_entry",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 753
+    },
+    "src/feelies/kernel/orchestrator.py:770:_bind_router_position_qty_for_rth": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 770,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_bind_router_position_qty_for_rth",
+      "hits": {
+        "dynamic_dispatch": 2
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 770
+    },
+    "src/feelies/kernel/orchestrator.py:782:_maybe_flip_buying_power_at_rth_close": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 782,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_maybe_flip_buying_power_at_rth_close",
+      "hits": {
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 782
+    },
+    "src/feelies/kernel/orchestrator.py:814:_reset_buying_power_phase_for_session": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 814,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "_reset_buying_power_phase_for_session",
+      "hits": {
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 814
+    },
+    "src/feelies/kernel/orchestrator.py:940:run_backtest": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 940,
+      "file": "src/feelies/kernel/orchestrator.py",
+      "func": "run_backtest",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 940
+    },
+    "src/feelies/monitoring/in_memory.py:127:emit": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 127,
+      "file": "src/feelies/monitoring/in_memory.py",
+      "func": "emit",
+      "hits": {
+        "logging_with_formatting": 1,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 127
+    },
+    "src/feelies/monitoring/in_memory.py:189:is_active": {
+      "band": "per_event",
+      "calls_per_quote": 1.00001,
+      "def_line": 189,
+      "file": "src/feelies/monitoring/in_memory.py",
+      "func": "is_active",
+      "hits": {},
+      "match": "near",
+      "ncalls": 82679,
+      "profile_line": 188
+    },
+    "src/feelies/monitoring/in_memory.py:37:record": {
+      "band": "per_event",
+      "calls_per_quote": 3.04192,
+      "def_line": 37,
+      "file": "src/feelies/monitoring/in_memory.py",
+      "func": "record",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 251500,
+      "profile_line": 37
+    },
+    "src/feelies/monitoring/in_memory.py:71:record": {
+      "band": "per_event",
+      "calls_per_quote": 3.04192,
+      "def_line": 71,
+      "file": "src/feelies/monitoring/in_memory.py",
+      "func": "record",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 251500,
+      "profile_line": 71
+    },
+    "src/feelies/portfolio/lot_ledger.py:41:_same_sign": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 41,
+      "file": "src/feelies/portfolio/lot_ledger.py",
+      "func": "_same_sign",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 41
+    },
+    "src/feelies/portfolio/lot_ledger.py:52:apply_fill": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 52,
+      "file": "src/feelies/portfolio/lot_ledger.py",
+      "func": "apply_fill",
+      "hits": {
+        "dataclass_replace": 1,
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 52
+    },
+    "src/feelies/portfolio/memory_position_store.py:118:_recompute_unrealized": {
+      "band": "per_event",
+      "calls_per_quote": 1.55797,
+      "def_line": 118,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "_recompute_unrealized",
+      "hits": {
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 128810,
+      "profile_line": 118
+    },
+    "src/feelies/portfolio/memory_position_store.py:148:all_positions": {
+      "band": "per_event",
+      "calls_per_quote": 1.00177,
+      "def_line": 148,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "all_positions",
+      "hits": {
+        "per_event_dict_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 82824,
+      "profile_line": 148
+    },
+    "src/feelies/portfolio/memory_position_store.py:162:opened_at_ns": {
+      "band": "frequent",
+      "calls_per_quote": 0.09058,
+      "def_line": 162,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "opened_at_ns",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 7489,
+      "profile_line": 162
+    },
+    "src/feelies/portfolio/memory_position_store.py:178:latest_mark": {
+      "band": "rare",
+      "calls_per_quote": 0.00037,
+      "def_line": 178,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "latest_mark",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 31,
+      "profile_line": 178
+    },
+    "src/feelies/portfolio/memory_position_store.py:182:total_exposure": {
+      "band": "rare",
+      "calls_per_quote": 0.00115,
+      "def_line": 182,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "total_exposure",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 95,
+      "profile_line": 182
+    },
+    "src/feelies/portfolio/memory_position_store.py:200:_same_sign": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 200,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "_same_sign",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 200
+    },
+    "src/feelies/portfolio/memory_position_store.py:20:__init__": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 20,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "__init__",
+      "hits": {
+        "per_event_dict_construction": 5
+      },
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 20
+    },
+    "src/feelies/portfolio/memory_position_store.py:29:get": {
+      "band": "per_event",
+      "calls_per_quote": 1.00498,
+      "def_line": 29,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "get",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 83090,
+      "profile_line": 29
+    },
+    "src/feelies/portfolio/memory_position_store.py:35:update": {
+      "band": "rare",
+      "calls_per_quote": 0.00048,
+      "def_line": 35,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "update",
+      "hits": {
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 40,
+      "profile_line": 35
+    },
+    "src/feelies/portfolio/memory_position_store.py:85:update_mark": {
+      "band": "per_event",
+      "calls_per_quote": 1.77882,
+      "def_line": 85,
+      "file": "src/feelies/portfolio/memory_position_store.py",
+      "func": "update_mark",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 147069,
+      "profile_line": 85
+    },
+    "src/feelies/portfolio/strategy_position_store.py:157:get_strategy_exposure": {
+      "band": "rare",
+      "calls_per_quote": 0.00052,
+      "def_line": 157,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "get_strategy_exposure",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 43,
+      "profile_line": 157
+    },
+    "src/feelies/portfolio/strategy_position_store.py:162:get_strategy_realized_pnl": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 162,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "get_strategy_realized_pnl",
+      "hits": {
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 162
+    },
+    "src/feelies/portfolio/strategy_position_store.py:179:get_strategy_cumulative_fees": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 179,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "get_strategy_cumulative_fees",
+      "hits": {
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 179
+    },
+    "src/feelies/portfolio/strategy_position_store.py:195:get_strategy_unrealized_pnl": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 195,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "get_strategy_unrealized_pnl",
+      "hits": {
+        "decimal_arithmetic": 2
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 195
+    },
+    "src/feelies/portfolio/strategy_position_store.py:34:_get_store": {
+      "band": "rare",
+      "calls_per_quote": 0.00171,
+      "def_line": 34,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "_get_store",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 141,
+      "profile_line": 34
+    },
+    "src/feelies/portfolio/strategy_position_store.py:41:get": {
+      "band": "rare",
+      "calls_per_quote": 0.00146,
+      "def_line": 41,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "get",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 121,
+      "profile_line": 41
+    },
+    "src/feelies/portfolio/strategy_position_store.py:58:update": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 58,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "update",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 58
+    },
+    "src/feelies/portfolio/strategy_position_store.py:85:update_mark": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 85,
+      "file": "src/feelies/portfolio/strategy_position_store.py",
+      "func": "update_mark",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 85
+    },
+    "src/feelies/risk/basic_risk.py:149:set_buying_power_phase": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 149,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "set_buying_power_phase",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 149
+    },
+    "src/feelies/risk/basic_risk.py:157:check_signal": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 157,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "check_signal",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 157
+    },
+    "src/feelies/risk/basic_risk.py:221:check_order": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 221,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "check_order",
+      "hits": {
+        "string_formatting": 2
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 221
+    },
+    "src/feelies/risk/basic_risk.py:395:record_fill": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 395,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "record_fill",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 395
+    },
+    "src/feelies/risk/basic_risk.py:419:_opens_or_increases": {
+      "band": "rare",
+      "calls_per_quote": 0.00076,
+      "def_line": 419,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_opens_or_increases",
+      "hits": {},
+      "match": "near",
+      "ncalls": 63,
+      "profile_line": 418
+    },
+    "src/feelies/risk/basic_risk.py:428:_check_pdt_min_equity": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 428,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_check_pdt_min_equity",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 428
+    },
+    "src/feelies/risk/basic_risk.py:464:_check_rth_session": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 464,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_check_rth_session",
+      "hits": {
+        "logging_with_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 464
+    },
+    "src/feelies/risk/basic_risk.py:499:_check_buying_power": {
+      "band": "rare",
+      "calls_per_quote": 0.00025,
+      "def_line": 499,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_check_buying_power",
+      "hits": {
+        "logging_with_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 21,
+      "profile_line": 499
+    },
+    "src/feelies/risk/basic_risk.py:610:_prospective_total_exposure": {
+      "band": "rare",
+      "calls_per_quote": 0.00037,
+      "def_line": 610,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_prospective_total_exposure",
+      "hits": {
+        "dynamic_dispatch": 1
+      },
+      "match": "exact",
+      "ncalls": 31,
+      "profile_line": 610
+    },
+    "src/feelies/risk/basic_risk.py:637:_check_exposure_and_drawdown": {
+      "band": "rare",
+      "calls_per_quote": 0.00051,
+      "def_line": 637,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_check_exposure_and_drawdown",
+      "hits": {
+        "decimal_arithmetic": 4,
+        "string_formatting": 2
+      },
+      "match": "exact",
+      "ncalls": 42,
+      "profile_line": 637
+    },
+    "src/feelies/risk/basic_risk.py:725:_regime_scaling": {
+      "band": "rare",
+      "calls_per_quote": 0.00051,
+      "def_line": 725,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_regime_scaling",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 42,
+      "profile_line": 725
+    },
+    "src/feelies/risk/basic_risk.py:753:_compute_current_equity": {
+      "band": "per_event",
+      "calls_per_quote": 1.001,
+      "def_line": 753,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_compute_current_equity",
+      "hits": {
+        "decimal_arithmetic": 3
+      },
+      "match": "exact",
+      "ncalls": 82761,
+      "profile_line": 753
+    },
+    "src/feelies/risk/basic_risk.py:770:_update_high_water_mark": {
+      "band": "per_event",
+      "calls_per_quote": 1.00051,
+      "def_line": 770,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_update_high_water_mark",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82720,
+      "profile_line": 770
+    },
+    "src/feelies/risk/basic_risk.py:783:refresh_high_water_mark": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 783,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "refresh_high_water_mark",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 783
+    },
+    "src/feelies/risk/basic_risk.py:797:_is_drawdown_breached": {
+      "band": "rare",
+      "calls_per_quote": 0.00051,
+      "def_line": 797,
+      "file": "src/feelies/risk/basic_risk.py",
+      "func": "_is_drawdown_breached",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 42,
+      "profile_line": 797
+    },
+    "src/feelies/risk/buying_power.py:43:buying_power_limit": {
+      "band": "rare",
+      "calls_per_quote": 0.00012,
+      "def_line": 43,
+      "file": "src/feelies/risk/buying_power.py",
+      "func": "buying_power_limit",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 10,
+      "profile_line": 43
+    },
+    "src/feelies/risk/position_sizer.py:107:_get_regime_factor": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 107,
+      "file": "src/feelies/risk/position_sizer.py",
+      "func": "_get_regime_factor",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 107
+    },
+    "src/feelies/risk/position_sizer.py:81:compute_target_quantity": {
+      "band": "rare",
+      "calls_per_quote": 0.0007,
+      "def_line": 81,
+      "file": "src/feelies/risk/position_sizer.py",
+      "func": "compute_target_quantity",
+      "hits": {
+        "decimal_arithmetic": 4
+      },
+      "match": "exact",
+      "ncalls": 58,
+      "profile_line": 81
+    },
+    "src/feelies/risk/post_exit_position_view.py:16:__init__": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 16,
+      "file": "src/feelies/risk/post_exit_position_view.py",
+      "func": "__init__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 16
+    },
+    "src/feelies/risk/stop_exit.py:101:stop_enabled": {
+      "band": "frequent",
+      "calls_per_quote": 0.09058,
+      "def_line": 101,
+      "file": "src/feelies/risk/stop_exit.py",
+      "func": "stop_enabled",
+      "hits": {},
+      "match": "near",
+      "ncalls": 7489,
+      "profile_line": 100
+    },
+    "src/feelies/risk/stop_exit.py:177:_on_quote": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 177,
+      "file": "src/feelies/risk/stop_exit.py",
+      "func": "_on_quote",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 177
+    },
+    "src/feelies/risk/stop_exit.py:201:_stop_triggered": {
+      "band": "frequent",
+      "calls_per_quote": 0.09058,
+      "def_line": 201,
+      "file": "src/feelies/risk/stop_exit.py",
+      "func": "_stop_triggered",
+      "hits": {
+        "decimal_arithmetic": 1
+      },
+      "match": "exact",
+      "ncalls": 7489,
+      "profile_line": 201
+    },
+    "src/feelies/risk/stop_exit.py:258:_session_flatten_triggered": {
+      "band": "frequent",
+      "calls_per_quote": 0.09058,
+      "def_line": 258,
+      "file": "src/feelies/risk/stop_exit.py",
+      "func": "_session_flatten_triggered",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 7489,
+      "profile_line": 258
+    },
+    "src/feelies/sensors/horizon_scheduler.py:159:on_event": {
+      "band": "per_event",
+      "calls_per_quote": 3.01822,
+      "def_line": 159,
+      "file": "src/feelies/sensors/horizon_scheduler.py",
+      "func": "on_event",
+      "hits": {
+        "logging_with_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 249540,
+      "profile_line": 159
+    },
+    "src/feelies/sensors/horizon_scheduler.py:219:_emit_for_symbols": {
+      "band": "per_event",
+      "calls_per_quote": 15.10428,
+      "def_line": 219,
+      "file": "src/feelies/sensors/horizon_scheduler.py",
+      "func": "_emit_for_symbols",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1248792,
+      "profile_line": 219
+    },
+    "src/feelies/sensors/horizon_scheduler.py:242:_emit_for_universe": {
+      "band": "per_event",
+      "calls_per_quote": 15.10428,
+      "def_line": 242,
+      "file": "src/feelies/sensors/horizon_scheduler.py",
+      "func": "_emit_for_universe",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1248792,
+      "profile_line": 242
+    },
+    "src/feelies/sensors/horizon_scheduler.py:262:_make_tick": {
+      "band": "frequent",
+      "calls_per_quote": 0.02642,
+      "def_line": 262,
+      "file": "src/feelies/sensors/horizon_scheduler.py",
+      "func": "_make_tick",
+      "hits": {
+        "string_formatting": 3
+      },
+      "match": "exact",
+      "ncalls": 2184,
+      "profile_line": 262
+    },
+    "src/feelies/sensors/horizon_scheduler.py:307:_emit_tick_metric": {
+      "band": "frequent",
+      "calls_per_quote": 0.02642,
+      "def_line": 307,
+      "file": "src/feelies/sensors/horizon_scheduler.py",
+      "func": "_emit_tick_metric",
+      "hits": {
+        "per_event_dict_construction": 1,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 2184,
+      "profile_line": 307
+    },
+    "src/feelies/sensors/impl/book_imbalance.py:64:update": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 64,
+      "file": "src/feelies/sensors/impl/book_imbalance.py",
+      "func": "update",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 64
+    },
+    "src/feelies/sensors/impl/ofi_ewma.py:127:update": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 127,
+      "file": "src/feelies/sensors/impl/ofi_ewma.py",
+      "func": "update",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 127
+    },
+    "src/feelies/sensors/impl/ofi_ewma.py:220:_effective_alpha": {
+      "band": "per_event",
+      "calls_per_quote": 0.99933,
+      "def_line": 220,
+      "file": "src/feelies/sensors/impl/ofi_ewma.py",
+      "func": "_effective_alpha",
+      "hits": {
+        "transcendental": 1
+      },
+      "match": "exact",
+      "ncalls": 82623,
+      "profile_line": 220
+    },
+    "src/feelies/sensors/impl/realized_vol_30s.py:111:update": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 111,
+      "file": "src/feelies/sensors/impl/realized_vol_30s.py",
+      "func": "update",
+      "hits": {
+        "transcendental": 3
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 111
+    },
+    "src/feelies/sensors/impl/spread_z_30d.py:115:update": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 115,
+      "file": "src/feelies/sensors/impl/spread_z_30d.py",
+      "func": "update",
+      "hits": {
+        "transcendental": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 115
+    },
+    "src/feelies/sensors/registry.py:198:is_empty": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 198,
+      "file": "src/feelies/sensors/registry.py",
+      "func": "is_empty",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 198
+    },
+    "src/feelies/sensors/registry.py:213:_on_event": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 213,
+      "file": "src/feelies/sensors/registry.py",
+      "func": "_on_event",
+      "hits": {
+        "logging_with_formatting": 3,
+        "sorting": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 213
+    },
+    "src/feelies/sensors/registry.py:302:_stamp": {
+      "band": "per_event",
+      "calls_per_quote": 3.99739,
+      "def_line": 302,
+      "file": "src/feelies/sensors/registry.py",
+      "func": "_stamp",
+      "hits": {
+        "logging_with_formatting": 1,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 330496,
+      "profile_line": 302
+    },
+    "src/feelies/sensors/registry.py:55:_is_finite_value": {
+      "band": "per_event",
+      "calls_per_quote": 3.99739,
+      "def_line": 55,
+      "file": "src/feelies/sensors/registry.py",
+      "func": "_is_finite_value",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 330496,
+      "profile_line": 55
+    },
+    "src/feelies/services/regime_engine.py:233:state_names": {
+      "band": "per_event",
+      "calls_per_quote": 1.00024,
+      "def_line": 233,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "state_names",
+      "hits": {},
+      "match": "near",
+      "ncalls": 82698,
+      "profile_line": 232
+    },
+    "src/feelies/services/regime_engine.py:241:calibrated": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 241,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "calibrated",
+      "hits": {},
+      "match": "near",
+      "ncalls": 82678,
+      "profile_line": 240
+    },
+    "src/feelies/services/regime_engine.py:255:discriminability_for_symbol": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 255,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "discriminability_for_symbol",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 255
+    },
+    "src/feelies/services/regime_engine.py:28:regime_posterior_entropy_nats": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 28,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "regime_posterior_entropy_nats",
+      "hits": {
+        "transcendental": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 28
+    },
+    "src/feelies/services/regime_engine.py:372:_pairwise_separation_index": {
+      "band": "per_event",
+      "calls_per_quote": 3.0,
+      "def_line": 372,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "_pairwise_separation_index",
+      "hits": {
+        "transcendental": 1
+      },
+      "match": "exact",
+      "ncalls": 248034,
+      "profile_line": 372
+    },
+    "src/feelies/services/regime_engine.py:385:_compute_min_pairwise_emission_separation": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 385,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "_compute_min_pairwise_emission_separation",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 385
+    },
+    "src/feelies/services/regime_engine.py:438:posterior": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 438,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "posterior",
+      "hits": {
+        "logging_with_formatting": 2,
+        "transcendental": 1
+      },
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 438
+    },
+    "src/feelies/services/regime_engine.py:491:current_state": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 491,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "current_state",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 491
+    },
+    "src/feelies/services/regime_engine.py:680:_transition_for_step": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 680,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "_transition_for_step",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 680
+    },
+    "src/feelies/services/regime_engine.py:739:_emission_for_symbol": {
+      "band": "per_event",
+      "calls_per_quote": 1.99878,
+      "def_line": 739,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "_emission_for_symbol",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 165255,
+      "profile_line": 739
+    },
+    "src/feelies/services/regime_engine.py:745:_predict_with_matrix": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 745,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "_predict_with_matrix",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 745
+    },
+    "src/feelies/services/regime_engine.py:760:_emission_likelihood_for_symbol": {
+      "band": "per_event",
+      "calls_per_quote": 0.99878,
+      "def_line": 760,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "_emission_likelihood_for_symbol",
+      "hits": {
+        "transcendental": 2
+      },
+      "match": "exact",
+      "ncalls": 82577,
+      "profile_line": 760
+    },
+    "src/feelies/services/regime_engine.py:768:_bayes_update": {
+      "band": "per_event",
+      "calls_per_quote": 0.99878,
+      "def_line": 768,
+      "file": "src/feelies/services/regime_engine.py",
+      "func": "_bayes_update",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82577,
+      "profile_line": 768
+    },
+    "src/feelies/services/regime_state_cache.py:57:record": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 57,
+      "file": "src/feelies/services/regime_state_cache.py",
+      "func": "record",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 57
+    },
+    "src/feelies/services/regime_state_cache.py:67:latest": {
+      "band": "rare",
+      "calls_per_quote": 0.00121,
+      "def_line": 67,
+      "file": "src/feelies/services/regime_state_cache.py",
+      "func": "latest",
+      "hits": {
+        "logging_with_formatting": 1,
+        "per_event_set_construction": 2
+      },
+      "match": "exact",
+      "ncalls": 100,
+      "profile_line": 67
+    },
+    "src/feelies/signals/horizon_engine.py:162:is_empty": {
+      "band": "rare",
+      "calls_per_quote": 0.00239,
+      "def_line": 162,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "is_empty",
+      "hits": {},
+      "match": "near",
+      "ncalls": 198,
+      "profile_line": 161
+    },
+    "src/feelies/signals/horizon_engine.py:203:_on_regime_state": {
+      "band": "per_event",
+      "calls_per_quote": 1.0,
+      "def_line": 203,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_on_regime_state",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 82678,
+      "profile_line": 203
+    },
+    "src/feelies/signals/horizon_engine.py:207:_on_sensor_reading": {
+      "band": "per_event",
+      "calls_per_quote": 3.99739,
+      "def_line": 207,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_on_sensor_reading",
+      "hits": {
+        "logging_with_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 330496,
+      "profile_line": 207
+    },
+    "src/feelies/signals/horizon_engine.py:241:_cache_reading": {
+      "band": "per_event",
+      "calls_per_quote": 3.91646,
+      "def_line": 241,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_cache_reading",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 323805,
+      "profile_line": 241
+    },
+    "src/feelies/signals/horizon_engine.py:259:_on_snapshot": {
+      "band": "frequent",
+      "calls_per_quote": 0.01321,
+      "def_line": 259,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_on_snapshot",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1092,
+      "profile_line": 259
+    },
+    "src/feelies/signals/horizon_engine.py:270:_dispatch_one": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 270,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_dispatch_one",
+      "hits": {
+        "logging_with_formatting": 6,
+        "per_event_dict_construction": 7,
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 270
+    },
+    "src/feelies/signals/horizon_engine.py:471:_publish_gate_close": {
+      "band": "rare",
+      "calls_per_quote": 0.00059,
+      "def_line": 471,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_publish_gate_close",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 49,
+      "profile_line": 471
+    },
+    "src/feelies/signals/horizon_engine.py:527:_publish_safety_state_change": {
+      "band": "rare",
+      "calls_per_quote": 0.00059,
+      "def_line": 527,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_publish_safety_state_change",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 49,
+      "profile_line": 527
+    },
+    "src/feelies/signals/horizon_engine.py:561:_emit_metric": {
+      "band": "rare",
+      "calls_per_quote": 0.00133,
+      "def_line": 561,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_emit_metric",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 110,
+      "profile_line": 561
+    },
+    "src/feelies/signals/horizon_engine.py:590:_check_duplicate_boundary": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 590,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_check_duplicate_boundary",
+      "hits": {
+        "logging_with_formatting": 1,
+        "per_event_dict_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 590
+    },
+    "src/feelies/signals/horizon_engine.py:648:_lookup_regime": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 648,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_lookup_regime",
+      "hits": {
+        "logging_with_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 648
+    },
+    "src/feelies/signals/horizon_engine.py:689:_build_bindings": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 689,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_build_bindings",
+      "hits": {
+        "per_event_dict_construction": 3
+      },
+      "match": "near",
+      "ncalls": 195,
+      "profile_line": 688
+    },
+    "src/feelies/signals/horizon_engine.py:731:_patch_signal": {
+      "band": "rare",
+      "calls_per_quote": 0.00015,
+      "def_line": 731,
+      "file": "src/feelies/signals/horizon_engine.py",
+      "func": "_patch_signal",
+      "hits": {
+        "dataclass_replace": 1
+      },
+      "match": "exact",
+      "ncalls": 12,
+      "profile_line": 731
+    },
+    "src/feelies/signals/regime_gate.py:131:__init__": {
+      "band": "rare",
+      "calls_per_quote": 0.00472,
+      "def_line": 131,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "__init__",
+      "hits": {
+        "per_event_dict_construction": 2
+      },
+      "match": "exact",
+      "ncalls": 390,
+      "profile_line": 131
+    },
+    "src/feelies/signals/regime_gate.py:231:evaluate": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 231,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "evaluate",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 231
+    },
+    "src/feelies/signals/regime_gate.py:245:_eval_node": {
+      "band": "frequent",
+      "calls_per_quote": 0.01443,
+      "def_line": 245,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "_eval_node",
+      "hits": {
+        "string_formatting": 5
+      },
+      "match": "exact",
+      "ncalls": 1193,
+      "profile_line": 245
+    },
+    "src/feelies/signals/regime_gate.py:326:_compare": {
+      "band": "rare",
+      "calls_per_quote": 0.00402,
+      "def_line": 326,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "_compare",
+      "hits": {
+        "string_formatting": 1
+      },
+      "match": "exact",
+      "ncalls": 332,
+      "profile_line": 326
+    },
+    "src/feelies/signals/regime_gate.py:344:_regime_unusable_reason": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 344,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "_regime_unusable_reason",
+      "hits": {
+        "dynamic_dispatch": 2,
+        "string_formatting": 3
+      },
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 344
+    },
+    "src/feelies/signals/regime_gate.py:364:_resolve_name": {
+      "band": "rare",
+      "calls_per_quote": 0.00167,
+      "def_line": 364,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "_resolve_name",
+      "hits": {
+        "sorting": 3,
+        "string_formatting": 6
+      },
+      "match": "exact",
+      "ncalls": 138,
+      "profile_line": 364
+    },
+    "src/feelies/signals/regime_gate.py:443:_resolve_posterior": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 443,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "_resolve_posterior",
+      "hits": {
+        "string_formatting": 4
+      },
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 443
+    },
+    "src/feelies/signals/regime_gate.py:527:engine_name": {
+      "band": "rare",
+      "calls_per_quote": 0.00472,
+      "def_line": 527,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "engine_name",
+      "hits": {},
+      "match": "near",
+      "ncalls": 390,
+      "profile_line": 526
+    },
+    "src/feelies/signals/regime_gate.py:55:__init__": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 55,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "__init__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 55
+    },
+    "src/feelies/signals/regime_gate.py:587:is_on": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 587,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "is_on",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 587
+    },
+    "src/feelies/signals/regime_gate.py:591:reset": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 591,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "reset",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 591
+    },
+    "src/feelies/signals/regime_gate.py:602:evaluate": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 602,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "evaluate",
+      "hits": {
+        "per_event_dict_construction": 1
+      },
+      "match": "exact",
+      "ncalls": 195,
+      "profile_line": 602
+    },
+    "src/feelies/signals/regime_gate.py:648:_eval": {
+      "band": "rare",
+      "calls_per_quote": 0.00236,
+      "def_line": 648,
+      "file": "src/feelies/signals/regime_gate.py",
+      "func": "_eval",
+      "hits": {},
+      "match": "near",
+      "ncalls": 195,
+      "profile_line": 647
+    },
+    "src/feelies/storage/event_resequence.py:33:event_merge_sort_key": {
+      "band": "per_event",
+      "calls_per_quote": 3.01822,
+      "def_line": 33,
+      "file": "src/feelies/storage/event_resequence.py",
+      "func": "event_merge_sort_key",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 249540,
+      "profile_line": 33
+    },
+    "src/feelies/storage/memory_event_log.py:126:replay": {
+      "band": "per_event",
+      "calls_per_quote": 3.01823,
+      "def_line": 126,
+      "file": "src/feelies/storage/memory_event_log.py",
+      "func": "replay",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 249541,
+      "profile_line": 126
+    },
+    "src/feelies/storage/memory_event_log.py:29:__init__": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 29,
+      "file": "src/feelies/storage/memory_event_log.py",
+      "func": "__init__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 29
+    },
+    "src/feelies/storage/memory_event_log.py:32:__len__": {
+      "band": "rare",
+      "calls_per_quote": 1e-05,
+      "def_line": 32,
+      "file": "src/feelies/storage/memory_event_log.py",
+      "func": "__len__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 1,
+      "profile_line": 32
+    },
+    "src/feelies/storage/memory_event_log.py:35:__getitem__": {
+      "band": "rare",
+      "calls_per_quote": 0.00022,
+      "def_line": 35,
+      "file": "src/feelies/storage/memory_event_log.py",
+      "func": "__getitem__",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 18,
+      "profile_line": 35
+    },
+    "src/feelies/storage/memory_trade_journal.py:21:record": {
+      "band": "rare",
+      "calls_per_quote": 0.00024,
+      "def_line": 21,
+      "file": "src/feelies/storage/memory_trade_journal.py",
+      "func": "record",
+      "hits": {},
+      "match": "exact",
+      "ncalls": 20,
+      "profile_line": 21
+    }
+  },
+  "measurement": {
+    "executed_set_from": "tools/arch/evidence/hotpath_executed.json",
+    "match_modes": {
+      "exact": 286,
+      "near": 24,
+      "none": 1144,
+      "unmatched_sibling": 24
+    },
+    "n_executed_functions": 335,
+    "n_functions_in_src": 1478,
+    "n_hot_functions": 310,
+    "n_quotes": 82678,
+    "parity_hash": "0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3",
+    "tool": "tools/arch/hotpath.py"
+  },
+  "prohibitions": {
+    "dataclass_replace": {
+      "cold_sites": 16,
+      "frequent_sites": 0,
+      "guarded_sites": 11,
+      "hot_functions": 7,
+      "hot_sites": 13,
+      "label": "dataclasses.replace() per event",
+      "per_event_sites": 5,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 8,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_flush_deferred_aggressive",
+          "ncalls": 82678,
+          "site": "src/feelies/execution/passive_limit_router.py:394",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1720",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1783",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1914",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1979",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.0007,
+          "func": "_plan_for_signal",
+          "ncalls": 58,
+          "site": "src/feelies/kernel/orchestrator.py:2845",
+          "unconditional": true
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00025,
+          "func": "_on_bus_hazard_order",
+          "ncalls": 21,
+          "site": "src/feelies/kernel/orchestrator.py:4989",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00024,
+          "func": "apply_fill",
+          "ncalls": 20,
+          "site": "src/feelies/portfolio/lot_ledger.py:100",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00015,
+          "func": "_patch_signal",
+          "ncalls": 12,
+          "site": "src/feelies/signals/horizon_engine.py:748",
+          "unconditional": true
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 1e-05,
+          "func": "_execute_reverse",
+          "ncalls": 1,
+          "site": "src/feelies/kernel/orchestrator.py:3045",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 1e-05,
+          "func": "_execute_reverse",
+          "ncalls": 1,
+          "site": "src/feelies/kernel/orchestrator.py:3047",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 1e-05,
+          "func": "_execute_reverse",
+          "ncalls": 1,
+          "site": "src/feelies/kernel/orchestrator.py:3092",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 1e-05,
+          "func": "_execute_reverse",
+          "ncalls": 1,
+          "site": "src/feelies/kernel/orchestrator.py:3189",
+          "unconditional": false
+        }
+      ],
+      "why": "Extension. Full field re-construction of a frozen event to change one field."
+    },
+    "decimal_arithmetic": {
+      "cold_sites": 100,
+      "frequent_sites": 1,
+      "guarded_sites": 87,
+      "hot_functions": 34,
+      "hot_sites": 102,
+      "label": "Decimal() construction",
+      "per_event_sites": 7,
+      "proven_per_event_sites": 3,
+      "proven_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.001,
+          "func": "_compute_current_equity",
+          "ncalls": 82761,
+          "site": "src/feelies/risk/basic_risk.py:761",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.001,
+          "func": "_compute_current_equity",
+          "ncalls": 82761,
+          "site": "src/feelies/risk/basic_risk.py:762",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.001,
+          "func": "_compute_current_equity",
+          "ncalls": 82761,
+          "site": "src/feelies/risk/basic_risk.py:763",
+          "unconditional": true
+        }
+      ],
+      "rare_sites": 94,
+      "status": "allowed",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.55797,
+          "func": "_recompute_unrealized",
+          "ncalls": 128810,
+          "site": "src/feelies/portfolio/memory_position_store.py:120",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.55797,
+          "func": "_recompute_unrealized",
+          "ncalls": 128810,
+          "site": "src/feelies/portfolio/memory_position_store.py:128",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.001,
+          "func": "_compute_current_equity",
+          "ncalls": 82761,
+          "site": "src/feelies/risk/basic_risk.py:761",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.001,
+          "func": "_compute_current_equity",
+          "ncalls": 82761,
+          "site": "src/feelies/risk/basic_risk.py:762",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.001,
+          "func": "_compute_current_equity",
+          "ncalls": 82761,
+          "site": "src/feelies/risk/basic_risk.py:763",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_flush_deferred_aggressive",
+          "ncalls": 82678,
+          "site": "src/feelies/execution/passive_limit_router.py:420",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1606",
+          "unconditional": false
+        },
+        {
+          "band": "frequent",
+          "calls_per_quote": 0.09058,
+          "func": "_stop_triggered",
+          "ncalls": 7489,
+          "site": "src/feelies/risk/stop_exit.py:218",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00383,
+          "func": "_fill_hazard",
+          "ncalls": 317,
+          "site": "src/feelies/execution/passive_limit_router.py:677",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00383,
+          "func": "_fill_hazard",
+          "ncalls": 317,
+          "site": "src/feelies/execution/passive_limit_router.py:681",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00383,
+          "func": "_fill_hazard",
+          "ncalls": 317,
+          "site": "src/feelies/execution/passive_limit_router.py:687",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00383,
+          "func": "_fill_hazard",
+          "ncalls": 317,
+          "site": "src/feelies/execution/passive_limit_router.py:689",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00383,
+          "func": "_fill_hazard",
+          "ncalls": 317,
+          "site": "src/feelies/execution/passive_limit_router.py:690",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00383,
+          "func": "_fill_hazard",
+          "ncalls": 317,
+          "site": "src/feelies/execution/passive_limit_router.py:694",
+          "unconditional": false
+        }
+      ],
+      "why": "Extension, and NOT prohibited -- declared allowed. Money is Decimal end to end and that is what makes P&L reductions order-free (Phase 1 budget row 4)."
+    },
+    "deep_copy": {
+      "cold_sites": 1,
+      "frequent_sites": 0,
+      "guarded_sites": 0,
+      "hot_functions": 0,
+      "hot_sites": 0,
+      "label": "copy.copy / copy.deepcopy",
+      "per_event_sites": 0,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 0,
+      "status": "prohibited",
+      "top_sites": [],
+      "why": "Extension. Unbounded in the size of the copied graph."
+    },
+    "disk_io": {
+      "cold_sites": 58,
+      "frequent_sites": 0,
+      "guarded_sites": 0,
+      "hot_functions": 0,
+      "hot_sites": 0,
+      "label": "filesystem read/write/stat/glob",
+      "per_event_sites": 0,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 0,
+      "status": "prohibited",
+      "top_sites": [],
+      "why": "P4-named. Unbounded, host-dependent latency inside a synchronous dispatch that has no queue to absorb it."
+    },
+    "dynamic_dispatch": {
+      "cold_sites": 73,
+      "frequent_sites": 0,
+      "guarded_sites": 17,
+      "hot_functions": 18,
+      "hot_sites": 24,
+      "label": "getattr / hasattr / setattr / vars / deferred import",
+      "per_event_sites": 10,
+      "proven_per_event_sites": 2,
+      "proven_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "refresh_high_water_mark",
+          "ncalls": 82678,
+          "site": "src/feelies/alpha/risk_wrapper.py:329",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2128",
+          "unconditional": true
+        }
+      ],
+      "rare_sites": 14,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 2.01822,
+          "func": "_process_trade_inner",
+          "ncalls": 166862,
+          "site": "src/feelies/kernel/orchestrator.py:1214",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4370",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "refresh_high_water_mark",
+          "ncalls": 82678,
+          "site": "src/feelies/alpha/risk_wrapper.py:329",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_maybe_flip_buying_power_at_rth_close",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:790",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1616",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2128",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_update_regime",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2451",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_update_regime",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2457",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_update_regime",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2472",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_record_net_shadow",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2923",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00236,
+          "func": "_regime_unusable_reason",
+          "ncalls": 195,
+          "site": "src/feelies/signals/regime_gate.py:354",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00236,
+          "func": "_regime_unusable_reason",
+          "ncalls": 195,
+          "site": "src/feelies/signals/regime_gate.py:358",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00074,
+          "func": "_is_consumed_by_portfolio",
+          "ncalls": 61,
+          "site": "src/feelies/kernel/orchestrator.py:4795",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00074,
+          "func": "_is_consumed_by_portfolio",
+          "ncalls": 61,
+          "site": "src/feelies/kernel/orchestrator.py:4802",
+          "unconditional": false
+        }
+      ],
+      "why": "P4-named. Name-resolved dispatch defeats the type-level contract and makes an absent attribute a silent no-op rather than an error."
+    },
+    "governance_evaluation": {
+      "cold_sites": 45,
+      "frequent_sites": 0,
+      "guarded_sites": 0,
+      "hot_functions": 0,
+      "hot_sites": 0,
+      "label": "reference to promotion / lifecycle / gate-matrix machinery",
+      "per_event_sites": 0,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 0,
+      "status": "prohibited",
+      "top_sites": [],
+      "why": "P4-named and CORE C.10. Whether an alpha is live is resolved at composition and must never be re-evaluated per event."
+    },
+    "logging_with_formatting": {
+      "cold_sites": 117,
+      "frequent_sites": 1,
+      "guarded_sites": 29,
+      "hot_functions": 18,
+      "hot_sites": 29,
+      "label": "logging call that formats or interpolates",
+      "per_event_sites": 11,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 17,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_on_sensor_reading",
+          "ncalls": 330496,
+          "site": "src/feelies/features/aggregator.py:301",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_stamp",
+          "ncalls": 330496,
+          "site": "src/feelies/sensors/registry.py:325",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_on_sensor_reading",
+          "ncalls": 330496,
+          "site": "src/feelies/signals/horizon_engine.py:218",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01822,
+          "func": "on_event",
+          "ncalls": 249540,
+          "site": "src/feelies/sensors/horizon_scheduler.py:176",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4393",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_flush_pending_sized_intents",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1319",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_on_event",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/registry.py:227",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_on_event",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/registry.py:257",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_on_event",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/registry.py:270",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "posterior",
+          "ncalls": 82678,
+          "site": "src/feelies/services/regime_engine.py:446",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "posterior",
+          "ncalls": 82678,
+          "site": "src/feelies/services/regime_engine.py:476",
+          "unconditional": false
+        },
+        {
+          "band": "frequent",
+          "calls_per_quote": 0.01321,
+          "func": "_build_snapshot",
+          "ncalls": 1092,
+          "site": "src/feelies/features/aggregator.py:396",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00236,
+          "func": "_dispatch_one",
+          "ncalls": 195,
+          "site": "src/feelies/signals/horizon_engine.py:293",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00236,
+          "func": "_dispatch_one",
+          "ncalls": 195,
+          "site": "src/feelies/signals/horizon_engine.py:346",
+          "unconditional": false
+        }
+      ],
+      "why": "P4-named. Builds a message and an args tuple per event even when the level is disabled, unless the call is guarded."
+    },
+    "per_event_dict_construction": {
+      "cold_sites": 453,
+      "frequent_sites": 8,
+      "guarded_sites": 31,
+      "hot_functions": 24,
+      "hot_sites": 53,
+      "label": "dict literal / dict comprehension / dict() per event",
+      "per_event_sites": 11,
+      "proven_per_event_sites": 3,
+      "proven_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00177,
+          "func": "all_positions",
+          "ncalls": 82824,
+          "site": "src/feelies/portfolio/memory_position_store.py:160",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1525",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2128",
+          "unconditional": true
+        }
+      ],
+      "rare_sites": 34,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 8.00686,
+          "func": "transition",
+          "ncalls": 661991,
+          "site": "src/feelies/core/state_machine.py:189",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_on_sensor_reading",
+          "ncalls": 330496,
+          "site": "src/feelies/features/aggregator.py:323",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 2.01822,
+          "func": "_update_ssr_state",
+          "ncalls": 166862,
+          "site": "src/feelies/kernel/orchestrator.py:5105",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00177,
+          "func": "all_positions",
+          "ncalls": 82824,
+          "site": "src/feelies/portfolio/memory_position_store.py:160",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4294",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4312",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4329",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4487",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1525",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2128",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_drain_async_fills",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:3952",
+          "unconditional": false
+        },
+        {
+          "band": "frequent",
+          "calls_per_quote": 0.02642,
+          "func": "_emit_tick_metric",
+          "ncalls": 2184,
+          "site": "src/feelies/sensors/horizon_scheduler.py:332",
+          "unconditional": true
+        },
+        {
+          "band": "frequent",
+          "calls_per_quote": 0.01321,
+          "func": "_build_snapshot",
+          "ncalls": 1092,
+          "site": "src/feelies/features/aggregator.py:359",
+          "unconditional": true
+        },
+        {
+          "band": "frequent",
+          "calls_per_quote": 0.01321,
+          "func": "_build_snapshot",
+          "ncalls": 1092,
+          "site": "src/feelies/features/aggregator.py:360",
+          "unconditional": true
+        }
+      ],
+      "why": "P4-named. Allocation per event; feeds the GC the harness has to disable to keep latency stable."
+    },
+    "per_event_set_construction": {
+      "cold_sites": 172,
+      "frequent_sites": 0,
+      "guarded_sites": 17,
+      "hot_functions": 13,
+      "hot_sites": 19,
+      "label": "set literal / set comprehension / set() / frozenset() per event",
+      "per_event_sites": 7,
+      "proven_per_event_sites": 2,
+      "proven_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 8.00711,
+          "func": "can_transition",
+          "ncalls": 662012,
+          "site": "src/feelies/core/state_machine.py:159",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2127",
+          "unconditional": true
+        }
+      ],
+      "rare_sites": 12,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 8.00711,
+          "func": "can_transition",
+          "ncalls": 662012,
+          "site": "src/feelies/core/state_machine.py:159",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01822,
+          "func": "_data_health_blocks_trading",
+          "ncalls": 249540,
+          "site": "src/feelies/kernel/orchestrator.py:5271",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01822,
+          "func": "_data_health_blocks_trading",
+          "ncalls": 249540,
+          "site": "src/feelies/kernel/orchestrator.py:5275",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 2.01822,
+          "func": "_update_ssr_state",
+          "ncalls": 166862,
+          "site": "src/feelies/kernel/orchestrator.py:5093",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_flush_pending_sized_intents",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1408",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2083",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2127",
+          "unconditional": true
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00121,
+          "func": "latest",
+          "ncalls": 100,
+          "site": "src/feelies/services/regime_state_cache.py:93",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00121,
+          "func": "latest",
+          "ncalls": 100,
+          "site": "src/feelies/services/regime_state_cache.py:94",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00074,
+          "func": "_is_consumed_by_portfolio",
+          "ncalls": 61,
+          "site": "src/feelies/kernel/orchestrator.py:4793",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00074,
+          "func": "_is_consumed_by_portfolio",
+          "ncalls": 61,
+          "site": "src/feelies/kernel/orchestrator.py:4804",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.0007,
+          "func": "_select_bus_signal",
+          "ncalls": 58,
+          "site": "src/feelies/kernel/orchestrator.py:4840",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.0007,
+          "func": "_select_bus_signal",
+          "ncalls": 58,
+          "site": "src/feelies/kernel/orchestrator.py:4858",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.0007,
+          "func": "_select_bus_signal",
+          "ncalls": 58,
+          "site": "src/feelies/kernel/orchestrator.py:4865",
+          "unconditional": false
+        }
+      ],
+      "why": "Extension. Allocation plus, per Phase 1 budget row 3, a hash-ordered iteration whose order is seed-dependent."
+    },
+    "regex": {
+      "cold_sites": 0,
+      "frequent_sites": 0,
+      "guarded_sites": 0,
+      "hot_functions": 0,
+      "hot_sites": 0,
+      "label": "re.compile / match / search / sub / findall",
+      "per_event_sites": 0,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 0,
+      "status": "prohibited",
+      "top_sites": [],
+      "why": "Extension. Pattern work per event, usually on a string that was itself built per event."
+    },
+    "serialization": {
+      "cold_sites": 100,
+      "frequent_sites": 0,
+      "guarded_sites": 0,
+      "hot_functions": 2,
+      "hot_sites": 2,
+      "label": "json / pickle / hashing / encode / asdict",
+      "per_event_sites": 0,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 2,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00041,
+          "func": "_seeded_uniform",
+          "ncalls": 34,
+          "site": "src/feelies/execution/passive_limit_router.py:718",
+          "unconditional": true
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00025,
+          "func": "derive_order_id",
+          "ncalls": 21,
+          "site": "src/feelies/core/identifiers.py:25",
+          "unconditional": true
+        }
+      ],
+      "why": "P4-named. Cost is proportional to payload size and is only ever needed off the decision path."
+    },
+    "sorting": {
+      "cold_sites": 176,
+      "frequent_sites": 0,
+      "guarded_sites": 12,
+      "hot_functions": 6,
+      "hot_sites": 12,
+      "label": "sorted() / list.sort() per event",
+      "per_event_sites": 4,
+      "proven_per_event_sites": 0,
+      "proven_sites": [],
+      "rare_sites": 8,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_on_sensor_reading",
+          "ncalls": 330496,
+          "site": "src/feelies/features/aggregator.py:283",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_on_sensor_reading",
+          "ncalls": 330496,
+          "site": "src/feelies/features/aggregator.py:289",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_on_sensor_reading",
+          "ncalls": 330496,
+          "site": "src/feelies/features/aggregator.py:309",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_on_event",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/registry.py:232",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00167,
+          "func": "_resolve_name",
+          "ncalls": 138,
+          "site": "src/feelies/signals/regime_gate.py:418",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00167,
+          "func": "_resolve_name",
+          "ncalls": 138,
+          "site": "src/feelies/signals/regime_gate.py:428",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00167,
+          "func": "_resolve_name",
+          "ncalls": 138,
+          "site": "src/feelies/signals/regime_gate.py:438",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.0007,
+          "func": "_select_bus_signal",
+          "ncalls": 58,
+          "site": "src/feelies/kernel/orchestrator.py:4858",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.0007,
+          "func": "_select_bus_signal",
+          "ncalls": 58,
+          "site": "src/feelies/kernel/orchestrator.py:4860",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.0007,
+          "func": "_select_bus_signal",
+          "ncalls": 58,
+          "site": "src/feelies/kernel/orchestrator.py:4865",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00025,
+          "func": "__init__",
+          "ncalls": 21,
+          "site": "src/feelies/core/state_machine.py:125",
+          "unconditional": false
+        },
+        {
+          "band": "rare",
+          "calls_per_quote": 0.00024,
+          "func": "largest_remainder_split",
+          "ncalls": 20,
+          "site": "src/feelies/alpha/fill_attribution.py:176",
+          "unconditional": false
+        }
+      ],
+      "why": "Extension. O(n log n) per event; also the determinism neutralizer for rows 2a/3, so it may not simply be deleted -- it must move to the producer."
+    },
+    "string_formatting": {
+      "cold_sites": 1161,
+      "frequent_sites": 11,
+      "guarded_sites": 91,
+      "hot_functions": 49,
+      "hot_sites": 103,
+      "label": "f-string, %-format, .format(), .join() outside a logging call",
+      "per_event_sites": 34,
+      "proven_per_event_sites": 3,
+      "proven_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 4.07797,
+          "func": "make_correlation_id",
+          "ncalls": 337158,
+          "site": "src/feelies/core/identifiers.py:15",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_stamp",
+          "ncalls": 330496,
+          "site": "src/feelies/sensors/registry.py:333",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.04192,
+          "func": "record",
+          "ncalls": 251500,
+          "site": "src/feelies/monitoring/in_memory.py:74",
+          "unconditional": true
+        }
+      ],
+      "rare_sites": 58,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 14.98724,
+          "func": "_scalarize",
+          "ncalls": 1239115,
+          "site": "src/feelies/features/impl/horizon_windowed.py:202",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 4.99673,
+          "func": "observe",
+          "ncalls": 413120,
+          "site": "src/feelies/features/impl/rolling_stats.py:116",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 4.07797,
+          "func": "make_correlation_id",
+          "ncalls": 337158,
+          "site": "src/feelies/core/identifiers.py:15",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_on_sensor_reading",
+          "ncalls": 330496,
+          "site": "src/feelies/features/aggregator.py:287",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.99739,
+          "func": "_stamp",
+          "ncalls": 330496,
+          "site": "src/feelies/sensors/registry.py:333",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.04192,
+          "func": "record",
+          "ncalls": 251500,
+          "site": "src/feelies/monitoring/in_memory.py:74",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01823,
+          "func": "events",
+          "ncalls": 249541,
+          "site": "src/feelies/ingestion/replay_feed.py:93",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01822,
+          "func": "_data_health_blocks_trading",
+          "ncalls": 249540,
+          "site": "src/feelies/kernel/orchestrator.py:5280",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01822,
+          "func": "_data_health_blocks_trading",
+          "ncalls": 249540,
+          "site": "src/feelies/kernel/orchestrator.py:5296",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01822,
+          "func": "_data_health_blocks_trading",
+          "ncalls": 249540,
+          "site": "src/feelies/kernel/orchestrator.py:5317",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.01813,
+          "func": "set_time",
+          "ncalls": 249533,
+          "site": "src/feelies/core/clock.py:47",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 2.01822,
+          "func": "_update_ssr_state",
+          "ncalls": 166862,
+          "site": "src/feelies/kernel/orchestrator.py:5104",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4293",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.00027,
+          "func": "_reconcile_fills",
+          "ncalls": 82700,
+          "site": "src/feelies/kernel/orchestrator.py:4311",
+          "unconditional": false
+        }
+      ],
+      "why": "Extension. Builds a string per event for a value that is usually discarded; the correlation-id and reason-tuple paths are the measured carriers."
+    },
+    "transcendental": {
+      "cold_sites": 24,
+      "frequent_sites": 0,
+      "guarded_sites": 8,
+      "hot_functions": 6,
+      "hot_sites": 9,
+      "label": "math.log / exp / sqrt / pow and friends",
+      "per_event_sites": 9,
+      "proven_per_event_sites": 1,
+      "proven_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.0,
+          "func": "_pairwise_separation_index",
+          "ncalls": 248034,
+          "site": "src/feelies/services/regime_engine.py:380",
+          "unconditional": true
+        }
+      ],
+      "rare_sites": 0,
+      "status": "allowed",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 3.0,
+          "func": "_pairwise_separation_index",
+          "ncalls": 248034,
+          "site": "src/feelies/services/regime_engine.py:380",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "update",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/impl/realized_vol_30s.py:135",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "update",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/impl/realized_vol_30s.py:163",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "update",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/impl/realized_vol_30s.py:169",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "update",
+          "ncalls": 82678,
+          "site": "src/feelies/sensors/impl/spread_z_30d.py:203",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "regime_posterior_entropy_nats",
+          "ncalls": 82678,
+          "site": "src/feelies/services/regime_engine.py:51",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "posterior",
+          "ncalls": 82678,
+          "site": "src/feelies/services/regime_engine.py:470",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 0.99933,
+          "func": "_effective_alpha",
+          "ncalls": 82623,
+          "site": "src/feelies/sensors/impl/ofi_ewma.py:228",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 0.99878,
+          "func": "_emission_likelihood_for_symbol",
+          "ncalls": 82577,
+          "site": "src/feelies/services/regime_engine.py:764",
+          "unconditional": false
+        }
+      ],
+      "why": "Extension, and NOT prohibited -- declared allowed with a stated cost, because Phase 1 row 12a makes libm the reason whole-platform parity is host-local. Counted so the allow list is honest."
+    },
+    "wall_clock_read": {
+      "cold_sites": 18,
+      "frequent_sites": 0,
+      "guarded_sites": 10,
+      "hot_functions": 5,
+      "hot_sites": 13,
+      "label": "time.* / datetime.now on the tick path",
+      "per_event_sites": 13,
+      "proven_per_event_sites": 3,
+      "proven_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1524",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2104",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_drain_async_fills",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:3940",
+          "unconditional": true
+        }
+      ],
+      "rare_sites": 0,
+      "status": "prohibited",
+      "top_sites": [
+        {
+          "band": "per_event",
+          "calls_per_quote": 8.00686,
+          "func": "transition",
+          "ncalls": 661991,
+          "site": "src/feelies/core/state_machine.py:180",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 8.00686,
+          "func": "transition",
+          "ncalls": 661991,
+          "site": "src/feelies/core/state_machine.py:198",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "__call__",
+          "ncalls": 82678,
+          "site": "src/feelies/harness/backtest_prep.py:83",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1524",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1633",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1635",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1675",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1677",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1771",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_process_tick_inner",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:1773",
+          "unconditional": false
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_finalize_tick",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:2104",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_drain_async_fills",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:3940",
+          "unconditional": true
+        },
+        {
+          "band": "per_event",
+          "calls_per_quote": 1.0,
+          "func": "_drain_async_fills",
+          "ncalls": 82678,
+          "site": "src/feelies/kernel/orchestrator.py:3950",
+          "unconditional": false
+        }
+      ],
+      "why": "Extension. Phase 1 budget row 7: the allowlist is file-granular, so a call-granular census is the only way to know the real count."
+    }
+  }
+}

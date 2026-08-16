@@ -1,0 +1,568 @@
+{
+  "n_publish": 48,
+  "n_subscribe": 32,
+  "publish_sites": [
+    {
+      "call": "bus.publish",
+      "engine_hint": 0,
+      "first_arg": "Alert",
+      "line": 598,
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 6,
+      "first_arg": "publishable",
+      "line": 276,
+      "path": "src/feelies/composition/engine.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 6,
+      "first_arg": "intent",
+      "line": 324,
+      "path": "src/feelies/composition/engine.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 6,
+      "first_arg": "ctx",
+      "line": 312,
+      "path": "src/feelies/composition/synchronizer.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 2,
+      "first_arg": "snapshot",
+      "line": 347,
+      "path": "src/feelies/features/aggregator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "Alert",
+      "line": 680,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "trade",
+      "line": 1212,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "quote",
+      "line": 1634,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "verdict",
+      "line": 1774,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "order_verdict",
+      "line": 1903,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "order",
+      "line": 2061,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "MetricEvent",
+      "line": 2114,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "regime_state",
+      "line": 2476,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "RegimeHazardSpike",
+      "line": 2515,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "exit_verdict",
+      "line": 3032,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "exit_order",
+      "line": 3223,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "order",
+      "line": 4012,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "StateTransition",
+      "line": 4696,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "SymbolHalted",
+      "line": 5074,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "order",
+      "line": 1454,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "MetricEvent",
+      "line": 1484,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "MetricEvent",
+      "line": 1569,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "MetricEvent",
+      "line": 2143,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "KillSwitchActivation",
+      "line": 2585,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "ack",
+      "line": 3828,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "PositionUpdate",
+      "line": 4450,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "hv",
+      "line": 4939,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "order",
+      "line": 5359,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "trade",
+      "line": 1200,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "tick",
+      "line": 1223,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "tick",
+      "line": 1252,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "order",
+      "line": 1399,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "order",
+      "line": 2644,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "entry_rv",
+      "line": 3174,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "entry_order",
+      "line": 3239,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 0,
+      "first_arg": "PositionUpdate",
+      "line": 4268,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 11,
+      "first_arg": "evt",
+      "line": 299,
+      "path": "src/feelies/monitoring/horizon_metrics.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 11,
+      "first_arg": "alert",
+      "line": 322,
+      "path": "src/feelies/monitoring/horizon_metrics.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 8,
+      "first_arg": "Alert",
+      "line": 366,
+      "path": "src/feelies/risk/basic_risk.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 8,
+      "first_arg": "Alert",
+      "line": 583,
+      "path": "src/feelies/risk/basic_risk.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 8,
+      "first_arg": "order",
+      "line": 378,
+      "path": "src/feelies/risk/deferral_cap.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 8,
+      "first_arg": "order",
+      "line": 486,
+      "path": "src/feelies/risk/exit_composer.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 8,
+      "first_arg": "order",
+      "line": 253,
+      "path": "src/feelies/risk/hazard_exit.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 8,
+      "first_arg": "order",
+      "line": 297,
+      "path": "src/feelies/risk/stop_exit.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 2,
+      "first_arg": "reading",
+      "line": 291,
+      "path": "src/feelies/sensors/registry.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 4,
+      "first_arg": "emitted",
+      "line": 464,
+      "path": "src/feelies/signals/horizon_engine.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 4,
+      "first_arg": "Signal",
+      "line": 505,
+      "path": "src/feelies/signals/horizon_engine.py"
+    },
+    {
+      "call": "self._bus.publish",
+      "engine_hint": 4,
+      "first_arg": "SafetyStateChange",
+      "line": 540,
+      "path": "src/feelies/signals/horizon_engine.py"
+    }
+  ],
+  "subscribe_sites": [
+    {
+      "call": "bus.subscribe",
+      "engine_hint": 0,
+      "first_arg": "NBBOQuote",
+      "line": 353,
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 6,
+      "first_arg": "CrossSectionalContext",
+      "line": 197,
+      "path": "src/feelies/composition/engine.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 6,
+      "first_arg": "HorizonFeatureSnapshot",
+      "line": 128,
+      "path": "src/feelies/composition/synchronizer.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 6,
+      "first_arg": "Signal",
+      "line": 129,
+      "path": "src/feelies/composition/synchronizer.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 6,
+      "first_arg": "HorizonTick",
+      "line": 130,
+      "path": "src/feelies/composition/synchronizer.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 2,
+      "first_arg": "SensorReading",
+      "line": 252,
+      "path": "src/feelies/features/aggregator.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 2,
+      "first_arg": "HorizonTick",
+      "line": 253,
+      "path": "src/feelies/features/aggregator.py"
+    },
+    {
+      "call": "orchestrator._bus.subscribe",
+      "engine_hint": 12,
+      "first_arg": "MetricEvent",
+      "line": 747,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "orchestrator._bus.subscribe",
+      "engine_hint": 12,
+      "first_arg": "NBBOQuote",
+      "line": 765,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "orchestrator._bus.subscribe",
+      "engine_hint": 12,
+      "first_arg": "event_type",
+      "line": 246,
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 0,
+      "first_arg": "MetricEvent",
+      "line": 559,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 0,
+      "first_arg": "Signal",
+      "line": 574,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 0,
+      "first_arg": "SizedPositionIntent",
+      "line": 578,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 0,
+      "first_arg": "OrderRequest",
+      "line": 585,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 0,
+      "first_arg": "Alert",
+      "line": 563,
+      "path": "src/feelies/kernel/orchestrator.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 11,
+      "first_arg": "CrossSectionalContext",
+      "line": 87,
+      "path": "src/feelies/monitoring/horizon_metrics.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 11,
+      "first_arg": "SizedPositionIntent",
+      "line": 88,
+      "path": "src/feelies/monitoring/horizon_metrics.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 11,
+      "first_arg": "RegimeHazardSpike",
+      "line": 89,
+      "path": "src/feelies/monitoring/horizon_metrics.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 11,
+      "first_arg": "OrderRequest",
+      "line": 90,
+      "path": "src/feelies/monitoring/horizon_metrics.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 7,
+      "first_arg": "CrossSectionalContext",
+      "line": 101,
+      "path": "src/feelies/portfolio/cross_sectional_tracker.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 7,
+      "first_arg": "SizedPositionIntent",
+      "line": 102,
+      "path": "src/feelies/portfolio/cross_sectional_tracker.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 8,
+      "first_arg": "SafetyStateChange",
+      "line": 237,
+      "path": "src/feelies/risk/deferral_cap.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 8,
+      "first_arg": "Trade",
+      "line": 238,
+      "path": "src/feelies/risk/deferral_cap.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 8,
+      "first_arg": "SafetyStateChange",
+      "line": 289,
+      "path": "src/feelies/risk/exit_composer.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 8,
+      "first_arg": "RegimeHazardSpike",
+      "line": 141,
+      "path": "src/feelies/risk/hazard_exit.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 8,
+      "first_arg": "Trade",
+      "line": 142,
+      "path": "src/feelies/risk/hazard_exit.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 8,
+      "first_arg": "NBBOQuote",
+      "line": 172,
+      "path": "src/feelies/risk/stop_exit.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 2,
+      "first_arg": "event_type",
+      "line": 193,
+      "path": "src/feelies/sensors/registry.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 3,
+      "first_arg": "RegimeState",
+      "line": 54,
+      "path": "src/feelies/services/regime_state_cache.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 4,
+      "first_arg": "RegimeState",
+      "line": 196,
+      "path": "src/feelies/signals/horizon_engine.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 4,
+      "first_arg": "SensorReading",
+      "line": 197,
+      "path": "src/feelies/signals/horizon_engine.py"
+    },
+    {
+      "call": "self._bus.subscribe",
+      "engine_hint": 4,
+      "first_arg": "HorizonFeatureSnapshot",
+      "line": 198,
+      "path": "src/feelies/signals/horizon_engine.py"
+    }
+  ]
+}

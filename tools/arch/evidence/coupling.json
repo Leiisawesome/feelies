@@ -1,0 +1,789 @@
+{
+  "cross_object_private_access": [
+    {
+      "attr": "_store_raw_events",
+      "expr": "metric_collector._store_raw_events",
+      "line": 411,
+      "owner": "metric_collector",
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "attr": "_construct",
+      "expr": "module._construct",
+      "line": 1541,
+      "owner": "module",
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "attr": "_construct",
+      "expr": "module._construct",
+      "line": 1543,
+      "owner": "module",
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "attr": "_session_id",
+      "expr": "horizon_scheduler._session_id",
+      "line": 1217,
+      "owner": "horizon_scheduler",
+      "path": "src/feelies/bootstrap.py"
+    },
+    {
+      "attr": "_SubParsersAction",
+      "expr": "argparse._SubParsersAction",
+      "line": 15,
+      "owner": "argparse",
+      "path": "src/feelies/cli/backtest.py"
+    },
+    {
+      "attr": "_bus",
+      "expr": "orchestrator._bus",
+      "line": 747,
+      "owner": "orchestrator",
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "attr": "_bus",
+      "expr": "orchestrator._bus",
+      "line": 765,
+      "owner": "orchestrator",
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "attr": "_bus",
+      "expr": "orchestrator._bus",
+      "line": 246,
+      "owner": "orchestrator",
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "attr": "_events",
+      "expr": "_metrics_collector._events",
+      "line": 781,
+      "owner": "_metrics_collector",
+      "path": "src/feelies/harness/backtest_runner.py"
+    },
+    {
+      "attr": "_referenced_identifiers",
+      "expr": "gate._referenced_identifiers",
+      "line": 713,
+      "owner": "gate",
+      "path": "src/feelies/signals/regime_gate.py"
+    }
+  ],
+  "cross_object_private_by_file": {
+    "src/feelies/bootstrap.py": 4,
+    "src/feelies/cli/backtest.py": 1,
+    "src/feelies/harness/backtest_runner.py": 4,
+    "src/feelies/signals/regime_gate.py": 1
+  },
+  "external_attribute_assignment": [
+    {
+      "line": 584,
+      "path": "src/feelies/bootstrap.py",
+      "target": "orchestrator.config_snapshot"
+    },
+    {
+      "line": 587,
+      "path": "src/feelies/bootstrap.py",
+      "target": "orchestrator.live_feed"
+    },
+    {
+      "line": 588,
+      "path": "src/feelies/bootstrap.py",
+      "target": "orchestrator.ib_connection"
+    },
+    {
+      "line": 411,
+      "path": "src/feelies/bootstrap.py",
+      "target": "metric_collector._store_raw_events"
+    },
+    {
+      "line": 1543,
+      "path": "src/feelies/bootstrap.py",
+      "target": "module._construct"
+    },
+    {
+      "line": 28,
+      "path": "src/feelies/broker/ib/contracts.py",
+      "target": "c.symbol"
+    },
+    {
+      "line": 29,
+      "path": "src/feelies/broker/ib/contracts.py",
+      "target": "c.secType"
+    },
+    {
+      "line": 30,
+      "path": "src/feelies/broker/ib/contracts.py",
+      "target": "c.exchange"
+    },
+    {
+      "line": 31,
+      "path": "src/feelies/broker/ib/contracts.py",
+      "target": "c.currency"
+    },
+    {
+      "line": 33,
+      "path": "src/feelies/broker/ib/contracts.py",
+      "target": "c.primaryExchange"
+    },
+    {
+      "line": 204,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.action"
+    },
+    {
+      "line": 215,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.totalQuantity"
+    },
+    {
+      "line": 216,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.tif"
+    },
+    {
+      "line": 219,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.eTradeOnly"
+    },
+    {
+      "line": 220,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.firmQuoteOnly"
+    },
+    {
+      "line": 206,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.orderType"
+    },
+    {
+      "line": 211,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.lmtPrice"
+    },
+    {
+      "line": 213,
+      "path": "src/feelies/broker/ib/router.py",
+      "target": "order.orderType"
+    },
+    {
+      "line": 208,
+      "path": "src/feelies/cli/forensics.py",
+      "target": "sub.required"
+    },
+    {
+      "line": 53,
+      "path": "src/feelies/cli/main.py",
+      "target": "subparsers.required"
+    },
+    {
+      "line": 787,
+      "path": "src/feelies/cli/promote.py",
+      "target": "sub.required"
+    },
+    {
+      "line": 651,
+      "path": "src/feelies/execution/passive_limit_router.py",
+      "target": "pending.at_bbo"
+    },
+    {
+      "line": 634,
+      "path": "src/feelies/execution/passive_limit_router.py",
+      "target": "pending.at_bbo"
+    },
+    {
+      "line": 639,
+      "path": "src/feelies/execution/passive_limit_router.py",
+      "target": "pending.ticks_at_level"
+    },
+    {
+      "line": 640,
+      "path": "src/feelies/execution/passive_limit_router.py",
+      "target": "pending.shares_traded_at_level"
+    },
+    {
+      "line": 643,
+      "path": "src/feelies/execution/passive_limit_router.py",
+      "target": "pending.at_bbo"
+    },
+    {
+      "line": 648,
+      "path": "src/feelies/execution/passive_limit_router.py",
+      "target": "pending.ticks_at_level"
+    },
+    {
+      "line": 649,
+      "path": "src/feelies/execution/passive_limit_router.py",
+      "target": "pending.shares_traded_at_level"
+    },
+    {
+      "line": 288,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_fills_jsonl"
+    },
+    {
+      "line": 289,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_sensor_readings_jsonl"
+    },
+    {
+      "line": 290,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_horizon_ticks_jsonl"
+    },
+    {
+      "line": 291,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_snapshots_jsonl"
+    },
+    {
+      "line": 292,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_signals_jsonl"
+    },
+    {
+      "line": 293,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_hazard_spikes_jsonl"
+    },
+    {
+      "line": 294,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_cross_sectional_jsonl"
+    },
+    {
+      "line": 295,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_sized_intents_jsonl"
+    },
+    {
+      "line": 296,
+      "path": "src/feelies/harness/backtest_cli.py",
+      "target": "args.emit_hazard_exits_jsonl"
+    },
+    {
+      "line": 74,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.quantity"
+    },
+    {
+      "line": 130,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.unrealized_pnl"
+    },
+    {
+      "line": 59,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.avg_entry_price"
+    },
+    {
+      "line": 77,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.avg_entry_price"
+    },
+    {
+      "line": 120,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.unrealized_pnl"
+    },
+    {
+      "line": 128,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.unrealized_pnl"
+    },
+    {
+      "line": 62,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.avg_entry_price"
+    },
+    {
+      "line": 72,
+      "path": "src/feelies/portfolio/memory_position_store.py",
+      "target": "pos.avg_entry_price"
+    }
+  ],
+  "mode_branches": [
+    {
+      "in_mode_seam": false,
+      "kind": "other_mode_concept",
+      "line": 1163,
+      "path": "src/feelies/alpha/layer_validator.py",
+      "test": "story is not None and mode != _SAFETY_EXIT_POLICY_DECOUPLE_MODE"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "other_mode_concept",
+      "line": 1171,
+      "path": "src/feelies/alpha/layer_validator.py",
+      "test": "mode != _SAFETY_EXIT_POLICY_DECOUPLE_MODE"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "other_mode_concept",
+      "line": 1142,
+      "path": "src/feelies/alpha/loader.py",
+      "test": "mode == _SAFETY_EXIT_POLICY_DECOUPLE_MODE"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 183,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.PAPER and config.ib_port == 4001"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 189,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.BACKTEST and config.backtest_enforce_ingest_terminal_health and (not config.ingest_terminal_symbol_health)"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 190,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 203,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode != OperatingMode.PAPER"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 222,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 273,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode != OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 303,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.PAPER"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 330,
+      "path": "src/feelies/bootstrap.py",
+      "test": "normalizer is None and config.mode == OperatingMode.PAPER"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 348,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 392,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.sizer_tilt_drive and config.mode == OperatingMode.PAPER"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 410,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 518,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.signal_min_edge_cost_ratio > 0 and (not resolved_edge_factors) and (config.mode == OperatingMode.PAPER)"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 521,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.PAPER"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 651,
+      "path": "src/feelies/bootstrap.py",
+      "test": "mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 661,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 821,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 867,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode == OperatingMode.PAPER"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 1143,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode != OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 1180,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode != OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 1820,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode != OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 1882,
+      "path": "src/feelies/bootstrap.py",
+      "test": "config.mode is not OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 447,
+      "path": "src/feelies/core/platform_config.py",
+      "test": "self.mode != OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 141,
+      "path": "src/feelies/harness/backtest_prep.py",
+      "test": "config.mode == OperatingMode.BACKTEST"
+    },
+    {
+      "in_mode_seam": false,
+      "kind": "operating_mode",
+      "line": 190,
+      "path": "src/feelies/harness/backtest_runner.py",
+      "test": "config.mode != OperatingMode.BACKTEST or config.session_open_ns is not None"
+    }
+  ],
+  "mode_branches_outside_seam_by_file": {
+    "src/feelies/bootstrap.py": 21,
+    "src/feelies/core/platform_config.py": 1,
+    "src/feelies/harness/backtest_prep.py": 1,
+    "src/feelies/harness/backtest_runner.py": 1
+  },
+  "mode_seam_prefixes": [
+    "src/feelies/execution/",
+    "src/feelies/broker/"
+  ],
+  "n_cross_object_private_access": 10,
+  "n_external_attribute_assignment": 45,
+  "n_mode_branches": 27,
+  "n_mode_branches_outside_seam": 24,
+  "n_operating_mode_branches": 24,
+  "n_orchestrator_collaborators": 55,
+  "n_other_mode_concept_branches": 3,
+  "orchestrator_collaborator_call_sites": {
+    "_active_orders": 8,
+    "_alert_manager": 1,
+    "_alpha_registry": 3,
+    "_alpha_symbols_with_fills": 1,
+    "_arbitration_collisions": 1,
+    "_borrow_tier": 1,
+    "_bus": 36,
+    "_carryover_signal_sequences": 3,
+    "_clock": 40,
+    "_deferred_router_acks": 2,
+    "_desired_target_book": 4,
+    "_edge_calibration_factors": 2,
+    "_event_log": 4,
+    "_feature_snapshots": 2,
+    "_fill_ledger": 2,
+    "_forced_exit_announced_quantity": 2,
+    "_halt_blackout_until_ns": 2,
+    "_halted_symbols": 2,
+    "_hazard_seq": 1,
+    "_hazard_submitted_order_ids": 1,
+    "_horizon_scheduler": 2,
+    "_intent_translator": 1,
+    "_kill_switch": 3,
+    "_last_regime_state": 2,
+    "_last_signal_mechanism": 1,
+    "_lot_ledger": 1,
+    "_macro": 36,
+    "_metrics": 3,
+    "_micro": 42,
+    "_min_cost_policy": 1,
+    "_net_shadow_transient_keys": 3,
+    "_normalizer": 4,
+    "_order_filled_qty": 2,
+    "_order_trading_intent": 3,
+    "_paper_session_recorder": 3,
+    "_pending_sized_intents": 8,
+    "_portfolio_netter": 2,
+    "_position_manager": 1,
+    "_position_sizer": 1,
+    "_positions": 23,
+    "_realized_cost_breach_streak": 2,
+    "_regime_bus_published_symbols": 2,
+    "_regime_engine": 3,
+    "_regime_hazard_detector": 2,
+    "_risk_engine": 7,
+    "_risk_escalation": 7,
+    "_sensor_registry": 1,
+    "_seq": 17,
+    "_signal_arbitrator": 1,
+    "_signal_buffer": 4,
+    "_signal_order_trace_seen_sequences": 1,
+    "_ssr_active": 1,
+    "_strategy_positions": 13,
+    "_trade_journal": 1,
+    "_working_exit_fallback": 1
+  },
+  "orchestrator_collaborators": {
+    "_active_orders": {
+      "items": 5,
+      "values": 3
+    },
+    "_alert_manager": {
+      "emit": 1
+    },
+    "_alpha_registry": {
+      "get": 2,
+      "has_portfolio_alphas": 1
+    },
+    "_alpha_symbols_with_fills": {
+      "add": 1
+    },
+    "_arbitration_collisions": {
+      "append": 1
+    },
+    "_borrow_tier": {
+      "get": 1
+    },
+    "_bus": {
+      "publish": 31,
+      "subscribe": 5
+    },
+    "_carryover_signal_sequences": {
+      "add": 1,
+      "discard": 2
+    },
+    "_clock": {
+      "now_ns": 40
+    },
+    "_deferred_router_acks": {
+      "clear": 1,
+      "extend": 1
+    },
+    "_desired_target_book": {
+      "clear": 1,
+      "live_targets": 1,
+      "put": 2
+    },
+    "_edge_calibration_factors": {
+      "get": 2
+    },
+    "_event_log": {
+      "append": 3,
+      "replay": 1
+    },
+    "_feature_snapshots": {
+      "load": 1,
+      "save": 1
+    },
+    "_fill_ledger": {
+      "allocate_fill": 1,
+      "record": 1
+    },
+    "_forced_exit_announced_quantity": {
+      "get": 1,
+      "pop": 1
+    },
+    "_halt_blackout_until_ns": {
+      "get": 1,
+      "pop": 1
+    },
+    "_halted_symbols": {
+      "add": 1,
+      "discard": 1
+    },
+    "_hazard_seq": {
+      "next": 1
+    },
+    "_hazard_submitted_order_ids": {
+      "add": 1
+    },
+    "_horizon_scheduler": {
+      "on_event": 2
+    },
+    "_intent_translator": {
+      "translate": 1
+    },
+    "_kill_switch": {
+      "activate": 2,
+      "reset": 1
+    },
+    "_last_regime_state": {
+      "clear": 1,
+      "get": 1
+    },
+    "_last_signal_mechanism": {
+      "get": 1
+    },
+    "_lot_ledger": {
+      "apply_fill": 1
+    },
+    "_macro": {
+      "assert_state": 4,
+      "can_transition": 11,
+      "on_transition": 1,
+      "transition": 20
+    },
+    "_metrics": {
+      "flush": 1,
+      "record": 2
+    },
+    "_micro": {
+      "bind_timing_sink": 2,
+      "can_transition": 2,
+      "on_transition": 1,
+      "reset": 6,
+      "transition": 31
+    },
+    "_min_cost_policy": {
+      "decide": 1
+    },
+    "_net_shadow_transient_keys": {
+      "add": 2,
+      "clear": 1
+    },
+    "_normalizer": {
+      "all_health": 2,
+      "health": 2
+    },
+    "_order_filled_qty": {
+      "get": 1,
+      "pop": 1
+    },
+    "_order_trading_intent": {
+      "get": 2,
+      "pop": 1
+    },
+    "_paper_session_recorder": {
+      "record_idle_tick": 1,
+      "record_timing": 2
+    },
+    "_pending_sized_intents": {
+      "append": 1,
+      "clear": 5,
+      "popleft": 2
+    },
+    "_portfolio_netter": {
+      "net": 2
+    },
+    "_position_manager": {
+      "plan": 1
+    },
+    "_position_sizer": {
+      "compute_target_quantity": 1
+    },
+    "_positions": {
+      "all_positions": 2,
+      "debit_fees": 1,
+      "get": 15,
+      "total_exposure": 3,
+      "update": 1,
+      "update_mark": 1
+    },
+    "_realized_cost_breach_streak": {
+      "get": 1,
+      "pop": 1
+    },
+    "_regime_bus_published_symbols": {
+      "add": 1,
+      "clear": 1
+    },
+    "_regime_engine": {
+      "checkpoint": 1,
+      "posterior": 1,
+      "restore": 1
+    },
+    "_regime_hazard_detector": {
+      "detect": 1,
+      "reset": 1
+    },
+    "_risk_engine": {
+      "check_order": 4,
+      "check_signal": 1,
+      "check_sized_intent": 2
+    },
+    "_risk_escalation": {
+      "on_transition": 1,
+      "reset": 1,
+      "transition": 5
+    },
+    "_sensor_registry": {
+      "is_empty": 1
+    },
+    "_seq": {
+      "next": 17
+    },
+    "_signal_arbitrator": {
+      "arbitrate": 1
+    },
+    "_signal_buffer": {
+      "append": 1,
+      "clear": 2,
+      "extend": 1
+    },
+    "_signal_order_trace_seen_sequences": {
+      "add": 1
+    },
+    "_ssr_active": {
+      "add": 1
+    },
+    "_strategy_positions": {
+      "debit_fees": 1,
+      "get": 7,
+      "strategy_ids": 1,
+      "update": 3,
+      "update_mark": 1
+    },
+    "_trade_journal": {
+      "record": 1
+    },
+    "_working_exit_fallback": {
+      "pop": 1
+    }
+  }
+}

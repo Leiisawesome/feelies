@@ -1,0 +1,20 @@
+---
+description: Architecture design session guardrails. Enable only while the target-design review is running; delete afterwards.
+alwaysApply: true
+---
+
+An architecture design review is in progress. These override normal behavior.
+
+- Writes permitted ONLY under `docs/architecture/target/out/` and `tools/arch/`.
+  Any diff to `src/`, `tests/`, `alphas/`, `configs/` is a protocol violation.
+- Do not fix anything you find. Record it as a finding. Fixing is a later session.
+- Every material claim cites `path:symbol` or `path:line` and is labeled
+  VERIFIED (read the code) / INFERRED (derived) / ASSUMED (not checkable).
+- Prefer running a script under `tools/arch/` and citing its evidence file over
+  reading files and reporting numbers. A number you did not measure is not VERIFIED.
+- Code is truth; documentation is a claim. Report disagreements; do not resolve
+  them silently or prefer the doc.
+- Stop at the phase hard stop. Do not begin the next phase.
+- On ambiguity: ask exactly one specific question and stop. Do not guess.
+- No status called "working". Use specified / implemented / conformance-tested /
+  open defect.
