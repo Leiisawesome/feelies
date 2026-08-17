@@ -1795,23 +1795,39 @@ FILES:           src/feelies/alpha/ (universe, §F.1 -> engine 5)
                  backpressure ingress, §F.6 -> engine 1)
                  src/feelies/kernel/ (exception taxonomy, §F.5 -> Kernel)
                  src/feelies/monitoring/ (budget-breach shedding, §F.6 -> engine 11)
-WHY THIS OWNER:  Phase 2 resolves all five and this step only implements the
+                 src/feelies/sensors/ (horizon grid, §F.8 -> engine 2)
+                 src/feelies/composition/, src/feelies/features/ (§F.8
+                 consumers: the private grid views these two hold)
+WHY THIS OWNER:  Phase 2 resolves all six and this step only implements the
                  resolutions: §F.1 and §F.2 to engine 5 and engine 7
                  respectively, §F.3 to engine 1, §F.5 to the Kernel, §F.6 split
                  between engine 1 (ingress shedding) and engine 11 (budget
-                 breach — already landed in S-07).
-REFACTOR PATH:   **Ship as five independent commits, one per §F item**, in this
+                 breach — already landed in S-07), and **§F.8 to engine 2**.
+                 §F.8 was resolved in X1 as an addendum to Phase 2 rather than
+                 by Phase 2 itself, on that phase's own uncontested
+                 recommendation; it lands here because this is where §F is
+                 implemented, and because it is structurally identical to §F.1
+                 — both are frozen composition-time artifacts hashed into the
+                 run fingerprint.
+REFACTOR PATH:   **Ship as six independent commits, one per §F item**, in this
                  order: §F.5 exception taxonomy first (every other step's ON
                  EXCEPTION clause assumes one exists to fail into), then §F.3,
-                 §F.1, §F.6 ingress, §F.2 last. **G32 is the only gap in the
-                 plan that is net-new capability rather than remediation** — no
-                 symbol-identity handling exists to move — so it is the one
-                 candidate for deferral if scope must be cut; see G.9.
+                 §F.1, **§F.8**, §F.6 ingress, §F.2 last. §F.8 must follow §F.3
+                 because the grid's anchor is the session open §F.3 assigns to
+                 engine 1, and it follows §F.1 so the `UniverseSnapshot`
+                 pattern is already in place to copy. **G32 is the only gap in
+                 the plan that is net-new capability rather than remediation**
+                 — no symbol-identity handling exists to move — so it is the
+                 one candidate for deferral if scope must be cut; see G.9.
 BLAST RADIUS:    platform-wide for §F.1 and §F.3 by site count; boundary for the
-                 rest
+                 rest, §F.8 included (three holders across three packages)
 VALIDATED BY:    C2, C3, X1, X6, X7, S6, S14, the oracle. **G31 and G32 have no
                  Phase 6 test (G.0.4)**, so this step must author its own gates
                  and register them in S-01's registry, or S1 stays xfailed.
+                 §F.8 has no Phase 6 test either and authors one: an AST scan
+                 asserting no module outside engine 2 holds a sorted horizon
+                 collection, on the pattern of
+                 `tests/acceptance/test_no_walltime_outside_clock.py:72`.
 PARITY IMPACT:   hold — all 26 baselines. This step pre-authorises no re-pin
                  and G.7 does not schedule one for it, so a moved baseline is
                  an undeclared change: stop the line under CORE-EXEC §D.2 and
@@ -1825,12 +1841,34 @@ PARITY IMPACT:   hold — all 26 baselines. This step pre-authorises no re-pin
                  item; a moved baseline here is a discovered disagreement, which
                  is the finding, not the failure. One commit per item so the
                  cause is nameable.
+                 **§F.8 holds, and its acceptance condition is not the hashes.**
+                 The grid is composition-time data that enters no hash helper's
+                 field list, so by Phase 1 §8's table the oracle is blind to it
+                 — the same property as `schema_version` under §F.7. Accept
+                 §F.8 on the removal of the three private views, not on a green
+                 suite: if `_horizons_sorted`, `_signal_horizons_sorted` and the
+                 composition-root derivation survive the commit, the contract
+                 was added without removing what it replaced and the
+                 disagreement it exists to prevent is still possible. It is
+                 also the one §F item here that could move a baseline for a
+                 *benign* reason — publishing one ordered grid where three
+                 independently sorted views existed changes nothing only if
+                 they already agreed, which is the same discovered-disagreement
+                 case as §F.1.
 DELETES:         199 of 200 universe definition points; 164 of 165 session/halt
-                 authorities; up to 18 fail-quiet handlers (18 -> 0)
+                 authorities; up to 18 fail-quiet handlers (18 -> 0); the three
+                 private horizon-grid views (`horizon_scheduler.py:97`,
+                 `synchronizer.py:74`, and the `_composition_signal_horizons`
+                 derivation at `bootstrap.py:1471`)
 NET DELTA:       src modules **+2** (symbol identity, exception taxonomy),
-                 public symbols +4, branch points **-18** (fail-quiet handlers).
+                 public symbols +5 (+4, plus `HorizonGrid` declared in an
+                 existing engine-2 module — §K.5 rules §F.8 a contract to
+                 declare, not a capability to build, so it adds no module),
+                 branch points **-18** (fail-quiet handlers).
 ROLLBACK:        revert per §F item. §F.2's revert is trivial (nothing depended
-                 on it); §F.1's is the hardest in the plan.
+                 on it); §F.1's is the hardest in the plan. §F.8's is cheap —
+                 restore the three private views — which is the other reason it
+                 is safe to carry in the plan's widest step.
 ```
 
 ---
@@ -2122,14 +2160,14 @@ the reconciliation requirement.
 | S-27 | 0 | 0 | −2 | 201 | 595 | 357 | +1 |
 | S-28 | 0 | 0 | −7 | 201 | 595 | 350 | +1 |
 | S-29 | 0 | −1 | −1 | 201 | 594 | 349 | +1 |
-| S-30 | +2 | +4 | −18 | 203 | 598 | 331 | +1 |
-| **wave D** | **+1** | **+2** | **−29** | **203** | **598** | **331** | **+10** |
-| S-31 | 0 | −12 | 0 | 203 | 586 | 331 | 0 |
-| S-32 | 0 | 0 | 0 | 203 | 586 | 331 | 0 |
-| S-33 | 0 | 0 | 0 | 203 | 586 | 331 | 0 |
-| S-34 | 0 | −14 | 0 | 203 | 572 | 331 | 0 |
-| **wave E** | **0** | **−26** | **0** | **203** | **572** | **331** | **0** |
-| **whole plan** | **+7** | **+21** | **−25** | **203** | **572** | **331** | **+51** |
+| S-30 | +2 | +5 | −18 | 203 | 599 | 331 | +1 |
+| **wave D** | **+1** | **+3** | **−29** | **203** | **599** | **331** | **+10** |
+| S-31 | 0 | −12 | 0 | 203 | 587 | 331 | 0 |
+| S-32 | 0 | 0 | 0 | 203 | 587 | 331 | 0 |
+| S-33 | 0 | 0 | 0 | 203 | 587 | 331 | 0 |
+| S-34 | 0 | −14 | 0 | 203 | 573 | 331 | 0 |
+| **wave E** | **0** | **−26** | **0** | **203** | **573** | **331** | **0** |
+| **whole plan** | **+7** | **+22** | **−25** | **203** | **573** | **331** | **+51** |
 
 **The S-31 row was −106 and is now −12** (X1, A5.4 closed FALSE). Every figure
 downstream of it in this table moved by +94, and the whole-plan symbol column
@@ -2150,7 +2188,7 @@ registry, FIX-1 to FIX-3, HARN-1 and HARN-2 — gives the **+51** in the last
 column. Six steps show `0` because the test they author was already given a file
 by an earlier step.
 
-**Reading the ledger against §G.10.** Net across the plan: **+7 modules, +21
+**Reading the ledger against §G.10.** Net across the plan: **+7 modules, +22
 public symbols, −25 branch points**, plus 51 files under `tests/` which §G.10
 exempts. Three things in it deserve to be argued rather than tabulated:
 
@@ -2165,7 +2203,7 @@ exempts. Three things in it deserve to be argued rather than tabulated:
    net-negative disappears**: without S-31 the plan is +33 public symbols."
    **A5.4 was wrong.** X1 closed it FALSE — of the 106 methods with no in-`src/`
    call site, 82 are called from `tests/` and only 13 are reached by nothing —
-   so S-31 is rescoped from −106 to −12 and the plan nets **+21 public symbols**.
+   so S-31 is rescoped from −106 to −12 and the plan nets **+22 public symbols**.
    The largest single contributor is now S-15's 32 `reset()` methods.
 
    **What this does and does not break.** §G.10's rule is per-category, not
@@ -2175,7 +2213,7 @@ exempts. Three things in it deserve to be argued rather than tabulated:
    overall net-negative, which was never §G.10's test — it was this plan's own
    framing, and it rested one assumption deep on a static measure that was
    never a deletion list. The honest statement is that the plan buys −25 branch
-   points and 51 conformance tests at a cost of +7 modules and +21 public
+   points and 51 conformance tests at a cost of +7 modules and +22 public
    symbols, and that trade must be argued on its merits rather than on a
    headline.
 3. **Branch points fall by 25 and the plan never adds an unenumerable one.** The
@@ -2359,7 +2397,7 @@ ambiguous.
   **All per-step src deltas are `INFERRED` projections** and the ledger states
   its own reconciliation requirement. Ledger arithmetic checked
   programmatically: every running total equals the accumulated deltas, and the
-  net is +7 / +21 / −25 (was +7 / −73 / −25 before X1 rescoped S-31).
+  net is +7 / +22 / −25 (was +7 / −73 / −25 before X1 rescoped S-31).
 - **One ledger column was wrong in the first draft and was corrected by
   measuring.** The test-file column originally read `+50`, which matched the
   test count — because it was copied from it. The 50 tests resolve to **49
@@ -3308,7 +3346,7 @@ already made in it**: A5.4 carries the plan's entire headline net-negative, and
 U-8 decides whether "all 26 baselines hold" — the acceptance criterion of 31 of 35
 steps — means what it appears to mean. A register that listed only my own new
 assumptions would omit the two that matter most. **X1 vindicated this: A5.4 was
-tested before S-01 and it was false**, which moved the headline from −73 to +21
+tested before S-01 and it was false**, which moved the headline from −73 to +22
 public symbols. Had it stayed off the register, the plan would have executed
 S-31 against a number that was never a deletion list.
 
@@ -3381,7 +3419,7 @@ FALSIFIED BY: Re-measuring after each step with the same scanners that produced
 BLAST RADIUS: The headline claim, which has already moved once. G.6 note 2
               named the dominant sensitivity — −106 of the symbol reduction was
               S-31 alone and depended on A5.4 — and **X1 closed A5.4 FALSE**,
-              so the claim is now **+21 public symbols and −25 branch points**,
+              so the claim is now **+22 public symbols and −25 branch points**,
               not −73 and −25. The headline was one assumption deep and that
               assumption did not hold; what remains is −25 branch points, which
               rests on the enumerated gate-registry rows rather than on a
@@ -3634,7 +3672,7 @@ Measured from `tools/arch/evidence/p7_assumptions.json`. Every row is open. The
 | A5.1 | IB rejects a re-submitted duplicate `order_id` server-side, bounding G03 | **S-08** | G03's blast radius is larger than P0-with-containment: nothing outside our journal prevents the double fill. **U-3 is the same question from the other side** |
 | A5.2 | The 3 order-insensitive set-iteration sites in G08 remain order-insensitive | S-32 | A hash-order dependence exists that R1's random seed has not yet happened to expose |
 | A5.3 | G20 has never fired in any recorded run | **S-05** | The P0 has been silently zeroing positions in recorded history, and S-05's "all 26 baselines hold" prediction is wrong — which S-05 is explicitly written to detect |
-| ~~A5.4~~ | ~~The 106 uncalled public methods are genuinely dead~~ — **CLOSED FALSE in X1** | **S-31** | It was wrong, and the consequence it predicted has happened: 82 of the 106 are called from `tests/` and 13 by nothing. S-31 is rescoped −106 → −12, the plan nets **+21 public symbols** (G.6 note 2), and the residue is settled by a coverage gate rather than a third static search |
+| ~~A5.4~~ | ~~The 106 uncalled public methods are genuinely dead~~ — **CLOSED FALSE in X1** | **S-31** | It was wrong, and the consequence it predicted has happened: 82 of the 106 are called from `tests/` and 13 by nothing. S-31 is rescoped −106 → −12, the plan nets **+22 public symbols** (G.6 note 2), and the residue is settled by a coverage gate rather than a third static search |
 | A5.5 | 136.2 µs/quote is representative of the live path | **S-07, S-08** | The budget is set against a number the live path does not produce, and the S-08 blocker in §I.7.1 cannot be evaluated at all |
 | A5.6 | G41's 4.2× overrun scales with alpha count | S-33, S-26 | The platform's stated purpose — A > 1 — is gated on a performance problem of unknown size |
 
@@ -4082,7 +4120,7 @@ refuted by reading CORE or a prior phase rather than by judgement.
 | K.1.1 engine 5's two determinism contracts | Engine 5's sheet carries **two** determinism clauses: the resolved registry is a run input and must be bit-reproducible; the promotion ledger is a decision record and must not be expected to reproduce | S-16's fingerprint scoped explicitly to the registry, with the ledger named as excluded. One clause added to one block |
 | K.1.2 safety depends on best-effort metrics | A declared class of **safety-critical metric**, with a stronger contract than an observability metric: defined statistic, defined window, defined behaviour on missing input, and fail-closed when it cannot be computed. Two members today — realized cost and, after S-07, tick latency | S-07 states its statistic and window (closing A7.13) and its behaviour when the measurement is unavailable. One clause added to one block |
 | K.1.3 the wiring ordinal is semantically justified | The kernel's wiring manifest declares an **opaque** ordinal; fill provenance is explicit on the fill rather than implied by subscription order | **One new step ahead of S-12**, carrying the triggering quote on the fill, per Phase 3's prescribed resolution. Without it, S-12 cannot satisfy its own R3 criterion |
-| K.1.4 §F has eight items, not seven | §F becomes an eight-item list; the horizon grid goes to engine 2 as a versioned contract, on Phase 2's recommendation | No new step — the grid is a config constant today, so this is a contract to declare rather than a capability to build. **Resolved in X1** as a marked addendum to `phase2_contracts.md`; the step that declares the contract is still to be named |
+| K.1.4 §F has eight items, not seven | §F becomes an eight-item list; the horizon grid goes to engine 2 as a versioned contract, on Phase 2's recommendation | No new step — the grid is a config constant today, so this is a contract to declare rather than a capability to build. **Resolved in X1** as a marked addendum to `phase2_contracts.md`, and **placed in S-30** — after §F.1, before §F.6 — because that is where the other five §F items land and §F.8 is structurally identical to §F.1. S-30's symbol delta goes +4 → +5 |
 | K.1.5 §F has nine items, and Phase 2 said so | **Added in X1.** §F.9 — risk-model provenance: factor loadings, covariance and betas, which CORE §E has engine 6 consume and gives no engine the production of. Phase 2 recorded it as "a ninth unassigned responsibility" (`phase2_contracts.md:687`) and listed it beside the horizon grid at `:2011`; K.1.4 read one of the two sheets and concluded no method existed to find a ninth | **Recorded, not resolved.** Scheduled to resolve alongside §F.8's contract work. Two reasons it is not settled here: its recommended owner (engine 12) conflicts with the write-authority rule that rejected engine 12 for §F.2, and unlike the grid it may be a capability to build, so §K.5's "no new step" reasoning does not transfer |
 
 **Net effect on the plan: one new step, three step blocks amended, one contract
@@ -4109,7 +4147,7 @@ the subtotal was wrong, so the whole-plan figure of −74 was correct and only t
 wave line disagreed with it. With S-11a's +1 the plan was then **+7 modules, −73
 public symbols, −25 branch points**, and `p7_ledger.py --check` fails if the table
 ever stops reconciling with itself again. (**X1 subsequently rescoped S-31 from
-−106 to −12 on A5.4's closure, making the current figure +7 / +21 / −25**; the
+−106 to −12 on A5.4's closure, making the current figure +7 / +22 / −25**; the
 reconciliation check is what confirmed the amended table still sums.) Three claims that quote the symbol figure
 were updated with it; nine step-count claims were recomputed from measurement
 rather than incremented, which is how "Wave D is 10 of 34 steps" was found to be
@@ -4238,11 +4276,12 @@ changed the plan:**
    meets §G.10 at all.
    **CLOSED — false, and it was the right thing to test first.** 82 of the 106 are
    called from `tests/`; 13 are reached by nothing. S-31 is rescoped to −12, the plan
-   nets **+21 public symbols**, and §G.10 still holds per-category because wave E
+   nets **+22 public symbols**, and §G.10 still holds per-category because wave E
    remains net-negative. See §G.6 note 2.
 3. **§F.8** — the horizon grid, per M2 above.
    **CLOSED — resolved to engine 2** in a marked addendum to
-   `docs/architecture/target/out/phase2_contracts.md`, on Phase 2's own §F template.
+   `docs/architecture/target/out/phase2_contracts.md`, on Phase 2's own §F template,
+   and **placed in S-30 after §F.1 and before §F.6**.
    **And M2's premise was too generous to the phases.** It reasons that no phase had
    a method for finding a ninth §F-class responsibility. Phase 2 had one and used it:
    `phase2_contracts.md:687` records "a ninth unassigned responsibility: risk-model

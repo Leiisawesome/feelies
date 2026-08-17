@@ -190,9 +190,9 @@ three-phase-old sheet: three holders keep *separately derived* views
 `bootstrap.py:1206` and `:1471`. The acceptance condition is stated as the
 removal of those three views, not as hash stability — declaring the contract
 moves no baseline, which is precisely why "the tests pass" would not evidence it.
-**Step placement is proposed and awaiting approval — this is the one X1 item
-still open.** §K.5 ruled no new step is needed. The proposal is **S-30**, not a
-wave-C step: S-30 is where §F.1, §F.2, §F.3, §F.5 and §F.6 all land
+**Step placement: S-30, after §F.1 and before §F.6 — proposed and approved by
+the operator, and applied.** §K.5 ruled no new step is needed. S-30 is where
+§F.1, §F.2, §F.3, §F.5 and §F.6 all land
 (`phase7_migration.md:1792-1806`), so §F is resolved in one step, and §F.8 is
 structurally identical to §F.1 — both are frozen composition-time artifacts
 hashed into the run fingerprint, so doing them adjacently makes the second a
@@ -201,9 +201,14 @@ copy of the first's pattern. Within S-30's stated internal order (§F.5, §F.3,
 the session open that §F.3 assigns to engine 1. Proposed slot: **after §F.1,
 before §F.6.**
 
-The counter-argument, which the operator should weigh: S-30 is already the
-widest step in the plan — platform-wide, and the block itself says "§F.1's
-revert is the hardest in the plan" — and this makes it wider. The alternative
-is a wave-C contract step, since declaring a contract is wave C's stated
-purpose; but no wave-C step currently declares any §F artifact, so that would
-split §F across two waves to keep one step smaller.
+The counter-argument, weighed and accepted: S-30 is already the widest step in
+the plan — platform-wide, and the block itself says "§F.1's revert is the
+hardest in the plan" — and this makes it wider. It is tolerable because §F.8's
+own revert is cheap (restore the three private views), so the step's hardest
+rollback is unchanged. The alternative considered was a wave-C contract step,
+since declaring a contract is wave C's stated purpose; rejected because no
+wave-C step declares any §F artifact, so it would split §F across two waves to
+keep one step smaller.
+
+S-30's symbol delta goes +4 → +5, which moves the whole-plan net from +21 to
+**+22**. `p7_ledger.py --check` reconciles.
