@@ -154,6 +154,33 @@ on the mark path: deleting it stops peak-equity tracking with no exception, no
 log, and no parity movement in any run that never draws down. That is an Inv-11
 fail-safe regression that the oracle cannot see.
 
+**Operator decisions and the amendment made on them.** S-31: rescope to the
+verified-dead set, gate the deletion behind a coverage run, amend the dependent
+claims. §F.9: record now, resolve alongside §F.8's contract work. §F.8 step
+placement: propose for approval — **still open, see below.**
+
+The S-31 amendment touched ten places, all of which quoted the −106 or the −73
+it produced: the step block (`PROBLEM`, `FILES`, `REFACTOR PATH`, `VALIDATED
+BY`, `DELETES`, `NET DELTA`), §G.6's ledger table and note 2, §G.9's G44 row,
+§I's provenance note, A7.3's blast radius, §J.2.1's A5.4 row, §J.2.2's U-3 row,
+§K.5's consequences table, and the closing section. `p7_ledger.py --check`
+reports the amended table still reconciles, which is what verifies the
+arithmetic: S-31 −106 → −12, wave E −120 → −26, whole plan −73 → **+21**.
+
+**§G.10 is not breached by this.** Its rule is per-category — waves A, B and C
+may increase; D and E must not — and wave E is still net-negative at −26. What
+the plan loses is the rhetorical claim of an overall net-negative, which was
+never §G.10's test.
+
+**The dead count is 13 by my pass and 16 by an independent one**, disagreeing in
+both directions on same-name receiver collisions (`ExDateCalendar.hash` vs
+`EventCalendar.hash`, `DesiredTargetBook.symbols` vs three other `.symbols`).
+`FeatureComputation.update_trade` comes off both lists: `alphas/SCHEMA.md:78`
+documents it as an optional author hook, so it is a published extension point
+that no coverage run can vouch for, because nothing implements it today. That
+leaves 12 in the plan and the gate to settle the rest — the disagreement is the
+argument for the gate, not a defect in either pass.
+
 **§F.8 — the horizon grid.** Resolved in a marked addendum to
 `phase2_contracts.md`, on Phase 2's own §F template and its uncontested
 recommendation of engine 2. Verified against current code rather than the
@@ -163,5 +190,20 @@ three-phase-old sheet: three holders keep *separately derived* views
 `bootstrap.py:1206` and `:1471`. The acceptance condition is stated as the
 removal of those three views, not as hash stability — declaring the contract
 moves no baseline, which is precisely why "the tests pass" would not evidence it.
-Step placement is left to the operator: §K.5 ruled no new step is needed, and
-which existing step declares it is not derivable from anything written down.
+**Step placement is proposed and awaiting approval — this is the one X1 item
+still open.** §K.5 ruled no new step is needed. The proposal is **S-30**, not a
+wave-C step: S-30 is where §F.1, §F.2, §F.3, §F.5 and §F.6 all land
+(`phase7_migration.md:1792-1806`), so §F is resolved in one step, and §F.8 is
+structurally identical to §F.1 — both are frozen composition-time artifacts
+hashed into the run fingerprint, so doing them adjacently makes the second a
+copy of the first's pattern. Within S-30's stated internal order (§F.5, §F.3,
+§F.1, §F.6 ingress, §F.2), §F.8 must follow §F.3, because the grid's anchor is
+the session open that §F.3 assigns to engine 1. Proposed slot: **after §F.1,
+before §F.6.**
+
+The counter-argument, which the operator should weigh: S-30 is already the
+widest step in the plan — platform-wide, and the block itself says "§F.1's
+revert is the hardest in the plan" — and this makes it wider. The alternative
+is a wave-C contract step, since declaring a contract is wave C's stated
+purpose; but no wave-C step currently declares any §F artifact, so that would
+split §F across two waves to keep one step smaller.
