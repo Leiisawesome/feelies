@@ -103,14 +103,16 @@ def main():
     }
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     (EVIDENCE / "inventory.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8", newline="\n")
 
     md = ["| module | sloc | public | declared responsibility (docstring — a claim) |",
           "|---|---|---|---|"]
     for r in sorted(rows, key=lambda x: x["path"]):
         resp = r["declared_responsibility"].replace("|", "\\|")
         md.append(f"| `{r['path']}` | {r['sloc']} | {r['public_symbols']} | {resp} |")
-    (EVIDENCE / "inventory_table.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    (EVIDENCE / "inventory_table.md").write_text("\n".join(md) + "\n",
+                                                 encoding="utf-8", newline="\n")
 
     print(f"inventory: {len(rows)} modules, {payload['total_sloc']} sloc, "
           f"{payload['total_public_symbols']} public symbols")

@@ -173,7 +173,8 @@ def parse(p: Path):
 def write(name: str, payload) -> Path:
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     out = EVIDENCE / f"{name}.json"
-    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                   encoding="utf-8", newline="\n")
     return out
 
 

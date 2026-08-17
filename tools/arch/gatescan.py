@@ -138,7 +138,8 @@ def main():
     }
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     out = EVIDENCE / "gatescan.json"
-    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                   encoding="utf-8", newline="\n")
 
     print(f"gatescan -> {rel(out)}")
     for k, v in sorted(payload["family_totals"].items(), key=lambda x: -x[1]):
