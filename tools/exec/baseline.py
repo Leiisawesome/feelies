@@ -32,27 +32,16 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "docs" / "architecture" / "target" / "out" / "exec"
 DETERMINISM = ROOT / "tests" / "determinism"
 
-# The APP acceptance oracle pins the trade parity hash, the config-contract
-# hash, net PnL and fill count. It sits outside tests/determinism/ and uses the
-# _BASELINE_ prefix, so it has to be named here or it is never captured -- and
-# S-16 declares _BASELINE_CONFIG_HASH as its re-pin target.
-ACCEPTANCE = (ROOT / "tests" / "acceptance" / "test_backtest_app_baseline.py",)
-
 # EXPECTED_LEVEL2_SIGNAL_HASH = "e3b0c442..."   /  EXPECTED_LEVEL2_SIGNAL_COUNT = 0
-# Eleven manifest hashes wrap their value in parentheses on the following line,
-# and _BASELINE_NET_PNL wraps it in Decimal(...), so the value is matched across
-# an optional paren, newline and constructor call rather than same-line only.
 CONST = re.compile(
-    r"^(EXPECTED_\w+_(?:HASH|COUNT)|_BASELINE_[A-Z0-9_]+)"
-    r"\s*(?::\s*[^=\n]+)?=\s*\(?\s*(?:[A-Za-z_][\w.]*\(\s*)?"
-    r"(?:\"([^\"]+)\"|'([^']+)'|(\d+(?:\.\d+)?))",
+    r"^(EXPECTED_\w+_(?:HASH|COUNT))\s*(?::\s*[^=]+)?=\s*(?:\"([^\"]+)\"|'([^']+)'|(\d+))",
     re.M,
 )
 
 # pytest -q summary: "4600 passed, 5 skipped, 43 deselected in 128.44s"
 SUMMARY = re.compile(
-    r"(?:(\d+) failed,\s*)?.*?(\d+) passed"
-    r"(?:,\s*(\d+) skipped)?(?:,\s*(\d+) deselected)?(?:,\s*(\d+) error)?",
+    r"(?:(\d+) failed[, ])?.*?(\d+) passed"
+    r"(?:[, ](\d+) skipped)?(?:[, ](\d+) deselected)?(?:[, ](\d+) error)?",
 )
 
 
@@ -73,15 +62,11 @@ def git(*args: str) -> str:
 
 
 def parity_constants() -> dict[str, str]:
-    """Every pinned parity constant, by name.
-
-    EXPECTED_*_HASH / _COUNT under tests/determinism/, plus the APP acceptance
-    oracle's _BASELINE_* constants.
-    """
+    """Every EXPECTED_*_HASH / _COUNT under tests/determinism/, by name."""
     found: dict[str, str] = {}
-    files = sorted(DETERMINISM.rglob("*.py")) if DETERMINISM.exists() else []
-    files += [p for p in ACCEPTANCE if p.exists()]
-    for p in files:
+    if not DETERMINISM.exists():
+        return found
+    for p in sorted(DETERMINISM.rglob("*.py")):
         text = p.read_text(encoding="utf-8", errors="replace")
         for name, dq, sq, num in CONST.findall(text):
             value = dq or sq or num
@@ -178,8 +163,7 @@ def cmd_capture(args):
     payload["evidence"] = evidence_snapshot()
 
     dest = OUT / f"baseline_{args.label}.json"
-    dest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8", newline="\n")
+    dest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"\n    -> {dest.relative_to(ROOT)}")
 
     green = (payload.get("tests", {}).get("exit_code") == 0

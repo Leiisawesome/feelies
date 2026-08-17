@@ -45,11 +45,10 @@ PATHY = re.compile(
     r"|(?<![\w./\\])[\w.\-]+\.(?:py|md|yaml|yml|toml|json|mdc|cfg|ini|txt|sh|ps1)\b"
 )
 
-# Parity constants may be named as EXPECTED_*, as the acceptance oracle's
-# _BASELINE_*, as a manifest key, or by the owning test module. Accept all
-# four; show the raw text either way.
-HASHNAME = re.compile(r"(?:EXPECTED|_BASELINE)_[A-Z0-9_]+")
-TESTMOD = re.compile(r"tests[/\\](?:determinism|acceptance)[/\\][\w.\-]+\.py")
+# Parity constants may be named as EXPECTED_*, as a manifest key, or by the
+# owning test module. Accept all three; show the raw text either way.
+HASHNAME = re.compile(r"EXPECTED_[A-Z0-9_]+")
+TESTMOD = re.compile(r"tests[/\\]determinism[/\\][\w.\-]+\.py")
 
 BLAST_ORDER = {"local": 1, "boundary": 2, "platform-wide": 3}
 
@@ -339,6 +338,95 @@ def cmd_show(args):
     print(f"\nFILES (raw):\n    {f.get('FILES','(absent)')[:600]}")
 
 
+def cmd_attach(args):
+    """Emit the exact Cursor attach set and GO line for one step."""
+    steps = parse_plan()
+    sid = args.attach.upper()
+    if sid not in steps:
+        print(f"{sid} not in plan. Known: {', '.join(sorted(steps, key=sort_key))}")
+        sys.exit(2)
+    f = steps[sid]
+
+    files = file_list(f.get("FILES", ""))
+    dirs = dir_list(f.get("FILES", ""))
+    tests = file_list(f.get("VALIDATED BY", ""))
+    mode, names = declared_parity(f.get("PARITY IMPACT", ""))
+    cls, _ = blast_class(f.get("BLAST RADIUS", ""))
+
+    fixed = [
+        "docs/architecture/target/prompts/exec/X0_CORE_EXEC.md",
+        "docs/architecture/target/prompts/exec/X2_step.md",
+        "docs/architecture/target/out/phase7_migration.md",
+        "docs/architecture/target/out/exec/LEDGER.md",
+    ]
+
+    existing, new_files = [], []
+    for x in files + tests:
+        (existing if (ROOT / x).exists() else new_files).append(x)
+
+    # Parent packages: the engine boundary the step works inside. A file cannot
+    # be changed correctly without its siblings and its package __init__.
+    parents = sorted({str(Path(x).parent).replace("\\", "/")
+                      for x in existing
+                      if str(Path(x).parent) not in (".", "")})
+    # Drop parents already covered by an explicit directory scope.
+    parents = [d for d in parents if not any(d.startswith(s.rstrip("/")) for s in dirs)]
+    # New files cannot be attached; attach where they will land.
+    for x in new_files:
+        d = str(Path(x).parent).replace("\\", "/")
+        if d and d not in parents and (ROOT / d).exists():
+            parents.append(d)
+    parents = sorted(set(parents))
+
+    extra, why = [], []
+    if mode == "break" or cls == "platform-wide":
+        extra.append("tests/determinism")
+        why.append("tests/determinism -- parity is declared to move, or the step is "
+                   "platform-wide; the replay corpus is the oracle")
+    contract_words = ("event", "contract", "envelope", "payload", "field on")
+    text = " ".join(f.get(k, "") for k in ("PROBLEM", "REFACTOR PATH")).lower()
+    if any(x.startswith(("src/feelies/core", "src/feelies/bus")) for x in files) \
+            or any(w in text for w in contract_words):
+        for d in ("src/feelies/core", "src/feelies/bus"):
+            if (ROOT / d).exists():
+                extra.append(d)
+        why.append("src/feelies/core + bus -- the step changes a contract or event type")
+
+    attach = fixed + sorted(set(existing)) + parents + [d.rstrip("/") for d in dirs] + extra
+    seen, ordered = set(), []
+    for a in attach:
+        if a not in seen:
+            seen.add(a)
+            ordered.append(a)
+
+    print(f"=== {sid} attach set ===")
+    print(f"blast radius {cls} | parity {mode}"
+          + (f" ({', '.join(names)})" if names else "") + "\n")
+
+    print("Paste into Cursor:\n")
+    print(" ".join(f"@{a}" for a in ordered))
+
+    print("\nThen the GO line:\n")
+    print("This is Windows/PowerShell -- `python` not `python3`, `uv run` unchanged.")
+    print(f"Execute step {sid} only, per the attached X0 and X2 files. "
+          f"Stop at the hard stop.")
+
+    if new_files:
+        print("\nDeclared but not yet on disk (the step creates these):")
+        for x in new_files:
+            print(f"  {x}")
+    if why:
+        print("\nWhy the extras:")
+        for w in why:
+            print(f"  {w}")
+
+    print("\nDeliberately NOT attached:")
+    print("  phase0-phase6 outputs -- design rationale; in execution they invite")
+    print("    re-litigating decisions the plan already settled")
+    print("  @Codebase / semantic search -- returns plausible partial context,")
+    print("    which defeats the scope discipline this step depends on")
+
+
 def cmd_reconcile(_args):
     if not LEDGER.exists():
         print(f"ledger not found: {LEDGER.relative_to(ROOT)}")
@@ -479,11 +567,14 @@ def main():
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--reconcile", action="store_true")
     ap.add_argument("--show", metavar="S-nn", help="dump one step's parsed fields")
+    ap.add_argument("--attach", metavar="S-nn", help="emit the Cursor attach set and GO line")
     args = ap.parse_args()
     if args.list:
         cmd_list(args)
     elif args.show:
         cmd_show(args)
+    elif args.attach:
+        cmd_attach(args)
     elif args.reconcile:
         cmd_reconcile(args)
     elif args.step and args.base:

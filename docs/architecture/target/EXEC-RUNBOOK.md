@@ -12,6 +12,7 @@ The design pack produced a locked plan. This pack executes it, one step at a tim
 prompts/X0_CORE_EXEC.md     standing contract — attach to EVERY step
 prompts/X1_baseline.md      pre-execution: verify lock, prove green, capture baseline
 prompts/X2_step.md          the per-step loop — reused for every step
+prompts/X2_ONESHOT.md       X0+X2 merged into a single paste; no attachments needed
 prompts/X3_integration.md   merge a batch, re-verify jointly, re-baseline
 prompts/X4_abort.md         rollback, including undoing a bad re-baseline
 tools/exec/baseline.py      capture/compare git + tests + parity constants + evidence
@@ -101,14 +102,34 @@ Run the `X1` prompt in Cursor; it writes the ledger header and reports lock stat
 
 One step per chat. Fresh chat every time.
 
-**Attach:** `X0_CORE_EXEC.md` + `X2_step.md` + `out/phase7_migration.md` + `out/exec/LEDGER.md` + the folders the step declares.
+**Two ways to run a step.** Use whichever suits the moment; they enforce identical rules.
 
-**GO line:**
+**A — one-shot (simplest).** Open `prompts/X2_ONESHOT.md`, replace every `S-NN` with the step ID, paste into a fresh chat. Nothing to attach: it tells the agent which files to read from disk and which to ignore. Best for `local` and `boundary` steps and for keeping the context tight.
 
+**B — attach set (more explicit context).** Attach `X0_CORE_EXEC.md` + `X2_step.md` and let Cursor index the relevant packages up front. Better for `platform-wide` steps where the agent benefits from seeing the surrounding packages before it starts.
+
+**For B, generate the attach set — do not choose it by hand:**
+
+```powershell
+uv run python tools\exec\verify_step.py --attach S-01
 ```
-This is Windows/PowerShell — `python` not `python3`, `uv run` unchanged.
-Execute step S-01 only, per the attached X0 and X2 files. Stop at the hard stop.
-```
+
+It prints the `@`-reference line and the GO line, both ready to paste. The set is derived from the step's own `FILES`, `VALIDATED BY`, `PARITY IMPACT`, and `BLAST RADIUS`:
+
+| Included | Source |
+|---|---|
+| The four process docs | fixed: X0, X2, the plan, the ledger |
+| Declared files that exist | `FILES` |
+| Their parent packages | the engine boundary the step works inside — a file cannot be changed correctly without its siblings and its `__init__` |
+| Declared directory scopes | `FILES`, trailing-slash entries |
+| Landing folders for files the step will create | `FILES` / `VALIDATED BY`, reported separately since they cannot be attached |
+| `tests/determinism` | only when parity is declared to break, or the step is platform-wide |
+| `src/feelies/core` + `src/feelies/bus` | only when the step changes a contract or event type |
+
+**Two exclusions that matter:**
+
+- **The Phase 0–6 outputs are not attached.** They are design rationale. In execution they invite re-litigating decisions the plan already settled — the plan is the contract, the reasoning behind it is not in scope.
+- **Never `@Codebase` or semantic search.** It returns plausible partial context, which is precisely what the scope discipline of a step cannot tolerate. Explicit paths only.
 
 The agent runs the loop: restate → pre-flight → **failing conformance test** → implement → verify → parity gate → blast-radius gate → commit → ledger → stop.
 
@@ -157,6 +178,8 @@ The serious case is §4 — an erroneous re-baseline, where constants were updat
 | Fast capture, no tests | `... capture --label <name> --skip-tests` |
 | Compare two baselines | `uv run python tools\exec\baseline.py compare --before <a> --after <b>` |
 | Parity only | `... compare --before <a> --after <b> --parity-only` |
+| Emit a step's attach set | `uv run python tools\exec\verify_step.py --attach S-07` |
+| Inspect one step's parsed fields | `uv run python tools\exec\verify_step.py --show S-07` |
 | Verify a step | `uv run python tools\exec\verify_step.py S-07 --base <sha>` |
 | Ledger vs git | `uv run python tools\exec\verify_step.py --reconcile` |
 
