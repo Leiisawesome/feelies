@@ -62,6 +62,16 @@ Corollary: a step whose declared parity impact is *hold* and whose actual impact
 
 ---
 
+## D2. The oracle is frozen
+
+`tools/exec/` measures whether a step did what it declared. Changing it mid-campaign changes the answer to every question already asked.
+
+- **Freeze the tooling before S-01** and tag it. Any later change to `tools/exec/` is its own gated commit, never part of a step.
+- **`baseline.py` and `verify_step.py` must recognise the same set of parity constants.** They previously did not, and the capture half was blind to 19 of 62 -- so the gate silently reported on the intersection. If you change one pattern, change both and re-capture every baseline.
+- **A capture records the tool's fingerprint.** `compare` warns loudly when two captures were taken by different tool versions, because "nothing moved" over a shrunken constant set is not evidence that anything held.
+- **`tools/exec/` is excluded from the declared-files check by design** -- process artifacts appear in every diff. That exclusion is exactly why an agent editing the oracle is invisible to the scope guard. Watch it by hand.
+- **A coverage change is never a plan finding.** It is a measurement change, and it invalidates comparisons that span it.
+
 ## E. Stop-the-line conditions
 
 Any one of these halts the step immediately. Report and stop; do not attempt recovery.
@@ -74,6 +84,7 @@ Any one of these halts the step immediately. Report and stop; do not attempt rec
 - The evidence delta contradicts the step's declared `DELETES` or `NET DELTA`.
 - The step needs a decision the plan does not contain.
 - Anything touching exposure, order submission, or the kill switch behaves unexpectedly.
+- The oracle's constant count differs from the frozen baseline's (sec. D2).
 
 **Never fix forward.** A failed step is reverted, the finding is recorded in the ledger, and the plan is amended in a Phase 7 revision. Fixing forward converts one bad step into an unreviewable compound change.
 
