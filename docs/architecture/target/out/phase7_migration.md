@@ -620,7 +620,8 @@ VALIDATED BY:    X10; R1 under a random seed; the parity oracle; and a
                  deliberate slow-engine injection through HARN-2 asserting the
                  breach fires, the record is written, and replay of that log
                  reproduces the same response without re-measuring
-PARITY IMPACT:   **All 26 hold, and the reason is a design constraint, not an
+PARITY IMPACT:   hold — all 26 baselines, conditional on (a) and (b) below.
+                 **All 26 hold, and the reason is a design constraint, not an
                  accident.** Two things must be true. (a) `LatencyBreach` must
                  not draw from `self._seq` — the always-on timers at
                  `:2127-2141` are already routed with `sequence=0` precisely so
@@ -738,7 +739,8 @@ REFACTOR PATH:   **Artifact + closure test, atomic.** (1) `schema_version` on
 BLAST RADIUS:    boundary — one envelope field, 21 classes, one gate
 VALIDATED BY:    S8, R5, all 26 baselines, the parity oracle,
                  `uv run mypy src/feelies`
-PARITY IMPACT:   **All 26 hold, and that is the defect this step exposes rather
+PARITY IMPACT:   hold — all 26 baselines, and no constant is re-pinned here.
+                 **All 26 hold, and that is the defect this step exposes rather
                  than fixes.** Hash inputs are hand-written field lists per
                  helper, so adding a field cannot break parity (Phase 0 P-1,
                  Phase 1 §6). The oracle is blind to schema growth. Adding
@@ -828,7 +830,9 @@ BLAST RADIUS:    platform-wide by reach, boundary by behaviour — 329 sites gai
                  place a wide reach is accepted before wave E, because every
                  later step's failure behaviour is stated against these rows.
 VALIDATED BY:    S13, X6, all 26 baselines, the parity oracle, X3 from S-02
-PARITY IMPACT:   All 26 hold **if and only if no gate emission draws from a
+PARITY IMPACT:   hold — all 26 baselines, conditional on the emission channel
+                 named below.
+                 All 26 hold **if and only if no gate emission draws from a
                  shared sequence generator**. X6 requires every gate to emit a
                  verdict, and today `RiskVerdict` publishes 43 times in a whole
                  session (`perf_census.json`). Verdict totality makes it one of
@@ -1711,7 +1715,9 @@ VALIDATED BY:    S7, H3, H1, the oracle, and `src/feelies/bootstrap.py:203`'s
                  `enforce_market_order = config.mode != OperatingMode.PAPER` —
                  Phase 1's open defect on silent reordering, which stays in
                  bootstrap and must be **declared** there rather than moved
-PARITY IMPACT:   All 26 hold if each move is behaviour-preserving.
+PARITY IMPACT:   hold — all 26 baselines, conditional on each of the 7 moves
+                 being behaviour-preserving.
+                 All 26 hold if each move is behaviour-preserving.
                  `src/feelies/harness/backtest_prep.py:141` and `src/feelies/harness/backtest_runner.py:190` are on the
                  oracle's own path, so a mistake there breaks the oracle
                  immediately — which makes them the safest two to move and the
@@ -1806,7 +1812,11 @@ BLAST RADIUS:    platform-wide for §F.1 and §F.3 by site count; boundary for t
 VALIDATED BY:    C2, C3, X1, X6, X7, S6, S14, the oracle. **G31 and G32 have no
                  Phase 6 test (G.0.4)**, so this step must author its own gates
                  and register them in S-01's registry, or S1 stays xfailed.
-PARITY IMPACT:   §F.5, §F.6 and §F.2 hold — taxonomy, policy and net-new
+PARITY IMPACT:   hold — all 26 baselines. This step pre-authorises no re-pin
+                 and G.7 does not schedule one for it, so a moved baseline is
+                 an undeclared change: stop the line under CORE-EXEC §D.2 and
+                 hand the disagreement to the operator.
+                 §F.5, §F.6 and §F.2 hold — taxonomy, policy and net-new
                  capability, none of which changes a draw or a hashed field.
                  §F.1 and §F.3 are the risk: consolidating 200 and 165 sites
                  onto one authority will change behaviour anywhere the current
@@ -1870,7 +1880,18 @@ BLAST RADIUS:    platform-wide (step 2); local per commit for step 1
 VALIDATED BY:    S5, S11, C1, the oracle, and Phase 4's per-quote measurement
                  re-run to confirm the ~12.8 µs is actually recovered — a
                  deletion that does not move the number deleted the wrong thing
-PARITY IMPACT:   **Step 1: all 26 hold, per item, and that is the acceptance
+PARITY IMPACT:   break — step 2 only; step 1 holds all 26. Step 2 deletes
+                 EXPECTED_STATE_TRANSITION_HASH and
+                 EXPECTED_STATE_TRANSITION_COUNT from the manifest, and re-pins
+                 EXPECTED_LEVEL2_SIGNAL_HASH, EXPECTED_SIGNAL_FIRES_HASH,
+                 EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH,
+                 EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH,
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH,
+                 EXPECTED_POSITION_PNL_HASH, EXPECTED_RISK_VERDICT_HASH and
+                 _BASELINE_TRADE_PARITY_HASH. No COUNT constant is declared to
+                 move; one that does is an unpredicted event-count change and
+                 remains a stop.
+                 **Step 1: all 26 hold, per item, and that is the acceptance
                  test.** Step 2: the `state_transition` baseline does not re-pin,
                  it is **deleted from the manifest** (26 -> 25, or 27 -> 28 after
                  S-17's additions), because with the publish gone the stream has
@@ -2125,8 +2146,8 @@ prediction: a pure move that moves a hash was not pure.
 | Step | Artifact affected | Direction | Cause |
 |---|---|---|---|
 | S-16 | `_BASELINE_CONFIG_HASH` only | re-pin, 1 value | The config snapshot gains the alpha manifest hash. It is already exempt from the parity manifest as "config-contract hash, not a replay baseline" (`tests/determinism/test_parity_manifest.py:174-175`), so no replay baseline moves. |
-| S-17 | `manifest_fingerprint()` | grow, 26 → 28+ | 0 |
-| S-23 | `level4_hazard_exit_order`, `decoupled_risk_flatten_order`, `halt_order`, `symbol_halted`; possibly `position_pnl` | re-pin, one author per commit | +1 |
+| S-17 | `manifest_fingerprint()` | grow, 26 → 28+ | Manifest growth, not behavioural change. S-17 adds the engine-1 canonical-stream baseline and engine 11's alert taxonomy; `manifest_fingerprint()` is one visible line over the entry set by design (`tests/determinism/parity_manifest.py:234`), so gaining entries moves it while no existing baseline moves. |
+| S-23 | `level4_hazard_exit_order`, `decoupled_risk_flatten_order`, `halt_order`, `symbol_halted`; possibly `position_pnl` | re-pin, one author per commit | The three remaining exit authors move off the kernel's signal family, the move the repo has already run once and documented (`tests/determinism/test_orchestrator_replay.py:273-278`): `source_layer`, `strategy_id` and the content-derived order id all change, and the halt path is engine 1/9 shared. `position_pnl` moves only if a draw family changes. |
 | S-31 step 2 | `state_transition` **deleted**; then `level2_signal`, `signal_fires`, `level3_sized_intent_*`, `level4_portfolio_order`, `position_pnl`, `risk_verdict`, trade parity hash | delete 1, re-pin the rest | `_emit_state_transition` draws `self._seq.next()` (`src/feelies/kernel/orchestrator.py:4700`) 8.007 times per quote. Removing the publish removes those draws and shifts every later `sequence` on every tick, and `sequence` is the first field of nearly every helper. The `state_transition` stream becomes empty, so its entry is deleted rather than re-pinned. |
 
 **Two dependency rules that fall out of this table.**
