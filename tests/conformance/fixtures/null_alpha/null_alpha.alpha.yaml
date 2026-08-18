@@ -1,0 +1,84 @@
+# =============================================================
+#   FIX-1 — the null alpha
+#   ----------------------------------------------------------------
+#   Loads, registers, and is evaluated on every horizon boundary like
+#   any other SIGNAL alpha, and emits nothing.  Not "emits nothing on
+#   this tape" — `evaluate` returns None unconditionally, so no input
+#   exists that makes it trade.
+#
+#   That is what makes it a control.  Anything the book does under this
+#   alpha was done by the engine, because the only strategy in the run
+#   asked for nothing.  C1 asserts exactly that.
+#
+#   No `trend_mechanism:` block: Inv-1 asks which causal force is being
+#   exploited and the honest answer here is none.  Runs loading this
+#   fixture must pin `enforce_trend_mechanism: false` (G16).
+# =============================================================
+
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: null_alpha
+version: "1.0.0"
+lifecycle_state: RESEARCH
+description: |
+  Conformance control alpha.  Emits no Signal by construction so that a
+  replay's book movement can be attributed to the engine rather than to
+  a strategy.
+
+hypothesis: |
+  None.  This fixture exploits no structural mechanism and makes no
+  tradeable claim; it exists so that "the platform created exposure
+  nobody asked for" is an observable, falsifiable statement.
+
+falsification_criteria:
+  - |
+    The fixture emits a Signal.  Its evaluate returns None on every input,
+    so a single emission means the Layer-2 evaluation path is inventing
+    signals rather than relaying them.
+  - |
+    Position, realized P&L or unrealized P&L becomes non-zero at any event
+    of a replay in which this is the only registered alpha.
+
+# G6 rejects an empty list on a SIGNAL spec, so one sensor is declared to
+# satisfy the schema. Nothing reads it, and the unused-dependency audit will
+# say so on load: that warning is correct and expected here. Do not silence
+# it by wiring a discarded read into evaluate — an unconditional `return
+# None` is the property this fixture exists to guarantee.
+depends_on_sensors:
+  - ofi_ewma
+
+parameters: {}
+
+# The shortest canonical horizon, so a fixture tape of practical length
+# crosses enough boundaries to actually evaluate the alpha many times.
+horizon_seconds: 30
+
+risk_budget:
+  max_position_per_symbol: 1
+  max_gross_exposure_pct: 0.1
+  max_drawdown_pct: 0.1
+  capital_allocation_pct: 0.1
+
+# Regime-independent and always ON, on the paper_smoke_v1 pattern. A gate
+# referencing P(state) fails safe to OFF whenever the regime engine is
+# uncalibrated, and evaluate is then never called at all — the fixture would
+# be proving the gate suppressed it, not that it emits nothing. "Emits
+# nothing" only means something if the emission path actually runs.
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: "True"
+  off_condition: "False"
+
+# Disclosure is structural (G12) and required of every SIGNAL spec. These
+# figures describe no position this alpha will ever take.
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
+  cost_basis: one_way
+
+signal: |
+  def evaluate(snapshot, regime, params):
+      return None
