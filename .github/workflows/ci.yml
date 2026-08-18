@@ -90,6 +90,14 @@ jobs:
       - name: Types
         run: uv run mypy src/feelies
 
+      - name: Import contracts
+        # Allowed to fail: the layers contract is G16 (S-04) and independence
+        # is G40 (S-34). S2 is the conformance gate; this step only makes the
+        # CLI output visible in CI. Do not drop continue-on-error until both
+        # contracts are kept.
+        continue-on-error: true
+        run: uv run lint-imports --no-cache
+
       - name: Tests
         # `functional` needs a live Massive key; `paper_rth` needs IB Gateway and
         # an open US market. Both self-skip, but deselecting is explicit and keeps
@@ -188,4 +196,25 @@ jobs:
         # constants. If the fetch step above ever pulls a session that differs
         # from the one the baseline was minted on, this fails as "input tape
         # changed" rather than as parity drift — do not answer that by re-pinning.
+        run: uv run pytest tests/acceptance/test_backtest_app_baseline.py -q -m ""
+
+      - name: Replay the locked APP baseline under an unpinned hash seed
+        # The step above runs at PYTHONHASHSEED=0, and until now that was the
+        # only seed the oracle was ever run under — so the strongest regression
+        # guard in the repo was the one guard newly introduced hash-order
+        # dependence could not reach. `check` closes that hole for the
+        # determinism corpus; this closes it for the trade parity hash, net PnL
+        # and fill count, which is where a set-iteration order that reaches an
+        # output would actually cost money.
+        #
+        # The pin above stays. It is no longer the only coverage.
+        #
+        # FEELIES_REQUIRE_BASELINE_CACHE=1 is inherited from the job, so this
+        # cannot report success by skipping on a cache miss any more than the
+        # pinned run can.
+        #
+        # Do not answer a failure here by pinning the seed back or re-baselining;
+        # find the set or dict whose iteration order reached an output and sort it.
+        env:
+          PYTHONHASHSEED: random
         run: uv run pytest tests/acceptance/test_backtest_app_baseline.py -q -m ""

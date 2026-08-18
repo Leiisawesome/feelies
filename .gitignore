@@ -26,3 +26,5 @@ docs/audits/_runs/
 
 # Local Windows Cursor/VS Code binary bundle
 code-win/
+
+tools/arch/evidence/*.json
