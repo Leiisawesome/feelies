@@ -1,17 +1,16 @@
 """``PlatformConfig.gate_thresholds`` block tests.
 
-Pins the YAML / dataclass surface of platform-level
-:class:`feelies.promotion.evidence.GateThresholds` overrides:
+Pins the YAML / dataclass surface of the optional ``gate_thresholds``
+mapping. Semantic key/type validation lives in bootstrap
+(``_build_platform_gate_thresholds``); this module covers structure
+and snapshot provenance:
 
   * **Default** — ``gate_thresholds_overrides`` is ``{}`` and
     ``snapshot()`` records an empty mapping (no determinism drift on
     legacy configs).
-  * **YAML happy path** — known keys with valid types are parsed and
-    coerced.
-  * **YAML sad path** — unknown keys, non-mapping blocks, and bad
-    value types raise :class:`ConfigurationError` with the source
-    path embedded.
-  * **Snapshot stability** — the merged overrides are folded into
+  * **YAML structure** — a non-mapping block is rejected; an empty
+    block stores ``{}``.
+  * **Snapshot stability** — the overrides are folded into
     ``_to_dict()`` in sorted-key order so two equivalent configs
     produce byte-identical checksums.
 """
@@ -68,40 +67,6 @@ class TestPlatformConfigGateThresholdsDefault:
 
 
 class TestPlatformConfigGateThresholdsYAML:
-    def test_parses_known_keys(self, tmp_path: Path) -> None:
-        body = (
-            _MINIMAL_CONFIG_YAML
-            + "\n"
-            + dedent(
-                """
-            gate_thresholds:
-              dsr_min: 1.5
-              paper_min_trading_days: 7
-            """
-            )
-        )
-        cfg = PlatformConfig.from_yaml(_write_yaml(tmp_path, body))
-        assert cfg.gate_thresholds_overrides == {
-            "dsr_min": 1.5,
-            "paper_min_trading_days": 7,
-        }
-        assert isinstance(cfg.gate_thresholds_overrides["dsr_min"], float)
-        assert isinstance(cfg.gate_thresholds_overrides["paper_min_trading_days"], int)
-
-    def test_int_value_coerced_to_float(self, tmp_path: Path) -> None:
-        body = (
-            _MINIMAL_CONFIG_YAML
-            + "\n"
-            + dedent(
-                """
-            gate_thresholds:
-              dsr_min: 2
-            """
-            )
-        )
-        cfg = PlatformConfig.from_yaml(_write_yaml(tmp_path, body))
-        assert cfg.gate_thresholds_overrides == {"dsr_min": 2.0}
-
     def test_empty_block_yields_empty_dict(self, tmp_path: Path) -> None:
         body = _MINIMAL_CONFIG_YAML + "\ngate_thresholds: {}\n"
         cfg = PlatformConfig.from_yaml(_write_yaml(tmp_path, body))
@@ -118,50 +83,6 @@ class TestPlatformConfigGateThresholdsErrors:
         body = _MINIMAL_CONFIG_YAML + "\ngate_thresholds: [1, 2, 3]\n"
         with pytest.raises(ConfigurationError, match="gate_thresholds.*must be a mapping"):
             PlatformConfig.from_yaml(_write_yaml(tmp_path, body))
-
-    def test_unknown_key_rejected(self, tmp_path: Path) -> None:
-        body = (
-            _MINIMAL_CONFIG_YAML
-            + "\n"
-            + dedent(
-                """
-            gate_thresholds:
-              not_a_real_threshold: 5
-            """
-            )
-        )
-        with pytest.raises(ConfigurationError, match="unknown field"):
-            PlatformConfig.from_yaml(_write_yaml(tmp_path, body))
-
-    def test_bad_type_rejected(self, tmp_path: Path) -> None:
-        body = (
-            _MINIMAL_CONFIG_YAML
-            + "\n"
-            + dedent(
-                """
-            gate_thresholds:
-              dsr_min: "not_a_number"
-            """
-            )
-        )
-        with pytest.raises(ConfigurationError, match="expects float"):
-            PlatformConfig.from_yaml(_write_yaml(tmp_path, body))
-
-    def test_error_carries_source_path(self, tmp_path: Path) -> None:
-        body = (
-            _MINIMAL_CONFIG_YAML
-            + "\n"
-            + dedent(
-                """
-            gate_thresholds:
-              not_a_real_threshold: 5
-            """
-            )
-        )
-        cfg_path = _write_yaml(tmp_path, body)
-        with pytest.raises(ConfigurationError) as excinfo:
-            PlatformConfig.from_yaml(cfg_path)
-        assert "platform.yaml" in str(excinfo.value)
 
 
 # ─────────────────────────────────────────────────────────────────────

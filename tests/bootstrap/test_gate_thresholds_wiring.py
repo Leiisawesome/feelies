@@ -112,6 +112,23 @@ def _write_alpha(directory: Path, name: str, body: str) -> None:
     (directory / name).write_text(body, encoding="utf-8")
 
 
+_MINIMAL_CONFIG_YAML = textwrap.dedent(
+    """
+    version: "0.1.0"
+    author: "test"
+    symbols: ["AAPL"]
+    mode: "BACKTEST"
+    alpha_specs: ["dummy.alpha.yaml"]
+    """
+).strip()
+
+
+def _write_yaml(tmp_path: Path, body: str) -> Path:
+    cfg_path = tmp_path / "platform.yaml"
+    cfg_path.write_text(body, encoding="utf-8")
+    return cfg_path
+
+
 # ─────────────────────────────────────────────────────────────────────
 # _build_platform_gate_thresholds helper
 # ─────────────────────────────────────────────────────────────────────
@@ -146,6 +163,95 @@ class TestBuildPlatformGateThresholds:
         b = _build_platform_gate_thresholds(cfg)
         assert a == b
         assert a is not b
+
+
+class TestBuildPlatformGateThresholdsSemantics:
+    def test_parses_known_keys(self, tmp_path: Path) -> None:
+        body = (
+            _MINIMAL_CONFIG_YAML
+            + "\n"
+            + textwrap.dedent(
+                """
+            gate_thresholds:
+              dsr_min: 1.5
+              paper_min_trading_days: 7
+            """
+            )
+        )
+        cfg_path = _write_yaml(tmp_path, body)
+        cfg = PlatformConfig.from_yaml(cfg_path)
+        thresholds = _build_platform_gate_thresholds(cfg, source=cfg_path)
+        assert thresholds is not None
+        assert thresholds.dsr_min == 1.5
+        assert thresholds.paper_min_trading_days == 7
+        assert isinstance(thresholds.dsr_min, float)
+        assert isinstance(thresholds.paper_min_trading_days, int)
+
+    def test_int_value_coerced_to_float(self, tmp_path: Path) -> None:
+        body = (
+            _MINIMAL_CONFIG_YAML
+            + "\n"
+            + textwrap.dedent(
+                """
+            gate_thresholds:
+              dsr_min: 2
+            """
+            )
+        )
+        cfg_path = _write_yaml(tmp_path, body)
+        cfg = PlatformConfig.from_yaml(cfg_path)
+        thresholds = _build_platform_gate_thresholds(cfg, source=cfg_path)
+        assert thresholds is not None
+        assert thresholds.dsr_min == 2.0
+
+    def test_unknown_key_rejected(self, tmp_path: Path) -> None:
+        body = (
+            _MINIMAL_CONFIG_YAML
+            + "\n"
+            + textwrap.dedent(
+                """
+            gate_thresholds:
+              not_a_real_threshold: 5
+            """
+            )
+        )
+        cfg_path = _write_yaml(tmp_path, body)
+        cfg = PlatformConfig.from_yaml(cfg_path)
+        with pytest.raises(ConfigurationError, match="unknown field"):
+            _build_platform_gate_thresholds(cfg, source=cfg_path)
+
+    def test_bad_type_rejected(self, tmp_path: Path) -> None:
+        body = (
+            _MINIMAL_CONFIG_YAML
+            + "\n"
+            + textwrap.dedent(
+                """
+            gate_thresholds:
+              dsr_min: "not_a_number"
+            """
+            )
+        )
+        cfg_path = _write_yaml(tmp_path, body)
+        cfg = PlatformConfig.from_yaml(cfg_path)
+        with pytest.raises(ConfigurationError, match="expects float"):
+            _build_platform_gate_thresholds(cfg, source=cfg_path)
+
+    def test_error_carries_source_path(self, tmp_path: Path) -> None:
+        body = (
+            _MINIMAL_CONFIG_YAML
+            + "\n"
+            + textwrap.dedent(
+                """
+            gate_thresholds:
+              not_a_real_threshold: 5
+            """
+            )
+        )
+        cfg_path = _write_yaml(tmp_path, body)
+        cfg = PlatformConfig.from_yaml(cfg_path)
+        with pytest.raises(ConfigurationError) as excinfo:
+            _build_platform_gate_thresholds(cfg, source=cfg_path)
+        assert "platform.yaml" in str(excinfo.value)
 
 
 # ─────────────────────────────────────────────────────────────────────

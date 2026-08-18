@@ -159,7 +159,9 @@ def build_platform(
     Optional precomputed corporate-action spans and regime quotes avoid replay
     rescans. A live normalizer enables per-event data-health gates.
     """
+    config_source: Path | None = None
     if isinstance(config, (str, Path)):
+        config_source = Path(config)
         config = PlatformConfig.from_yaml(config)
 
     config.validate()
@@ -226,7 +228,7 @@ def build_platform(
         else None
     )
     # Threshold precedence: defaults, platform overrides, then alpha overrides.
-    gate_thresholds = _build_platform_gate_thresholds(config)
+    gate_thresholds = _build_platform_gate_thresholds(config, source=config_source)
     registry = AlphaRegistry(
         clock=registry_clock,
         gate_thresholds=gate_thresholds,
@@ -676,12 +678,18 @@ def _ensure_session_open_ns_for_paper(
 
 def _build_platform_gate_thresholds(
     config: PlatformConfig,
+    *,
+    source: Path | None = None,
 ) -> GateThresholds | None:
     """Resolve platform gate thresholds and report invalid overrides once."""
     overrides = config.gate_thresholds_overrides
     if not overrides:
         return None
-    return apply_gate_thresholds_overrides(GateThresholds(), overrides)
+    try:
+        return apply_gate_thresholds_overrides(GateThresholds(), overrides)
+    except ValueError as exc:
+        where = f"{source}: " if source is not None else ""
+        raise ConfigurationError(f"{where}gate_thresholds: {exc}") from exc
 
 
 def _validate_regime_engine_risk_scale_alignment(engine: RegimeEngine) -> None:

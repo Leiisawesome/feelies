@@ -17,6 +17,32 @@ import pytest
 
 _SUMMARY = re.compile(r"Contracts:\s*(\d+)\s*kept,\s*(\d+)\s*broken")
 _STATUS = re.compile(r"^(Five import tiers|Twelve engine module sets)\s+(KEPT|BROKEN)\s*$", re.M)
+_LAYER_PAIR = re.compile(
+    r"^(feelies\.[a-z0-9_]+) is not allowed to import (feelies\.[a-z0-9_]+):",
+    re.M,
+)
+
+# Residual Five-import-tiers breaks after G16: kernel→engines (G40),
+# harness→cli/bootstrap, core→sensors.spec. Equality, not a subset:
+# a fourth pair fails immediately; G40's closure forces this set to change.
+_TIER_RESIDUALS = frozenset(
+    {
+        ("feelies.harness", "feelies.bootstrap"),
+        ("feelies.harness", "feelies.cli"),
+        ("feelies.kernel", "feelies.ingestion"),
+        ("feelies.kernel", "feelies.alpha"),
+        ("feelies.kernel", "feelies.portfolio"),
+        ("feelies.kernel", "feelies.composition"),
+        ("feelies.kernel", "feelies.sensors"),
+        ("feelies.kernel", "feelies.services"),
+        ("feelies.kernel", "feelies.risk"),
+        ("feelies.kernel", "feelies.signals"),
+        ("feelies.kernel", "feelies.monitoring"),
+        ("feelies.kernel", "feelies.execution"),
+        ("feelies.kernel", "feelies.storage"),
+        ("feelies.core", "feelies.sensors"),
+    }
+)
 
 
 def _lint_imports_cmd() -> list[str]:
@@ -50,11 +76,27 @@ def run_import_linter() -> tuple[str, int, int, dict[str, str]]:
     return out, kept, broken, statuses
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G16")
+def _broken_layer_pairs(out: str, heading: str, stop: str) -> frozenset[tuple[str, str]]:
+    broken_at = out.find("Broken contracts")
+    section = out[broken_at:] if broken_at >= 0 else out
+    start = section.find(heading)
+    if start < 0:
+        return frozenset()
+    rest = section[start:]
+    end = rest.find(stop)
+    if end >= 0:
+        rest = rest[:end]
+    return frozenset((a, b) for a, b in _LAYER_PAIR.findall(rest))
+
+
 def test_five_import_tiers() -> None:
     out, _kept, _broken, statuses = run_import_linter()
     assert "Five import tiers" in statuses, out
-    assert statuses["Five import tiers"] == "KEPT", out
+    pairs = _broken_layer_pairs(out, "Five import tiers", "Twelve engine module sets")
+    assert pairs == _TIER_RESIDUALS, (
+        f"unexpected {sorted(pairs - _TIER_RESIDUALS)}; "
+        f"missing {sorted(_TIER_RESIDUALS - pairs)}\n{out}"
+    )
 
 
 @pytest.mark.xfail(strict=True, reason="GAP G40")

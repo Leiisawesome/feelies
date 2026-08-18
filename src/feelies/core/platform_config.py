@@ -1183,7 +1183,7 @@ class PlatformConfig:
         *,
         source: Path,
     ) -> dict[str, Any]:
-        """Parse and normalize the optional gate-threshold mapping."""
+        """Structural checks on the optional gate-threshold mapping; returns the raw block."""
         if block is None:
             return {}
         if not isinstance(block, dict):
@@ -1193,17 +1193,7 @@ class PlatformConfig:
         if not block:
             return {}
 
-        # Imported lazily to avoid a hard dependency cycle between
-        # core.platform_config and alpha.promotion_evidence at import
-        # time (alpha modules import core.events / core.config).
-        from feelies.promotion.evidence import (
-            parse_gate_thresholds_overrides,
-        )
-
-        try:
-            return parse_gate_thresholds_overrides(block)
-        except ValueError as exc:
-            raise ConfigurationError(f"{source}: gate_thresholds: {exc}") from exc
+        return block
 
     @staticmethod
     def _parse_sensor_spec(entry: Any, *, source: Path) -> SensorSpec:
