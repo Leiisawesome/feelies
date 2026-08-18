@@ -205,6 +205,7 @@ class BasicRiskEngine:
             signal.symbol,
             positions,
             scale_down_reason="approaching exposure limit",
+            exposure_does_not_increase=signal_reduces,
         )
         if shared is not None:
             return shared
@@ -306,6 +307,7 @@ class BasicRiskEngine:
             positions,
             scale_down_reason="approaching exposure limit at order gate",
             exposure_override=prospective_exposure,
+            exposure_does_not_increase=prospective_exposure <= positions.total_exposure(),
         )
         if shared is not None:
             return shared
@@ -644,6 +646,7 @@ class BasicRiskEngine:
         *,
         scale_down_reason: str,
         exposure_override: Decimal | None = None,
+        exposure_does_not_increase: bool = False,
     ) -> RiskVerdict | None:
         """Check exposure cap, drawdown guard, and scale-down threshold.
 
@@ -658,6 +661,13 @@ class BasicRiskEngine:
 
         When ``current_equity <= 0``, a percentage-of-NAV cap has no useful
         meaning. Return ``FORCE_FLATTEN`` regardless of the drawdown setting.
+
+        Drawdown is evaluated before the gross cap so FORCE_FLATTEN wins
+        over REJECT when both rails breach, and so the HWM still advances
+        on the over-cap path.  A request whose prospective exposure does
+        not increase is exempt from the gross cap and the scale-down band
+        (Inv-11); the predicate is supplied by the caller — gate 2 from
+        the override vs the snapshot, gate 1 from ``signal_reduces``.
         """
         current_equity = self._compute_current_equity(positions)
         exposure = positions.total_exposure() if exposure_override is None else exposure_override
@@ -669,18 +679,6 @@ class BasicRiskEngine:
                 symbol=symbol,
                 action=RiskAction.FORCE_FLATTEN,
                 reason=f"non-positive equity: {current_equity} <= 0",
-            )
-        max_exposure = (
-            current_equity * Decimal(str(self._config.max_gross_exposure_pct)) / Decimal("100")
-        )
-        if exposure >= max_exposure:
-            return RiskVerdict(
-                timestamp_ns=timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=sequence,
-                symbol=symbol,
-                action=RiskAction.REJECT,
-                reason=f"gross exposure limit: {exposure} >= {max_exposure}",
             )
 
         # Bump the HWM as a separate, explicit step so the predicate
@@ -697,6 +695,19 @@ class BasicRiskEngine:
                 reason="drawdown limit breached",
             )
 
+        max_exposure = (
+            current_equity * Decimal(str(self._config.max_gross_exposure_pct)) / Decimal("100")
+        )
+        if exposure >= max_exposure and not exposure_does_not_increase:
+            return RiskVerdict(
+                timestamp_ns=timestamp_ns,
+                correlation_id=correlation_id,
+                sequence=sequence,
+                symbol=symbol,
+                action=RiskAction.REJECT,
+                reason=f"gross exposure limit: {exposure} >= {max_exposure}",
+            )
+
         threshold = Decimal(str(self._config.scale_down_threshold_pct))
         if threshold >= Decimal("1"):
             return RiskVerdict(
@@ -707,7 +718,7 @@ class BasicRiskEngine:
                 action=RiskAction.REJECT,
                 reason="scale_down_threshold_pct >= 1.0 is invalid (would divide by zero)",
             )
-        if exposure >= max_exposure * threshold:
+        if exposure >= max_exposure * threshold and not exposure_does_not_increase:
             scaling = float((max_exposure - exposure) / (max_exposure * (1 - threshold)))
             scaling = max(0.1, min(1.0, scaling))
             return RiskVerdict(

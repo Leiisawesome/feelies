@@ -230,6 +230,30 @@ class TestCheckOrder:
         assert "approaching exposure" in verdict.reason
         assert 0.0 < verdict.scaling_factor < 1.0
 
+    def test_drawdown_wins_when_gross_and_drawdown_both_breach(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """An event over both rails must FORCE_FLATTEN, not REJECT.
+
+        500 AAPL at 100.00 marked to 80.00 breaches the 20% gross cap
+        and the 5% drawdown rail together.  The gross reject currently
+        returns first, so the drawdown path is unreachable in the state
+        it exists for.
+        """
+        cfg = RiskConfig(
+            max_position_per_symbol=100000,
+            max_gross_exposure_pct=20.0,
+            max_drawdown_pct=5.0,
+            account_equity=Decimal("100000"),
+            scale_down_threshold_pct=0.8,
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 500, Decimal("100.00"))
+        store.update_mark("AAPL", Decimal("80.00"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.FORCE_FLATTEN
+        assert "drawdown" in verdict.reason
+
 
 class TestRegimeScaling:
     def test_vol_breakout_reduces_position_limit(self, store: MemoryPositionStore) -> None:

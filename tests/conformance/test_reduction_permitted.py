@@ -268,3 +268,41 @@ class TestForceFlattenStates:
             f"{verdict.action.name} ({verdict.reason!r})"
         )
         assert "non-positive equity" in verdict.reason
+
+
+class TestGrossExposureCap:
+    """The book is already over the portfolio gross cap.
+
+    ``_loose_config`` sets ``max_gross_exposure_pct: 100.0``, a cap that
+    never binds on these books, so the other cases cannot reach this
+    gate.  This case uses a binding 10% cap and a second symbol whose
+    remaining notional still breaches after the flatten — the reduction
+    is refused exactly when reducing matters.
+    """
+
+    @staticmethod
+    def _engine() -> BasicRiskEngine:
+        return BasicRiskEngine(
+            _loose_config(max_gross_exposure_pct=10.0),
+            account_id=_ACCOUNT,
+        )
+
+    @staticmethod
+    def _over_cap_book() -> MemoryPositionStore:
+        # $5,000 AAPL + $10,000 MSFT = $15,000 book against a $10,000 cap.
+        store = MemoryPositionStore()
+        store.update(_SYMBOL, 50, Decimal("100"))
+        store.update("MSFT", 100, Decimal("100"))
+        store.update_mark(_SYMBOL, Decimal("100"))
+        store.update_mark("MSFT", Decimal("100"))
+        return store
+
+    def test_entry_refused_but_flatten_permitted(self) -> None:
+        book = self._over_cap_book()
+        _assert_entry_refused(
+            self._engine().check_order(_order(Side.BUY, 50), book),
+            "gross exposure limit",
+        )
+        _assert_reduction_permitted(
+            self._engine().check_order(_order(Side.SELL, 50), book)
+        )
