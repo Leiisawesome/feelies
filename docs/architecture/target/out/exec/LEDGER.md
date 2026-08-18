@@ -499,3 +499,108 @@ NOTES:           Blast radius stayed local — tests/ only, no src, no order
                  Left uncommitted for the operator: `baseline_pre-S-03.json`,
                  `baseline_post-S-03.json`, and this ledger entry. The step
                  commit contains the 14 declared files only, per section 7.
+
+## S-04  import-linter contracts; move inv12_stress out of core
+DATE:            2026-08-18T05:32:47+00:00
+BASE SHA:        f7f5f915be41ca97faf44acba38d257a3600268a
+RESULT SHA:      not committed — blocked at the boundary gate, S-04b split taken
+VERDICT:         blocked
+CONFORMANCE:     S2 | failed-before: yes | passes-after: no (xfail landed; move not taken)
+                 Step-2 failure output, captured before xfail, contracts expressed:
+                   Five import tiers BROKEN
+                   Twelve engine module sets BROKEN
+                   Contracts: 0 kept, 2 broken.
+                   feelies.core is not allowed to import feelies.promotion:
+                   - feelies.core.platform_config -> feelies.promotion.evidence (l.1199)
+                   (plus kernel -> engines, harness -> cli/bootstrap, core -> sensors.spec)
+                 S2 without xfail: 2 failed in 0.90s
+                   assert 'BROKEN' == 'KEPT'
+                 After xfail(strict=True, reason="GAP G16" / "GAP G40"): 2 xfailed
+MUTATION:        illegal import present -> fails; removed -> original break remains
+                 Added `import feelies.cli` to src/feelies/core/clock.py (not kept):
+                   Contracts: 0 kept, 2 broken.
+                   feelies.core is not allowed to import feelies.cli:
+                   feelies.core is not allowed to import feelies.promotion:
+                 Restored via git checkout -- src/feelies/core/clock.py; git diff empty:
+                   Contracts: 0 kept, 2 broken.
+                   feelies.core is not allowed to import feelies.promotion:
+                 (cli edge gone). The contract cannot "pass once removed" until the
+                 G16/G40 breaks themselves are gone; the extra edge is what the
+                 mutation proved S2 sees.
+TESTS:           4776 passed / 0 failed / 29 skipped / 9 xfailed
+                 -> 4776 passed / 0 failed / 29 skipped / 11 xfailed
+                 determinism 145 -> 145. The +2 xfailed are S2's two tests.
+                 Nothing previously passing moved.
+PARITY:          declared hold (All 26 hold. A module move changes no sequence
+                 draw and no hashed field.) | actual 62 constants unmoved,
+                 0 changed, key-for-key and value-for-value | MATCH.
+                 verify_step S-04 (uncommitted, so FILES saw 0 touched against
+                 HEAD): PARITY holds. NET DELTA note: "claiming deletions with
+                 no negative delta did not do what it said" — cycle 2 still 2.
+FILES DECLARED:  pyproject.toml
+                 .github/workflows/ci.yml
+                 tests/conformance/test_import_contracts.py
+                 tools/arch/importgraph.py
+                 src/feelies/core/inv12_stress.py -> src/feelies/research/inv12_stress.py
+FILES TOUCHED:   pyproject.toml
+                 .github/workflows/ci.yml
+                 tests/conformance/test_import_contracts.py
+                 tools/arch/importgraph.py
+                 uv.lock   (UNDECLARED — required to add import-linter)
+                 inv12_stress.py not moved
+NET DELTA:       declared src modules 0 (one moves), public symbols 0, branch
+                 points 0. Config files +2, test files +1, tools +1.
+                 actual src modules 196 -> 196 (+0), public symbols 551 -> 551
+                 (+0), sloc 43197 -> 43197 (+0), import cycles 2 -> 2 (+0).
+                 Cycle 2 not deleted. MATCH on modules; DELETES not satisfied.
+FINDINGS:        1. S-04b split taken. Eight importers of feelies.core.inv12_stress
+                    are not in FILES. Updating them would fail verify_step.
+                    src: promotion/evidence.py, research/decouple_gates.py,
+                    harness/backtest_cli.py.
+                    tests: acceptance/test_inv12_stress_gate.py,
+                    acceptance/test_inv12_pnl_survival.py,
+                    core/test_inv12_stress.py, research/test_decouple_gates.py,
+                    harness/test_backtest_cli.py.
+                    core/__init__.py does not re-export the module. The public
+                    path feelies.core.inv12_stress would break.
+                 2. The move cannot delete cycle 2 or the Tier 0 -> Tier 2 edge.
+                    inv12_stress TYPE_CHECKING-imports platform_config;
+                    platform_config lazily imports promotion.evidence (l.1199)
+                    and sensors.spec (l.22). After a move that updates
+                    promotion.evidence, the SCC becomes
+                    research.inv12_stress -> platform_config ->
+                    promotion.evidence -> research.inv12_stress. The layers
+                    break `core -> promotion` is platform_config, not
+                    inv12_stress, and survives the move.
+                 3. The layers contract is also broken by G40: kernel.orchestrator
+                    imports risk, execution, alpha, composition, ingestion,
+                    monitoring, portfolio, sensors, signals, storage, services.
+                    Dropping the G16 xfail after a successful move would still
+                    fail. Independence is G40 residual until S-34.
+                 4. tools/arch/coupling.py does not report import cycles.
+                    VALIDATED BY named the wrong tool. measure.py / importgraph.py
+                    do. importgraph.py after this step: 1 grimp SCC (the G16
+                    chain), still PRESENT. measure.py n_cycles still 2 (cli
+                    package cycle + G16).
+                 5. uv.lock is required to add import-linter to the dev extra
+                    and is not in FILES. CI `uv sync --all-extras --locked`
+                    fails without it. OneDrive-locked venv uninstalls during
+                    `uv sync` briefly broke pygments and certifi; repaired
+                    with `uv pip install --no-deps`. Not a src defect.
+                 6. I-23 notes S-04 should add a scan that the dynamic-import
+                    count stays at one, and currently does not. Not added.
+                 7. import-linter 2.13 exits 1 when contracts are broken (the
+                    standing rule described exit 0). S2 still parses
+                    "Contracts: N kept, M broken" and does not use the exit code.
+                 8. Carried findings checked, no collision: G46 stays S-10;
+                    G6 empty-sensors is FIX-1; src/feelies/risk/ not edited.
+                 9. HEAD was exec/S-03 (f7f5f91), not arch/exec (aa413d9).
+                    tools/exec differs from exec-tools-v1 by c6af7d7+aa413d9
+                    (+96/-12), same as S-03. Cut exec/S-04 from f7f5f91. Same
+                    tree as 2ffde72 (S-03 merge to main) which HEAD later sat
+                    on; no content drift.
+NOTES:           S-04b split taken: contract shipped xfailed, inv12_stress not
+                 moved, xfail not dropped. Importers not updated. Blast radius
+                 stayed boundary. Waiting at the human gate; do not commit.
+                 Left uncommitted: baseline_pre-S-04.json, baseline_post-S-04.json,
+                 this ledger entry, and the step files pending go/no-go.
