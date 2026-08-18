@@ -385,8 +385,10 @@ class CompositionEngine:
             for s in ctx.universe:
                 try:
                     current_positions[s] = float(self._position_lookup(strategy_id, s))
-                except Exception:  # pragma: no cover - defensive
-                    current_positions[s] = 0.0
+                except KeyError as exc:
+                    raise CompositionContextError(
+                        f"position lookup failed for {strategy_id!r}/{s}: {exc}"
+                    ) from exc
 
         opt = self._optimizer.optimize(combined, ctx.universe, current_positions)
 
