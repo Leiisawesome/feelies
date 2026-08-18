@@ -354,3 +354,148 @@ NOTES:           Blast radius escalated from the plan's stated `local` to
                  Left uncommitted for the operator: `baseline_pre-S-02.json`,
                  `baseline_post-S-02.json`, and this ledger entry. The step
                  commit contains the four declared files only, per section 7.
+
+## S-03  arm Phase-6 scan detectors as conformance tests
+DATE:            2026-08-18T04:08:20+00:00
+BASE SHA:        d2b934c9880eec54049277b99eba3ace16d69acd
+RESULT SHA:      57beddff0a7dc20e1dcae4eb87617ce397854191
+VERDICT:         passed
+CONFORMANCE:     S3, S4, S5, S6, S7, S10, S11, S16, S17, R2, R7, R8, C2, C3 |
+                 failed-before: yes for the ten gap detectors; no (by design)
+                 for R7, R8, C2, C3 and the I-01 uuid/RNG clause |
+                 passes-after: yes (7 passed, 9 xfailed strict)
+                 Step-2 failure output, captured before xfail/allowlist:
+                   FAILED test_no_raw_wall_clock_outside_allowlist
+                   AssertionError: ... kernel/orchestrator.py:1524,1633,1771,
+                   3940,1635,1675,1773,2104,1677,3950  time.perf_counter_ns()
+                   FAILED test_no_alpha_shape_literal_outside_alphas_and_config
+                   AssertionError: 2 alpha-id literal(s) ... platform_config.py:108
+                   FAILED test_hot_path_allow_list
+                   AssertionError: proven per-event: dict_construction 3,
+                   dynamic_dispatch 2, string_formatting 3, set_construction 2,
+                   wall_clock_read 3 (orchestrator.py:1524,2104,3940)
+                   FAILED test_no_fail_quiet_exception_handler
+                   AssertionError: 20 fail-quiet except handler(s). First:
+                   layer_validator.py:1189 except (TypeError, ValueError)
+                   FAILED test_mode_branches_only_at_composition_root
+                   AssertionError: 3 OperatingMode branch(es) outside the
+                   composition root and mode seam. First:
+                   platform_config.py:447 self.mode != OperatingMode.BACKTEST
+                   FAILED test_frozen_events_carry_no_mutable_container
+                   AssertionError: frozen events with mutable container fields
+                   (G12): Alert, CrossSectionalContext, HorizonFeatureSnapshot,
+                   MetricEvent, RiskVerdict, Signal, SizedPositionIntent,
+                   StateTransition
+                   FAILED test_every_published_type_has_a_subscriber
+                   AssertionError: KillSwitchActivation, OrderAck,
+                   PositionUpdate, RiskVerdict, StateTransition, SymbolHalted
+                   FAILED test_reset_path_totality
+                   AssertionError: 32 stateful class(es) ... First: Orchestrator
+                   FAILED test_no_post_construction_mutation_or_private_reach
+                   AssertionError: 40 external attribute assignment(s) outside
+                   the composition root. First: broker/ib/contracts.py:28 c.symbol
+                   FAILED test_market_data_canonical_parity_baseline
+                   AssertionError: engine 1 canonical stream has no baseline
+                   (G05); S-17 supplies it
+                   10 failed, 6 passed
+                 S4's implementation is the ten call-granular allowlist
+                 entries, after which that test passes. The other nine land
+                 xfail(strict=True, reason="GAP Gnn").
+                 Vacuity: S4 named the ten orchestrator lines; S3 named both
+                 leak sites; S5 named proven sites; S6 named a handler; S7
+                 named a branch; S10 listed eight event classes (frozen=True
+                 asserted first and held); S11 listed six types; S16 named
+                 Orchestrator; S17 named a site; R2 hashed a non-empty stream
+                 (len==64) before the missing-baseline assert.
+                 R7/R8/C2/C3 mutation-proved per AGENTS.md (pycache purged
+                 each round; restore via git checkout; git diff -- src empty):
+                 R7 duration compare `event.timestamp_ns` -> `0` — FAILED
+                 "throttle comparison is not in event time: 0 - last_ns <
+                 binding.throttle_ns"; restored, 1 passed.
+                 R8 all_positions `dict(self._positions)` -> set comprehension
+                 — FAILED iteration ['AAA','MNO','ZZZ'] != insertion
+                 ['ZZZ','AAA','MNO']; restored, 1 passed.
+                 C2 probe unrealized_pnl forced to Decimal('1') — FAILED
+                 "flat book carried unrealized PnL at 19636 of 19636
+                 observations"; restored, 1 passed.
+                 C3 probe dropped NBBOQuote/Trade samples — FAILED
+                 "probe saw no NBBOQuote/Trade — ingress never ran";
+                 restored, 1 passed.
+TESTS:           4771 passed / 0 failed / 29 skipped / 0 xfailed
+                 -> 4776 passed / 0 failed / 29 skipped / 9 xfailed
+                 determinism 145 -> 145. The +5 passed are uuid/RNG, R7, R8,
+                 C2, C3; the +9 xfailed are the nine gap detectors. S4 was
+                 already in the suite (2 tests, still 2, both pass). Nothing
+                 previously passing moved. Live pre-S-03 capture is 4771, not
+                 the post-S-02 artifact's 4770 — see finding 2.
+PARITY:          declared hold (All 26 hold. No src edit.) | actual 62
+                 constants unmoved, 0 changed, key-for-key and value-for-value
+                 | MATCH. verify_step S-03: FILES clean, PARITY holds, CLEAN.
+FILES DECLARED:  tests/conformance/ (S3, S5, S6, S7, S10, S11, S16, S17,
+                 R2, R7, R8, C2, C3)
+                 tests/acceptance/test_no_walltime_outside_clock.py (extend, S4)
+                 promoting tools/arch/{measure,clockscan,hotpath,gatescan,
+                 gapscan,contracts,substrate,coupling}.py (imported, not edited)
+FILES TOUCHED:   tests/acceptance/test_no_walltime_outside_clock.py
+                 tests/conformance/test_alpha_agnosticism.py
+                 tests/conformance/test_hot_path_allow_list.py
+                 tests/conformance/test_exception_containment.py
+                 tests/conformance/test_mode_seam.py
+                 tests/conformance/test_event_immutability.py
+                 tests/conformance/test_emission_registry.py
+                 tests/conformance/test_reset_paths.py
+                 tests/conformance/test_construction_integrity.py
+                 tests/conformance/test_market_data_canonical.py
+                 tests/conformance/test_sensor_throttle_event_time.py
+                 tests/conformance/test_store_ordering_seed_independence.py
+                 tests/conformance/test_accounting_identities.py
+                 tests/conformance/test_ingress_conservation.py
+                 14 touched (1 extend + 13 new) against directory scope
+                 tests/conformance/ + the named acceptance file. tools/arch/
+                 not edited (PATHY does not extract the brace list; editing
+                 them would have been UNDECLARED). src/ untouched.
+NET DELTA:       declared src modules 0, public symbols 0, branch points 0,
+                 test files +13, allowlist entries -1 file +12 call sites |
+                 actual src modules 196 -> 196 (+0), public symbols 551 -> 551
+                 (+0), sloc 43197 -> 43197 (+0), import cycles 2 -> 2 (+0),
+                 alphaleak 2 -> 2 (+0), test files +13. MATCH on modules.
+                 Allowlist: deleted the orchestrator whole-file entry, added
+                 10 call-granular sites (clockscan reports 10 kernel reads,
+                 not 12). See finding 3.
+FINDINGS:        1. Process: HEAD was `main` (d2b934c, S-01 and S-02 merged),
+                    not `arch/exec`. tools/exec differs from exec-tools-v1
+                    (bb46c79) by c6af7d7 and aa413d9 (+96/-12). Branching
+                    from arch/exec would have dropped S-01/S-02. Cut
+                    exec/S-03 from main. tools/exec was not modified.
+                 2. pre-S-03 capture is 4771 passed / 0 xfailed; post-S-02
+                    artifact is 4770 / 1 xfailed. Parity 62/62 identical.
+                    The extra pass is bbfadcc converting S1 from xfail to
+                    equality. Artifact wins as the S-02 reference; S-03
+                    before/after uses the live capture.
+                 3. NET DELTA said +12 call sites; orchestrator has 10
+                    time.perf_counter_ns reads. All ten are allowlisted.
+                    The three proven per-event reads (1524, 2104, 3940) stay
+                    on the call list as G01 residual for S-32.
+                 4. S7 using coupling.mode_branches found 3 OperatingMode
+                    AST hits outside bootstrap+execution+broker, not
+                    gapscan's 7 line-regex sites. FILES names coupling.py.
+                 5. R2, R7, R8 landed in tests/conformance/ per S-03 FILES.
+                    p7_index and S-17 name tests/determinism/ paths. S-03
+                    FILES is the contract for this step.
+                 6. Carried findings checked, no collision: G46 stays S-10;
+                    G6 empty-sensors is FIX-1 (C2/C3 reuse it, warning
+                    expected); gross-exposure cap untouched — src/feelies/risk/
+                    not edited.
+                 7. S5's dead_compute clause does not run while proven
+                    per-event sites fail first. When the xfail drops, both
+                    halves must pass. Recorded, not split.
+NOTES:           Blast radius stayed local — tests/ only, no src, no order
+                 path, no ExecutionBackend. S4 promotes clockscan.CLOCK_LEAVES
+                 and replaces the 5,480-line orchestrator exemption with ten
+                 call-granular entries. Scanners are imported, not copied;
+                 substrate.main() is pointed at a tmp evidence dir because
+                 rel(out) against ROOT raises when EVIDENCE is outside the
+                 repo (caught after the JSON is written).
+                 Left uncommitted for the operator: `baseline_pre-S-03.json`,
+                 `baseline_post-S-03.json`, and this ledger entry. The step
+                 commit contains the 14 declared files only, per section 7.
