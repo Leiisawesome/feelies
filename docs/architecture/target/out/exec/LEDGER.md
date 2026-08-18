@@ -776,3 +776,90 @@ NOTES:           A5.3 survives: all four engine-6 baselines unmoved
                  Left uncommitted for the operator: capture artifacts and
                  this ledger entry. The step commit is the three declared
                  files only.
+
+## S-05a  gross-cap reduction exemption; drawdown precedence
+DATE:            2026-08-18T13:47:44+00:00
+BASE SHA:        14b23cd7d7082dd4169ede4c3e194c591a412105
+RESULT SHA:      31771af9456216a27f3d308f8847d72a92f36244
+VERDICT:         passed
+CONFORMANCE:     X3 repaired | failed-before: yes | passes-after: yes
+                 clause-2 case | failed-before: yes | passes-after: yes
+                 X3 pre-fix (binding 10% cap, two-symbol book, flatten AAPL):
+                   FAILED tests/conformance/test_reduction_permitted.py::
+                   TestGrossExposureCap::test_entry_refused_but_flatten_permitted
+                   AssertionError: flattening order was not permitted: REJECT
+                   ('gross exposure limit: 10000 >= 10000.0'). A degraded state
+                   may tighten entries; refusing the exit strands the exposure
+                   it is trying to protect (Inv-11).
+                   1 failed in 0.28s
+                 clause-2 pre-fix (500 AAPL @ 100 marked to 80, check_signal):
+                   FAILED tests/risk/test_basic_risk.py::TestCheckOrder::
+                   test_drawdown_wins_when_gross_and_drawdown_both_breach
+                   AssertionError: assert <RiskAction.REJECT: 3> ==
+                   <RiskAction.FORCE_FLATTEN: 4>
+                   RiskVerdict(..., action=REJECT,
+                   reason='gross exposure limit: 40000.00 >= 18000.000')
+                   1 failed in 0.32s
+                 After: X3 8 passed; clause-2 included in test_basic_risk 37 passed.
+TESTS:           4780 passed / 0 failed / 28 skipped / 10 xfailed
+                 -> 4782 passed / 0 failed / 28 skipped / 10 xfailed
+                 determinism 145 -> 145. The +2 are exactly this step's two
+                 new test functions; nothing previously passing moved.
+                 Baseline figures read from baseline_post-S-05.json, which
+                 pre-S-05a matched key-for-key (parity 62/62, tests 4780/28/10,
+                 sloc 43201).
+PARITY:          declared hold (all 62 constants) | actual 62 constants
+                 unmoved, 0 changed, key-for-key and value-for-value | MATCH.
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45eb8f3c3d041e74831390d29214e0f39d6881ae21e0cae7b
+                 unmoved. EXPECTED_RISK_VERDICT_COUNT 4 unmoved.
+                 verify_step S-05A missed the plan key (unfenced block plus
+                 uppercase). Four checks by hand: FILES clean, PARITY holds,
+                 tests +2, NET DELTA modules 0.
+FILES DECLARED:  src/feelies/risk/basic_risk.py
+                 tests/conformance/test_reduction_permitted.py
+                 tests/risk/test_basic_risk.py
+FILES TOUCHED:   src/feelies/risk/basic_risk.py
+                 tests/conformance/test_reduction_permitted.py
+                 tests/risk/test_basic_risk.py
+                 3 declared, 3 touched, nothing outside FILES.
+                 Step commit 31771af is those three files only.
+NET DELTA:       declared src modules 0, public symbols 0, branch points +1
+                 (the exemption) -1 (no new branch for reordering) = 0
+                 | actual src modules 196 -> 196 (+0), public symbols 551 -> 551
+                 (+0), sloc 43201 -> 43210 (+9), import cycles 1 -> 1 (+0),
+                 alphaleak 2 -> 2 (+0). MATCH on modules. The +9 sloc is the
+                 exemption flag, the HWM/drawdown reorder, and docstring.
+FINDINGS:        The S-05a plan block was written outside a fenced code block,
+                 so verify_step._blocks dropped it and --list reported
+                 "36 of 36 fully specified" for a plan containing 37 steps.
+                 A step that fails to parse is invisible, not reported --
+                 same shape as the blind oracle (43 of 62 constants) and
+                 the vacuous X3 cap. Every verification tool here needs a
+                 coverage assertion, not just a pass/fail. Record against
+                 exec-tools-v2 alongside the uppercase step-id bug.
+                 Also: this step's PROBLEM field cites equity 89995 / cap
+                 17999, which assumed a fee this path does not charge;
+                 actual is 90000 / 18000.
+                 Carried, not fixed: G.8 registers G01-G45 (G46 is S-10);
+                 G6 rejects depends_on_sensors: []; load_platform_config +
+                 build_platform(config) loses config-path attribution
+                 (S-04c); ci.yml import contract continue-on-error: true
+                 until G40; test_forced_exit_attribution_replay.py:193-196
+                 stubs check_signal/check_order.
+NOTES:           X3 was vacuous at _loose_config:81 (cap 100.0); repaired as
+                 a separate TestGrossExposureCap rather than by mutating
+                 the shared fixture, preserving the other seven states'
+                 gate isolation. The exemption predicate is "prospective
+                 exposure does not increase", supplied by the caller --
+                 exposure_override vs snapshot at gate 2, signal_reduces at
+                 gate 1. The same flag exempts the scale-down band; found
+                 because X3 still failed after a REJECT-only exemption.
+                 HWM staleness resolved: rally-over-cap probe gives
+                 _high_water_mark 110000.
+                 Parent of the step commit is fc907c5 (plan: fence the
+                 S-05a block), landed while waiting at the gate. Captures
+                 were taken at 14b23cd; fc907c5 is plan-only and does not
+                 move parity.
+                 Left uncommitted for the operator: capture artifacts and
+                 this ledger entry.
