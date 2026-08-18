@@ -309,7 +309,8 @@ def main() -> None:
         "events": event_versioning(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    OUT.write_text(json.dumps(data, indent=2, sort_keys=True),
+                   encoding="utf-8", newline="\n")
 
     c = data["citations"]
     bad = [x for x in c["symbol_citations"] if not x["resolves"]]

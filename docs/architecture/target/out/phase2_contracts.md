@@ -2009,3 +2009,76 @@ Two of the silently-surviving cases are not hypothetical. Phase 0 P-1 names `Ord
 **All seven §F resolutions complete.** Together with the twelve engine contract sheets, deliverable **B** is finished — every §F item has exactly one named owner (F.6 by a justified two-mechanism split), and CORE §M's requirement that each be resolved is met for Phase 2's share of it.
 
 **Carried into Phase 3**, as flagged across the sheets and not resolved here: two production paths to a desired portfolio (engine 6 overlap 2); the read-surface design for the four never-subscribed contracts plus engine 12's private-attribute observation path; the 24 mode branches split into composition-root selection versus in-engine branching; the gate ladder over the 56-site `regime_gate` family. **Two §F-class findings recorded for the operator** (CORE §A), neither in §F.1–7 and neither resolved: the horizon grid (engine 2's sheet) and risk-model provenance (engine 6's sheet).
+
+---
+
+## ADDENDUM (post-Phase-7, pre-execution): F.8 — Horizon grid
+
+**Provenance of this section.** Phase 2 closed with seven §F resolutions and recorded the horizon grid as an unresolved §F-class finding on engine 2's sheet (`:217-228`). Phase 7's §K.1.4 promoted it to a model finding, its Definition-of-Done item M2 called for it to be "added as §F.8 and resolved on the produce/interpret/apply pattern the other seven used, **before execution rather than during it**", and its closing section listed it as one of three things that should close before execution begins. This addendum discharges that. It is written in Phase 2's §F template because §F resolutions are Phase 2's deliverable; it is marked as an addendum rather than folded into the body so the audit trail shows Phase 2 concluded seven and the eighth arrived later.
+
+**RESPONSIBILITY:** 8. Horizon grid — which horizons exist, when their boundaries fall, and what anchors them. Engines 2, 4 and 6 must see the same grid at the same event time.
+
+**OWNER ENGINE:** 2 — Feature Estimation.
+
+**WHY THIS ENGINE:**
+
+The consumer list decides it, exactly as it did for F.1. Four places hold a view of the grid today and none produces it, and three of the four hold a *separately derived* view:
+
+| Holder | Site | What it holds |
+|---|---|---|
+| Boundary scheduler | `src/feelies/sensors/horizon_scheduler.py:97` | its own `_horizons_sorted` |
+| Composition barrier | `src/feelies/composition/synchronizer.py:68-75` | its own `_context_horizons`, `_signal_horizons` and `_signal_horizons_sorted` |
+| Snapshot assembly | `src/feelies/features/aggregator.py:153-157` | features sorted by `(feature_id, horizon_seconds, feature_version)` |
+| Anchor | `src/feelies/core/session_clock.py:47` | `rth_open_ns` |
+
+All four are handed their inputs by the composition root — `horizons=config.horizons_seconds` at `src/feelies/bootstrap.py:1206`, and a separately computed signal subset via `_composition_signal_horizons` at `:1471` — so the grid is assembled at composition and immediately forgotten. There is no artifact, no version and no hash, which is why a disagreement between the four is undetectable rather than merely unlikely.
+
+Engine 2 is the owner for the reason its own sheet gave: it already owns boundary snapshots, so the grid is a second field on an artifact it already publishes rather than a second mechanism. Three alternatives, rejected:
+
+- **The composition root**, which is what assembles the grid today. It selects and wires; it does not own facts, and it publishes no versioned artifact. Leaving ownership there is what produced three private sorted views.
+- **Engine 6**, by the same cycle argument that removed it from F.1: the composition barrier is the *last* consumer of the grid, so a grid owned there would be defined after two of its own consumers had used it.
+- **The session clock**, which produces `rth_open_ns`. The anchor is an *input* to the grid, not the grid — the same produce/interpret distinction F.3 drew between observing session state and constraining on it.
+
+**Membership and anchoring are different facts and must not share a channel**, on F.1's pattern: which horizons exist is governance resolved at composition, while where a boundary falls is derived from the anchor. Collapsing them would make a tzdata change look like a grid change.
+
+**CONTRACT PUBLISHED:**
+
+A `HorizonGrid`, resolved at composition, frozen, consumed once — deliberately the same shape as F.1's `UniverseSnapshot`:
+
+- **Horizons as an ordered tuple**, sorted, not a set. Phase 1 budget row 3 measured set iteration as a live nondeterminism source with no named check, and the three private sorts above are three independent chances to disagree. Consumers read the published order and must not re-sort.
+- **The signal-horizon subset as a declared field**, not a value derived at the composition root. Today `_composition_signal_horizons` (`bootstrap.py:1471`) computes it and `UniverseSynchronizer` re-derives a sorted copy; one of those two is redundant and neither is recorded.
+- **As-of semantics:** session id and the anchor event time, which is the session's opening boundary.
+- **The anchor's own provenance, including the host tzdata version.** Phase 1 budget row 13 states that a tzdata change "would silently move every horizon grid", and it is currently unpinned and unrecorded. A grid that does not record what anchored it cannot prove two runs used the same boundaries.
+- `grid_hash` over the ordered horizons plus the anchor, and a `grid_version`, entering the run fingerprint alongside `universe_hash` (F.1) and `identity_hash` (F.2).
+- `is_boundary(horizon, timestamp) → bool`, total. There is no third answer and no "not yet known."
+
+**FAILURE BEHAVIOR:**
+
+| Condition | Behaviour |
+|---|---|
+| A consumer requests a horizon not in the grid | Refuse at the boundary, naming the horizon and the grid version. Not an empty result — an absent horizon is a wiring error, and returning nothing makes it look like a quiet session. |
+| A boundary is missed | Emit the gap, per engine 2's existing rule that "a missed boundary is a gap and must emit". |
+| Host tzdata differs from the version the grid recorded | Refuse at load, naming both. This is the one condition the platform cannot currently detect at all. |
+| Two consumers observe different grids | Impossible by construction once the grid is published rather than assembled per consumer — which is the point of the resolution, and what the conformance test below asserts. |
+
+**DETERMINISM NOTE:**
+
+Declaring the grid moves no baseline. It is composition-time data and enters no hash helper's field list, so by Phase 1 §8's table it is an addition the oracle is blind to — the same property, and the same caveat, as `schema_version` under F.7. **The acceptance condition is therefore not "the hashes hold" but "the three private views are gone":** if `_horizons_sorted`, `_signal_horizons_sorted` and the composition-root derivation still exist after the step, the contract was added without removing what it replaced, and the disagreement it exists to prevent is still possible.
+
+**Conformance test:** one grid per run, asserted structurally — no module outside engine 2 may hold a sorted horizon collection, on the AST-scan pattern already proven by `tests/acceptance/test_no_walltime_outside_clock.py:72`.
+
+**Alpha-naming (CORE §I).** Clean — the grid is a set of integers with no alpha, symbol or archetype in it. Note that the canonical horizon set is a platform constant and the CORE §C.7 prohibition is on *branching* on a horizon, not on declaring which exist.
+
+**Model finding: none.** Engine 2 owning the grid is a strong fit rather than a forced one: it already owns the boundary artifact the grid describes.
+
+**Step placement is an operator call, and this addendum does not make it.** Phase 7 §K.5 ruled "no new step — the grid is a config constant today, so this is a contract to declare rather than a capability to build", which implies folding it into an existing wave-C contract step. Which one is not derivable from anything written down, so the plan must name it before S-01 rather than during wave C.
+
+---
+
+## UNRESOLVED: F.9 — Risk-model provenance
+
+**Not resolved here, and recorded so that §F's incompleteness is not understated.** Phase 2's engine-6 sheet (`:687`) records "**a ninth unassigned responsibility: risk-model provenance**" — factor loadings, covariance and betas, which CORE §E has engine 6 consume and gives no engine the production of. Phase 0 D0.2 places factor loadings and the sector map in `storage/reference/` under "Unowned by any engine", "consumed by engines 6, 7, 10 and by `bootstrap`; owned by none". Phase 2's closing paragraph above lists it alongside the horizon grid; its recommended owner is engine 12.
+
+**Phase 7 did not carry it.** §K.1.4 treats the horizon grid as the sole eighth item and reasons that "a seven-item list that turns out to have eight items invites the question of whether it has nine, and nothing in Phases 0–7 was designed to answer that"; the Definition-of-Done repeats that "no phase had a method for finding an eighth, so none has a method for finding a ninth". **A phase did find the ninth** — Phase 2, in the same document, using that word — so the correct statement is narrower and worse: the method existed and the finding was recorded, and the later phase that enumerated §F-class gaps read one of the two sheets that carried one.
+
+**Two reasons this needs an operator rather than an addendum.** First, the recommended owner is in tension with a rule Phase 2 applied elsewhere: engine 12 was rejected as owner of F.2 because it "holds no write authority by its own sheet's rule" (`:1573`), and that objection is not obviously weaker here. Second, unlike the horizon grid, this may be a capability to build rather than a contract to declare — the loadings are unowned and unversioned reference data, so §K.5's "no new step" reasoning does not transfer, and resolving it could add scope to a locked plan.

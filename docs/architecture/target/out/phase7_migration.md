@@ -620,7 +620,8 @@ VALIDATED BY:    X10; R1 under a random seed; the parity oracle; and a
                  deliberate slow-engine injection through HARN-2 asserting the
                  breach fires, the record is written, and replay of that log
                  reproduces the same response without re-measuring
-PARITY IMPACT:   **All 26 hold, and the reason is a design constraint, not an
+PARITY IMPACT:   hold — all 26 baselines, conditional on (a) and (b) below.
+                 **All 26 hold, and the reason is a design constraint, not an
                  accident.** Two things must be true. (a) `LatencyBreach` must
                  not draw from `self._seq` — the always-on timers at
                  `:2127-2141` are already routed with `sequence=0` precisely so
@@ -738,7 +739,8 @@ REFACTOR PATH:   **Artifact + closure test, atomic.** (1) `schema_version` on
 BLAST RADIUS:    boundary — one envelope field, 21 classes, one gate
 VALIDATED BY:    S8, R5, all 26 baselines, the parity oracle,
                  `uv run mypy src/feelies`
-PARITY IMPACT:   **All 26 hold, and that is the defect this step exposes rather
+PARITY IMPACT:   hold — all 26 baselines, and no constant is re-pinned here.
+                 **All 26 hold, and that is the defect this step exposes rather
                  than fixes.** Hash inputs are hand-written field lists per
                  helper, so adding a field cannot break parity (Phase 0 P-1,
                  Phase 1 §6). The oracle is blind to schema growth. Adding
@@ -828,7 +830,9 @@ BLAST RADIUS:    platform-wide by reach, boundary by behaviour — 329 sites gai
                  place a wide reach is accepted before wave E, because every
                  later step's failure behaviour is stated against these rows.
 VALIDATED BY:    S13, X6, all 26 baselines, the parity oracle, X3 from S-02
-PARITY IMPACT:   All 26 hold **if and only if no gate emission draws from a
+PARITY IMPACT:   hold — all 26 baselines, conditional on the emission channel
+                 named below.
+                 All 26 hold **if and only if no gate emission draws from a
                  shared sequence generator**. X6 requires every gate to emit a
                  verdict, and today `RiskVerdict` publishes 43 times in a whole
                  session (`perf_census.json`). Verdict totality makes it one of
@@ -1711,7 +1715,9 @@ VALIDATED BY:    S7, H3, H1, the oracle, and `src/feelies/bootstrap.py:203`'s
                  `enforce_market_order = config.mode != OperatingMode.PAPER` —
                  Phase 1's open defect on silent reordering, which stays in
                  bootstrap and must be **declared** there rather than moved
-PARITY IMPACT:   All 26 hold if each move is behaviour-preserving.
+PARITY IMPACT:   hold — all 26 baselines, conditional on each of the 7 moves
+                 being behaviour-preserving.
+                 All 26 hold if each move is behaviour-preserving.
                  `src/feelies/harness/backtest_prep.py:141` and `src/feelies/harness/backtest_runner.py:190` are on the
                  oracle's own path, so a mistake there breaks the oracle
                  immediately — which makes them the safest two to move and the
@@ -1789,24 +1795,44 @@ FILES:           src/feelies/alpha/ (universe, §F.1 -> engine 5)
                  backpressure ingress, §F.6 -> engine 1)
                  src/feelies/kernel/ (exception taxonomy, §F.5 -> Kernel)
                  src/feelies/monitoring/ (budget-breach shedding, §F.6 -> engine 11)
-WHY THIS OWNER:  Phase 2 resolves all five and this step only implements the
+                 src/feelies/sensors/ (horizon grid, §F.8 -> engine 2)
+                 src/feelies/composition/, src/feelies/features/ (§F.8
+                 consumers: the private grid views these two hold)
+WHY THIS OWNER:  Phase 2 resolves all six and this step only implements the
                  resolutions: §F.1 and §F.2 to engine 5 and engine 7
                  respectively, §F.3 to engine 1, §F.5 to the Kernel, §F.6 split
                  between engine 1 (ingress shedding) and engine 11 (budget
-                 breach — already landed in S-07).
-REFACTOR PATH:   **Ship as five independent commits, one per §F item**, in this
+                 breach — already landed in S-07), and **§F.8 to engine 2**.
+                 §F.8 was resolved in X1 as an addendum to Phase 2 rather than
+                 by Phase 2 itself, on that phase's own uncontested
+                 recommendation; it lands here because this is where §F is
+                 implemented, and because it is structurally identical to §F.1
+                 — both are frozen composition-time artifacts hashed into the
+                 run fingerprint.
+REFACTOR PATH:   **Ship as six independent commits, one per §F item**, in this
                  order: §F.5 exception taxonomy first (every other step's ON
                  EXCEPTION clause assumes one exists to fail into), then §F.3,
-                 §F.1, §F.6 ingress, §F.2 last. **G32 is the only gap in the
-                 plan that is net-new capability rather than remediation** — no
-                 symbol-identity handling exists to move — so it is the one
-                 candidate for deferral if scope must be cut; see G.9.
+                 §F.1, **§F.8**, §F.6 ingress, §F.2 last. §F.8 must follow §F.3
+                 because the grid's anchor is the session open §F.3 assigns to
+                 engine 1, and it follows §F.1 so the `UniverseSnapshot`
+                 pattern is already in place to copy. **G32 is the only gap in
+                 the plan that is net-new capability rather than remediation**
+                 — no symbol-identity handling exists to move — so it is the
+                 one candidate for deferral if scope must be cut; see G.9.
 BLAST RADIUS:    platform-wide for §F.1 and §F.3 by site count; boundary for the
-                 rest
+                 rest, §F.8 included (three holders across three packages)
 VALIDATED BY:    C2, C3, X1, X6, X7, S6, S14, the oracle. **G31 and G32 have no
                  Phase 6 test (G.0.4)**, so this step must author its own gates
                  and register them in S-01's registry, or S1 stays xfailed.
-PARITY IMPACT:   §F.5, §F.6 and §F.2 hold — taxonomy, policy and net-new
+                 §F.8 has no Phase 6 test either and authors one: an AST scan
+                 asserting no module outside engine 2 holds a sorted horizon
+                 collection, on the pattern of
+                 `tests/acceptance/test_no_walltime_outside_clock.py:72`.
+PARITY IMPACT:   hold — all 26 baselines. This step pre-authorises no re-pin
+                 and G.7 does not schedule one for it, so a moved baseline is
+                 an undeclared change: stop the line under CORE-EXEC §D.2 and
+                 hand the disagreement to the operator.
+                 §F.5, §F.6 and §F.2 hold — taxonomy, policy and net-new
                  capability, none of which changes a draw or a hashed field.
                  §F.1 and §F.3 are the risk: consolidating 200 and 165 sites
                  onto one authority will change behaviour anywhere the current
@@ -1815,12 +1841,34 @@ PARITY IMPACT:   §F.5, §F.6 and §F.2 hold — taxonomy, policy and net-new
                  item; a moved baseline here is a discovered disagreement, which
                  is the finding, not the failure. One commit per item so the
                  cause is nameable.
+                 **§F.8 holds, and its acceptance condition is not the hashes.**
+                 The grid is composition-time data that enters no hash helper's
+                 field list, so by Phase 1 §8's table the oracle is blind to it
+                 — the same property as `schema_version` under §F.7. Accept
+                 §F.8 on the removal of the three private views, not on a green
+                 suite: if `_horizons_sorted`, `_signal_horizons_sorted` and the
+                 composition-root derivation survive the commit, the contract
+                 was added without removing what it replaced and the
+                 disagreement it exists to prevent is still possible. It is
+                 also the one §F item here that could move a baseline for a
+                 *benign* reason — publishing one ordered grid where three
+                 independently sorted views existed changes nothing only if
+                 they already agreed, which is the same discovered-disagreement
+                 case as §F.1.
 DELETES:         199 of 200 universe definition points; 164 of 165 session/halt
-                 authorities; up to 18 fail-quiet handlers (18 -> 0)
+                 authorities; up to 18 fail-quiet handlers (18 -> 0); the three
+                 private horizon-grid views (`horizon_scheduler.py:97`,
+                 `synchronizer.py:74`, and the `_composition_signal_horizons`
+                 derivation at `bootstrap.py:1471`)
 NET DELTA:       src modules **+2** (symbol identity, exception taxonomy),
-                 public symbols +4, branch points **-18** (fail-quiet handlers).
+                 public symbols +5 (+4, plus `HorizonGrid` declared in an
+                 existing engine-2 module — §K.5 rules §F.8 a contract to
+                 declare, not a capability to build, so it adds no module),
+                 branch points **-18** (fail-quiet handlers).
 ROLLBACK:        revert per §F item. §F.2's revert is trivial (nothing depended
-                 on it); §F.1's is the hardest in the plan.
+                 on it); §F.1's is the hardest in the plan. §F.8's is cheap —
+                 restore the three private views — which is the other reason it
+                 is safe to carry in the plan's widest step.
 ```
 
 ---
@@ -1837,12 +1885,15 @@ PROBLEM:         **~12.8 µs/quote (9.4%) provably unread** — 20 unread event
                  fields of 179, 2 unread metric names of 9, 106 public methods
                  with zero in-src call sites of 564 — led by **7.2 µs/quote
                  publishing `StateTransition` to zero subscribers**. CORE §G.10
-                 justified net complexity.
+                 justified net complexity. **The 106 is a measurement, not a
+                 deletion list.** A5.4 closed **FALSE** in X1 — see REFACTOR
+                 PATH (3) and NET DELTA.
 FILES:           src/feelies/kernel/orchestrator.py:4694-4707
                  (`_emit_state_transition`)
                  src/feelies/core/events.py:344 (`StateTransition`)
                  tests/determinism/parity_manifest.py:183 (`state_transition`)
-                 the 20 unread fields, 2 unread metrics, 106 uncalled methods
+                 the 20 unread fields, 2 unread metrics, and the verified-dead
+                 method set the coverage gate admits
 WHY THIS OWNER:  Engine 11 owns observability. `StateTransition`'s docstring
                  promise — "Logged whenever any state machine transitions. No
                  silent transitions" (`src/feelies/core/events.py:345`) — is
@@ -1859,18 +1910,46 @@ REFACTOR PATH:   **This step corrects Phase 5's own claim about itself and that
                  8.007 transitions per quote, so deleting the publish removes
                  ~8 draws per quote from the shared kernel generator and shifts
                  every later event on every tick.
-                 Path: (1) the 20 fields, 2 metrics and 106 methods first, one
-                 category per commit, each verified against the oracle — those
-                 genuinely do not move a hash; (2) `StateTransition` **last and
-                 alone**, as the notification-channel move plus a declared
-                 re-pin; (3) A5.4 must close before deleting the 106 methods —
-                 cross-reference `tests/` and `scripts/`, because static
-                 analysis covers `src/` call sites only.
+                 Path: (1) the 20 fields, 2 metrics and the verified-dead
+                 methods first, one category per commit, each verified against
+                 the oracle — those genuinely do not move a hash; (2)
+                 `StateTransition` **last and alone**, as the
+                 notification-channel move plus a declared re-pin; (3) **A5.4
+                 is closed and it is FALSE — the method deletion is rescoped
+                 and gated.** X1 cross-referenced `tests/`, `scripts/`,
+                 `tools/`, `alphas/`, `configs/` and string-literal dispatch:
+                 of the 106, **82 are called from `tests/` alone** and only
+                 13 are reached by nothing. Two independent static passes
+                 disagreed in both directions (13 vs 16) on same-name receiver
+                 collisions, which is why the residue is settled empirically
+                 rather than by a third search. **Gate:** run the full suite
+                 under `coverage` with branch data and delete only methods the
+                 run proves unexecuted; then replay the APP oracle. A method
+                 the gate cannot reach but that is *documented* as an
+                 extension point is **not** deletable — `FeatureComputation.
+                 update_trade` (`alphas/SCHEMA.md:78`) is the worked example,
+                 and coverage cannot see it because nothing implements the
+                 optional hook today.
 BLAST RADIUS:    platform-wide (step 2); local per commit for step 1
-VALIDATED BY:    S5, S11, C1, the oracle, and Phase 4's per-quote measurement
-                 re-run to confirm the ~12.8 µs is actually recovered — a
-                 deletion that does not move the number deleted the wrong thing
-PARITY IMPACT:   **Step 1: all 26 hold, per item, and that is the acceptance
+VALIDATED BY:    S5, S11, C1, the oracle, the coverage gate above, and Phase
+                 4's per-quote measurement re-run to confirm the ~12.8 µs is
+                 actually recovered — a deletion that does not move the number
+                 deleted the wrong thing. Note the corrected expectation: the
+                 method deletion recovers ~0 µs because an uncalled method
+                 costs nothing per quote, so the recovered time is
+                 attributable to `StateTransition` and the unread fields.
+PARITY IMPACT:   break — step 2 only; step 1 holds all 26. Step 2 deletes
+                 EXPECTED_STATE_TRANSITION_HASH and
+                 EXPECTED_STATE_TRANSITION_COUNT from the manifest, and re-pins
+                 EXPECTED_LEVEL2_SIGNAL_HASH, EXPECTED_SIGNAL_FIRES_HASH,
+                 EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH,
+                 EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH,
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH,
+                 EXPECTED_POSITION_PNL_HASH, EXPECTED_RISK_VERDICT_HASH and
+                 _BASELINE_TRADE_PARITY_HASH. No COUNT constant is declared to
+                 move; one that does is an unpredicted event-count change and
+                 remains a stop.
+                 **Step 1: all 26 hold, per item, and that is the acceptance
                  test.** Step 2: the `state_transition` baseline does not re-pin,
                  it is **deleted from the manifest** (26 -> 25, or 27 -> 28 after
                  S-17's additions), because with the publish gone the stream has
@@ -1885,12 +1964,23 @@ PARITY IMPACT:   **Step 1: all 26 hold, per item, and that is the acceptance
                  oracle is precisely the dead work being removed, and §G.10
                  would not permit it.
 DELETES:         `_emit_state_transition`; the `StateTransition` domain-bus
-                 publish; 20 unread event fields; 2 unread metric names; up to
-                 106 uncalled public methods; the `state_transition` manifest
-                 entry. **~12.8 µs/quote, 9.4% of measured tick cost.**
-NET DELTA:       src modules 0, public symbols **-106** (subject to A5.4),
+                 publish; 20 unread event fields; 2 unread metric names; **up
+                 to 12 verified-dead public methods** (13 measured, less
+                 `FeatureComputation.update_trade`, which is a documented
+                 author hook); the `state_transition` manifest entry.
+                 **~12.8 µs/quote, 9.4% of measured tick cost.**
+NET DELTA:       src modules 0, public symbols **-12** (was **-106**; A5.4
+                 closed FALSE in X1 and the step is rescoped — the coverage
+                 gate may reduce this further, never increase it),
                  branch points 0, manifest entries **-1**.
                  Orchestrator lines -~15 plus the field removals.
+                 **Three of the 12 are documented contract surfaces, not
+                 plain dead code, and each needs an explicit call rather than
+                 a mechanical deletion:** `CostArithmetic.
+                 declared_round_trip_cost_bps` (the Inv-12 disclosure
+                 accessor) and the `AlphaBudgetRiskWrapper.
+                 checkpoint_risk_state` / `restore_risk_state` pair (which
+                 §J.2 already reasons about).
 ROLLBACK:        revert per commit. Step 2's revert must restore the
                  `state_transition` baseline value and every re-pinned hash from
                  git history in one commit — which is why step 2 is alone in its
@@ -2070,14 +2160,21 @@ the reconciliation requirement.
 | S-27 | 0 | 0 | −2 | 201 | 595 | 357 | +1 |
 | S-28 | 0 | 0 | −7 | 201 | 595 | 350 | +1 |
 | S-29 | 0 | −1 | −1 | 201 | 594 | 349 | +1 |
-| S-30 | +2 | +4 | −18 | 203 | 598 | 331 | +1 |
-| **wave D** | **+1** | **+2** | **−29** | **203** | **598** | **331** | **+10** |
-| S-31 | 0 | −106 | 0 | 203 | 492 | 331 | 0 |
-| S-32 | 0 | 0 | 0 | 203 | 492 | 331 | 0 |
-| S-33 | 0 | 0 | 0 | 203 | 492 | 331 | 0 |
-| S-34 | 0 | −14 | 0 | 203 | 478 | 331 | 0 |
-| **wave E** | **0** | **−120** | **0** | **203** | **478** | **331** | **0** |
-| **whole plan** | **+7** | **−73** | **−25** | **203** | **478** | **331** | **+51** |
+| S-30 | +2 | +5 | −18 | 203 | 599 | 331 | +1 |
+| **wave D** | **+1** | **+3** | **−29** | **203** | **599** | **331** | **+10** |
+| S-31 | 0 | −12 | 0 | 203 | 587 | 331 | 0 |
+| S-32 | 0 | 0 | 0 | 203 | 587 | 331 | 0 |
+| S-33 | 0 | 0 | 0 | 203 | 587 | 331 | 0 |
+| S-34 | 0 | −14 | 0 | 203 | 573 | 331 | 0 |
+| **wave E** | **0** | **−26** | **0** | **203** | **573** | **331** | **0** |
+| **whole plan** | **+7** | **+22** | **−25** | **203** | **573** | **331** | **+51** |
+
+**The S-31 row was −106 and is now −12** (X1, A5.4 closed FALSE). Every figure
+downstream of it in this table moved by +94, and the whole-plan symbol column
+changed sign. The pre-amendment row is kept here rather than in git history
+alone because §G.6's purpose is to be argued against, and the argument changed:
+`| S-31 | 0 | −106 | 0 | 203 | 492 | 331 | 0 |`, giving wave E −120 and the
+whole plan −73.
 
 **The test-file column is measured, not projected.** Phase 6's 50 tests resolve
 to **49 distinct paths — 45 new test modules and 4 existing files extended**
@@ -2091,7 +2188,7 @@ registry, FIX-1 to FIX-3, HARN-1 and HARN-2 — gives the **+51** in the last
 column. Six steps show `0` because the test they author was already given a file
 by an earlier step.
 
-**Reading the ledger against §G.10.** Net across the plan: **+7 modules, −73
+**Reading the ledger against §G.10.** Net across the plan: **+7 modules, +22
 public symbols, −25 branch points**, plus 51 files under `tests/` which §G.10
 exempts. Three things in it deserve to be argued rather than tabulated:
 
@@ -2100,13 +2197,25 @@ exempts. Three things in it deserve to be argued rather than tabulated:
    manifest, sequence registry and forbidden-reads matrix (contract definitions,
    S-11 to S-14); symbol identity and the exception taxonomy (S-30). Wave D nets
    +1 module only because S-26 deletes `src/feelies/alpha/arbitration.py` and S-30 adds two.
-2. **Public symbols fall by 73, and −106 of that is one step.** S-31's method
-   deletion carries assumption A5.4 — that the 106 uncalled public methods are
-   genuinely dead and not reached from `tests/`, `scripts/` or `getattr`. **If
-   A5.4 is wrong the plan's headline net-negative disappears**: without S-31 the
-   plan is +33 public symbols, and the largest single contributor becomes S-15's
-   32 `reset()` methods. That is the honest sensitivity and it is why A5.4 must
-   close before S-31 and not during it.
+2. **Public symbols rise by 21, and the sensitivity this note used to describe
+   as hypothetical has fired.** The original note read: "Public symbols fall by
+   73, and −106 of that is one step… **if A5.4 is wrong the plan's headline
+   net-negative disappears**: without S-31 the plan is +33 public symbols."
+   **A5.4 was wrong.** X1 closed it FALSE — of the 106 methods with no in-`src/`
+   call site, 82 are called from `tests/` and only 13 are reached by nothing —
+   so S-31 is rescoped from −106 to −12 and the plan nets **+22 public symbols**.
+   The largest single contributor is now S-15's 32 `reset()` methods.
+
+   **What this does and does not break.** §G.10's rule is per-category, not
+   per-plan: waves A, B and C may increase, and waves D and E must not. Wave E
+   is still net-negative (−26) and wave D is unchanged, so **the plan still
+   satisfies §G.10 as written**. What it loses is the rhetorical claim of an
+   overall net-negative, which was never §G.10's test — it was this plan's own
+   framing, and it rested one assumption deep on a static measure that was
+   never a deletion list. The honest statement is that the plan buys −25 branch
+   points and 51 conformance tests at a cost of +7 modules and +22 public
+   symbols, and that trade must be argued on its merits rather than on a
+   headline.
 3. **Branch points fall by 25 and the plan never adds an unenumerable one.** The
    +4 additions (schema gate, cascade bound, latency comparison and escalation,
    journal refusal) all become rows in S-11's gate registry; the −29 removals are
@@ -2125,8 +2234,8 @@ prediction: a pure move that moves a hash was not pure.
 | Step | Artifact affected | Direction | Cause |
 |---|---|---|---|
 | S-16 | `_BASELINE_CONFIG_HASH` only | re-pin, 1 value | The config snapshot gains the alpha manifest hash. It is already exempt from the parity manifest as "config-contract hash, not a replay baseline" (`tests/determinism/test_parity_manifest.py:174-175`), so no replay baseline moves. |
-| S-17 | `manifest_fingerprint()` | grow, 26 → 28+ | 0 |
-| S-23 | `level4_hazard_exit_order`, `decoupled_risk_flatten_order`, `halt_order`, `symbol_halted`; possibly `position_pnl` | re-pin, one author per commit | +1 |
+| S-17 | `manifest_fingerprint()` | grow, 26 → 28+ | Manifest growth, not behavioural change. S-17 adds the engine-1 canonical-stream baseline and engine 11's alert taxonomy; `manifest_fingerprint()` is one visible line over the entry set by design (`tests/determinism/parity_manifest.py:234`), so gaining entries moves it while no existing baseline moves. |
+| S-23 | `level4_hazard_exit_order`, `decoupled_risk_flatten_order`, `halt_order`, `symbol_halted`; possibly `position_pnl` | re-pin, one author per commit | The three remaining exit authors move off the kernel's signal family, the move the repo has already run once and documented (`tests/determinism/test_orchestrator_replay.py:273-278`): `source_layer`, `strategy_id` and the content-derived order id all change, and the halt path is engine 1/9 shared. `position_pnl` moves only if a draw family changes. |
 | S-31 step 2 | `state_transition` **deleted**; then `level2_signal`, `signal_fires`, `level3_sized_intent_*`, `level4_portfolio_order`, `position_pnl`, `risk_verdict`, trade parity hash | delete 1, re-pin the rest | `_emit_state_transition` draws `self._seq.next()` (`src/feelies/kernel/orchestrator.py:4700`) 8.007 times per quote. Removing the publish removes those draws and shifts every later `sequence` on every tick, and `sequence` is the first field of nearly every helper. The `state_transition` stream becomes empty, so its entry is deleted rather than re-pinned. |
 
 **Two dependency rules that fall out of this table.**
@@ -2234,7 +2343,7 @@ is nominated as the cut line if scope must shrink.
 |---|---|---|---|
 | **G32** (§F.2 symbol identity) | The whole gap, if scope must be cut | It is the plan's only **net-new capability** rather than remediation — no symbol-identity handling exists to move (3 sites, no CUSIP/FIGI, no corporate-action handling). Phase 5's own blast-radius reading is that intraday single-day replay is unaffected and only a multi-day series crossing a corporate action is silently wrong. The platform is intraday. | A multi-day backtest, or any live position held across a corporate action. Until then this is a known-wrong number in a case the platform does not currently produce. |
 | **G41** (4.2× latency overrun) | The overrun itself, to S-33 | S-07 creates the budget and the breach response, which is the P0 (G43). **Closing the overrun is a different job from detecting it**, and doing them in one step would mean optimising against a budget that had never fired. | S-07 shipped and X10 observed firing at least once under HARN-2 injection. |
-| **G44** (106 uncalled methods) | The method deletion, pending A5.4 | Static analysis covers `src/` call sites only. Deleting a method reached from `tests/`, `scripts/` or `getattr` is a silent break, and this deletion carries the plan's entire headline net-negative (G.6 note 2). | Cross-reference `tests/` and `scripts/`, then delete against the oracle, per A5.4. |
+| **G44** (106 uncalled methods) | The method deletion, now rescoped to ~12 | A5.4 closed **FALSE** in X1: static analysis covered `src/` call sites only, and 82 of the 106 are called from `tests/`. The deletion no longer carries the plan's headline, because there is no longer a headline net-negative to carry (G.6 note 2). What survives is the silent-break risk on the residue — `getattr`-reached methods fail closed with no exception. | Delete only what a `coverage` run with branch data proves unexecuted, then replay the oracle. Documented extension points are excluded regardless of coverage. |
 | **X1** (degraded monotonicity property) | From wave B to S-22 | X1 is a property over the **enumerable** degradation set, and that enumeration is an artifact S-11 and S-22 create. It genuinely cannot precede them. **X3 covers the P0-relevant clause in wave A** — reduction is always permitted — so no P0 ships without a monotonicity guard. | S-11 and S-22 shipped. |
 | **G31, G32 conformance tests** | Authored in S-30 rather than wave A | Phase 6 specifies no test for either (G.0.4, `p7_index.json:unmapped`). S1 will fail on both from wave A onward, xfailed with their gap IDs, which is the correct signal rather than a silent hole. | S-30 authoring the gates and registering them in S-01's registry. |
 
@@ -2288,7 +2397,7 @@ ambiguous.
   **All per-step src deltas are `INFERRED` projections** and the ledger states
   its own reconciliation requirement. Ledger arithmetic checked
   programmatically: every running total equals the accumulated deltas, and the
-  net is +7 / −73 / −25.
+  net is +7 / +22 / −25 (was +7 / −73 / −25 before X1 rescoped S-31).
 - **One ledger column was wrong in the first draft and was corrected by
   measuring.** The test-file column originally read `+50`, which matched the
   test count — because it was copied from it. The 50 tests resolve to **49
@@ -2939,7 +3048,7 @@ GUARD:          S13. It should assert the absence over `configs/` rather than th
 | Candidate | Why not |
 |---|---|
 | ~~`enforce_layer_gates` absent from `configs/`~~ | **Refused, then promoted as I-24 after reading the code.** My refusal reasoned from the glossary sentence "if false, only G1/G3 downgrade to warnings" and inferred that absence from every config meant the gates ship advisory. The inference was backwards: the default is `True` in all three places it is declared. The corrected entry is I-24 and the error is recorded as A7.12. |
-| The 106 uncalled public methods (Phase 5 G44) | Phase 5 puts these in the gap table, and its assumption A5.4 (`docs/architecture/target/out/phase5_gaps.md:371`) leaves open whether they are dead. Not a candidate either way until A5.4 closes. |
+| The 106 uncalled public methods (Phase 5 G44) | Phase 5 puts these in the gap table, and its assumption A5.4 (`docs/architecture/target/out/phase5_gaps.md:371`) leaves open whether they are dead. **A5.4 closed FALSE in X1** — 82 are called from `tests/` — so 94 of the 106 were never candidates for anything, and the ~12 that remain are too small to be worth deferring separately. |
 | `TargetPosition.target_usd` as a settled unit | Now settled (§I.8) but it is a *finding*, not a sound boundary — a float dollar exposure is the weaker half of I-05. |
 
 ---
@@ -3236,7 +3345,10 @@ after Deliverable K, and **two inherited entries are load-bearing for decisions
 already made in it**: A5.4 carries the plan's entire headline net-negative, and
 U-8 decides whether "all 26 baselines hold" — the acceptance criterion of 31 of 35
 steps — means what it appears to mean. A register that listed only my own new
-assumptions would omit the two that matter most.
+assumptions would omit the two that matter most. **X1 vindicated this: A5.4 was
+tested before S-01 and it was false**, which moved the headline from −73 to +22
+public symbols. Had it stayed off the register, the plan would have executed
+S-31 against a number that was never a deletion list.
 
 Each entry carries the four fields P7 requires. `FALSIFIED BY` states a check
 someone could actually run, not a restatement of the doubt.
@@ -3304,11 +3416,14 @@ FALSIFIED BY: Re-measuring after each step with the same scanners that produced
               the baseline of 196 modules, 551 public symbols and 356 branch
               points. G.0.2 already labels every delta INFERRED and makes
               re-measurement an acceptance condition rather than a nicety.
-BLAST RADIUS: The headline claim of −73 public symbols and −25 branch points.
-              G.6 note 2 already states the dominant sensitivity: −106 of the
-              symbol reduction is S-31 alone and depends on A5.4, so without
-              that one step the plan is **+33 public symbols**. The headline is
-              one assumption deep, not many.
+BLAST RADIUS: The headline claim, which has already moved once. G.6 note 2
+              named the dominant sensitivity — −106 of the symbol reduction was
+              S-31 alone and depended on A5.4 — and **X1 closed A5.4 FALSE**,
+              so the claim is now **+22 public symbols and −25 branch points**,
+              not −73 and −25. The headline was one assumption deep and that
+              assumption did not hold; what remains is −25 branch points, which
+              rests on the enumerated gate-registry rows rather than on a
+              static measure.
 ```
 
 ```
@@ -3557,7 +3672,7 @@ Measured from `tools/arch/evidence/p7_assumptions.json`. Every row is open. The
 | A5.1 | IB rejects a re-submitted duplicate `order_id` server-side, bounding G03 | **S-08** | G03's blast radius is larger than P0-with-containment: nothing outside our journal prevents the double fill. **U-3 is the same question from the other side** |
 | A5.2 | The 3 order-insensitive set-iteration sites in G08 remain order-insensitive | S-32 | A hash-order dependence exists that R1's random seed has not yet happened to expose |
 | A5.3 | G20 has never fired in any recorded run | **S-05** | The P0 has been silently zeroing positions in recorded history, and S-05's "all 26 baselines hold" prediction is wrong — which S-05 is explicitly written to detect |
-| A5.4 | The 106 uncalled public methods are genuinely dead | **S-31** | The plan's entire headline net-negative disappears: without S-31 the net is **+32 public symbols** (G.6 note 2) |
+| ~~A5.4~~ | ~~The 106 uncalled public methods are genuinely dead~~ — **CLOSED FALSE in X1** | **S-31** | It was wrong, and the consequence it predicted has happened: 82 of the 106 are called from `tests/` and 13 by nothing. S-31 is rescoped −106 → −12, the plan nets **+22 public symbols** (G.6 note 2), and the residue is settled by a coverage gate rather than a third static search |
 | A5.5 | 136.2 µs/quote is representative of the live path | **S-07, S-08** | The budget is set against a number the live path does not produce, and the S-08 blocker in §I.7.1 cannot be evaluated at all |
 | A5.6 | G41's 4.2× overrun scales with alpha count | S-33, S-26 | The platform's stated purpose — A > 1 — is gated on a performance problem of unknown size |
 
@@ -3567,7 +3682,7 @@ Measured from `tools/arch/evidence/p7_assumptions.json`. Every row is open. The
 |---|---|---|---|
 | U-1 | Whether `RiskVerdict`, `StateTransition`, `SymbolHalted`, `KillSwitchActivation` are consumed by out-of-tree operator tooling | **S-31, S-12** | S-31 deletes the `StateTransition` domain-bus publish and its baseline. If a notebook or runbook reads it off the bus, that is a silent break in tooling no test covers. Phase 2 assigned this to engine 11 and it stayed open |
 | U-2 | Whether `_select_bus_signal` arbitration is stable across equal-strength signals from different alphas | **S-26** | The reducer consolidation changes behaviour rather than preserving it, and "parity holds at A=1" hides it because ties need two alphas to occur. Phase 2 §4 resolves this *structurally* for the target via a published tie-break key, and says explicitly that it "says nothing about what today's comparator does" |
-| U-3 | Whether `broker/ib/` reconciles position-of-record beyond the fill stream | **S-21, S-30 §F.4** | Phase 2 called this "open and now blocking" and said it should close before Phase 5. It decides whether §F.4 is a wiring task or a build, and it bounds A5.1 |
+| ~~U-3~~ | ~~Whether `broker/ib/` reconciles position-of-record beyond the fill stream~~ — **CLOSED NO in X1** | **S-21, S-30 §F.4** | It does not. All four files under `src/feelies/broker/ib/` were read end to end; the adapter implements three `EWrapper` callbacks (`nextValidId`, `orderStatus`, `error`) and `reqPositions`, `reqAccountUpdates`, `reqAccountSummary`, `reqExecutions`, `reqOpenOrders` and `updatePortfolio` have **zero occurrences in `src/`**. So **§F.4 is a build, not a wiring task**, and WL-2 is discharged in the favourable direction — engine 8's action is designed alongside the reconciliation, so Phase 2's declare/act separation is honoured by construction. **A5.1 is correspondingly weakened**: nothing outside the platform's own journal bounds a duplicate fill |
 | U-5 | Whether a multi-symbol run is pinned end to end | **S-17, S-26** | The axis the platform exists to serve is pinned only in isolation. Engine 6 holds four baselines but none is a multi-symbol whole-run oracle, so S-26's consolidation has no end-to-end detector at N>1 |
 | U-7 | Actual tick-path latency distribution | S-07 | **Largely closed by Phase 4** — tick-to-decision p99 is 0.432 ms against a 3 ms target — but the per-engine figures remain means, which is what makes A7.13 necessary |
 | U-8 | True per-stream parity coverage, versus the union-of-names upper bound | **all 30 steps that claim baselines hold** | See A7.5. This is the highest-leverage open item in the register and the cheapest to close |
@@ -4005,10 +4120,12 @@ refuted by reading CORE or a prior phase rather than by judgement.
 | K.1.1 engine 5's two determinism contracts | Engine 5's sheet carries **two** determinism clauses: the resolved registry is a run input and must be bit-reproducible; the promotion ledger is a decision record and must not be expected to reproduce | S-16's fingerprint scoped explicitly to the registry, with the ledger named as excluded. One clause added to one block |
 | K.1.2 safety depends on best-effort metrics | A declared class of **safety-critical metric**, with a stronger contract than an observability metric: defined statistic, defined window, defined behaviour on missing input, and fail-closed when it cannot be computed. Two members today — realized cost and, after S-07, tick latency | S-07 states its statistic and window (closing A7.13) and its behaviour when the measurement is unavailable. One clause added to one block |
 | K.1.3 the wiring ordinal is semantically justified | The kernel's wiring manifest declares an **opaque** ordinal; fill provenance is explicit on the fill rather than implied by subscription order | **One new step ahead of S-12**, carrying the triggering quote on the fill, per Phase 3's prescribed resolution. Without it, S-12 cannot satisfy its own R3 criterion |
-| K.1.4 §F has eight items, not seven | §F becomes an eight-item list; the horizon grid goes to engine 2 as a versioned contract, on Phase 2's recommendation | No new step — the grid is a config constant today, so this is a contract to declare rather than a capability to build |
+| K.1.4 §F has eight items, not seven | §F becomes an eight-item list; the horizon grid goes to engine 2 as a versioned contract, on Phase 2's recommendation | No new step — the grid is a config constant today, so this is a contract to declare rather than a capability to build. **Resolved in X1** as a marked addendum to `phase2_contracts.md`, and **placed in S-30** — after §F.1, before §F.6 — because that is where the other five §F items land and §F.8 is structurally identical to §F.1. S-30's symbol delta goes +4 → +5 |
+| K.1.5 §F has nine items, and Phase 2 said so | **Added in X1.** §F.9 — risk-model provenance: factor loadings, covariance and betas, which CORE §E has engine 6 consume and gives no engine the production of. Phase 2 recorded it as "a ninth unassigned responsibility" (`phase2_contracts.md:687`) and listed it beside the horizon grid at `:2011`; K.1.4 read one of the two sheets and concluded no method existed to find a ninth | **Recorded, not resolved.** Scheduled to resolve alongside §F.8's contract work. Two reasons it is not settled here: its recommended owner (engine 12) conflicts with the write-authority rule that rejected engine 12 for §F.2, and unlike the grid it may be a capability to build, so §K.5's "no new step" reasoning does not transfer |
 
 **Net effect on the plan: one new step, three step blocks amended, one contract
-sheet amendment recorded but not applied.**
+sheet amendment recorded but not applied.** X1 adds: §F.8 resolved, §F.9
+recorded and scheduled, and S-31 rescoped on A5.4's closure.
 
 **All three plan changes are now applied.** S-11a is inserted between S-11 and
 S-12 — lettered rather than renumbered, because renumbering S-12 through S-34
@@ -4027,9 +4144,11 @@ running total, so `tools/arch/p7_ledger.py` now recomputes the running and subto
 columns from the per-step deltas. Doing so revealed that **wave C's public-symbol
 subtotal read +39 while its steps sum to +40** — the running column was right and
 the subtotal was wrong, so the whole-plan figure of −74 was correct and only the
-wave line disagreed with it. With S-11a's +1 the plan is now **+7 modules, −73
+wave line disagreed with it. With S-11a's +1 the plan was then **+7 modules, −73
 public symbols, −25 branch points**, and `p7_ledger.py --check` fails if the table
-ever stops reconciling with itself again. Three claims that quote the symbol figure
+ever stops reconciling with itself again. (**X1 subsequently rescoped S-31 from
+−106 to −12 on A5.4's closure, making the current figure +7 / +22 / −25**; the
+reconciliation check is what confirmed the amended table still sums.) Three claims that quote the symbol figure
 were updated with it; nine step-count claims were recomputed from measurement
 rather than incremented, which is how "Wave D is 10 of 34 steps" was found to be
 12 of 35.
@@ -4140,18 +4259,37 @@ counts.
 All five hold, so §M is satisfied and execution is a separate session with a separate
 prompt. Locked means the step set, ordering and acceptance criteria are fixed — not
 that every question is answered. **Three things should close before execution
-begins**, none of which §M tests:
+begins**, none of which §M tests. **All three were closed in X1, and two of them
+changed the plan:**
 
 1. **U-3** — whether `broker/ib/` reconciles positions beyond the fill stream. Phase
    0 raised it, Phase 2 called it "open and now blocking" and said it should close
    before Phase 5, and it reached the last phase untouched. It blocks S-21, S-30 §F.3
    and the §K.2 watch-line, and Phase 0 named the route: read the adapter end to end
    and look for a positions request. One session.
+   **CLOSED — no.** The adapter implements three `EWrapper` callbacks and issues no
+   position query; §F.4 is a build, not a wiring task, and §K.2's WL-2 is discharged
+   in the favourable direction. See §J.2.2.
 2. **A5.4** — whether the 106 uncalled public methods S-31 deletes are genuinely
    dead. The plan's headline net-negative is −73 public symbols; without S-31 it is
    +33. This is the single assumption with the largest effect on whether the plan
    meets §G.10 at all.
+   **CLOSED — false, and it was the right thing to test first.** 82 of the 106 are
+   called from `tests/`; 13 are reached by nothing. S-31 is rescoped to −12, the plan
+   nets **+22 public symbols**, and §G.10 still holds per-category because wave E
+   remains net-negative. See §G.6 note 2.
 3. **§F.8** — the horizon grid, per M2 above.
+   **CLOSED — resolved to engine 2** in a marked addendum to
+   `docs/architecture/target/out/phase2_contracts.md`, on Phase 2's own §F template,
+   and **placed in S-30 after §F.1 and before §F.6**.
+   **And M2's premise was too generous to the phases.** It reasons that no phase had
+   a method for finding a ninth §F-class responsibility. Phase 2 had one and used it:
+   `phase2_contracts.md:687` records "a ninth unassigned responsibility: risk-model
+   provenance", and `:2011` lists it beside the horizon grid. §F.9 is therefore
+   **recorded and deliberately unresolved** — its recommended owner (engine 12)
+   conflicts with the write-authority rule that rejected engine 12 for §F.2, and
+   unlike the grid it may be a capability to build rather than a contract to declare.
+   It is scheduled to resolve alongside §F.8's contract work rather than before S-01.
 
 **What locking does not settle** is whether the conformance suite works. Thirty-one
 of 35 steps are accepted on "the baselines hold", 50 conformance tests are specified

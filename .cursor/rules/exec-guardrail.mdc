@@ -1,0 +1,23 @@
+---
+description: Migration execution guardrails. Enable only while executing the locked plan; delete afterwards. Replaces arch-guardrail.mdc.
+alwaysApply: true
+---
+
+Migration execution is in progress against a locked plan. These override normal behavior.
+
+- Edit ONLY the files listed in the current step's FILES field. Anything else is
+  a plan defect: stop and report, do not edit it.
+- NEVER run scripts/rebaseline_parity_hashes.py. Parity re-baselining is a human
+  action. An agent running it converts a caught regression into a committed one.
+- Any parity hash change the step did not declare is a STOP. Revert; do not
+  reconcile, explain, or update the constant.
+- Write the conformance test first and prove it FAILS before implementing. A test
+  that passes beforehand protects nothing.
+- Never fix forward. A failed step is reverted and the plan is amended.
+- Found a bug outside the step? Record it as a finding. Do not fix it.
+- No opportunistic renaming, reformatting, import reordering, or annotation tidying.
+- boundary blast radius: present the diff and wait for approval.
+  platform-wide: present the diff and rollback, wait for explicit go/no-go.
+  Silence is not approval.
+- Environment is uv: `uv run pytest`, `uv run python`. Windows: `python`, not `python3`.
+- Stop at the step boundary. Do not begin the next step.
