@@ -583,7 +583,70 @@ NET DELTA:       src modules 0, public symbols 0, branch points **-1**
 ROLLBACK:        revert; restores the handler and re-xfails X5. Independent of
                  S-06 through S-08.
 ```
-
+STEP:            S-05a
+CLOSES:          new -- fail-safe inversions in BasicRiskEngine's shared
+                 exposure/drawdown gate (S-02 ledger finding 1, extended)
+PROBLEM:         Two defects in _check_exposure_and_drawdown (basic_risk.py:637).
+                 (1) The gross cap at :673 has no reduction exemption, unlike
+                 the per-symbol cap at :191 and the buying-power gate at :520
+                 which both cite Inv-11. Gate 1 computes `signal_reduces` at
+                 :184 and discards it before calling the shared gate, which
+                 always sees positions.total_exposure(). A flatten signal on an
+                 over-cap book is rejected pre-sizing.
+                 (2) The gross reject at :673 returns before the HWM update at
+                 :686 and the drawdown check at :688, so an event breaching both
+                 yields REJECT, never FORCE_FLATTEN. VERIFIED reachable:
+                 500 AAPL at 100 marked to 80 gives equity 89995, exposure
+                 40000, cap 17999, drawdown 10.005% vs a 5% limit -- verdict is
+                 "gross exposure limit". The drawdown rail is unreachable in the
+                 state it exists for, and the HWM goes stale while over-cap.
+WHY THIS OWNER:  Phase 2 engine 8 owns the veto and it is monotone. Both defects
+                 make it non-monotone: (1) blocks a reduction, (2) suppresses a
+                 mandated de-risk.
+REFACTOR PATH:   (0) X3 REPAIR FIRST. tests/conformance/test_reduction_permitted.py:81
+                 sets max_gross_exposure_pct: 100.0, a cap that never binds, so
+                 the test cannot exercise this gate. Set a binding cap, prove
+                 the repaired X3 FAILS, and only then implement.
+                 (1) thread the reduction signal into the shared gate; exempt a
+                 non-increasing request from the gross cap. The general predicate
+                 is "prospective exposure does not increase" -- gate 2 already
+                 passes exposure_override for this; gate 1 has signal_reduces.
+                 (2) evaluate the HWM update and drawdown check before the gross
+                 cap, so FORCE_FLATTEN wins over REJECT on a doubly-breached
+                 event.
+FILES:           src/feelies/risk/basic_risk.py
+                 tests/conformance/test_reduction_permitted.py
+                 tests/risk/test_basic_risk.py
+BLAST RADIUS:    platform-wide -- the shared gate serves gate 1 and gate 2, and
+                 clause 2 changes a verdict class on the de-risking path
+VALIDATED BY:    repaired X3 with a binding cap, failing before and passing
+                 after; a new case asserting FORCE_FLATTEN on the doubly-breached
+                 scenario above; the risk verdict replay baseline; full suite
+PARITY IMPACT:   hold across all 62 constants. VERIFIED structurally, not
+                 inferred from passing baselines: _check_exposure_and_drawdown
+                 is reached by exactly one determinism tape.
+                 - test_risk_verdict_replay.py: all 4 verdicts enumerated, hash
+                   b388a2c5... reproduced exactly. Clause 1 -- verdict 2 (GOOG,
+                   gross 27000.00 >= 19999.700) is an entry on a symbol with no
+                   position, so the exemption does not apply. Clause 2 -- no
+                   event breaches both rails: verdict 2 is gross-only, verdict 3
+                   is drawdown-only (equity 83000.50, exposure 10001.00, cap
+                   16600.10).
+                 - test_forced_exit_attribution_replay.py: stubs check_signal /
+                   check_order at :193-196; the real engine is never built.
+                 - test_decoupled_safety_replay.py: no BasicRiskEngine, no
+                   max_gross_exposure_pct, no account_equity; flatten orders
+                   originate in the safety/decoupling path.
+                 - test_state_transition_replay.py: ":122 check_order_pass" is a
+                   state label, not a call.
+                 EXPIRES IF: any tape constructs a BasicRiskEngine, or adds a
+                 reducing signal meeting a breached gross cap, or an event
+                 breaching gross and drawdown together.
+DELETES:         two fail-safe inversions; one unreachable code path
+NET DELTA:       src modules 0, public symbols 0, branch points +1 (the
+                 exemption) -1 (no new branch for reordering) = 0
+ROLLBACK:        revert; both clauses revert together. X3's binding cap reverts
+                 with it, restoring the vacuous configuration.
 ```
 STEP:            S-06
 CLOSES:          G23 (P0)
