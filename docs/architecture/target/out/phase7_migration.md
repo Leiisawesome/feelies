@@ -467,7 +467,67 @@ ROLLBACK:        revert; the import path reverts with it. import-linter becomes
                  an unused dev dependency until re-landed.
 ```
 
----
+```
+STEP:            S-04b
+CLOSES:          G16 (the Tier 0 -> Tier 2 edge; S-04 armed the detector only)
+PROBLEM:         core/platform_config.py:1199 lazily imports
+                 promotion.evidence.parse_gate_thresholds_overrides so tier 0
+                 can validate governance threshold semantics, putting the
+                 governance package in the import closure of every tick-path
+                 module. Inv-8 layer separation. The comment at :1196 shows the
+                 cycle was known and deferred to call time rather than cut.
+                 The parse is also redundant: apply_gate_thresholds_overrides
+                 re-parses at evidence.py:1567, and bootstrap.py:684 already
+                 calls it. The parser cannot move to core -- its whitelist is
+                 derived from GateThresholds (evidence.py:383, 1493) by
+                 introspection, with a sync assertion at :1761. Root cause is
+                 that tier 0 parses at all, not where the parser lives.
+WHY THIS OWNER:  Governance owns the semantics of its own thresholds. The
+                 contracts tier owns config structure. platform_config keeps the
+                 structural checks it can make without governance types and
+                 stops making the ones it cannot.
+REFACTOR PATH:   (1) platform_config._parse_gate_thresholds_block keeps the
+                 structural checks (None, non-mapping, empty) and returns the
+                 raw block; delete the lazy import and comment at :1196-1200.
+                 (2) bootstrap._build_platform_gate_thresholds wraps the
+                 resulting ValueError as ConfigurationError carrying the config
+                 source path, so a malformed block still fails eagerly at
+                 startup with attribution. (3) move the semantic assertions in
+                 tests/core/test_platform_config_gate_thresholds.py (lines
+                 84-89, 103, 128-156) to bootstrap level. (4) drop S2's G16
+                 xfail. G40 keeps its xfail -- that is the separate
+                 kernel -> engines violation and is not closed here.
+FILES:           src/feelies/core/platform_config.py
+                 src/feelies/bootstrap.py
+                 tests/core/test_platform_config_gate_thresholds.py
+                 tests/bootstrap/test_gate_thresholds_wiring.py
+                 tests/conformance/test_import_contracts.py
+BLAST RADIUS:    boundary -- one lazy import is cut; the config object's
+                 gate_thresholds_overrides field changes from normalized to raw
+VALIDATED BY:    S2's G16 xfail drops and the layers contract reports KEPT for
+                 the core -> promotion edge; tools/arch/importgraph.py reports
+                 the G16 chain gone; a malformed gate_thresholds still fails at
+                 startup with the config path in the message; mypy clean; full
+                 suite
+PARITY IMPACT:   hold. VERIFIED: platform.yaml, configs/paper_smoke_rth.yaml and
+                 configs/paper_run.yaml all set `gate_thresholds: {}`, and the
+                 empty case returns at :1192 before the lazy import is reached,
+                 so the parser never executes on any replayed tape and no
+                 int->float normalization occurs. No test YAML sets the block;
+                 the only determinism-adjacent reference
+                 (tests/acceptance/test_bt13_portfolio_research_only.py:54)
+                 default-constructs GateThresholds and never loads a
+                 PlatformConfig. EXPIRES IF: any config sets a non-empty block,
+                 since storing raw would change the config snapshot's
+                 serialized content.
+DELETES:         the Tier 0 -> Tier 2 edge; the lazy import and its comment at
+                 core/platform_config.py:1196-1200; one redundant parse of the
+                 same block
+NET DELTA:       src modules 0, public symbols 0, branch points -1
+ROLLBACK:        git revert; the import path and the normalization revert
+                 together. S2's G16 xfail must be restored with it or the test
+                 fails strict.
+```
 
 ### G.2 Wave B — the four P0s
 
