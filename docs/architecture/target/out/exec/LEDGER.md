@@ -171,3 +171,186 @@ NOTES:           C1 was vacuous twice before it was load-bearing, and both traps
                  Left uncommitted for the operator: `baseline_pre-S-01.json`,
                  `baseline_post-S-01.json`, and this ledger entry. The step
                  commit contains the six declared files only, per section 7.
+
+## S-02  Guard whole-run parity, reduction, fill timing, alpha purity
+DATE:            2026-08-18
+BASE SHA:        dc3fec5f1499ecd4cdf216dfa368eb2b129df866
+RESULT SHA:      73def0347a40d84ec13476db56628f9fa5b7245d
+VERDICT:         passed
+CONFORMANCE:     R1, X3, H1, A1 | failed-before: no, by design | passes-after:
+                 yes (25 passed in the step's three files).
+                 The plan states outright that all four behaviours are correct
+                 today ("since all four pass today") and NET DELTA declares 0 src
+                 modules, so there is nothing to implement and section 2's
+                 fail-first gate cannot apply as written. VALIDATED BY names the
+                 substitute proof itself: the AGENTS.md mutation procedure. That
+                 was run for all four; the mutated-run output is below, and each
+                 mutation was reverted with `git diff -- src/` empty afterwards.
+                 H1 (the mutation the plan specifies -- `passive_limit_router.py`
+                 :527 exchange-time comparison replaced by a wall-clock read):
+                   FAILED tests/execution/test_router_fill_timing_parity.py::
+                   TestPassiveAggressiveEligibilityParity::
+                   test_a_wall_clock_past_the_deadline_makes_neither_path_eligible
+                   assert [OrderAck(... order_id='passive', timestamp_ns=9000000,
+                   fill_price=Decimal('99.90'), reason='FILLED_BY_THROUGH' ...)]
+                   == []
+                   1 failed, 15 passed
+                 The 15 that passed are the point: all 14 pre-existing tests in
+                 that file survive this mutation. Every one of them advances the
+                 clock in lockstep with the tape, so a wall-clock read satisfies
+                 them. That is precisely the hole H1's extension closes, and it
+                 is why the extension separates the two clocks.
+                 X3, three mutations of `risk/basic_risk.py`:
+                   (a) post-fill quantity computed as an increase
+                       (`post_signed = signed_qty + delta`) -- 4 failed:
+                       PDT/RTH/holiday/position-limit flattens all REJECT.
+                       e.g. AssertionError: a flattening order was refused in a
+                       degraded state: REJECT ('post-fill position 200 exceeds
+                       limit 100')
+                   (b) `_check_buying_power` early return for exits removed --
+                       0 failed. The case survives, because the prospective-gross
+                       arithmetic independently subtracts the closed position.
+                       Removing BOTH guards fails it:
+                       AssertionError: ... REJECT ('insufficient buying power:
+                       need 10000.00, have 4000.00'). Recorded in the class
+                       docstring per AGENTS.md.
+                   (c) both `FORCE_FLATTEN` assignments -> `REJECT` -- 2 failed:
+                       AssertionError: drawdown breach answered a flattening
+                       order with REJECT ('drawdown 5.00% exceeds max 1.0%')
+                 A1, two mutations:
+                   (a) `PositionUpdate` subscription added to
+                       `HorizonSignalEngine.attach` -- 1 failed: the signal engine
+                       subscribes to ['HorizonFeatureSnapshot', 'PositionUpdate',
+                       'RegimeState', 'SensorReading'], expected exactly [...]
+                   (b) `position_quantity: int = 0` field added to
+                       `HorizonFeatureSnapshot` -- 1 failed: an input handed to
+                       the alpha carries book state in ['position_quantity'] --
+                       the type is pure but the payload is not
+                 Vacuity, per section 2 -- how each guard is known to have run:
+                 X3's seven cases each assert a *control entry* is refused with
+                 that state's own reason before asserting the exit is permitted,
+                 so a gate that stopped firing fails the case rather than passing
+                 it. A1 asserts `recorder.calls` is non-empty before scanning
+                 arguments (the C1 trap from S-01), and its subscription check is
+                 an equality, so an empty set fails. H1 asserts both orders
+                 acknowledge at the shared deadline and that the same tape does
+                 fill both once eligible, so the negative assertions cannot pass
+                 by nothing happening.
+TESTS:           4759 passed / 0 failed / 29 skipped / 1 xfailed
+                 -> 4770 passed / 0 failed / 29 skipped / 1 xfailed
+                 determinism 145 -> 145. The +11 are exactly this step's eleven
+                 new test functions (X3 7, H1 2, A1 2); nothing previously
+                 passing moved. Baseline figures read from
+                 `baseline_post-S-01.json`, which pre-S-02 matched key-for-key.
+PARITY:          declared hold ("All 26 hold") | actual 62 constants unmoved,
+                 0 changed, key-for-key and value-for-value | MATCH.
+                 verify_step S-02: FILES clean, PARITY holds, CLEAN.
+                 R1 exercised locally before landing: the oracle replays green
+                 under `PYTHONHASHSEED=random` (2 passed in 17.8s, cache-backed,
+                 `FEELIES_REQUIRE_BASELINE_CACHE=1` -- it replayed, it did not
+                 skip). G08's residual is therefore closed rather than merely
+                 armed; had a hash moved under a random seed that would have been
+                 a live defect found, not one introduced.
+FILES DECLARED:  .github/workflows/ci.yml
+                 tests/conformance/test_reduction_permitted.py
+                 tests/execution/test_router_fill_timing_parity.py
+                 tests/conformance/test_alpha_purity.py
+FILES TOUCHED:   .github/workflows/ci.yml
+                 tests/conformance/test_reduction_permitted.py
+                 tests/execution/test_router_fill_timing_parity.py
+                 tests/conformance/test_alpha_purity.py
+                 4 declared, 4 touched, nothing outside FILES. `src/` untouched.
+NET DELTA:       declared src modules 0, public symbols 0, branch points 0, test
+                 files +3, CI job steps +1 | actual src modules 196 -> 196 (+0),
+                 public symbols 551 -> 551 (+0), sloc 43197 -> 43197 (+0), import
+                 cycles 2 -> 2 (+0), alphaleak 2 -> 2 (+0), test files +2 new and
+                 +1 extended (= the 3 the FILES field lists, one annotated
+                 "extend"), CI job steps +1. MATCH.
+                 DELETES is satisfied semantically, not textually: the pinned
+                 `PYTHONHASHSEED: "0"` step remains, as DELETES itself requires
+                 ("The pinned job stays"); what is deleted is its status as the
+                 only seed the oracle runs under. No line was removed, so the
+                 diff is +21/-0 on ci.yml.
+FINDINGS:        1. Not fixed, outside the step, and the reason X3 stops at seven
+                    states: the gross-exposure cap is the one gate in
+                    `BasicRiskEngine` with no reduction exemption. It is measured
+                    on prospective total exposure across the whole book, so when
+                    the book is over the cap a flatten of symbol A is REJECTed
+                    because symbol B still breaches it -- the reduction is refused
+                    exactly when reducing matters. Verified read-only: a $15,000
+                    book against a $10,000 cap, flattening the $5,000 leg ->
+                    REJECT ('gross exposure limit: 10000 >= 10000.0'). Every other
+                    entry gate (PDT, buying power, RTH, holiday, per-symbol cap)
+                    exempts reductions explicitly. This looks like an Inv-11
+                    violation on the fail-safe path and wants its own step; X3
+                    covers the states the engine declares an exemption for, and
+                    would have to encode the current refusal as correct to include
+                    this one.
+                 2. Plan defect, worked around with operator approval: REFACTOR
+                    PATH tells R1 to "add the parity oracle to the existing
+                    random-seed job", but that job is `check`, which has no
+                    event-cache restore step and runs on fork PRs without secrets.
+                    Under `FEELIES_REQUIRE_BASELINE_CACHE=1` the oracle would fail
+                    there on every run; without it, it would skip and report
+                    green, which is the exact failure mode AGENTS.md documents.
+                    Landed instead as one step on the existing `parity-oracle`
+                    job under `PYTHONHASHSEED: random`, where the cache restore,
+                    the refetch fallback and the fork-PR skip already exist. Same
+                    end state, and it matches DELETES and "CI job steps +1"
+                    literally.
+                 3. Process, not a code defect: pre-flight expects HEAD on
+                    `arch/exec`, but `arch/exec` is at bb46c79 and does not
+                    contain S-01. S-01's commit (a3e17e4) and the operator's
+                    capture/ledger commit (dc3fec5) live only on `exec/S-01`.
+                    S-02's ROLLBACK says "A1 consumes FIX-1", so branching from
+                    `arch/exec` would have deleted A1's input. Cut `exec/S-02`
+                    from dc3fec5 with operator confirmation. Either `arch/exec`
+                    needs to advance as steps land, or the pre-flight expectation
+                    needs restating; S-03 will hit this again.
+                 4. S-01's two live findings were checked for collision and
+                    neither touches S-02: the G01-G45 registration gap is S-10's,
+                    and G6's rejection of `depends_on_sensors: []` is a property
+                    of FIX-1 which A1 consumes unchanged (it declares `ofi_ewma`
+                    and the P1 unused-dependency warning is expected on load).
+                 5. Not fixed, pre-existing, but it reads as an instruction to
+                    undo this step: `conftest.py:31-43` issues a
+                    `PytestConfigWarning` on any seed other than "0", whose text
+                    is "run `PYTHONHASHSEED=0 uv run pytest ...`". R1's new job
+                    step therefore prints, on every CI run, advice to re-pin the
+                    seed it exists to unpin. It is warn-only -- no behaviour
+                    change, and the step exits 0 with it (verified: 2 passed,
+                    1 warning, 17.04s, same invocation as the CI step) -- and it
+                    already fires in the pre-existing `check` job, so S-02 did
+                    not introduce it. Worth narrowing to exempt the deliberate
+                    random-seed jobs, which is a conftest change and so outside
+                    this step's FILES. The ci.yml comment already tells a reader
+                    not to answer a failure by re-pinning; the warning is the
+                    louder voice and says the opposite.
+NOTES:           Blast radius escalated from the plan's stated `local` to
+                 platform-wide under section 0's escalation clause: H1 pins the
+                 fill-eligibility rule that governs order submission, and R1
+                 changes how the parity surface is exercised in CI. Full diff,
+                 verification output and rollback were presented and explicit
+                 go was given before commit. Both the escalation and the R1
+                 placement in finding 2 were approved by the operator.
+                 X3's seven states are enumerated from the engine rather than the
+                 plan: PDT minimum equity, Reg-T buying power, outside RTH,
+                 market holiday, per-symbol cap, drawdown breach, non-positive
+                 equity. The last two answer a flatten with `FORCE_FLATTEN`
+                 rather than `ALLOW`; that is not a refusal (the orchestrator
+                 flattens the book), so the helper accepts either, and those two
+                 cases additionally assert the reason so a bare `FORCE_FLATTEN`
+                 from a third state cannot satisfy them.
+                 A1 reuses FIX-1 and C1's tape rather than restating either, per
+                 S-01's "one control alpha, one fixture". It reaches into
+                 `engine._signals` and `bus._handlers` -- private attributes, but
+                 the alternative is asserting on public output, which is what
+                 makes a purity test vacuous: a pure alpha and a fourth
+                 subscription produce identical public output.
+                 The mutation cycle followed AGENTS.md exactly, including the two
+                 `__pycache__` purges per round. Every restore was verified with
+                 `git diff -- src/` before the pristine re-run, and every pristine
+                 re-run was green.
+                 Left uncommitted for the operator: `baseline_pre-S-02.json`,
+                 `baseline_post-S-02.json`, and this ledger entry. The step
+                 commit contains the four declared files only, per section 7.
