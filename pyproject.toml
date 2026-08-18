@@ -30,6 +30,7 @@ dev = [
     "ruff>=0.3",
     "types-PyYAML>=6.0",
     "python-dotenv>=1.0",
+    "import-linter>=2.3",
 ]
 massive = [
     "websockets>=13.0",
@@ -150,4 +151,39 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
     "\\.\\.\\.",
+]
+
+[tool.importlinter]
+root_package = "feelies"
+
+[[tool.importlinter.contracts]]
+id = "tiers"
+name = "Five import tiers"
+type = "layers"
+containers = ["feelies"]
+layers = [
+    "cli",
+    "bootstrap",
+    "ingestion : storage : sensors : features : services : signals : alpha : promotion : composition : portfolio : risk : execution : broker : monitoring : harness : research : forensics",
+    "kernel : bus",
+    "core",
+]
+
+[[tool.importlinter.contracts]]
+id = "engines"
+name = "Twelve engine module sets"
+type = "independence"
+modules = [
+    "feelies.ingestion",
+    "feelies.sensors",
+    "feelies.services",
+    "feelies.signals",
+    "feelies.alpha",
+    "feelies.composition",
+    "feelies.portfolio",
+    "feelies.risk",
+    "feelies.execution",
+    "feelies.broker",
+    "feelies.monitoring",
+    "feelies.forensics",
 ]

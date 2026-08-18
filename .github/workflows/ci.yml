@@ -90,6 +90,14 @@ jobs:
       - name: Types
         run: uv run mypy src/feelies
 
+      - name: Import contracts
+        # Allowed to fail: the layers contract is G16 (S-04) and independence
+        # is G40 (S-34). S2 is the conformance gate; this step only makes the
+        # CLI output visible in CI. Do not drop continue-on-error until both
+        # contracts are kept.
+        continue-on-error: true
+        run: uv run lint-imports --no-cache
+
       - name: Tests
         # `functional` needs a live Massive key; `paper_rth` needs IB Gateway and
         # an open US market. Both self-skip, but deselecting is explicit and keeps
