@@ -586,3 +586,98 @@ class TestSizeCapSplit:
         # LEVEL adverse: 100.15 (opposite BBO) × 70 × 2.0 bps = 1.40 —
         # strictly the gentler rate despite the larger slice.
         assert drain[0].fees == Decimal("1.40")
+
+
+class TestPassiveAggressiveEligibilityParity:
+    """H1's parity half: both fill paths obey one eligibility rule.
+
+    Everything above pins the passive path, and every case in it advances
+    the clock in lockstep with the tape — so a gate that read the wall
+    clock instead of ``exchange_timestamp_ns`` would satisfy all of them.
+    These two separate the clocks and put the aggressive path on the same
+    tape, which is what makes it one rule rather than two that happen to
+    agree today.  A resting limit and a market order submitted on the same
+    quote share a deadline of ``max(clock, quote exchange time) + latency``;
+    fill eligibility is therefore a fact about the tape, identical in
+    backtest and live, and unchanged by how fast the process is running.
+    """
+
+    _LATENCY_NS = 1000
+    _SUBMIT_NS = 5000
+    _DEADLINE_NS = _SUBMIT_NS + _LATENCY_NS
+
+    @staticmethod
+    def _market(symbol: str, side: Side, qty: int, order_id: str) -> OrderRequest:
+        return OrderRequest(
+            timestamp_ns=0,
+            correlation_id="o1",
+            sequence=2,
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=qty,
+        )
+
+    def _router(self, clock: SimulatedClock) -> PassiveLimitOrderRouter:
+        # fill_hazard_max=0 removes drain fills, so an eligible passive fill
+        # can only be a through-fill off the crossing quotes below.
+        return PassiveLimitOrderRouter(
+            clock,
+            latency_ns=self._LATENCY_NS,
+            cost_model=ZeroCostModel(),
+            fill_hazard_max=Decimal("0"),
+        )
+
+    def _submit_both(self, router: PassiveLimitOrderRouter) -> None:
+        """One resting limit and one market order, same quote, same instant."""
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=self._SUBMIT_NS))
+        router.submit(_limit("AAPL", Side.BUY, 100, "100.00", order_id="passive"))
+        router.submit(self._market("AAPL", Side.BUY, 100, order_id="aggressive"))
+        acks = router.poll_acks()
+        assert {a.order_id for a in acks} == {"passive", "aggressive"}
+        assert all(a.status == OrderAckStatus.ACKNOWLEDGED for a in acks)
+        assert all(a.timestamp_ns == self._DEADLINE_NS for a in acks)
+
+    def test_both_paths_share_one_exchange_time_deadline(self) -> None:
+        clock = SimulatedClock(start_ns=self._SUBMIT_NS)
+        router = self._router(clock)
+        self._submit_both(router)
+
+        # One nanosecond short of the deadline, on a quote that crosses the
+        # resting limit and shows depth for the market order — everything a
+        # fill needs except elapsed exchange time.
+        clock.set_time(5999)
+        router.on_quote(_quote("AAPL", "99.80", "99.90", ts=5999))
+        assert _fills(router.poll_acks()) == []
+
+        # The same crossing quote one nanosecond later, at the deadline:
+        # both paths fill, which is also what proves the tape above could
+        # have filled either of them and was refused on timing alone.
+        clock.set_time(self._DEADLINE_NS)
+        router.on_quote(_quote("AAPL", "99.80", "99.90", ts=self._DEADLINE_NS))
+        assert {a.order_id for a in _fills(router.poll_acks())} == {
+            "passive",
+            "aggressive",
+        }
+
+    def test_a_wall_clock_past_the_deadline_makes_neither_path_eligible(self) -> None:
+        """A slow replay must not fill earlier than a fast one."""
+        clock = SimulatedClock(start_ns=self._SUBMIT_NS)
+        router = self._router(clock)
+        self._submit_both(router)
+
+        # The process falls far behind: wall time is past the deadline while
+        # the tape is still short of it.  Reading the clock here would fill
+        # both orders on a quote that predates their arrival at the exchange.
+        clock.set_time(9_000_000)
+        router.on_quote(_quote("AAPL", "99.80", "99.90", ts=5999))
+        assert _fills(router.poll_acks()) == []
+        assert router.resting_order_count == 1
+
+        clock.set_time(9_000_001)
+        router.on_quote(_quote("AAPL", "99.80", "99.90", ts=self._DEADLINE_NS))
+        assert {a.order_id for a in _fills(router.poll_acks())} == {
+            "passive",
+            "aggressive",
+        }
