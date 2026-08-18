@@ -436,11 +436,11 @@ PROBLEM:         `feelies.core.inv12_stress` -> `feelies.core.platform_config`
                  edge, illegal whether or not it closes a loop — and Phase 3
                  states the forbidden-reads matrix is unenforceable until the
                  tier rule holds.
-FILES:           pyproject.toml (add import-linter to the dev extra; [tool.          importlinter] contracts -- layers over tiers 0-4, independence over the twelve engine module sets)
+FILES:           pyproject.toml (add import-linter to the dev extra; [tool.importlinter] contracts -- layers over tiers 0-4, independence over the twelve engine module sets)
+                 uv.lock (relocked by the dev-extra addition)
                  .github/workflows/ci.yml
                  tests/conformance/test_import_contracts.py (S2)
                  tools/arch/importgraph.py (new -- grimp evidence, per Phase 3)
-                 src/feelies/core/inv12_stress.py -> src/feelies/research/inv12_stress.py
 WHY THIS OWNER:  Phase 3 §3.1 already made this call and named both tools. The
                  root cause is placement — a stress/validation module sits in
                  the contracts tier — so the fix is a move, not an import
@@ -452,14 +452,16 @@ REFACTOR PATH:   (1) add import-linter with the contract expressed but
                  turns out to require breaking a public import path, split:
                  ship the contract xfailed, move in S-04b.
 BLAST RADIUS:    boundary — one module moves; its importers change import path
-VALIDATED BY:    S2 green; `uv run mypy src/feelies` clean; full suite;
-                 `tools/arch/coupling.py` reports cycle 2 gone
+VALIDATED BY:    S2 lands as xfail(strict=True); `uv run mypy src/feelies` clean;
+                 full suite; `tools/arch/importgraph.py` reports the G16 chain
+                 (coupling.py does not report cycles)
 PARITY IMPACT:   All 26 hold. A module move changes no sequence draw and no
                  hashed field. If a baseline moves, the "move" changed
                  behaviour and the step is wrong.
-DELETES:         import cycle 2; the Tier 0 -> Tier 2 edge; `inv12_stress` from
-                 `core/`
-NET DELTA:       src modules 0 (one moves), public symbols 0, branch points 0.
+DELETES:         nothing. This step arms the detector; G16 and G40 remain open
+                 under strict xfail. CI runs the contract with
+                 continue-on-error: true until they close.
+NET DELTA:       src modules 0, public symbols 0, branch points 0.
                  Config files +2, test files +1, tools +1.
 ROLLBACK:        revert; the import path reverts with it. import-linter becomes
                  an unused dev dependency until re-landed.
