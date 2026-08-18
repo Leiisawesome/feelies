@@ -604,3 +604,76 @@ NOTES:           S-04b split taken: contract shipped xfailed, inv12_stress not
                  stayed boundary. Waiting at the human gate; do not commit.
                  Left uncommitted: baseline_pre-S-04.json, baseline_post-S-04.json,
                  this ledger entry, and the step files pending go/no-go.
+
+## S-04b  cut the core->promotion edge
+DATE:            2026-08-18T10:54:43+00:00
+BASE SHA:        4f91bec26bda50a38cfcf27da1e7f449749e1630
+RESULT SHA:      c7c1e90b111654f9fd9238144d2a6894a378295b
+VERDICT:         passed
+CONFORMANCE:     S2 G16 | xfail-before: yes | KEPT-after: yes
+                 Step-2 before-state, captured before any implementation:
+                   XFAIL tests/conformance/test_import_contracts.py::test_five_import_tiers - GAP G16
+                   XFAIL tests/conformance/test_import_contracts.py::test_twelve_engine_independence - GAP G40
+                   2 xfailed, 1 warning in 0.96s
+                   lint-imports: Five import tiers BROKEN; Contracts: 0 kept, 2 broken.
+                   feelies.core is not allowed to import feelies.promotion:
+                   - feelies.core.platform_config -> feelies.promotion.evidence (l.1199)
+                   importgraph: G16 chain (PRESENT): feelies.core.inv12_stress ->
+                   feelies.core.platform_config -> feelies.promotion.evidence
+                 After: G16 xfail dropped; 1 passed, 1 xfailed (G40).
+                   core -> promotion absent from the layers report.
+                   importgraph: G16 chain (absent); grimp SCCs 1 -> 0.
+TESTS:           4777 passed / 0 failed / 28 skipped / 11 xfailed
+                 -> 4778 passed / 0 failed / 28 skipped / 10 xfailed
+                 determinism 145 -> 145. The +1 passed / -1 xfailed is G16's
+                 xfail dropping. Nothing previously passing moved.
+PARITY:          declared hold | actual 62 constants unmoved, 0 changed,
+                 key-for-key and value-for-value | MATCH.
+                 verify_step S-04b: FILES clean (uncommitted at the gate, so
+                 0 vs HEAD; working tree was the 5 declared), PARITY holds,
+                 CLEAN. Oracle `.upper()` cannot look up `S-04b` (finding 6).
+FILES DECLARED:  src/feelies/core/platform_config.py
+                 src/feelies/bootstrap.py
+                 tests/core/test_platform_config_gate_thresholds.py
+                 tests/bootstrap/test_gate_thresholds_wiring.py
+                 tests/conformance/test_import_contracts.py
+FILES TOUCHED:   src/feelies/core/platform_config.py
+                 src/feelies/bootstrap.py
+                 tests/core/test_platform_config_gate_thresholds.py
+                 tests/bootstrap/test_gate_thresholds_wiring.py
+                 tests/conformance/test_import_contracts.py
+                 5 declared, 5 touched, nothing outside FILES. ci.yml
+                 unchanged. src/feelies/risk/ not edited. inv12_stress not moved.
+NET DELTA:       declared src modules 0, public symbols 0, branch points -1
+                 | actual src modules 196 -> 196 (+0), public symbols 551 -> 551
+                 (+0), sloc 43197 -> 43199 (+2), import cycles 2 -> 1 (-1),
+                 alphaleak 2 -> 2 (+0). MATCH on modules. Cycle 2 deleted
+                 (the G16 SCC). The +2 sloc is the bootstrap wrap.
+FINDINGS:        1. The G.8 table registers G01-G45, with G46 deferred to S-10.
+                 2. G6 rejects `depends_on_sensors: []`, contradicting the
+                    unused-dependency audit for any control alpha.
+                 3. The gross-exposure cap in BasicRiskEngine has no reduction
+                    exemption. Under operator review. S-04b must not touch
+                    src/feelies/risk/.
+                 4. pre-step 4777/28 vs baseline_post-S-04.json 4776/29; live
+                    capture used as before-state; parity 62/62 identical
+                 5. load_platform_config + build_platform(config) does not
+                    thread a Path, so harness backtest CLI and forensics lose
+                    config-path attribution. Eager failure preserved. Outside
+                    FILES; to be closed by a later step.
+                 6. verify_step.py uppercases the step id, so letter-suffixed
+                    steps need an invocation workaround. Oracle is frozen; do
+                    not fix. Record against exec-tools-v2.
+NOTES:           Malformed `gate_thresholds: {not_a_real_threshold: 5}` still
+                 fails at startup as ConfigurationError, raised in
+                 `_build_platform_gate_thresholds` wrapping ValueError from
+                 `apply_gate_thresholds_overrides`. `build_platform(path)`
+                 puts the config file path in the message. G40 xfail intact;
+                 ci.yml `continue-on-error: true` unchanged until G40 closes.
+                 The tiers assertion enumerates the three known residual
+                 violations rather than checking the single edge, so a fourth
+                 violation fails immediately and G40's closure forces the test
+                 to be updated.
+                 Left uncommitted for the operator: capture artifacts and this
+                 ledger entry. The step commit contains the five declared
+                 files only, per section 7.
