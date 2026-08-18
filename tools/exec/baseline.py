@@ -21,6 +21,7 @@ This tool NEVER writes to tests/ or src/. It reads and records only.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -29,6 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+EXEC_TOOLS = Path(__file__).resolve().parent
 OUT = ROOT / "docs" / "architecture" / "target" / "out" / "exec"
 DETERMINISM = ROOT / "tests" / "determinism"
 
@@ -70,6 +72,22 @@ def run(cmd: list[str], timeout: int = 3600) -> tuple[int, str]:
 def git(*args: str) -> str:
     _, out = run(["git", *args])
     return out.strip()
+
+
+def tools_fingerprint() -> dict:
+    """Fingerprint the frozen oracle (``tools/exec/``) that produced a capture.
+
+    X0 D2: a capture records the tool's fingerprint so ``compare`` can warn when
+    two captures were taken by different tool versions -- "nothing moved" over a
+    shrunken constant set (the documented 43 -> 62 blind spot) is not evidence
+    that anything held.
+    """
+    h = hashlib.sha256()
+    files = sorted(EXEC_TOOLS.rglob("*.py"))
+    for p in files:
+        h.update(p.relative_to(EXEC_TOOLS).as_posix().encode("utf-8") + b"\0")
+        h.update(p.read_bytes() + b"\0")
+    return {"sha256": h.hexdigest(), "files": len(files)}
 
 
 def parity_constants() -> dict[str, str]:
@@ -144,6 +162,7 @@ def cmd_capture(args):
     payload = {
         "label": args.label,
         "captured_at": datetime.now(timezone.utc).isoformat(),
+        "tools_fingerprint": tools_fingerprint(),
         "git": {
             "sha": git("rev-parse", "HEAD"),
             "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
@@ -203,6 +222,14 @@ def _load(p: str) -> dict:
 def cmd_compare(args):
     a, b = _load(args.before), _load(args.after)
     print(f"comparing '{a['label']}' -> '{b['label']}'\n")
+
+    fa = a.get("tools_fingerprint", {}).get("sha256")
+    fb = b.get("tools_fingerprint", {}).get("sha256")
+    if fa != fb:
+        print("  WARNING: captures taken by different tools/exec versions "
+              f"({(fa or 'none')[:12]} -> {(fb or 'none')[:12]}) -- a hold over a "
+              "changed constant set is not evidence (X0 D2). Re-capture both "
+              "with the frozen oracle before trusting this comparison.\n")
 
     pa, pb = a.get("parity", {}), b.get("parity", {})
     moved = sorted(k for k in set(pa) & set(pb) if pa[k] != pb[k])

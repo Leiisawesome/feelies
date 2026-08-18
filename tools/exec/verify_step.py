@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PLAN = ROOT / "docs" / "architecture" / "target" / "out" / "phase7_migration.md"
 LEDGER = ROOT / "docs" / "architecture" / "target" / "out" / "exec" / "LEDGER.md"
 EXEC_OUT = ROOT / "docs" / "architecture" / "target" / "out" / "exec"
+MANIFEST = ROOT / "tests" / "determinism" / "parity_manifest.py"
 
 STEP_ID = re.compile(r"^\s*STEP:\s*(S-\d+[a-z]?(?:\.\d+)?)", re.M)
 FIELD = re.compile(r"^\s*([A-Z][A-Z /]*[A-Z]):\s*(.*)$")
@@ -45,9 +46,13 @@ PATHY = re.compile(
     r"|(?<![\w./\\])[\w.\-]+\.(?:py|md|yaml|yml|toml|json|mdc|cfg|ini|txt|sh|ps1)\b"
 )
 
-# Parity constants may be named as EXPECTED_*, as a manifest key, or by the
-# owning test module. Accept all three; show the raw text either way.
-HASHNAME = re.compile(r"EXPECTED_[A-Z0-9_]+")
+# Parity constants may be named as EXPECTED_* / _BASELINE_* -- the full set
+# baseline.py captures (EXPECTED_* under tests/determinism/ plus the APP
+# acceptance oracle's _BASELINE_* constants) -- or by the owning test module.
+# Manifest short-keys (e.g. level4_hazard_exit_order) are resolved against the
+# moved constants at the step gate (cmd_step). Show the raw text either way.
+HASHNAME = re.compile(
+    r"(?<![A-Za-z0-9_])(?:EXPECTED_[A-Z0-9_]+|_BASELINE_[A-Z0-9_]+)")
 TESTMOD = re.compile(r"tests[/\\]determinism[/\\][\w.\-]+\.py")
 
 BLAST_ORDER = {"local": 1, "boundary": 2, "platform-wide": 3}
@@ -219,6 +224,26 @@ def declared_parity(v: str) -> tuple[str, list[str]]:
     if says_hold:
         return "hold", []
     return "unknown", []
+
+
+def manifest_key_map() -> dict[str, str]:
+    """Map each manifest HASH constant to its short key, read from the manifest
+    source so a step may name either the constant or the key.
+
+    The key<->constant mapping is arbitrary (``level1_sensor_reading`` pins
+    ``EXPECTED_LEVEL4_READING_HASH``), so it is read, not derived. COUNT
+    constants are deliberately excluded: an event-count move is noteworthy on
+    its own and must be declared by name, not covered by naming its key.
+    """
+    out: dict[str, str] = {}
+    if not MANIFEST.exists():
+        return out
+    text = MANIFEST.read_text(encoding="utf-8", errors="replace")
+    for key, body in re.findall(r'"([a-z][a-z0-9_]+)"\s*:\s*\(([^)]*)\)', text):
+        for const in re.findall(r"EXPECTED_[A-Z0-9_]+", body):
+            if const.endswith("_HASH"):
+                out[const] = key
+    return out
 
 
 def cmd_list(args):
@@ -433,8 +458,15 @@ def cmd_reconcile(_args):
         sys.exit(2)
     ledger = LEDGER.read_text(encoding="utf-8", errors="replace")
     entries = {m.group(1) for m in re.finditer(r"^##\s+(S-\d+)", ledger, re.M)}
-    passed = {m.group(1) for m in re.finditer(
-        r"^##\s+(S-\d+)[\s\S]*?VERDICT:\s*passed", ledger, re.M)}
+    # Each entry runs from its header to the next header (or EOF); a step is
+    # 'passed' only if its OWN block records that verdict. Without the bound a
+    # blocked/reverted entry absorbs a later step's 'passed'.
+    passed = {
+        m.group(1)
+        for m in re.finditer(
+            r"^##\s+(S-\d+)((?:(?!^##\s+S-\d+)[\s\S])*)", ledger, re.M)
+        if re.search(r"VERDICT:\s*passed", m.group(2))
+    }
     _, log = run(["git", "log", "--oneline", "--no-merges"])
     committed = {m.group(1) for m in re.finditer(r"\b(S-\d+):", log)}
 
@@ -505,26 +537,51 @@ def cmd_step(args):
     # --- parity ------------------------------------------------------------
     pre = EXEC_OUT / f"baseline_pre-{sid}.json"
     post = EXEC_OUT / f"baseline_post-{sid}.json"
+    parity_raw = f.get("PARITY IMPACT", "")
+    key_map = manifest_key_map()
     print("\nPARITY")
     if pre.exists() and post.exists():
         a = json.loads(pre.read_text(encoding="utf-8")).get("parity", {})
         b = json.loads(post.read_text(encoding="utf-8")).get("parity", {})
         moved = sorted(k for k in set(a) & set(b) if a[k] != b[k])
+        added = sorted(set(b) - set(a))
+        removed = sorted(set(a) - set(b))
+        changed = bool(moved or added or removed)
+
+        # Moves and removals change or drop a pinned stream and must be
+        # declared; additions are new coverage -- reported, but not a stop on
+        # their own. A constant is declared by its own name, its owning module,
+        # or the manifest key it belongs to (named in PARITY IMPACT).
+        must = moved + removed
+        must_names = sorted({k.split("::")[1] for k in must})
+        must_mods = {k.split("::")[0] for k in must}
+        mod_declared = any(m in declared_hashes for m in must_mods)
+
+        def _declared(name: str) -> bool:
+            if name in declared_hashes or mod_declared:
+                return True
+            key = key_map.get(name)
+            return bool(key) and re.search(
+                rf"\b{re.escape(key)}\b", parity_raw) is not None
+
+        undeclared = [n for n in must_names if not _declared(n)]
+
         moved_names = sorted({k.split("::")[1] for k in moved})
-        moved_mods = {k.split("::")[0] for k in moved}
-        undeclared = [n for n in moved_names
-                      if n not in declared_hashes
-                      and not any(m in declared_hashes for m in moved_mods)]
         print(f"  moved {len(moved)}: {', '.join(moved_names) if moved_names else '(none)'}")
-        if mode == "hold" and moved:
-            print("  VERDICT: FAIL -- declared hold, but constants moved. STOP THE LINE.")
+        for k in added:
+            print(f"    ADDED       {k.split('::')[1]}")
+        for k in removed:
+            print(f"    REMOVED     {k.split('::')[1]}")
+        if mode == "hold" and changed:
+            print("  VERDICT: FAIL -- declared hold, but the constant set changed. "
+                  "STOP THE LINE.")
             fail = 1
         elif undeclared:
             for n in undeclared:
                 print(f"    UNDECLARED  {n}")
             print("  VERDICT: FAIL -- undeclared parity movement. STOP THE LINE.")
             fail = 1
-        elif mode == "break" and moved:
+        elif changed:
             print("  VERDICT: declared break, matches. HUMAN RE-BASELINE REQUIRED.")
             print("           Do not run scripts/rebaseline_parity_hashes.py yourself.")
         else:
