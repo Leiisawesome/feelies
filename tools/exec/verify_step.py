@@ -581,7 +581,7 @@ def cmd_step(args):
                 print(f"    UNDECLARED  {n}")
             print("  VERDICT: FAIL -- undeclared parity movement. STOP THE LINE.")
             fail = 1
-        elif changed:
+        elif must:
             print("  VERDICT: declared break, matches. HUMAN RE-BASELINE REQUIRED.")
             print("           Do not run scripts/rebaseline_parity_hashes.py yourself.")
         else:
