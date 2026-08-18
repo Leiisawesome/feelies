@@ -583,6 +583,7 @@ NET DELTA:       src modules 0, public symbols 0, branch points **-1**
 ROLLBACK:        revert; restores the handler and re-xfails X5. Independent of
                  S-06 through S-08.
 ```
+```
 STEP:            S-05a
 CLOSES:          new -- fail-safe inversions in BasicRiskEngine's shared
                  exposure/drawdown gate (S-02 ledger finding 1, extended)
