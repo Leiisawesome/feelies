@@ -677,3 +677,102 @@ NOTES:           Malformed `gate_thresholds: {not_a_real_threshold: 5}` still
                  Left uncommitted for the operator: capture artifacts and this
                  ledger entry. The step commit contains the five declared
                  files only, per section 7.
+
+## S-05  fail-closed position read in composition
+DATE:            2026-08-18T11:55:41+00:00
+BASE SHA:        80ea15c04ed2a3d509dc01bae3d3ca2fdff48aef
+RESULT SHA:      b3847c8f71951e88e5554ab648647a8bd8d66448
+VERDICT:         passed
+CONFORMANCE:     X5 | failed-before: yes | passes-after: yes
+                 X7 | failed-before: not run as a standalone fail-first
+                 (AST scan; handler body was the fail-quiet assignment) |
+                 passes-after: yes. S6 remains xfailed (G23/G36).
+                 Step-2 XPASS then FAILED — see NOTES.
+                 Handler-entry proof: lookup.calls and lookup.raised asserted
+                 before the target check; both passed on the FAILED run, so
+                 the injected KeyError reached composition/engine.py:384-389.
+TESTS:           4778 passed / 0 failed / 28 skipped / 10 xfailed
+                 -> 4780 passed / 0 failed / 28 skipped / 10 xfailed
+                 determinism 145 -> 145. The +2 passed are X5 and X7; nothing
+                 previously passing moved. Baseline figures read from
+                 baseline_post-S-04b.json, which pre-S-05 matched key-for-key
+                 (parity 62/62, tests 4778/28/10, sloc 43199).
+PARITY:          declared hold (all 26; A5.3 counter on the four engine-6
+                 baselines) | actual 62 constants unmoved, 0 changed,
+                 key-for-key and value-for-value | MATCH.
+                 verify_step S-05: FILES clean (uncommitted at the gate, so
+                 0 vs HEAD; working tree was the 3 declared), PARITY holds,
+                 CLEAN. NET DELTA compare-by-eye: modules 196->196, symbols
+                 551->551, sloc 43199->43201 (+2, the raise), cycles 1->1.
+FILES DECLARED:  src/feelies/composition/engine.py:384-389
+                 tests/conformance/test_position_read_fails_closed.py (X5, new)
+                 tests/conformance/test_exception_containment.py (X7, extend)
+FILES TOUCHED:   src/feelies/composition/engine.py
+                 tests/conformance/test_position_read_fails_closed.py
+                 tests/conformance/test_exception_containment.py
+                 3 declared, 3 touched, nothing outside FILES.
+                 src/feelies/risk/ not edited. ci.yml not edited.
+NET DELTA:       declared src modules 0, public symbols 0, branch points -1,
+                 test files +2 | actual src modules 196 -> 196 (+0), public
+                 symbols 551 -> 551 (+0), sloc 43199 -> 43201 (+2), import
+                 cycles 1 -> 1 (+0), alphaleak 2 -> 2 (+0), fail-quiet
+                 handlers 20 -> 19, test files +1 new and +1 extended.
+                 MATCH on modules. Branch-point -1 is the fail-quiet
+                 assignment replaced by a raise.
+FINDINGS:        1. Degenerate empty `target_positions={}` is hold, not
+                    flatten. `build_sized_intent_orders` returns
+                    `SizedIntentRiskResult(orders=())` when the dict is
+                    empty and otherwise iterates only the keys present;
+                    `plan_leg` never backfills omitted symbols to zero.
+                    Flatten requires explicit `TargetPosition(target_usd=0)`
+                    entries. A failed lookup therefore does not unwind the
+                    book. The payload is indistinguishable, by
+                    `target_positions` alone, from completeness-degenerate,
+                    `CompositionContextError`-degenerate, optimizer-null
+                    `{}`, and a legitimate "hold" empty. Observability
+                    only: `_emit_degenerate` suffixes `correlation_id`
+                    with `:degenerate`; `horizon_metrics` counts every
+                    empty intent as degenerate and may alert on rate.
+                    Not fixed.
+                 2. The G.8 table registers G01-G45, with G46 deferred to S-10.
+                 3. G6 rejects `depends_on_sensors: []`, contradicting the
+                    unused-dependency audit for any control alpha.
+                 4. The gross-exposure cap in BasicRiskEngine has no reduction
+                    exemption and preempts the drawdown check. S-05a is being
+                    drafted. S-05 did not touch src/feelies/risk/.
+                 5. load_platform_config + build_platform(config) loses
+                    config-path attribution for the harness CLI and forensics
+                    (S-04c, not yet written).
+                 6. .github/workflows/ci.yml runs the import contract with
+                    continue-on-error: true until G40 closes. Not flipped.
+                 7. verify_step.py uppercases the step id; letter-suffixed
+                    steps need an invocation workaround. Oracle is frozen.
+NOTES:           A5.3 survives: all four engine-6 baselines unmoved
+                 (level3_sized_intent_decay_off,
+                 level3_sized_intent_decay_on, cross_sectional_context,
+                 level4_portfolio_order), so the fail-quiet handler was
+                 not firing in any recorded run.
+                 The first X5 draft XPASSed under the buggy code because
+                 two equal LONG strengths give z-score zero and an empty
+                 book either way:
+                   F  [100%]
+                   [XPASS(strict)] GAP G20
+                   1 failed in 0.21s
+                 Replaced with an asymmetric book plus a lookup=None
+                 control that must size, then re-proved FAILED
+                 (--runxfail, still under xfail, before any handler change):
+                   FAILED tests/conformance/test_position_read_fails_closed.py::
+                   test_failed_position_lookup_halts_emits_and_produces_no_target
+                   tests\conformance\test_position_read_fails_closed.py:165:
+                   E   AssertionError: failed position lookup produced a
+                       target (G20 silent-flat): [('x5_portfolio',
+                       {'AAPL': 50000.0, 'MSFT': 50000.0, 'NVDA': -50000.0})]
+                   1 failed in 0.31s
+                 The exception caught is KeyError, raised as
+                 CompositionContextError; `_dispatch_one` emits a
+                 degenerate SizedPositionIntent and abandons the
+                 boundary; fail-quiet handlers 20 -> 19;
+                 `# pragma: no cover` removed.
+                 Left uncommitted for the operator: capture artifacts and
+                 this ledger entry. The step commit is the three declared
+                 files only.
