@@ -436,14 +436,11 @@ PROBLEM:         `feelies.core.inv12_stress` -> `feelies.core.platform_config`
                  edge, illegal whether or not it closes a loop — and Phase 3
                  states the forbidden-reads matrix is unenforceable until the
                  tier rule holds.
-FILES:           .importlinter (new — layers contract tiers 0-4, independence
-                 contracts over the twelve engine module sets)
-                 pyproject.toml (add import-linter to the dev extra)
+FILES:           pyproject.toml (add import-linter to the dev extra; [tool.          importlinter] contracts -- layers over tiers 0-4, independence over the twelve engine module sets)
                  .github/workflows/ci.yml
                  tests/conformance/test_import_contracts.py (S2)
-                 tools/arch/importgraph.py (new — grimp evidence, per Phase 3)
-                 src/feelies/core/inv12_stress.py -> moved out of the
-                 contracts tier
+                 tools/arch/importgraph.py (new -- grimp evidence, per Phase 3)
+                 src/feelies/core/inv12_stress.py -> src/feelies/research/inv12_stress.py
 WHY THIS OWNER:  Phase 3 §3.1 already made this call and named both tools. The
                  root cause is placement — a stress/validation module sits in
                  the contracts tier — so the fix is a move, not an import
