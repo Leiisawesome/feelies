@@ -23,6 +23,10 @@ from decimal import Decimal
 from enum import Enum, auto
 from typing import Any, Literal
 
+# Pinned-code-per-log rule. Log-level invalidation is event_schema_hash
+# (disk_event_cache._compute_schema_hash); this integer is the envelope pin.
+SCHEMA_VERSION: int = 1
+
 
 # ── Base ────────────────────────────────────────────────────────────────
 
@@ -33,6 +37,10 @@ class Event:
 
     ``source_layer`` names the emitting layer. Default ``"UNKNOWN"`` supports
     producers that do not set it.
+
+    ``schema_version`` is the envelope compatibility pin (``SCHEMA_VERSION``).
+    Payload fields such as ``SensorReading.sensor_version`` and
+    ``HorizonFeatureSnapshot.feature_versions`` are not this pin.
 
     Immutability is shallow: ``frozen=True`` blocks
     rebinding a field, but events whose fields hold mutable containers
@@ -50,6 +58,7 @@ class Event:
     correlation_id: str
     sequence: int
     source_layer: str = "UNKNOWN"
+    schema_version: int = SCHEMA_VERSION
 
 
 # ── Market Data Events ──────────────────────────────────────────────────
