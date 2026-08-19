@@ -1470,6 +1470,50 @@ NET DELTA:       src modules 0, public symbols 0, branch points 0.
                  Test files +2, manifest entries +2.
 ROLLBACK:        revert; `manifest_fingerprint()` returns to its prior value.
 ```
+```
+STEP:            S-17a
+CLOSES:          new -- the parity oracle is blind to schema growth
+PROBLEM:         Hash inputs are hand-written field lists per helper (Phase 0
+                 P-1, Phase 1 sec. 6), so adding a field to any event moves no
+                 constant. CORE sec. C.11 -- schema evolution never breaks
+                 replay -- is therefore unenforced by the oracle: S-09's
+                 schema_version, S-11's gate-verdict field, S-16's config
+                 snapshot field and S-31's StateTransition all pass invisibly.
+                 The gap is recorded in five places
+                 (phase7_migration.md:1009-1013, :2878, :3730, :3977) and closed
+                 in none; S-17 grows manifest_fingerprint() by adding manifest
+                 ENTRIES, which is a different thing from covering field sets.
+WHY THIS OWNER:  The Kernel owns the determinism substrate. One line in
+                 manifest_fingerprint() converts schema drift from invisible to
+                 declared.
+WHY HERE:        After S-09, S-11 and S-16 have added their fields and after
+                 S-17's manifest growth, so both re-baselines fall in one
+                 window. Placing it earlier would make three field-adding steps
+                 parity=break for no additional safety.
+REFACTOR PATH:   (1) a test asserting that adding a field to any hashed event
+                 moves manifest_fingerprint() -- prove it FAILS first by adding
+                 a throwaway field and confirming nothing moves; (2) fold the
+                 per-event field set into manifest_fingerprint()'s input;
+                 (3) operator re-baselines all 26 in one commit with the
+                 rationale referencing this step.
+FILES:           tests/determinism/parity_manifest.py
+                 tests/conformance/<schema-drift closure test from S-09>
+BLAST RADIUS:    platform-wide -- every baseline re-pins once
+VALIDATED BY:    the drift test failing before and passing after; all 26
+                 re-pinned and test_parity_manifest reporting no drift between
+                 the owning modules and the manifest
+PARITY IMPACT:   break -- ALL 26 baselines and manifest_fingerprint() move
+                 exactly once, by construction. The operator re-baselines; the
+                 agent does not. No behaviour changes: the recorded streams are
+                 identical, only the fingerprint's input set grows.
+DELETES:         the oracle's blindness to schema growth; the standing need to
+                 remember to update a helper's field list by hand
+NET DELTA:       src modules 0, public symbols 0, branch points 0. Test files +0
+                 (reuses S-09's closure test).
+ROLLBACK:        revert, and restore the 26 constants from the pre-S-17a
+                 capture. After this lands, every field-adding step is
+                 parity=break by design -- that is the point, not a regression.
+```
 
 ```
 STEP:            S-18
