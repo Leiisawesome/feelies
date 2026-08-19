@@ -661,12 +661,26 @@ PROBLEM:         `try: self._registry.get(strategy_id) / except KeyError: pass`
                  synthetic-ness, so a config typo or a failed registration
                  takes the same path. **Inv-11**: unknown state resolving to
                  *fewer* constraints.
+                 Two committed tests assert the fall-through as correct:
+                 TestCheckOrderDelegatesToInner::test_unknown_strategy_passes_through
+                 and TestCheckSizedIntent::test_unregistered_strategy_id_falls_through,
+                 both from e3281a1 (2026-04-11), a bug-fix pass that pinned
+                 observed behaviour rather than a design. The class docstring
+                 asserts only that check_order still delegates to the inner
+                 engine for aggregate checks, which this step preserves. The
+                 platform already has a sanctioned bypass for ids that
+                 legitimately skip per-alpha budgets -- the `__` prefix, with an
+                 explicit branch. A second, silent bypass for any unregistered
+                 id is a hole, not a design. Both tests are rewritten here to
+                 assert the new contract.                 
 FILES:           src/feelies/alpha/risk_wrapper.py:186-192
                  tests/conformance/test_per_alpha_budget.py (X4)
                  tests/conformance/test_pathological_refusal.py (X6, narrow)
                  tests/conformance/fixtures/pathological/ (FIX-3, first case only —
                  the unregistered-id input. The other six input classes need the
                  gate registry to bind a *named* gate, so they land in S-11.)
+                 tests/alpha/test_risk_wrapper.py (overturns two tests that pin
+                 the G23 fail-open as intended behaviour)
 WHY THIS OWNER:  Phase 2 engine 5 standing check 3 settles it: engine 5 *sets*
                  per-alpha budgets, engine 8 *enforces* them. That the wrapper
                  currently lives in `alpha/` is a placement problem (S-22's);
@@ -686,13 +700,86 @@ PARITY IMPACT:   All 26 expected to hold **provided step (2) lands before step
                  `decoupled_risk_flatten_order` moves, a non-synthetic
                  unregistered id was reaching the wrapper in a baseline run,
                  which is the defect and not a re-pin.
-DELETES:         one fail-quiet handler (19 -> 18); the registry-absence branch
+DELETES:         one fail-quiet handler (19 -> 18); the registry-absence branch; 
+                 two assertions pinning the fail-open as correct
 NET DELTA:       src modules 0, public symbols 0, branch points **-1 +1 = 0**
                  (fail-quiet handler removed, explicit synthetic test added —
                  net zero, and the new branch is enumerable where the old was
                  not).
                  Test files +2.
 ROLLBACK:        revert; independent of every other step.
+```
+```
+STEP:            S-06a
+CLOSES:          new -- S-06 ledger finding (registry alpha_id validation)
+PROBLEM:         AlphaRegistry.register (registry.py:102) checks for a duplicate
+                 alpha_id at :114, runs alpha.validate() at :117, and enforces
+                 threshold floors at :122 -- but never applies _ALPHA_ID_RE. The
+                 YAML path is closed: loader.py:128 defines
+                 ^[a-z][a-z0-9_]*$ and applies it at :866, and alphas/SCHEMA.md
+                 states the same rule, so a leading underscore raises
+                 AlphaLoadError. A module registered programmatically with a
+                 `__` prefix, however, counts as registered and takes the
+                 synthetic bypass in the risk wrapper, skipping per-alpha
+                 budgets. After S-06 closed the unregistered-id fall-through,
+                 this is the remaining registration route to an unbudgeted
+                 order. Fifth instance of one shape: a check enforced at one
+                 entry point and absent at another.
+
+                 The bypass has two doors and this step closes the registration
+                 one. VERIFIED: bootstrap.py:747-754 registers only modules
+                 returned by loader.load, so _ALPHA_ID_RE has already run on
+                 every id reaching register in production -- the added check is
+                 inert at runtime and guards the programmatic path. The
+                 order-side door is closed by convention rather than by code:
+                 the only `__`-prefixed strategy_id in src/ is
+                 orchestrator.py:4006 "__working_exit_fallback__", kernel-
+                 authored on an exit path, with no alpha-reachable route to set
+                 one. `__synthetic_net__` is never a registered alpha_id -- it
+                 appears only as an order strategy_id -- so a blanket regex
+                 needs no allowance.
+WHY THIS OWNER:  Engine 5 owns alpha identity. The loader validates ids arriving
+                 by YAML; the registry is the second door and must apply the
+                 same rule. The regex currently lives in loader.py, a parsing
+                 module, so this step moves it to registry.py, which owns
+                 identity, and the loader imports it from there.
+REFACTOR PATH:   (1) a conformance case registering a `__`-prefixed module
+                 programmatically and asserting AlphaRegistryError, that the
+                 rejection names the id rule, and that no registry state was
+                 mutated; plus a control registering a valid id that still
+                 succeeds -- prove the case FAILS first, and prove the failure
+                 is the registry accepting the id rather than a malformed stub;
+                 (2) move _ALPHA_ID_RE to registry.py, have loader.py import it,
+                 and apply it in register() before the duplicate check at :114,
+                 raising AlphaRegistryError like the adjacent guards; (3)
+                 confirm the wrapper's `__` branch remains reachable only by
+                 platform construction, not by registration.
+FILES:           src/feelies/alpha/registry.py
+                 src/feelies/alpha/loader.py
+                 tests/conformance/test_per_alpha_budget.py
+                 tests/alpha/test_registry_per_alpha_thresholds.py
+BLAST RADIUS:    boundary -- one guard added at one call site; the regex moves
+                 between two engine-5 modules and the loader's behaviour is
+                 unchanged
+VALIDATED BY:    the new conformance case failing before and passing after; the
+                 valid-id control passing throughout; the loader's existing
+                 id-rejection tests still passing after the move; mypy clean;
+                 full suite; the parity oracle
+PARITY IMPACT:   hold, structurally. bootstrap.py:754 is the only production
+                 caller of AlphaRegistry.register, and every module reaching it
+                 came through loader.load, where the regex already ran -- so the
+                 added check cannot alter any tape. Confirm by reading that no
+                 determinism tape registers a module by another route; do not
+                 infer hold from a green baseline, which is consistent with the
+                 guard never firing. EXPIRES IF: any caller registers a module
+                 built other than by loader.load.
+DELETES:         the last registration path to an unbudgeted order; the
+                 duplicated ownership of the alpha-id rule between a parsing
+                 module and an identity module
+NET DELTA:       src modules 0, public symbols 0 (the regex is module-private in
+                 both locations), branch points +1
+ROLLBACK:        git revert; the regex returns to loader.py and the registry
+                 accepts unvalidated ids again. Independent of S-07 onward.
 ```
 
 ```
