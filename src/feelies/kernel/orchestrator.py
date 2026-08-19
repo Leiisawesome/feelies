@@ -42,7 +42,7 @@ from feelies.alpha.arbitration import (
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
-from feelies.core.platform_config import PlatformConfig
+from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.core.errors import (
     ConfigurationError,
     OrchestratorPipelineAbortError,
@@ -54,6 +54,7 @@ from feelies.core.events import (
     Event,
     HorizonTick,
     KillSwitchActivation,
+    LatencyBreach,
     MetricEvent,
     MetricType,
     NBBOQuote,
@@ -147,6 +148,10 @@ from feelies.kernel.micro import MicroState, create_micro_state_machine
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.alerting import AlertManager
 from feelies.monitoring.kill_switch import KillSwitch
+from feelies.monitoring.latency_budget import (
+    _LatencyBudgetMonitor,
+    _apply_breach_response,
+)
 from feelies.monitoring.paper_session_recorder import PaperSessionRecorder
 from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_store import PositionStore
@@ -557,6 +562,10 @@ class Orchestrator:
 
         # Wire MetricCollector to receive MetricEvents from the bus.
         self._bus.subscribe(MetricEvent, self._on_metric_event)
+
+        self._latency_monitor = _LatencyBudgetMonitor()
+        self._latency_reduce_only = False
+        self._bus.subscribe(LatencyBreach, self._on_latency_breach)
 
         # Wire AlertManager to receive Alert events from the bus.
         if self._alert_manager is not None:
@@ -2126,6 +2135,15 @@ class Orchestrator:
         # Record always-on timers directly so they cannot shift kernel event IDs.
         _attribution_timing_keys = frozenset({"sensor_fanout_ns", "sm_transition_ns"})
         timings = getattr(self, "_tick_timings", {})
+        if self._config is not None and self._config.mode is not OperatingMode.BACKTEST:
+            samples: dict[str, int] = {str(k): int(v) for k, v in timings.items()}
+            samples["tick_to_decision_latency_ns"] = latency_ns
+            for breach in self._latency_monitor.observe(
+                samples,
+                timestamp_ns=now_ns,
+                correlation_id=correlation_id,
+            ):
+                self._bus.publish(breach)
         for name, value in timings.items():
             if name in _attribution_timing_keys:
                 self._metrics.record(
@@ -4710,6 +4728,16 @@ class Orchestrator:
         """Forward MetricEvents from the bus to the MetricCollector."""
         if isinstance(event, MetricEvent):
             self._metrics.record(event)
+
+    def _on_latency_breach(self, event: LatencyBreach) -> None:
+        """Reduce-only + kill-switch escalation from a recorded breach.
+
+        Replay publishes the stored ``LatencyBreach``; this handler must not
+        re-measure. ``LatencyBreach.sequence`` is 0 and this path does not
+        draw ``self._seq``.
+        """
+        self._latency_reduce_only = True
+        _apply_breach_response(self._kill_switch, event)
 
     def _on_alert_event(self, event: Event) -> None:
         """Forward Alert events from the bus to the AlertManager."""
