@@ -863,3 +863,252 @@ NOTES:           X3 was vacuous at _loose_config:81 (cap 100.0); repaired as
                  move parity.
                  Left uncommitted for the operator: capture artifacts and
                  this ledger entry.
+
+## S-06  fail-closed unregistered strategy_id
+DATE:            2026-08-19T09:22:37+08:00
+BASE SHA:        2493c93055231c1cd609f98be4d5a34a027f4ada
+RESULT SHA:      not committed — blocked at the boundary gate
+VERDICT:         blocked
+CONFORMANCE:     X4 (tests/conformance/test_per_alpha_budget.py) |
+                 failed-before: yes | passes-after: yes (uncommitted)
+                 X6 narrow (tests/conformance/test_pathological_refusal.py) |
+                 failed-before: yes | passes-after: yes (uncommitted)
+                 Step-2 failure output, captured before any src edit:
+                   FAILED tests/conformance/test_per_alpha_budget.py::
+                   test_unregistered_strategy_id_is_refused_and_does_not_reach_inner
+                   tests\conformance\test_per_alpha_budget.py:192: in
+                   test_unregistered_strategy_id_is_refused_and_does_not_reach_inner
+                       assert inner.orders == [], (
+                   E   AssertionError: unregistered strategy_id was forwarded
+                       to the inner engine (G23 swallow):
+                       ['not_a_registered_alpha']. The order proceeded
+                       unbudgeted.
+                   FAILED tests/conformance/test_pathological_refusal.py::
+                   test_unregistered_strategy_id_fixture_is_refused
+                   tests\conformance\test_pathological_refusal.py:36: in
+                   test_unregistered_strategy_id_fixture_is_refused
+                       assert inner.orders == [], (
+                   E   AssertionError: pathological unregistered id was
+                       forwarded unbudgeted: ['not_a_registered_alpha']
+                   2 failed, 3 passed in 0.46s
+                 Handler-entry proof: both failures are the inner.orders
+                 assert. The preceding registry.lookups == [unregistered]
+                 and registry.key_errors == [unregistered] asserts passed,
+                 so registry.get raised KeyError at check_order:186-192
+                 and the except body swallowed it. A failure at the lookup
+                 asserts would have meant the scenario never entered the
+                 handler.
+                 Controls, passing throughout (the 3 passed above, and
+                 again after the src edit):
+                   test_registered_strategy_id_is_budgeted_and_permitted
+                   test_registered_strategy_id_over_position_limit_is_rejected
+                   test_synthetic_prefix_uses_aggregate_checks_only
+TESTS:           4781 passed / 0 failed / 29 skipped / 10 xfailed
+                 -> not advanced. After the src edit, X4+X6 are 5 passed,
+                 but two previously-passing tests outside FILES go red
+                 (see FINDINGS). Full suite, determinism, post-capture
+                 and verify_step were not run. Pre-S-06 capture matched
+                 baseline_post-S-05a.json key-for-key (parity 62/62,
+                 tests 4781/29/10, sloc 43210, symbols 551, modules 196,
+                 cycles 1). S-05a ledger said 4782/28; the artifact and
+                 this capture both say 4781/29. Artifact wins.
+PARITY:          declared hold (all 26, provided synthetic ``__`` prefix
+                 lands before the unregistered refusal) | actual not
+                 recaptured | n/a (blocked before post-capture).
+                 Hold is structural: no determinism tape reaches the
+                 changed path (see NOTES).
+FILES DECLARED:  src/feelies/alpha/risk_wrapper.py:186-192
+                 tests/conformance/test_per_alpha_budget.py (X4)
+                 tests/conformance/test_pathological_refusal.py (X6, narrow)
+                 tests/conformance/fixtures/pathological/ (FIX-3 case 1)
+FILES TOUCHED:   src/feelies/alpha/risk_wrapper.py
+                 tests/conformance/test_per_alpha_budget.py
+                 tests/conformance/test_pathological_refusal.py
+                 tests/conformance/fixtures/pathological/unregistered_strategy_id.yaml
+                 4 touched against 3 named files + 1 directory scope.
+                 Need, not touched: tests/alpha/test_risk_wrapper.py
+NET DELTA:       declared src modules 0, public symbols 0, branch points
+                 -1 +1 = 0, test files +2 | actual not measured
+FINDINGS:        1. PLAN DEFECT / blocker — FILES does not list
+                    tests/alpha/test_risk_wrapper.py, which pins the G23
+                    fail-open as correct:
+                      TestCheckOrderDelegatesToInner.test_unknown_strategy_passes_through
+                      (strategy_id='unknown_alpha' must be ALLOW/SCALE_DOWN)
+                      TestCheckSizedIntent.test_unregistered_strategy_id_falls_through
+                      (strategy_id='multi_alpha_net' must emit one order)
+                    After the in-FILES edit both fail. Editing them would
+                    be UNDECLARED. Leaving them fails "previously-passing
+                    test now failing". The step cannot land until FILES
+                    is amended to include that file (and those two tests
+                    inverted to expect REJECT / dropped legs).
+                 2. check_signal:68-71 still does
+                    ``except KeyError: return self._inner.check_signal(...)``.
+                    Same shape as G23, on the signal path. FILES names
+                    only check_order:186-192. Not fixed.
+                 3. An unregistered flatten is also REJECT under this
+                    edit (exposure does not increase; it also cannot
+                    decrease via this path). Empty strategy_id still
+                    falls through to aggregate checks (unit test still
+                    green). ``__``-prefixed ids skip per-alpha and still
+                    reach the inner engine.
+                 4. Carried, not fixed: G.8 registers G01-G45 (G46 is
+                    S-10); G6 rejects depends_on_sensors: [];
+                    load_platform_config + build_platform(config) loses
+                    config-path attribution (S-04c); ci.yml import
+                    contract continue-on-error: true until G40;
+                    verify_step.py uppercases the step id and drops
+                    unfenced blocks (S-06 is fenced, invocation is
+                    ``S-06``); test_forced_exit_attribution_replay.py
+                    :193-196 stubs check_signal/check_order.
+NOTES:           Caller on the unregistered non-synthetic path observes
+                 RiskVerdict(action=REJECT, reason contains the id and
+                 "per-alpha budget unknown; order refused"). Inner
+                 check_order is not called. Exposure does not increase.
+                 Determinism tapes (rg -l risk_wrapper|RiskWrapper|strategy_id
+                 under tests/determinism/): none name the wrapper.
+                 test_orchestrator_replay.py is the only hit that
+                 constructs it (build_platform, enforce_per_alpha_risk_budget
+                 defaults True). Its main stream has 0 orders; the
+                 stop-exit stream has 1 order with strategy_id "" which
+                 never enters ``if strategy_id:``.
+                 test_risk_verdict_replay.py builds BasicRiskEngine
+                 directly and calls check_signal with strategy_id="probe"
+                 — not the wrapper, not check_order.
+                 test_decoupled_safety_replay.py / test_hazard_exit_replay.py
+                 emit OrderRequest from ExitComposer / HazardExitController,
+                 not wrapper.check_order.
+                 test_portfolio_order_replay.py builds BasicRiskEngine.
+                 test_forced_exit_attribution_replay.py stubs check_order
+                 to always ALLOW (carried finding).
+                 Remaining hits hash strategy_id on Signal/intent/JSONL
+                 and do not construct risk.
+                 Hold is structural: the KeyError handler is not on any
+                 taped stream.
+                 Blast radius stated boundary; order-path touch noted.
+                 Waiting at the human gate. Do not commit. Do not begin
+                 S-07.
+                 Left uncommitted: baseline_pre-S-06.json, this ledger
+                 entry, and the four declared files pending go/no-go
+                 (FILES amendment vs revert).
+
+## S-06  fail-closed unregistered strategy_id
+DATE:            2026-08-19T09:59:18+08:00
+BASE SHA:        2493c93055231c1cd609f98be4d5a34a027f4ada
+RESULT SHA:      12c8dcdf3a5099082aa3ca9340bd4741a3d5452b
+VERDICT:         passed
+CONFORMANCE:     X4 (tests/conformance/test_per_alpha_budget.py) |
+                 failed-before: yes | passes-after: yes
+                 X6 narrow (tests/conformance/test_pathological_refusal.py) |
+                 failed-before: yes | passes-after: yes
+                 test_unknown_strategy_passes_through rewritten |
+                 failed-before: yes | passes-after: yes
+                 test_unregistered_strategy_id_falls_through rewritten |
+                 failed-before: yes | passes-after: yes
+                 Step-2 failure output, captured after restoring
+                 risk_wrapper.py and before re-implementing:
+                   FAILED tests/conformance/test_per_alpha_budget.py::
+                   test_unregistered_strategy_id_is_refused_and_does_not_reach_inner
+                   tests\conformance\test_per_alpha_budget.py:192:
+                   E   AssertionError: unregistered strategy_id was forwarded
+                       to the inner engine (G23 swallow):
+                       ['not_a_registered_alpha']. The order proceeded
+                       unbudgeted.
+                   FAILED tests/conformance/test_pathological_refusal.py::
+                   test_unregistered_strategy_id_fixture_is_refused
+                   tests\conformance\test_pathological_refusal.py:36:
+                   E   AssertionError: pathological unregistered id was
+                       forwarded unbudgeted: ['not_a_registered_alpha']
+                   FAILED tests/alpha/test_risk_wrapper.py::
+                   TestCheckOrderDelegatesToInner::test_unknown_strategy_passes_through
+                   tests\alpha\test_risk_wrapper.py:361:
+                   E   AssertionError: unregistered strategy_id reached the
+                       inner engine; the order proceeded unbudgeted
+                   FAILED tests/alpha/test_risk_wrapper.py::
+                   TestCheckSizedIntent::test_unregistered_strategy_id_falls_through
+                   tests\alpha\test_risk_wrapper.py:490:
+                   E   AssertionError: unregistered strategy_id reached the
+                       inner engine on the portfolio path; the intent
+                       proceeded unbudgeted
+                   4 failed, 6 passed in 0.36s
+                 Handler-entry proof: every failure is the inner.orders
+                 assert. Lookups/KeyError asserts in X4/X6 passed, so
+                 registry.get raised at check_order and the except body
+                 swallowed it. The two rewritten unit tests fail the
+                 same way: the recording inner saw the order.
+                 Controls, passing throughout (the 6 passed above):
+                   X4 registered in-budget permitted
+                   X4 registered over position-limit rejected
+                   X4 synthetic prefix aggregate-only
+                   test_empty_strategy_id_passes_through
+                   test_registered_strategy_delegates_to_inner
+                   test_synthetic_prefix_delegates_to_inner
+                 After implement: tests/alpha/test_risk_wrapper.py 26
+                 passed; tests/conformance 26 passed / 10 xfailed.
+TESTS:           4781 passed / 0 failed / 29 skipped / 10 xfailed
+                 -> 4788 passed / 0 failed / 29 skipped / 10 xfailed
+                 determinism 145 -> 145. The +7 are X4's four tests, X6's
+                 one test, and two new delegation tests on
+                 TestCheckOrderDelegatesToInner. The two rewritten tests
+                 were already in the suite. Nothing previously passing
+                 moved. Pre-S-06 recapture matched
+                 baseline_post-S-05a.json key-for-key (parity 62/62,
+                 tests 4781/29/10, sloc 43210).
+PARITY:          declared hold | actual 62 constants unmoved, 0 changed,
+                 key-for-key and value-for-value | MATCH.
+                 verify_step S-06: FILES clean (uncommitted vs HEAD, 0
+                 touched), PARITY holds, CLEAN. NET DELTA compare-by-eye:
+                 modules 196->196, symbols 551->551, sloc 43210->43219
+                 (+9), cycles 1->1.
+FILES DECLARED:  src/feelies/alpha/risk_wrapper.py:186-192
+                 tests/conformance/test_per_alpha_budget.py (X4)
+                 tests/conformance/test_pathological_refusal.py (X6, narrow)
+                 tests/conformance/fixtures/pathological/ (FIX-3 case 1)
+                 tests/alpha/test_risk_wrapper.py
+FILES TOUCHED:   src/feelies/alpha/risk_wrapper.py
+                 tests/conformance/test_per_alpha_budget.py
+                 tests/conformance/test_pathological_refusal.py
+                 tests/conformance/fixtures/pathological/unregistered_strategy_id.yaml
+                 tests/alpha/test_risk_wrapper.py
+                 5 touched against 4 named files + 1 directory scope.
+                 Step commit 12c8dcd is those five files only.
+NET DELTA:       declared src modules 0, public symbols 0, branch points
+                 -1 +1 = 0, test files +2 | actual src modules 196 -> 196
+                 (+0), public symbols 551 -> 551 (+0), sloc 43210 ->
+                 43219 (+9), import cycles 1 -> 1 (+0), alphaleak 2 -> 2
+                 (+0), test files +2 new and +1 extended. MATCH on
+                 modules. The +9 sloc is the REJECT return and the
+                 explicit ``__`` prefix test.
+FINDINGS:        AlphaRegistry.register does not re-apply _ALPHA_ID_RE, so a
+                 programmatically registered module with a `__` prefix would
+                 count as registered and skip per-alpha budgets. The YAML path
+                 is closed (loader and SCHEMA.md both enforce
+                 ^[a-z][a-z0-9_]*$); this is the remaining route to an
+                 unbudgeted order. Not fixed here.
+                 Also not fixed: check_signal:68-71 still does
+                 ``except KeyError: return self._inner.check_signal(...)``.
+                 Carried: G.8 registers G01-G45 (G46 is S-10); G6 rejects
+                 depends_on_sensors: []; load_platform_config +
+                 build_platform(config) loses config-path attribution
+                 (S-04c); ci.yml import contract continue-on-error: true
+                 until G40; verify_step.py uppercases the step id and
+                 drops unfenced blocks; test_forced_exit_attribution_replay.py
+                 :193-196 stubs check_signal/check_order.
+NOTES:           two committed tests from e3281a1 pinned the G23 fail-open
+                 as intended and were rewritten, not deleted, to assert the
+                 new contract; the class docstring's delegation claim remains
+                 tested via test_registered_strategy_delegates_to_inner and
+                 test_synthetic_prefix_delegates_to_inner;
+                 test_empty_strategy_id_passes_through pins the
+                 strategy_id="" case the stop-exit determinism stream
+                 relies on. Parity hold is structural: no determinism tape
+                 reaches the KeyError handler; only
+                 test_orchestrator_replay.py builds the wrapper, with 0
+                 orders on the main stream.
+                 Caller on the unregistered non-synthetic path observes
+                 RiskVerdict(action=REJECT, reason contains the id and
+                 "per-alpha budget unknown; order refused"). Inner
+                 check_order is not called. Exposure does not increase.
+                 Left uncommitted for the operator: baseline_pre-S-06.json,
+                 baseline_post-S-06.json, this ledger entry, and the plan
+                 amendment in phase7_migration.md. The step commit is the
+                 five declared files only.
