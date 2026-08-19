@@ -986,44 +986,72 @@ STEP:            S-09
 CLOSES:          G07
 PROBLEM:         2 of 21 event classes carry a version field. Every hot-path
                  event is unversioned, so no consumer can detect a producer
-                 shape change. CORE §C.11 schema evolution never breaks replay;
-                 CORE §F.7, resolved to the Kernel in Phase 2.
+                 shape change. CORE sec. C.11 schema evolution never breaks
+                 replay; CORE sec. F.7, resolved to the Kernel in Phase 2.
+WHY THIS OWNER:  Phase 2 assigns sec. F.7 to the Kernel and puts
+                 `schema_version` on the base `Event` envelope rather than
+                 per-class, so the compatibility rule is one rule. The Kernel
+                 owns the rule; the INGEST PATH enforces it, because
+                 orchestrator.py:2395 replays an already-loaded log and a
+                 refusal there is too late -- by then a bad-version log is in
+                 memory. The precedent is `require_healthy_ingestion_manifests`
+                 (storage/cache_replay.py:82, :131-140), which reads a per-day
+                 manifest and refuses fail-closed at load: the same mechanism
+                 with a different key.
+REFACTOR PATH:   **Artifact + closure test, atomic.**
+                 (1) `schema_version` on the envelope with a default.
+                 (2) S8 asserting closure -- every event class resolves a
+                 version, and the pinned-code-per-log rule is stated in one
+                 place. S8 must detect a DRIFT, not the presence of a field: a
+                 test that enumerates classes and checks an attribute exists
+                 passes whether or not the version is correct, propagated, or
+                 checked anywhere. Prove it by adding a throwaway field to an
+                 event class and confirming S8 fails.
+                 (3) R5 asserting a log outside the supported range is REFUSED
+                 LOUDLY rather than replayed wrong. THE CHECK IS UNCONDITIONAL:
+                 `require_healthy_ingestion_manifests` defaults to False and is
+                 opt-in; copying that default would make the schema gate fail
+                 open, which is the opposite of sec. C.11. A cache written
+                 before schema tagging -- version absent -- must also refuse,
+                 exactly as :90-91 handles pre-tagging ingestion health. R5 must
+                 construct a log at an unsupported version and one with the
+                 version absent, not unit-test a comparison function.
+                 (4) The envelope field and the log-level check answer different
+                 questions and do not share a mechanism: the envelope field
+                 answers "can this consumer read this event", the manifest key
+                 answers "should this log replay at all". S8 covers the first,
+                 R5 the second.
 FILES:           src/feelies/core/events.py (Event envelope)
-                 src/feelies/kernel/ (the schema gate)
+                 src/feelies/storage/cache_replay.py (the ingest gate)
                  tests/conformance/test_schema_drift.py (S8)
                  tests/conformance/test_schema_versioning.py (R5)
-WHY THIS OWNER:  Phase 2 assigns §F.7 to the Kernel and puts `schema_version` on
-                 the base `Event` envelope rather than per-class, so the
-                 compatibility rule is one rule.
-REFACTOR PATH:   **Artifact + closure test, atomic.** (1) `schema_version` on
-                 the envelope with a default; (2) S8 asserting closure — every
-                 event class resolves a version, and the pinned-code-per-log
-                 rule is stated in one place; (3) R5 asserting a log outside the
-                 supported range is **refused loudly** rather than replayed
-                 wrong.
-BLAST RADIUS:    boundary — one envelope field, 21 classes, one gate
-VALIDATED BY:    S8, R5, all 26 baselines, the parity oracle,
-                 `uv run mypy src/feelies`
-PARITY IMPACT:   hold — all 26 baselines, and no constant is re-pinned here.
+BLAST RADIUS:    boundary -- one envelope field, 21 classes, one gate at ingest
+VALIDATED BY:    S8 with the throwaway-field mutation proof; R5 against a
+                 constructed unsupported-version log and a version-absent log;
+                 all 26 baselines; the parity oracle; `uv run mypy src/feelies`
+PARITY IMPACT:   hold -- all 26 baselines, and no constant is re-pinned here.
                  **All 26 hold, and that is the defect this step exposes rather
                  than fixes.** Hash inputs are hand-written field lists per
                  helper, so adding a field cannot break parity (Phase 0 P-1,
-                 Phase 1 §6). The oracle is blind to schema growth. Adding
+                 Phase 1 sec. 6). The oracle is blind to schema growth. Adding
                  `schema_version` **to** the helpers would break all 26 at once
-                 via one `manifest_fingerprint()` line — that is deliberately
-                 **not** in this step, because a coordinated re-pin should not
-                 ride along with a field addition. It is scheduled in G.7 as an
-                 explicit decision for the operator.
-DELETES:         the 83 `schema_version` sites' ambiguity — alpha-YAML
-                 versioning in `promotion/` (25) and `cli/` (19) stops being
-                 the only thing the name means. No module deleted.
-                 §G.10: contract definition, net increase permitted.
+                 via one `manifest_fingerprint()` line -- that is deliberately
+                 NOT done here and is scheduled as S-17a, after S-11 and S-16
+                 have added their fields, so both re-baselines fall in one
+                 window. Until S-17a lands, S8 and R5 carry the entire weight of
+                 detecting schema drift.
+DELETES:         the 83 `schema_version` sites' ambiguity -- alpha-YAML
+                 versioning in `promotion/` (25) and `cli/` (19) stops being the
+                 only thing the name means. No module deleted. sec. G.10:
+                 contract definition, net increase permitted.
 NET DELTA:       src modules 0, public symbols +1, branch points +1 (the schema
                  gate; enumerable, becomes a gate-registry row under S-11).
                  Test files +2.
 ROLLBACK:        revert. The field disappears; no baseline moves in either
                  direction, which makes this the cheapest step to revert in the
-                 plan and the one whose revert is hardest to notice.
+                 plan and the one whose revert is hardest to notice -- so the
+                 revert must be verified by S8 and R5 failing again, not by a
+                 green suite.
 ```
 
 ```
