@@ -44,6 +44,38 @@ class OperatingMode(Enum):
     PAPER = auto()
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class EngineLatencyBudget:
+    """Per-engine latency budget: p99 over a declared rolling event count."""
+
+    engine: str
+    budget_ns: int
+    statistic: str
+    window_events: int
+
+
+# Tick-to-decision p99 target named in the plan (U-7: 3 ms). Applied per
+# hot-path engine as an upper bound; G41's 10 µs/event overrun is S-33.
+_TICK_TO_DECISION_P99_BUDGET_NS: int = 3_000_000
+_LATENCY_BUDGET_WINDOW_EVENTS: int = 100
+
+ENGINE_LATENCY_BUDGETS: tuple[EngineLatencyBudget, ...] = tuple(
+    EngineLatencyBudget(
+        engine=name,
+        budget_ns=_TICK_TO_DECISION_P99_BUDGET_NS,
+        statistic="p99",
+        window_events=_LATENCY_BUDGET_WINDOW_EVENTS,
+    )
+    for name in (
+        "sensor_fanout_ns",
+        "sm_transition_ns",
+        "signal_evaluate_ns",
+        "risk_check_ns",
+        "tick_to_decision_latency_ns",
+    )
+)
+
+
 @dataclass(frozen=True, kw_only=True)
 class PlatformConfig:
     """Concrete configuration for the trading platform.

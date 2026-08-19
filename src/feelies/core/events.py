@@ -420,6 +420,22 @@ class KillSwitchActivation(Event):
     activated_by: str
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class LatencyBreach(Event):
+    """A live p99 latency observation exceeded its declared engine budget.
+
+    Carries statistic, window, observed value, and budget so the record is
+    interpretable without the config that produced it. Replay consumes this
+    record and never re-measures.
+    """
+
+    engine: str
+    statistic: str
+    window_events: int
+    observed_ns: int
+    budget_ns: int
+
+
 # Why a regime gate force-closed and drove safety OFF.  One token per legacy
 # ``_publish_gate_close`` path in :class:`~feelies.signals.horizon_engine.HorizonSignalEngine`:
 # the clean ON→OFF transition and the three fail-closed error paths.

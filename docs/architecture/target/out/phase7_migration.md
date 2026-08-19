@@ -794,11 +794,29 @@ PROBLEM:         There is no budget in the code. `_tick_timings` is written at
                  overrun is invisible to the running system in every mode, and
                  Inv-11's requirement that stress resolve toward reduced
                  exposure has no implementation on the latency axis.
+                 S4 at tests/acceptance/test_no_walltime_outside_clock.py
+                 allowlists ten perf_counter_ns sites in orchestrator.py by line
+                 number, so it fails on any insertion above them regardless of
+                 wall-clock behaviour. This step adds no new read -- the count
+                 stays at 10 -- but all ten shift (1524->1533, 1633->1642,
+                 1635->1644, 1675->1684, 1677->1686, 1771->1780, 1773->1782,
+                 2104->2113, 3940->3958, 3950->3968). Three of them (1524, 2104,
+                 3940) are named in the allowlist comment at :38-41 as G01's
+                 residual, closed by S-32, so their line numbers are a
+                 cross-step reference: they are re-keyed here by enclosing
+                 symbol -- _process_tick_inner, _finalize_tick,
+                 _drain_async_fills -- which are distinct and unambiguous. The
+                 remaining seven are retargeted in place; fully de-line-pinning
+                 S4 is out of scope.                 
 FILES:           src/feelies/core/events.py (LatencyBreach, new)
                  src/feelies/monitoring/ (budget predicate + breach record)
                  src/feelies/core/platform_config.py (per-engine budget table)
                  src/feelies/kernel/orchestrator.py:2126-2153 (comparison site)
                  tests/conformance/test_latency_budget.py (X10)
+                 tests/acceptance/test_no_walltime_outside_clock.py (S4's ten
+                 orchestrator entries are line-pinned and shift on any insertion
+                 above them; retarget all ten, and re-key the three G01
+                 residuals by enclosing symbol so S-32's reference is stable)                 
 WHY THIS OWNER:  Phase 2 splits §F.6: engine 11 owns the response to a budget
                  breach, engine 1 owns ingress shedding. The measurement stays
                  where it is; only the comparison and the response are new.
@@ -843,10 +861,12 @@ PARITY IMPACT:   hold — all 26 baselines, conditional on (a) and (b) below.
                  events, so the no-breach branch is taken and output is
                  identical. Backtest has no wall-clock deadline (Phase 5 G43),
                  so no breach is generated during replay.
-DELETES:         the unread-metric path for `_tick_timings` — the values stop
-                 being published-and-ignored and become a compared input.
-                 §G.10: this is a P0 fix, so a net increase is permitted, but
-                 it is not a pure addition.
+DELETES:         the unread-metric path for `_tick_timings` becomes a compared
+                 input on PAPER. The MetricEvent publish path REMAINS --
+                 removing the seq.next() publishes on signal_evaluate_ns /
+                 risk_check_ns would shift kernel event IDs. Supplemented, not
+                 removed. Also deletes the line-number coupling of G01's three
+                 residuals.
 NET DELTA:       src modules +1, public symbols +2 (LatencyBreach, the budget
                  table), branch points **+2** (the comparison and the
                  escalation) — both enumerable, both gate-registry entries once

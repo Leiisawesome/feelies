@@ -7,6 +7,7 @@ Ruff's datetime rules do not detect.
 from __future__ import annotations
 
 import ast
+from collections import Counter
 from pathlib import Path
 
 from tools.arch.clockscan import CLOCK_LEAVES, CLOCK_RECEIVERS
@@ -35,23 +36,24 @@ _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
     "ingestion/massive_ingestor.py": "live REST page-fetch progress timing (live-only path)",
 }
 
-# (lineno, "root.attr()") pairs justified after deleting the whole-file
-# orchestrator exemption. Latency telemetry into _tick_timings; event
-# timestamps still use the injected clock. The three proven per-event
-# reads (1524, 2104, 3940) are G01's residual, closed by S-32.
-_WALL_CLOCK_CALL_ALLOWLIST: dict[str, frozenset[tuple[int, str]]] = {
+# Call-granular orchestrator entries. Seven are (lineno, "root.attr()") and
+# stay line-pinned. G01's three proven per-event residuals are keyed by
+# enclosing symbol so S-32 survives insertions: _process_tick_inner,
+# _finalize_tick, _drain_async_fills. Latency telemetry into _tick_timings;
+# event timestamps still use the injected clock. G01 residual closed by S-32.
+_WALL_CLOCK_CALL_ALLOWLIST: dict[str, frozenset[tuple[int | str, str]]] = {
     "kernel/orchestrator.py": frozenset(
         {
-            (1524, "time.perf_counter_ns()"),
-            (1633, "time.perf_counter_ns()"),
-            (1635, "time.perf_counter_ns()"),
-            (1675, "time.perf_counter_ns()"),
-            (1677, "time.perf_counter_ns()"),
-            (1771, "time.perf_counter_ns()"),
-            (1773, "time.perf_counter_ns()"),
-            (2104, "time.perf_counter_ns()"),
-            (3940, "time.perf_counter_ns()"),
-            (3950, "time.perf_counter_ns()"),
+            (1642, "time.perf_counter_ns()"),
+            (1644, "time.perf_counter_ns()"),
+            (1684, "time.perf_counter_ns()"),
+            (1686, "time.perf_counter_ns()"),
+            (1780, "time.perf_counter_ns()"),
+            (1782, "time.perf_counter_ns()"),
+            (3968, "time.perf_counter_ns()"),
+            ("_process_tick_inner", "time.perf_counter_ns()"),
+            ("_finalize_tick", "time.perf_counter_ns()"),
+            ("_drain_async_fills", "time.perf_counter_ns()"),
         }
     ),
 }
@@ -78,6 +80,67 @@ def _wall_clock_calls(path: Path) -> list[tuple[int, str]]:
     return hits
 
 
+def _function_spans(tree: ast.AST) -> list[tuple[int, int, str]]:
+    """``def`` line, last line, name for every function in *tree*."""
+    spans: list[tuple[int, int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            end = node.end_lineno if node.end_lineno is not None else node.lineno
+            spans.append((node.lineno, end, node.name))
+    return spans
+
+
+def _enclosing_symbol(spans: list[tuple[int, int, str]], lineno: int) -> str | None:
+    covering = [(end - start, name) for start, end, name in spans if start <= lineno <= end]
+    if not covering:
+        return None
+    covering.sort()
+    return covering[0][1]
+
+
+def _split_allowlist(
+    allowed: frozenset[tuple[int | str, str]],
+) -> tuple[frozenset[tuple[int, str]], frozenset[tuple[str, str]]]:
+    by_line: set[tuple[int, str]] = set()
+    by_symbol: set[tuple[str, str]] = set()
+    for key, call in allowed:
+        if isinstance(key, int):
+            by_line.add((key, call))
+        else:
+            by_symbol.add((key, call))
+    return frozenset(by_line), frozenset(by_symbol)
+
+
+def _consume_allowlist(
+    path: Path,
+    allowed: frozenset[tuple[int | str, str]],
+) -> tuple[list[tuple[int, str]], list[tuple[str, str]]]:
+    """Return (offenders, unused symbol entries) after applying line then symbol keys.
+
+    Each symbol entry admits one leftover call inside that function. A second
+    unmatched read in a symbol-keyed function is still an offender.
+    """
+    hits = _wall_clock_calls(path)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    spans = _function_spans(tree)
+    by_line, by_symbol = _split_allowlist(allowed)
+    leftover: list[tuple[int, str, str | None]] = []
+    for lineno, call in hits:
+        if (lineno, call) in by_line:
+            continue
+        leftover.append((lineno, call, _enclosing_symbol(spans, lineno)))
+    budget: Counter[tuple[str, str]] = Counter(by_symbol)
+    offenders: list[tuple[int, str]] = []
+    for lineno, call, symbol in leftover:
+        key = (symbol, call) if symbol is not None else None
+        if key is not None and budget[key] > 0:
+            budget[key] -= 1
+            continue
+        offenders.append((lineno, call))
+    unused = [entry for entry, n in budget.items() if n > 0]
+    return offenders, unused
+
+
 def test_no_raw_wall_clock_outside_allowlist() -> None:
     """Every raw wall-clock read in src/feelies must be allowlisted.
 
@@ -93,17 +156,15 @@ def test_no_raw_wall_clock_outside_allowlist() -> None:
         if rel in _WALL_CLOCK_ALLOWLIST:
             continue
         allowed_calls = _WALL_CLOCK_CALL_ALLOWLIST.get(rel, frozenset())
-        for lineno, call in _wall_clock_calls(path):
-            if (lineno, call) in allowed_calls:
-                continue
+        offenders_here, _unused = _consume_allowlist(path, allowed_calls)
+        for lineno, call in offenders_here:
             offenders.append(f"{rel}:{lineno}  {call}")
 
     assert not offenders, (
         "raw wall-clock reads found outside the Inv-10 allowlist — route the "
         "timestamp through the injected clock, or add the file to "
         "``_WALL_CLOCK_ALLOWLIST`` / the call-granular list with a "
-        "justification confirming it is replay-neutral:\n  "
-        + "\n  ".join(offenders)
+        "justification confirming it is replay-neutral:\n  " + "\n  ".join(offenders)
     )
 
 
@@ -127,9 +188,13 @@ def test_wall_clock_allowlist_has_no_stale_entries() -> None:
             stale.append(f"{rel} (call-allowlist file missing)")
             continue
         present = set(_wall_clock_calls(path))
-        for entry in sorted(allowed):
+        by_line, _ = _split_allowlist(allowed)
+        for entry in sorted(by_line):
             if entry not in present:
                 stale.append(
                     f"{rel}:{entry[0]} {entry[1]} (call gone — drop the call-allowlist entry)"
                 )
+        _, unused_symbols = _consume_allowlist(path, allowed)
+        for symbol, call in sorted(unused_symbols):
+            stale.append(f"{rel}:{symbol} {call} (call gone — drop the call-allowlist entry)")
     assert not stale, f"stale _WALL_CLOCK_ALLOWLIST entries: {stale}"
