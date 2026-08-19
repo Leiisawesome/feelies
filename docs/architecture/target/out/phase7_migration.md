@@ -881,57 +881,82 @@ ROLLBACK:        revert. The comparison and the event disappear; `_tick_timings`
 STEP:            S-08
 CLOSES:          G03 (P0)
 PROBLEM:         `derive_order_id` is correctly a pure function of provenance,
-                 so a restart re-derives the same `order_id` — and nothing
+                 so a restart re-derives the same `order_id` -- and nothing
                  durable records which IDs were **submitted**.
                  `self._submitted_order_ids: set[str] = set()`
-                 (`src/feelies/execution/passive_limit_router.py:183`, read this
+                 (src/feelies/execution/passive_limit_router.py:183, read this
                  session; its comment says "ever submitted" and its lifetime is
-                 the object's), `_next_valid_id` starts `None` each process
-                 (`src/feelies/broker/ib/connection.py:353-364`), the only
-                 wired journal is `InMemoryTradeJournal`
-                 (`src/feelies/bootstrap.py:358`, read this session), and
-                 `src/feelies/storage/memory_event_log.py:7` states all events
-                 are lost on process exit. A stable key with nothing to look it
-                 up in. **Inv-11**, and the failure direction is toward *more*
-                 exposure.
+                 the object's), `_next_valid_id` starts `None` each process, so
+                 exactly-once submission holds only within one process.
+WHY THIS OWNER:  Phase 2 engine 10 owns exactly-once submission across restart
+                 and reconnect; engine 7 owns book durability. Both resolve the
+                 same way -- journal before wire, refuse on unprovable absence
+                 -- which makes durability a precondition of trading rather than
+                 a feature of it.
+REFACTOR PATH:   **Artifact + closure test, atomic.**
+                 (1) H2 and X11 first, xfail(strict, "GAP G03").
+                 (2) the durable journal as an append-only file with a
+                 content-addressed record per submission. DURABILITY MODE IS
+                 fsync-per-record: a page-cached append survives `kill -9` but
+                 not power loss, and the requirement is power-loss safety.
+                 (3) write **before** the wire, never after -- Phase 2 engine
+                 10's ON EXCEPTION clause is explicit that a raise between wire
+                 and journal is the one case with no safe containment.
+                 (4) refuse to submit any ID not provably absent from the
+                 journal.
+                 (5) THE REJECT ASYMMETRY IS DELIBERATE. The in-memory set at
+                 :183 is not append-only: `append_reject_ack`
+                 (passive_limit_router.py:777-786) removes an id on reject
+                 unless `release_submitted_id=False`. The journal does not
+                 release. So the journal records submission ATTEMPTS, and
+                 restart recovery must distinguish "journaled and rejected"
+                 (safe to re-derive) from "journaled, outcome unknown" (refuse).
+                 Recording only post-wire confirmations would contradict (3) and
+                 is not the resolution.
 FILES:           src/feelies/storage/ (durable submitted-order journal, new)
                  src/feelies/execution/passive_limit_router.py:183
                  src/feelies/broker/ib/connection.py:353-364
                  src/feelies/bootstrap.py:358 (wire the durable journal)
+                 src/feelies/core/platform_config.py (journal latency budget entry)
                  tests/conformance/test_order_idempotency.py (H2)
                  tests/conformance/test_reconciliation.py (X11)
-WHY THIS OWNER:  Phase 2 engine 10 owns exactly-once submission across restart
-                 and reconnect; engine 7 owns book durability. Both resolve the
-                 same way — **journal before wire, refuse on unprovable
-                 absence** — which makes durability a precondition of trading
-                 rather than a feature of it.
-REFACTOR PATH:   **Artifact + closure test, atomic.** (1) H2 and X11 first,
-                 xfail(strict, "GAP G03"); (2) the durable journal as an
-                 append-only file with a content-addressed record per
-                 submission; (3) write **before** the wire, never after — Phase
-                 2 engine 10's ON EXCEPTION clause is explicit that a raise
-                 between wire and journal is the one case with no safe
-                 containment; (4) refuse to submit any ID not provably absent;
-                 (5) wire it at the composition root beside
-                 `InMemoryTradeJournal`, selected by mode, in
-                 `src/feelies/bootstrap.py` where mode selection is legitimate.
-BLAST RADIUS:    boundary — live and paper only. Backtest is single-process and
+BLAST RADIUS:    boundary -- live and paper only. Backtest is single-process and
                  unaffected, which is why this is shippable ahead of wave C.
 VALIDATED BY:    H2 (kill mid-submission, restart, assert no duplicate reaches
-                 the broker), X11, the parity oracle, `market_fill_acks` and
-                 `halt_ack`
+                 the broker) WITH AN EXPLICIT fsync-MODE ASSERTION -- a
+                 page-cached write survives `kill -9` and would pass the restart
+                 test without meeting the durability requirement, so the restart
+                 alone does not discriminate between the three modes;
+                 X11; the parity oracle; `market_fill_acks` and `halt_ack`;
+                 a rejected-then-re-derived case proving (5) -- an id journaled
+                 and rejected must be re-submittable, not permanently refused;
+                 and a REPLAY of a session that used the durable journal,
+                 asserting the same refusal decisions, since the durable path is
+                 otherwise exercised only by H2 and never by the oracle.
 PARITY IMPACT:   All 26 hold. The journal is a side-effect store, draws no
                  sequence, and adds no hashed field. Backtest keeps
                  `InMemoryTradeJournal`, so the oracle's code path is unchanged
-                 — **which is also this step's weakness**: the durable path is
-                 exercised only by H2, never by the oracle.
+                 -- **which is also this step's weakness**: the durable path is
+                 exercised only by H2, which is why VALIDATED BY adds a replay
+                 of a journal-backed session.
+                 LATENCY: submission is on the tick-critical path
+                 (orchestrator.py:1407 and :1462 call
+                 `order_router.submit(order)` inside the walk that records
+                 `risk_check_ns` at :1782), and a portfolio batch writes one
+                 record per leg, not one per tick. An fsync costs 1-10 ms
+                 against S-07's 3 ms p99 budgets, so the write must either carry
+                 its own `ENGINE_LATENCY_BUDGETS` entry with a stated statistic
+                 and window, or be moved off-tick with the ordering guarantee in
+                 (3) preserved by another mechanism. State which, and state what
+                 a breach does -- S-07 wired breach to kill-switch escalation.
 DELETES:         the in-process-only exactly-once guarantee; the claim in
-                 `src/feelies/execution/passive_limit_router.py:183`'s comment that the set holds IDs
-                 "ever submitted", which becomes true rather than aspirational
-NET DELTA:       src modules +1, public symbols +2, branch points **+1** (the
-                 refusal). §G.10: P0 fix, net increase permitted.
-                 Test files +2.
-ROLLBACK:        revert, and delete the journal file — it is append-only and
+                 src/feelies/execution/passive_limit_router.py:183's comment
+                 that the set holds IDs "ever submitted", which becomes true
+                 rather than aspirational.
+NET DELTA:       src modules +1, public symbols +2, branch points **+2** (the
+                 refusal, and the rejected-vs-unknown discrimination in (5)).
+                 sec. G.10: P0 fix, net increase permitted. Test files +2.
+ROLLBACK:        revert, and delete the journal file -- it is append-only and
                  nothing else reads it. The router falls back to the in-memory
                  set. **Do not roll back while a live session is mid-flight**:
                  the journal is the only record of what was sent.
