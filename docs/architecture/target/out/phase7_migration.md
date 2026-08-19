@@ -649,6 +649,7 @@ NET DELTA:       src modules 0, public symbols 0, branch points +1 (the
 ROLLBACK:        revert; both clauses revert together. X3's binding cap reverts
                  with it, restoring the vacuous configuration.
 ```
+```
 STEP:            S-06
 CLOSES:          G23 (P0)
 PROBLEM:         `try: self._registry.get(strategy_id) / except KeyError: pass`
