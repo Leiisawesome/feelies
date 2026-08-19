@@ -31,6 +31,7 @@ from feelies.alpha.module import (
     AlphaRiskBudget,
     ParameterDef,
 )
+from feelies.alpha.registry import _ALPHA_ID_RE
 from feelies.promotion.evidence import parse_gate_thresholds_overrides
 from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
@@ -125,7 +126,6 @@ _SAFETY_EXIT_POLICY_MODES: frozenset[str] = frozenset(
 # Below 30 seconds, L1 sampling cannot support a meaningful horizon snapshot.
 # PlatformConfig remains the authoritative horizon whitelist.
 _SIGNAL_MIN_HORIZON_SECONDS = 30
-_ALPHA_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 _SAFE_BUILTINS = {

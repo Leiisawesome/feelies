@@ -18,10 +18,11 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
-from feelies.alpha.registry import AlphaRegistry
+from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.core.events import (
     OrderRequest,
@@ -267,3 +268,38 @@ def test_synthetic_prefix_uses_aggregate_checks_only() -> None:
     assert inner.orders and inner.orders[0].strategy_id == synthetic
     assert verdict.action is RiskAction.ALLOW
     assert verdict.reason == "inner-allow"
+
+
+_INVALID_PREFIX_ID = "__synthetic_probe__"
+
+
+def test_double_underscore_prefixed_id_is_refused_by_registry() -> None:
+    """S-06a: register() must apply ^[a-z][a-z0-9_]*$ before mutating.
+
+    Production cannot emit this id: bootstrap registers only modules
+    returned by loader.load, where the regex already ran. The case
+    constructs the module directly. A failure because the stub was
+    malformed, validate() rejected it, or the id collided, proves
+    nothing about the missing id rule.
+    """
+    registry = AlphaRegistry()
+    module = _StubAlpha(_INVALID_PREFIX_ID, _budget(max_position=100))
+
+    with pytest.raises(AlphaRegistryError, match=r"must match") as exc_info:
+        registry.register(module)
+
+    message = str(exc_info.value)
+    assert _INVALID_PREFIX_ID in message
+    assert "^[a-z][a-z0-9_]*$" in message
+    assert _INVALID_PREFIX_ID not in registry
+    assert len(registry) == 0
+
+
+def test_valid_alpha_id_still_registers() -> None:
+    """Control: a legal id still registers so a blanket refusal cannot pass."""
+    registry = AlphaRegistry()
+    module = _StubAlpha(_REGISTERED_ID, _budget(max_position=100))
+    registry.register(module)
+    assert _REGISTERED_ID in registry
+    assert len(registry) == 1
+    assert registry.get(_REGISTERED_ID) is module

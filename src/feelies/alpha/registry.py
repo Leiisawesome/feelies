@@ -21,6 +21,7 @@ Lifecycle integration:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 
 from feelies.promotion.lifecycle import (
@@ -44,6 +45,8 @@ from feelies.core.clock import Clock
 from feelies.features.definition import FeatureDefinition
 
 _logger = logging.getLogger(__name__)
+
+_ALPHA_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class AlphaRegistryError(Exception):
@@ -110,6 +113,12 @@ class AlphaRegistry:
         """
         manifest = alpha.manifest
         alpha_id = manifest.alpha_id
+
+        if not _ALPHA_ID_RE.match(str(alpha_id)):
+            raise AlphaRegistryError(
+                f"Alpha '{alpha_id}' must match '^[a-z][a-z0-9_]*$' "
+                "(lowercase, underscores only)"
+            )
 
         if alpha_id in self._alphas:
             raise AlphaRegistryError(f"Alpha '{alpha_id}' is already registered")

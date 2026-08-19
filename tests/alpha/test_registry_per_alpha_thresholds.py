@@ -375,3 +375,23 @@ class TestPerAlphaFloorEnforcement:
         lc = registry.get_lifecycle("kyle")
         assert lc is not None
         assert lc._gate_thresholds.cpcv_min_mean_sharpe == 0.1  # noqa: SLF001
+
+
+class TestAlphaIdRuleAtRegister:
+    """S-06a: the id regex is an identity rule, enforced at register()."""
+
+    def test_double_underscore_prefix_rejected_without_mutation(self) -> None:
+        registry = AlphaRegistry()
+        with pytest.raises(AlphaRegistryError, match=r"must match") as exc_info:
+            registry.register(_StubModule("__synthetic_probe__"))
+        assert "__synthetic_probe__" in str(exc_info.value)
+        assert "^[a-z][a-z0-9_]*$" in str(exc_info.value)
+        assert "__synthetic_probe__" not in registry
+        assert len(registry) == 0
+        assert registry.get_lifecycle("__synthetic_probe__") is None
+
+    def test_valid_id_still_registers(self) -> None:
+        registry = AlphaRegistry()
+        registry.register(_StubModule("kyle"))
+        assert "kyle" in registry
+        assert len(registry) == 1
