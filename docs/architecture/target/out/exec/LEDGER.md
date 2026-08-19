@@ -1725,4 +1725,273 @@ NOTES:           Durability mode is fsync-per-record. Asserted by
                  Left uncommitted: baseline_pre-S-08.json,
                  baseline_post-S-08.json, this ledger entry.
 
+---
+
+## S-09  schema_version on the Event envelope
+DATE:            2026-08-19T19:29:19+08:00
+BASE SHA:        9fb1d846758832056055273608cf2106f8baadc0
+RESULT SHA:      reverted
+VERDICT:         reverted
+CONFORMANCE:     S8 | failed-before: yes | passes-after: yes | mutation: yes
+                 R5 | failed-before: yes | passes-after: yes | mutation: yes
+                 Step-2 failure output, captured with --runxfail before
+                 any src edit (xfail(strict, "GAP G07") was on the tests):
+                   FAILED tests/conformance/test_schema_drift.py::
+                   test_s8_every_event_class_resolves_schema_version
+                   E   AssertionError: event schema drift: Alert: extra=()
+                       missing=('schema_version',); CrossSectionalContext:
+                       extra=() missing=('schema_version',); ... Trade:
+                       extra=() missing=('schema_version',)
+                   (all 21 concrete Event subclasses named; missing is
+                   schema_version — absence of versioning, not a fixture)
+                   FAILED tests/conformance/test_schema_versioning.py::
+                   test_r5_unsupported_schema_version_is_refused
+                   E   Failed: DID NOT RAISE CacheReplayError
+                   FAILED tests/conformance/test_schema_versioning.py::
+                   test_r5_absent_schema_version_is_refused
+                   E   Failed: DID NOT RAISE CacheReplayError
+                   3 failed in 0.33s
+                 S8 throwaway-field mutation (Alert.throwaway: int = 0):
+                   before impl: Alert: extra=('throwaway',)
+                   missing=('schema_version',) — names the field
+                   restore: events.py byte-identical, throwaway gone,
+                   S8 again missing=('schema_version',) only
+                   after impl: Alert: extra=('throwaway',) missing=()
+                   restore: events.py byte-identical, S8 1 passed
+                 R5 opt-in mutation (require_schema_version: bool = False
+                 wrapping check_cache_schema_version):
+                   both R5 tests DID NOT RAISE — the bad log loaded
+                   restore: cache_replay.py byte-identical, R5 2 passed
+TESTS:           4812 passed / 0 failed / 28 skipped / 10 xfailed
+                 -> reverted (same counts; no post-S-09 capture)
+PARITY:          declared hold (all 26; oracle is blind to schema
+                 growth, pending S-17a) | actual not recaptured after
+                 revert; pre-S-09 map matched post-S-08 62/62
+                 key-for-key and value-for-value | MATCH
+FILES DECLARED:  src/feelies/core/events.py
+                 src/feelies/storage/cache_replay.py
+                 tests/conformance/test_schema_drift.py
+                 tests/conformance/test_schema_versioning.py
+FILES TOUCHED:   the four declared files, then git restore / deleted
+                 the two new tests. Nothing outside FILES. The writer
+                 the gate needs is src/feelies/storage/disk_event_cache.py,
+                 which is not in FILES and was not edited.
+NET DELTA:       declared src modules 0, public symbols +1, branch
+                 points +1, test files +2 | actual none (reverted)
+FINDINGS:        PLAN DEFECT — FILES omits disk_event_cache.py.
+                 The unconditional ingest gate reads
+                 manifest.get("schema_version") and refuses absent or
+                 unsupported, following require_healthy_ingestion_manifests
+                 at cache_replay.py:131-140 but not its default. DiskEventCache.save
+                 never writes that key (manifest is a hand-built dict of
+                 symbol/date/counts/checksum/event_schema_hash/
+                 normalizer_version/created_at/optional ingestion_health).
+                 After the gate lands, previously-passing tests fail:
+                   tests/storage/test_cache_replay.py::
+                   test_load_cache_replay_day_meta_carries_ingestion_health
+                   tests/storage/test_cache_replay.py::
+                   test_range_spanning_a_weekend_loads
+                 both save() then load_event_log_from_disk_cache; both
+                 raise CacheReplayError schema_version=None (require 1).
+                 Stop-the-line: previously-passing test now failing, and
+                 the change genuinely needs another file. Did not edit
+                 disk_event_cache.py. Did not update those tests. Did not
+                 fail the gate open. Did not merge envelope and manifest
+                 into one check.
+                 Adding schema_version to Event also changes
+                 DiskEventCache._compute_schema_hash (it iterates
+                 NBBOQuote/Trade __dataclass_fields__), so operator
+                 caches become unusable at the existing hash check
+                 before the new gate runs. Re-ingest still would not
+                 tag schema_version unless save() writes it.
+                 Carried, not fixed: G.8 registers G01-G45 (G46 is S-10);
+                 G6 rejects depends_on_sensors: []; load_platform_config
+                 + build_platform(config) loses config-path (S-04c);
+                 ci.yml import contract continue-on-error: true until G40
+                 (do not flip); verify_step.py uppercases the step id,
+                 silently drops unfenced blocks, and matches blast-radius
+                 substrings without negation; baseline test COUNTS are
+                 not reproducible across time of day (RTH-gated skips);
+                 connection.py:353-364 has no automated coverage of the
+                 live handshake; all 14 tests in
+                 tests/broker/ib/test_ib_functional.py skip without a
+                 reachable gateway.
+NOTES:           Supported range was stated as SCHEMA_VERSION = 1 in
+                 feelies.core.events (singleton; ingest gate imported it
+                 and compared with !=). Version-absent: manifest key
+                 missing -> raw is None -> CacheReplayError, not a
+                 default to 1. The 2 pre-existing version fields
+                 (SensorReading.sensor_version, HorizonFeatureSnapshot.
+                 feature_versions) are payload, not the envelope pin;
+                 they would have stayed; schema_version would have been
+                 additive on Event with default SCHEMA_VERSION. All 21
+                 concrete Event subclasses would have resolved it by
+                 inheritance. The check was unconditional — no flag.
+                 The oracle did not and could not detect this change
+                 (hand-written hash field lists; pending S-17a); a green
+                 oracle would have proved nothing. Revert verified by
+                 restoring declared files, deleting the two new tests,
+                 deleting branch exec/S-09, HEAD back at
+                 9fb1d846758832056055273608cf2106f8baadc0 on arch/exec.
+                 Retry requires FILES to add
+                 src/feelies/storage/disk_event_cache.py so save()
+                 persists schema_version = SCHEMA_VERSION on the
+                 manifest. Plan amendment, not a silent extra edit.
+                 Left uncommitted: baseline_pre-S-09.json, this ledger
+                 entry.
+
+---
+
+## S-09  schema_version on the Event envelope
+DATE:            2026-08-19T20:27:22+08:00
+BASE SHA:        9fb1d846758832056055273608cf2106f8baadc0
+RESULT SHA:      not committed — waiting at the boundary gate
+VERDICT:         blocked
+CONFORMANCE:     S8 | failed-before: yes | passes-after: yes | mutation: yes
+                 Step-2 failure output, captured with --runxfail before
+                 any src edit (xfail(strict, "GAP G07") was on the test):
+                   FAILED tests/conformance/test_schema_drift.py::
+                   test_s8_every_event_class_resolves_schema_version
+                   E   AssertionError: event schema drift: Alert: extra=()
+                       missing=('schema_version',); CrossSectionalContext:
+                       extra=() missing=('schema_version',); ... Trade:
+                       extra=() missing=('schema_version',)
+                   (all 21 concrete Event subclasses named; missing is
+                   schema_version — absence of versioning, not a fixture)
+                   1 failed in 0.26s
+                 S8 throwaway-field mutation after implement
+                 (Alert.throwaway: int = 0):
+                   events.py sha256 before
+                   3fe82e4aaf82ad7da34a51e043d8aa22669874823ed3aaf6ca76e20253442e8f
+                   FAILED: Alert: extra=('throwaway',) missing=()
+                   restore: byte-identical, sha256
+                   3fe82e4aaf82ad7da34a51e043d8aa22669874823ed3aaf6ca76e20253442e8f
+                   S8 1 passed
+TESTS:           4812 passed / 0 failed / 28 skipped / 10 xfailed
+                 -> 4811 passed / 0 failed / 30 skipped / 10 xfailed
+                 +1 is S8. -1 pass / +1 skip is
+                 test_app_20260326_backtest_baseline_from_disk_cache
+                 (cache miss after event_schema_hash moved; skip is not
+                 a pass). +1 further skip is
+                 test_two_alphas_hold_live_targets_on_one_symbol (same
+                 APP/2026-03-26 cache). Determinism 145 -> 145.
+PARITY:          declared hold | actual 62 constants unmoved,
+                 0 changed, key-for-key and value-for-value | MATCH.
+                 Expected: the oracle is blind to schema growth
+                 (pending S-17a). A green oracle proves nothing about
+                 this step. verify_step S-09: FILES clean (vacuous —
+                 diffs base..HEAD only; both files uncommitted),
+                 PARITY holds, NET DELTA by eye, CLEAN. Blast radius
+                 boundary — human gate required before commit.
+FILES DECLARED:  src/feelies/core/events.py
+                 tests/conformance/test_schema_drift.py
+FILES TOUCHED:   src/feelies/core/events.py
+                 tests/conformance/test_schema_drift.py (new)
+                 2 touched against 2 declared. cache_replay.py and
+                 disk_event_cache.py not edited. No third file.
+NET DELTA:       declared src modules 0, public symbols +1, branch
+                 points +1, test files +2 | actual src modules 198 ->
+                 198 (+0), public symbols 555 -> 555 (+0), sloc
+                 43634 -> 43639 (+5), cycles 1 -> 1, alphaleak 2 -> 2.
+                 Test files +1. SCHEMA_VERSION is a module-level
+                 Assign; inventory counts only ClassDef/FunctionDef, so
+                 the declared +1 public symbol does not appear. Declared
+                 branch points +1 and test files +2 are leftovers of
+                 withdrawn R5. MATCH on modules. Finding, not a stop
+                 (verify_step NET DELTA is compare-by-eye).
+FINDINGS:        verify_step FILES is vacuous on an uncommitted tree
+                 (declared 2, touched 0). Report, do not fix.
+                 NET DELTA leftovers: public symbols +1 / branch points
+                 +1 / test files +2 still name the withdrawn ingest
+                 gate. BLAST RADIUS still says "one gate at ingest".
+                 serialization.py treats a missing __schema_version__
+                 tag as v1 (fail-open) — its own step.
+                 Live flake during the first full pytest:
+                 test_websocket_feed_emits_live_massive_event asserted
+                 Trade.size > 0 against a size-0 print; retry passed;
+                 post-S-09 capture was 0 failed. Not this step.
+                 Carried: G.8 G01-G45 (G46 is S-10); G6 vs empty
+                 depends_on_sensors; load_platform_config +
+                 build_platform(config) loses config-path (S-04c);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercases step id, drops unfenced
+                 blocks, and matches blast-radius substrings without
+                 negation; baseline COUNTS not reproducible across
+                 RTH; connection.py:353-364 untested live handshake.
+NOTES:           R5 withdrawn — event_schema_hash is the log-level pin.
+                 Schema hash before:
+                 sha256:8ff53428a52107dcaa808fec2be1a4377df8562ec5f2c6d79052bdf1909909a7
+                 after:
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa
+                 APP/2026-03-26 refused: event_schema_hash mismatch
+                 (cached 8ff53428a521..., current 18e8861f5ff9...).
+                 Functional baseline SKIPPED by default; FAILED under
+                 FEELIES_REQUIRE_BASELINE_CACHE=1. Re-ingestion of
+                 every cached session is required before that gate
+                 runs. The 2 pre-existing version fields
+                 (SensorReading.sensor_version,
+                 HorizonFeatureSnapshot.feature_versions) stayed as
+                 payload; envelope schema_version is additive default
+                 SCHEMA_VERSION=1 on Event; all 21 concrete subclasses
+                 resolve it by inheritance. The oracle did not and
+                 could not detect this change, pending S-17a.
+                 Waiting at the human gate. Do not commit.
+                 Left uncommitted: baseline_pre-S-09.json,
+                 baseline_post-S-09.json, this ledger entry, and the
+                 two declared files pending go/no-go.
+
+---
+
+## S-09  2026-08-19T20:31:04+08:00
+  STEP:          S-09
+  BASE:          9fb1d846758832056055273608cf2106f8baadc0
+  RESULT SHA:    759ae409eb241057ad35920ff114a0b826afac7f
+  VERDICT:       passed
+  CONFORMANCE:   S8 | failed-before: yes | passes-after: yes | mutation: yes
+  TESTS:         4812 passed / 28 skipped / 10 xfailed
+                 -> 4811 passed / 30 skipped / 10 xfailed
+  PARITY:        hold, 62 constants unmoved
+  FILES:         2 declared, 2 committed (clean vs 759ae40)
+  NET DELTA:     modules 198 -> 198 (+0)
+                 public_symbols 555 -> 555 (+0)
+                 sloc 43634 -> 43639 (+5)
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   CLEAN (boundary — committed after human go)
+  NOTES:         R5 withdrawn -- event_schema_hash is the log-level pin and already
+                 refuses an unknown NBBOQuote/Trade shape with a missing key failing closed;
+                 schema_version is the envelope pin for consumer readability only, and no second
+                 mechanism was built. Schema hash moved 8ff53428 -> 18e8861f, invalidating every
+                 cached day; APP/2026-03-26 reports the mismatch by name. The functional baseline
+                 SKIPPED by default and FAILED under FEELIES_REQUIRE_BASELINE_CACHE=1 -- re-ingest
+                 every cached session before that gate runs, and note the extra skip
+                 (test_two_alphas_hold_live_targets_on_one_symbol) has the same cause. All 21
+                 classes resolve schema_version=1 by inheritance; SensorReading.sensor_version
+                 and HorizonFeatureSnapshot.feature_versions remain payload, since they name the
+                 producer version rather than envelope compatibility. S8 detects drift in both
+                 directions -- missing and extra -- proven by the Alert.throwaway mutation with a
+                 byte-identical restore. The parity oracle did not and could not detect this
+                 change; S-17a closes that.
+  FINDINGS:      verify_step FILES was vacuous on the uncommitted tree
+                 (diffs base..HEAD only). NET DELTA leftovers: declared
+                 public symbols +1 / branch points +1 / test files +2
+                 still name withdrawn R5; actual +0 / +0 / +1. BLAST
+                 RADIUS still says "one gate at ingest". serialization.py
+                 treats a missing __schema_version__ tag as v1 (fail-open)
+                 -- its own step. Live flake
+                 test_websocket_feed_emits_live_massive_event (size-0
+                 print) retried green; post capture 0 failed.
+                 Carried: G.8 G01-G45 (G46 is S-10); G6 vs empty
+                 depends_on_sensors; load_platform_config +
+                 build_platform(config) loses config-path (S-04c);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercases step id, drops unfenced
+                 blocks, and matches blast-radius substrings without
+                 negation; baseline COUNTS not reproducible across
+                 RTH; connection.py:353-364 untested live handshake.
+  NEXT:          S-10 unit declarations (boundary). Not started.
+                 Left uncommitted: baseline_pre-S-09.json,
+                 baseline_post-S-09.json, this ledger entry.
+
 
