@@ -1507,3 +1507,222 @@ NOTES:           S4 ten tuples: seven retargeted in place (1642, 1644,
                  (boundary -- live/paper). Not started.
                  Left uncommitted: baseline_pre-S-07.json,
                  baseline_post-S-07.json, this ledger entry.
+
+---
+
+## S-08  durable submitted-order journal
+DATE:            2026-08-19T17:35:06+08:00
+BASE SHA:        f6448370e85e40df2304fc9a4b806aa013de54f4
+RESULT SHA:      not committed — waiting at the boundary gate
+VERDICT:         blocked
+CONFORMANCE:     H2 | failed-before: yes | passes-after: yes
+                 X11 | failed-before: yes | passes-after: yes
+                 Step-2 failure output, captured with --runxfail before
+                 any src edit (xfail(strict, "GAP G03") was on the tests):
+                   FAILED tests/conformance/test_order_idempotency.py::
+                   test_h2_kill_mid_submission_restart_no_duplicate
+                   tests\conformance\test_order_idempotency.py:147: in
+                   test_h2_kill_mid_submission_restart_no_duplicate
+                       assert broker == [], (
+                   E   AssertionError: duplicate reached the broker after
+                       restart: ['oid-kill']; acks=[('oid-kill',
+                       <OrderAckStatus.ACKNOWLEDGED: 1>, '')]
+                   E   assert ['oid-kill'] == []
+                   FAILED tests/conformance/test_order_idempotency.py::
+                   test_h2_durability_mode_is_fsync_per_record
+                   tests\conformance\test_order_idempotency.py:175: in
+                   test_h2_durability_mode_is_fsync_per_record
+                       assert journal is not None, (
+                   E   AssertionError: nothing durable records submitted
+                       ids — DurableSubmittedOrderJournal is absent
+                   E   assert None is not None
+                   2 failed in 0.29s
+                   FAILED tests/conformance/test_reconciliation.py::
+                   test_x11_journaled_rejected_is_resubmittable
+                   tests\conformance\test_reconciliation.py:95:
+                       assert journal is not None, (
+                   E   AssertionError: nothing durable records submitted
+                       ids — DurableSubmittedOrderJournal is absent
+                   E   assert None is not None
+                   FAILED tests/conformance/test_reconciliation.py::
+                   test_x11_journaled_unknown_is_refused
+                   tests\conformance\test_reconciliation.py:143:
+                       assert journal is not None
+                   FAILED tests/conformance/test_reconciliation.py::
+                   test_x11_journal_backed_replay_same_refusals
+                   tests\conformance\test_reconciliation.py:184:
+                       assert journal is not None
+                   3 failed in 0.34s
+                 How each assertion executed (not merely that it failed):
+                   (i)  broker probe is _post_passive; oid-kill was in
+                        the probe list and ACKNOWLEDGED after restart —
+                        G03 itself, not a missing fixture.
+                   (ii) ImportError path returned None; journal is not
+                        None fired. After implement, durability_mode ==
+                        fsync-per-record and os.fsync spy was non-empty.
+                   (iii)/(iv)/replay: journal is not None is required so
+                        (iii) cannot pass vacuously on a fresh in-memory
+                        set. After implement all three passed.
+                 After implement: H2 3 passed, X11 3 passed (xfail removed).
+TESTS:           4799 passed / 0 failed / 28 skipped / 10 xfailed
+                 -> 4805 passed / 0 failed / 28 skipped / 10 xfailed
+                 +6 are this step's six conformance functions. Determinism
+                 145 -> 145. Pre-S-08 vs post-S-07 artifact: 4799/28 vs
+                 4798/29 (one skip became a pass; cache-environment, not
+                 this step). Artifact wins on S-07 numbers; this step's
+                 delta is against the live pre-S-08 capture.
+PARITY:          declared hold (all 26) | actual 62 constants unmoved,
+                 0 changed, key-for-key and value-for-value | MATCH.
+                 market_fill_acks and halt_ack still hold. verify_step
+                 S-08: FILES clean (uncommitted vs HEAD, 0 touched —
+                 frozen oracle diffs base..HEAD only), PARITY holds,
+                 NET DELTA +1/+2, CLEAN. Blast radius boundary — human
+                 gate required before commit.
+FILES DECLARED:  src/feelies/storage/ (durable submitted-order journal, new)
+                 src/feelies/execution/passive_limit_router.py:183
+                 src/feelies/broker/ib/connection.py:353-364
+                 src/feelies/bootstrap.py:358
+                 src/feelies/core/platform_config.py
+                 tests/conformance/test_order_idempotency.py
+                 tests/conformance/test_reconciliation.py
+FILES TOUCHED:   src/feelies/storage/submitted_order_journal.py (new)
+                 src/feelies/execution/passive_limit_router.py
+                 src/feelies/broker/ib/connection.py
+                 src/feelies/bootstrap.py
+                 src/feelies/core/platform_config.py
+                 tests/conformance/test_order_idempotency.py (new)
+                 tests/conformance/test_reconciliation.py (new)
+                 7 touched against 6 named files + 1 directory scope.
+                 Nothing outside FILES.
+NET DELTA:       declared src modules +1, public symbols +2, branch
+                 points +2, test files +2 | actual src modules 197 ->
+                 198 (+1), public symbols 553 -> 555 (+2), sloc 43376 ->
+                 43634 (+258), import cycles 1 -> 1 (+0), alphaleak 2 ->
+                 2 (+0), n_edges 613 -> 618 (+5), n_modules 160 -> 161
+                 (+1). MATCH on modules and symbols. Test files +2.
+                 Public symbols: SubmissionJournalState,
+                 DurableSubmittedOrderJournal.
+FINDINGS:        Carried, not fixed: G.8 registers G01-G45 (G46 is S-10);
+                 G6 rejects depends_on_sensors: []; load_platform_config
+                 + build_platform(config) loses config-path (S-04c);
+                 ci.yml import contract continue-on-error: true until G40
+                 (do not flip); verify_step.py uppercases the step id,
+                 silently drops unfenced blocks, and matches blast-radius
+                 substrings without negation; the __ prefix is a platform
+                 sentinel with two instances and no central definition.
+                 verify_step FILES is vacuous on an uncommitted tree
+                 (diffs base..HEAD only); report, do not fix.
+                 PAPER bootstrap tests stub build_paper_backend with
+                 object(); wiring uses getattr/hasattr so those mocks
+                 skip the journal. Real ExecutionBackend + IB connection
+                 still bind. Not a plan defect.
+                 Pre-S-08 vs baseline_post-S-07.json: parity 62/62 MATCH;
+                 tests 4799/28 vs 4798/29 (one skip flipped). Not a red
+                 baseline.
+NOTES:           Durability mode is fsync-per-record. Asserted by
+                 durability_mode == "fsync-per-record" AND a non-empty
+                 os.fsync spy after record_attempt — not inferred from
+                 restart survival. Kill-after-fsync raises
+                 KeyboardInterrupt from the spy after real os.fsync;
+                 _post_passive never ran (broker empty); recovered
+                 journal refused.
+                 Latency choice (A): write stays on-tick inside
+                 submit()/record_attempt, before the wire. Own
+                 ENGINE_LATENCY_BUDGETS entry submitted_order_journal_ns,
+                 statistic=p99, window_events=100, budget_ns=15_000_000
+                 (15 ms, above the 1-10 ms fsync cost, not the S-07 3 ms
+                 tick-to-decision budget). Observation is clock.now_ns
+                 around fsync in the journal (injected clock, not
+                 perf_counter — S4 allowlist not in FILES). A breach is
+                 recorded on the journal (latency_breach_count) and does
+                 NOT activate the kill switch: flatten-on-kill would
+                 enqueue more per-leg writes on the same slow device,
+                 leaving UNKNOWN outcomes that brick restart recovery.
+                 Journaled-then-rejected: record_attempt then
+                 record_reject on release_submitted_id=True; recovery
+                 decision is REJECTED; re-submit ACKNOWLEDGES.
+                 Journaled-unknown: record_attempt only; recovery
+                 decision is UNKNOWN / must_refuse; re-submit REJECTED
+                 duplicate, no ACKNOWLEDGED.
+                 Journal-backed replay: oid-rej REJECTED, oid-unk-a/b
+                 UNKNOWN on a second DurableSubmittedOrderJournal over
+                 the same file; third router refused exactly the UNKNOWN
+                 set.
+                 Backtest does not bind the journal (mode is BACKTEST);
+                 oracle path unchanged.
+                 Waiting at the human gate. Do not commit. Do not begin
+                 S-09.
+                 Left uncommitted: baseline_pre-S-08.json,
+                 baseline_post-S-08.json, this ledger entry, and the
+                 seven declared files pending go/no-go.
+
+---
+
+## S-08  2026-08-19T17:44:00+08:00
+  STEP:          S-08
+  BASE:          f6448370e85e40df2304fc9a4b806aa013de54f4
+  RESULT SHA:    5e0e8db69006032f71c20445cc486397f615244c
+  VERDICT:       passed
+  CONFORMANCE:   H2 | failed-before: yes | passes-after: yes
+                 X11 | failed-before: yes | passes-after: yes
+  TESTS:         4799 passed / 28 skipped / 10 xfailed
+                 -> 4805 passed / 28 skipped / 10 xfailed
+  PARITY:        hold, 62 constants unmoved
+  FILES:         7 declared, 7 committed (clean vs 5e0e8db)
+  NET DELTA:     modules 197 -> 198 (+1)
+                 public_symbols 553 -> 555 (+2)
+                 sloc 43376 -> 43634 (+258)
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   CLEAN (boundary — committed after human go)
+  NOTES:         durability is fsync-per-record, asserted by
+                 durability_mode plus a non-empty os.fsync spy, with
+                 the kill raised after the real fsync so _post_passive
+                 never ran and the recovered journal refused. Latency
+                 choice (A): on-tick write with its own budget entry
+                 submitted_order_journal_ns, p99 over 100 events,
+                 15 ms; a breach increments latency_breach_count and
+                 deliberately does NOT activate the kill switch,
+                 because flatten-on-kill would enqueue more per-leg
+                 fsyncs on the same slow device and leave UNKNOWN
+                 records that brick recovery. The journal logs
+                 attempts and appends outcomes: attempt-then-reject is
+                 re-submittable, attempt-with-no-outcome is refused.
+                 Backtest does not bind the journal, so the oracle
+                 path is unchanged.
+                 recovered_ib_next_valid_id() on an empty journal
+                 returns None (_ib_next_valid_id starts None; empty
+                 replay is a no-op). nextValidId does not call
+                 max(orderId, None): persisted is fetched, then
+                 `if persisted is not None: incoming = max(incoming,
+                 persisted)`. bind_submitted_order_journal uses the
+                 same None-guard. Fresh install is safe. Untested by
+                 the fourteen skipped functional tests.
+  FINDINGS:      the pre-S-08 count mismatch (4799/28 vs the
+                 artifact's 4798/29) is wall-clock dependent, not a
+                 regression -- nine skips are gated on US RTH
+                 (9:30-16:00 ET) and one crossed the boundary between
+                 captures. Baseline test counts are therefore NOT
+                 reproducible across time of day; only the parity
+                 constants are. Pre-flight should treat a count
+                 mismatch as informational unless failed > 0 or the
+                 parity map moved. Also: connection.py:353-364 is
+                 covered only by tests/broker/ib/test_ib_functional.py,
+                 all fourteen of which skip without a reachable IB
+                 Gateway, so the nextValidId high-water change ships
+                 without automated coverage.
+                 Carried: G.8 G01-G45 (G46 is S-10); G6 vs empty
+                 depends_on_sensors; load_platform_config +
+                 build_platform(config) loses config-path (S-04c);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercases step id, drops unfenced
+                 blocks, and matches blast-radius substrings without
+                 negation; __ prefix is a platform sentinel with two
+                 instances and no central definition.
+  NEXT:          S-09 schema_version on Event envelope (boundary).
+                 Not started.
+                 Left uncommitted: baseline_pre-S-08.json,
+                 baseline_post-S-08.json, this ledger entry.
+
+
