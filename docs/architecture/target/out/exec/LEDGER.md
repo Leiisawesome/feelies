@@ -1112,3 +1112,104 @@ NOTES:           two committed tests from e3281a1 pinned the G23 fail-open
                  baseline_post-S-06.json, this ledger entry, and the plan
                  amendment in phase7_migration.md. The step commit is the
                  five declared files only.
+
+## S-06a  validate alpha_id at the registry
+DATE:            2026-08-19T10:57:56+08:00
+BASE SHA:        c277ba7c6debd8e7afc26ea8208677897036744b
+RESULT SHA:      e8ef690f1e2df58ba8d6d4176a096365d91ac1bc
+VERDICT:         passed
+CONFORMANCE:     test_double_underscore_prefixed_id_is_refused_by_registry
+                 (tests/conformance/test_per_alpha_budget.py) |
+                 failed-before: yes | passes-after: yes
+                 TestAlphaIdRuleAtRegister.test_double_underscore_prefix_rejected_without_mutation
+                 (tests/alpha/test_registry_per_alpha_thresholds.py) |
+                 failed-before: yes | passes-after: yes
+                 Step-2 failure output, captured before any src edit.
+                 Acceptance proof (register returned; id present; then fail):
+                   FAILED tests/conformance/test_per_alpha_budget.py::
+                   test_double_underscore_prefixed_id_is_refused_by_registry
+                   tests\conformance\test_per_alpha_budget.py:296: in
+                   test_double_underscore_prefixed_id_is_refused_by_registry
+                       assert False, (
+                   E   AssertionError: registry ACCEPTED invalid id
+                       '__synthetic_probe__'; rule ^[a-z][a-z0-9_]*$ should
+                       have refused it with AlphaRegistryError
+                   E   assert False
+                   1 failed, 5 passed in 0.40s
+                 The presence assert held, so this is the registry accepting
+                 the id, not a malformed stub, validate() rejection, or
+                 duplicate. Final-form pytest.raises then also failed before
+                 the src edit:
+                   FAILED tests/conformance/test_per_alpha_budget.py::
+                   test_double_underscore_prefixed_id_is_refused_by_registry
+                   E   Failed: DID NOT RAISE <class
+                       'feelies.alpha.registry.AlphaRegistryError'>
+                   FAILED tests/alpha/test_registry_per_alpha_thresholds.py::
+                   TestAlphaIdRuleAtRegister::
+                   test_double_underscore_prefix_rejected_without_mutation
+                   E   Failed: DID NOT RAISE <class
+                       'feelies.alpha.registry.AlphaRegistryError'>
+                   2 failed, 2 passed in 0.34s
+                 Controls, passing throughout:
+                   test_valid_alpha_id_still_registers
+                   TestAlphaIdRuleAtRegister.test_valid_id_still_registers
+                 After implement: test_per_alpha_budget 6 passed;
+                 test_registry_per_alpha_thresholds 19 passed.
+TESTS:           4788 passed / 0 failed / 29 skipped / 10 xfailed
+                 -> 4792 passed / 0 failed / 29 skipped / 10 xfailed
+                 determinism 145 -> 145. The +4 are exactly this step's four
+                 new test functions. Nothing previously passing moved.
+                 Pre-S-06a capture matched baseline_post-S-06.json key-for-key
+                 (parity 62/62, tests 4788/29/10, sloc 43219, symbols 551,
+                 modules 196, cycles 1). SHA differs (c277ba7 vs 544572d);
+                 artifact wins on the numbers.
+PARITY:          declared hold | actual 62 constants unmoved, 0 changed,
+                 key-for-key and value-for-value | MATCH.
+                 verify_step S-06A missed the plan key (uppercase). Four
+                 checks by hand: FILES clean, PARITY holds, tests +4, NET
+                 DELTA modules 0.
+FILES DECLARED:  src/feelies/alpha/registry.py
+                 src/feelies/alpha/loader.py
+                 tests/conformance/test_per_alpha_budget.py
+                 tests/alpha/test_registry_per_alpha_thresholds.py
+FILES TOUCHED:   src/feelies/alpha/registry.py
+                 src/feelies/alpha/loader.py
+                 tests/conformance/test_per_alpha_budget.py
+                 tests/alpha/test_registry_per_alpha_thresholds.py
+                 4 declared, 4 touched, nothing outside FILES.
+NET DELTA:       declared src modules 0, public symbols 0, branch points +1
+                 | actual src modules 196 -> 196 (+0), public symbols 551 ->
+                 551 (+0), sloc 43219 -> 43226 (+7), import cycles 1 -> 1
+                 (+0), n_edges 608 -> 609 (loader now imports registry),
+                 alphaleak 2 -> 2 (+0), test files +0 new and +2 extended.
+                 MATCH on modules. The +7 sloc is the register() guard,
+                 import re, and the regex relocation.
+FINDINGS:        No suite test asserts AlphaLoadError on an invalid
+                 alpha_id. The loader has enforced ^[a-z][a-z0-9_]*$ at
+                 :866 since before this campaign and nothing verifies it;
+                 removing that line would leave every test green. The YAML
+                 door was called closed throughout S-06 and S-06a on the
+                 strength of code alone. Verified by a one-off during this
+                 step, not by the suite. Fold into S-04c, which is already
+                 queued for loader-adjacent work.
+                 Also carried, not fixed: G.8 registers G01-G45 (G46 is
+                 S-10); G6 rejects depends_on_sensors: [];
+                 load_platform_config + build_platform(config) loses
+                 config-path attribution (S-04c); ci.yml import contract
+                 continue-on-error: true until G40; verify_step.py
+                 uppercases the step id (S-06A missed S-06a).
+NOTES:           _ALPHA_ID_RE now lives in registry.py and loader.py
+                 imports it; registry did not previously import loader, so
+                 the relocation is one-way with no cycle (n_edges 608 ->
+                 609, cycles unchanged at 1). The fail-first evidence shows
+                 the registry accepting '__synthetic_probe__' and retaining
+                 it in _alphas before the guard, then DID NOT RAISE in
+                 final form. The wrapper's `__` branch is now reachable
+                 only by a platform-constructed order strategy_id -- one
+                 instance in src/, orchestrator.py:4006 -- not by
+                 registration.
+                 G16 still KEPT (1 passed); G40 still xfail. ci.yml not
+                 flipped. Step commit e8ef690 is the four declared files
+                 only. Left uncommitted for the operator:
+                 baseline_pre-S-06a.json, baseline_post-S-06a.json, and
+                 this ledger entry.
