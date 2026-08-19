@@ -183,56 +183,67 @@ class AlphaBudgetRiskWrapper:
         additional_exposure: Decimal = Decimal("0"),
     ) -> RiskVerdict:
         strategy_id = order.strategy_id
-        if strategy_id:
+        # Synthetic / net sentinels (``__`` prefix) use aggregate checks only.
+        # An unknown non-synthetic id is an unknown state: refuse, do not
+        # skip the budget block (G23).  KeyError stays the caught exception.
+        if strategy_id and not strategy_id.startswith("__"):
             try:
                 alpha = self._registry.get(strategy_id)
             except KeyError:
-                # Synthetic and net strategies use aggregate risk checks only.
-                pass
-            else:
-                budget = alpha.manifest.risk_budget
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.REJECT,
+                    reason=(
+                        f"unregistered strategy_id {strategy_id!r} — "
+                        "per-alpha budget unknown; order refused"
+                    ),
+                )
+            budget = alpha.manifest.risk_budget
 
-                # 1. Per-alpha position limit (post-fill)
-                effective_max = min(
-                    budget.max_position_per_symbol,
-                    self._platform_config.max_position_per_symbol,
+            # 1. Per-alpha position limit (post-fill)
+            effective_max = min(
+                budget.max_position_per_symbol,
+                self._platform_config.max_position_per_symbol,
+            )
+            strategy_pos = self._strategy_positions.get(
+                strategy_id,
+                order.symbol,
+            )
+            signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
+            post_fill = abs(strategy_pos.quantity + signed_qty)
+            if post_fill > effective_max:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.REJECT,
+                    reason=(
+                        f"per-alpha position limit at order gate: "
+                        f"post-fill |{post_fill}| > {effective_max}"
+                    ),
                 )
-                strategy_pos = self._strategy_positions.get(
-                    strategy_id,
-                    order.symbol,
-                )
-                signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
-                post_fill = abs(strategy_pos.quantity + signed_qty)
-                if post_fill > effective_max:
-                    return RiskVerdict(
-                        timestamp_ns=order.timestamp_ns,
-                        correlation_id=order.correlation_id,
-                        sequence=order.sequence,
-                        symbol=order.symbol,
-                        action=RiskAction.REJECT,
-                        reason=(
-                            f"per-alpha position limit at order gate: "
-                            f"post-fill |{post_fill}| > {effective_max}"
-                        ),
-                    )
 
-                # Exposure limits never block orders that reduce absolute position.
-                order_reduces = post_fill < abs(strategy_pos.quantity)
-                _, alpha_max_exposure, alpha_exposure = self._alpha_equity_and_exposure(
-                    strategy_id, budget
+            # Exposure limits never block orders that reduce absolute position.
+            order_reduces = post_fill < abs(strategy_pos.quantity)
+            _, alpha_max_exposure, alpha_exposure = self._alpha_equity_and_exposure(
+                strategy_id, budget
+            )
+            if alpha_exposure >= alpha_max_exposure and not order_reduces:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.REJECT,
+                    reason=(
+                        f"per-alpha exposure limit at order gate: "
+                        f"{alpha_exposure} >= {alpha_max_exposure}"
+                    ),
                 )
-                if alpha_exposure >= alpha_max_exposure and not order_reduces:
-                    return RiskVerdict(
-                        timestamp_ns=order.timestamp_ns,
-                        correlation_id=order.correlation_id,
-                        sequence=order.sequence,
-                        symbol=order.symbol,
-                        action=RiskAction.REJECT,
-                        reason=(
-                            f"per-alpha exposure limit at order gate: "
-                            f"{alpha_exposure} >= {alpha_max_exposure}"
-                        ),
-                    )
 
         # Include prior legs when enforcing gross and buying-power caps.
         return self._inner.check_order(order, positions, additional_exposure=additional_exposure)

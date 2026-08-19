@@ -1,0 +1,4 @@
+# FIX-3 case 1 — unregistered strategy_id
+# Remaining six input classes land in S-11 (they need a named gate).
+case_id: unregistered_strategy_id
+strategy_id: not_a_registered_alpha

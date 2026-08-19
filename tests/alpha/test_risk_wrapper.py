@@ -97,6 +97,60 @@ def _build_wrapper(
     )
 
 
+class _RecordingInner:
+    """Forwards to a real engine and records check_order / dropped-leg vetoes."""
+
+    def __init__(self, inner: BasicRiskEngine) -> None:
+        self._inner = inner
+        self.orders: list[OrderRequest] = []
+        self.dropped: list[tuple[str, str]] = []
+
+    def check_order(
+        self,
+        order: OrderRequest,
+        positions: object,
+        *,
+        additional_exposure: Decimal = Decimal("0"),
+    ) -> object:
+        self.orders.append(order)
+        return self._inner.check_order(
+            order, positions, additional_exposure=additional_exposure
+        )
+
+    def _emit_dropped_legs_alert(
+        self,
+        intent: object,
+        dropped: list[tuple[str, str]],
+    ) -> None:
+        self.dropped.extend(dropped)
+        self._inner._emit_dropped_legs_alert(intent, dropped)  # type: ignore[arg-type]
+
+
+def _build_recorded_wrapper(
+    alpha: MockAlpha,
+    strategy_positions: StrategyPositionStore | None = None,
+    platform_max_position: int = 1000,
+    account_equity: Decimal = Decimal("100000"),
+) -> tuple[AlphaBudgetRiskWrapper, _RecordingInner]:
+    registry = AlphaRegistry()
+    registry.register(alpha)
+    if strategy_positions is None:
+        strategy_positions = StrategyPositionStore()
+    platform_config = RiskConfig(
+        max_position_per_symbol=platform_max_position,
+        account_equity=account_equity,
+    )
+    recorder = _RecordingInner(BasicRiskEngine(platform_config))
+    wrapper = AlphaBudgetRiskWrapper(
+        inner=recorder,  # type: ignore[arg-type]
+        registry=registry,
+        strategy_positions=strategy_positions,
+        platform_config=platform_config,
+        account_equity=account_equity,
+    )
+    return wrapper, recorder
+
+
 class TestCheckOrderPerAlphaPositionLimit:
     """``check_order`` enforces per-alpha position limits."""
 
@@ -297,13 +351,19 @@ class TestCheckOrderDelegatesToInner:
     """check_order still delegates to inner engine for aggregate checks."""
 
     def test_unknown_strategy_passes_through(self) -> None:
+        """Unregistered non-synthetic id is refused; inner is not reached (G23)."""
         alpha = _make_alpha()
-        wrapper = _build_wrapper(alpha)
+        wrapper, recorder = _build_recorded_wrapper(alpha)
         order = _make_order(strategy_id="unknown_alpha")
         agg = StrategyPositionStore().as_aggregate()
 
         verdict = wrapper.check_order(order, agg)
-        assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
+        assert recorder.orders == [], (
+            "unregistered strategy_id reached the inner engine; "
+            "the order proceeded unbudgeted"
+        )
+        assert verdict.action is RiskAction.REJECT
+        assert "unknown_alpha" in verdict.reason
 
     def test_empty_strategy_id_passes_through(self) -> None:
         alpha = _make_alpha()
@@ -312,6 +372,28 @@ class TestCheckOrderDelegatesToInner:
         agg = StrategyPositionStore().as_aggregate()
 
         verdict = wrapper.check_order(order, agg)
+        assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
+
+    def test_registered_strategy_delegates_to_inner(self) -> None:
+        """A known in-budget id still reaches aggregate checks."""
+        alpha = _make_alpha(max_position=50, max_exposure_pct=100.0, capital_pct=100.0)
+        wrapper, recorder = _build_recorded_wrapper(alpha)
+        order = _make_order(strategy_id="test_alpha", quantity=10)
+        agg = StrategyPositionStore().as_aggregate()
+
+        verdict = wrapper.check_order(order, agg)
+        assert recorder.orders and recorder.orders[0].strategy_id == "test_alpha"
+        assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
+
+    def test_synthetic_prefix_delegates_to_inner(self) -> None:
+        """``__``-prefixed ids skip per-alpha budgets and hit aggregate checks."""
+        alpha = _make_alpha()
+        wrapper, recorder = _build_recorded_wrapper(alpha)
+        order = _make_order(strategy_id="__synthetic_net__")
+        agg = StrategyPositionStore().as_aggregate()
+
+        verdict = wrapper.check_order(order, agg)
+        assert recorder.orders and recorder.orders[0].strategy_id == "__synthetic_net__"
         assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
 
 
@@ -393,19 +475,28 @@ class TestCheckSizedIntent:
         assert orders[0].reason == "PORTFOLIO"
 
     def test_unregistered_strategy_id_falls_through(self) -> None:
-        """Unregistered strategy_id (e.g. PORTFOLIO net) only sees inner caps."""
+        """Unregistered id is refused with a named veto, not a silent drop."""
         alpha = _make_alpha()
         agg_store = MemoryPositionStore()
         agg_store.update_mark("AAPL", Decimal("100"))
 
-        wrapper = _build_wrapper(alpha)
+        wrapper, recorder = _build_recorded_wrapper(alpha)
         intent = self._make_intent(
             strategy_id="multi_alpha_net",
             targets={"AAPL": 1_000.0},
         )
 
-        orders = wrapper.check_sized_intent(intent, agg_store).orders
-        assert len(orders) == 1
+        result = wrapper.check_sized_intent(intent, agg_store)
+        assert recorder.orders == [], (
+            "unregistered strategy_id reached the inner engine on the "
+            "portfolio path; the intent proceeded unbudgeted"
+        )
+        assert result.orders == ()
+        assert recorder.dropped, (
+            "per-leg veto dropped the unregistered intent silently "
+            "(no dropped-leg record). A named refusal is required."
+        )
+        assert any("multi_alpha_net" in reason for _, reason in recorder.dropped)
 
     def test_empty_intent_returns_empty_tuple(self) -> None:
         alpha = _make_alpha()
