@@ -920,6 +920,8 @@ FILES:           src/feelies/storage/ (durable submitted-order journal, new)
                  src/feelies/core/platform_config.py (journal latency budget entry)
                  tests/conformance/test_order_idempotency.py (H2)
                  tests/conformance/test_reconciliation.py (X11)
+                 tests/broker/ib/test_next_valid_id_high_water.py (new,
+                 gateway-free)
 BLAST RADIUS:    boundary -- live and paper only. Backtest is single-process and
                  unaffected, which is why this is shippable ahead of wave C.
 VALIDATED BY:    H2 (kill mid-submission, restart, assert no duplicate reaches
@@ -932,7 +934,14 @@ VALIDATED BY:    H2 (kill mid-submission, restart, assert no duplicate reaches
                  and rejected must be re-submittable, not permanently refused;
                  and a REPLAY of a session that used the durable journal,
                  asserting the same refusal decisions, since the durable path is
-                 otherwise exercised only by H2 and never by the oracle.
+                 otherwise exercised only by H2 and never by the oracle; 
+                 a gateway-free test over nextValidId's
+                 high-water logic -- empty journal, persisted below incoming,
+                 persisted above incoming, and a simulated reconnect that must
+                 not regress -- since all 14 tests in
+                 tests/broker/ib/test_ib_functional.py skip without a reachable
+                 gateway and the reconnect invariant at connection.py:371-373 is
+                 otherwise unasserted.
 PARITY IMPACT:   All 26 hold. The journal is a side-effect store, draws no
                  sequence, and adds no hashed field. Backtest keeps
                  `InMemoryTradeJournal`, so the oracle's code path is unchanged

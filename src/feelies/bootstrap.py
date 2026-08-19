@@ -115,6 +115,7 @@ from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
+from feelies.storage.submitted_order_journal import DurableSubmittedOrderJournal
 
 if TYPE_CHECKING:
     from feelies.broker.ib import IBGatewayConnection
@@ -356,6 +357,21 @@ def build_platform(
 
     # Subscribe the router before sensors so fills retain their triggering quote.
     position_store = MemoryPositionStore()
+    if config.mode != OperatingMode.BACKTEST:
+        router = getattr(backend, "order_router", None)
+        ib_conn = bundle.ib_connection
+        can_bind_ib = ib_conn is not None and hasattr(
+            ib_conn, "bind_submitted_order_journal"
+        )
+        if router is not None or can_bind_ib:
+            submitted_order_journal = DurableSubmittedOrderJournal(
+                _submitted_order_journal_path(config),
+                clock=clock,
+            )
+            if router is not None:
+                submitted_order_journal.install_on(router)
+            if ib_conn is not None and hasattr(ib_conn, "bind_submitted_order_journal"):
+                ib_conn.bind_submitted_order_journal(submitted_order_journal)
     strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
@@ -905,6 +921,14 @@ def _create_backend(
 
 def _decimal(value: float) -> Decimal:
     return Decimal(str(value))
+
+
+def _submitted_order_journal_path(config: PlatformConfig) -> Path:
+    """PAPER/live journal path. Not a PlatformConfig field (parity hash)."""
+    base = config.cache_dir
+    if base is None:
+        base = Path.home() / ".feelies" / "cache"
+    return Path(base) / f"submitted_order_journal-{config.ib_client_id}.jsonl"
 
 
 def _derive_session_id(config: PlatformConfig) -> str:

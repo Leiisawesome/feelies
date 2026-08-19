@@ -58,21 +58,33 @@ class EngineLatencyBudget:
 # hot-path engine as an upper bound; G41's 10 µs/event overrun is S-33.
 _TICK_TO_DECISION_P99_BUDGET_NS: int = 3_000_000
 _LATENCY_BUDGET_WINDOW_EVENTS: int = 100
+# fsync-per-record is 1-10 ms; this is not the 3 ms tick-to-decision budget.
+# A journal p99 breach is recorded on the journal and does not escalate to
+# the kill switch (flatten-on-kill would enqueue more journal writes).
+_JOURNAL_FSYNC_P99_BUDGET_NS: int = 15_000_000
 
-ENGINE_LATENCY_BUDGETS: tuple[EngineLatencyBudget, ...] = tuple(
+ENGINE_LATENCY_BUDGETS: tuple[EngineLatencyBudget, ...] = (
+    *(
+        EngineLatencyBudget(
+            engine=name,
+            budget_ns=_TICK_TO_DECISION_P99_BUDGET_NS,
+            statistic="p99",
+            window_events=_LATENCY_BUDGET_WINDOW_EVENTS,
+        )
+        for name in (
+            "sensor_fanout_ns",
+            "sm_transition_ns",
+            "signal_evaluate_ns",
+            "risk_check_ns",
+            "tick_to_decision_latency_ns",
+        )
+    ),
     EngineLatencyBudget(
-        engine=name,
-        budget_ns=_TICK_TO_DECISION_P99_BUDGET_NS,
+        engine="submitted_order_journal_ns",
+        budget_ns=_JOURNAL_FSYNC_P99_BUDGET_NS,
         statistic="p99",
         window_events=_LATENCY_BUDGET_WINDOW_EVENTS,
-    )
-    for name in (
-        "sensor_fanout_ns",
-        "sm_transition_ns",
-        "signal_evaluate_ns",
-        "risk_check_ns",
-        "tick_to_decision_latency_ns",
-    )
+    ),
 )
 
 

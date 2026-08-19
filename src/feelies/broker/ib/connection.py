@@ -37,6 +37,7 @@ from ibapi.order_cancel import OrderCancel  # type: ignore[import-untyped]
 from ibapi.wrapper import EWrapper  # type: ignore[import-untyped]
 
 from feelies.core.clock import Clock
+from feelies.storage.submitted_order_journal import DurableSubmittedOrderJournal
 
 if TYPE_CHECKING:
     from ibapi.contract import Contract  # type: ignore[import-untyped]
@@ -114,6 +115,7 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
         # thread; implementations must be thread-safe (e.g. bus.publish
         # is internally lock-free).  Set via on_alert_event().
         self._alert_callback: Callable[[int, str], None] | None = None
+        self._submitted_order_journal: DurableSubmittedOrderJournal | None = None
 
     def on_alert_event(self, callback: Callable[[int, str], None]) -> None:
         """Register a callback invoked for non-fatal IB connectivity events.
@@ -125,6 +127,19 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
         The callback must be thread-safe.
         """
         self._alert_callback = callback
+
+    def bind_submitted_order_journal(self, journal: DurableSubmittedOrderJournal) -> None:
+        """Persist nextValidId across process restart. Handshake only, not tick."""
+        self._submitted_order_journal = journal
+        with self._next_id_lock:
+            persisted = journal.recovered_ib_next_valid_id()
+            if persisted is not None:
+                if self._next_valid_id is None:
+                    self._next_valid_id = persisted
+                else:
+                    self._next_valid_id = max(self._next_valid_id, persisted)
+            if self._next_valid_id is not None:
+                journal.record_ib_next_valid_id(self._next_valid_id)
 
     # ── Lifecycle (main thread) ──────────────────────────────────────
 
@@ -358,10 +373,18 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
         ids are not reused.
         """
         with self._next_id_lock:
+            incoming = orderId
+            journal = self._submitted_order_journal
+            if journal is not None:
+                persisted = journal.recovered_ib_next_valid_id()
+                if persisted is not None:
+                    incoming = max(incoming, persisted)
             if self._next_valid_id is None:
-                self._next_valid_id = orderId
+                self._next_valid_id = incoming
             else:
-                self._next_valid_id = max(self._next_valid_id, orderId)
+                self._next_valid_id = max(self._next_valid_id, incoming)
+            if journal is not None:
+                journal.record_ib_next_valid_id(self._next_valid_id)
         self._next_id_ready.set()
 
     def orderStatus(  # noqa: N802 — ibapi name
