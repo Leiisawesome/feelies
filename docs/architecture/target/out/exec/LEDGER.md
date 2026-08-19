@@ -1213,3 +1213,297 @@ NOTES:           _ALPHA_ID_RE now lives in registry.py and loader.py
                  only. Left uncommitted for the operator:
                  baseline_pre-S-06a.json, baseline_post-S-06a.json, and
                  this ledger entry.
+
+## S-07  per-engine latency budget and breach response
+DATE:            2026-08-19T11:56:13+08:00
+BASE SHA:        fe9a0540af00b44b3c2bb00fa92246506c14d1b1
+RESULT SHA:      not committed — blocked at the platform-wide gate
+VERDICT:         blocked
+CONFORMANCE:     X10 | failed-before: yes | passes-after: yes (uncommitted)
+                 Step-2 failure output, captured before any src edit:
+                   FAILED tests/conformance/test_latency_budget.py::
+                   test_x10_tick_timings_are_compared_to_a_budget
+                   tests\conformance\test_latency_budget.py:57: in
+                   test_x10_tick_timings_are_compared_to_a_budget
+                       assert compared, (
+                   E   AssertionError: no comparison exists: _tick_timings
+                       is published as MetricEvents and never compared to a
+                       budget
+                   E   assert False
+                   1 failed in 0.45s
+                 Site-identity asserts (_tick_timings read, MetricEvent
+                 published) passed on that run: the failure is the third
+                 assert, so this is "no comparison exists", not a missing
+                 table or the wrong function.
+                 After implement, X10 6 passed (comparison site, (i), (ii),
+                 (iii), never-seen, HARN-2 replay).
+TESTS:           4792 passed / 0 failed / 29 skipped / 10 xfailed
+                 -> 4796 passed / 2 failed / 29 skipped / 10 xfailed
+                 (full suite). The +6 X10 tests passed; the 2 failures are
+                 S4's call-granular allowlist in
+                 tests/acceptance/test_no_walltime_outside_clock.py, which
+                 is not in FILES. Determinism 145 -> 145. Parity constants
+                 62/62 value-for-value MATCH vs baseline_post-S-06a.json.
+                 Pre-S-07 capture matched that artifact key-for-key
+                 (parity 62/62, tests 4792/29/10, sloc 43226, symbols 551,
+                 modules 196, cycles 1). SHA differs (fe9a054 vs 14b056e);
+                 artifact wins on the numbers.
+PARITY:          declared hold (all 26, conditional on (a) and (b)) |
+                 actual 62 constants unmoved, 0 changed, key-for-key and
+                 value-for-value | MATCH. Conditions (a) and (b) both held:
+                 LatencyBreach is constructed with sequence=0 and the
+                 handler does not draw self._seq; BACKTEST skips the
+                 comparison so baselines take the no-breach branch.
+                 Determinism 145 passed. R1 under PYTHONHASHSEED=random
+                 with FEELIES_REQUIRE_BASELINE_CACHE=1: 2 passed in 17.57s
+                 (replayed, did not skip).
+                 verify_step S-07: FILES clean (uncommitted vs HEAD, 0
+                 touched); PARITY cannot check (no post capture — suite
+                 red); NET DELTA cannot check. Oracle .upper() parses
+                 S-07. BLAST RADIUS parser treats "Not platform-wide" as
+                 naming platform-wide (substring); frozen, not fixed.
+FILES DECLARED:  src/feelies/core/events.py (LatencyBreach, new)
+                 src/feelies/monitoring/ (budget predicate + breach record)
+                 src/feelies/core/platform_config.py (per-engine budget table)
+                 src/feelies/kernel/orchestrator.py:2126-2153 (comparison site)
+                 tests/conformance/test_latency_budget.py (X10)
+FILES TOUCHED:   src/feelies/core/events.py
+                 src/feelies/core/platform_config.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/monitoring/latency_budget.py
+                 tests/conformance/test_latency_budget.py
+                 5 touched against 4 named files + 1 directory scope.
+                 Need, not touched: tests/acceptance/test_no_walltime_outside_clock.py
+NET DELTA:       declared src modules +1, public symbols +2 (LatencyBreach,
+                 the budget table), branch points +2, test files +1 |
+                 actual not recaptured (suite red). By eye: +1 module
+                 (latency_budget.py), +2 public classes (LatencyBreach,
+                 EngineLatencyBudget). ENGINE_LATENCY_BUDGETS is an
+                 assignment and is not counted. Predicate names are
+                 _-prefixed.
+FINDINGS:        1. PLAN DEFECT / blocker — FILES does not list
+                    tests/acceptance/test_no_walltime_outside_clock.py,
+                    whose S4 call-granular allowlist pins ten
+                    time.perf_counter_ns() sites by line number. Inserting
+                    the comparison at :2126-2153 (and the subscribe/import
+                    lines above it) shifts those lines; no new wall-clock
+                    read was added. After the insertion the live sites are
+                    1533, 1642, 1644, 1684, 1686, 1780, 1782, 2113, 3958,
+                    3968 vs the pinned 1524, 1633, 1635, 1675, 1677, 1771,
+                    1773, 2104, 3940, 3950. Editing the allowlist would be
+                    UNDECLARED. Leaving it fails "previously-passing test
+                    now failing". The step cannot land until FILES is
+                    amended to include that file (retarget the ten tuples;
+                    no new perf_counter read).
+                 2. The S-07 block names statistic=p99 and window type
+                    (rolling event count) but not the numeric window or
+                    per-engine budget_ns. Landed as window_events=100 and
+                    budget_ns=3_000_000 (the plan's U-7 3 ms tick-to-decision
+                    p99 target) on every hot-path engine. G41's 10 µs/event
+                    overrun remains S-33.
+                 3. OperatingMode has only BACKTEST and PAPER (no LIVE).
+                    "Comparison, live only" is implemented as
+                    mode is not BACKTEST.
+                 4. LatencyBreach is published on the bus with sequence=0
+                    and is not appended to InMemoryEventLog. That log is
+                    sequence-bisect ordered for quotes/trades; appending
+                    sequence=0 would corrupt last_sequence/replay. The bus
+                    record is the append-only breach journal. Not fixed.
+                 5. Carried, not fixed: G.8 registers G01-G45 (G46 is
+                    S-10); G6 rejects depends_on_sensors: [];
+                    load_platform_config + build_platform(config) loses
+                    config-path attribution (S-04c); ci.yml import
+                    contract continue-on-error: true until G40;
+                    verify_step.py uppercases the step id and drops
+                    unfenced blocks; the `__` prefix is a platform
+                    sentinel with two instances and no central definition.
+NOTES:           the statistic and window per engine: p99 over 100 events,
+                 budget 3_000_000 ns, for sensor_fanout_ns,
+                 sm_transition_ns, signal_evaluate_ns, risk_check_ns,
+                 tick_to_decision_latency_ns.
+                 (iii): 98 samples of 1_000 ns and 2 of 1_000_000 ns,
+                 window 100, budget 50_000 ns; mean 20_980 < budget, p99
+                 1_000_000 > budget, LatencyBreach fired with sequence=0.
+                 A mean-based predicate would not have breached.
+                 Conditions (a) and (b) both held (see PARITY).
+                 Unread-metric path: supplemented, not removed. _tick_timings
+                 is now a compared input on PAPER; MetricEvent
+                 publish/record is retained because dropping the
+                 seq.next() publishes on signal_evaluate_ns/risk_check_ns
+                 would shift kernel event IDs (undeclared parity movement).
+                 HARN-2: FaultInjector.slow_engine("risk_check_ns",
+                 10_000_000 ns), 100 calls, samples taken from the injected
+                 SimulatedClock delta; live monitor wrote LatencyBreach;
+                 replay applied _apply_breach_response to the stored
+                 records on a fresh monitor that was still NEVER_SEEN
+                 (no re-measure) and the kill switch activated.
+                 Quoted :2126 comment: "Record always-on timers directly so
+                 they cannot shift kernel event IDs."
+                 Waiting at the human gate. Do not commit. Do not begin
+                 S-08.
+                 Left uncommitted: baseline_pre-S-07.json, this ledger
+                 entry, and the five declared files pending FILES
+                 amendment vs revert.
+
+## S-07  per-engine latency budget and breach response
+DATE:            2026-08-19T13:38:13+08:00
+BASE SHA:        fe9a0540af00b44b3c2bb00fa92246506c14d1b1
+RESULT SHA:      not committed — waiting at the platform-wide gate
+VERDICT:         blocked
+CONFORMANCE:     X10 | failed-before: yes | passes-after: yes
+                 S4 retarget | failed-before: yes (line shift) |
+                 passes-after: yes
+                 Step-2 X10 failure (unchanged, captured before src edit):
+                   E   AssertionError: no comparison exists: _tick_timings
+                       is published as MetricEvents and never compared to a
+                       budget
+                 S4 guard proof, throwaway at orchestrator.py:3979 in
+                 _escalate_unfilled_working_exits (after the last
+                 line-pinned site, so the seven pins did not shift):
+                   FAILED tests/acceptance/test_no_walltime_outside_clock.py::
+                   test_no_raw_wall_clock_outside_allowlist
+                   E   AssertionError: raw wall-clock reads found outside
+                       the Inv-10 allowlist ...
+                   E       kernel/orchestrator.py:3979  time.perf_counter_ns()
+                   1 failed, 1 passed in 0.93s
+                 Restore from pre-insert backup: SHA256
+                 141A8D85D67780AE8B7F2E5117BCAC24CA5BC5F15F88AEBD55B7D0DB32A66552
+                 BYTE_IDENTICAL. S4 after restore: 2 passed in 0.80s.
+TESTS:           4792 passed / 0 failed / 29 skipped / 10 xfailed
+                 -> 4798 passed / 0 failed / 29 skipped / 10 xfailed
+                 determinism 145 -> 145. The +6 are X10. S4 was already in
+                 the suite (2 tests, both pass). Nothing previously
+                 passing moved. Post-S-07 capture BASELINE: GREEN.
+PARITY:          declared hold | actual 62 constants unmoved, 0 changed,
+                 key-for-key and value-for-value | MATCH.
+                 Conditions (a) and (b) both held. R1 under
+                 PYTHONHASHSEED=random + FEELIES_REQUIRE_BASELINE_CACHE=1:
+                 2 passed in 17.22s (replayed, did not skip).
+                 verify_step S-07 --base fe9a054: FILES clean, PARITY
+                 holds, CLEAN. NET DELTA: modules 196->197 (+1), symbols
+                 551->553 (+2), sloc 43226->43376 (+150), cycles 1->1,
+                 alphaleak 2->2. n_edges 609->613 (not declared).
+FILES DECLARED:  src/feelies/core/events.py
+                 src/feelies/monitoring/
+                 src/feelies/core/platform_config.py
+                 src/feelies/kernel/orchestrator.py:2126-2153
+                 tests/conformance/test_latency_budget.py
+                 tests/acceptance/test_no_walltime_outside_clock.py
+FILES TOUCHED:   src/feelies/core/events.py
+                 src/feelies/core/platform_config.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/monitoring/latency_budget.py
+                 tests/conformance/test_latency_budget.py
+                 tests/acceptance/test_no_walltime_outside_clock.py
+                 6 touched against 5 named files + 1 directory scope.
+                 Nothing outside FILES.
+NET DELTA:       declared src modules +1, public symbols +2, branch points
+                 +2, test files +1 | actual src modules 196 -> 197 (+1),
+                 public symbols 551 -> 553 (+2), sloc 43226 -> 43376
+                 (+150), import cycles 1 -> 1 (+0), alphaleak 2 -> 2 (+0),
+                 test files +1 new and +1 extended. MATCH on modules and
+                 symbols. The +150 sloc is LatencyBreach, the budget
+                 table, the monitor, and the comparison/handler. Test
+                 files: +1 is X10; S4 is extend.
+FINDINGS:        Carried, not fixed: G.8 registers G01-G45 (G46 is S-10);
+                 G6 rejects depends_on_sensors: []; load_platform_config +
+                 build_platform(config) loses config-path attribution
+                 (S-04c); ci.yml import contract continue-on-error: true
+                 until G40; verify_step.py uppercases the step id and
+                 drops unfenced blocks; the `__` prefix is a platform
+                 sentinel with two instances and no central definition;
+                 OperatingMode has BACKTEST and PAPER only (no LIVE);
+                 LatencyBreach is bus-published sequence=0, not appended
+                 to InMemoryEventLog (sequence-bisect of quotes/trades).
+                 Window 100 and budget_ns 3_000_000 are declared on each
+                 entry; the block named the statistic and window type,
+                 not N. G41's 10 µs/event overrun remains S-33.
+NOTES:           S4 ten tuples: seven retargeted in place (1642, 1644,
+                 1684, 1686, 1780, 1782, 3968). Three G01 residuals
+                 re-keyed by enclosing symbol (_process_tick_inner,
+                 _finalize_tick, _drain_async_fills). Each symbol entry
+                 admits one leftover call after line pins are applied, so
+                 a second unmatched read in a symbol-keyed function is
+                 still an offender. Comment at :39-43 names symbols, not
+                 line numbers.
+                 Statistic and window per engine: p99 over 100 events,
+                 3_000_000 ns, for the five hot-path keys.
+                 (iii): mean 20_980 under 50_000, p99 1_000_000 over,
+                 breach fired sequence=0.
+                 Conditions (a) and (b) both held.
+                 Unread-metric path: supplemented, not removed
+                 (MetricEvent publish remains per amended DELETES).
+                 HARN-2 replay-without-re-measure: fresh monitor stayed
+                 NEVER_SEEN; kill switch activated from stored records.
+                 Waiting at the human gate. Do not commit. Do not begin
+                 S-08.
+                 Left uncommitted: baseline_pre-S-07.json,
+                 baseline_post-S-07.json, this ledger entry, and the six
+                 declared files pending go/no-go.
+
+## S-07  2026-08-19T13:48:39+08:00
+  STEP:          S-07
+  BASE:          fe9a0540af00b44b3c2bb00fa92246506c14d1b1
+  RESULT SHA:    7bf6acd9318f17d8ea64079bcaa504db3c316f1b
+  VERDICT:       passed
+  CONFORMANCE:   34 passed, 10 xfailed
+  TESTS:         4792 passed / 29 skipped / 10 xfailed
+                 -> 4798 passed / 29 skipped / 10 xfailed
+  PARITY:        hold, 62 constants unmoved
+  FILES:         6 declared, 6 committed (clean vs 7bf6acd)
+  NET DELTA:     modules 196 -> 197 (+1)
+                 public_symbols 551 -> 553 (+2)
+                 sloc 43226 -> 43376 (+150)
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  X10:           6 passed (fail-first: site-identity ok;
+                 third assert: "no comparison exists")
+  DETERMINISM:   145 passed
+  R1:            2 passed in 16.99s (replayed)
+  VERIFY_STEP:   CLEAN
+  NOTES:         Budget table is a module-level tuple in
+                 platform_config.py, not a PlatformConfig field, so
+                 _BASELINE_CONFIG_HASH did not move. Statistic is p99
+                 nearest-rank over a 100-event window per entry; an
+                 incomplete window resolves NEVER_SEEN, not
+                 within-budget. (iii) demonstrated at mean 20,980 under
+                 a 50,000 budget with p99 1,000,000 over -- a
+                 mean-based predicate would not have breached.
+                 Conditions (a) and (b) both held: LatencyBreach
+                 carries sequence=0, the handler never draws self._seq,
+                 and the comparison is gated on mode is not BACKTEST so
+                 baselines take the no-breach branch. S4's three G01
+                 residuals are keyed by enclosing symbol
+                 (_process_tick_inner, _finalize_tick,
+                 _drain_async_fills), one call each, with a second
+                 unmatched read in those functions still an offender;
+                 the other seven remain line-pinned. S4 guard proof: a
+                 throwaway read at :3979 produced a named failure;
+                 restore verified byte-identical by SHA256
+                 141A8D85D67780AE8B7F2E5117BCAC24CA5BC5F15F88AEBD55B7D0DB32A66552.
+                 Unread-metric path supplemented, not removed.
+                 importgraph reports cycles 0 with G40 still xfailing
+                 -- these are different properties: G40 is an
+                 independence contract over directional edges, not an
+                 SCC. measure.py n_cycles stayed 1 -> 1 (NET DELTA);
+                 that count is also not G40.
+  FINDINGS:      Cycle-count explanation (stash check): importgraph SCC
+                 count 0, measure.py n_cycles 1, G40 still xfailing.
+                 These are three different properties. G40 is an
+                 independence contract over directional edges, not an
+                 SCC; a zero-cycle importgraph report does not close
+                 G40. Also: verify_step classified this step
+                 platform-wide by matching the substring inside
+                 "Not platform-wide" -- negation-blind. Record against
+                 exec-tools-v2. Do not fix in this step.
+                 Carried: G.8 G01-G45 (G46 is S-10); G6 vs empty
+                 depends_on_sensors; load_platform_config +
+                 build_platform(config) loses config-path (S-04c);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercases step id and drops unfenced
+                 blocks; __ prefix is a platform sentinel with two
+                 instances and no central definition.
+  NEXT:          S-08 durable submitted-order journal
+                 (boundary -- live/paper). Not started.
+                 Left uncommitted: baseline_pre-S-07.json,
+                 baseline_post-S-07.json, this ledger entry.
