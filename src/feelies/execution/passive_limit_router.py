@@ -13,6 +13,7 @@ receive maker rebates.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Protocol
 
 import hashlib
 from dataclasses import dataclass, replace
@@ -44,6 +45,18 @@ from feelies.execution.trading_session import (
     TradingSessionBounds,
 )
 from feelies.execution.tick_size import snap_limit_price
+
+
+class _SubmittedOrderJournal(Protocol):
+    durability_mode: str
+
+    def must_refuse(self, order_id: str) -> bool: ...
+
+    def record_attempt(self, order_id: str) -> None: ...
+
+    def record_reject(self, order_id: str) -> None: ...
+
+    def unknown_order_ids(self) -> frozenset[str]: ...
 
 
 class PassiveFillOutcome(Enum):
@@ -127,6 +140,7 @@ class PassiveLimitOrderRouter:
         moc_bounds: MocSessionBounds | None = None,
         moc_penalty_bps: Decimal | int | str | float = Decimal("0"),
         trading_session_bounds: TradingSessionBounds | None = None,
+        submitted_order_journal: _SubmittedOrderJournal | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -179,8 +193,12 @@ class PassiveLimitOrderRouter:
         # in the number of orders for that symbol rather than O(n) across
         # all orders.  Order of fills/cancels is determinism-critical.
         self._resting_by_symbol: dict[str, dict[str, None]] = {}
-        # Full set of order_ids ever submitted — used for idempotent reject.
+        # Submitted ids this process; hydrated from the durable journal
+        # (UNKNOWN outcomes only). Reject releases this set; the journal does not.
         self._submitted_order_ids: set[str] = set()
+        self._submitted_order_journal = submitted_order_journal
+        if submitted_order_journal is not None:
+            self._submitted_order_ids.update(submitted_order_journal.unknown_order_ids())
         self._ack_seq = SequenceGenerator()
         self.locked_quote_reject_count: int = 0
         self.no_quote_reject_count: int = 0
@@ -204,6 +222,11 @@ class PassiveLimitOrderRouter:
     def bind_position_qty(self, fn: Callable[[str], int]) -> None:
         """Provide signed position quantity for RTH entry classification."""
         self._rth_gate.bind_position_qty(fn)
+
+    def bind_submitted_order_journal(self, journal: _SubmittedOrderJournal) -> None:
+        """Attach the durable journal and hydrate UNKNOWN ids into the set."""
+        self._submitted_order_journal = journal
+        self._submitted_order_ids.update(journal.unknown_order_ids())
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
@@ -269,6 +292,17 @@ class PassiveLimitOrderRouter:
                 release_submitted_id=False,
             )
             return
+        journal = self._submitted_order_journal
+        if journal is not None and journal.must_refuse(request.order_id):
+            self.duplicate_id_reject_count += 1
+            self._reject(
+                request,
+                f"duplicate order_id: {request.order_id}",
+                release_submitted_id=False,
+            )
+            return
+        if journal is not None:
+            journal.record_attempt(request.order_id)
         self._submitted_order_ids.add(request.order_id)
 
         quote = self._last_quotes.get(request.symbol)
@@ -784,6 +818,8 @@ class PassiveLimitOrderRouter:
             timestamp_ns=timestamp_ns,
             release_submitted_id=release_submitted_id,
         )
+        if release_submitted_id and self._submitted_order_journal is not None:
+            self._submitted_order_journal.record_reject(request.order_id)
 
     def _emit_passive_fill(
         self,
