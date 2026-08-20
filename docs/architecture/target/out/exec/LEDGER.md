@@ -2036,4 +2036,161 @@ WATCH:       The previously-masked baseline gates now run. Current full
 ALSO:        APP/2026-03-21 carries ingestion_health=UNKNOWN while the other
              158 days are HEALTHY. Predates S-09; unrelated; unexamined.
 
+---
+
+## S-10  unit declarations on the Event contract
+DATE:            2026-08-20T10:04:17+08:00
+BASE SHA:        40b66a971c8ae4d1250ceaf20ed7b8a459a1ce60
+RESULT SHA:      not committed — waiting at the boundary gate
+VERDICT:         blocked
+CONFORMANCE:     S9 | failed-before: yes | passes-after: yes | mutation: yes
+                 Step-2 failure output, captured with --runxfail before
+                 any src edit (xfail(strict, "GAP G46") was on the test):
+                   FAILED tests/conformance/test_unit_declaration.py::
+                   test_s9_numeric_fields_declare_a_unit
+                   E   AssertionError: numeric fields with no declared unit:
+                       Event.timestamp_ns, Event.sequence, Event.schema_version,
+                       CrossSectionalContext.horizon_seconds, ...
+                       SizedPositionIntent.disclosed_cost_total_bps_by_symbol,
+                       ... Trade.received_ns
+                   (absence of units, not a fixture; 1 failed in 0.22s)
+                 S9 mutation after implement (Signal.edge_estimate_bps
+                 unit stripped):
+                   events.py sha256 before
+                   ce2cc0e8fbfd5388449edb01ed49c31310fe148e79a14163d9949b53e901d3c3
+                   FAILED: numeric fields with no declared unit:
+                   Signal.edge_estimate_bps
+                   restore: byte-identical, sha256
+                   ce2cc0e8fbfd5388449edb01ed49c31310fe148e79a14163d9949b53e901d3c3
+                   S9 1 passed
+TESTS:           4812 passed / 0 failed / 29 skipped / 10 xfailed
+                 -> 4813 passed / 0 failed / 29 skipped / 10 xfailed
+                 +1 is S9. Determinism 145 -> 145. Skip count unchanged
+                 (informational; RTH-gated).
+PARITY:          declared hold | actual 62 constants unmoved,
+                 0 changed, key-for-key and value-for-value | MATCH.
+                 Expected: the oracle is blind to Field.metadata (pending
+                 S-17a). A green oracle proves nothing about this step.
+                 verify_step S-10: FILES clean (vacuous — diffs
+                 base..HEAD only; both files uncommitted), PARITY holds,
+                 NET DELTA by eye, CLEAN. Blast radius boundary — human
+                 gate required before commit.
+FILES DECLARED:  src/feelies/core/events.py
+                 tests/conformance/test_unit_declaration.py
+FILES TOUCHED:   src/feelies/core/events.py
+                 tests/conformance/test_unit_declaration.py (new)
+                 2 touched against 2 declared. No third file.
+NET DELTA:       declared src modules 0, public symbols +1, branch
+                 points 0, test files +1 | actual src modules 198 -> 198
+                 (+0), public symbols 555 -> 556 (+1, declared_unit),
+                 sloc 43639 -> 43654 (+15), cycles 1 -> 1, alphaleak 2
+                 -> 2. Test files +1. MATCH.
+FINDINGS:        verify_step FILES is vacuous on an uncommitted tree
+                 (declared 2, touched 0). Report, do not fix.
+                 FILES omits tests/conformance/registry.py. S-01 deferred
+                 G46 and the registry comments that S-10 registers it;
+                 adding G46 would be a third file, so GAP_REGISTRY remains
+                 G01-G45. S9 closes G46 in substance. Not edited.
+                 TargetPosition nested numerics (target_usd, urgency,
+                 expected_edge_bps) are not on the 21 Event classes; S9
+                 does not walk them. target_positions itself is
+                 dict[str, TargetPosition] (not numeric) and is marked
+                 undetermined per the plan.
+                 Carried: G6 vs empty depends_on_sensors; load_platform_config
+                 + build_platform(config) loses config-path (S-04c);
+                 serialization.py missing __schema_version__ tag treated
+                 as current version (fail-open) — its own step;
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercases step id, drops unfenced blocks,
+                 and matches blast-radius substrings without negation;
+                 ~157 research cache days stale until after S-17a;
+                 baseline COUNTS not reproducible across RTH;
+                 connection.py:353-364 untested live handshake.
+NOTES:           Mechanism: Field.metadata["unit"] plus module-level
+                 declared_unit (the +1 public symbol). Chosen over a
+                 ClassVar map so the unit sits on the field it describes.
+                 Neither adds a dataclass field; _compute_schema_hash
+                 and event_to_dict walk name and type only. Schema hash
+                 before and after:
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa
+                 (unmoved). UNIT_UNDETERMINED is a declaration, not an
+                 absence; S9 accepts it. Fields whose unit could not be
+                 named, with candidates:
+                   SizedPositionIntent.target_positions — plan-flagged;
+                   weights / notional / shares. Container is not numeric
+                   (TargetPosition.target_usd is USD). Marked undetermined.
+                   SizedPositionIntent.disclosed_cost_total_bps_by_symbol
+                   — plan-flagged; bps one-way vs bps round-trip.
+                   Marked undetermined; blocks S-24.
+                   NBBOQuote.bid_size, ask_size — share vs round_lot.
+                   MetricEvent.value — heterogeneous per metric.
+                   SensorReading.value — heterogeneous per sensor.
+                   HorizonFeatureSnapshot.values — heterogeneous per feature.
+                   RiskVerdict.constraints — heterogeneous constraint values.
+                   SizedPositionIntent.factor_exposures — factor-dependent
+                   (beta / USD / percent).
+                   RegimeHazardSpike.hazard_score — dimensionless score vs
+                   1/s hazard rate.
+                   RegimeState.discriminability — 1 / nat / unnamed
+                   divergence (default inf).
+                 G46 — deferred here by S-01 — is closed by S9. The
+                 executable GAP_REGISTRY is still G01-G45 because FILES
+                 omitted registry.py; substance is G01-G46.
+                 The oracle did not and could not detect this change;
+                 S-17a closes that. Waiting at the human gate. Do not
+                 commit.
+                 Left uncommitted: baseline_pre-S-10.json,
+                 baseline_post-S-10.json, this ledger entry, and the
+                 two declared files pending go/no-go.
+
+---
+
+## S-10  2026-08-20T10:30:38+08:00
+  STEP:          S-10
+  BASE:          40b66a971c8ae4d1250ceaf20ed7b8a459a1ce60
+  RESULT SHA:    ec20dcf94232eee907b4c40cd42491f6473b476d
+  VERDICT:       passed
+  CONFORMANCE:   S9 | failed-before: yes | passes-after: yes | mutation: yes
+                 undetermined | failed-before: n/a | fails-now: yes
+                 (strict xfail; --runxfail lists all 11)
+  TESTS:         4812 passed / 29 skipped / 10 xfailed
+                 -> 4813 passed / 29 skipped / 11 xfailed
+  PARITY:        hold, 62 constants unmoved
+  FILES:         3 declared, 3 committed (clean vs ec20dcf)
+  NET DELTA:     modules 198 -> 198 (+0)
+                 public_symbols 555 -> 556 (+1)
+                 sloc 43639 -> 43654 (+15)
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   CLEAN (boundary — committed after human go)
+  NOTES:         Mechanism is Field.metadata["unit"] plus declared_unit -- no
+                 dataclass field added, so name and type are unchanged and the
+                 schema hash is unmoved at sha256:18e8861f. S9 fails only on a
+                 MISSING unit; UNIT_UNDETERMINED does not certify a field. A
+                 separate strict-xfail assertion lists all 11 undetermined
+                 fields and fails while any remain, so the disputed set is
+                 visible and greppable rather than passing silently. Eleven,
+                 not the ten the plan flagged: bid_size and ask_size are
+                 separate fields, and target_positions carries the token though
+                 S9 does not treat that container as numeric. GAP_REGISTRY is
+                 now G01-G46; S1 passes; the uncovered P0/P1 set is unchanged
+                 at {G31, G32}. The parity oracle cannot see this step.
+  FINDINGS:      verify_step extracted 4 declared tokens from a 3-entry FILES
+                 field -- a bare "registry.py" from the prose was counted as a
+                 path. Frozen oracle; record against exec-tools-v2 alongside
+                 the uppercase, unfenced-block and negation-blind substring
+                 bugs.
+                 Carried: G6 vs empty depends_on_sensors; load_platform_config
+                 + build_platform(config) loses config-path (S-04c);
+                 serialization.py missing __schema_version__ tag treated as
+                 current version (fail-open) -- its own step; ci.yml G40
+                 continue-on-error: true until G40; ~157 research cache days
+                 stale until after S-17a; baseline COUNTS not reproducible
+                 across RTH; connection.py:353-364 untested live handshake.
+  NEXT:          S-11 enumerable gate registry (platform-wide by reach,
+                 boundary by behaviour). Not started.
+                 Left uncommitted: baseline_pre-S-10.json,
+                 baseline_post-S-10.json, this ledger entry.
+
 
