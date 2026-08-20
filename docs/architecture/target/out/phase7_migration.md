@@ -1244,15 +1244,33 @@ REFACTOR PATH:   (1) R3 is extended to permute router/stop-exit registration
                  order and assert an identical fill stream -- prove it FAILS
                  first, and report which of the two failure modes it produces
                  (stale price, or "no quote available for symbol").
-                 (2) the triggering quote is carried to submit so pricing does
-                 not depend on _last_quotes having been written by an earlier
-                 subscriber. Sourced where the router already has it.
+                 (2) the triggering quote is carried as an EXPLICIT
+                 DEFAULTED ARGUMENT on submit(), sourced from the quote
+                 StopExit already holds, with _last_quotes as fallback. Both
+                 simulated routers take it. NO ContextVar: implicit state across
+                 a nested publish, and it forced risk/stop_exit.py to import a
+                 private symbol from a concrete router -- a new forbidden
+                 risk->execution edge on the already-broken G40 independence
+                 contract, worse than the existing shared-helper edges. NO field
+                 on OrderRequest either: S8's PINNED_PAYLOAD
+                 (test_schema_drift.py:101-113) is exact equality on that tuple
+                 as well as OrderAck.
                  (3) NO FIELD ON OrderAck. S8's PINNED_PAYLOAD
                  (test_schema_drift.py:90-100) is exact equality over the field
                  tuple; any addition fails by name. If the resolution requires
                  an OrderAck field, that is a scope change -- stop and report,
                  do not edit PINNED_PAYLOAD.
 FILES:           src/feelies/execution/passive_limit_router.py
+                 src/feelies/execution/backtest_router.py:142,172-176 (same
+                 _last_quotes race; this is the router APP and
+                 test_orchestrator_replay.py actually use, since execution_mode
+                 defaults to "market" -- a PassiveLimit-only fix cannot close
+                 the defect)
+                 src/feelies/execution/backend.py (OrderRouter protocol gains a
+                 defaulted triggering-quote argument so the orchestrator can
+                 pass it under mypy --strict)
+                 src/feelies/broker/ib/router.py (matching unused parameter; IB
+                 prices from the wire, not _last_quotes)
                  src/feelies/risk/stop_exit.py
                  src/feelies/kernel/orchestrator.py
                  tests/conformance/test_registration_order.py
