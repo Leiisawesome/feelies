@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from enum import Enum, auto
 
 from feelies.core.clock import Clock
+from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
 
 
@@ -83,9 +84,12 @@ def classify_halt_status(
         return None
     present = set(conditions)
     if present & halt_on_codes:
+        record_verdict("RT.DATA_HEALTH", "FAIL", HaltSignal.HALT_ON.name)
         return HaltSignal.HALT_ON
     if present & halt_off_codes:
+        record_verdict("RT.DATA_HEALTH", "PASS", HaltSignal.HALT_OFF.name)
         return HaltSignal.HALT_OFF
+    record_verdict("RT.DATA_HEALTH", "PASS")
     return None
 
 

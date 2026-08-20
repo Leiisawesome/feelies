@@ -60,6 +60,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from feelies.core.events import Side
+from feelies.core.gate_registry import record_verdict
 from feelies.execution.intent import OrderIntent, TradingIntent
 
 # ── Stable suppression tokens ────────────────────────────────────────────
@@ -202,18 +203,26 @@ def admission_block_reason(
     """
     if opens_exposure:
         if in_halt_blackout:
+            record_verdict("RT.SESSION_ADMISSION", "FAIL", BLOCK_HALT_BLACKOUT)
             return BLOCK_HALT_BLACKOUT
         if in_session_flatten_window:
+            record_verdict("RT.SESSION_ADMISSION", "FAIL", BLOCK_SESSION_FLATTEN_WINDOW)
             return BLOCK_SESSION_FLATTEN_WINDOW
     if opens_short:
         if ssr_active:
+            record_verdict("RT.SESSION_ADMISSION", "FAIL", BLOCK_SSR)
             return BLOCK_SSR
         if locate_unavailable:
+            record_verdict("RT.SESSION_ADMISSION", "FAIL", BLOCK_LOCATE_UNAVAILABLE)
             return BLOCK_LOCATE_UNAVAILABLE
     if quantity is not None and blocks_for_min_size(
         quantity, min_order_shares, exempt=exempt_from_min_size
     ):
+        record_verdict("RT.MIN_SIZE", "FAIL", BLOCK_BELOW_MIN_ORDER_SHARES)
         return BLOCK_BELOW_MIN_ORDER_SHARES
+    record_verdict("RT.SESSION_ADMISSION", "PASS")
+    if quantity is not None:
+        record_verdict("RT.MIN_SIZE", "PASS")
     return None
 
 

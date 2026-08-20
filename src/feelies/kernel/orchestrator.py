@@ -38,7 +38,7 @@ from feelies.alpha.arbitration import (
     is_redundant_gate_close_flat,
     standalone_signal_actionable_for_strategy,
 )
-
+from feelies.core.gate_registry import record_verdict
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
@@ -147,7 +147,7 @@ from feelies.kernel.macro import (
 from feelies.kernel.micro import MicroState, create_micro_state_machine
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.alerting import AlertManager
-from feelies.monitoring.kill_switch import KillSwitch
+from feelies.monitoring.kill_switch import KillSwitch, observe_kill_switch
 from feelies.monitoring.latency_budget import (
     _LatencyBudgetMonitor,
     _apply_breach_response,
@@ -765,7 +765,7 @@ class Orchestrator:
         Applies to ``run_backtest`` and ``run_paper`` — kill switch and risk
         escalation must both allow entry.
         """
-        if self._kill_switch is not None and self._kill_switch.is_active:
+        if self._kill_switch is not None and observe_kill_switch(self._kill_switch.is_active):
             raise SessionEntryBlockedError(
                 "Cannot start session: kill switch is active — reset with operator audit first",
             )
@@ -1039,7 +1039,7 @@ class Orchestrator:
     def recover_from_degraded(self) -> bool:
         """G7 → G2 on recovery validation.  Returns True if successful."""
         self._macro.assert_state(MacroState.DEGRADED)
-        if self._kill_switch is not None and self._kill_switch.is_active:
+        if self._kill_switch is not None and observe_kill_switch(self._kill_switch.is_active):
             logger.warning(
                 "recover_from_degraded: refused — kill switch is still active",
             )
@@ -1076,7 +1076,7 @@ class Orchestrator:
         # Risk escalation activates the kill switch in `_escalate_risk`.
         # Clearing it here keeps macro/risk/kill-switch semantics coherent
         # so the next quote tick does not immediately re-enter DEGRADED.
-        if self._kill_switch is not None and self._kill_switch.is_active:
+        if self._kill_switch is not None and observe_kill_switch(self._kill_switch.is_active):
             self._kill_switch.reset(
                 operator="unlock_from_lockdown",
                 audit_token=audit_token,
@@ -1567,7 +1567,7 @@ class Orchestrator:
         self._tick_quote_for_trace = None
 
         # Kill switch gate.
-        if self._kill_switch is not None and self._kill_switch.is_active:
+        if self._kill_switch is not None and observe_kill_switch(self._kill_switch.is_active):
             if self._macro.state in TRADING_MODES:
                 if self._macro.can_transition(MacroState.DEGRADED):
                     self._macro.transition(
@@ -3626,7 +3626,7 @@ class Orchestrator:
             # suppress every opening leg on deployments that never enabled B4.
             return None
         if quote is None or quote.symbol != order.symbol:
-            return BLOCK_EDGE_UNPRICEABLE
+            return record_verdict("RT.COST_GATE", "FAIL", BLOCK_EDGE_UNPRICEABLE) or BLOCK_EDGE_UNPRICEABLE
         target = intent.target_positions.get(order.symbol)
         edge_bps = target.expected_edge_bps if target is not None else 0.0
         passes, effective_bps, factor = self._edge_clears_round_trip_cost(
@@ -3640,7 +3640,7 @@ class Orchestrator:
             is_short_entry=delta.opens_or_increases_short,
         )
         if passes:
-            return None
+            return record_verdict("RT.COST_GATE", "PASS") or None
         logger.debug(
             "PORTFOLIO leg %s %s %d refused by B4: disclosed %.2f bps x "
             "realization %.3f = %.2f effective (strategy=%s)",
@@ -3652,7 +3652,7 @@ class Orchestrator:
             effective_bps,
             intent.strategy_id,
         )
-        return BLOCK_EDGE_BELOW_COST
+        return record_verdict("RT.COST_GATE", "FAIL", BLOCK_EDGE_BELOW_COST) or BLOCK_EDGE_BELOW_COST
 
     def _filter_portfolio_orders_for_pending_conflicts(
         self,
@@ -3671,7 +3671,7 @@ class Orchestrator:
         """
         filtered: list[OrderRequest] = []
         for order in orders:
-            if self._has_pending_order_for_symbol(order.symbol):
+            if self._has_pending_order_for_symbol(order.symbol) and not record_verdict("RT.DUPLICATE_INTENT", "FAIL", order.order_id):
                 self._publish_alert(
                     timestamp_ns=self._clock.now_ns(),
                     correlation_id=correlation_id,
@@ -4516,7 +4516,7 @@ class Orchestrator:
                     if (
                         escalate
                         and self._kill_switch is not None
-                        and not self._kill_switch.is_active
+                        and not observe_kill_switch(self._kill_switch.is_active)
                     ):
                         self._kill_switch.activate(
                             reason="realized_cost_persistent_overrun",
