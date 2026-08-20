@@ -1180,7 +1180,9 @@ FILES:           src/feelies/core/events.py (Fill: explicit triggering-quote
                  src/feelies/execution/moc_fill.py:83,132
                  src/feelies/bootstrap.py:353-355 (the comment and the ordering
                  requirement it encodes)
-                 tests/conformance/ — extends R3
+                 tests/conformance/test_registration_order.py (R3, created here
+                 — S-12's REFACTOR PATH names R3 but requires S-11a first, so
+                 R3 originates in this step and S-12 extends it)
 WHY THIS OWNER:  Phase 3 §238 prescribes exactly this resolution — "move the
                  requirement onto fill provenance" — and names it as what keeps
                  the wiring ordinal from acquiring trading-domain content. Engine
