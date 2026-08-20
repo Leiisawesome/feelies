@@ -355,7 +355,6 @@ def build_platform(
         )
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))
 
-    # Subscribe the router before sensors so fills retain their triggering quote.
     position_store = MemoryPositionStore()
     if config.mode != OperatingMode.BACKTEST:
         router = getattr(backend, "order_router", None)
