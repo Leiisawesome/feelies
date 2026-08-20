@@ -1232,6 +1232,65 @@ ROLLBACK:        revert. The field disappears, the comment returns, and
                  ordinal over a graph whose order silently matters again. If
                  S-11a is reverted, revert S-12 in the same commit.
 ```
+```
+STEP:            S-11b
+CLOSES:          new -- the real WL-7 race, found while executing S-11a
+PROBLEM:         StopExitController subscribes NBBOQuote
+                 (risk/stop_exit.py:172) and can publish an OrderRequest on the
+                 same publish: _on_quote -> _emit_exit -> bus.publish(MARKET) at
+                 :177-197, :269-297, with source_layer="RISK" and reason in
+                 {STOP_EXIT, SESSION_FLAT}. The orchestrator routes that to
+                 _submit_instrumented_order (orchestrator.py:594, :4947, :5019)
+                 and on to backend.order_router.submit (:3863). But submit
+                 prices from self._last_quotes, not from the triggering quote
+                 (passive_limit_router.py:308-312, backtest router :172-176),
+                 and on_quote writes _last_quotes first (passive :235, backtest
+                 :142).
+                 So the fill price depends on whether the router or stop-exit
+                 subscribed first. Router-first: _last_quotes is this quote and
+                 the stop fills at it. Stop-first: _last_quotes is the previous
+                 quote or missing -- the stop fills at a stale price, or is
+                 rejected with "no quote available for symbol". Ack sequence
+                 draws move with it.
+                 Bootstrap registers the router at :356 and stop-exit via
+                 _create_stop_exit_controller -> attach() at :468, :1642, so the
+                 correct order holds today by accident of registration order and
+                 nothing enforces it. CORE sec. C.3 contract-first boundaries;
+                 Inv-5, delivery order is output-determining.
+WHY THIS OWNER:  Engine 10 owns the price a fill is struck at. A forced exit
+                 must price against the quote that triggered it, not against
+                 whatever the router last saw.
+REFACTOR PATH:   (1) R3 is extended to permute router/stop-exit registration
+                 order and assert an identical fill stream -- prove it FAILS
+                 first, and report which of the two failure modes it produces
+                 (stale price, or "no quote available for symbol").
+                 (2) the triggering quote is carried to submit so pricing does
+                 not depend on _last_quotes having been written by an earlier
+                 subscriber. Sourced where the router already has it.
+                 (3) NO FIELD ON OrderAck. S8's PINNED_PAYLOAD
+                 (test_schema_drift.py:90-100) is exact equality over the field
+                 tuple; any addition fails by name. If the resolution requires
+                 an OrderAck field, that is a scope change -- stop and report,
+                 do not edit PINNED_PAYLOAD.
+FILES:           src/feelies/execution/passive_limit_router.py
+                 src/feelies/risk/stop_exit.py
+                 src/feelies/kernel/orchestrator.py
+                 tests/conformance/test_registration_order.py
+BLAST RADIUS:    boundary -- one pricing source changes on the forced-exit path
+VALIDATED BY:    R3 as extended with its fail-first proof, all 26 baselines, the
+                 parity oracle, mypy
+PARITY IMPACT:   VERIFY, DO NOT ASSUME. The correct order holds today by
+                 accident, so recorded tapes were produced under router-first
+                 and should be unaffected. But this changes the pricing source
+                 on a path that emits orders, and ack sequence draws move if
+                 fills change. Establish structurally which determinism tapes
+                 construct StopExitController before declaring, and enumerate
+                 any affected stream. If a constant moves, name it.
+DELETES:         the dependence of forced-exit fill price on subscription order
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert. Pricing returns to _last_quotes and the ordering
+                 becomes load-bearing again.
+```
 
 ```
 STEP:            S-12
