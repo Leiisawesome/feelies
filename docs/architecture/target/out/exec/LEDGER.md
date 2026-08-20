@@ -2344,4 +2344,63 @@ NOTES:           Mechanism: Field.metadata["unit"] plus module-level
                  Left uncommitted: baseline_pre-S-11a.json, this
                  ledger entry.
 
+---
+
+## S-11a  2026-08-20T17:53:39+08:00
+  STEP:          S-11a
+  BASE:          e816ae18d16955dbbbc69e99da250654ebd97f19
+  RESULT SHA:    88bd3f5d2faf67872b3a176b579992a988a5d95a
+  VERDICT:       passed
+  CONFORMANCE:   none — no test in this step. Deletion proven inert:
+                 grep src/feelies finds no remaining copy of
+                 "Subscribe the router before sensors so fills retain
+                 their triggering quote." git diff is exactly that one
+                 comment line. bus.subscribe(NBBOQuote, ...) at
+                 bootstrap.py:353-356 is byte-identical.
+  TESTS:         4826 passed / 28 skipped / 14 xfailed
+                 -> 4836 passed / 18 skipped / 14 xfailed
+                 failed 0 -> 0. +10 passed / -10 skipped is wall-clock
+                 functional (Massive WS); first pre-capture went RED
+                 on test_websocket_feed_emits_live_massive_event, retry
+                 GREEN 4826/28, same test 1 passed in 1.65s.
+  PARITY:        hold, 62 constants unmoved | MATCH
+                 schema hash unmoved
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa
+  FILES:         1 declared, 1 committed (clean vs 88bd3f5)
+                 src/feelies/bootstrap.py
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0, test files 0
+                 actual modules 199 -> 199 (+0)
+                 public_symbols 562 -> 562 (+0)
+                 sloc 44494 -> 44494 (+0)
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   S-11a uppercased to S-11A not in plan (frozen).
+                 Four checks by hand: FILES 1/1 clean; PARITY holds
+                 62/62; TESTS failed 0; NET DELTA 0/0/0. CLEAN
+                 (local — committed without waiting).
+  NOTES:         No provenance field (no Fill type; OrderAck is S8
+                 PINNED_PAYLOAD). No R3 here — unfalsifiable for
+                 router/sensor; originates in S-11b. Comment at
+                 bootstrap.py:358 deleted, not reworded; subscribe
+                 order unchanged. Seq-draw invariance: diff is one
+                 comment line, no SequenceGenerator, no .next().
+  FINDINGS:      pre-flight first capture RED on live Massive WS
+                 functional test; flake, not this step. Record with
+                 wall-clock skip counts.
+                 Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA; ~157 research cache
+                 days stale until after S-17a; 11 UNIT_UNDETERMINED
+                 block S-24; three X6 cases xfail(strict) awaiting
+                 S-12 family instances.
+  NEXT:          S-11b forced-exit pricing (boundary). Not started.
+                 Left uncommitted: baseline_pre-S-11a.json,
+                 baseline_post-S-11a.json, this ledger entry.
+
 
