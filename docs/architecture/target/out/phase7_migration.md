@@ -1182,55 +1182,35 @@ PROBLEM:         bootstrap.py:355 claims "Subscribe the router before sensors so
                  (risk/stop_exit.py:172) -- see S-11b.
 FILES:           src/feelies/bootstrap.py:353-355 (delete the comment and the
                  ordering requirement it encodes)
-                 tests/conformance/test_registration_order.py (R3, created here
-                 -- S-12's REFACTOR PATH names R3 but requires S-11a first, so
-                 R3 originates in this step and S-12 extends it)
 WHY THIS OWNER:  Phase 3 §238 prescribes exactly this resolution — "move the
                  requirement onto fill provenance" — and names it as what keeps
                  the wiring ordinal from acquiring trading-domain content. Engine
                  10 owns the fill and its provenance; the kernel owns
                  registration. A property of the fill belongs on the fill, not in
                  the kernel's registration order.
-REFACTOR PATH:   (1) R3 permutes NBBOQuote registration order for router/sensor
-                 and asserts an identical fill stream. It PASSES on landing --
-                 that is the point: it converts an unenforced comment into a
-                 regression guard. Its fail-first proof is a MUTATION: make
-                 resting fills read self._last_quotes instead of the `quote`
-                 argument, confirm R3 fails, restore byte-identical.
-                 (2) delete bootstrap.py:355's comment and the ordering
+REFACTOR PATH:   (1) delete bootstrap.py:355's comment and the ordering
                  requirement.
+                 (2) NO R3 HERE. R3 was written and proven unfalsifiable: the
+                 router/sensor pair has no orderable hazard, so no mutation can
+                 make a subscription-order test fail. EventBus runs each handler
+                 to completion; a non-submitting subscriber never writes
+                 _last_quotes; the router always sees the same `quote` argument
+                 and the same _last_quotes at the start of on_quote. Two
+                 mutations were tried -- reading _last_quotes after the write,
+                 and reading a stale snapshot taken before it -- and neither
+                 produced disagreeing streams. R3 originates in S-11b, where a
+                 submitting subscriber makes the race observable.
                  (3) NO PROVENANCE FIELD. There is no Fill type; fills are
                  OrderAck, and S8's PINNED_PAYLOAD (test_schema_drift.py:90-100)
-                 is exact equality over the field tuple, so any addition fails
-                 by name. Stamping quote identity on OrderAck would not close the
-                 stop-exit race anyway -- that race is about which quote submit
-                 PRICES AGAINST, not which quote is recorded.
-BLAST RADIUS:    boundary — one field on one event, and the deletion of an
-                 implicit ordering requirement.
-VALIDATED BY:    R3 with its mutation proof, all 26 baselines, the parity oracle
-PARITY IMPACT:   **All 26 hold, and this step is what makes S-12's criterion
-                 reachable.** Adding a provenance field draws no `self._seq` and
-                 changes no computed value; the triggering quote is already the
-                 one the router reads, so the field records what the code already
-                 did. `sequence` remains the first field of every hash helper
-                 (§G.0.1) and no draw count changes.
-                 **Sequencing note:** S-12's PARITY IMPACT makes R3 — permute
-                 registration order, assert an identical hash — the proof that
-                 the wiring manifest is not load-bearing, and states that if R3
-                 fails "the step is incomplete." With `NBBOQuote` order deciding
-                 fill provenance, R3 fails and S-12 can never report complete.
-                 That is why this step is numbered to sort before S-12 rather
-                 than appended at the end.
+                 is exact equality over the field tuple.
+BLAST RADIUS:    local -- one comment deleted, no code path touched
+VALIDATED BY:    all 26 baselines, the parity oracle, mypy, full suite
+PARITY IMPACT:   hold. One comment line is deleted. No field, no draw, no
+                 computed value changes.
 DELETES:         bootstrap.py:355's ordering requirement, unenforced and false
                  as stated for the pair it names
-NET DELTA:       src modules 0, public symbols +1 (the provenance field, counted
-                 the way S-09 counts `schema_version`), branch points 0. Test
-                 files 0 — R3 already exists and is extended.
-ROLLBACK:        revert. The field disappears, the comment returns, and
-                 subscription order is load-bearing again. Reverting **after**
-                 S-12 lands is unsafe: the manifest would then declare an opaque
-                 ordinal over a graph whose order silently matters again. If
-                 S-11a is reverted, revert S-12 in the same commit.
+NET DELTA:       src modules 0, public symbols 0, branch points 0, test files 0
+ROLLBACK:        revert; the comment returns. Nothing depends on it.
 ```
 ```
 STEP:            S-11b
