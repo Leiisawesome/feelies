@@ -1002,44 +1002,31 @@ REFACTOR PATH:   **Artifact + closure test, atomic.**
                  (1) `schema_version` on the envelope with a default.
                  (2) S8 asserting closure -- every event class resolves a
                  version, and the pinned-code-per-log rule is stated in one
-                 place. S8 must detect a DRIFT, not the presence of a field: a
-                 test that enumerates classes and checks an attribute exists
-                 passes whether or not the version is correct, propagated, or
-                 checked anywhere. Prove it by adding a throwaway field to an
-                 event class and confirming S8 fails.
-                 (3) R5 asserting a log outside the supported range is REFUSED
-                 LOUDLY rather than replayed wrong. THE CHECK IS UNCONDITIONAL:
-                 `require_healthy_ingestion_manifests` defaults to False and is
-                 opt-in; copying that default would make the schema gate fail
-                 open, which is the opposite of sec. C.11. A cache written
-                 before schema tagging -- version absent -- must also refuse,
-                 exactly as :90-91 handles pre-tagging ingestion health. R5 must
-                 construct a log at an unsupported version and one with the
-                 version absent, not unit-test a comparison function.
-                 (4) The envelope field and the log-level check answer different
-                 questions and do not share a mechanism: the envelope field
-                 answers "can this consumer read this event", the manifest key
-                 answers "should this log replay at all". S8 covers the first,
-                 R5 the second.
+                 place. S8 must detect a DRIFT, not the presence of a field.
+                 MUTATION PROOF: add a throwaway field to an event class,
+                 confirm S8 fails naming it, restore byte-identical.
+                 (3) R5 IS WITHDRAWN. `event_schema_hash`
+                 (disk_event_cache.py:60-71, :126-131) already refuses a cache
+                 whose NBBOQuote/Trade shape this build does not know, with a
+                 missing key failing closed because None != hash. A second
+                 mechanism would add only "same shape, different declared
+                 generation" -- a distinction with no consumer. The hash IS the
+                 log-level pin; document it as such. schema_version goes on the
+                 envelope for consumer readability only.
 FILES:           src/feelies/core/events.py (Event envelope)
-                 src/feelies/storage/cache_replay.py (the ingest gate)
                  tests/conformance/test_schema_drift.py (S8)
-                 tests/conformance/test_schema_versioning.py (R5)
 BLAST RADIUS:    boundary -- one envelope field, 21 classes, one gate at ingest
-VALIDATED BY:    S8 with the throwaway-field mutation proof; R5 against a
-                 constructed unsupported-version log and a version-absent log;
-                 all 26 baselines; the parity oracle; `uv run mypy src/feelies`
-PARITY IMPACT:   hold -- all 26 baselines, and no constant is re-pinned here.
-                 **All 26 hold, and that is the defect this step exposes rather
-                 than fixes.** Hash inputs are hand-written field lists per
-                 helper, so adding a field cannot break parity (Phase 0 P-1,
-                 Phase 1 sec. 6). The oracle is blind to schema growth. Adding
-                 `schema_version` **to** the helpers would break all 26 at once
-                 via one `manifest_fingerprint()` line -- that is deliberately
-                 NOT done here and is scheduled as S-17a, after S-11 and S-16
-                 have added their fields, so both re-baselines fall in one
-                 window. Until S-17a lands, S8 and R5 carry the entire weight of
-                 detecting schema drift.
+VALIDATED BY:    S8 with the throwaway-field mutation proof; all 26 baselines;
+                 the parity oracle; `uv run mypy src/feelies`
+PARITY IMPACT:   hold -- no constant moves, and the oracle cannot see this step
+                 (hand-written field lists per helper; S-17a closes that).
+                 BUT event_schema_hash DOES move: schema_version is inherited
+                 into NBBOQuote and Trade, so _compute_schema_hash changes and
+                 EVERY cached day is invalidated, requiring a one-time
+                 re-ingestion of every cached session including APP/2026-03-26.
+                 The functional baseline skips on that miss unless
+                 FEELIES_REQUIRE_BASELINE_CACHE=1, under which it FAILS. Re-ingest
+                 before running that gate.
 DELETES:         the 83 `schema_version` sites' ambiguity -- alpha-YAML
                  versioning in `promotion/` (25) and `cli/` (19) stops being the
                  only thing the name means. No module deleted. sec. G.10:
@@ -1047,11 +1034,10 @@ DELETES:         the 83 `schema_version` sites' ambiguity -- alpha-YAML
 NET DELTA:       src modules 0, public symbols +1, branch points +1 (the schema
                  gate; enumerable, becomes a gate-registry row under S-11).
                  Test files +2.
-ROLLBACK:        revert. The field disappears; no baseline moves in either
-                 direction, which makes this the cheapest step to revert in the
-                 plan and the one whose revert is hardest to notice -- so the
-                 revert must be verified by S8 and R5 failing again, not by a
-                 green suite.
+ROLLBACK:        revert. The field disappears and no baseline moves -- but
+                 event_schema_hash moves BACK, invalidating any cache written
+                 while S-09 was live. This is NOT the cheapest step to revert.
+                 Verify the revert by S8 failing again, not by a green suite.
 ```
 
 ```
