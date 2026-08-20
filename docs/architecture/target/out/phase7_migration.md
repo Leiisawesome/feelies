@@ -1164,24 +1164,26 @@ STEP:            S-11a
 CLOSES:          nothing in Phase 5 — this is S-12's missing prerequisite,
                  identified by §K.1.3. It closes WL-7, the Phase 3 watch-line
                  whose live candidate is `src/feelies/bootstrap.py:355`.
-PROBLEM:         Fill provenance is carried by **subscription order**, documented
-                 in a comment and enforced by nothing.
-                 `src/feelies/bootstrap.py:353` subscribes `NBBOQuote` to the
-                 backtest router, and `:355` explains why the position matters:
-                 "Subscribe the router before sensors so fills retain their
-                 triggering quote." Sensors subscribe to the same type, so a
-                 correctness property of fills depends on the relative order of
-                 two registrations that nothing checks. CORE §C.3 contract-first
-                 boundaries; Inv-5, because delivery order is output-determining
-                 (Phase 1 §3).
-FILES:           src/feelies/core/events.py (Fill: explicit triggering-quote
-                 provenance)
-                 src/feelies/execution/passive_limit_router.py:377,527
-                 src/feelies/execution/moc_fill.py:83,132
-                 src/feelies/bootstrap.py:353-355 (the comment and the ordering
-                 requirement it encodes)
+PROBLEM:         bootstrap.py:355 claims "Subscribe the router before sensors so
+                 fills retain their triggering quote." VERIFIED FALSE for that
+                 pair: sensors cannot change fills. SensorRegistry._on_event
+                 publishes SensorReading (sensors/registry.py:291);
+                 HorizonSignalEngine._on_sensor_reading only caches
+                 (signals/horizon_engine.py:207-239); HorizonAggregator only
+                 buffers (features/aggregator.py:268) and snapshots fire on
+                 HorizonTick, not the quote. Resting fills use the `quote`
+                 argument to on_quote (passive_limit_router.py:233-239, :551),
+                 so a second NBBOQuote subscriber that does not submit cannot
+                 alter the fill stream. R3 confirms it: permuting router/sensor
+                 order yields identical OrderAck streams today.
+                 The comment therefore documents a hazard the code does not
+                 have, while naming the wrong subscriber. The subscriber that
+                 CAN submit on the same publish is StopExitController
+                 (risk/stop_exit.py:172) -- see S-11b.
+FILES:           src/feelies/bootstrap.py:353-355 (delete the comment and the
+                 ordering requirement it encodes)
                  tests/conformance/test_registration_order.py (R3, created here
-                 — S-12's REFACTOR PATH names R3 but requires S-11a first, so
+                 -- S-12's REFACTOR PATH names R3 but requires S-11a first, so
                  R3 originates in this step and S-12 extends it)
 WHY THIS OWNER:  Phase 3 §238 prescribes exactly this resolution — "move the
                  requirement onto fill provenance" — and names it as what keeps
@@ -1189,18 +1191,23 @@ WHY THIS OWNER:  Phase 3 §238 prescribes exactly this resolution — "move the
                  10 owns the fill and its provenance; the kernel owns
                  registration. A property of the fill belongs on the fill, not in
                  the kernel's registration order.
-REFACTOR PATH:   (1) the quote that triggered a fill becomes an explicit field
-                 the router passes, sourced where the router already reads it —
-                 `passive_limit_router.py:377,527` and `moc_fill.py:83,132`
-                 already use exchange timestamps from the triggering quote (I-12,
-                 verified), so the value is in hand and only the plumbing is new;
-                 (2) the comment at `src/feelies/bootstrap.py:355` is deleted and
-                 the ordering requirement with it; (3) R3 is extended to permute
-                 registration order for `NBBOQuote` specifically and assert an
-                 identical fill stream.
+REFACTOR PATH:   (1) R3 permutes NBBOQuote registration order for router/sensor
+                 and asserts an identical fill stream. It PASSES on landing --
+                 that is the point: it converts an unenforced comment into a
+                 regression guard. Its fail-first proof is a MUTATION: make
+                 resting fills read self._last_quotes instead of the `quote`
+                 argument, confirm R3 fails, restore byte-identical.
+                 (2) delete bootstrap.py:355's comment and the ordering
+                 requirement.
+                 (3) NO PROVENANCE FIELD. There is no Fill type; fills are
+                 OrderAck, and S8's PINNED_PAYLOAD (test_schema_drift.py:90-100)
+                 is exact equality over the field tuple, so any addition fails
+                 by name. Stamping quote identity on OrderAck would not close the
+                 stop-exit race anyway -- that race is about which quote submit
+                 PRICES AGAINST, not which quote is recorded.
 BLAST RADIUS:    boundary — one field on one event, and the deletion of an
                  implicit ordering requirement.
-VALIDATED BY:    R3 as extended, all 26 baselines, the parity oracle
+VALIDATED BY:    R3 with its mutation proof, all 26 baselines, the parity oracle
 PARITY IMPACT:   **All 26 hold, and this step is what makes S-12's criterion
                  reachable.** Adding a provenance field draws no `self._seq` and
                  changes no computed value; the triggering quote is already the
@@ -1214,10 +1221,8 @@ PARITY IMPACT:   **All 26 hold, and this step is what makes S-12's criterion
                  fill provenance, R3 fails and S-12 can never report complete.
                  That is why this step is numbered to sort before S-12 rather
                  than appended at the end.
-DELETES:         the implicit ordering contract at
-                 `src/feelies/bootstrap.py:355` — a correctness requirement held
-                 in a comment. This is the rare step whose deletion is the point:
-                 it removes a dependency rather than code.
+DELETES:         bootstrap.py:355's ordering requirement, unenforced and false
+                 as stated for the pair it names
 NET DELTA:       src modules 0, public symbols +1 (the provenance field, counted
                  the way S-09 counts `schema_version`), branch points 0. Test
                  files 0 — R3 already exists and is extended.
