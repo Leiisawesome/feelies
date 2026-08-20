@@ -1086,7 +1086,8 @@ PROBLEM:         Two independent gate ladders with no common registry. G1-G17
                  `src/feelies`** — and runtime gating is 329 call sites across
                  10 families. No operator can enumerate what would block a
                  trade. CORE §G enumerable gates; Inv-13 auditable provenance.
-FILES:           src/feelies/core/ (the gate registry, new — 53 rows as data)
+FILES:           src/feelies/core/gate_registry.py (the gate registry, new — 53 
+                 rows as  data)
                  src/feelies/alpha/layer_validator.py:306-341
                  tests/conformance/test_gate_registry.py (S13, new)
                  tests/conformance/test_pathological_refusal.py (X6, completed
