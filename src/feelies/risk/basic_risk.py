@@ -35,6 +35,7 @@ from feelies.core.events import (
     SignalDirection,
     SizedPositionIntent,
 )
+from feelies.core.gate_registry import record_verdict
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.sized_intent_legs import resolve_mark
 from feelies.risk.sized_intent_orders import build_sized_intent_orders
@@ -53,6 +54,12 @@ from feelies.risk.buying_power import (
 )
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.services.regime_state_cache import RegimeStateCache
+
+
+def _emit_risk(gate_id: str, verdict: RiskVerdict) -> RiskVerdict:
+    outcome = "PASS" if verdict.action is RiskAction.ALLOW else "FAIL"
+    record_verdict(gate_id, outcome, verdict.reason)
+    return verdict
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -189,13 +196,16 @@ class BasicRiskEngine:
             and signal.direction in (SignalDirection.LONG, SignalDirection.FLAT)
         )
         if abs(current.quantity) >= adjusted_max and not signal_reduces:
-            return RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
-                correlation_id=signal.correlation_id,
-                sequence=signal.sequence,
-                symbol=signal.symbol,
-                action=RiskAction.REJECT,
-                reason=f"position limit reached: |{current.quantity}| >= {adjusted_max}",
+            return _emit_risk(
+                "RT.EXPOSURE_LIMITS",
+                RiskVerdict(
+                    timestamp_ns=signal.timestamp_ns,
+                    correlation_id=signal.correlation_id,
+                    sequence=signal.sequence,
+                    symbol=signal.symbol,
+                    action=RiskAction.REJECT,
+                    reason=f"position limit reached: |{current.quantity}| >= {adjusted_max}",
+                ),
             )
 
         shared = self._check_exposure_and_drawdown(
@@ -210,13 +220,16 @@ class BasicRiskEngine:
         if shared is not None:
             return shared
 
-        return RiskVerdict(
-            timestamp_ns=signal.timestamp_ns,
-            correlation_id=signal.correlation_id,
-            sequence=signal.sequence,
-            symbol=signal.symbol,
-            action=RiskAction.ALLOW,
-            reason="within limits",
+        return _emit_risk(
+            "RT.VERDICT_COMPOSE",
+            RiskVerdict(
+                timestamp_ns=signal.timestamp_ns,
+                correlation_id=signal.correlation_id,
+                sequence=signal.sequence,
+                symbol=signal.symbol,
+                action=RiskAction.ALLOW,
+                reason="within limits",
+            ),
         )
 
     def check_order(
@@ -234,13 +247,16 @@ class BasicRiskEngine:
         """
         current_equity = self._compute_current_equity(positions)
         if current_equity <= 0:
-            return RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
-                correlation_id=order.correlation_id,
-                sequence=order.sequence,
-                symbol=order.symbol,
-                action=RiskAction.FORCE_FLATTEN,
-                reason=f"non-positive equity: {current_equity} <= 0",
+            return _emit_risk(
+                "RT.DRAWDOWN_TIER",
+                RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.FORCE_FLATTEN,
+                    reason=f"non-positive equity: {current_equity} <= 0",
+                ),
             )
 
         regime_scale = self._regime_scaling(order.symbol)
@@ -279,15 +295,18 @@ class BasicRiskEngine:
             return rth_verdict
 
         if post_fill_qty > adjusted_max:
-            return RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
-                correlation_id=order.correlation_id,
-                sequence=order.sequence,
-                symbol=order.symbol,
-                action=RiskAction.REJECT,
-                reason=(
-                    f"post-fill position {post_fill_qty} would exceed "
-                    f"regime-adjusted limit {adjusted_max}"
+            return _emit_risk(
+                "RT.EXPOSURE_LIMITS",
+                RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.REJECT,
+                    reason=(
+                        f"post-fill position {post_fill_qty} would exceed "
+                        f"regime-adjusted limit {adjusted_max}"
+                    ),
                 ),
             )
 
@@ -312,13 +331,16 @@ class BasicRiskEngine:
         if shared is not None:
             return shared
 
-        return RiskVerdict(
-            timestamp_ns=order.timestamp_ns,
-            correlation_id=order.correlation_id,
-            sequence=order.sequence,
-            symbol=order.symbol,
-            action=RiskAction.ALLOW,
-            reason="order within limits",
+        return _emit_risk(
+            "RT.VERDICT_COMPOSE",
+            RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.ALLOW,
+                reason="order within limits",
+            ),
         )
 
     def check_sized_intent(
@@ -454,13 +476,16 @@ class BasicRiskEngine:
         ):
             return None
         self._emit_pdt_suppression_alert(order, current_equity)
-        return RiskVerdict(
-            timestamp_ns=order.timestamp_ns,
-            correlation_id=order.correlation_id,
-            sequence=order.sequence,
-            symbol=order.symbol,
-            action=RiskAction.REJECT,
-            reason="PDT_MIN_EQUITY",
+        return _emit_risk(
+            "RT.BUYING_POWER",
+            RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.REJECT,
+                reason="PDT_MIN_EQUITY",
+            ),
         )
 
     def _check_rth_session(
@@ -489,13 +514,16 @@ class BasicRiskEngine:
             reason,
             order.timestamp_ns,
         )
-        return RiskVerdict(
-            timestamp_ns=order.timestamp_ns,
-            correlation_id=order.correlation_id,
-            sequence=order.sequence,
-            symbol=order.symbol,
-            action=RiskAction.REJECT,
-            reason=reason,
+        return _emit_risk(
+            "RT.SESSION_ADMISSION",
+            RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.REJECT,
+                reason=reason,
+            ),
         )
 
     def _check_buying_power(
@@ -548,13 +576,16 @@ class BasicRiskEngine:
                 limit,
                 current_equity,
             )
-            return RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
-                correlation_id=order.correlation_id,
-                sequence=order.sequence,
-                symbol=order.symbol,
-                action=RiskAction.REJECT,
-                reason=INSUFFICIENT_BUYING_POWER,
+            return _emit_risk(
+                "RT.BUYING_POWER",
+                RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.REJECT,
+                    reason=INSUFFICIENT_BUYING_POWER,
+                ),
             )
         return None
 
@@ -672,13 +703,16 @@ class BasicRiskEngine:
         current_equity = self._compute_current_equity(positions)
         exposure = positions.total_exposure() if exposure_override is None else exposure_override
         if current_equity <= 0:
-            return RiskVerdict(
-                timestamp_ns=timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=sequence,
-                symbol=symbol,
-                action=RiskAction.FORCE_FLATTEN,
-                reason=f"non-positive equity: {current_equity} <= 0",
+            return _emit_risk(
+                "RT.DRAWDOWN_TIER",
+                RiskVerdict(
+                    timestamp_ns=timestamp_ns,
+                    correlation_id=correlation_id,
+                    sequence=sequence,
+                    symbol=symbol,
+                    action=RiskAction.FORCE_FLATTEN,
+                    reason=f"non-positive equity: {current_equity} <= 0",
+                ),
             )
 
         # Bump the HWM as a separate, explicit step so the predicate
@@ -686,49 +720,61 @@ class BasicRiskEngine:
         # _is_drawdown_breached docstring for the rationale.
         self._update_high_water_mark(current_equity)
         if self._is_drawdown_breached(current_equity):
-            return RiskVerdict(
-                timestamp_ns=timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=sequence,
-                symbol=symbol,
-                action=RiskAction.FORCE_FLATTEN,
-                reason="drawdown limit breached",
+            return _emit_risk(
+                "RT.DRAWDOWN_TIER",
+                RiskVerdict(
+                    timestamp_ns=timestamp_ns,
+                    correlation_id=correlation_id,
+                    sequence=sequence,
+                    symbol=symbol,
+                    action=RiskAction.FORCE_FLATTEN,
+                    reason="drawdown limit breached",
+                ),
             )
 
         max_exposure = (
             current_equity * Decimal(str(self._config.max_gross_exposure_pct)) / Decimal("100")
         )
         if exposure >= max_exposure and not exposure_does_not_increase:
-            return RiskVerdict(
-                timestamp_ns=timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=sequence,
-                symbol=symbol,
-                action=RiskAction.REJECT,
-                reason=f"gross exposure limit: {exposure} >= {max_exposure}",
+            return _emit_risk(
+                "RT.EXPOSURE_LIMITS",
+                RiskVerdict(
+                    timestamp_ns=timestamp_ns,
+                    correlation_id=correlation_id,
+                    sequence=sequence,
+                    symbol=symbol,
+                    action=RiskAction.REJECT,
+                    reason=f"gross exposure limit: {exposure} >= {max_exposure}",
+                ),
             )
 
         threshold = Decimal(str(self._config.scale_down_threshold_pct))
         if threshold >= Decimal("1"):
-            return RiskVerdict(
-                timestamp_ns=timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=sequence,
-                symbol=symbol,
-                action=RiskAction.REJECT,
-                reason="scale_down_threshold_pct >= 1.0 is invalid (would divide by zero)",
+            return _emit_risk(
+                "RT.EXPOSURE_LIMITS",
+                RiskVerdict(
+                    timestamp_ns=timestamp_ns,
+                    correlation_id=correlation_id,
+                    sequence=sequence,
+                    symbol=symbol,
+                    action=RiskAction.REJECT,
+                    reason="scale_down_threshold_pct >= 1.0 is invalid (would divide by zero)",
+                ),
             )
         if exposure >= max_exposure * threshold and not exposure_does_not_increase:
             scaling = float((max_exposure - exposure) / (max_exposure * (1 - threshold)))
             scaling = max(0.1, min(1.0, scaling))
-            return RiskVerdict(
-                timestamp_ns=timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=sequence,
-                symbol=symbol,
-                action=RiskAction.SCALE_DOWN,
-                reason=scale_down_reason,
-                scaling_factor=scaling,
+            return _emit_risk(
+                "RT.EXPOSURE_LIMITS",
+                RiskVerdict(
+                    timestamp_ns=timestamp_ns,
+                    correlation_id=correlation_id,
+                    sequence=sequence,
+                    symbol=symbol,
+                    action=RiskAction.SCALE_DOWN,
+                    reason=scale_down_reason,
+                    scaling_factor=scaling,
+                ),
             )
 
         return None

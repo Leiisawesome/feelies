@@ -13,6 +13,7 @@ from enum import Enum, auto
 from math import ceil
 
 from feelies.core.events import LatencyBreach
+from feelies.core.gate_registry import record_verdict
 from feelies.core.platform_config import ENGINE_LATENCY_BUDGETS, EngineLatencyBudget
 from feelies.monitoring.kill_switch import KillSwitch
 
@@ -77,9 +78,11 @@ class _LatencyBudgetMonitor:
             window = self._windows[engine]
             window.append(int(raw))
             if len(window) < budget.window_events:
+                record_verdict("RT.LATENCY_BUDGET", "UNKNOWN", engine)
                 continue
             observed = _p99(window)
             if observed > budget.budget_ns:
+                record_verdict("RT.LATENCY_BUDGET", "FAIL", engine)
                 emitted.append(
                     LatencyBreach(
                         timestamp_ns=timestamp_ns,
@@ -93,6 +96,8 @@ class _LatencyBudgetMonitor:
                         budget_ns=budget.budget_ns,
                     )
                 )
+            else:
+                record_verdict("RT.LATENCY_BUDGET", "PASS", engine)
         return tuple(emitted)
 
     def _status(self, engine: str) -> _BudgetStatus:

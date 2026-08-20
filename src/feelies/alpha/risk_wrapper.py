@@ -33,6 +33,7 @@ from feelies.core.events import (
     SignalDirection,
     SizedPositionIntent,
 )
+from feelies.core.gate_registry import record_verdict
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import RiskConfig
@@ -190,6 +191,11 @@ class AlphaBudgetRiskWrapper:
             try:
                 alpha = self._registry.get(strategy_id)
             except KeyError:
+                record_verdict(
+                    "RT.BUDGET_RESOLVE",
+                    "FAIL",
+                    f"unregistered strategy_id {strategy_id!r}",
+                )
                 return RiskVerdict(
                     timestamp_ns=order.timestamp_ns,
                     correlation_id=order.correlation_id,
@@ -201,6 +207,7 @@ class AlphaBudgetRiskWrapper:
                         "per-alpha budget unknown; order refused"
                     ),
                 )
+            record_verdict("RT.BUDGET_RESOLVE", "PASS", strategy_id)
             budget = alpha.manifest.risk_budget
 
             # 1. Per-alpha position limit (post-fill)

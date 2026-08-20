@@ -31,6 +31,8 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from feelies.core.gate_registry import GATE_ALIASES, record_verdict
+
 _logger = logging.getLogger(__name__)
 
 
@@ -303,41 +305,40 @@ class LayerValidator:
             Filesystem path or sentinel (``<dict>``) for the spec.
             Threaded into all error messages for operator triage.
         """
-        # Gate order makes error reporting deterministic.
-        self._softly(
-            self._check_g1_layer_independence,
-            spec,
-            source,
-            gate="G1",
-        )
-        self._check_g2_event_typing(spec, source)
-        self._softly(
-            self._check_g3_no_cross_horizon_leakage,
-            spec,
-            source,
-            gate="G3",
-        )
-        self._check_g4_regime_gate_purity(spec, source)
-        self._check_g5_signal_purity(spec, source)
-        self._check_g6_feature_dependency_dag(spec, source)
-        self._check_g7_horizon_registration(spec, source)
-        self._check_g8_no_implicit_lookahead(spec, source)
-        self._check_g9_session_alignment(spec, source)
-        self._check_g10_universe_disclosure(spec, source)
-        self._check_g11_factor_neutralization_disclosure(spec, source)
-        self._check_g12_cost_arithmetic_disclosure(spec, source)
+        # Gate order makes error reporting deterministic.  Each call is
+        # bound to a registry row via GATE_ALIASES; G13 is retired and
+        # has no check.  Predicates are unchanged.
+        def _bound(alias: str, check: Any, *, soft: bool = False) -> None:
+            resolved = GATE_ALIASES[alias]
+            stable_id = resolved.stable_id
+            if stable_id is None:
+                raise RuntimeError(f"{alias} is retired and has no check")
+            try:
+                if soft:
+                    self._softly(check, spec, source, gate=alias)
+                else:
+                    check(spec, source)
+            except LayerValidationError as exc:
+                record_verdict(stable_id, "FAIL", str(exc), alias=alias)
+                raise
+            record_verdict(stable_id, "PASS", "", alias=alias)
 
-        # Data-scope and fill-assumption gates.
-        self._check_g14_data_scope(spec, source)
-        self._check_g15_fill_assumptions(spec, source)
-
-        # Trend-mechanism gate.
-        self._check_g16_trend_mechanism_compliance(spec, source)
-
-        # Stage-0 dual-permission actuation gate.  Always blocking — the
-        # bounded-deferral ceiling and the story/decouple coupling are
-        # safety-critical (Inv-11), not research-downgradable.
-        self._check_g17_safety_exit_policy(spec, source)
+        _bound("G1", self._check_g1_layer_independence, soft=True)
+        _bound("G2", self._check_g2_event_typing)
+        _bound("G3", self._check_g3_no_cross_horizon_leakage, soft=True)
+        _bound("G4", self._check_g4_regime_gate_purity)
+        _bound("G5", self._check_g5_signal_purity)
+        _bound("G6", self._check_g6_feature_dependency_dag)
+        _bound("G7", self._check_g7_horizon_registration)
+        _bound("G8", self._check_g8_no_implicit_lookahead)
+        _bound("G9", self._check_g9_session_alignment)
+        _bound("G10", self._check_g10_universe_disclosure)
+        _bound("G11", self._check_g11_factor_neutralization_disclosure)
+        _bound("G12", self._check_g12_cost_arithmetic_disclosure)
+        _bound("G14", self._check_g14_data_scope)
+        _bound("G15", self._check_g15_fill_assumptions)
+        _bound("G16", self._check_g16_trend_mechanism_compliance)
+        _bound("G17", self._check_g17_safety_exit_policy)
 
     def _check_g14_data_scope(self, spec: dict[str, Any], source: str) -> None:
         """G14 — alpha must declare no data dependency beyond L1 NBBO + trades.
