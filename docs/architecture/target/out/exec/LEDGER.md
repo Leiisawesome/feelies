@@ -2193,4 +2193,88 @@ NOTES:           Mechanism: Field.metadata["unit"] plus module-level
                  Left uncommitted: baseline_pre-S-10.json,
                  baseline_post-S-10.json, this ledger entry.
 
+---
+
+## S-11  2026-08-20T14:39:14+08:00
+  STEP:          S-11
+  BASE:          748cc17e6798d61f8443d350bd5e148877dd44ae
+  RESULT SHA:    63e74e1a5a42728b8e4bad3ad304d578756947ef
+  VERDICT:       passed
+  CONFORMANCE:   S13 | failed-before: yes | passes-after: yes | mutation: yes
+                 X6 | failed-before: yes | passes-after: yes | mutation: yes
+                 X6 family (nan, out_of_universe, missing_schema_version)
+                   | failed-before: n/a | fails-now: yes
+                   (strict xfail; family instances land at S-12)
+                 Fail-before (registry absent):
+                   ERROR collecting tests/conformance/test_gate_registry.py
+                   ModuleNotFoundError: No module named 'feelies.core.gate_registry'
+                   X6: 5 failed with the same ModuleNotFoundError;
+                   3 family cases already xfailed.
+  TESTS:         4813 passed / 29 skipped / 11 xfailed
+                 -> 4825 passed / 29 skipped / 14 xfailed
+  PARITY:        hold, 62 constants unmoved | MATCH
+  FILES:         11 declared, 11 committed (clean vs 63e74e1)
+  NET DELTA:     declared src modules +1, public symbols +2,
+                 branch points 329 -> 329, test files +2
+                 actual modules 198 -> 199 (+1)
+                 public_symbols 556 -> 562 (+6)
+                 sloc 43654 -> 44494 (+840)
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   CLEAN (platform-wide -- committed after human go)
+                 FILES reported declared 11, touched 0 (vacuous on the
+                 uncommitted tree; known frozen bug). Actual 11/11.
+  NOTES:         registry is 53 = 19 governance + 34 runtime spine;
+                 RT.SCHEMA_SUPPORTED, RT.CONTRACT_CONFORM and
+                 RT.IN_UNIVERSE are per-boundary family templates whose
+                 instances are generated from the wiring manifest at
+                 S-12, not rows. Three X6 cases (nan, out_of_universe,
+                 missing_schema_version) are xfail(strict) awaiting
+                 those instances. G13 is a retired alias,
+                 stable_id=None, zero LayerValidator methods; warm-up
+                 is RT.FEATURE_WARMTH. Runtime emit sites:
+                 layer_validator (G-aliases), risk_wrapper
+                 (RT.BUDGET_RESOLVE), order_admission (session,
+                 min-size), observe_kill_switch (RT.KILL_SWITCH),
+                 latency_budget.observe, classify_halt_status
+                 (RT.DATA_HEALTH), basic_risk._emit_risk (exposure,
+                 drawdown, buying power, compose), orchestrator
+                 (RT.COST_GATE, RT.DUPLICATE_INTENT). No sequence draw
+                 on the notification path: gate_registry.py contains
+                 no SequenceGenerator, no self._seq, no .publish(.
+                 Orchestrator emits are folded into existing if/return
+                 lines so the Inv-10 wall-clock allowlist line numbers
+                 do not move, and record_verdict returns Literal[False]
+                 so those folds type-check under --strict. Predicates
+                 unchanged, 329 -> 329.
+  FINDINGS:      the verify_step NET DELTA table reported cycles 0 and
+                 alphaleak 0; re-running measure.py directly gives
+                 cycles 1 (feelies.cli -> feelies.cli.main) and
+                 alphaleak 2 (core/platform_config.py:152, :954). The
+                 zeros were a stale evidence read inside the capture,
+                 not a real change. Record against exec-tools-v2.
+                 Also: public symbols landed +6 against a declared +2
+                 -- the supporting names on the new module plus
+                 observe_kill_switch. The plan's NET DELTA understates
+                 it.
+                 verify_step FILES is vacuous on an uncommitted tree
+                 (declared 11, touched 0). Frozen oracle; record
+                 against exec-tools-v2 alongside the uppercase,
+                 unfenced-block, negation-blind substring, and
+                 bare-filename bugs.
+                 Carried: G6 vs empty depends_on_sensors;
+                 load_platform_config + build_platform(config) loses
+                 config-path (S-04c); serialization.py missing
+                 __schema_version__ tag treated as current version
+                 (fail-open) -- its own step; ci.yml G40
+                 continue-on-error: true until G40; ~157 research
+                 cache days stale until after S-17a; baseline COUNTS
+                 not reproducible across RTH; connection.py:353-364
+                 untested live handshake; 11 UNIT_UNDETERMINED fields
+                 block S-24.
+  NEXT:          S-11a fill provenance (boundary). Not started.
+                 Left uncommitted: baseline_pre-S-11.json,
+                 baseline_post-S-11.json, this ledger entry.
+
 
