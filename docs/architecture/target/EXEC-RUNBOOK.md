@@ -199,6 +199,7 @@ The serious case is §4 — an erroneous re-baseline, where constants were updat
 | `--reconcile` shows UNREVIEWED | A commit bypassed the process | Investigate before merging anything. |
 | Cumulative parity delta exceeds declared union | Interaction between steps | Bisect. Do not absorb. |
 | Net delta positive with no justification | Steps adding without deleting | Catch at batch 2, not batch 6. |
+| Suite reports 30 skips, not 28 | Two baseline gates masked by the S-09 cache deferral | See LEDGER.md -> DEFERRAL cache re-ingestion after S-09. Not a regression. |
 
 ---
 

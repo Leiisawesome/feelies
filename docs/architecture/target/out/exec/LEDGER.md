@@ -1994,4 +1994,37 @@ NOTES:           R5 withdrawn — event_schema_hash is the log-level pin.
                  Left uncommitted: baseline_pre-S-09.json,
                  baseline_post-S-09.json, this ledger entry.
 
+---
+
+## DEFERRAL  cache re-ingestion after S-09
+DATE:        2026-08-19
+CAUSE:       schema_version on the Event envelope is inherited into
+             NBBOQuote and Trade. event_to_dict
+             (src/feelies/core/serialization.py:50) iterates
+             __dataclass_fields__, so the field lands in every new JSONL
+             line, and _compute_schema_hash
+             (src/feelies/storage/disk_event_cache.py:60-71) walks the same
+             field set. The hash moved
+             sha256:8ff53428a52107dcaa808fec2be1a4377df8562ec5f2c6d79052bdf1909909a7
+             -> sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa.
+             The invalidation is CORRECT: the on-disk format genuinely
+             changed. The two mechanisms agree by construction.
+SCOPE:       159 cache days, 8 symbols (APP, CROX, DIOD, ENSG, MLI, OLN,
+             PCTY, RMBS), 378 MB under ~/.feelies/cache. Only APP/2026-03-26
+             and the day used by
+             test_two_alphas_hold_live_targets_on_one_symbol gate the test
+             suite; the remainder is research data.
+ACTION NOW:  re-ingest those two days only.
+DEFERRED:    the remaining ~157 days until after S-17a. S-11, S-16 and S-31
+             each add fields and each invalidates the cache again;
+             re-pulling four times is wasted API budget. S-17a is the
+             convergence point.
+WATCH:       until re-ingested, the suite reports 30 skips where 28 is the
+             pre-S-09 figure. Two of those skips are this deferral, not a
+             passing gate. FEELIES_REQUIRE_BASELINE_CACHE=1 turns them into
+             failures. Baseline captures from here carry 30, so a pre-flight
+             count mismatch against baseline_post-S-08.json has this cause.
+ALSO:        APP/2026-03-21 carries ingestion_health=UNKNOWN while the other
+             158 days are HEALTHY. Predates S-09; unrelated; unexamined.
+
 
