@@ -27,6 +27,11 @@ from typing import Any, Literal
 # (disk_event_cache._compute_schema_hash); this integer is the envelope pin.
 SCHEMA_VERSION: int = 1
 
+# Quantity unit lives in Field.metadata["unit"], not as a dataclass field, so
+# name and type are unchanged and event_schema_hash does not move. This token
+# marks a disputed dimension: it is a declaration, not an absence.
+UNIT_UNDETERMINED: str = "undetermined"
+
 
 # ── Base ────────────────────────────────────────────────────────────────
 
@@ -42,6 +47,9 @@ class Event:
     Payload fields such as ``SensorReading.sensor_version`` and
     ``HorizonFeatureSnapshot.feature_versions`` are not this pin.
 
+    Numeric-field units are declared in ``Field.metadata['unit']`` (see
+    ``declared_unit``). They are not dataclass fields.
+
     Immutability is shallow: ``frozen=True`` blocks
     rebinding a field, but events whose fields hold mutable containers
     (e.g. ``Signal.metadata``, ``RiskVerdict.constraints``,
@@ -54,11 +62,17 @@ class Event:
     preferred shape for new schemas.
     """
 
-    timestamp_ns: int
+    timestamp_ns: int = field(metadata={"unit": "ns"})
     correlation_id: str
-    sequence: int
+    sequence: int = field(metadata={"unit": "1"})
     source_layer: str = "UNKNOWN"
-    schema_version: int = SCHEMA_VERSION
+    schema_version: int = field(default=SCHEMA_VERSION, metadata={"unit": "1"})
+
+
+def declared_unit(cls: type[Event], field_name: str) -> str | None:
+    """Return the declared unit for ``field_name``, or ``None`` if undeclared."""
+    raw = cls.__dataclass_fields__[field_name].metadata.get("unit")
+    return raw if isinstance(raw, str) else None
 
 
 # ── Market Data Events ──────────────────────────────────────────────────
@@ -81,20 +95,20 @@ class NBBOQuote(Event):
     """
 
     symbol: str
-    bid: Decimal
-    ask: Decimal
-    bid_size: int
-    ask_size: int
-    bid_exchange: int = 0
-    ask_exchange: int = 0
-    exchange_timestamp_ns: int
-    conditions: tuple[int, ...] = ()
-    indicators: tuple[int, ...] = ()
-    sequence_number: int = 0
-    tape: int = 0
-    participant_timestamp_ns: int | None = None
-    trf_timestamp_ns: int | None = None
-    received_ns: int | None = None
+    bid: Decimal = field(metadata={"unit": "USD"})
+    ask: Decimal = field(metadata={"unit": "USD"})
+    bid_size: int = field(metadata={"unit": UNIT_UNDETERMINED})
+    ask_size: int = field(metadata={"unit": UNIT_UNDETERMINED})
+    bid_exchange: int = field(default=0, metadata={"unit": "1"})
+    ask_exchange: int = field(default=0, metadata={"unit": "1"})
+    exchange_timestamp_ns: int = field(metadata={"unit": "ns"})
+    conditions: tuple[int, ...] = field(default=(), metadata={"unit": "1"})
+    indicators: tuple[int, ...] = field(default=(), metadata={"unit": "1"})
+    sequence_number: int = field(default=0, metadata={"unit": "1"})
+    tape: int = field(default=0, metadata={"unit": "1"})
+    participant_timestamp_ns: int | None = field(default=None, metadata={"unit": "ns"})
+    trf_timestamp_ns: int | None = field(default=None, metadata={"unit": "ns"})
+    received_ns: int | None = field(default=None, metadata={"unit": "ns"})
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -107,20 +121,20 @@ class Trade(Event):
     """
 
     symbol: str
-    price: Decimal
-    size: int
-    exchange: int = 0
+    price: Decimal = field(metadata={"unit": "USD"})
+    size: int = field(metadata={"unit": "share"})
+    exchange: int = field(default=0, metadata={"unit": "1"})
     trade_id: str = ""
-    exchange_timestamp_ns: int
-    conditions: tuple[int, ...] = ()
+    exchange_timestamp_ns: int = field(metadata={"unit": "ns"})
+    conditions: tuple[int, ...] = field(default=(), metadata={"unit": "1"})
     decimal_size: str | None = None
-    sequence_number: int = 0
-    tape: int = 0
-    trf_id: int | None = None
-    trf_timestamp_ns: int | None = None
-    participant_timestamp_ns: int | None = None
-    correction: int | None = None
-    received_ns: int | None = None
+    sequence_number: int = field(default=0, metadata={"unit": "1"})
+    tape: int = field(default=0, metadata={"unit": "1"})
+    trf_id: int | None = field(default=None, metadata={"unit": "1"})
+    trf_timestamp_ns: int | None = field(default=None, metadata={"unit": "ns"})
+    participant_timestamp_ns: int | None = field(default=None, metadata={"unit": "ns"})
+    correction: int | None = field(default=None, metadata={"unit": "1"})
+    received_ns: int | None = field(default=None, metadata={"unit": "ns"})
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -141,7 +155,7 @@ class SymbolHalted(Event):
     symbol: str
     halted: bool
     reason: str = ""
-    blackout_until_ns: int = 0
+    blackout_until_ns: int = field(default=0, metadata={"unit": "ns"})
 
 
 # ── Feature Events ──────────────────────────────────────────────────────
@@ -162,14 +176,14 @@ class RegimeState(Event):
     symbol: str
     engine_name: str
     state_names: tuple[str, ...]
-    posteriors: tuple[float, ...]
-    dominant_state: int
+    posteriors: tuple[float, ...] = field(metadata={"unit": "1"})
+    dominant_state: int = field(metadata={"unit": "1"})
     dominant_name: str
-    horizon_seconds: int = 0
-    stability: float = 1.0
-    posterior_entropy_nats: float = 0.0
+    horizon_seconds: int = field(default=0, metadata={"unit": "s"})
+    stability: float = field(default=1.0, metadata={"unit": "1"})
+    posterior_entropy_nats: float = field(default=0.0, metadata={"unit": "nat"})
     calibrated: bool = True
-    discriminability: float = float("inf")
+    discriminability: float = field(default=float("inf"), metadata={"unit": UNIT_UNDETERMINED})
 
 
 # ── Signal Events ───────────────────────────────────────────────────────
@@ -205,19 +219,19 @@ class Signal(Event):
     symbol: str
     strategy_id: str
     direction: SignalDirection
-    strength: float
-    edge_estimate_bps: float
-    disclosed_cost_total_bps: float = 0.0
+    strength: float = field(metadata={"unit": "1"})
+    edge_estimate_bps: float = field(metadata={"unit": "bps"})
+    disclosed_cost_total_bps: float = field(default=0.0, metadata={"unit": "bps"})
     # Combined exit and entry cost for a reversal; zero for other signals.
-    reversal_cost_estimate_bps: float = 0.0
-    disclosed_margin_ratio: float = 0.0
+    reversal_cost_estimate_bps: float = field(default=0.0, metadata={"unit": "bps"})
+    disclosed_margin_ratio: float = field(default=0.0, metadata={"unit": "1"})
     metadata: dict[str, Any] = field(default_factory=dict)
     layer: Literal["SIGNAL", "PORTFOLIO"] = "SIGNAL"
-    horizon_seconds: int = 0
+    horizon_seconds: int = field(default=0, metadata={"unit": "s"})
     regime_gate_state: Literal["ON", "OFF", "N/A"] = "N/A"
     consumed_features: tuple[str, ...] = ()
     trend_mechanism: TrendMechanism | None = None
-    expected_half_life_seconds: int = 0
+    expected_half_life_seconds: int = field(default=0, metadata={"unit": "s"})
 
 
 # ── Risk Events ─────────────────────────────────────────────────────────
@@ -237,8 +251,10 @@ class RiskVerdict(Event):
     symbol: str
     action: RiskAction
     reason: str
-    scaling_factor: float = 1.0
-    constraints: dict[str, float] = field(default_factory=dict)
+    scaling_factor: float = field(default=1.0, metadata={"unit": "1"})
+    constraints: dict[str, float] = field(
+        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
+    )
 
 
 # ── Order Events ────────────────────────────────────────────────────────
@@ -287,15 +303,15 @@ class OrderRequest(Event):
     symbol: str
     side: Side
     order_type: OrderType
-    quantity: int
-    limit_price: Decimal | None = None
+    quantity: int = field(metadata={"unit": "share"})
+    limit_price: Decimal | None = field(default=None, metadata={"unit": "USD"})
     strategy_id: str = ""
     # True for short-entry sells. HTB fees apply on the fill day only.
     is_short: bool = False
     # Closing-auction orders remain queued until the
     # official close print instead of filling on the continuous book.
     is_moc: bool = False
-    g12_disclosed_cost_total_bps: float = 0.0
+    g12_disclosed_cost_total_bps: float = field(default=0.0, metadata={"unit": "bps"})
     reason: str = ""
 
 
@@ -315,12 +331,12 @@ class OrderAck(Event):
     order_id: str
     symbol: str
     status: OrderAckStatus
-    filled_quantity: int = 0
-    fill_price: Decimal | None = None
-    fees: Decimal = Decimal("0")
-    cost_bps: Decimal = Decimal("0")
+    filled_quantity: int = field(default=0, metadata={"unit": "share"})
+    fill_price: Decimal | None = field(default=None, metadata={"unit": "USD"})
+    fees: Decimal = field(default=Decimal("0"), metadata={"unit": "USD"})
+    cost_bps: Decimal = field(default=Decimal("0"), metadata={"unit": "bps"})
     reason: str = ""
-    request_sequence: int | None = None
+    request_sequence: int | None = field(default=None, metadata={"unit": "1"})
 
 
 # ── Position Events ─────────────────────────────────────────────────────
@@ -338,12 +354,12 @@ class PositionUpdate(Event):
     """
 
     symbol: str
-    quantity: int
-    avg_price: Decimal
-    realized_pnl: Decimal
-    unrealized_pnl: Decimal
-    cumulative_fees: Decimal = Decimal("0")
-    cost_bps: Decimal = Decimal("0")
+    quantity: int = field(metadata={"unit": "share"})
+    avg_price: Decimal = field(metadata={"unit": "USD"})
+    realized_pnl: Decimal = field(metadata={"unit": "USD"})
+    unrealized_pnl: Decimal = field(metadata={"unit": "USD"})
+    cumulative_fees: Decimal = field(default=Decimal("0"), metadata={"unit": "USD"})
+    cost_bps: Decimal = field(default=Decimal("0"), metadata={"unit": "bps"})
 
 
 # ── System Events ───────────────────────────────────────────────────────
@@ -375,7 +391,7 @@ class MetricEvent(Event):
 
     layer: str
     name: str
-    value: float
+    value: float = field(metadata={"unit": UNIT_UNDETERMINED})
     metric_type: MetricType
     tags: dict[str, str] = field(default_factory=dict)
 
@@ -440,9 +456,9 @@ class LatencyBreach(Event):
 
     engine: str
     statistic: str
-    window_events: int
-    observed_ns: int
-    budget_ns: int
+    window_events: int = field(metadata={"unit": "1"})
+    observed_ns: int = field(metadata={"unit": "ns"})
+    budget_ns: int = field(metadata={"unit": "ns"})
 
 
 # Why a regime gate force-closed and drove safety OFF.  One token per legacy
@@ -485,9 +501,9 @@ class SafetyStateChange(Event):
     trend_mechanism: TrendMechanism | None = None
     regime_gate_state: Literal["ON", "OFF", "N/A"] = "OFF"
     consumed_features: tuple[str, ...] = ()
-    expected_half_life_seconds: int = 0
-    disclosed_cost_total_bps: float = 0.0
-    disclosed_margin_ratio: float = 0.0
+    expected_half_life_seconds: int = field(default=0, metadata={"unit": "s"})
+    disclosed_cost_total_bps: float = field(default=0.0, metadata={"unit": "bps"})
+    disclosed_margin_ratio: float = field(default=0.0, metadata={"unit": "1"})
 
 
 # Layered sensor, signal, and portfolio event contracts.
@@ -541,10 +557,10 @@ class RegimeHazardSpike(Event):
     symbol: str
     engine_name: str
     departing_state: str
-    departing_posterior_prev: float
-    departing_posterior_now: float
+    departing_posterior_prev: float = field(metadata={"unit": "1"})
+    departing_posterior_now: float = field(metadata={"unit": "1"})
     incoming_state: str | None
-    hazard_score: float
+    hazard_score: float = field(metadata={"unit": UNIT_UNDETERMINED})
 
 
 # ── Supporting types for new events ─────────────────────────────────────
@@ -612,15 +628,15 @@ class HorizonTick(Event):
     and consumers fall back to ``timestamp_ns``.
     """
 
-    horizon_seconds: int
-    boundary_index: int
+    horizon_seconds: int = field(metadata={"unit": "s"})
+    boundary_index: int = field(metadata={"unit": "1"})
     session_id: str
     scope: Literal["SYMBOL", "UNIVERSE"]
-    boundary_timestamp_ns: int = 0
+    boundary_timestamp_ns: int = field(default=0, metadata={"unit": "ns"})
     symbol: str | None = None
     # Nominal grid time, distinct from the event that triggered this boundary.
     # Zero means unset for direct construction; the scheduler always sets it.
-    boundary_ts_ns: int = 0
+    boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
 
     @property
     def asof_timestamp_ns(self) -> int:
@@ -645,8 +661,8 @@ class SensorReading(Event):
     symbol: str
     sensor_id: str
     sensor_version: str
-    value: float | tuple[float, ...]
-    confidence: float = 1.0
+    value: float | tuple[float, ...] = field(metadata={"unit": UNIT_UNDETERMINED})
+    confidence: float = field(default=1.0, metadata={"unit": "1"})
     warm: bool = True
     provenance: SensorProvenance = field(default_factory=SensorProvenance)
     parent_correlation_id: str = ""
@@ -662,13 +678,13 @@ class HorizonFeatureSnapshot(Event):
     """
 
     symbol: str
-    horizon_seconds: int
-    boundary_index: int
+    horizon_seconds: int = field(metadata={"unit": "s"})
+    boundary_index: int = field(metadata={"unit": "1"})
     # Exact nominal boundary time, carried verbatim from the triggering
     # ``HorizonTick.boundary_ts_ns``.  ``timestamp_ns`` remains the trigger
     # time; this is the regular-grid anchor for IC labels / forensics.
-    boundary_ts_ns: int = 0
-    values: dict[str, float] = field(default_factory=dict)
+    boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
+    values: dict[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
     warm: dict[str, bool] = field(default_factory=dict)
     stale: dict[str, bool] = field(default_factory=dict)
     source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -688,8 +704,8 @@ class CrossSectionalContext(Event):
     snapshot was stale or not warm at the barrier time.
     """
 
-    horizon_seconds: int
-    boundary_index: int
+    horizon_seconds: int = field(metadata={"unit": "s"})
+    boundary_index: int = field(metadata={"unit": "1"})
     universe: tuple[str, ...]
     signals_by_symbol: dict[str, "Signal | None"] = field(default_factory=dict)
     # Per-symbol map strategy_id -> latest feeder Signal at the portfolio barrier.
@@ -700,7 +716,7 @@ class CrossSectionalContext(Event):
         default_factory=dict,
     )
     snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
-    completeness: float = 0.0
+    completeness: float = field(default=0.0, metadata={"unit": "1"})
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -718,15 +734,21 @@ class SizedPositionIntent(Event):
 
     strategy_id: str
     layer: Literal["PORTFOLIO"] = "PORTFOLIO"
-    horizon_seconds: int = 0
-    target_positions: dict[str, TargetPosition] = field(default_factory=dict)
-    factor_exposures: dict[str, float] = field(default_factory=dict)
-    expected_turnover_usd: float = 0.0
-    expected_gross_exposure_usd: float = 0.0
-    mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
+    horizon_seconds: int = field(default=0, metadata={"unit": "s"})
+    target_positions: dict[str, TargetPosition] = field(
+        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
+    )
+    factor_exposures: dict[str, float] = field(
+        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
+    )
+    expected_turnover_usd: float = field(default=0.0, metadata={"unit": "USD"})
+    expected_gross_exposure_usd: float = field(default=0.0, metadata={"unit": "USD"})
+    mechanism_breakdown: dict[TrendMechanism, float] = field(
+        default_factory=dict, metadata={"unit": "1"}
+    )
     # Per-symbol one-way cost disclosed by the consumed signals.
     disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
-        default_factory=dict,
+        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
     # Digest of the signals, positions, and parameters that produced the targets.
     decision_basis_hash: str = ""

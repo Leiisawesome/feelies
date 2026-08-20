@@ -21,9 +21,8 @@ from dataclasses import dataclass
 
 SEVERITIES = ("P0", "P1", "P2")
 
-#: Phase 5 catalogued gaps G01..G45.  G46 is a Phase 6 §8.1 proposal and is
-#: registered by S-10, the step that closes it.
-GAP_ID_RANGE = range(1, 46)
+#: Phase 5 catalogued G01..G45. G46 (Phase 6 §8.1) is registered by S-10.
+GAP_ID_RANGE = range(1, 47)
 
 
 @dataclass(frozen=True)
@@ -83,6 +82,7 @@ GAP_REGISTRY: dict[str, GapEntry] = {
     "G43": GapEntry("P0", ("S-07",), ("X1", "X10")),
     "G44": GapEntry("P2", ("S-31",), ("S5",)),
     "G45": GapEntry("P2", ("S-32",), ("S5",)),
+    "G46": GapEntry("P1", ("S-10",), ("S9",)),
 }
 
 
