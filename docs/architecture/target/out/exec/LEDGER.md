@@ -2277,4 +2277,71 @@ NOTES:           Mechanism: Field.metadata["unit"] plus module-level
                  Left uncommitted: baseline_pre-S-11.json,
                  baseline_post-S-11.json, this ledger entry.
 
+---
+
+## S-11a  2026-08-20T16:28:35+08:00
+  STEP:          S-11a
+  BASE:          2f2c1ff7893775a839b5e4126a28113a0b0765d0
+  RESULT SHA:    not committed — reverted, no src edit
+  VERDICT:       blocked
+  CONFORMANCE:   R3 | failed-before: no | passes-after: n/a | mutation: n/a
+                 tests/conformance/test_registration_order.py created, then
+                 deleted on revert. PYTHONHASHSEED=0:
+                   1 passed in 0.15s
+                 Permutation took effect: crossing-quote handler order was
+                 ["router", "sensor"] vs ["sensor", "router"]. Fill streams
+                 of the resting through-fill were identical. R3 passed
+                 before any src change, so it cannot guard the field.
+  TESTS:         pre-S-11a capture 4826 passed / 0 failed / 28 skipped /
+                 14 xfailed (skip vs post-S-11 4825/29 is wall-clock;
+                 failed=0). Determinism 145 passed. R3 1 passed before
+                 implement. No post-implement suite.
+  PARITY:        declared hold, 62 constants | actual unmoved vs
+                 baseline_post-S-11.json (62/62, 0 changed) | MATCH
+                 (no src edit). Schema hash
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa
+                 (pre-flight only; field never landed).
+  FILES:         5 declared, 1 created (R3), restored. Branch exec/S-11a
+                 deleted. HEAD arch/exec @ 2f2c1ff.
+  NET DELTA:     declared src modules 0, public symbols +1, branch
+                 points 0, test files 0 (R3 already exists — plan text)
+                 vs FILES creating R3 | actual 0 / 0 / 0 / 0
+  DETERMINISM:   145 passed (pre-capture)
+  VERIFY_STEP:   not run — no implement
+  NOTES:         Provenance was to live on Fill so event_schema_hash
+                 (NBBOQuote+Trade only) would not move. There is no Fill
+                 type; fills are OrderAck. Putting the field on OrderAck
+                 would fail S8 (PINNED_PAYLOAD) and S8's file is not in
+                 FILES — a sixth path. R3 originates here; S-12 extends
+                 it. bootstrap.py:358's ordering requirement was not
+                 deleted (no implement). Seq-draw invariance not
+                 re-verified beyond "no src edit".
+  FINDINGS:      PLAN DEFECT — R3 as specified is unsatisfiable as a
+                 fail-then-pass gate. Resting through-fills take the
+                 quote argument to on_quote; a second NBBOQuote
+                 subscriber that does not submit does not change the
+                 OrderAck stream. The permutation was observed and the
+                 streams matched, so R3 passed before the field exists.
+                 A same-tick submit stand-in would fail today and still
+                 fail after an OrderAck field. The comment at
+                 bootstrap.py:358 is not a load-bearing fill-stream
+                 dependence for observer-style sensors.
+                 Also: no Fill event; S8 not in FILES. Plan must name
+                 the type (OrderAck) and either add
+                 tests/conformance/test_schema_drift.py to FILES or
+                 place provenance where S8 does not pin.
+                 Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA; ~157 research cache
+                 days stale until after S-17a; 11 UNIT_UNDETERMINED
+                 block S-24; three X6 cases xfail(strict) awaiting
+                 S-12 family instances.
+  NEXT:          plan amend, then retry S-11a. Do not start S-12.
+                 Left uncommitted: baseline_pre-S-11a.json, this
+                 ledger entry.
+
 
