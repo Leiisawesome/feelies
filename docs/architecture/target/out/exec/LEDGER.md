@@ -2014,16 +2014,25 @@ SCOPE:       159 cache days, 8 symbols (APP, CROX, DIOD, ENSG, MLI, OLN,
              and the day used by
              test_two_alphas_hold_live_targets_on_one_symbol gate the test
              suite; the remainder is research data.
-ACTION NOW:  re-ingest those two days only.
+ACTION NOW:  DONE. Re-ingested APP/2026-03-26 (APP baseline oracle) and
+             APP/2026-03-26 (test_two_alphas_hold_live_targets_on_one_symbol).
+             Verified with FEELIES_REQUIRE_BASELINE_CACHE=1 and
+             PYTHONHASHSEED=0:
+               uv run pytest -q -m functional
+             -> 19 passed, 24 skipped, 4808 deselected. All 24 functional
+             skips are environmental (14 IB Gateway unreachable, 8 outside
+             US RTH, 1 no live Massive quote, 1 opt-in
+             PAPER_E2E_SIGNAL_PATH). None is cache- or schema-related, so
+             the baseline gate ran and matched rather than skipping.
 DEFERRED:    the remaining ~157 days until after S-17a. S-11, S-16 and S-31
              each add fields and each invalidates the cache again;
              re-pulling four times is wasted API budget. S-17a is the
              convergence point.
-WATCH:       until re-ingested, the suite reports 30 skips where 28 is the
-             pre-S-09 figure. Two of those skips are this deferral, not a
-             passing gate. FEELIES_REQUIRE_BASELINE_CACHE=1 turns them into
-             failures. Baseline captures from here carry 30, so a pre-flight
-             count mismatch against baseline_post-S-08.json has this cause.
+WATCH:       The previously-masked baseline gates now run. Current full
+             suite: 4812 passed, 29 skipped, 10 xfailed. Skip counts remain
+             wall-clock dependent because the RTH-gated set moves, so a
+             count mismatch at pre-flight is informational unless
+             failed > 0 or the parity map moved.
 ALSO:        APP/2026-03-21 carries ingestion_health=UNKNOWN while the other
              158 days are HEALTHY. Predates S-09; unrelated; unexamined.
 
