@@ -1051,6 +1051,8 @@ PROBLEM:         CORE §C.8 states that a field whose unit is not declared does
                  every extraction.
 FILES:           src/feelies/core/events.py (unit declarations)
                  tests/conformance/test_unit_declaration.py (S9)
+                 tests/conformance/registry.py (register G46 -- S-01 deferred it
+                 here and registry.py names S-10 as its registrar)                 
 WHY THIS OWNER:  Units are a property of the contract, so they belong on the
                  contract in Tier 0, not in the consumer that interprets them.
 REFACTOR PATH:   **Artifact + closure test, atomic.** (1) a unit declaration
