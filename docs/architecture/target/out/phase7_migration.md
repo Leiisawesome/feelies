@@ -1094,6 +1094,13 @@ FILES:           src/feelies/core/gate_registry.py (the gate registry, new — 5
                  here — S-06 created the file with its first case; this step
                  adds FIX-3's remaining six input classes, which need a *named*
                  registered gate and so could not land earlier)
+                 src/feelies/alpha/risk_wrapper.py (RT.BUDGET_RESOLVE)
+                 src/feelies/execution/order_admission.py (session, min-size, cost)
+                 src/feelies/monitoring/kill_switch.py (RT.KILL_SWITCH)
+                 src/feelies/monitoring/latency_budget.py (RT.LATENCY_BUDGET)
+                 src/feelies/ingestion/data_integrity.py (RT.DATA_HEALTH)
+                 src/feelies/risk/basic_risk.py (leg D)
+                 src/feelies/kernel/orchestrator.py (spine legs)                 
 WHY THIS OWNER:  Phase 3 §D specifies 53 declared gates — 19 governance, 34
                  runtime spine — in one registry as data, from which ordinals,
                  docs and test bindings are generated. That resolves the G13
@@ -1107,6 +1114,23 @@ REFACTOR PATH:   **Artifact + closure test, atomic.** (1) the registry with all
                  (`src/feelies/promotion/evidence.py:1720-1731`); (3) bind the
                  existing 329 call sites to registry rows without changing any
                  predicate; (4) X6 asserting every gate emits a verdict.
+                 (5) THE REGISTRY IS 53 ROWS: 19 governance + 34 runtime spine.
+                 RT.SCHEMA_SUPPORTED, RT.CONTRACT_CONFORM and RT.IN_UNIVERSE are
+                 per-boundary FAMILY TEMPLATES per Phase 3 D.4 -- their instance
+                 count is generated from the wiring manifest (S-12), not
+                 hand-counted as rows. A registry of 56 is a defect.
+                 (6) X6 REQUIRES AN EMITTED RECORD, NOT AN API PROBE. Phase 6:
+                 each FIX-3 class is refused by a named registered gate AND
+                 produces an emitted record; a silent skip fails even when the
+                 exposure outcome is correct. Phase 3 D.9: FAIL/UNKNOWN always
+                 on the notification channel. Runtime sites must call
+                 record_verdict at their existing refuse/allow -- that is not a
+                 predicate change.
+                 (7) The three FIX-3 classes bound to family templates
+                 (nan, out_of_universe, missing_schema_version) have no named
+                 row until family instances exist at S-12. Bind them to the
+                 family template ID and mark those X6 cases
+                 xfail(strict=True, reason="family instances land at S-12").                 
 BLAST RADIUS:    platform-wide by reach, boundary by behaviour — 329 sites gain
                  a registry binding; **no predicate changes**. This is the one
                  place a wide reach is accepted before wave E, because every
@@ -1128,8 +1152,9 @@ PARITY IMPACT:   hold — all 26 baselines, conditional on the emission channel
 DELETES:         the G13 hole; the two-ladder split; 16 string-keyed method
                  dispatches in `LayerValidator` replaced by registry rows.
                  §G.10: contract definition.
-NET DELTA:       src modules +1, public symbols +2, branch points **329 -> 329**
-                 (bound, not added). Test files +2.
+NET DELTA:       src modules +1, public symbols +2, branch points 329 -> 329
+                 (bound, not added; record_verdict calls sit at existing
+                 decision points). Test files +2.
 ROLLBACK:        revert. The 329 sites lose their binding and behave as today.
                  Reverting after S-22 is harder — see G.7's dependency note.
 ```
