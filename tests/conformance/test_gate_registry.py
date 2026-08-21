@@ -108,6 +108,62 @@ def test_s13_family_templates_are_templates_not_rows() -> None:
     )
 
 
+def test_s13_generated_family_instances_match_wiring_manifest() -> None:
+    """D.4: instance count comes from the wiring manifest, not a hand count.
+
+    Generated instances are additional to the 53 hand-written rows and live
+    in FAMILY_INSTANCES (family = template id). GATE_REGISTRY stays the
+    53 rows (family = "none"). Template ids remain absent as rows.
+    """
+    from feelies.core import gate_registry as gr
+    from feelies.core.wiring_manifest import SUBSCRIPTIONS
+
+    expected = {
+        f"{template}:{sub.event_type}:{sub.subscriber}"
+        for template in FAMILY_TEMPLATES
+        for sub in SUBSCRIPTIONS
+    }
+    generated = getattr(gr, "FAMILY_INSTANCES", {})
+    actual = set(generated)
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    assert not missing and not extra, (
+        "generated family instances diverge from the wiring manifest: "
+        f"missing {missing}, extra {extra}"
+    )
+    leaked = sorted(gid for gid in FAMILY_TEMPLATES if gid in GATE_REGISTRY)
+    assert leaked == [], (
+        "family templates recorded as hand-written rows: " + ", ".join(leaked)
+    )
+    overlap = sorted(actual & set(GATE_REGISTRY))
+    assert overlap == [], (
+        "generated instances collided with hand-written rows: "
+        + ", ".join(overlap)
+    )
+    from tests.conformance.test_wiring_manifest import _measure_phase4
+
+    runtime = _measure_phase4()
+    needed = {
+        f"{template}:{event_type}:{subscriber}"
+        for template in FAMILY_TEMPLATES
+        for event_type, subscriber in runtime
+    }
+    missing_runtime = sorted(needed - actual)
+    assert not missing_runtime, (
+        "generated family instances missing for receiving boundaries: "
+        + ", ".join(missing_runtime)
+    )
+    handwritten = {
+        gid for gid, row in GATE_REGISTRY.items() if row.family == "none"
+    }
+    assert handwritten == set(GATE_REGISTRY)
+    assert len(handwritten) == 53
+    for inst in generated.values():
+        assert inst.family in FAMILY_TEMPLATES
+        assert inst.stable_id not in GATE_REGISTRY
+        assert inst.stable_id not in FAMILY_TEMPLATES
+
+
 def test_s13_every_row_has_required_fields_and_a_bound_test() -> None:
     missing: list[str] = []
     for gate_id, row in GATE_REGISTRY.items():
