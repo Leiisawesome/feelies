@@ -1459,7 +1459,21 @@ REFACTOR PATH:   **Artifact + closure test, atomic.** (1) registry mapping
                  stream -> sequence authority and contract -> sole producer;
                  (2) S12 asserting closure both ways; (3) `SequenceGenerator`
                  gains a required stream name so an unregistered generator
-                 cannot be constructed.
+                 cannot be constructed.(3) `stream` is a REQUIRED KEYWORD ARGUMENT on SequenceGenerator, enforced by S12 over PRODUCTION call sites
+                 only, not by the constructor signature. A required positional
+                 would TypeError 154 constructions across 65 test files and 21
+                 across 7 scripts -- out of proportion to the step, and the
+                 registry is a production invariant. S12 asserts: every
+                 SequenceGenerator in src/feelies passes stream=, every stream
+                 named there is in the registry, and every registry stream is
+                 constructed. Tests and scripts may construct unnamed
+                 generators; they are not authorities.
+                 (4) the stream list and the contract -> producer rows are
+                 DERIVED, not invented: streams from the src/feelies
+                 construction sites found by the S12 scan, producers from the
+                 publish sites already enumerated in wiring_manifest.SUBSCRIPTIONS
+                 and gate_registry. If a stream or contract cannot be attributed
+                 from those, STOP and report it rather than choosing an owner. 
 BLAST RADIUS:    boundary — 26 construction sites gain a name
 VALIDATED BY:    S12, all 26 baselines, the parity oracle,
                  `tests/determinism/test_legacy_sequence_isolation.py`
@@ -1469,7 +1483,7 @@ PARITY IMPACT:   All 26 hold. Naming a generator changes no draw order. This is
                  step that changes draw counts is visible in the registry diff
                  rather than discovered by a broken hash.
 DELETES:         13 implicit `thread_safe=True` defaults become explicit;
-                 the unnamed-generator construction path
+                 the unnamed-generator construction path the unnamed-generator construction path IN PRODUCTION only.
 NET DELTA:       src modules +1, public symbols +1, branch points 0.
                  Test files +1.
 ROLLBACK:        revert; generators lose their names.
