@@ -1292,7 +1292,11 @@ FILES:           src/feelies/execution/passive_limit_router.py
                  tests/kernel/test_orchestrator_exit_composer_routing.py:83
                  tests/kernel/test_orchestrator_bus_sized_intent.py:92
                  tests/determinism/test_forced_exit_attribution_replay.py:85
-                 tests/kernel/test_orchestrator_async_fill_latency.py:41                 
+                 tests/kernel/test_orchestrator_async_fill_latency.py:41
+                 tests/kernel/test_orchestrator_order_routing.py:98-101
+                 (monkeypatches order_router.submit with raise_on_submit(_order);
+                 must accept and ignore triggering_quote so the RuntimeError it
+                 asserts is not preempted by a TypeError)                                  
 BLAST RADIUS:    boundary -- one pricing source changes on the forced-exit path
 VALIDATED BY:    R3 as extended with its fail-first proof, all 26 baselines, the
                  parity oracle, mypy
