@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-08-21T06:43:17.852605+00:00",
+  "captured_at": "2026-08-21T08:41:08.399538+00:00",
   "determinism": {
     "command": "uv run pytest tests/determinism -q",
     "deselected": 0,
@@ -8,7 +8,7 @@
     "failed": 0,
     "passed": 145,
     "skipped": 0,
-    "tail": "........................................................................ [ 49%]\n........................................................................ [ 99%]\n.                                                                        [100%]\n145 passed in 9.30s"
+    "tail": "........................................................................ [ 49%]\n........................................................................ [ 99%]\n.                                                                        [100%]\n145 passed in 8.70s"
   },
   "evidence": {
     "alphaleak": {
@@ -27,27 +27,10 @@
     }
   },
   "git": {
-    "branch": "exec/S-11b",
-    "dirty": true,
-    "porcelain": [
-      "M docs/architecture/target/out/exec/LEDGER.md",
-      " M src/feelies/broker/ib/router.py",
-      " M src/feelies/execution/backend.py",
-      " M src/feelies/execution/backtest_router.py",
-      " M src/feelies/execution/passive_limit_router.py",
-      " M src/feelies/kernel/orchestrator.py",
-      " M src/feelies/storage/submitted_order_journal.py",
-      " M tests/determinism/test_forced_exit_attribution_replay.py",
-      " M tests/kernel/test_orchestrator_async_fill_latency.py",
-      " M tests/kernel/test_orchestrator_bus_sized_intent.py",
-      " M tests/kernel/test_orchestrator_exit_composer_routing.py",
-      " M tests/kernel/test_orchestrator_hazard_exit_routing.py",
-      " M tests/kernel/test_orchestrator_order_routing.py",
-      "?? docs/architecture/target/out/exec/baseline_post-S-11b.json",
-      "?? docs/architecture/target/out/exec/baseline_pre-S-11b.json",
-      "?? tests/conformance/test_registration_order.py"
-    ],
-    "sha": "4a6c4c16c46b1a8ca1398bef30d314720f9e9bd2"
+    "branch": "arch/exec",
+    "dirty": false,
+    "porcelain": [],
+    "sha": "d6f9fe07eb173f54294e916afec0d09d0e55b098"
   },
   "label": "post-S-11b",
   "parity": {
@@ -121,9 +104,9 @@
     "errors": 0,
     "exit_code": 0,
     "failed": 0,
-    "passed": 4836,
-    "skipped": 19,
-    "tail": "\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_strong_alpha_passes_default_validator\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:478: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_marginal_alpha_fails_validator\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:500: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_explicit_trial_variance_used\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:546: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev_default = build_dsr_evidence(\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n4836 passed, 19 skipped, 14 xfailed, 48 warnings in 241.74s (0:04:01)"
+    "passed": 4837,
+    "skipped": 18,
+    "tail": "\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_strong_alpha_passes_default_validator\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:478: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_marginal_alpha_fails_validator\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:500: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_explicit_trial_variance_used\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:546: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev_default = build_dsr_evidence(\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n4837 passed, 18 skipped, 14 xfailed, 48 warnings in 218.68s (0:03:38)"
   },
   "tools_fingerprint": {
     "files": 2,
