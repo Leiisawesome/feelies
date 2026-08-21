@@ -200,6 +200,7 @@ The serious case is §4 — an erroneous re-baseline, where constants were updat
 | Cumulative parity delta exceeds declared union | Interaction between steps | Bisect. Do not absorb. |
 | Net delta positive with no justification | Steps adding without deleting | Catch at batch 2, not batch 6. |
 | Suite skip count mismatches a captured baseline | RTH-gated skips move with wall clock; S-09 gating-day re-ingest is done. Last full suite: 4812 passed / 29 skipped / 10 xfailed. Informational unless failed > 0 or the parity map moved. | See LEDGER.md -> DEFERRAL cache re-ingestion after S-09. |
+| Baseline capture reports RED with failed == 1 | IB after-hours test, no reachable gateway | See LEDGER.md -> EXEMPTION IB after-hours failure. Not a regression. failed > 1 or a different test is a stop. |
 
 ---
 

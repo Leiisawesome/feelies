@@ -2834,5 +2834,28 @@ NOTES:           Mechanism: Field.metadata["unit"] plus module-level
                  baseline_pre-S-12a.json, baseline_post-S-12a.json,
                  this ledger entry.
 
+---
+
+## EXEMPTION  IB after-hours failure in the reference baselines
+DATE:        2026-08-21
+FAILURE:     tests/broker/ib/test_ib_functional.py::TestIBGatewayFunctional::
+             test_after_hours_reject_surfaces_as_rejected
+             "AssertionError: expected terminal cleanup, got []"
+PRESENT IN:  baseline_post-S-12.json (4848 passed, 1 failed, exit 1) and
+             baseline_post-S-12a.json (4852 passed, 1 failed, exit 1).
+             baseline.py reports "BASELINE: RED -- do not start execution".
+CAUSE:       environmental. Requires a reachable IB Gateway at
+             127.0.0.1:4002 and a live after-hours session. The other
+             thirteen tests in that file skip when the gateway is
+             unreachable; this one runs and fails. Predates S-12 and S-12a;
+             neither step touches broker/ib/.
+DECISION:    proceed. This one failure is the accepted baseline state until
+             re-captured with a reachable gateway. It is NOT a regression.
+WATCH:       a pre-flight capture reporting failed == 1 on THIS test only is
+             expected. failed > 1, or a different test, is a stop. Re-capture
+             during US market hours with IB Gateway running to clear it.
+NOTE:        the S-12 ledger entry records the baseline as GREEN; the
+             artifact says otherwise and the artifact wins.
+
 
 
