@@ -1375,8 +1375,15 @@ PARITY IMPACT:   **All 26 must hold, and R3 is what proves it.** Declaring the
 DELETES:         the emergent subscription graph; up to 6 inert publishes; 45
                  external attribute assignments -> allowlisted composition-root
                  set; 10 cross-object private accesses;
-                 `subscribe_all` (0 call sites, `src/feelies/bus/event_bus.py:55`)
-NET DELTA:       src modules +1, public symbols +2 -1 (`subscribe_all` deleted),
+                 `subscribe_all` (0 call sites, `src/feelies/bus/event_bus.py:55`) `subscribe_all` is NOT deleted here. Zero call sites in
+                 src/feelies apart from its definition, but six outside FILES
+                 use it: tests/bus/test_event_bus.py (3),
+                 tests/kernel/test_orchestrator.py (2),
+                 tests/kernel/test_single_writer_invariant.py,
+                 tests/fixtures/replay.py,
+                 tests/conformance/harness/engine_probe.py (HARN-1) and
+                 scripts/smoke_pipeline.py. Removing it is a separate cleanup.
+NET DELTA:       src modules +1, public symbols +2 (`subscribe_all` deleted),
                  branch points +1 (the depth bound).
                  Test files +4.
 ROLLBACK:        revert — but this is the least cleanly revertible step in wave
