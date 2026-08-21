@@ -2593,4 +2593,135 @@ NOTES:           Mechanism: Field.metadata["unit"] plus module-level
                  baseline_pre-S-11b.json, baseline_post-S-11b.json,
                  this ledger entry.
 
+---
+
+## S-12  2026-08-21T18:20:00+08:00
+  STEP:          S-12
+  BASE:          ac8aa41bb1c175504c4ade98c407843efecb8d60
+  RESULT SHA:    0fa569e41334e22c6dd23e6d9c0fc562fca802fb
+  VERDICT:       passed
+  CONFORMANCE:   S15, S17, X8, X9, R3-manifest | failed-before: yes |
+                 passes-after: yes | mutation: yes
+                 Fail-before (10 failed, 3 passed in 2.06s):
+                   S15 graph: subscription not in the manifest:
+                     RegimeState RegimeStateCache
+                   S15 hash: wiring manifest is empty
+                   S17 injection leftover: metric_collector._store_raw_events,
+                     module._construct, orchestrator.config_snapshot,
+                     orchestrator.ib_connection, orchestrator.live_feed
+                   S17 assignment allowlist: 47 sites; first
+                     bootstrap.py:601 orchestrator.config_snapshot
+                   S17 private allowlist: 10 sites; first
+                     bootstrap.py:428 metric_collector._store_raw_events
+                   X8 bound: EventBus has no cascade depth bound
+                   X8 fail-closed: same, bound 0
+                   X9 consumer: KillSwitchActivation has no subscriber
+                   X9 observable: no subscriber
+                   R3 new: wiring manifest is empty
+                 3 passed (must stay green): S-11b R3 fill-stream;
+                 X9 fail-closed without bus delivery; X9 durable
+                 (InMemoryKillSwitch.history).
+                 After implement: 13 passed in the five conformance
+                 files. Mutation: removed
+                 Subscription(4, SensorReading, HorizonAggregator);
+                 S15 failed naming "SensorReading HorizonAggregator";
+                 restore SHA256
+                 e2640f66cf4909bacc0f27ee97cb8693a154b764593800a84befa3b2f8d00b74
+                 BYTE_IDENTICAL.
+  TESTS:         4837 passed / 0 failed / 18 skipped / 14 xfailed
+                 -> 4849 passed / 0 failed / 18 skipped / 14 xfailed
+                 +12 are S15(2)+S17(3)+X8(2)+X9(4)+R3-manifest(1).
+                 determinism 145 -> 145. kernel 389 passed. mypy clean
+                 (200 files). wall-clock 2 passed. conformance 67
+                 passed / 14 xfailed (S11 still xfail on
+                 StateTransition; old S17 still xfail; three X6 still
+                 xfail). Post-S-12 capture BASELINE: GREEN.
+  PARITY:        declared hold, all 26, R3 proves it | actual 62
+                 constants unmoved, 0 changed | MATCH vs
+                 baseline_pre-S-12.json. R3 manifest permutation
+                 (forward vs reversed EventBus.subscribe buffer) hashes
+                 the stop-exit OrderAck stream identically.
+  FILES:         8 declared, 8 touched, 8 committed (clean vs 0fa569e).
+                 verify_step before commit reported touched 0
+                 (uncommitted tree).
+  NET DELTA:     declared src modules +1, public symbols +2,
+                 branch points +1, test files +4
+                 (plan amended: subscribe_all kept)
+                 actual modules 199 -> 200 (+1)
+                 public_symbols 562 -> 564 (+2)
+                 sloc 44528 -> 44773 (+245)
+                 n_edges 626 -> 628
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   S-12 --base ac8aa41 (pre-commit): FILES clean
+                 (touched 0, uncommitted); PARITY holds; NET DELTA
+                 compared by eye against then-stale "subscribe_all
+                 deleted"; overall CLEAN, platform-wide gate.
+                 After the amend, public symbols +2 MATCH.
+  NOTES:         Order was measured by wrapping EventBus.subscribe
+                 during build_platform under the phase-4 config
+                 (tests/integration/test_phase4_e2e.py) with
+                 PYTHONHASHSEED=0 -- 26 runtime rows, ordinals
+                 00-25, conditional hazard/deferral/composer rows in
+                 the slot they occupy when they attach. S15 is
+                 runtime subset-of declared. The bootstrap NBBOQuote
+                 lambda was renamed _on_backtest_quote so the
+                 subscriber id is stable. Six zero-subscriber types:
+                 OrderAck, PositionUpdate, RiskVerdict, SymbolHalted
+                 and KillSwitchActivation each gained a consumer via
+                 _NotificationObserver; StateTransition is
+                 reclassified as a notification record with its
+                 publish kept for S-31, so S11 stays xfail. No
+                 publish was removed, so no type re-pins. Cascade
+                 bound is 16; at the limit publish raises
+                 RuntimeError matching "cascade depth" and the nested
+                 event is not delivered. KillSwitchActivation's
+                 consumer is _NotificationObserver.on_event; X9
+                 proves fail-closed via SessionEntryBlockedError on
+                 run_backtest after activate-without-publish,
+                 durable via InMemoryKillSwitch.history, observable
+                 via a production handler plus a tap. Five
+                 injections: _store_raw_events through
+                 _BacktestMetricCollector, config_snapshot /
+                 live_feed / ib_connection through a nested
+                 Orchestrator.__init__, module._construct through
+                 LoadedPortfolioLayerModule. Parity hold is proved
+                 by R3's manifest permutation -- forward vs reversed
+                 subscribe buffer, identical stop-exit OrderAck
+                 hash. Wall-clock pins unmoved (1642, 1644, 1684,
+                 1686, 1780, 1782, 3968). subscribe_all kept: six
+                 callers outside FILES. exec/S-12 carries a
+                 duplicate plan commit (edf4b25) that also exists on
+                 arch/exec as c556242 (identical tree); it will
+                 disappear in the merge.
+  FINDINGS:      the three X6 xfails remain deferred -- this step
+                 does not generate family instances, and S13 forbids
+                 RT.SCHEMA_SUPPORTED, RT.CONTRACT_CONFORM and
+                 RT.IN_UNIVERSE in GATE_REGISTRY, so dropping them
+                 would need a ninth file
+                 (tests/conformance/test_pathological_refusal.py).
+                 They should move to a new S-12a whose FILES are
+                 that test plus the family-instance generator
+                 derived from wiring_manifest.SUBSCRIPTIONS (not
+                 extra GATE_REGISTRY rows). They must not move to
+                 S-13 (sequence-authority; wrong owner, and the 53-
+                 row registry constraint is S-11/S13).
+                 Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA / FILES touched 0 on
+                 uncommitted tree; ~157 research cache days stale
+                 until after S-17a; 11 UNIT_UNDETERMINED block S-24;
+                 Inv-10 wall-clock allowlist line-pinned; S-11b
+                 semicolons at orchestrator 455, 1474, 1480.
+  NEXT:          S-13 sequence-authority registry (boundary). Not
+                 started. Do not begin S-13. Left uncommitted:
+                 baseline_pre-S-12.json, baseline_post-S-12.json,
+                 this ledger entry.
+
+
 
