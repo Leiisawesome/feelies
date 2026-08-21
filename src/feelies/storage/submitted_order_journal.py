@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from feelies.core.clock import Clock
-from feelies.core.events import OrderAck, OrderAckStatus, OrderRequest
+from feelies.core.events import NBBOQuote, OrderAck, OrderAckStatus, OrderRequest
 from feelies.core.platform_config import ENGINE_LATENCY_BUDGETS, EngineLatencyBudget
 
 _JOURNAL_ENGINE = "submitted_order_journal_ns"
@@ -115,7 +115,10 @@ class DurableSubmittedOrderJournal:
         orig_poll = router.poll_acks
         journal = self
 
-        def submit(request: OrderRequest) -> None:
+        def submit(
+            request: OrderRequest,
+            triggering_quote: NBBOQuote | None = None,
+        ) -> None:
             if journal.must_refuse(request.order_id):
                 pending = getattr(router, "_pending_acks", None)
                 seq = getattr(router, "_ack_seq", None)
@@ -135,7 +138,7 @@ class DurableSubmittedOrderJournal:
                     )
                 return
             journal.record_attempt(request.order_id)
-            orig_submit(request)
+            orig_submit(request, triggering_quote=triggering_quote)
 
         def poll_acks() -> list[OrderAck]:
             acks: list[OrderAck] = list(orig_poll())

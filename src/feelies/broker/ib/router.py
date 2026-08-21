@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 
 from feelies.core.clock import Clock
 from feelies.core.events import (
+    NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
@@ -108,7 +109,11 @@ class IBOrderRouter:
 
     # ── OrderRouter protocol ────────────────────────────────────────
 
-    def submit(self, request: OrderRequest) -> None:
+    def submit(
+        self,
+        request: OrderRequest,
+        triggering_quote: NBBOQuote | None = None,
+    ) -> None:
         """Synchronous submit-time ACK + enqueue to IB writer thread.
 
         Duplicate ``order_id`` submissions are REJECTED rather than

@@ -28,6 +28,7 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
+    NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
@@ -80,7 +81,9 @@ class _RecordingRouter:
         self._pending: list[OrderAck] = []
         self._fill_price = fill_price
 
-    def submit(self, request: OrderRequest) -> None:
+    def submit(
+        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
+    ) -> None:
         self.submitted.append(request)
         self._pending.append(
             OrderAck(

@@ -89,7 +89,9 @@ class _ScriptedOrderRouter:
         self._submit_fill_price = submit_fill_price
         self.submitted: list[OrderRequest] = []
 
-    def submit(self, request: OrderRequest) -> None:
+    def submit(
+        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
+    ) -> None:
         self.submitted.append(request)
         self._pending_acks.append(
             OrderAck(

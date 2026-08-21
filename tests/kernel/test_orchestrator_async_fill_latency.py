@@ -38,8 +38,12 @@ class _DelayedRouter(BacktestOrderRouter):
         super().__init__(clock=clock)
         self._pending: list[OrderAck] = []
 
-    def submit(self, request: OrderRequest) -> None:
-        super().submit(request)
+    def submit(
+        self,
+        request: OrderRequest,
+        triggering_quote: NBBOQuote | None = None,
+    ) -> None:
+        super().submit(request, triggering_quote=triggering_quote)
         self._pending.append(
             OrderAck(
                 timestamp_ns=self._clock.now_ns() + 500_000_000,
