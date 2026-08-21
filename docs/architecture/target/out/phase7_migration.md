@@ -1390,6 +1390,43 @@ ROLLBACK:        revert — but this is the least cleanly revertible step in wav
                  C, because constructor-injection changes touch every consumer's
                  signature. Ship it as its own release, not batched.
 ```
+```
+STEP:            S-12a
+CLOSES:          the three X6 cases deferred from S-11
+PROBLEM:         S-11 landed RT.SCHEMA_SUPPORTED, RT.CONTRACT_CONFORM and
+                 RT.IN_UNIVERSE as per-boundary FAMILY TEMPLATES, not registry
+                 rows, per Phase 3 D.4: their instance count is generated from
+                 the wiring manifest, not hand-counted. Three X6 cases -- nan,
+                 out_of_universe and missing_schema_version -- are bound to those
+                 templates and carry xfail(strict=True, reason="family instances
+                 land at S-12"). S-12 delivered the manifest but did not generate
+                 the instances, so the xfails still stand and S13 forbids the
+                 three IDs from appearing in GATE_REGISTRY.
+WHY THIS OWNER:  Engine 5 owns the gate registry; the manifest is the generator.
+                 A family instance is a registry row derived from a declared
+                 subscription, not a hand-written one.
+REFACTOR PATH:   (1) generate family instances from
+                 wiring_manifest.SUBSCRIPTIONS -- one per receiving boundary per
+                 template; (2) S13 asserts the generated set matches the manifest
+                 and that the three template IDs remain absent as hand-written
+                 rows; (3) drop the three xfails in X6. strict=True means a
+                 green xfail is a failure, so they must be dropped in the same
+                 commit that makes them pass.
+FILES:           src/feelies/core/gate_registry.py
+                 tests/conformance/test_gate_registry.py (S13)
+                 tests/conformance/test_pathological_refusal.py (X6)
+BLAST RADIUS:    boundary -- registry rows are generated, no predicate changes
+VALIDATED BY:    S13 with the generated-instance assertion, X6 with the three
+                 xfails dropped, all 26 baselines, the parity oracle, mypy
+PARITY IMPACT:   hold. Generated rows are registry data on engine 11's
+                 notification channel, outside the parity manifest per G29. No
+                 self._seq draw, no predicate change. VERIFY, do not assume.
+DELETES:         the three deferred xfails; the gap between declared templates
+                 and instantiated rows
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert; the instances vanish and the three xfails must be
+                 restored or X6 fails strict.
+```
 
 ```
 STEP:            S-13
