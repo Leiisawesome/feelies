@@ -1260,6 +1260,15 @@ REFACTOR PATH:   (1) R3 is extended to permute router/stop-exit registration
                  tuple; any addition fails by name. If the resolution requires
                  an OrderAck field, that is a scope change -- stop and report,
                  do not edit PINNED_PAYLOAD.
+                 (4) NO SIGNATURE SNIFFING. _submit_to_router calls
+                 submit(order, triggering_quote=quote) unconditionally. A
+                 co_varnames check that falls back to submit(order) is fail-quiet
+                 on the exact defect this step closes: a callee lacking the
+                 parameter reverts to stale-price pricing and nothing reports it.
+                 (5) _DelayedRouter overrides submit and must FORWARD to
+                 super().submit(...), not swallow the argument.
+                 _FillingRouter is the forced-exit tape double -- if it ignores
+                 the quote, coverage on that path is fake.                 
 FILES:           src/feelies/execution/passive_limit_router.py
                  src/feelies/execution/backtest_router.py:142,172-176 (same
                  _last_quotes race; this is the router APP and
@@ -1274,6 +1283,16 @@ FILES:           src/feelies/execution/passive_limit_router.py
                  src/feelies/risk/stop_exit.py
                  src/feelies/kernel/orchestrator.py
                  tests/conformance/test_registration_order.py
+                 src/feelies/storage/submitted_order_journal.py:118 (install_on's
+                 wrapper must forward triggering_quote -- on paper it always
+                 replaces order_router.submit, since IBOrderRouter has no
+                 bind_submitted_order_journal, so a non-forwarding wrapper
+                 strips the quote and the race returns)
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py:83,138
+                 tests/kernel/test_orchestrator_exit_composer_routing.py:83
+                 tests/kernel/test_orchestrator_bus_sized_intent.py:92
+                 tests/determinism/test_forced_exit_attribution_replay.py:85
+                 tests/kernel/test_orchestrator_async_fill_latency.py:41                 
 BLAST RADIUS:    boundary -- one pricing source changes on the forced-exit path
 VALIDATED BY:    R3 as extended with its fail-first proof, all 26 baselines, the
                  parity oracle, mypy
