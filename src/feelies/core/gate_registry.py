@@ -6,7 +6,8 @@ hole cannot recur. G1-G17 survive as aliases; G13 is retired (warm-up is
 
 ``RT.SCHEMA_SUPPORTED``, ``RT.CONTRACT_CONFORM`` and ``RT.IN_UNIVERSE`` are
 per-boundary family templates (Phase 3 D.4). Their instance count is
-generated from the wiring manifest at S-12; they are not registry rows.
+generated from ``wiring_manifest.SUBSCRIPTIONS`` into ``FAMILY_INSTANCES``;
+they are not ``GATE_REGISTRY`` rows.
 
 Verdicts are recorded on engine 11's notification channel by
 :func:`record_verdict`. That function does not import a sequence
@@ -19,6 +20,8 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, replace
 from typing import Literal
+
+from feelies.core.wiring_manifest import SUBSCRIPTIONS
 
 _OUTCOMES = frozenset({"PASS", "FAIL", "UNKNOWN", "NOT_EVALUATED"})
 _KNOWN_TESTS = frozenset({"S13", "X6", "X3", "X4", "S8", "S9", "H1", "S6"})
@@ -681,6 +684,38 @@ FAMILY_TEMPLATES: dict[str, str] = {
     "RT.IN_UNIVERSE": "in_universe(instrument_id), total (per receiving boundary)",
 }
 
+
+def _family_instance_id(template_id: str, event_type: str, subscriber: str) -> str:
+    return f"{template_id}:{event_type}:{subscriber}"
+
+
+def _generate_family_instances() -> dict[str, GateRecord]:
+    """One instance per receiving boundary per template. Not a hand count."""
+    out: dict[str, GateRecord] = {}
+    for template_id, predicate in FAMILY_TEMPLATES.items():
+        for sub in SUBSCRIPTIONS:
+            stable_id = _family_instance_id(
+                template_id, sub.event_type, sub.subscriber
+            )
+            out[stable_id] = _rt(
+                stable_id,
+                leg="Q",
+                rank=0,
+                owner=5,
+                predicate=predicate,
+                on_fail="reject + emit",
+                on_unknown="reject",
+                family=template_id,
+                site_exemption=(
+                    "generated from wiring_manifest.SUBSCRIPTIONS; "
+                    "predicate lives at the receiving boundary"
+                ),
+            )
+    return out
+
+
+FAMILY_INSTANCES: dict[str, GateRecord] = _generate_family_instances()
+
 GATE_ALIASES: dict[str, _Alias] = {
     "G1": _Alias(stable_id="GOV.LAYER_VALIDATE", kind="current"),
     "G2": _Alias(stable_id="GOV.CONTRACT_SHAPE", kind="current"),
@@ -761,6 +796,32 @@ def _check_registry_completeness() -> None:
     leaked = sorted(gid for gid in FAMILY_TEMPLATES if gid in GATE_REGISTRY)
     if leaked:
         raise RuntimeError(f"family templates recorded as rows: {leaked}")
+    expected_instances = {
+        _family_instance_id(template, sub.event_type, sub.subscriber)
+        for template in FAMILY_TEMPLATES
+        for sub in SUBSCRIPTIONS
+    }
+    missing_i = sorted(expected_instances - set(FAMILY_INSTANCES))
+    extra_i = sorted(set(FAMILY_INSTANCES) - expected_instances)
+    if missing_i or extra_i:
+        raise RuntimeError(
+            f"FAMILY_INSTANCES diverges from the wiring manifest: "
+            f"missing {missing_i}, extra {extra_i}"
+        )
+    overlap = sorted(set(FAMILY_INSTANCES) & set(GATE_REGISTRY))
+    if overlap:
+        raise RuntimeError(
+            f"generated instances collided with hand-written rows: {overlap}"
+        )
+    for inst in FAMILY_INSTANCES.values():
+        if inst.family not in FAMILY_TEMPLATES:
+            raise RuntimeError(
+                f"{inst.stable_id} family {inst.family!r} is not a template"
+            )
+        if inst.stable_id in FAMILY_TEMPLATES:
+            raise RuntimeError(f"template id used as instance id: {inst.stable_id}")
+        if inst.family == "none":
+            raise RuntimeError(f"{inst.stable_id} is indistinguishable from a row")
     seen_markers: dict[str, str] = {}
     for row in GATE_REGISTRY.values():
         unknown_tests = [t for t in row.tested_by if t not in _KNOWN_TESTS]

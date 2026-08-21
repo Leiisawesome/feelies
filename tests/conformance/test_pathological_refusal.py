@@ -22,7 +22,7 @@ from tests.conformance.test_per_alpha_budget import (
 )
 
 # FIX-3 remaining six. Must-be-refused-by is the Phase 6 class table.
-# Three family-template IDs have no named row until S-12 instances exist.
+# Family-template IDs bind to generated instances, not GATE_REGISTRY rows.
 FIX3_FAMILY: tuple[tuple[str, str], ...] = (
     ("nan", "RT.CONTRACT_CONFORM"),
     ("out_of_universe", "RT.IN_UNIVERSE"),
@@ -113,21 +113,31 @@ def test_pathological_class_refused_by_named_registered_gate(
     _assert_emitted(gate_id, class_id)
 
 
-@pytest.mark.xfail(strict=True, reason="family instances land at S-12")
 @pytest.mark.parametrize("class_id,gate_id", FIX3_FAMILY)
 def test_pathological_family_class_awaits_s12_instances(
     class_id: str, gate_id: str
 ) -> None:
-    """FIX-3 classes bound to family templates have no named row until S-12."""
-    from feelies.core.gate_registry import FAMILY_TEMPLATES, GATE_REGISTRY
+    """FIX-3 classes bound to family templates refuse via generated instances."""
+    from feelies.core.gate_registry import (
+        FAMILY_INSTANCES,
+        FAMILY_TEMPLATES,
+        GATE_REGISTRY,
+    )
 
     assert gate_id in FAMILY_TEMPLATES, (
         f"{class_id!r} must bind to a family template, not a spine row"
     )
     assert gate_id not in GATE_REGISTRY
-    raise AssertionError(
+    instances = [
+        inst for inst in FAMILY_INSTANCES.values() if inst.family == gate_id
+    ]
+    assert instances, (
         f"family instance for {gate_id} (class {class_id}) has not landed"
     )
+    for inst in instances:
+        assert "X6" in inst.tested_by
+        assert inst.stable_id not in GATE_REGISTRY
+        assert inst.stable_id not in FAMILY_TEMPLATES
 
 
 def test_x6_runtime_gates_emit_records_not_api_probe() -> None:
