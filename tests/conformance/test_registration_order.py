@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from feelies.bootstrap import build_platform
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, OrderAck, OrderAckStatus, OrderRequest
@@ -229,4 +230,79 @@ def test_r3_forced_exit_fill_stream_independent_of_registration_order() -> None:
         + "\n".join(disagreements)
         + "\nall four streams:\n"
         + dump
+    )
+
+
+def _manifest_subscriptions() -> tuple[object, ...]:
+    try:
+        from feelies.core.wiring_manifest import SUBSCRIPTIONS
+    except ImportError:
+        return ()
+    return tuple(SUBSCRIPTIONS)
+
+
+def _hash_fill_stream(*, reverse_registration: bool) -> str:
+    """Replay stop-exit after applying buffered subscriptions in one order."""
+    import hashlib
+
+    from feelies.bus.event_bus import EventBus
+    from feelies.core.events import OrderAck
+    from feelies.storage.memory_event_log import InMemoryEventLog
+    from tests.determinism.test_orchestrator_replay import (
+        _STOP_EXIT_ENTRY_PRICE,
+        _STOP_EXIT_ENTRY_QTY,
+        _STOP_EXIT_SYMBOL,
+        _make_stop_exit_config,
+        _synth_stop_exit_events,
+    )
+
+    orig = EventBus.subscribe
+    buffered: list[tuple[EventBus, type[Any], Any]] = []
+
+    def _buffer(
+        self: EventBus, event_type: type[Any], handler: Any
+    ) -> None:
+        buffered.append((self, event_type, handler))
+
+    EventBus.subscribe = _buffer  # type: ignore[method-assign]
+    try:
+        config = _make_stop_exit_config()
+        event_log = InMemoryEventLog()
+        event_log.append_batch(_synth_stop_exit_events())
+        orch, _cfg = build_platform(config, event_log=event_log)
+    finally:
+        EventBus.subscribe = orig  # type: ignore[method-assign]
+
+    rows = list(reversed(buffered)) if reverse_registration else buffered
+    for bus, event_type, handler in rows:
+        orig(bus, event_type, handler)
+
+    fills: list[str] = []
+
+    def _on_ack(event: Any) -> None:
+        if isinstance(event, OrderAck):
+            price = "" if event.fill_price is None else str(event.fill_price)
+            fills.append(f"{event.status.name}:{price}:{event.reason}")
+
+    orch._bus.subscribe(OrderAck, _on_ack)
+    orch.boot(config)
+    orch._positions.update(_STOP_EXIT_SYMBOL, _STOP_EXIT_ENTRY_QTY, _STOP_EXIT_ENTRY_PRICE)
+    orch.run_backtest()
+    blob = "\n".join(fills).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def test_r3_manifest_registration_order_preserves_output_hash() -> None:
+    """Full-manifest permutation must not change the output hash.
+
+    Declaring the measured order changes nothing; changing it would.
+    If this fails, the manifest is load-bearing in a way the target forbids.
+    """
+    subscriptions = _manifest_subscriptions()
+    assert subscriptions, "wiring manifest is empty; cannot permute registration order"
+    forward = _hash_fill_stream(reverse_registration=False)
+    reverse = _hash_fill_stream(reverse_registration=True)
+    assert forward == reverse, (
+        "output hash depends on wiring-manifest registration order: "
+        f"declared={forward} reversed={reverse}"
     )
