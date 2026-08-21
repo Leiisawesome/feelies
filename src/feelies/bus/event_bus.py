@@ -21,6 +21,10 @@ EventHandler = Callable[[Event], None]
 
 E = TypeVar("E", bound=Event)
 
+# Measured max re-entrant depth on a stop-exit replay is 4. Sixteen is the
+# count of handlers that publish from inside dispatch (G02 / I-15).
+MAX_CASCADE_DEPTH = 16
+
 
 class EventBus:
     """Central event routing with deterministic delivery order.
@@ -30,11 +34,14 @@ class EventBus:
     propagate immediately — fail-fast, not fail-silent.
     """
 
-    __slots__ = ("_handlers", "_global_handlers")
+    MAX_CASCADE_DEPTH = MAX_CASCADE_DEPTH
+
+    __slots__ = ("_handlers", "_global_handlers", "_depth")
 
     def __init__(self) -> None:
         self._handlers: dict[type[Event], list[EventHandler]] = defaultdict(list)
         self._global_handlers: list[EventHandler] = []
+        self._depth = 0
 
     def subscribe(
         self,
@@ -61,10 +68,21 @@ class EventBus:
 
         Order: type-specific handlers (registration order),
         then global handlers (registration order).
+        A nested publish that would exceed ``MAX_CASCADE_DEPTH`` is
+        refused: the event is not delivered.
         """
-        handlers = self._handlers.get(type(event))
-        if handlers is not None:
-            for handler in handlers:
+        if self._depth >= MAX_CASCADE_DEPTH:
+            raise RuntimeError(
+                f"event bus cascade depth {self._depth + 1} exceeds "
+                f"bound {MAX_CASCADE_DEPTH}"
+            )
+        self._depth += 1
+        try:
+            handlers = self._handlers.get(type(event))
+            if handlers is not None:
+                for handler in handlers:
+                    handler(event)
+            for handler in self._global_handlers:
                 handler(event)
-        for handler in self._global_handlers:
-            handler(event)
+        finally:
+            self._depth -= 1

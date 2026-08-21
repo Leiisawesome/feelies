@@ -16,7 +16,7 @@ from datetime import date
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from feelies.alpha.discovery import load_and_register
 from feelies.alpha.fill_attribution import FillAttributionLedger
@@ -43,10 +43,22 @@ from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock, SimulatedClock, WallClock
-from feelies.core.events import Alert, AlertSeverity, NBBOQuote
+from feelies.core.config import ConfigSnapshot
+from feelies.core.events import (
+    Alert,
+    AlertSeverity,
+    Event,
+    KillSwitchActivation,
+    NBBOQuote,
+    OrderAck,
+    PositionUpdate,
+    RiskVerdict,
+    SymbolHalted,
+)
 from feelies.core.errors import ConfigurationError
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.wiring_manifest import manifest_hash
 from feelies.core.session_clock import rth_open_ns
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
@@ -84,7 +96,7 @@ from feelies.features.impl.sensor_passthrough import (
 from feelies.features.protocol import HorizonFeature
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.ingestion.normalizer import MarketDataNormalizer
-from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.orchestrator import Orchestrator as KernelOrchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.in_memory import (
     InMemoryAlertManager,
@@ -143,6 +155,75 @@ class UniverseScaleError(RuntimeError):
     """Raised when a PORTFOLIO universe exceeds the v0.2 cap (§15.1)."""
 
 
+class _BacktestMetricCollector(InMemoryMetricCollector):
+    """Metric collector that never buffers the raw event list."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._store_raw_events = False
+
+
+def _root_orchestrator_class() -> type[KernelOrchestrator]:
+    class Orchestrator(KernelOrchestrator):
+        """Composition-root orchestrator: lifecycle handles injected at init."""
+
+        def __init__(
+            self,
+            *,
+            config_snapshot: ConfigSnapshot,
+            live_feed: object | None,
+            ib_connection: object | None,
+            **kwargs: Any,
+        ) -> None:
+            super().__init__(**kwargs)
+            self.config_snapshot = config_snapshot
+            self.live_feed = live_feed
+            self.ib_connection = ib_connection
+
+    return Orchestrator
+
+
+_RootOrchestrator: Any = _root_orchestrator_class()
+
+
+class _NotificationObserver:
+    """Additive observer for previously zero-subscriber domain events.
+
+    Records every delivery. KillSwitchActivation also surfaces an alert
+    on the in-memory manager (not the bus — no extra ``self._seq`` draw).
+    """
+
+    __slots__ = ("_alerts", "records")
+
+    def __init__(self, alert_manager: InMemoryAlertManager) -> None:
+        self._alerts = alert_manager
+        self.records: list[Event] = []
+
+    def on_event(self, event: Event) -> None:
+        self.records.append(event)
+        if isinstance(event, KillSwitchActivation):
+            self._alerts.emit(
+                Alert(
+                    timestamp_ns=event.timestamp_ns,
+                    correlation_id=event.correlation_id,
+                    sequence=event.sequence,
+                    severity=AlertSeverity.WARNING,
+                    layer="monitoring",
+                    alert_name="kill_switch_activation",
+                    message=event.reason,
+                    context={"activated_by": event.activated_by},
+                )
+            )
+
+
+def _attach_notification_observer(bus: EventBus, observer: _NotificationObserver) -> None:
+    bus.subscribe(OrderAck, observer.on_event)
+    bus.subscribe(PositionUpdate, observer.on_event)
+    bus.subscribe(RiskVerdict, observer.on_event)
+    bus.subscribe(SymbolHalted, observer.on_event)
+    bus.subscribe(KillSwitchActivation, observer.on_event)
+
+
 def build_platform(
     config: PlatformConfig | str | Path,
     event_log: InMemoryEventLog | None = None,
@@ -154,7 +235,7 @@ def build_platform(
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
     edge_calibration_factors: "Mapping[str, float] | None" = None,
-) -> tuple[Orchestrator, PlatformConfig]:
+) -> tuple[KernelOrchestrator, PlatformConfig]:
     """Compose an orchestrator and resolved platform config.
 
     Optional precomputed corporate-action spans and regime quotes avoid replay
@@ -353,7 +434,11 @@ def build_platform(
             BacktestOrderRouter | PassiveLimitOrderRouter,
             backend.order_router,
         )
-        bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))
+
+        def _on_backtest_quote(event: NBBOQuote) -> None:
+            backtest_router.on_quote(event)
+
+        bus.subscribe(NBBOQuote, _on_backtest_quote)
 
     position_store = MemoryPositionStore()
     if config.mode != OperatingMode.BACKTEST:
@@ -423,9 +508,11 @@ def build_platform(
 
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
-    metric_collector = InMemoryMetricCollector()
+    metric_collector: InMemoryMetricCollector
     if config.mode == OperatingMode.BACKTEST:
-        metric_collector._store_raw_events = False
+        metric_collector = _BacktestMetricCollector()
+    else:
+        metric_collector = InMemoryMetricCollector()
 
     # Create metrics first so sensor monitoring subscribes during composition.
     sensor_registry, horizon_scheduler = _create_sensor_layer(
@@ -547,7 +634,14 @@ def build_platform(
             config.signal_min_edge_cost_ratio,
         )
 
-    orchestrator = Orchestrator(
+    # Stamp the snapshot from the injected clock so a backtest's provenance
+    # record is deterministic (SimulatedClock); only PAPER reads wall time
+    # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
+    config_snapshot = config.snapshot(ts_ns=clock.now_ns())
+    orchestrator = _RootOrchestrator(
+        config_snapshot=config_snapshot,
+        live_feed=bundle.live_feed,
+        ib_connection=bundle.ib_connection,
         clock=clock,
         bus=bus,
         backend=backend,
@@ -593,16 +687,9 @@ def build_platform(
         position_manager_urgency_exec=config.position_manager_urgency_exec,
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
     )
-
-    # Stamp the snapshot from the injected clock so a backtest's provenance
-    # record is deterministic (SimulatedClock); only PAPER reads wall time
-    # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
-    config_snapshot = config.snapshot(ts_ns=clock.now_ns())
-    orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
-
-    # Expose PAPER lifecycle handles to the operator entry script.
-    orchestrator.live_feed = bundle.live_feed  # type: ignore[attr-defined]
-    orchestrator.ib_connection = bundle.ib_connection  # type: ignore[attr-defined]
+    _attach_notification_observer(
+        bus, _NotificationObserver(alert_manager)
+    )
 
     # Wire IB connectivity / unknown-status alerts onto the shared bus so
     # operators have programmatic visibility into IB link-state events and
@@ -630,12 +717,14 @@ def build_platform(
     _wire_decouple_revocation_hook(registry, exit_composer, deferral_cap_controller)
 
     logger.info(
-        "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, config_checksum=%s",
+        "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, "
+        "config_checksum=%s, wiring_manifest_hash=%s",
         config.mode.name,
         sorted(config.symbols),
         len(registry),
         config.regime_engine or "none",
         config_snapshot.checksum[:12],
+        manifest_hash()[:12],
     )
 
     return orchestrator, config
@@ -1567,24 +1656,37 @@ def _create_composition_layer(
 
     for module in sorted(portfolio_modules, key=lambda m: m.alpha_id):
         # Re-bind the default constructor so its engine-thunk resolves
-        # to the engine we just built.  This is a no-op for inline
-        # ``construct:`` blocks, which carry their own callable.
+        # to the engine we just built.  Inline ``construct:`` blocks
+        # already carry their own callable. A new module instance is
+        # constructed rather than patched after init.
         construct = module._construct  # noqa: SLF001 — bootstrap rewires
+        alpha = module
         if isinstance(construct, _DefaultPortfolioConstructor):
-            module._construct = _DefaultPortfolioConstructor(  # noqa: SLF001
-                engine_thunk=lambda e=engine: e,
-                strategy_id=module.alpha_id,
-                feeder_strategy_ids=module.depends_on_signals,
-                mechanism_caps=module.mechanism_caps,
-                global_mechanism_cap=module.max_share_of_gross,
-                neutralize=module.factor_neutralization_disclosed,
+            alpha = LoadedPortfolioLayerModule(
+                manifest=module.manifest,
+                construct=_DefaultPortfolioConstructor(
+                    engine_thunk=lambda e=engine: e,
+                    strategy_id=module.alpha_id,
+                    feeder_strategy_ids=module.depends_on_signals,
+                    mechanism_caps=module.mechanism_caps,
+                    global_mechanism_cap=module.max_share_of_gross,
+                    neutralize=module.factor_neutralization_disclosed,
+                    consumes_mechanisms=module.consumes_mechanisms,
+                ),
+                universe=module.universe,
+                horizon_seconds=module.horizon_seconds,
                 consumes_mechanisms=module.consumes_mechanisms,
+                max_share_of_gross=module.max_share_of_gross,
+                factor_neutralization_disclosed=module.factor_neutralization_disclosed,
+                depends_on_signals=module.depends_on_signals,
+                params=module.params,
+                mechanism_caps=module.mechanism_caps,
             )
         engine.register(
             RegisteredPortfolioAlpha(
                 alpha_id=module.alpha_id,
                 horizon_seconds=module.horizon_seconds,
-                alpha=module,
+                alpha=alpha,
                 params=module.params,
             )
         )
