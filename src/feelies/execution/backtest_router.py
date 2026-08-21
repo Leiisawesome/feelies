@@ -158,7 +158,11 @@ class BacktestOrderRouter:
         self._reject(request, reason)
         return True
 
-    def submit(self, request: OrderRequest) -> None:
+    def submit(
+        self,
+        request: OrderRequest,
+        triggering_quote: NBBOQuote | None = None,
+    ) -> None:
         if request.order_id in self._submitted_order_ids:
             self.duplicate_id_reject_count += 1
             self._reject(
@@ -169,7 +173,11 @@ class BacktestOrderRouter:
             return
         self._submitted_order_ids.add(request.order_id)
 
-        quote = self._last_quotes.get(request.symbol)
+        quote = (
+            triggering_quote
+            if triggering_quote is not None
+            else self._last_quotes.get(request.symbol)
+        )
         if quote is None:
             self.no_quote_reject_count += 1
             self._reject(request, "no quote available for symbol")

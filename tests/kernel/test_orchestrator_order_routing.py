@@ -9,7 +9,7 @@ import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
-from feelies.core.events import Alert, OrderRequest, OrderType, Side
+from feelies.core.events import Alert, NBBOQuote, OrderRequest, OrderType, Side
 from feelies.execution.position_manager import ExecStyle
 
 from tests.kernel.test_orchestrator import _build_orchestrator, _make_quote
@@ -95,7 +95,10 @@ def test_submit_exception_rejects_and_prunes_order(monkeypatch) -> None:
     )
     orch._track_order(order.order_id, order.side, order)
 
-    def raise_on_submit(_order: OrderRequest) -> None:
+    def raise_on_submit(
+        _order: OrderRequest,
+        triggering_quote: NBBOQuote | None = None,
+    ) -> None:
         raise RuntimeError("submit failed")
 
     monkeypatch.setattr(orch._backend.order_router, "submit", raise_on_submit)

@@ -452,7 +452,7 @@ class Orchestrator:
         )
         self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = signal_order_trace_sink
         self._paper_session_recorder: PaperSessionRecorder | None = None
-        self._quote_tick_in_flight: bool = False
+        self._quote_tick_in_flight: bool = False; self._in_flight_quote: NBBOQuote | None = None
         self._tick_quote_for_trace: NBBOQuote | None = None
         # Preserve the last quote so inter-quote signals can produce trace rows.
         self._last_quote_context_for_signal_trace: NBBOQuote | None = None
@@ -1404,7 +1404,7 @@ class Orchestrator:
                     OrderState.SUBMITTED,
                     "submitted",
                 )
-                self._backend.order_router.submit(order)
+                self._submit_to_router(order, triggering_quote=self._in_flight_quote)
                 self._bus.publish(order)
 
             self._micro.transition(
@@ -1459,7 +1459,7 @@ class Orchestrator:
                 OrderState.SUBMITTED,
                 "submitted",
             )
-            self._backend.order_router.submit(order)
+            self._submit_to_router(order, triggering_quote=self._in_flight_quote)
             self._bus.publish(order)
         self._settle_router_acks(
             correlation_id,
@@ -1471,13 +1471,13 @@ class Orchestrator:
 
         Any exception degrades the macro state and restores the micro machine to M0."""
         cid = quote.correlation_id
-        self._quote_tick_in_flight = True
+        self._quote_tick_in_flight = True; self._in_flight_quote = quote
         try:
             self._process_tick_inner(quote)
         except Exception as exc:
             self._handle_tick_failure(cid, exc)
         finally:
-            self._quote_tick_in_flight = False
+            self._quote_tick_in_flight = False; self._in_flight_quote = None
             self._micro.bind_timing_sink(None)
 
     def _handle_tick_failure(self, cid: str, original: Exception) -> None:
@@ -3860,7 +3860,7 @@ class Orchestrator:
             correlation_id=order.correlation_id,
         )
         try:
-            self._backend.order_router.submit(order)
+            self._submit_to_router(order, triggering_quote=self._in_flight_quote)
         except Exception as exc:
             self._reject_order_after_submit_failure(order, exc)
             return exc
@@ -3969,6 +3969,13 @@ class Orchestrator:
                 correlation_id=correlation_id,
                 extra={"ack_count": len(acks)},
             )
+
+    def _submit_to_router(
+        self,
+        order: OrderRequest,
+        triggering_quote: NBBOQuote | None = None,
+    ) -> None:
+        self._backend.order_router.submit(order, triggering_quote=triggering_quote)
 
     def _escalate_unfilled_working_exits(
         self,
@@ -5383,7 +5390,7 @@ class Orchestrator:
                 f"degrade_flatten:{reason}",
                 correlation_id=correlation_id,
             )
-            self._backend.order_router.submit(order)
+            self._submit_to_router(order, triggering_quote=self._in_flight_quote)
             self._bus.publish(order)
             self._settle_router_acks(correlation_id, expected_order_ids={order_id})
         except Exception as exc:  # noqa: BLE001 — fail-safe; never raise

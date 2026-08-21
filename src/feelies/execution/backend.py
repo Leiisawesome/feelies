@@ -70,7 +70,11 @@ class OrderRouter(Protocol):
     the order SM through ``CANCEL_REQUESTED → CANCELLED`` immediately.
     """
 
-    def submit(self, request: OrderRequest) -> None:
+    def submit(
+        self,
+        request: OrderRequest,
+        triggering_quote: NBBOQuote | None = None,
+    ) -> None:
         """Submit an order.  Acknowledgement arrives via poll_acks()."""
         ...
 

@@ -32,6 +32,7 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
     AlertSeverity,
+    NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
@@ -80,7 +81,9 @@ class _RecordingRouter:
         self._pending: list[OrderAck] = []
         self._fill_price = fill_price
 
-    def submit(self, request: OrderRequest) -> None:
+    def submit(
+        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
+    ) -> None:
         self.submitted.append(request)
         self._pending.append(
             OrderAck(
@@ -135,10 +138,12 @@ class _CancellingRouter(_RecordingRouter):
         self._fill_on_cancel = fill_on_cancel
         self._live: dict[str, OrderRequest] = {}
 
-    def submit(self, request: OrderRequest) -> None:
+    def submit(
+        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
+    ) -> None:
         self._live[request.order_id] = request
         if self._auto_fill:
-            super().submit(request)
+            super().submit(request, triggering_quote=triggering_quote)
             return
         self.submitted.append(request)
         self._pending.append(
