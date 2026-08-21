@@ -1438,7 +1438,19 @@ PROBLEM:         26 `SequenceGenerator` constructions, 13 taking the
                  the invariant, so a future cross-stream comparison is silently
                  wrong. CORE §C.6 single source of truth per fact.
 FILES:           src/feelies/core/identifiers.py:28
-                 src/feelies/core/ (producer + sequence-authority registry)
+                 src/feelies/core/sequence_authority.py (producer +
+                 sequence-authority registry, new)
+                 src/feelies/signals/horizon_engine.py
+                 src/feelies/sensors/registry.py
+                 src/feelies/sensors/horizon_scheduler.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/backtest_router.py
+                 src/feelies/execution/passive_limit_router.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 src/feelies/features/aggregator.py
+                 src/feelies/bootstrap.py
+                 src/feelies/broker/ib/router.py
+                 src/feelies/monitoring/horizon_metrics.py
                  tests/conformance/test_single_owner.py (S12)
 WHY THIS OWNER:  One sequence authority per stream is Tier 0 declaration, and
                  S12's other clause — one producer per contract — is the same
