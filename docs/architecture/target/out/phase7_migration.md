@@ -1326,10 +1326,16 @@ PROBLEM:         Four defects with one cause: the subscription graph is
                  react" (G28); and 45 external attribute assignments plus 10
                  cross-object private accesses, so objects are not valid after
                  `__init__` (G39). CORE §C.3; Inv-3 contract-first boundaries.
-FILES:           src/feelies/core/ (wiring manifest, new)
+FILES:           src/feelies/core/wiring_manifest.py (wiring manifest, new)
                  src/feelies/bus/event_bus.py:59-70 (depth bound)
                  src/feelies/bootstrap.py:584,587,588,411,1543
-                 tests/conformance/ — S15, S17, X8, X9
+                 tests/conformance/test_wiring_manifest.py (S15, new)
+                 tests/conformance/test_composition_root.py (S17, new)
+                 tests/conformance/test_cascade_depth.py (X8, new)
+                 tests/conformance/test_kill_switch_consumer.py (X9, new)
+                 tests/conformance/test_registration_order.py (R3, created in
+                 S-11b; extended here to permute registration order over the
+                 full manifest and assert an identical hash)
 WHY THIS OWNER:  Phase 3 §B specifies the wiring manifest as a declared, hashed
                  artifact and the composition root as the only place wiring
                  happens. A manifest is the only thing that makes subscription
