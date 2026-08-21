@@ -2723,5 +2723,116 @@ NOTES:           Mechanism: Field.metadata["unit"] plus module-level
                  baseline_pre-S-12.json, baseline_post-S-12.json,
                  this ledger entry.
 
+---
+
+## S-12a  2026-08-21T20:44:08+08:00
+  STEP:          S-12a
+  BASE:          18e1172ad4400bc40d895f1bd6c5fd8d463ef19c
+  RESULT SHA:    39b25f1650a083d7a2357a740a1d2b64d4ee9ad2
+  VERDICT:       passed
+  CONFORMANCE:   S13 generated-instance assertion | failed-before: yes |
+                 passes-after: yes | mutation: yes
+                 X6 family (nan, out_of_universe, missing_schema_version)
+                   | failed-before: xfail(strict) | passes-after: yes
+                   | markers dropped in the same commit
+                 Fail-before (S13, no FAMILY_INSTANCES):
+                   FAILED tests/conformance/test_gate_registry.py::
+                   test_s13_generated_family_instances_match_wiring_manifest
+                   AssertionError: generated family instances diverge from
+                   the wiring manifest: missing [108 ids], extra []
+                   1 failed in 0.30s
+                 X6 fail-before:
+                   XFAIL [nan-RT.CONTRACT_CONFORM] family instances land at S-12
+                   XFAIL [out_of_universe-RT.IN_UNIVERSE] family instances land at S-12
+                   XFAIL [missing_schema_version-RT.SCHEMA_SUPPORTED] family instances land at S-12
+                   3 xfailed in 0.45s
+                 After implement: S13 file 9 passed; X6 file 8 passed,
+                 -rxX prints no XFAIL. Mutation: removed
+                 Subscription(4, SensorReading, HorizonAggregator);
+                 S13 failed naming
+                 RT.CONTRACT_CONFORM:SensorReading:HorizonAggregator,
+                 RT.IN_UNIVERSE:SensorReading:HorizonAggregator,
+                 RT.SCHEMA_SUPPORTED:SensorReading:HorizonAggregator;
+                 restore SHA256
+                 e2640f66cf4909bacc0f27ee97cb8693a154b764593800a84befa3b2f8d00b74
+                 BYTE_IDENTICAL.
+  TESTS:         4848 passed / 1 failed / 18 skipped / 14 xfailed
+                 -> 4852 passed / 1 failed / 18 skipped / 11 xfailed
+                 +4 passed / -3 xfailed are the new S13 assertion and
+                 the three X6 family cases. failed 1 is the same IB
+                 after-hours test already red on baseline_post-S-12.json.
+                 determinism 145 -> 145. mypy clean (200 files).
+                 conformance 71 passed / 11 xfailed (S11 still xfail on
+                 StateTransition; three X6 no longer xfail).
+  PARITY:        declared hold | actual 62 constants unmoved, 0 changed
+                 | MATCH vs baseline_pre-S-12a.json and
+                 baseline_post-S-12.json (62/62 key-for-key).
+  FILES:         3 declared, 3 touched, 3 committed (clean vs 39b25f1).
+                 verify_step before commit reported S-12A not in plan
+                 (uppercase); FILES would have shown touched 0 on the
+                 uncommitted tree.
+  NET DELTA:     declared src modules 0, public symbols 0, branch points 0
+                 actual modules 200 -> 200 (+0)
+                 public_symbols 564 -> 564 (+0)
+                 sloc 44773 -> 44827 (+54)
+                 n_edges 628 -> 629
+                 n_modules 162 -> 163
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 The +1 import-graph module/edge is gate_registry
+                 importing the existing wiring_manifest.
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   S-12a uppercased to S-12A not in plan (frozen). Four
+                 checks by hand: FILES 3/3 clean; PARITY holds 62/62;
+                 TESTS failed 1->1 same IB after-hours test; NET DELTA
+                 0/0/0 on declared axes. CLEAN (boundary -- committed
+                 after human go).
+  NOTES:         108 instances = 36 receiving boundaries x 3 templates,
+                 generated from wiring_manifest.SUBSCRIPTIONS.
+                 GATE_REGISTRY stays 53 hand-written rows with
+                 family=="none"; FAMILY_INSTANCES keys are
+                 {template}:{event_type}:{subscriber} with family set
+                 to a template id, and the two key sets are disjoint.
+                 Template ids remain absent as rows, enforced at import
+                 by _check_registry_completeness. The three X6 xfails
+                 dropped in the same commit that made them pass.
+                 Generated rows stay off the parity manifest:
+                 import-time registry data, no EXPECTED_/_BASELINE_
+                 pin, record_verdict still resolves against the 53-row
+                 GATE_REGISTRY only, and none of the 24 parity modules
+                 were edited. Mutation proof: removing
+                 Subscription(4, "SensorReading", "HorizonAggregator")
+                 made S13 name all three corresponding instances;
+                 restore byte-identical.
+  FINDINGS:      baseline_post-S-12.json was captured RED -- 4848
+                 passed, 1 failed, exit_code 1, on
+                 tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected -- while
+                 the S-12 ledger entry records GREEN. Environmental
+                 (IB gateway, after hours), not a regression, but the
+                 reference artifact and the ledger disagree and the
+                 artifact wins. Also: X6's family cases assert
+                 instances exist and template ids stay absent; they do
+                 not drive nan / out_of_universe /
+                 missing_schema_version through a production emit site,
+                 because no emit site is in FILES.
+                 Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA / FILES touched 0 on
+                 uncommitted tree; ~157 research cache days stale
+                 until after S-17a; 11 UNIT_UNDETERMINED block S-24;
+                 subscribe_all kept (six callers outside src/feelies);
+                 StateTransition notification record, publish kept for
+                 S-31, S11 stays xfail.
+  NEXT:          S-13 sequence-authority registry (boundary). Not
+                 started. Do not begin S-13. Left uncommitted:
+                 baseline_pre-S-12a.json, baseline_post-S-12a.json,
+                 this ledger entry.
+
 
 
