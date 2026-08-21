@@ -2403,4 +2403,194 @@ NOTES:           Mechanism: Field.metadata["unit"] plus module-level
                  Left uncommitted: baseline_pre-S-11a.json,
                  baseline_post-S-11a.json, this ledger entry.
 
+---
+
+## S-11b  2026-08-21T10:23:07+08:00
+  STEP:          S-11b
+  BASE:          3b30398fb3806e906dc9956132bb08ad8dbe4222
+  RESULT SHA:    not committed — blocked, branch exec/S-11b left intact
+  VERDICT:       blocked
+  CONFORMANCE:   R3 | failed-before: yes | passes-after: yes | mutation: yes
+                 Fail-before (both routers, stale-price mode, not reject):
+                   BacktestOrderRouter router_first FILLED 90.00
+                   BacktestOrderRouter stop_first   FILLED 99.50
+                   PassiveLimitOrderRouter router_first FILLED 90.00
+                   PassiveLimitOrderRouter stop_first   FILLED 99.50
+                 Handler order observed: (router, stop_exit) vs
+                 (stop_exit, router). STOP_EXIT submitted in all four.
+                 After implement: 1 passed. Mutation: BacktestOrderRouter
+                 pricing reverted to _last_quotes only; R3 failed again
+                 on 90.00 vs 99.50 while PassiveLimit stayed 90.00/90.00;
+                 SHA256 restore byte-identical
+                 19DB5C53D878844B493464E4771784157B202F2CDAFCFAF53AC1678CE4FD9E84.
+  TESTS:         pre-S-11b capture 4835 passed / 0 failed / 19 skipped /
+                 14 xfailed (skip vs post-S-11a 4836/18 is wall-clock;
+                 failed=0). Determinism 145 passed.
+                 R3 1 failed before, 1 passed after.
+                 kernel: 388 passed, 1 failed
+                 (test_orchestrator_order_routing.py::
+                 test_submit_exception_rejects_and_prunes_order).
+                 conformance 55 passed / 14 xfailed. mypy clean.
+                 Full suite and post-capture not run — stop-the-line.
+  PARITY:        declared VERIFY, do not assume | actual unmoved vs
+                 baseline_post-S-11a.json at pre-capture (62/62, 0 changed)
+                 | MATCH (pre only; post not captured).
+  FILES:         plan lists 13 unique paths (prompt said 14). 13 touched
+                 on exec/S-11b, all declared. A 14th unique path is
+                 required and was not declared.
+  NET DELTA:     declared src modules 0, public symbols 0, branch points 0
+                 | not re-measured — blocked before post-capture.
+  DETERMINISM:   145 passed (pre-capture). Not re-run after implement.
+  VERIFY_STEP:   not run — blocked before post-capture. S-11b would
+                 uppercase to S-11B (frozen).
+  NOTES:         Implementation on the branch: both simulated routers
+                 take triggering_quote with _last_quotes fallback; IB
+                 unused matching parameter; protocol defaulted;
+                 _submit_to_router (after 3971) calls
+                 submit(order, triggering_quote=quote) unconditionally;
+                 StopExit holds the quote on a module global for the
+                 nested publish; journal wrapper forwards; _DelayedRouter
+                 forwards to super(); six declared doubles accept the
+                 argument. No ContextVar. No co_varnames. No OrderRequest
+                 or OrderAck field. Wall-clock allowlist lines unmoved
+                 at 1642, 1644, 1684, 1686, 1780, 1782, 3968.
+                 ContextVar and co_varnames sniff were both rejected:
+                 ContextVar is implicit state plus a forbidden
+                 risk->execution import; the sniff is fail-quiet on
+                 paper because install_on always replaces IB submit.
+                 R3 originates here after S-11a discarded it as
+                 unfalsifiable for a non-submitting subscriber.
+                 BacktestOrderRouter is the tape router (execution_mode
+                 defaults to market).
+  FINDINGS:      PLAN DEFECT — FILES omitted
+                 tests/kernel/test_orchestrator_order_routing.py:98-101.
+                 raise_on_submit(_order) is monkeypatched onto
+                 order_router.submit. Unconditional
+                 submit(order, triggering_quote=quote) raises
+                 TypeError("got an unexpected keyword argument
+                 'triggering_quote'") instead of RuntimeError, so the
+                 previously-passing test fails. The only other submit
+                 override in tests/ is this monkeypatch; the six
+                 declared doubles were updated. Editing that file is a
+                 14th unique path the plan text does not name. No
+                 signature sniff / TypeError fallback (forbidden).
+                 Prompt said FOURTEEN FILES entries; the plan block
+                 names 13 unique paths. This omitted monkeypatch is
+                 the likely 14th.
+                 Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA / FILES touched 0 on
+                 uncommitted tree; ~157 research cache days stale
+                 until after S-17a; 11 UNIT_UNDETERMINED block S-24;
+                 three X6 cases xfail(strict) awaiting S-12 family
+                 instances; Inv-10 wall-clock allowlist line-pinned.
+  NEXT:          plan amend — add
+                 tests/kernel/test_orchestrator_order_routing.py to
+                 FILES, then retry S-11b. Do not start S-12.
+                 Branch exec/S-11b left intact (implementation + R3);
+                 not reverted, not committed. Left uncommitted:
+                 baseline_pre-S-11b.json, this ledger entry.
+
+---
+
+## S-11b  2026-08-21T15:02:06+08:00
+  STEP:          S-11b
+  BASE:          4a6c4c16c46b1a8ca1398bef30d314720f9e9bd2
+  RESULT SHA:    e87d9c56193fc24b51f8892623b1a24f9b9a71f3
+  VERDICT:       passed
+  CONFORMANCE:   R3 | failed-before: yes | passes-after: yes | mutation: yes
+                 Fail-before (both routers, stale-price mode, not reject):
+                   BacktestOrderRouter router_first FILLED 90.00
+                   BacktestOrderRouter stop_first   FILLED 99.50
+                   PassiveLimitOrderRouter router_first FILLED 90.00
+                   PassiveLimitOrderRouter stop_first   FILLED 99.50
+                 Handler order observed: (router, stop_exit) vs
+                 (stop_exit, router). STOP_EXIT submitted in all four.
+                 After implement: 1 passed. Mutation: BacktestOrderRouter
+                 pricing reverted to _last_quotes only; R3 failed again
+                 on 90.00 vs 99.50 while PassiveLimit stayed 90.00/90.00;
+                 SHA256 restore byte-identical
+                 19DB5C53D878844B493464E4771784157B202F2CDAFCFAF53AC1678CE4FD9E84.
+  TESTS:         4835 passed / 0 failed / 19 skipped / 14 xfailed
+                 -> 4836 passed / 0 failed / 19 skipped / 14 xfailed
+                 +1 passed is R3. Skip vs post-S-11a 18 is wall-clock.
+  PARITY:        declared VERIFY | actual hold 62 unmoved | MATCH
+                 vs baseline_post-S-11a.json. Tape is
+                 tests/determinism/test_orchestrator_replay.py stop-exit
+                 (bootstrap router-first + BacktestOrderRouter);
+                 EXPECTED_STOP_EXIT_STREAMS unmoved.
+  FILES:         14 declared, 13 touched, 13 committed (clean vs
+                 e87d9c5). stop_exit.py declared, not touched — quote
+                 is the _process_tick argument, not a StopExit hold.
+  NET DELTA:     declared src modules 0, public symbols 0, branch
+                 points 0
+                 actual modules 199 -> 199 (+0)
+                 public_symbols 562 -> 562 (+0)
+                 sloc 44494 -> 44528 (+34)
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   S-11b uppercased to S-11B not in plan (frozen).
+                 Four checks by hand: FILES 14 declared / 13 touched,
+                 all declared, stop_exit.py declared-untouched; PARITY
+                 holds 62/62; TESTS failed 0; NET DELTA modules +0,
+                 symbols +0. CLEAN (boundary — committed after human
+                 go).
+  NOTES:         Three attempts. Attempt 1 fixed only
+                 PassiveLimitOrderRouter while APP and
+                 test_orchestrator_replay.py both resolve
+                 execution_mode="market" -> BacktestOrderRouter, so
+                 parity held because the fix never reached the tape.
+                 Attempt 2 added a co_varnames signature sniff that
+                 silently fell back to submit(order) -- fail-quiet on
+                 the defect being closed, and live on paper because
+                 DurableSubmittedOrderJournal.install_on wraps submit
+                 as def submit(request). Attempt 3's first pass used a
+                 module-level mutable global (_held_triggering_quote)
+                 read by the kernel through a private import; rejected
+                 as process-global rather than task-scoped and a
+                 kernel->risk edge on a private symbol. Final: the
+                 quote is the _process_tick argument, carried
+                 explicitly to _submit_to_router at all four call
+                 sites, with _last_quotes as fallback.
+                 _tick_quote_for_trace was rejected as a source: it is
+                 diagnostic, assigned only when a signal-order trace
+                 sink is bound, and None on every production tick --
+                 using it would have left the race live while parity
+                 held for the wrong reason. Lines 455, 1474 and 1480
+                 join two statements with a semicolon deliberately, so
+                 the Inv-10 wall-clock pins at 1642, 1644, 1684, 1686,
+                 1780, 1782 and 3968 do not move; _submit_to_router is
+                 inserted after 3971 for the same reason. R3 originates
+                 here after being discarded from S-11a as
+                 unfalsifiable, and drives quotes through _process_tick
+                 rather than bus.publish so the orchestrator is
+                 actually dispatching when stop-exit fires.
+  FINDINGS:      the plan required four amendments during execution --
+                 backtest_router.py, the OrderRouter protocol and IB
+                 router, the journal wrapper plus six test doubles, and
+                 the order-routing monkeypatch. Each was found by an
+                 attempt failing, not by reading. Also: three plan
+                 commits landed on the step branch and needed
+                 cherry-picking to arch/exec.
+                 Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA / FILES touched 0 on
+                 uncommitted tree; ~157 research cache days stale
+                 until after S-17a; 11 UNIT_UNDETERMINED block S-24;
+                 three X6 cases xfail(strict) awaiting S-12 family
+                 instances; Inv-10 wall-clock allowlist line-pinned.
+  NEXT:          S-12 wiring manifest (platform-wide). Not started.
+                 Do not begin S-12. Left uncommitted:
+                 baseline_pre-S-11b.json, baseline_post-S-11b.json,
+                 this ledger entry.
+
 
