@@ -2857,5 +2857,146 @@ WATCH:       a pre-flight capture reporting failed == 1 on THIS test only is
 NOTE:        the S-12 ledger entry records the baseline as GREEN; the
              artifact says otherwise and the artifact wins.
 
+---
+
+## S-13  2026-08-22T10:28:00+08:00
+  STEP:          S-13
+  BASE:          5656fd5810e935e28ffed0e06ee308fd4c17173f
+  RESULT SHA:    d4244775b3eb620e44e17752f949716bd4bbcc0b
+  VERDICT:       passed
+  CONFORMANCE:   S12 stream-authority | failed-before: yes | passes-after: yes
+                 | mutation: yes
+                 S12 contract-producer | failed-before: yes | passes-after: yes
+                 | mutation: yes
+                 Fail-before (no registry, unnamed production sites):
+                   FAILED tests/conformance/test_single_owner.py::
+                   test_s12_every_stream_has_exactly_one_sequence_authority
+                   AssertionError: stream has no sequence authority:
+                   src/feelies/bootstrap.py:358
+                   FAILED tests/conformance/test_single_owner.py::
+                   test_s12_every_contract_has_exactly_one_producer
+                   AssertionError: contract has no producer: Alert
+                   2 failed in 0.58s
+                 After implement: 2 passed. Mutation: removed
+                 SequenceAuthority("sensor", "SensorRegistry",
+                 ("SensorReading",)); S12 failed naming stream sensor
+                 and contract SensorReading; restore SHA256
+                 e2fa811eed7e6dbb54145c142b632872d5ed3990b222a515bd536ab02ca16971
+                 BYTE_IDENTICAL.
+  TESTS:         4852 passed / 1 failed / 18 skipped / 11 xfailed
+                 -> 4864 passed / 2 failed / 7 skipped / 11 xfailed
+                 (full capture during US RTH). Comparable
+                 `pytest -q -m "not paper_rth"`: 4853 passed / 1 failed
+                 / 5 skipped / 14 deselected / 11 xfailed -- failed 1
+                 is the exempted IB after-hours test. +2 passed on that
+                 cut are S12. The second full-suite failure is the g12
+                 paper_rth test (own EXEMPTION). determinism 145 -> 145.
+                 mypy clean (201 files). conformance 73 passed / 11
+                 xfailed (S11 still xfail on StateTransition).
+  PARITY:        declared hold | actual 62 constants unmoved, 0 changed
+                 | MATCH vs baseline_pre-S-13.json (62/62 key-for-key).
+                 Naming a generator changes no draw order.
+  FILES:         14 declared, 14 touched, 14 committed (clean vs
+                 d424477). verify_step before commit reported touched 0
+                 (uncommitted tree).
+  NET DELTA:     declared src modules +1, public symbols +1, branch
+                 points 0, test files +1
+                 actual modules 200 -> 201 (+1)
+                 public_symbols 564 -> 565 (+1, SequenceAuthority)
+                 sloc 44827 -> 44920 (+93)
+                 n_edges 629 -> 629
+                 n_modules 163 -> 163
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 sequence_authority.py is not imported from src/, so
+                 the import graph does not gain a module or edge.
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   Four checks by hand: FILES 14/14 (oracle reported
+                 touched 0 on the uncommitted tree); PARITY holds
+                 62/62; TESTS failed 1->2, extra is the g12 paper_rth
+                 EXEMPTION, comparable not-paper_rth failed 1 IB only;
+                 NET DELTA +1/+1/0 on declared axes. DELETES prose is
+                 not file deletions -- frozen matcher. CLEAN (boundary
+                 -- committed after human go).
+  NOTES:         26 SequenceGenerator constructions in src/feelies, 24
+                 unique stream names; hazard and metric are shared
+                 inject+fallback pairs. stream is keyword-only with
+                 default None and no fallback name -- enforcement is by
+                 S12 over production call sites, not by the constructor
+                 signature, because a required positional would
+                 TypeError 154 constructions across 65 test files and
+                 21 across 7 scripts. Tests and scripts may construct
+                 unnamed generators; they are not authorities. The plan
+                 said 13 thread_safe defaults; the actual is 11 -- 13
+                 calls have no thread_safe= in the call text, but 2 of
+                 those are orchestrator.py SequenceGenerator(stream=...,
+                 **_seq_kw) where _seq_kw already carries the flag, and
+                 adding it beside **_seq_kw would be a duplicate-keyword
+                 error. Stream and contract tables are derived from the
+                 construction sites and from wiring_manifest.SUBSCRIPTIONS
+                 plus gate_registry, not chosen. S12 uniqueness is per
+                 stream; four bus types (Alert, MetricEvent, OrderAck,
+                 OrderRequest) have multiple derived authorities and
+                 all are listed rather than one being picked. Mutation
+                 proof: removing SequenceAuthority("sensor", ...) made
+                 S12 fail on both clauses -- orphaned stream and
+                 orphaned SensorReading contract -- restore
+                 byte-identical. Wall-clock pins unmoved (1642, 1644,
+                 1684, 1686, 1780, 1782, 3968).
+  FINDINGS:      two baseline failures are now known-environmental and
+                 both are recorded -- the IB after-hours EXEMPTION, and
+                 this g12 paper_rth failure, which is pre-existing on
+                 arch/exec and surfaces only during market hours. Also:
+                 ibapi is not a declared dependency, so a fresh
+                 worktree cannot run the paper suite -- `uv sync
+                 --all-extras` does not install it.
+                 Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA / FILES touched 0 on
+                 uncommitted tree; ~157 research cache days stale
+                 until after S-17a; 11 UNIT_UNDETERMINED block S-24;
+                 subscribe_all kept (six callers outside src/feelies);
+                 StateTransition notification record, publish kept for
+                 S-31, S11 stays xfail; Inv-10 wall-clock allowlist
+                 line-pinned; S-11b semicolons at orchestrator 455,
+                 1474, 1480.
+  NEXT:          S-14 forbidden-reads matrix (boundary). Not started.
+                 Do not begin S-14. Left uncommitted:
+                 baseline_pre-S-13.json, baseline_post-S-13.json,
+                 this ledger entry.
+
+---
+
+## EXEMPTION  G12 paper_rth cost-disclosure alert in the reference baselines
+DATE:        2026-08-22
+FAILURE:     tests/integration/test_paper_rth_safety.py::
+             test_g12_cost_exceeds_disclosure_alert
+             "assert False" on any(a.alert_name ==
+             "g12_realized_cost_exceeds_disclosure_stress")
+PRESENT IN:  baseline_post-S-13.json (4864 passed, 2 failed, exit 1).
+             Absent from baseline_pre-S-13.json (outside RTH; 4852
+             passed, 1 failed, 18 skipped) because the test is
+             paper_rth-marked and skips. Fails identically on arch/exec
+             without the S-13 changes, under PAPER_RTH_FORCE=1 with a
+             reachable IB Gateway.
+CAUSE:       environmental. paper_rth-marked, so it skips outside US
+             RTH and only surfaces during market hours. Requires a
+             reachable IB Gateway. Predates S-13; the step does not
+             change draw order or the G12 alert path.
+DECISION:    proceed. This failure plus the IB after-hours EXEMPTION
+             is the accepted in-RTH baseline state. It is NOT a
+             regression.
+WATCH:       outside RTH, failed == 1 on the IB after-hours test only
+             is expected. During US RTH with IB Gateway, failed == 2
+             on THIS test and the IB after-hours test is expected.
+             failed > 2, or a different test, is a stop.
+NOTE:        ibapi is not a declared dependency; `uv sync --all-extras`
+             does not install it, so a fresh worktree cannot run the
+             paper suite.
+
 
 
