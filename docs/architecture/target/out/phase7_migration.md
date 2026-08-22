@@ -1562,6 +1562,14 @@ FILES:           src/feelies/kernel/orchestrator.py
                  src/feelies/harness/backtest_prep.py
                  src/feelies/portfolio/memory_position_store.py
                  src/feelies/storage/submitted_order_journal.py
+                 src/feelies/ingestion/massive_ingestor.py
+                 src/feelies/portfolio/cross_sectional_tracker.py
+                 src/feelies/risk/deferral_cap.py
+                 src/feelies/risk/exit_composer.py
+                 src/feelies/risk/hazard_exit.py
+                 src/feelies/risk/stop_exit.py
+                 src/feelies/sensors/registry.py
+                 src/feelies/storage/memory_event_log.py
                  tests/conformance/test_reset_paths.py (S16 — authored in S-03;
                  this step drops its xfail)
                  tests/conformance/test_recovery_determinism.py (R6, new)
@@ -1583,7 +1591,12 @@ REFACTOR PATH:   (1) S16 as an assertion over the existing scan, xfail(strict);
                  classes live in. If the scan names a class in a file not listed,
                  STOP and report it — do not edit an undeclared file, and do not
                  skip a class to stay inside FILES. The plan's "32" is stale;
-                 report the count you find.
+                 report the count you find. broker/ib/router.py and portfolio/memory_position_store.py are
+                 declared but absent from the 34: the scanner counts `self.attr =`
+                 only, not dict writes, so IBOrderRouter and MemoryPositionStore
+                 mutate through containers. Declaring them is deliberate -- if
+                 either needs a reset on the same reasoning, add it and say so;
+                 if not, leave them untouched and record why.
 BLAST RADIUS:    boundary — 32 classes gain a method
 VALIDATED BY:    S16, R6, all 26 baselines, the parity oracle
 PARITY IMPACT:   All 26 hold. Adding an unused method changes nothing.
