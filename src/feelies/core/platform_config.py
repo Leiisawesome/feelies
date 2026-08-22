@@ -9,6 +9,7 @@ import hashlib
 import importlib
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 from pathlib import Path
@@ -34,6 +35,22 @@ def latency_stress_ns(
 ) -> tuple[int, int]:
     """Scale both latency legs for invariant-12 stress."""
     return fill_latency_ns * multiplier, market_data_latency_ns * multiplier
+
+
+def compute_manifest_hash(source: Path | Mapping[str, Any]) -> str:
+    """SHA-256 of an alpha spec's content.
+
+    A path is hashed as newline-normalized file bytes (empty if missing) so
+    ``PlatformConfig.snapshot`` discloses spec content without loading alphas.
+    A mapping is hashed as canonical JSON for ``AlphaLoader.load_from_dict``.
+    """
+    if isinstance(source, Path):
+        if not source.is_file():
+            return ""
+        data = source.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        return hashlib.sha256(data).hexdigest()
+    payload = json.dumps(source, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 logger = logging.getLogger(__name__)
@@ -724,7 +741,16 @@ class PlatformConfig:
                     for spec in value
                 ]
             elif name == "alpha_specs":
-                value = sorted(spec.name for spec in value)
+                value = [
+                    {
+                        "name": spec.name,
+                        "sha256": compute_manifest_hash(spec),
+                    }
+                    for spec in sorted(
+                        value,
+                        key=lambda p: p.as_posix().replace("\\", "/"),
+                    )
+                ]
             elif isinstance(value, Path):
                 value = value.name
             elif isinstance(value, Enum):

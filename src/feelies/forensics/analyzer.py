@@ -48,6 +48,7 @@ class TCAReport:
     # Rolling window edge means
     rolling_50_mean_edge_bps: float
     rolling_200_mean_edge_bps: float
+    run_fingerprint: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -60,6 +61,7 @@ class DecaySignal:
     realized: float
     z_score: float
     recommendation: str
+    run_fingerprint: str = ""
 
 
 class ForensicAnalyzer(Protocol):
@@ -68,6 +70,8 @@ class ForensicAnalyzer(Protocol):
     def analyze_fills(
         self,
         trades: list[TradeRecord],
+        *,
+        run_fingerprint: str = "",
     ) -> TCAReport:
         """Compute TCA metrics from trade records."""
         ...
@@ -76,6 +80,8 @@ class ForensicAnalyzer(Protocol):
         self,
         strategy_id: str,
         trades: list[TradeRecord],
+        *,
+        run_fingerprint: str = "",
     ) -> list[DecaySignal]:
         """Identify statistical evidence of edge degradation."""
         ...

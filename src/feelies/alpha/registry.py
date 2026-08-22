@@ -20,6 +20,8 @@ Lifecycle integration:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -106,6 +108,20 @@ class AlphaRegistry:
         """Invalidate the feature cache; registered alphas and hooks stay."""
         self._feature_cache = None
 
+    def manifest_fingerprint(self) -> str:
+        """SHA-256 of registered ``(alpha_id, manifest_hash)`` pairs.
+
+        Covers the resolved registry. Excludes the promotion ledger: the
+        ledger is a wall-clock-stamped append-only record of decisions
+        and is never read on the tick path.
+        """
+        rows = sorted(
+            (alpha.manifest.alpha_id, alpha.manifest.manifest_hash)
+            for alpha in self._alphas.values()
+        )
+        payload = json.dumps(rows, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def register(self, alpha: AlphaModule) -> None:
         """Register an alpha module.
 
@@ -120,8 +136,7 @@ class AlphaRegistry:
 
         if not _ALPHA_ID_RE.match(str(alpha_id)):
             raise AlphaRegistryError(
-                f"Alpha '{alpha_id}' must match '^[a-z][a-z0-9_]*$' "
-                "(lowercase, underscores only)"
+                f"Alpha '{alpha_id}' must match '^[a-z][a-z0-9_]*$' (lowercase, underscores only)"
             )
 
         if alpha_id in self._alphas:

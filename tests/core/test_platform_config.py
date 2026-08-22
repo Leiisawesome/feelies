@@ -8,7 +8,7 @@ import pytest
 
 from feelies.core.config import ConfigSnapshot
 from feelies.core.errors import ConfigurationError
-from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.platform_config import OperatingMode, PlatformConfig, compute_manifest_hash
 
 
 # ── Construction and defaults ───────────────────────────────────────
@@ -209,6 +209,22 @@ class TestSnapshot:
         snap = cfg.snapshot()
         snap.data["parameter_overrides"]["sig_x"]["k"] = 999
         assert cfg.parameter_overrides == {"sig_x": {"k": 1}}
+
+    def test_missing_alpha_spec_path_still_snapshots(self) -> None:
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+        snap = cfg.snapshot()
+        assert snap.data["alpha_specs"] == [{"name": "x.yaml", "sha256": ""}]
+
+    def test_alpha_spec_content_moves_checksum(self, tmp_path: Path) -> None:
+        spec = tmp_path / "dummy.alpha.yaml"
+        spec.write_text("threshold: 1.0\n", encoding="utf-8")
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[spec])
+        snap = cfg.snapshot()
+        assert snap.data["alpha_specs"] == [
+            {"name": "dummy.alpha.yaml", "sha256": compute_manifest_hash(spec)}
+        ]
+        spec.write_text("threshold: 2.0\n", encoding="utf-8")
+        assert cfg.snapshot().checksum != snap.checksum
 
 
 # ── YAML loading ────────────────────────────────────────────────────

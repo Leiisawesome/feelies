@@ -140,6 +140,7 @@ class AlphaManifest:
     safety_exit_policy: dict[str, Any] | None = None
     gate_thresholds_overrides: dict[str, Any] | None = None
     lifecycle_cap: str | None = None
+    manifest_hash: str = ""
 
 
 # ── Alpha module protocol ───────────────────────────────────────────

@@ -38,7 +38,12 @@ class DecayDetector:
     has dropped significantly relative to their own history.
     """
 
-    def analyze_fills(self, trades: list[TradeRecord]) -> TCAReport:
+    def analyze_fills(
+        self,
+        trades: list[TradeRecord],
+        *,
+        run_fingerprint: str = "",
+    ) -> TCAReport:
         """Compute TCA metrics from trade records.
 
         All bps values are in basis points (1 bps = 0.01%).
@@ -57,6 +62,7 @@ class DecayDetector:
                 size_histogram={"1-100": 0, "101-500": 0, "501-2000": 0, ">2000": 0},
                 rolling_50_mean_edge_bps=0.0,
                 rolling_200_mean_edge_bps=0.0,
+                run_fingerprint=run_fingerprint,
             )
 
         # ── Per-trade metrics ─────────────────────────────────
@@ -124,12 +130,15 @@ class DecayDetector:
             size_histogram=size_histogram,
             rolling_50_mean_edge_bps=rolling_50,
             rolling_200_mean_edge_bps=rolling_200,
+            run_fingerprint=run_fingerprint,
         )
 
     def detect_edge_decay(
         self,
         strategy_id: str,
         trades: list[TradeRecord],
+        *,
+        run_fingerprint: str = "",
     ) -> list[DecaySignal]:
         """Detect edge decay for a strategy via Z-score test.
 
@@ -187,5 +196,6 @@ class DecayDetector:
                     f"(z={z_score:.2f}).  Review signal quality, "
                     "check for regime change or data staleness."
                 ),
+                run_fingerprint=run_fingerprint,
             )
         ]
