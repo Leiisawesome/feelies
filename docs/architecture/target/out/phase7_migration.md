@@ -1621,16 +1621,27 @@ STEP:            S-16
 CLOSES:          G06, G30
 PROBLEM:         Alpha manifest **content** moves no checksum: `alpha_specs` is
                  reduced to `sorted(spec.name for spec in value)` at
-                 `src/feelies/core/platform_config.py:683`, and no
+                 `src/feelies/core/platform_config.py:726-727`, and no
                  `manifest_hash` / `spec_hash` / `yaml_hash` / `sha256` exists
                  anywhere in `src/feelies/alpha/`. Editing a threshold in an
                  `alphas/**/*.alpha.yaml` changes what the platform trades and
                  moves no checksum. Engine 12's forensic outputs carry no
                  fingerprint at all. Inv-13 full provenance; CORE §C.13.
-FILES:           src/feelies/alpha/ (manifest content hash)
-                 src/feelies/core/platform_config.py:683
-                 src/feelies/forensics/ (fingerprint on forensic outputs)
+FILES:           src/feelies/alpha/module.py
+                 src/feelies/alpha/loader.py
+                 src/feelies/alpha/registry.py
+                 src/feelies/alpha/signal_layer_module.py
+                 src/feelies/core/platform_config.py
+                 src/feelies/forensics/analyzer.py
+                 src/feelies/forensics/decay_detector.py
+                 src/feelies/forensics/cost_survival.py
+                 src/feelies/forensics/cost_circuit_breaker.py
+                 src/feelies/forensics/edge_calibration.py
+                 src/feelies/forensics/gate_close_attribution.py
+                 src/feelies/forensics/decouple_backstop.py
                  tests/conformance/test_fingerprint_totality.py (R4)
+                 tests/acceptance/test_backtest_app_baseline.py (`_BASELINE_CONFIG_HASH` re-pin)
+                 tests/core/test_platform_config.py (snapshot path; dummy `alpha_specs` Paths)
 WHY THIS OWNER:  Phase 2 engine 5: the engine that reads and validates
                  manifests is the one that must compute their hash. Engine 12
                  stamps the fingerprint it was given; it does not compute one.
@@ -1647,7 +1658,16 @@ REFACTOR PATH:   (1) R4 asserting the fingerprint covers everything that can
                  cannot — it is never read on the tick path. If R4 is written to
                  demand ledger coverage it will demand reproducibility of a
                  wall-clock-stamped append-only log, which is unachievable; state
-                 the exclusion in R4 rather than discovering it.
+                 the exclusion in R4 rather than discovering it. 
+                 New `manifest_hash` / forensic fingerprint fields take a default
+                 so existing `AlphaManifest` / `TCAReport` sites outside FILES
+                 stay valid. Do not add a field to `Signal` or otherwise touch
+                 `src/feelies/core/events.py` (S8 `PINNED_PAYLOAD`). Stamp R4's
+                 Signal provenance via `metadata` in the loader wrap;
+                 `HorizonSignalEngine._patch_signal` already preserves `metadata`.
+                 `test_app_baseline_config_contract_hash` calls `from_yaml` then
+                 `snapshot()` and never loads alphas, so `_to_dict` must disclose
+                 spec *content* (not names-only) or that oracle will not move.
 BLAST RADIUS:    boundary — the config snapshot gains a field
 VALIDATED BY:    R4, all 26 baselines, and specifically
                  `tests/acceptance/test_backtest_app_baseline.py`'s
@@ -1660,7 +1680,7 @@ PARITY IMPACT:   **All 26 replay baselines hold; the config-contract hash
                  baseline" (`tests/determinism/test_parity_manifest.py:174-175`),
                  so this is a one-line re-pin in the acceptance test, not a
                  manifest re-pin. Note the compatibility shims at
-                 `src/feelies/core/platform_config.py:696-710` and `:712-720` exist precisely to
+                 `src/feelies/core/platform_config.py:740-754` and `:756-764` exist precisely to
                  keep established checksums valid — this step deliberately
                  breaks that checksum and must not extend the shim to hide it.
 DELETES:         the names-only reduction at `:683`; the largest hole in run
