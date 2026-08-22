@@ -1485,11 +1485,11 @@ class Orchestrator:
         exc_name = type(original).__name__
 
         try:
-            self._micro.reset(
+            self.reset(
                 trigger=f"pipeline_abort:{exc_name}",
-                correlation_id=cid,
+                correlation_id=cid, for_new_run=False,
             )
-            self._pending_sized_intents.clear()
+            # pending-intent clear lives in reset, not beside it
             self._bus.publish(
                 MetricEvent(
                     timestamp_ns=self._clock.now_ns(),
@@ -3969,6 +3969,113 @@ class Orchestrator:
                 correlation_id=correlation_id,
                 extra={"ack_count": len(acks)},
             )
+
+    def reset(
+        self,
+        trigger: str = "reset",
+        correlation_id: str = "",
+        *,
+        for_new_run: bool = True,
+    ) -> None:
+        """Restore run-scoped state to post-``__init__`` so a second run can boot.
+
+        Bus subscriptions and attach flags stay: the bus cannot unsubscribe.
+        Durable stores (submitted-order journal) are not cleared.
+        ``for_new_run=False`` is in-session tick recovery: micro reset plus
+        pending-intent clear only. Macro stays in the live trading mode so
+        DEGRADED can still fire; the book and router maps are not wiped.
+        """
+
+        if not for_new_run:
+            self._micro.reset(trigger=trigger, correlation_id=correlation_id)
+            self._pending_sized_intents.clear()
+            return
+
+        def _maybe_reset(obj: object) -> None:
+            reset = getattr(obj, "reset", None)
+            if callable(reset):
+                reset()
+
+        skip = frozenset(
+            {"DurableSubmittedOrderJournal", "IBGatewayConnection", "MassiveLiveFeed"}
+        )
+        _maybe_reset(self._clock)
+        _maybe_reset(self._risk_engine)
+        _maybe_reset(self._positions)
+        _maybe_reset(self._metrics)
+        _maybe_reset(self._normalizer)
+        _maybe_reset(self._sensor_registry)
+        _maybe_reset(self._horizon_scheduler)
+        _maybe_reset(self._horizon_signal_engine)
+        _maybe_reset(self._composition_engine)
+        _maybe_reset(self._hazard_exit_controller)
+        _maybe_reset(self._alpha_registry)
+        _maybe_reset(getattr(self._backend, "order_router", None))
+        _maybe_reset(self._fill_ledger)
+        self._bus.reset()
+
+        self._paper_session_recorder = None
+        self._quote_tick_in_flight = False
+        self._in_flight_quote = None
+        self._tick_quote_for_trace = None
+        self._last_quote_context_for_signal_trace = None
+        self._signal_order_trace_seen_sequences.clear()
+        self._carryover_signal_sequences.clear()
+        self._last_regime_state.clear()
+        self._regime_bus_published_symbols.clear()
+        self._realized_cost_breach_streak.clear()
+        self._active_orders.clear()
+        self._order_trading_intent.clear()
+        self._forced_exit_announced_quantity.clear()
+        self._last_signal_mechanism.clear()
+        self._working_exit_fallback.clear()
+        self._order_filled_qty.clear()
+        self._deferred_router_acks.clear()
+        self._events_prelogged = False
+        self._pipeline_abort_requested = False
+        self._halted_symbols.clear()
+        self._halt_blackout_until_ns.clear()
+        self._ssr_active.clear()
+        self._rth_close_bp_flipped = False
+        self._rth_bp_session_date = None
+        self._latency_reduce_only = False
+        self._signal_buffer.clear()
+        self._alpha_symbols_with_fills.clear()
+        self._arbitration_collisions.clear()
+        self._pending_sized_intents.clear()
+        self._consumed_by_portfolio_ids = None
+        self._warned_multi_standalone_signals = False
+        self._logged_harmless_arbitration_collision = False
+        self._hazard_submitted_order_ids.clear()
+        self._net_shadow_transient_keys.clear()
+        self._lot_ledger = LotLedger()
+        self._desired_target_book = DesiredTargetBook()
+        self._portfolio_netter = PortfolioNetter(
+            self._desired_target_book,
+            portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
+        )
+        self._market_context = MarketContext()
+        self._latency_monitor = _LatencyBudgetMonitor()
+
+        seen = {id(self)}
+        groups = list(self._bus._handlers.values())
+        groups.append(self._bus._global_handlers)
+        for group in groups:
+            for handler in group:
+                owner = getattr(handler, "__self__", None)
+                if owner is None or id(owner) in seen:
+                    continue
+                seen.add(id(owner))
+                if type(owner).__name__ in skip:
+                    continue
+                _maybe_reset(owner)
+
+        self._macro.reset(trigger=trigger, correlation_id=correlation_id)
+        self._micro.reset(trigger=trigger, correlation_id=correlation_id)
+        self._risk_escalation.reset(trigger=trigger, correlation_id=correlation_id)
+        self._seq.reset()
+        self._hazard_seq.reset()
+        _maybe_reset(self._clock)
 
     def _submit_to_router(
         self,

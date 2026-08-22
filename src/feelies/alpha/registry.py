@@ -102,6 +102,10 @@ class AlphaRegistry:
         # alpha's open deferred book immediately.
         self._lifecycle_revocation_hook: Callable[[LifecycleRevocation], None] | None = None
 
+    def reset(self) -> None:
+        """Invalidate the feature cache; registered alphas and hooks stay."""
+        self._feature_cache = None
+
     def register(self, alpha: AlphaModule) -> None:
         """Register an alpha module.
 

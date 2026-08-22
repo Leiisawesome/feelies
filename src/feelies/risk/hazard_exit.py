@@ -120,6 +120,12 @@ class HazardExitController:
         # Episode or quantity changes release the guard for a new residual close.
         self._pending_exit_symbols: dict[str, tuple[int | None, int]] = {}
 
+    def reset(self) -> None:
+        """Clear episode suppression; keep policies and bus wiring."""
+        self._emitted_for_episode.clear()
+        self._pending_exit_symbols.clear()
+        self._seq.reset()
+
     # ── Public API ───────────────────────────────────────────────────
 
     @property

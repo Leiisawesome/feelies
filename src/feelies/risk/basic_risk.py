@@ -153,6 +153,16 @@ class BasicRiskEngine:
                     self._account_id,
                 )
 
+    def reset(self) -> None:
+        """Restore drawdown HWM and buying-power phase; keep injected config."""
+        self._high_water_mark = self._config.account_equity
+        self._buying_power_phase = BuyingPowerPhase.INTRADAY
+        cache_reset = getattr(self._regime_states, "reset", None)
+        if callable(cache_reset):
+            cache_reset()
+        if self._alert_seq is not None:
+            self._alert_seq.reset()
+
     def set_buying_power_phase(self, phase: BuyingPowerPhase) -> None:
         """Switch between intraday and overnight Reg-T caps."""
         self._buying_power_phase = phase

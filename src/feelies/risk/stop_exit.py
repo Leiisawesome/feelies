@@ -154,6 +154,12 @@ class StopExitController:
         # quantity changes release the guard for a new residual close.
         self._pending_exit_symbols: dict[str, tuple[int | None, int]] = {}
 
+    def reset(self) -> None:
+        """Clear trailing-stop peaks; keep policy and bus wiring."""
+        self._peak_pnl_per_share.clear()
+        self._pending_exit_symbols.clear()
+        self._seq.reset()
+
     # ── Public API ───────────────────────────────────────────────────
 
     @property

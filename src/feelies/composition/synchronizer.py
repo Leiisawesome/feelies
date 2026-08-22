@@ -99,6 +99,13 @@ class UniverseSynchronizer:
         self._emitted: set[tuple[int, int]] = set()
         self._attached = False
 
+    def reset(self) -> None:
+        """Clear feeder caches and emission dedup; keep bus wiring."""
+        self._snapshot_cache.clear()
+        self._signal_cache.clear()
+        self._emitted.clear()
+        self._ctx_seq.reset()
+
     # ── Public API ───────────────────────────────────────────────────
 
     @property

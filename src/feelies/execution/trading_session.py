@@ -250,6 +250,10 @@ class RthEntryFillGate:
             opens_or_increases=True,
         )
 
+    def reset(self) -> None:
+        """Position callback is process wiring; nothing run-scoped to restore."""
+        return
+
 
 def build_trading_session_from_platform(
     *,

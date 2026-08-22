@@ -93,6 +93,11 @@ class CrossSectionalTracker:
         # bus deliveries; see CompositionEngine).
         self._last_completeness: dict[tuple[int, int], float] = {}
 
+    def reset(self) -> None:
+        """Drop latest snapshots; keep bus wiring."""
+        self._snapshots.clear()
+        self._last_completeness.clear()
+
     # ── Public API ───────────────────────────────────────────────────
 
     def attach(self) -> None:

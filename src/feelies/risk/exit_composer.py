@@ -268,6 +268,11 @@ class ExitComposer:
         self._attached = False
         self._pending_exit: dict[tuple[str, str], tuple[int | None, int]] = {}
 
+    def reset(self) -> None:
+        """Clear pending-exit guards; keep policies and bus wiring."""
+        self._pending_exit.clear()
+        self._seq.reset()
+
     # ── Public API ───────────────────────────────────────────────────
 
     @property

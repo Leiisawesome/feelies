@@ -61,6 +61,13 @@ class AlphaBudgetRiskWrapper:
         self._account_equity = account_equity
         self._alpha_hwm: dict[str, Decimal] = {}
 
+    def reset(self) -> None:
+        """Clear per-alpha high-water marks; the inner engine is reset separately."""
+        self._alpha_hwm.clear()
+        inner_reset = getattr(self._inner, "reset", None)
+        if callable(inner_reset):
+            inner_reset()
+
     def check_signal(
         self,
         signal: Signal,

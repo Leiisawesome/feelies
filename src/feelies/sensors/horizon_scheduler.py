@@ -72,6 +72,8 @@ class HorizonScheduler:
         "_symbols_sorted",
         "_session_open_ns",
         "_session_open_locked",
+        "_session_open_ns_init",
+        "_session_open_locked_init",
         "_sequence_generator",
         "_last_boundary_symbol",
         "_last_boundary_universe",
@@ -113,6 +115,8 @@ class HorizonScheduler:
         # an explicit session_open_ns at construction or auto-bound on
         # the first event.  Once locked, ``bind_session_open()`` raises.
         self._session_open_locked = session_open_ns is not None
+        self._session_open_ns_init: int | None = session_open_ns
+        self._session_open_locked_init = session_open_ns is not None
         self._sequence_generator = sequence_generator
         # A pure anchor function may snap lazy binding to the session open.
         # Events before the resolved anchor are ignored.
@@ -131,6 +135,16 @@ class HorizonScheduler:
             if metric_collector is not None
             else None
         )
+
+    def reset(self) -> None:
+        """Restore the session anchor and emitted-boundary tables."""
+        self._session_open_ns = self._session_open_ns_init
+        self._session_open_locked = self._session_open_locked_init
+        self._last_boundary_symbol.clear()
+        self._last_boundary_universe.clear()
+        self._sequence_generator.reset()
+        if self._metrics_seq is not None:
+            self._metrics_seq.reset()
 
     # ── Public API ───────────────────────────────────────────────────
 

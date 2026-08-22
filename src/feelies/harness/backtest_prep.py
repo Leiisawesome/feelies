@@ -61,6 +61,11 @@ class QuoteTraceIndex:
                 tick_index=self.quote_count,
             )
 
+    def reset(self) -> None:
+        """Clear the index. QuoteTraceIndex is a per-replay observer."""
+        self.quote_count = 0
+        self.by_correlation_id.clear()
+
 
 class QuoteReplayObserver:
     """Single NBBO subscriber: quote trace index + CLI progress lines."""
@@ -73,6 +78,12 @@ class QuoteReplayObserver:
         self._interval = interval
         self._count = 0
         self._t0 = time.monotonic()
+
+    def reset(self) -> None:
+        """Restart quote counting; the trace index is reset with it."""
+        self._count = 0
+        self._t0 = time.monotonic()
+        self.trace.reset()
 
     def __call__(self, event: Event) -> None:
         if not isinstance(event, NBBOQuote):

@@ -43,6 +43,14 @@ class MetricSummary:
         if value > self.max_value:
             self.max_value = value
 
+    def reset(self) -> None:
+        """Restore counters to construction defaults."""
+        self.count = 0
+        self.total = 0.0
+        self.min_value = float("inf")
+        self.max_value = float("-inf")
+        self.last_value = 0.0
+
     @property
     def mean(self) -> float:
         return self.total / self.count if self.count > 0 else 0.0
@@ -67,6 +75,12 @@ class InMemoryMetricCollector:
         # reallocations in long backtest runs (~11M entries → 91 MB buffer).
         # Summaries are always updated regardless of this flag.
         self._store_raw_events: bool = True
+
+    def reset(self) -> None:
+        """Clear recorded metrics for a subsequent run in this process."""
+        self._events.clear()
+        self._summaries.clear()
+        self._flushed = False
 
     def record(self, metric: MetricEvent) -> None:
         if self._store_raw_events:

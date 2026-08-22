@@ -161,6 +161,10 @@ class MassiveHistoricalIngestor:
         # Share one quote/trade client pair per source client.
         self._parallel_clients: tuple[Any, Any, Any] | None = None
 
+    def reset(self) -> None:
+        """Drop cached REST clients. Checkpoint durability is not this object's."""
+        self._parallel_clients = None
+
     def ingest(
         self,
         symbols: Sequence[str],

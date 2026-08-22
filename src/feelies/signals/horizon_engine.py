@@ -141,6 +141,16 @@ class HorizonSignalEngine:
         # Observe duplicate or out-of-order boundaries without blocking dispatch.
         self._last_boundary_index: dict[tuple[str, str], int] = {}
 
+    def reset(self) -> None:
+        """Clear run caches; registrations and bus wiring stay."""
+        self._regime_cache.clear()
+        self._sensor_cache.clear()
+        self._last_boundary_index.clear()
+        self._signal_seq.reset()
+        if self._metrics_seq is not None:
+            self._metrics_seq.reset()
+        self._safety_seq.reset()
+
     # ── Registration ─────────────────────────────────────────────────
 
     def register(self, registered: RegisteredSignal) -> None:

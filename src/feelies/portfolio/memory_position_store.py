@@ -26,6 +26,14 @@ class MemoryPositionStore:
         # Track open-episode age for hazard exits; sign flips restart and flat clears it.
         self._opened_at_ns: dict[str, int] = {}
 
+    def reset(self) -> None:
+        """Empty the book. Position stores are cold-start-only across runs."""
+        self._positions.clear()
+        self._marks.clear()
+        self._bids.clear()
+        self._asks.clear()
+        self._opened_at_ns.clear()
+
     def get(self, symbol: str) -> Position:
         pos = self._positions.get(symbol)
         if pos is None:

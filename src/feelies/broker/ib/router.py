@@ -107,6 +107,17 @@ class IBOrderRouter:
         self._has_acked: dict[int, bool] = {}
         self._submitted_order_ids: set[str] = set()
 
+    def reset(self) -> None:
+        """Clear in-memory order bookkeeping; the IB connection stays up."""
+        self._pending_acks.clear()
+        self._meta.clear()
+        self._platform_to_ib.clear()
+        self._last_cumulative.clear()
+        self._last_cum_value.clear()
+        self._has_acked.clear()
+        self._submitted_order_ids.clear()
+        self._ack_seq.reset()
+
     # ── OrderRouter protocol ────────────────────────────────────────
 
     def submit(

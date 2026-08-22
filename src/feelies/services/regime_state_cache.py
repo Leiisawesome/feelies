@@ -46,6 +46,11 @@ class RegimeStateCache:
         # rather than on every lookup — risk reads this per tick.
         self._warned_ambiguous: set[tuple[str, frozenset[str]]] = set()
 
+    def reset(self) -> None:
+        """Drop published states; bus wiring stays."""
+        self._by_key.clear()
+        self._warned_ambiguous.clear()
+
     # ── Wiring ───────────────────────────────────────────────────────
 
     def attach(self) -> None:

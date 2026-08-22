@@ -34,10 +34,15 @@ class SimulatedClock:
     ensuring bit-identical replay (invariant 5).
     """
 
-    __slots__ = ("_time_ns",)
+    __slots__ = ("_time_ns", "_start_ns")
 
     def __init__(self, start_ns: int = 0) -> None:
+        self._start_ns = start_ns
         self._time_ns = start_ns
+
+    def reset(self) -> None:
+        """Restore time to the constructor ``start_ns`` (replay re-anchors)."""
+        self._time_ns = self._start_ns
 
     def now_ns(self) -> int:
         return self._time_ns
