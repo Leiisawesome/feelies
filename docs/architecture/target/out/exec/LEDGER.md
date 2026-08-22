@@ -3389,6 +3389,119 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  baseline_pre-S-15.json, baseline_post-S-15.json,
                  this ledger entry.
 
+---
+
+## S-16  2026-08-22T19:46:00+08:00
+  STEP:          S-16
+  BASE:          d7c4a856ec15c0ea766ea1411c2afc78269d7cc3
+  RESULT SHA:    e2a7c2b3b5faccffbf5cf0ac9ca5707af0c3c8af
+  VERDICT:       passed
+  CONFORMANCE:   R4 | failed-before: yes | passes-after: yes | mutation: yes
+                 Fail-before (HEAD src, R4 xfail + --runxfail):
+                   FAILED tests/conformance/test_fingerprint_totality.py::
+                   test_r4_fingerprint_covers_resolved_registry_not_promotion_ledger
+                   AssertionError: manifest content moves no checksum:
+                   alpha_one.alpha.yaml
+                   assert not ['alpha_one.alpha.yaml', 'alpha_two.alpha.yaml']
+                   1 failed in 0.26s
+                 After implement: 1 passed. Mutation: skipped
+                 compute_manifest_hash for alpha_one.alpha.yaml in
+                 _to_dict; R4 failed naming alpha_one.alpha.yaml;
+                 restore SHA256
+                 5086A9B13A7B4B2AEF3F88F2404ECBAA2ADA8C442F8C53A1829E1E818E591BFB
+                 BYTE_IDENTICAL.
+  TESTS:         4858 passed / 0 failed / 19 skipped / 10 xfailed
+                 -> 4860 passed / 1 failed / 19 skipped / 10 xfailed
+                 (post-S-16 capture, before re-pin). After operator
+                 re-pin, test_app_baseline_config_contract_hash
+                 1 passed in 0.34s. +3 are R4 and two snapshot
+                 tests. Functional APP replay passed. determinism
+                 145 -> 145. mypy clean (202 files). conformance
+                 77 passed / 10 xfailed -> 78 passed / 10 xfailed
+                 (S11 still xfail on StateTransition). wall-clock
+                 pins unmoved (1642, 1644, 1684, 1686, 1780, 1782,
+                 3968).
+  PARITY:        declared break (_BASELINE_CONFIG_HASH only; 26
+                 replay baselines hold) | actual 26 hold; pin
+                 e4073f3517ce6232dfc067228e991b8477b1de93b8cb582b2ffc9f62cafa0e6b
+                 -> 89d43554e749134925b9407c9e810a2fa2e7ce56a3efa26bf596818d0e3cd64c
+                 re-pinned by operator | MATCH.
+  FILES:         15 declared, 15 committed (clean vs e2a7c2b).
+                 verify_step before commit reported touched 0
+                 (uncommitted tree).
+  NET DELTA:     declared src modules 0, public symbols +1,
+                 branch points 0, test files +1
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 566 -> 567 (+1, compute_manifest_hash)
+                 sloc 45361 -> 45452 (+91)
+                 n_edges 632 -> 633 (+1, loader imports
+                 compute_manifest_hash)
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   Four checks by hand: FILES 15/15 after re-pin
+                 (oracle reported touched 0 on the uncommitted
+                 tree); PARITY 26 replay hold, config-contract
+                 pin moved as declared; TESTS 4858->4860 passed,
+                 0->1 failed on the unre-pinned oracle, then the
+                 oracle 1 passed after re-pin; NET DELTA modules
+                 0, public_symbols +1, sloc +91. DELETES is the
+                 names-only reduction, not a file deletion.
+                 CLEAN (boundary, then commit).
+  NOTES:         First declared parity break of the campaign. All
+                 26 replay baselines unmoved -- 62 file constants
+                 identical pre to post. _BASELINE_CONFIG_HASH
+                 moved e4073f35 -> 89d43554 by construction,
+                 verified on a clean alphas/ tree after
+                 implementation. The threshold demonstration is
+                 the point of the step: editing entry_threshold_z
+                 in sig_benign_midcap_v1 from 0.8 to 0.9 moved
+                 the config hash 89d43554 -> d2e5870b, and the
+                 YAML restored byte-identical. manifest_hash
+                 mutation proof: skipping compute_manifest_hash
+                 for alpha_one.alpha.yaml in _to_dict made R4
+                 name it; restore byte-identical. _to_dict
+                 discloses spec content rather than names-only,
+                 which is what makes the oracle move --
+                 test_app_baseline_config_contract_hash calls
+                 from_yaml then snapshot() and never loads
+                 alphas, so a hash stored only on AlphaManifest
+                 would have been invisible to it. Scope is the
+                 resolved registry, never the promotion ledger:
+                 R4's docstring states the exclusion, and it
+                 asserts that changing ledger.jsonl bytes does
+                 not move snapshot().checksum. The compatibility
+                 shims at platform_config.py were not extended,
+                 and events.py and test_schema_drift.py were not
+                 touched.
+  FINDINGS:      The S-16 block's DELETES field still cites the
+                 names-only reduction at `:683`; the corrected
+                 cite is `:726-727`, already fixed in PROBLEM
+                 but not in DELETES. Also: compute_config_hash
+                 lives on feelies.harness, not platform_config --
+                 worth noting for future steps that touch the
+                 config oracle.
+                 Carried: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader
+                 alpha_id test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; verify_step uppercase / unfenced /
+                 negation-blind / bare-filename / stale NET
+                 DELTA / FILES touched 0 on uncommitted tree;
+                 ~157 research cache days stale until after
+                 S-17a; 11 UNIT_UNDETERMINED block S-24;
+                 subscribe_all kept; StateTransition kept for
+                 S-31, S11 stays xfail; Inv-10 wall-clock
+                 allowlist line-pinned; S-11b semicolons;
+                 accepted baseline failure set is the four
+                 exempted tests; R6 14/31 resets.
+  NEXT:          S-17 canonical market-data replay (local). Not
+                 started. Do not begin S-17. Left uncommitted:
+                 baseline_pre-S-16.json, baseline_post-S-16.json,
+                 this ledger entry.
+
 
 
 
