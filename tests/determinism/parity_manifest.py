@@ -31,6 +31,9 @@ from __future__ import annotations
 import hashlib
 from typing import Final
 
+import feelies.core.events as events_mod
+from feelies.core.events import Event
+
 from tests.determinism.test_cross_sectional_context_replay import (
     EXPECTED_XSECT_CONTEXT_COUNT,
     EXPECTED_XSECT_CONTEXT_HASH,
@@ -257,10 +260,36 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
 FLOAT_HASH_TOLERANCE: Final[str] = ".6f/.2f"
 
 
+def _concrete_event_subclasses() -> dict[str, type[Event]]:
+    found: dict[str, type[Event]] = {}
+    for name, obj in vars(events_mod).items():
+        if isinstance(obj, type) and issubclass(obj, Event) and obj is not Event:
+            found[name] = obj
+    return found
+
+
+def _event_field_sets_canonical() -> str:
+    """Class name plus dataclass field names, dataclass order, every Event subclass.
+
+    Type annotations, defaults, and Field.metadata are not hashed.
+    """
+    lines: list[str] = []
+    for name, cls in sorted(_concrete_event_subclasses().items()):
+        field_names = ",".join(cls.__dataclass_fields__)
+        lines.append(f"{name}|{field_names}")
+    return "\n".join(lines)
+
+
 def manifest_fingerprint() -> str:
-    """Hash the sorted manifest so coordinated re-pins remain visible."""
+    """Hash the sorted manifest so coordinated re-pins remain visible.
+
+    Also hashes every Event subclass field set (class name + dataclass
+    field names in dataclass order; no type annotations) so schema growth
+    cannot pass invisibly.
+    """
     canonical = "\n".join(
         f"{name}|{hash_hex}|{count}"
         for name, (hash_hex, count) in sorted(LOCKED_PARITY_BASELINES.items())
     )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    payload = canonical + "\n" + _event_field_sets_canonical()
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

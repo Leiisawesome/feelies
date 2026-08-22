@@ -16,8 +16,10 @@ not the envelope pin.
 
 from __future__ import annotations
 
+import pytest
+
 import feelies.core.events as events_mod
-from feelies.core.events import Event
+from feelies.core.events import Event, Signal
 
 # Envelope fields every Event subclass must resolve, in dataclass order.
 PINNED_ENVELOPE: tuple[str, ...] = (
@@ -262,3 +264,34 @@ def test_s8_every_event_class_resolves_schema_version() -> None:
         or cls.__dataclass_fields__["schema_version"].default != schema_version
     ]
     assert not unresolved, f"event classes do not resolve SCHEMA_VERSION: {unresolved}"
+
+
+def test_s17a_field_add_moves_fingerprint_not_replay_hashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adding a field to any Event subclass moves the fingerprint; the 28 replay hashes do not."""
+    from tests.determinism import parity_manifest
+    from tests.determinism.test_signal_replay import EXPECTED_LEVEL2_SIGNAL_HASH
+
+    schema = parity_manifest._event_field_sets_canonical()
+    names = [line.split("|", 1)[0] for line in schema.splitlines() if line]
+    assert ":" not in schema
+    assert sorted(names) == sorted(PINNED_PAYLOAD)
+    for line in schema.splitlines():
+        cls_name, field_csv = line.split("|", 1)
+        actual = tuple(field_csv.split(",")) if field_csv else ()
+        assert actual == PINNED_ENVELOPE + PINNED_PAYLOAD[cls_name]
+
+    assert len(parity_manifest.LOCKED_PARITY_BASELINES) == 28
+    locked_before = dict(parity_manifest.LOCKED_PARITY_BASELINES)
+    assert locked_before["level2_signal"][0] == EXPECTED_LEVEL2_SIGNAL_HASH
+    fp_before = parity_manifest.manifest_fingerprint()
+
+    mutated = dict(Signal.__dataclass_fields__)
+    mutated["s17a_probe"] = next(iter(mutated.values()))
+    monkeypatch.setattr(Signal, "__dataclass_fields__", mutated)
+
+    fp_after = parity_manifest.manifest_fingerprint()
+    assert fp_after != fp_before
+    assert dict(parity_manifest.LOCKED_PARITY_BASELINES) == locked_before
+    assert locked_before["level2_signal"][0] == EXPECTED_LEVEL2_SIGNAL_HASH
