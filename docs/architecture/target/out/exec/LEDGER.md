@@ -3132,5 +3132,263 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  baseline_pre-S-14.json, baseline_post-S-14.json,
                  this ledger entry.
 
+---
+
+## S-15  2026-08-22T15:36:09+08:00
+  STEP:          S-15
+  BASE:          c3e70cc2221b7c18733510b1e1525ad04f9f2602
+  RESULT SHA:    not started — blocked at pre-flight, no branch cut, no edit made
+  VERDICT:       blocked
+  CONFORMANCE:   S16, R6 | failed-before: not run | passes-after: not run
+  TESTS:         not run -> not run
+  PARITY:        declared hold (all 26 baselines) | actual 62 constants
+                 unmoved vs baseline_post-S-14.json, key-for-key and
+                 value-for-value | MATCH (read-only parity_constants();
+                 no capture run)
+  FILES:         28 declared (26 source + 2 test), 0 touched. HEAD
+                 arch/exec @ c3e70cc. exec/S-15 not cut.
+                 tools/exec diff vs exec-tools-v1 empty. Working tree
+                 clean aside from this ledger entry.
+  NET DELTA:     declared src modules 0, public symbols +32, branch
+                 points 0, test files +2 | actual 0 / 0 / 0 / 0
+  DETERMINISM:   not run
+  VERIFY_STEP:   not run — no implement
+  NOTES:         Class set derived from tools/arch/substrate.py's
+                 stateful_no_reset filter (not truncated
+                 stateful_no_reset_top[:25]). n_stateful_no_reset=34
+                 (plan's "32" is stale; n_stateful_classes=115;
+                 mutating outside __init__=40). substrate.json's
+                 top-25 truncation made the plan's pointer unusable;
+                 FILES was amended at c3e70cc to enumerate 26 source
+                 files and still missed eight of the 34.
+                 No capture, no branch: same hand-back as S-01's first
+                 blocked pre-flight, so the retry starts on a clean
+                 tree. Parity verified read-only against
+                 baseline_post-S-14.json (artifact git sha 82f02b8;
+                 HEAD is c3e70cc = plan FILES amendment on top of
+                 cd3385b post-S-14 reference).
+  FINDINGS:      PLAN DEFECT — FILES does not contain the scan set.
+                 Eight classes live in files the step does not
+                 declare. Standing rule: do not edit an undeclared
+                 file, and do not skip a class to stay inside FILES.
+                 Undeclared (8):
+                   MassiveHistoricalIngestor
+                     src/feelies/ingestion/massive_ingestor.py
+                   CrossSectionalTracker
+                     src/feelies/portfolio/cross_sectional_tracker.py
+                   DeferralCapController
+                     src/feelies/risk/deferral_cap.py
+                   ExitComposer
+                     src/feelies/risk/exit_composer.py
+                   HazardExitController
+                     src/feelies/risk/hazard_exit.py
+                   StopExitController
+                     src/feelies/risk/stop_exit.py
+                   SensorRegistry
+                     src/feelies/sensors/registry.py
+                   InMemoryEventLog
+                     src/feelies/storage/memory_event_log.py
+                 Declared source files with no class in the set (2):
+                   src/feelies/broker/ib/router.py (IBOrderRouter)
+                   src/feelies/portfolio/memory_position_store.py
+                     (MemoryPositionStore — mutates via dict
+                     subscript, so the Attribute-assignment scan
+                     does not count it; plan still calls position
+                     stores cold-start-only)
+                 Full 34, derived, sorted by n_mutated_outside_init:
+                   40 Orchestrator src/feelies/kernel/orchestrator.py
+                   11 PassiveLimitOrderRouter src/feelies/execution/passive_limit_router.py
+                    7 MassiveNormalizer src/feelies/ingestion/massive_normalizer.py
+                    6 IBGatewayConnection src/feelies/broker/ib/connection.py
+                    6 HorizonMetricsCollector src/feelies/monitoring/horizon_metrics.py
+                    5 BacktestOrderRouter src/feelies/execution/backtest_router.py
+                    5 MetricSummary src/feelies/monitoring/in_memory.py
+                    4 MassiveLiveFeed src/feelies/ingestion/massive_ws.py
+                    4 HorizonSignalEngine src/feelies/signals/horizon_engine.py
+                    2 AlphaRegistry src/feelies/alpha/registry.py
+                    2 _WarmTimestampIndex src/feelies/features/aggregator.py
+                    2 BasicRiskEngine src/feelies/risk/basic_risk.py
+                    2 HorizonScheduler src/feelies/sensors/horizon_scheduler.py
+                    2 RegimeStateCache src/feelies/services/regime_state_cache.py
+                    1 AlphaBudgetRiskWrapper src/feelies/alpha/risk_wrapper.py
+                    1 EventBus src/feelies/bus/event_bus.py
+                    1 CompositionEngine src/feelies/composition/engine.py
+                    1 UniverseSynchronizer src/feelies/composition/synchronizer.py
+                    1 SimulatedClock src/feelies/core/clock.py
+                    1 SequenceGenerator src/feelies/core/identifiers.py
+                    1 MocFillController src/feelies/execution/moc_fill.py
+                    1 RthEntryFillGate src/feelies/execution/trading_session.py
+                    1 HorizonAggregator src/feelies/features/aggregator.py
+                    1 QuoteReplayObserver src/feelies/harness/backtest_prep.py
+                    1 QuoteTraceIndex src/feelies/harness/backtest_prep.py
+                    1 MassiveHistoricalIngestor src/feelies/ingestion/massive_ingestor.py
+                    1 CrossSectionalTracker src/feelies/portfolio/cross_sectional_tracker.py
+                    1 DeferralCapController src/feelies/risk/deferral_cap.py
+                    1 ExitComposer src/feelies/risk/exit_composer.py
+                    1 HazardExitController src/feelies/risk/hazard_exit.py
+                    1 StopExitController src/feelies/risk/stop_exit.py
+                    1 SensorRegistry src/feelies/sensors/registry.py
+                    1 InMemoryEventLog src/feelies/storage/memory_event_log.py
+                    1 DurableSubmittedOrderJournal src/feelies/storage/submitted_order_journal.py
+                 Amend FILES to add the eight undeclared paths before
+                 retry. Durable vs run-scoped split was not declared:
+                 DurableSubmittedOrderJournal is in the 34 and must
+                 not be reset by replay (S-08); InMemoryEventLog is
+                 the tape. That split is for the retry, not this stop.
+                 Carried, not fixed: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; verify_step uppercase / unfenced /
+                 negation-blind / bare-filename / stale NET DELTA /
+                 FILES touched 0 on uncommitted tree; ~157 research
+                 cache days stale until after S-17a; 11
+                 UNIT_UNDETERMINED block S-24; subscribe_all kept
+                 (six callers outside src/feelies); StateTransition
+                 notification record, publish kept for S-31, S11
+                 stays xfail; Inv-10 wall-clock allowlist
+                 line-pinned at orchestrator 1642, 1644, 1684, 1686,
+                 1780, 1782, 3968; S-11b semicolons at orchestrator
+                 455, 1474, 1480; ibapi is not a declared
+                 dependency; accepted baseline failure set is the
+                 four exempted tests.
+  NEXT:          plan amend FILES (add the eight undeclared source
+                 paths), then retry S-15. Do not start S-16.
+                 Left uncommitted: this ledger entry. No
+                 baseline_pre-S-15.json.
+
+---
+
+## S-15  2026-08-22T17:50:00+08:00
+  STEP:          S-15
+  BASE:          f70f7ce5f8c11dd679c3e726b851d0753f3ad373
+  RESULT SHA:    9e45fc58c013565592a5963f48c77af4d5508ffa
+  VERDICT:       passed
+  CONFORMANCE:   S16 | failed-before: yes | passes-after: yes
+                 | mutation: yes
+                 R6 | failed-before: yes | passes-after: yes
+                 Fail-before (HEAD src, S-03 S16 xfail + new R6):
+                   FAILED tests/conformance/test_reset_paths.py::
+                   test_reset_path_totality --runxfail
+                   AssertionError: 34 stateful class(es) mutate
+                   outside __init__ with no reset path. First:
+                   Orchestrator (src/feelies/kernel/orchestrator.py)
+                   assert 34 == 0
+                   1 failed in 0.90s
+                   FAILED tests/conformance/test_recovery_determinism.py::
+                   test_reset_then_replay_matches_cold_start
+                   AttributeError: 'Orchestrator' object has no
+                   attribute 'reset'
+                   1 failed in 0.97s
+                 After implement: S16 + R6 pass. Mutation: removed
+                 EventBus.reset(); S16 failed Unexpected:
+                 ['EventBus']; restore SHA256
+                 69FAF0EC4676696E3AABC87642D63997463DF5D2B1D370A15062DD07EC85B769
+                 BYTE_IDENTICAL.
+  TESTS:         4856 passed / 0 failed / 19 skipped / 10 xfailed
+                 -> 4858 passed / 0 failed / 19 skipped / 10 xfailed
+                 +2 are S16 un-xfail and R6. determinism 145 -> 145.
+                 mypy clean (202 files). conformance 77 passed /
+                 10 xfailed (S11 still xfail on StateTransition).
+                 wall-clock pins unmoved (1642, 1644, 1684, 1686,
+                 1780, 1782, 3968).
+  PARITY:        declared hold | actual 62 constants unmoved, 0
+                 changed | MATCH vs baseline_pre-S-15.json (62/62
+                 key-for-key).
+  FILES:         36 declared, 33 touched, 33 committed (clean vs
+                 9e45fc5). Three declared untouched:
+                 massive_ws.py, broker/ib/connection.py,
+                 storage/submitted_order_journal.py (the three
+                 durable/live exemptions). verify_step before
+                 commit reported touched 0 (uncommitted tree).
+  NET DELTA:     declared src modules 0, public symbols +32,
+                 branch points 0, test files +2
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 566 -> 566 (+0; measure.py counts
+                 module-level classes/functions, not methods)
+                 sloc 45034 -> 45361 (+327)
+                 n_edges 632 -> 632
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 Hand count: 33 new instance reset() methods
+                 (31 scan-visible + IBOrderRouter +
+                 MemoryPositionStore) vs the plan's stale +32.
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   Four checks by hand: FILES 36 declared / 33
+                 touched / 0 extras; PARITY holds 62/62; TESTS
+                 4856->4858 passed, 0 failed; NET DELTA modules 0,
+                 measure public_symbols 0 (methods), sloc +327.
+                 DELETES is replacement of ad-hoc clearing, not a
+                 file deletion. CLEAN (boundary gate, then commit).
+  NOTES:         34 classes, not the plan's 32. 31 run-scoped got
+                 reset(); three durable or live exemptions with
+                 reasons -- DurableSubmittedOrderJournal (S-08: the
+                 only record of what was sent), IBGatewayConnection
+                 (live threads and nextValidId), MassiveLiveFeed
+                 (live WS loop). IBOrderRouter and
+                 MemoryPositionStore also got reset() despite being
+                 absent from the scan: it counts self.attr= only,
+                 and both mutate through containers, so their state
+                 is run-scoped. InMemoryEventLog.reset()
+                 deliberately does not clear _events.
+                 _handle_tick_failure now calls self.reset(...,
+                 for_new_run=False) -- that branch is exactly the
+                 _micro.reset plus _pending_sized_intents.clear(),
+                 in that order -- replacing the ad-hoc clearing
+                 rather than sitting beside it. Mutation proof:
+                 removing EventBus.reset() made S16 report
+                 Unexpected: ['EventBus']; restore byte-identical.
+                 R6 caught a real reset bug during implementation
+                 -- SensorRegistry.reset() cleared preallocated
+                 state_by_symbol, warm 10 vs cold 9818, fixed by
+                 re-seeding initial_state().
+  FINDINGS:      R6 exercises 14 of the 31 resets, of which about
+                 six can actually fail it on the FIX-1 tape.
+                 Seventeen are never invoked -- four constructed
+                 but not reached through the cascade
+                 (InMemoryEventLog, RthEntryFillGate, MetricSummary,
+                 _WarmTimestampIndex, the last two because the
+                 parent calls clear() rather than the child's
+                 reset()), and thirteen never constructed on that
+                 tape (PassiveLimitOrderRouter, MassiveNormalizer,
+                 MassiveHistoricalIngestor, MocFillController,
+                 CompositionEngine, UniverseSynchronizer,
+                 CrossSectionalTracker, HorizonMetricsCollector,
+                 HazardExitController, ExitComposer,
+                 DeferralCapController, QuoteReplayObserver,
+                 QuoteTraceIndex), plus IBOrderRouter.
+                 reset(for_new_run=False) is also untested -- R6
+                 never takes that branch. R6's fingerprint is
+                 (event type, sequence), not payloads, so a bad
+                 reset emitting the same types and sequences would
+                 pass. 33 new methods with one covering integration
+                 is the shape this campaign keeps finding vacuous,
+                 and the follow-up is a widened tape (PORTFOLIO
+                 plus a trading SIGNAL plus
+                 execution_mode="passive_limit" plus an MOC date)
+                 or per-class mutate -> reset() -> equals-post-init
+                 roundtrips. Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id test (S-04c);
+                 serialization.py missing __schema_version__ tag as
+                 current version (fail-open); ci.yml G40
+                 continue-on-error: true until G40; verify_step
+                 uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA / FILES touched 0
+                 on uncommitted tree; ~157 research cache days
+                 stale until after S-17a; 11 UNIT_UNDETERMINED
+                 block S-24; subscribe_all kept; StateTransition
+                 kept for S-31, S11 stays xfail; Inv-10 wall-clock
+                 allowlist line-pinned; S-11b semicolons;
+                 accepted baseline failure set is the four
+                 exempted tests.
+  NEXT:          S-16 alpha manifest content hash (boundary). Not
+                 started. Do not begin S-16. Left uncommitted:
+                 baseline_pre-S-15.json, baseline_post-S-15.json,
+                 this ledger entry.
+
+
 
 
