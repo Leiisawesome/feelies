@@ -1536,7 +1536,32 @@ PROBLEM:         110 stateful classes, 38 mutate outside `__init__`, **32 have
                  Contained today only by process-per-run; breaks the moment two
                  runs share a process — parameter sweeps, notebooks, a
                  long-lived paper session. Inv-1 deterministic replay.
-FILES:           the 32 classes named in `substrate.json:stateful_no_reset_top`
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/passive_limit_router.py
+                 src/feelies/execution/backtest_router.py
+                 src/feelies/execution/moc_fill.py
+                 src/feelies/execution/trading_session.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 src/feelies/ingestion/massive_ws.py
+                 src/feelies/broker/ib/connection.py
+                 src/feelies/broker/ib/router.py
+                 src/feelies/monitoring/horizon_metrics.py
+                 src/feelies/monitoring/in_memory.py
+                 src/feelies/signals/horizon_engine.py
+                 src/feelies/alpha/registry.py
+                 src/feelies/alpha/risk_wrapper.py
+                 src/feelies/features/aggregator.py
+                 src/feelies/risk/basic_risk.py
+                 src/feelies/sensors/horizon_scheduler.py
+                 src/feelies/services/regime_state_cache.py
+                 src/feelies/bus/event_bus.py
+                 src/feelies/composition/engine.py
+                 src/feelies/composition/synchronizer.py
+                 src/feelies/core/clock.py
+                 src/feelies/core/identifiers.py
+                 src/feelies/harness/backtest_prep.py
+                 src/feelies/portfolio/memory_position_store.py
+                 src/feelies/storage/submitted_order_journal.py
                  tests/conformance/test_reset_paths.py (S16 — authored in S-03;
                  this step drops its xfail)
                  tests/conformance/test_recovery_determinism.py (R6, new)
@@ -1550,7 +1575,15 @@ REFACTOR PATH:   (1) S16 as an assertion over the existing scan, xfail(strict);
                  (2) declare per class whether its state is run-scoped or
                  durable — durable state is exempt **with a stated reason**, not
                  silently; (3) `reset()` on each run-scoped class; (4) R6
-                 asserting reset-then-replay equals cold-start replay.
+                 asserting reset-then-replay equals cold-start replay. (5) THE CLASS SET IS DERIVED, NOT HAND-COUNTED. Run
+                 tools/arch/substrate.py and take stateful_no_reset — the
+                 emitted stateful_no_reset_top is TRUNCATED to 25 by
+                 substrate.py:410 while n_stateful_no_reset reports 34, so the
+                 artifact cannot name the set. FILES above lists the files those
+                 classes live in. If the scan names a class in a file not listed,
+                 STOP and report it — do not edit an undeclared file, and do not
+                 skip a class to stay inside FILES. The plan's "32" is stale;
+                 report the count you find.
 BLAST RADIUS:    boundary — 32 classes gain a method
 VALIDATED BY:    S16, R6, all 26 baselines, the parity oracle
 PARITY IMPACT:   All 26 hold. Adding an unused method changes nothing.
