@@ -3021,5 +3021,116 @@ WATCH:       the accepted baseline failure set is now three tests across two
              `uv run pytest -q -m "not paper_rth"` was clean at 4853 passed
              immediately before this capture.
 
+---
+
+## S-14  2026-08-22T13:15:55+08:00
+  STEP:          S-14
+  BASE:          fd957d93ca7a0adb795c1db687068b0daa9dc44f
+  RESULT SHA:    153ae04c7e15239691da8c344f9e166f8a614708
+  VERDICT:       passed
+  CONFORMANCE:   S14 static | failed-before: yes | passes-after: yes
+                 | mutation: yes
+                 S14 dynamic | failed-before: yes | passes-after: yes
+                 | mutation: yes
+                 Fail-before (no matrix):
+                   FAILED tests/conformance/test_forbidden_reads.py::
+                   test_s14_static_matrix_and_access_analysis
+                   AssertionError: forbidden-reads matrix missing pair:
+                   feelies.ingestion event RegimeState
+                   FAILED tests/conformance/test_forbidden_reads.py::
+                   test_s14_dynamic_no_forbidden_read_during_tick_sequence
+                   AssertionError: no forbidden-reads matrix
+                   2 failed in 0.64s
+                 After implement: 2 passed. Mutation static: dropped
+                 FORBIDDEN_READS[0]; S14 failed naming feelies.ingestion
+                 event RegimeState; restore SHA256
+                 99f6cf7c2b0363d43d57cc315430c0f11e2ea5c6b91dfb2a0bf329050910faf2
+                 BYTE_IDENTICAL. Mutation dynamic: probe recorded
+                 feelies.forensics event Signal; S14 failed naming that
+                 pair; restore SHA256
+                 ce38a7a68581f2339b32741a1efbdd4c5fc145569f18b9f164d71602dc2f3f31
+                 BYTE_IDENTICAL.
+  TESTS:         4854 passed / 0 failed / 19 skipped / 11 xfailed
+                 -> 4856 passed / 0 failed / 19 skipped / 11 xfailed
+                 +2 are S14. Comparable `pytest -q -m "not paper_rth"`:
+                 4855 passed / 0 failed / 6 skipped / 14 deselected /
+                 11 xfailed. determinism 145 -> 145. mypy clean
+                 (202 files). conformance 75 passed / 11 xfailed
+                 (S11 still xfail on StateTransition).
+  PARITY:        declared hold | actual 62 constants unmoved, 0 changed
+                 | MATCH vs baseline_pre-S-14.json (62/62 key-for-key).
+  FILES:         3 declared, 3 touched, 3 committed (clean vs 153ae04).
+                 verify_step before commit reported touched 0
+                 (uncommitted tree).
+  NET DELTA:     declared src modules +1, public symbols +1, branch
+                 points 0, test files +1
+                 actual modules 201 -> 202 (+1)
+                 public_symbols 565 -> 566 (+1, ForbiddenRead)
+                 sloc 44920 -> 45034 (+114)
+                 n_edges 629 -> 632
+                 n_modules 163 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 passed
+  VERIFY_STEP:   Four checks by hand: FILES 3/3 (oracle reported
+                 touched 0 on the uncommitted tree); PARITY holds
+                 62/62; TESTS 4854->4856 passed, 0 failed, +2 are S14;
+                 NET DELTA +1/+1/0 on declared axes. DELETES prose is
+                 not file deletions -- frozen matcher. CLEAN (boundary
+                 -- committed after human go).
+  NOTES:         Matrix is 12 x 98 = 1176 cells, 1069 forbidden and
+                 107 allowed. Engines derived from pyproject.toml's
+                 importlinter "engines" contract in declaration order;
+                 facts from the union of SUBSCRIPTIONS event types,
+                 ZERO_SUBSCRIBER_RESOLUTIONS, GATE_REGISTRY ids and
+                 STREAM_AUTHORITIES streams and contracts -- 21 event
+                 + 53 gate + 24 stream. A cell is allowed only if
+                 attributable: subscriber class in that engine
+                 package, stream or contract authority class in that
+                 engine package, or owner_engine as a 1-based index
+                 into ENGINES. Classes in kernel, bootstrap or
+                 features grant no cell, and no pair was
+                 unattributable. Shared feelies.core.events type
+                 imports are schema, not scored as reads. Dynamic
+                 half runs two tapes: null-alpha SIGNAL-only, 4028
+                 reads on four engines, and phase-4 SIGNAL+PORTFOLIO,
+                 33539 reads adding composition, portfolio and
+                 monitoring -- seven subscriber engines observed in
+                 union, no forbidden read on either.
+                 LIMITS, both structural and both belonging beside
+                 each other: the dynamic half instruments declared
+                 bus subscriptions, so it cannot catch a forbidden
+                 read on an engine that never subscribes --
+                 ingestion, alpha, execution, broker and forensics
+                 have no EventBus.subscribe in their packages under
+                 any tape. Execution and broker receive quotes
+                 through bootstrap's _on_backtest_quote calling
+                 router.on_quote(), kernel acting on their behalf,
+                 which is the same cell S14 refuses to invent. And
+                 the largest violation of the matrix has no row: a
+                 Tier-1 module performs Tier-2 reads for nine
+                 engines, and kernel, bootstrap and features are not
+                 among the twelve. S14 passes while the god
+                 orchestrator stands and becomes meaningful as wave D
+                 lands.
+  FINDINGS:      Carried: G6 vs empty depends_on_sensors; config-path
+                 attribution loss + missing loader alpha_id test
+                 (S-04c); serialization.py missing
+                 __schema_version__ tag as current version (fail-open);
+                 ci.yml G40 continue-on-error: true until G40;
+                 verify_step uppercase / unfenced / negation-blind /
+                 bare-filename / stale NET DELTA / FILES touched 0 on
+                 uncommitted tree; ~157 research cache days stale
+                 until after S-17a; 11 UNIT_UNDETERMINED block S-24;
+                 subscribe_all kept (six callers outside src/feelies);
+                 StateTransition notification record, publish kept for
+                 S-31, S11 stays xfail; Inv-10 wall-clock allowlist
+                 line-pinned; S-11b semicolons at orchestrator 455,
+                 1474, 1480; ibapi is not a declared dependency.
+  NEXT:          S-15 reset paths (boundary). Not started.
+                 Do not begin S-15. Left uncommitted:
+                 baseline_pre-S-14.json, baseline_post-S-14.json,
+                 this ledger entry.
+
 
 
