@@ -221,6 +221,31 @@ class PassiveLimitOrderRouter:
             )
         self._rth_gate = RthEntryFillGate(trading_session_bounds)
 
+    def reset(self) -> None:
+        """Clear resting book and fill counters; keep journal binding."""
+        self._fills_by_through = 0
+        self._fills_by_drain = 0
+        self._cancels_max_resting = 0
+        self._cancels_level_left = 0
+        self._sum_ticks_to_fill = 0
+        self._last_quotes.clear()
+        self._pending_acks.clear()
+        self._resting_orders.clear()
+        self._resting_by_symbol.clear()
+        self._submitted_order_ids.clear()
+        if self._submitted_order_journal is not None:
+            self._submitted_order_ids.update(
+                self._submitted_order_journal.unknown_order_ids()
+            )
+        self.locked_quote_reject_count = 0
+        self.no_quote_reject_count = 0
+        self.duplicate_id_reject_count = 0
+        self.zero_depth_reject_count = 0
+        self._deferred_aggressive.clear()
+        self._ack_seq.reset()
+        if self._moc is not None:
+            self._moc.reset()
+
     def bind_position_qty(self, fn: Callable[[str], int]) -> None:
         """Provide signed position quantity for RTH entry classification."""
         self._rth_gate.bind_position_qty(fn)

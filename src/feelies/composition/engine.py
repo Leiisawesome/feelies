@@ -164,6 +164,10 @@ class CompositionEngine:
         # (cold start).
         self._position_lookup = position_lookup
 
+    def reset(self) -> None:
+        """Restore the intent sequence; registered alphas and wiring stay."""
+        self._intent_seq.reset()
+
     # ── Registration ─────────────────────────────────────────────────
 
     def register(self, registered: RegisteredPortfolioAlpha) -> None:

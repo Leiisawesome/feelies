@@ -38,17 +38,37 @@ def substrate_payload(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any
     return json.loads((tmp / "substrate.json").read_text(encoding="utf-8"))
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G04")
+_DURABLE_NO_RESET: dict[str, str] = {
+    "DurableSubmittedOrderJournal": (
+        "S-08: the journal is the only record of what was sent; replay must not clear it"
+    ),
+    "IBGatewayConnection": (
+        "live IB session: threads and nextValidId are handshake state, journal-backed"
+    ),
+    "MassiveLiveFeed": "live WebSocket session: loop and thread are not replay state",
+}
+
+
 def test_reset_path_totality(substrate_payload: dict[str, Any]) -> None:
     n_classes = int(substrate_payload["n_stateful_classes"])
     assert n_classes > 0, "substrate scanner found no stateful classes"
     n_no_reset = int(substrate_payload["n_stateful_no_reset"])
     top = substrate_payload["stateful_no_reset_top"]
-    assert n_no_reset == 0, (
-        f"{n_no_reset} stateful class(es) mutate outside __init__ with no reset "
-        f"path. First: {top[0]['cls']} ({top[0]['path']})"
+    names = {str(row["cls"]) for row in top}
+    unexpected = names - set(_DURABLE_NO_RESET)
+    assert not unexpected, (
+        f"{n_no_reset} run-scoped class(es) still have no reset path. "
+        f"Unexpected: {sorted(unexpected)}. First: {top[0]['cls']} ({top[0]['path']})"
         if top
         else f"{n_no_reset} stateful class(es) have no reset path"
+    )
+    assert n_no_reset == len(_DURABLE_NO_RESET), (
+        f"n_stateful_no_reset={n_no_reset} != durable exemptions {len(_DURABLE_NO_RESET)}; "
+        f"named={sorted(names)}"
+    )
+    missing_exemption = set(_DURABLE_NO_RESET) - names
+    assert not missing_exemption, (
+        f"durable exemption no longer in the scan (stale): {sorted(missing_exemption)}"
     )
 
 

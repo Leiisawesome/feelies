@@ -81,6 +81,16 @@ class HorizonMetricsCollector:
         # Last status per alpha throttles repeated solver-degradation alerts.
         self._last_solver_status: dict[str, str] = {}
 
+    def reset(self) -> None:
+        """Zero run counters; keep bus wiring."""
+        self._intents_total = 0
+        self._degenerate_total = 0
+        self._barriers_total = 0
+        self._hazard_spikes_total = 0
+        self._hazard_exits_total = 0
+        self._last_solver_status.clear()
+        self._metric_seq.reset()
+
     # ── Public API ───────────────────────────────────────────────────
 
     def attach(self) -> None:

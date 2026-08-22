@@ -125,6 +125,20 @@ class BacktestOrderRouter:
             )
         self._rth_gate = RthEntryFillGate(trading_session_bounds)
 
+    def reset(self) -> None:
+        """Clear quotes, deferred fills, and ack counters; keep RTH wiring."""
+        self._last_quotes.clear()
+        self._pending_acks.clear()
+        self._submitted_order_ids.clear()
+        self._deferred_markets.clear()
+        self.locked_quote_reject_count = 0
+        self.no_quote_reject_count = 0
+        self.duplicate_id_reject_count = 0
+        self.zero_depth_reject_count = 0
+        self._ack_seq.reset()
+        if self._moc is not None:
+            self._moc.reset()
+
     def bind_position_qty(self, fn: Callable[[str], int]) -> None:
         """Provide signed position quantity for RTH entry classification."""
         self._rth_gate.bind_position_qty(fn)

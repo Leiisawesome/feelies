@@ -275,6 +275,18 @@ class MassiveNormalizer:
         self._ts_lookahead_ns = self._DEFAULT_TS_LOOKAHEAD_NS
         self._warn_ambiguous_rest_logged: bool = False
 
+    def reset(self) -> None:
+        """Clear dedup/gap cursors and counters; keep registered symbols."""
+        self._last_seen.clear()
+        self._duplicates_filtered = 0
+        self._unparseable_elements = 0
+        self._oversized_frames = 0
+        self._anonymous_malformed_frames = 0
+        self._warn_ambiguous_rest_logged = False
+        self._seq.reset()
+        for machine in self._health_machines.values():
+            machine.reset()
+
     # ── MarketDataNormalizer protocol ────────────────────────────────
 
     def on_message(

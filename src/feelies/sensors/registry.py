@@ -127,6 +127,17 @@ class SensorRegistry:
             else None
         )
 
+    def reset(self) -> None:
+        """Restore per-symbol sensor state and throttle; keep registrations."""
+        self._throttle_last_ns.clear()
+        self._publish_target = None
+        for binding in self._bindings_by_key.values():
+            for symbol in list(binding.state_by_symbol):
+                binding.state_by_symbol[symbol] = binding.sensor.initial_state()
+        self._sequence_generator.reset()
+        if self._metrics_seq is not None:
+            self._metrics_seq.reset()
+
     # ── Registration ─────────────────────────────────────────────────
 
     def register(self, spec: SensorSpec) -> None:

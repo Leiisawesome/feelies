@@ -43,6 +43,10 @@ class EventBus:
         self._global_handlers: list[EventHandler] = []
         self._depth = 0
 
+    def reset(self) -> None:
+        """Restore cascade depth. Subscriptions are process wiring and stay."""
+        self._depth = 0
+
     def subscribe(
         self,
         event_type: type[E],

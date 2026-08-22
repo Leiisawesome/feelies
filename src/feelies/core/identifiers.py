@@ -46,7 +46,7 @@ class SequenceGenerator:
     Tests and scripts may omit it — they are not sequence authorities.
     """
 
-    __slots__ = ("_counter", "_lock", "_stream")
+    __slots__ = ("_counter", "_lock", "_stream", "_start")
 
     def __init__(
         self,
@@ -55,9 +55,19 @@ class SequenceGenerator:
         thread_safe: bool = True,
         stream: str | None = None,
     ) -> None:
+        self._start = start
         self._counter = start
         self._lock: threading.Lock | None = threading.Lock() if thread_safe else None
         self._stream = stream
+
+    def reset(self) -> None:
+        """Restore the counter to the constructor ``start`` value."""
+        lock = self._lock
+        if lock is None:
+            self._counter = self._start
+            return
+        with lock:
+            self._counter = self._start
 
     def next(self) -> int:
         lock = self._lock

@@ -50,6 +50,10 @@ class MocFillController:
         self._moc_penalty_bps = moc_penalty_bps
         self._pending: list[_PendingMoc] = []
 
+    def reset(self) -> None:
+        """Drop pending MOC orders. The ack list is owned by the router."""
+        self._pending.clear()
+
     @property
     def bounds(self) -> MocSessionBounds:
         return self._bounds

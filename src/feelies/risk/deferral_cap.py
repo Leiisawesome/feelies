@@ -195,6 +195,12 @@ class DeferralCapController:
         self._first_safe_off_ns: dict[tuple[str, str], tuple[int, int]] = {}
         self._pending_exit: dict[tuple[str, str], tuple[int | None, int]] = {}
 
+    def reset(self) -> None:
+        """Clear episode anchors; keep policies and bus wiring."""
+        self._first_safe_off_ns.clear()
+        self._pending_exit.clear()
+        self._seq.reset()
+
     # ── Public API ───────────────────────────────────────────────────
 
     @property

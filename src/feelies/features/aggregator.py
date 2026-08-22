@@ -70,6 +70,12 @@ class _WarmTimestampIndex:
             start = 0
         self._start = start
 
+    def reset(self) -> None:
+        """Drop retained timestamps so a subsequent run is a cold index."""
+        self._timestamps.clear()
+        self._cutoff_ns = -1
+        self._start = 0
+
     def latest_at_or_before(self, asof_ns: int) -> int | None:
         """Return the newest retained timestamp causal for ``asof_ns``."""
         idx = bisect_right(self._timestamps, asof_ns, lo=self._start) - 1
@@ -239,6 +245,21 @@ class HorizonAggregator:
             if metric_collector is not None
             else None
         )
+
+    def reset(self) -> None:
+        """Restore feature buffers and snapshot dedup; keep bus wiring."""
+        for feature in self._features_sorted:
+            for symbol in self._symbols_sorted:
+                self._feature_state[(feature.feature_id, feature.horizon_seconds, symbol)] = (
+                    feature.initial_state()
+                )
+        self._last_snapshot_boundary.clear()
+        self._warm_timestamps.clear()
+        self._observed_versions.clear()
+        self._multi_version_warned.clear()
+        self._sequence_generator.reset()
+        if self._metrics_seq is not None:
+            self._metrics_seq.reset()
 
     # ── Bus wiring ────────────────────────────────────────────────────
 

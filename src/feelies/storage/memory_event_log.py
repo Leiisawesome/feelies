@@ -63,6 +63,11 @@ class InMemoryEventLog:
         self._last_market_key: tuple[int, str, int, int] | None = None
         self._enforce_market_order_enabled = enforce_market_order
 
+    def reset(self) -> None:
+        """Restore the append cursor. Events stay — this object is the tape."""
+        with self._lock:
+            self._last_market_key = None
+
     def append(self, event: Event) -> None:
         with self._lock:
             self._enforce_market_order(event)
