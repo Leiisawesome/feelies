@@ -22,6 +22,7 @@ through :class:`~feelies.alpha.registry.AlphaRegistry` without a fork.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, Mapping
 
 from feelies.alpha.cost_arithmetic import CostArithmetic
@@ -209,7 +210,7 @@ class _CompiledHorizonSignal:
       reproduces the call-site bit-for-bit.
     """
 
-    __slots__ = ("signal_id", "signal_version", "_fn")
+    __slots__ = ("signal_id", "signal_version", "_fn", "_manifest_hash")
 
     def __init__(
         self,
@@ -217,10 +218,12 @@ class _CompiledHorizonSignal:
         signal_id: str,
         signal_version: str,
         fn: Any,
+        manifest_hash: str = "",
     ) -> None:
         self.signal_id = signal_id
         self.signal_version = signal_version
         self._fn = fn
+        self._manifest_hash = manifest_hash
 
     def evaluate(
         self,
@@ -229,7 +232,11 @@ class _CompiledHorizonSignal:
         params: Mapping[str, Any],
     ) -> Signal | None:
         result: Signal | None = self._fn(snapshot, regime, params)
-        return result
+        if result is None:
+            return None
+        meta = dict(result.metadata)
+        meta["manifest_hash"] = self._manifest_hash
+        return replace(result, metadata=meta)
 
 
 __all__ = ["LoadedSignalLayerModule", "_CompiledHorizonSignal"]

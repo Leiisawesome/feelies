@@ -133,6 +133,7 @@ class GateCloseAttribution:
     actuation: Actuation
     source_layer: str
     reason: str
+    run_fingerprint: str = ""
 
     @property
     def provenance_key(self) -> ProvenanceKey:

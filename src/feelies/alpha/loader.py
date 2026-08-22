@@ -53,6 +53,7 @@ from feelies.core.events import (
     Trade,
     TrendMechanism,
 )
+from feelies.core.platform_config import compute_manifest_hash
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
 from feelies.signals.regime_gate import RegimeGate, RegimeGateError
 
@@ -244,13 +245,19 @@ class AlphaLoader:
         except Exception as exc:
             raise AlphaLoadError(f"Failed to read {path}: {exc}") from exc
 
-        return self.load_from_dict(spec, param_overrides=param_overrides, source=str(path))
+        return self.load_from_dict(
+            spec,
+            param_overrides=param_overrides,
+            source=str(path),
+            manifest_hash=compute_manifest_hash(path),
+        )
 
     def load_from_dict(
         self,
         spec: dict[str, Any],
         param_overrides: dict[str, Any] | None = None,
         source: str = "<dict>",
+        manifest_hash: str | None = None,
     ) -> LoadedSignalLayerModule | LoadedPortfolioLayerModule:
         """Load an alpha specification from a pre-parsed dict.
 
@@ -260,6 +267,7 @@ class AlphaLoader:
         - ``PORTFOLIO`` → :class:`LoadedPortfolioLayerModule`
         """
         self._validate_schema(spec, source)
+        hashed = manifest_hash if manifest_hash is not None else compute_manifest_hash(spec)
 
         layer_value = str(spec.get("layer") or "")
         if layer_value == "SIGNAL":
@@ -267,12 +275,14 @@ class AlphaLoader:
                 spec,
                 param_overrides=param_overrides,
                 source=source,
+                manifest_hash=hashed,
             )
         if layer_value == "PORTFOLIO":
             return self._load_portfolio_layer(
                 spec,
                 param_overrides=param_overrides,
                 source=source,
+                manifest_hash=hashed,
             )
 
         # Every accepted layer must have an explicit dispatch branch.
@@ -288,6 +298,7 @@ class AlphaLoader:
         *,
         param_overrides: dict[str, Any] | None,
         source: str,
+        manifest_hash: str,
     ) -> LoadedSignalLayerModule:
         """Load a schema-1.1 ``layer: SIGNAL`` alpha.
 
@@ -343,6 +354,7 @@ class AlphaLoader:
             signal_id=alpha_id,
             signal_version=str(spec["version"]),
             fn=compiled_evaluate,
+            manifest_hash=manifest_hash,
         )
 
         trend_mechanism_block = self._parse_trend_mechanism_block(
@@ -390,6 +402,7 @@ class AlphaLoader:
             safety_exit_policy=safety_exit_policy_block,
             gate_thresholds_overrides=promotion_overrides,
             lifecycle_cap=lifecycle_cap,
+            manifest_hash=manifest_hash,
         )
 
         return LoadedSignalLayerModule(
@@ -414,6 +427,7 @@ class AlphaLoader:
         *,
         param_overrides: dict[str, Any] | None,
         source: str,
+        manifest_hash: str,
     ) -> LoadedPortfolioLayerModule:
         """Load a schema-1.1 ``layer: PORTFOLIO`` alpha.
 
@@ -515,6 +529,7 @@ class AlphaLoader:
             hazard_exit=hazard_exit_block,
             gate_thresholds_overrides=promotion_overrides,
             lifecycle_cap=lifecycle_cap,
+            manifest_hash=manifest_hash,
         )
 
         return LoadedPortfolioLayerModule(

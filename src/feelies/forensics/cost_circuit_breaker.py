@@ -53,6 +53,7 @@ class CircuitBreakerDecision:
     mean_cost_bps: float
     realized_margin_ratio: float
     decay_z: float | None
+    run_fingerprint: str = ""
 
 
 @runtime_checkable
@@ -75,6 +76,7 @@ def evaluate_cost_circuit_breaker(
     records: Iterable[TradeRecord],
     *,
     policy: CircuitBreakerPolicy | None = None,
+    run_fingerprint: str = "",
 ) -> list[CircuitBreakerDecision]:
     """Decide a circuit-breaker action per alpha from a window of fills.
 
@@ -89,6 +91,7 @@ def evaluate_cost_circuit_breaker(
         records,
         min_margin_ratio=pol.survival_margin_ratio,
         min_fills=pol.min_fills,
+        run_fingerprint=run_fingerprint,
     )
 
     by_alpha: dict[str, list[TradeRecord]] = {}
@@ -98,7 +101,11 @@ def evaluate_cost_circuit_breaker(
 
     decisions: list[CircuitBreakerDecision] = []
     for row in rows:
-        decay_signals = detector.detect_edge_decay(row.strategy_id, by_alpha[row.strategy_id])
+        decay_signals = detector.detect_edge_decay(
+            row.strategy_id,
+            by_alpha[row.strategy_id],
+            run_fingerprint=run_fingerprint,
+        )
         decay_z = max((d.z_score for d in decay_signals), default=None)
         margin = row.realized_margin_ratio
 
@@ -145,6 +152,7 @@ def evaluate_cost_circuit_breaker(
                 mean_cost_bps=row.mean_cost_bps,
                 realized_margin_ratio=margin,
                 decay_z=decay_z,
+                run_fingerprint=run_fingerprint,
             )
         )
     return decisions

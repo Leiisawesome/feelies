@@ -53,6 +53,7 @@ class QuoteFreezeEpisode:
     symbol: str
     hold_seconds: float
     exit_reason: str
+    run_fingerprint: str = ""
 
     def exited_within(self, session_flatten_bound_seconds: float) -> bool:
         """Whether the episode exited by the session-flatten bound at latest.

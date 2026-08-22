@@ -63,6 +63,7 @@ class EdgeCalibration:
     disclosed_edge_bps: float
     haircut_factor: float
     lcb_factor: float
+    run_fingerprint: str = ""
 
 
 def build_edge_calibrations(
@@ -72,6 +73,7 @@ def build_edge_calibrations(
     z: float = DEFAULT_LCB_Z,
     min_fills: int = DEFAULT_MIN_FILLS,
     factor_floor: float = DEFAULT_FACTOR_FLOOR,
+    run_fingerprint: str = "",
 ) -> dict[str, EdgeCalibration]:
     """Compute per-alpha edge calibration from a window of fills.
 
@@ -109,6 +111,7 @@ def build_edge_calibrations(
             disclosed_edge_bps=disclosed,
             haircut_factor=haircut_factor,
             lcb_factor=lcb_factor,
+            run_fingerprint=run_fingerprint,
         )
     return out
 

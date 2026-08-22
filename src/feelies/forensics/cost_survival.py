@@ -66,6 +66,7 @@ class AlphaCostSurvival:
     """``mean_edge_bps / mean_cost_bps`` — gross-edge-vs-modeled-cost ratio."""
     pct_edge_covers_cost: float
     verdict: str
+    run_fingerprint: str = ""
 
 
 def _verdict(
@@ -97,6 +98,7 @@ def per_alpha_cost_survival(
     *,
     min_margin_ratio: float = DEFAULT_MIN_MARGIN_RATIO,
     min_fills: int = DEFAULT_MIN_FILLS,
+    run_fingerprint: str = "",
 ) -> list[AlphaCostSurvival]:
     """Group *records* by ``strategy_id`` and score each alpha's realized
     edge against its cost.  Rows are returned sorted by net contribution
@@ -108,7 +110,7 @@ def per_alpha_cost_survival(
     detector = DecayDetector()
     rows: list[AlphaCostSurvival] = []
     for strategy_id, trades in by_alpha.items():
-        tca = detector.analyze_fills(trades)
+        tca = detector.analyze_fills(trades, run_fingerprint=run_fingerprint)
         gross = float(sum((t.realized_pnl for t in trades), Decimal("0")))
         fees = float(sum((t.fees for t in trades), Decimal("0")))
         net = gross - fees
@@ -132,6 +134,7 @@ def per_alpha_cost_survival(
                     min_margin_ratio=min_margin_ratio,
                     min_fills=min_fills,
                 ),
+                run_fingerprint=run_fingerprint,
             )
         )
     rows.sort(key=lambda r: r.net, reverse=True)
