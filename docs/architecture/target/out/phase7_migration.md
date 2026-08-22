@@ -1498,7 +1498,7 @@ PROBLEM:         **Zero sites.** No forbidden-read assertion, no
                  downgradable to a warning, plus `mypy --strict` — and neither
                  can see a cross-layer read performed through an object the type
                  system permits. Inv-8 layer separation.
-FILES:           src/feelies/core/ (forbidden-reads matrix, new)
+FILES:           src/feelies/core/forbidden_reads.py (forbidden-reads matrix, new)
                  tests/conformance/test_forbidden_reads.py (S14)
                  tests/conformance/harness/engine_probe.py (HARN-1, dynamic half)
 WHY THIS OWNER:  Phase 3 §C specifies the matrix; Phase 3 also states plainly
