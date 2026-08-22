@@ -2998,5 +2998,28 @@ NOTE:        ibapi is not a declared dependency; `uv sync --all-extras`
              does not install it, so a fresh worktree cannot run the
              paper suite.
 
+---
+
+## EXEMPTION  live-Massive WebSocket failures in the reference baselines
+DATE:        2026-08-22
+FAILURES:    tests/ingestion/test_massive_functional.py::test_multi_symbol_subscribe
+             tests/ingestion/test_massive_functional.py::test_sustained_quotes_with_idle_ticks
+PRESENT IN:  baseline_post-S-13.json (4862 passed, 3 failed, exit 1),
+             alongside test_g12_cost_exceeds_disclosure_alert.
+CAUSE:       environmental. Both require live quote/trade flow from the
+             Massive WebSocket feed; they fail when the market is inactive
+             or the feed is quiet.
+             test_websocket_feed_emits_live_massive_event in the same file
+             flipped red then green during the S-11a pre-capture for the
+             same reason. Neither S-13 nor any prior step touches
+             ingestion/massive_ingestor.py.
+DECISION:    proceed. Not regressions.
+WATCH:       the accepted baseline failure set is now three tests across two
+             files -- the IB after-hours test, g12, and these two Massive
+             tests, of which any subset may run or skip depending on market
+             hours and feed activity. A failure OUTSIDE that set is a stop.
+             `uv run pytest -q -m "not paper_rth"` was clean at 4853 passed
+             immediately before this capture.
+
 
 
