@@ -122,7 +122,9 @@ class SensorRegistry:
         self._metric_collector = metric_collector
         self._emit_reading_metrics_enabled = emit_reading_metrics
         self._metrics_seq: SequenceGenerator | None = (
-            SequenceGenerator() if metric_collector is not None else None
+            SequenceGenerator(stream="sensor_metrics", thread_safe=True)
+            if metric_collector is not None
+            else None
         )
 
     # ── Registration ─────────────────────────────────────────────────

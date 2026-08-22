@@ -40,13 +40,24 @@ class SequenceGenerator:
 
     Pass ``thread_safe=False`` on the single-threaded BACKTEST path to skip
     the lock (measured hot-path overhead; emission order is unchanged).
+
+    ``stream`` is a keyword-only name for the sequence this generator owns.
+    Production call sites in ``src/feelies`` must pass it; S12 enforces that.
+    Tests and scripts may omit it — they are not sequence authorities.
     """
 
-    __slots__ = ("_counter", "_lock")
+    __slots__ = ("_counter", "_lock", "_stream")
 
-    def __init__(self, start: int = 0, *, thread_safe: bool = True) -> None:
+    def __init__(
+        self,
+        start: int = 0,
+        *,
+        thread_safe: bool = True,
+        stream: str | None = None,
+    ) -> None:
         self._counter = start
         self._lock: threading.Lock | None = threading.Lock() if thread_safe else None
+        self._stream = stream
 
     def next(self) -> int:
         lock = self._lock

@@ -248,7 +248,7 @@ class MassiveNormalizer:
         max_raw_frame_bytes: int = _DEFAULT_MAX_RAW_FRAME_BYTES,
     ) -> None:
         self._clock = clock
-        self._seq = SequenceGenerator(start=1)
+        self._seq = SequenceGenerator(start=1, stream="massive", thread_safe=True)
         # Tape condition codes mark halt and resume events. Empty sets disable
         # halt detection.
         self._halt_on_codes: frozenset[int] = halt_on_codes or frozenset()

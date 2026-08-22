@@ -235,7 +235,9 @@ class HorizonAggregator:
         # Isolate metric sequences from the snapshot stream.
         self._metric_collector = metric_collector
         self._metrics_seq: SequenceGenerator | None = (
-            SequenceGenerator() if metric_collector is not None else None
+            SequenceGenerator(stream="aggregator_metrics", thread_safe=True)
+            if metric_collector is not None
+            else None
         )
 
     # ── Bus wiring ────────────────────────────────────────────────────

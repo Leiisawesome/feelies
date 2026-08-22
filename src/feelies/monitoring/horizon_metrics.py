@@ -69,7 +69,9 @@ class HorizonMetricsCollector:
         metric_sequence_generator: SequenceGenerator | None = None,
     ) -> None:
         self._bus = bus
-        self._metric_seq = metric_sequence_generator or SequenceGenerator()
+        self._metric_seq = metric_sequence_generator or SequenceGenerator(
+            stream="metric", thread_safe=True
+        )
         self._attached = False
         self._intents_total = 0
         self._degenerate_total = 0

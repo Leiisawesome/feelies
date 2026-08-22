@@ -120,12 +120,16 @@ class HorizonSignalEngine:
         # Isolate metrics so instrumentation cannot shift signal event IDs.
         self._metric_collector = metric_collector
         self._metrics_seq: SequenceGenerator | None = (
-            SequenceGenerator() if metric_collector is not None else None
+            SequenceGenerator(stream="signal_metrics", thread_safe=True)
+            if metric_collector is not None
+            else None
         )
         # Isolate SafetyStateChange on its own sequence stream so publishing it
         # on every gate-close path can never perturb the locked Signal stream
         # (Inv-5) — mirrors the metrics-seq isolation above.
-        self._safety_seq: SequenceGenerator = SequenceGenerator()
+        self._safety_seq: SequenceGenerator = SequenceGenerator(
+            stream="safety", thread_safe=True
+        )
         # Fail regime gates closed when calibrated states are not distinct.
         self._regime_min_discriminability = float(regime_min_discriminability)
         self._signals: list[RegisteredSignal] = []

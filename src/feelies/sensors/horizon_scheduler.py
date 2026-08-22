@@ -127,7 +127,9 @@ class HorizonScheduler:
         # Count each emitted tick without perturbing the tick sequence.
         self._metric_collector = metric_collector
         self._metrics_seq: SequenceGenerator | None = (
-            SequenceGenerator() if metric_collector is not None else None
+            SequenceGenerator(stream="scheduler_metrics", thread_safe=True)
+            if metric_collector is not None
+            else None
         )
 
     # ── Public API ───────────────────────────────────────────────────

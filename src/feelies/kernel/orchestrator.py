@@ -434,7 +434,7 @@ class Orchestrator:
         # BACKTEST bootstrap passes thread_safe_sequences=False (single-
         # threaded replay); paper/live keep the lock.
         _seq_kw = {"thread_safe": thread_safe_sequences}
-        self._seq = SequenceGenerator(**_seq_kw)
+        self._seq = SequenceGenerator(stream="orchestrator", **_seq_kw)
 
         # Optional sensor and horizon components; None keeps the short tick path.
         self._sensor_registry = sensor_registry
@@ -442,7 +442,7 @@ class Orchestrator:
         self._horizon_signal_engine = horizon_signal_engine
         # Hazard events use an isolated sequence so exits cannot shift other IDs.
         self._regime_hazard_detector = regime_hazard_detector
-        self._hazard_seq = hazard_sequence_generator or SequenceGenerator(**_seq_kw)
+        self._hazard_seq = hazard_sequence_generator or SequenceGenerator(stream="hazard", **_seq_kw)
         # Bootstrap wires optional composition components to the bus; these
         # references support orchestration and inspection.
         self._composition_engine = composition_engine
