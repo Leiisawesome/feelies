@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.conformance.test_market_data_canonical import _replay as market_data_canonical_replay
 from tests.determinism import parity_manifest
+from tests.determinism.test_alert_taxonomy_replay import _replay as alert_taxonomy_replay
 from tests.determinism.test_cross_sectional_context_replay import _replay as xsect_context_replay
 from tests.determinism.test_decoupled_safety_replay import (
     _replay_risk_flatten as decoupled_risk_flatten_replay,
@@ -101,6 +103,8 @@ _REPLAY_BY_NAME = {
     "risk_verdict": risk_verdict_replay,
     "decoupled_safety_state_change": decoupled_safety_state_change_replay,
     "decoupled_risk_flatten_order": decoupled_risk_flatten_replay,
+    "market_data_canonical": market_data_canonical_replay,
+    "alert_taxonomy": alert_taxonomy_replay,
 }
 
 
@@ -189,6 +193,28 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     "_EMPTY_SHA256": "sha256(b'') helper constant (tests/integration/test_phase4_e2e.py)",
     "EXPECTED_E2E_INTENT_HASH": "host-sensitive E2E baseline "
     "(tests/integration/test_phase4_e2e.py)",
+}
+
+
+# Engine outputs that must appear as LOCKED_PARITY_BASELINES keys (hashed)
+# or be named in _ENGINE_OUTPUT_EXEMPTIONS (exempt-with-a-reason).  The 26
+# existing replay streams are already keys in the manifest; this table is
+# the closure over the two engines whose outputs were previously unhashed.
+_REQUIRED_ENGINE_OUTPUT_KEYS: dict[str, str] = {
+    "market_data_canonical": "engine 1 NBBOQuote/Trade canonical stream (G05)",
+    "alert_taxonomy": "engine 11 Alert taxonomy, alert_name and severity only (G29)",
+}
+
+_REQUIRED_ENGINE_OUTPUT_BINDINGS: dict[str, str] = {
+    "EXPECTED_MARKET_DATA_CANONICAL_HASH": "engine 1 canonical stream (G05)",
+    "EXPECTED_ALERT_TAXONOMY_HASH": "engine 11 Alert taxonomy (G29)",
+}
+
+# Remaining engine-11 stream: MetricEvent is a diagnostic counter, not a
+# trading stream.  Pinning it would convert every metric increment into a
+# parity break.  KillSwitchActivation is kernel/bootstrap, not engine 11.
+_ENGINE_OUTPUT_EXEMPTIONS: dict[str, str] = {
+    "metric_event": "engine 11 MetricEvent — diagnostic counters, not a trading stream",
 }
 
 
@@ -284,6 +310,19 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
         "_REPLAY_BY_NAME, or to _UNREGISTERED_HASH_EXEMPTIONS with a reason."
     )
 
+    missing_engine_outputs = sorted(
+        name
+        for name in _REQUIRED_ENGINE_OUTPUT_KEYS
+        if name not in parity_manifest.LOCKED_PARITY_BASELINES
+        and name not in _ENGINE_OUTPUT_EXEMPTIONS
+    )
+    assert not missing_engine_outputs, (
+        "engine outputs neither hashed nor exempt-with-a-reason: "
+        + "; ".join(
+            f"{n} ({_REQUIRED_ENGINE_OUTPUT_KEYS[n]})" for n in missing_engine_outputs
+        )
+    )
+
 
 def test_every_exemption_names_a_binding_that_exists() -> None:
     """A stale exemption is worse than none — it reads as coverage that is gone.
@@ -300,6 +339,16 @@ def test_every_exemption_names_a_binding_that_exists() -> None:
     assert not stale, (
         f"_UNREGISTERED_HASH_EXEMPTIONS names bindings that no longer hold a "
         f"locked hash: {stale}.  Drop them."
+    )
+
+    missing_engine_bindings = sorted(
+        name for name in _REQUIRED_ENGINE_OUTPUT_BINDINGS if name not in live
+    )
+    assert not missing_engine_bindings, (
+        "engine-output hash bindings missing from scannable modules: "
+        + "; ".join(
+            f"{n} ({_REQUIRED_ENGINE_OUTPUT_BINDINGS[n]})" for n in missing_engine_bindings
+        )
     )
 
 
@@ -349,7 +398,7 @@ def test_scanner_sees_dict_and_underscore_bindings(tmp_path: Path) -> None:
 # ``StrategyPositionStore`` or hashes order/state streams rather than the journal,
 # so per-strategy re-attribution was invisible to the whole corpus. See
 # ``test_forced_exit_attribution_replay.py``.
-EXPECTED_MANIFEST_FINGERPRINT = "4b85ce329259e889100629992c31ff3cac332e0c24de91698adb0e0ca49dd95a"
+EXPECTED_MANIFEST_FINGERPRINT = "ec7af15d242a1aa6231b61ef3ee544182ad4dd3d3831927c96e07465f7886e06"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:
