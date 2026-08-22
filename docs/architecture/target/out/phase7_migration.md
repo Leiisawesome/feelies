@@ -1683,7 +1683,7 @@ PARITY IMPACT:   **All 26 replay baselines hold; the config-contract hash
                  `src/feelies/core/platform_config.py:740-754` and `:756-764` exist precisely to
                  keep established checksums valid — this step deliberately
                  breaks that checksum and must not extend the shim to hide it.
-DELETES:         the names-only reduction at `:683`; the largest hole in run
+DELETES:         the names-only reduction at `:726-727`; the largest hole in run
                  provenance
 NET DELTA:       src modules 0, public symbols +1, branch points 0.
                  Test files +1.
@@ -1702,16 +1702,21 @@ PROBLEM:         6 event classes have no hash helper at all (`Alert`,
                  ingestion-side change is invisible to the oracle until it moves
                  a downstream hash. Engine 11's entire output stream is outside
                  the manifest. Inv-5.
-FILES:           tests/determinism/test_market_data_canonical_replay.py (R2 —
-                 authored in S-03; this step supplies the baseline it asserts on)
-                 tests/determinism/parity_manifest.py:133
+FILES:           tests/conformance/test_market_data_canonical.py (R2 —
+                 authored in S-03; this step supplies
+                 EXPECTED_MARKET_DATA_CANONICAL_HASH on the manifest
+                 and drops the xfail)
+                 tests/determinism/test_alert_taxonomy_replay.py (engine 11
+                 taxonomy: alert_name and severity only, never message)
+                 tests/determinism/parity_manifest.py
                  tests/determinism/test_parity_manifest.py (R9 — extends the two
-                 closure tests already at `:261` and `:288`)
+                 closure tests already at `:261` and `:288`; re-pins
+                 EXPECTED_MANIFEST_FINGERPRINT)
 WHY THIS OWNER:  Phase 1 §6.1 specifies exactly this and calls it "the cheapest
                  coverage gain available in this axis" because it needs **no
                  production change**: feed a fixed raw-frame fixture through
                  `MassiveNormalizer.on_message`
-                 (`src/feelies/ingestion/massive_normalizer.py:280`) and hash the
+                 (`src/feelies/ingestion/massive_normalizer.py:292`) and hash the
                  emitted `NBBOQuote`/`Trade` sequence over the full declared
                  field set, `Decimal` fields as exact strings rather than `.6f`.
                  No transcendental math, so it is portable and can be a manifest
@@ -1732,13 +1737,13 @@ PARITY IMPACT:   All 26 existing baselines hold; **the manifest gains 2 or more
                  entries (26 -> 28+) and `manifest_fingerprint()` changes by
                  construction.** That is a manifest-growth re-pin, not a
                  behavioural break, and it is one visible line by design
-                 (`tests/determinism/parity_manifest.py:234`). Declaring the
+                 (`tests/determinism/test_parity_manifest.py:352`). Declaring the
                  float tolerance changes no hash — it documents the one the
                  helpers already use.
 DELETES:         the claim that engine 1 is pinned by `symbol_halted`; the
                  undocumented `.6f` tolerance
 NET DELTA:       src modules 0, public symbols 0, branch points 0.
-                 Test files +2, manifest entries +2.
+                 Test files +1, manifest entries +2.
 ROLLBACK:        revert; `manifest_fingerprint()` returns to its prior value.
 ```
 ```
