@@ -1751,44 +1751,81 @@ STEP:            S-17a
 CLOSES:          new -- the parity oracle is blind to schema growth
 PROBLEM:         Hash inputs are hand-written field lists per helper (Phase 0
                  P-1, Phase 1 sec. 6), so adding a field to any event moves no
-                 constant. CORE sec. C.11 -- schema evolution never breaks
+                 replay hash. CORE sec. C.11 -- schema evolution never breaks
                  replay -- is therefore unenforced by the oracle: S-09's
                  schema_version, S-11's gate-verdict field, S-16's config
-                 snapshot field and S-31's StateTransition all pass invisibly.
-                 The gap is recorded in five places
-                 (phase7_migration.md:1009-1013, :2878, :3730, :3977) and closed
-                 in none; S-17 grows manifest_fingerprint() by adding manifest
-                 ENTRIES, which is a different thing from covering field sets.
+                 snapshot field and S-31's unread-field deletions all pass
+                 invisibly. The gap is stated at
+                 phase7_migration.md:1021-1022 ("the oracle cannot see this
+                 step (hand-written field lists per helper; S-17a closes
+                 that)"). The cites previously listed as :1009-1013, :2878,
+                 :3730, :3977 do not name this gap. S-17 grows
+                 manifest_fingerprint() by adding manifest ENTRIES, which is
+                 a different thing from covering field sets.
 WHY THIS OWNER:  The Kernel owns the determinism substrate. One line in
                  manifest_fingerprint() converts schema drift from invisible to
                  declared.
 WHY HERE:        After S-09, S-11 and S-16 have added their fields and after
-                 S-17's manifest growth, so both re-baselines fall in one
-                 window. Placing it earlier would make three field-adding steps
-                 parity=break for no additional safety.
-REFACTOR PATH:   (1) a test asserting that adding a field to any hashed event
-                 moves manifest_fingerprint() -- prove it FAILS first by adding
-                 a throwaway field and confirming nothing moves; (2) fold the
-                 per-event field set into manifest_fingerprint()'s input;
-                 (3) operator re-baselines all 26 in one commit with the
-                 rationale referencing this step.
+                 S-17's manifest growth (28 entries), so the fingerprint
+                 re-pin falls in one window. Placing it earlier would make
+                 those field-adding steps parity=break for no additional
+                 safety.
+REFACTOR PATH:   (1) a test asserting that adding a field to any Event
+                 subclass moves manifest_fingerprint() and does not move the
+                 28 replay hashes. Prove it FAILS first: add
+                 `Signal.s17a_probe: int = 0`. S8
+                 (`tests/conformance/test_schema_drift.py`, PINNED_PAYLOAD)
+                 will fail by name if PINNED_PAYLOAD is not updated -- that
+                 is not the oracle proof. The oracle proof is
+                 test_manifest_fingerprint_matches_locked_value and
+                 test_manifest_entry_matches_replay both still passing.
+                 Every concrete Event subclass is in PINNED_PAYLOAD; there
+                 is no class S8 will ignore. (2) fold the per-event field
+                 set (class name + dataclass field names, in dataclass
+                 order, every Event subclass) into
+                 manifest_fingerprint()'s input. Do not rewrite hash-helper
+                 field lists. (3) operator re-pins
+                 EXPECTED_MANIFEST_FINGERPRINT only, in the same commit,
+                 with the rationale referencing this step. The 28
+                 EXPECTED_*_HASH values must not move.
 FILES:           tests/determinism/parity_manifest.py
-                 tests/conformance/<schema-drift closure test from S-09>
-BLAST RADIUS:    platform-wide -- every baseline re-pins once
-VALIDATED BY:    the drift test failing before and passing after; all 26
-                 re-pinned and test_parity_manifest reporting no drift between
-                 the owning modules and the manifest
-PARITY IMPACT:   break -- ALL 26 baselines and manifest_fingerprint() move
-                 exactly once, by construction. The operator re-baselines; the
-                 agent does not. No behaviour changes: the recorded streams are
-                 identical, only the fingerprint's input set grows.
-DELETES:         the oracle's blindness to schema growth; the standing need to
-                 remember to update a helper's field list by hand
-NET DELTA:       src modules 0, public symbols 0, branch points 0. Test files +0
-                 (reuses S-09's closure test).
-ROLLBACK:        revert, and restore the 26 constants from the pre-S-17a
-                 capture. After this lands, every field-adding step is
-                 parity=break by design -- that is the point, not a regression.
+                 tests/conformance/test_schema_drift.py (S8 -- authored in
+                 S-09; this step adds the fingerprint-moves-on-field-add
+                 assertion, or a sibling in the same file)
+                 tests/determinism/test_parity_manifest.py
+                 (EXPECTED_MANIFEST_FINGERPRINT re-pin)
+BLAST RADIUS:    platform-wide -- the fingerprint re-pins once. No replay
+                 baseline re-pins. After this lands, every later field add
+                 or delete is a fingerprint break by design, including
+                 S-31 step 1 (20 unread fields) which today claims all
+                 baselines hold.
+VALIDATED BY:    the drift test failing before (fingerprint holds with the
+                 throwaway present) and passing after (fingerprint moves,
+                 28 replay hashes do not); test_parity_manifest reporting
+                 no drift between owning modules and the manifest
+PARITY IMPACT:   break -- EXPECTED_MANIFEST_FINGERPRINT moves exactly once,
+                 by construction. The 28 replay hashes and counts do not
+                 move. The operator re-pins EXPECTED_MANIFEST_FINGERPRINT;
+                 the agent does not. No behaviour changes: the recorded
+                 streams are identical, only the fingerprint's input set
+                 grows (Event subclass field names). Do not re-pin any
+                 EXPECTED_*_HASH. The corpus is 28 manifest entries and 64
+                 scanned file constants; the two
+                 EXPECTED_MARKET_DATA_CANONICAL_* bindings live in
+                 tests/conformance/ and are invisible to baseline.py's
+                 scanner. 
+DELETES:         the oracle's blindness to schema growth; the standing need
+                 to remember to update a helper's field list by hand for
+                 the fingerprint to notice
+NET DELTA:       src modules 0, public symbols 0, branch points 0. Test
+                 files +0 (extends S-09's closure test).
+ROLLBACK:        revert, and restore EXPECTED_MANIFEST_FINGERPRINT from the
+                 pre-S-17a capture. After this lands, every field-adding
+                 or field-deleting step is parity=break on the fingerprint
+                 by design -- that is the point, not a regression. S-23
+                 (new DeRiskRequirement) and S-31 (unread-field deletions;
+                 StateTransition removal) are the remaining events.py
+                 shape changes.
 ```
 
 ```
@@ -2080,6 +2117,9 @@ PARITY IMPACT:   **Four baselines break, and the repo has already run this
                  changes. **Re-pin one author per commit** so each moved hash
                  names its own cause. A batched re-pin of four baselines is
                  indistinguishable from a mistake.
+                 After S-17a, the new DeRiskRequirement class adds a field set
+                 and moves EXPECTED_MANIFEST_FINGERPRINT in addition to the
+                 named replay hashes.
 DELETES:         the inbound `OrderRequest` direction; `_on_bus_hazard_order`;
                  the bus re-entry at `:585`; four `OrderRequest` publishers
                  become requirement publishers; three redundant engine-7 read
@@ -2548,6 +2588,9 @@ PARITY IMPACT:   break — step 2 only; step 1 holds all 26. Step 2 deletes
                  phantom draws per quote whose only purpose is to satisfy an
                  oracle is precisely the dead work being removed, and §G.10
                  would not permit it.
+                 After S-17a, step 1's 20 unread-field deletions also move
+                 EXPECTED_MANIFEST_FINGERPRINT. The "all baselines hold" line
+                 above predates S-17a and covers replay hashes only.
 DELETES:         `_emit_state_transition`; the `StateTransition` domain-bus
                  publish; 20 unread event fields; 2 unread metric names; **up
                  to 12 verified-dead public methods** (13 measured, less
