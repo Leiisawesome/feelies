@@ -3502,6 +3502,148 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  baseline_pre-S-16.json, baseline_post-S-16.json,
                  this ledger entry.
 
+---
+
+## S-17  2026-08-22T20:54:00+08:00
+  STEP:          S-17
+  BASE:          ecc5afa2ccf0ca21c9a38101aa37f7fa72e53396
+  RESULT SHA:    cd5382e883f34c3d39ff16eaf2b9d02515ad7594
+  VERDICT:       passed
+  CONFORMANCE:   R2 | failed-before: yes | passes-after: yes
+                 | mutation: yes
+                 R9 | failed-before: yes | passes-after: yes
+                 Fail-before (R2 xfail + --runxfail):
+                   FAILED tests/conformance/test_market_data_canonical.py::
+                   test_market_data_canonical_parity_baseline
+                   AssertionError: engine 1 canonical stream has no
+                   baseline (G05); S-17 supplies it
+                   assert None is not None
+                   1 failed in 0.63s
+                 Fail-before (R9 closure, after extending :261 and :288,
+                 before baselines):
+                   FAILED test_every_locked_hash_is_registered_or_exempt
+                   AssertionError: engine outputs neither hashed nor
+                   exempt-with-a-reason: alert_taxonomy (engine 11 Alert
+                   taxonomy, alert_name and severity only (G29));
+                   market_data_canonical (engine 1 NBBOQuote/Trade
+                   canonical stream (G05))
+                   FAILED test_every_exemption_names_a_binding_that_exists
+                   AssertionError: engine-output hash bindings missing
+                   from scannable modules:
+                   EXPECTED_ALERT_TAXONOMY_HASH (engine 11 Alert
+                   taxonomy (G29));
+                   EXPECTED_MARKET_DATA_CANONICAL_HASH (engine 1
+                   canonical stream (G05))
+                   2 failed in 1.54s
+                 After implement: R2 1 passed (xfail dropped in the
+                 same change that supplied the constant); R9 closure
+                 2 passed. After operator re-pin:
+                 test_manifest_fingerprint_matches_locked_value
+                 1 passed in 0.47s. Mutation: one byte of the
+                 raw-frame fixture `"sym": "AAPL"` -> `"sym": "BAPL"`
+                 (first occurrence); canonical hash
+                 4c0446aa6c9c1dced2e98016158f209f9072df2891d5bc2e60396f369072115a
+                 ->
+                 d4f21e2e1ff8c98cf6ab6c3385789a4dd48d7fd43a1915c214326d007ba38fca;
+                 restore SHA256
+                 d126ffd134849a7986aad2dee05c017099a30eb266261ab7184df3260d0b8ea0
+                 BYTE_IDENTICAL; restored hash 4c0446aa. pycache
+                 purged between mutate and restore.
+  TESTS:         4861 passed / 0 failed / 19 skipped / 10 xfailed
+                 -> 4866 passed / 1 failed / 19 skipped / 9 xfailed
+                 (post-S-17 capture, before re-pin). After operator
+                 re-pin, test_manifest_fingerprint_matches_locked_value
+                 1 passed; determinism 148 passed / 0 failed.
+                 conformance 78 passed / 10 xfailed -> 79 passed /
+                 9 xfailed (R2 xfail dropped, no XPASS).
+  PARITY:        declared 26 hold; manifest 26 -> 28 and
+                 manifest_fingerprint() moves by construction |
+                 actual 26 replay hashes and counts unmoved
+                 (62/62 pre-map constants identical); +2 entries;
+                 EXPECTED_MANIFEST_FINGERPRINT
+                 4b85ce329259e889100629992c31ff3cac332e0c24de91698adb0e0ca49dd95a
+                 ->
+                 ec7af15d242a1aa6231b61ef3ee544182ad4dd3d3831927c96e07465f7886e06
+                 re-pinned by operator | MATCH.
+  FILES:         4 declared, 4 committed (clean vs cd5382e).
+                 verify_step before commit reported touched 0
+                 (uncommitted tree). git status --porcelain -- src
+                 empty.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0, test files +1, manifest entries +2
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 567 -> 567 (+0)
+                 sloc 45452 -> 45452 (+0)
+                 n_edges 633 -> 633
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   145 -> 148 passed
+  VERIFY_STEP:   Four checks by hand: FILES 4/4 after re-pin
+                 (oracle reported touched 0 on the uncommitted
+                 tree); PARITY 26 replay hold, fingerprint pin
+                 moved as declared; TESTS 4861->4866 passed,
+                 0->1 failed on the unre-pinned fingerprint, then
+                 fingerprint 1 passed and determinism 148 after
+                 re-pin; NET DELTA 0/0/0, DELETES is conceptual
+                 not a file deletion. CLEAN (local, then commit).
+  NOTES:         Manifest grows 26 -> 28. New entries:
+                 market_data_canonical
+                 (4c0446aa6c9c1dced2e98016158f209f9072df2891d5bc2e60396f369072115a,
+                 count 2) from engine 1's canonical NBBOQuote/Trade
+                 stream, and alert_taxonomy
+                 (f6b784b275a549e169f7075ca583b9f198966f802216fbf7e8eb835d6f31b557,
+                 count 4) from engine 11. Taxonomy is alert_name
+                 and severity.name only -- composition.low_completeness,
+                 composition.high_degenerate_rate,
+                 composition.solver_degraded,
+                 composition.factor_residual_high, all WARNING --
+                 with message excluded, because pinning alert
+                 content would convert every diagnostic improvement
+                 into a parity break. Engine 1 hashes Decimal as
+                 exact strings, not .6f. FLOAT_HASH_TOLERANCE =
+                 ".6f/.2f" now stated in the manifest, documenting
+                 what the helpers already do rather than changing
+                 any hash. R2's xfail dropped in the same change
+                 that supplied its constant, so no XPASS. All 26
+                 existing baselines unmoved; parity map 62
+                 identical plus the two new alert-taxonomy
+                 constants. EXPECTED_MANIFEST_FINGERPRINT 4b85ce32
+                 -> ec7af15d. git status --porcelain -- src empty:
+                 no production file touched. Fixture mutation
+                 proof: one byte, "sym": "AAPL" -> "BAPL", moved
+                 the canonical hash 4c0446aa -> d4f21e2e; restore
+                 byte-identical.
+  FINDINGS:      1. baseline.py's parity scanner does not see
+                    EXPECTED_MARKET_DATA_CANONICAL_HASH/COUNT
+                    because R2 lives in tests/conformance/ (S-03
+                    authored it there) and the scanner only reads
+                    tests/determinism/ plus the acceptance APP
+                    file. The hex is in LOCKED_PARITY_BASELINES via
+                    import; R9 sees it (whole tests/ tree). Not
+                    fixed — would be a tools/exec edit, frozen.
+                 2. verify_step FILES touched 0 on uncommitted
+                    tree; PARITY blind to FINGERPRINT and to
+                    conformance-hosted hashes; NET DELTA treats
+                    conceptual DELETES as missing file deletions.
+                    Frozen, worked around.
+                 Carried: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader
+                 alpha_id test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; verify_step frozen bugs; ~157 research
+                 cache days stale until after S-17a; 11
+                 UNIT_UNDETERMINED block S-24; accepted baseline
+                 failure set is the four exempted tests; R6 14/31
+                 resets.
+  NEXT:          S-17a fold per-event field sets into
+                 manifest_fingerprint() (platform-wide). Not
+                 started. Do not begin S-17a. Left uncommitted:
+                 baseline_pre-S-17.json,
+                 baseline_post-S-17.json, this ledger entry.
+
+
 
 
 
