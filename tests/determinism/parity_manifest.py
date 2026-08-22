@@ -123,6 +123,14 @@ from tests.determinism.test_sized_intent_with_decay_replay import (
     EXPECTED_LEVEL3_INTENT_DECAY_ON_COUNT,
     EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH,
 )
+from tests.conformance.test_market_data_canonical import (
+    EXPECTED_MARKET_DATA_CANONICAL_COUNT,
+    EXPECTED_MARKET_DATA_CANONICAL_HASH,
+)
+from tests.determinism.test_alert_taxonomy_replay import (
+    EXPECTED_ALERT_TAXONOMY_COUNT,
+    EXPECTED_ALERT_TAXONOMY_HASH,
+)
 from tests.determinism.test_v03_sensor_replay import (
     EXPECTED_V03_READING_COUNT,
     EXPECTED_V03_READING_HASH,
@@ -228,7 +236,25 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
         EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH,
         EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_COUNT,
     ),
+    # Engine 1 canonical NBBOQuote/Trade stream.  Not pinned by symbol_halted.
+    "market_data_canonical": (
+        EXPECTED_MARKET_DATA_CANONICAL_HASH,
+        EXPECTED_MARKET_DATA_CANONICAL_COUNT,
+    ),
+    # Engine 11 Alert taxonomy: alert_name and severity only, never message.
+    "alert_taxonomy": (
+        EXPECTED_ALERT_TAXONOMY_HASH,
+        EXPECTED_ALERT_TAXONOMY_COUNT,
+    ),
 }
+
+
+# Oracle float encoding used by existing hash helpers.  Documents the
+# tolerance the helpers already apply; does not change any hash.
+# .6f — dimensionless / bps / posterior / scale floats
+# .2f — USD notionals on SizedPositionIntent
+# Engine-1 canonical hashes Decimal fields as exact strings, not floats.
+FLOAT_HASH_TOLERANCE: Final[str] = ".6f/.2f"
 
 
 def manifest_fingerprint() -> str:
