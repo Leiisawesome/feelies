@@ -355,7 +355,7 @@ def build_platform(
         )
     # Isolate risk alerts so they cannot shift orchestrator event IDs.
     _seq_thread_safe = config.mode != OperatingMode.BACKTEST
-    risk_alert_seq = SequenceGenerator(thread_safe=_seq_thread_safe)
+    risk_alert_seq = SequenceGenerator(stream="risk_alert", thread_safe=_seq_thread_safe)
     pdt_constraint = PDTConstraint(
         PDTConfig(
             account_type=AccountType.MARGIN_25K,
@@ -695,7 +695,7 @@ def build_platform(
     # operators have programmatic visibility into IB link-state events and
     # unrecognised order-status strings during live/paper sessions.
     if bundle.ib_connection is not None and hasattr(bundle.ib_connection, "on_alert_event"):
-        _ib_alert_seq = SequenceGenerator()
+        _ib_alert_seq = SequenceGenerator(stream="ib_alert", thread_safe=True)
         _ib_clock = clock  # captured by closure
 
         def _publish_ib_alert(error_code: int, error_msg: str) -> None:
@@ -1249,9 +1249,9 @@ def _create_sensor_layer(
     thread_safe_sequences: bool = True,
 ) -> tuple[SensorRegistry | None, HorizonScheduler | None]:
     """Compose and attach the sensor layer; return dispatch-facing components."""
-    sensor_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
-    horizon_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
-    snapshot_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    sensor_seq = SequenceGenerator(stream="sensor", thread_safe=thread_safe_sequences)
+    horizon_seq = SequenceGenerator(stream="horizon", thread_safe=thread_safe_sequences)
+    snapshot_seq = SequenceGenerator(stream="snapshot", thread_safe=thread_safe_sequences)
 
     sensor_registry: SensorRegistry | None = None
     if config.sensor_specs:
@@ -1376,7 +1376,7 @@ def _create_hazard_detector(
     """Create the shared hazard sequence and opt-in detector.
 
     The detector remains absent unless at least one alpha enables hazard exits."""
-    hazard_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    hazard_seq = SequenceGenerator(stream="hazard", thread_safe=thread_safe_sequences)
 
     def _opts_in(manifest_block: dict[str, object] | None) -> bool:
         if not isinstance(manifest_block, dict):
@@ -1411,7 +1411,7 @@ def _create_signal_layer(
     thread_safe_sequences: bool = True,
 ) -> HorizonSignalEngine | None:
     """Compose and attach the SIGNAL engine when SIGNAL alphas exist."""
-    signal_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    signal_seq = SequenceGenerator(stream="signal", thread_safe=thread_safe_sequences)
 
     signal_alphas = registry.signal_alphas()
     if not signal_alphas:
@@ -1583,9 +1583,9 @@ def _create_composition_layer(
 
     _enforce_factor_loadings_freshness(config, sorted(universe), clock=clock)
 
-    intent_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
-    ctx_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
-    metric_seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    intent_seq = SequenceGenerator(stream="intent", thread_safe=thread_safe_sequences)
+    ctx_seq = SequenceGenerator(stream="ctx", thread_safe=thread_safe_sequences)
+    metric_seq = SequenceGenerator(stream="metric", thread_safe=thread_safe_sequences)
 
     upstream_ids = _union_portfolio_upstream_strategy_ids(portfolio_modules)
     signal_horizons = _composition_signal_horizons(
@@ -1735,7 +1735,9 @@ def _create_stop_exit_controller(
         return None
     controller = StopExitController(
         bus=bus,
-        sequence_generator=SequenceGenerator(thread_safe=thread_safe_sequences),
+        sequence_generator=SequenceGenerator(
+            stream="stop_exit", thread_safe=thread_safe_sequences
+        ),
         position_store=position_store,
         policy=policy,
         trading_session_bounds=trading_session_bounds,
@@ -1775,7 +1777,7 @@ def _create_hazard_exit_controller(
     if not candidates:
         return None
 
-    seq = SequenceGenerator(thread_safe=thread_safe_sequences)
+    seq = SequenceGenerator(stream="hazard_exit", thread_safe=thread_safe_sequences)
     controller = HazardExitController(
         bus=bus,
         sequence_generator=seq,
@@ -1862,7 +1864,9 @@ def _create_exit_composer(
     fallback = tuple(sorted(fallback_universe))
     composer = ExitComposer(
         bus=bus,
-        sequence_generator=SequenceGenerator(thread_safe=thread_safe_sequences),
+        sequence_generator=SequenceGenerator(
+            stream="exit_composer", thread_safe=thread_safe_sequences
+        ),
         position_store=strategy_positions,
     )
     for registered in sorted(decoupled, key=lambda s: s.alpha_id):
@@ -1904,7 +1908,9 @@ def _create_deferral_cap_controller(
     fallback = tuple(sorted(fallback_universe))
     controller = DeferralCapController(
         bus=bus,
-        sequence_generator=SequenceGenerator(thread_safe=thread_safe_sequences),
+        sequence_generator=SequenceGenerator(
+            stream="deferral_cap", thread_safe=thread_safe_sequences
+        ),
         position_store=strategy_positions,
         session_flatten_enabled=session_flatten_enabled,
         session_flatten_seconds_before_close=session_flatten_seconds_before_close,

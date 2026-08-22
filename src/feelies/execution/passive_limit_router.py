@@ -199,7 +199,9 @@ class PassiveLimitOrderRouter:
         self._submitted_order_journal = submitted_order_journal
         if submitted_order_journal is not None:
             self._submitted_order_ids.update(submitted_order_journal.unknown_order_ids())
-        self._ack_seq = SequenceGenerator()
+        self._ack_seq = SequenceGenerator(
+            stream="passive_limit_ack", thread_safe=True
+        )
         self.locked_quote_reject_count: int = 0
         self.no_quote_reject_count: int = 0
         self.duplicate_id_reject_count: int = 0

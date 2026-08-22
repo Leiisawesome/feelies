@@ -106,7 +106,7 @@ class BacktestOrderRouter:
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._submitted_order_ids: set[str] = set()
-        self._ack_seq = SequenceGenerator()
+        self._ack_seq = SequenceGenerator(stream="backtest_ack", thread_safe=True)
         self.locked_quote_reject_count: int = 0
         self.no_quote_reject_count: int = 0
         self.duplicate_id_reject_count: int = 0

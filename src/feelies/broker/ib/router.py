@@ -98,7 +98,7 @@ class IBOrderRouter:
     ) -> None:
         self._connection = connection
         self._clock = clock
-        self._ack_seq = SequenceGenerator()
+        self._ack_seq = SequenceGenerator(stream="ib_ack", thread_safe=True)
         self._pending_acks: list[OrderAck] = []
         self._meta: dict[int, _IBOrderMeta] = {}
         self._platform_to_ib: dict[str, int] = {}
