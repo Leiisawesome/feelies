@@ -763,22 +763,38 @@ class SizedPositionIntent(Event):
     strategy_id: str
     layer: Literal["PORTFOLIO"] = "PORTFOLIO"
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
-    target_positions: dict[str, TargetPosition] = field(
+    target_positions: Mapping[str, TargetPosition] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
-    factor_exposures: dict[str, float] = field(
+    factor_exposures: Mapping[str, float] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
     expected_turnover_usd: float = field(default=0.0, metadata={"unit": "USD"})
     expected_gross_exposure_usd: float = field(default=0.0, metadata={"unit": "USD"})
-    mechanism_breakdown: dict[TrendMechanism, float] = field(
+    mechanism_breakdown: Mapping[TrendMechanism, float] = field(
         default_factory=dict, metadata={"unit": "1"}
     )
     # Per-symbol one-way cost disclosed by the consumed signals.
-    disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
+    disclosed_cost_total_bps_by_symbol: Mapping[str, float] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
     # Digest of the signals, positions, and parameters that produced the targets.
     decision_basis_hash: str = ""
     # Optimizer terminal status; empty means not recorded.
     solver_status: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "target_positions", MappingProxyType(dict(self.target_positions))
+        )
+        object.__setattr__(
+            self, "factor_exposures", MappingProxyType(dict(self.factor_exposures))
+        )
+        object.__setattr__(
+            self, "mechanism_breakdown", MappingProxyType(dict(self.mechanism_breakdown))
+        )
+        object.__setattr__(
+            self,
+            "disclosed_cost_total_bps_by_symbol",
+            MappingProxyType(dict(self.disclosed_cost_total_bps_by_symbol)),
+        )
