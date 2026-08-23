@@ -63,7 +63,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     PositionUpdate,
-    RegimeHazardSpike,
+    RegimeHazardSpike,  # noqa: F401
     RegimeState,
     RiskAction,
     RiskVerdict,
@@ -2370,35 +2370,6 @@ class Orchestrator:
         self._regime_bus_published_symbols.clear()
         if self._regime_hazard_detector is not None:
             self._regime_hazard_detector.reset()
-
-    def _maybe_publish_hazard_spike(
-        self,
-        regime_state: RegimeState,
-        correlation_id: str,
-    ) -> None:
-        """Publish a hazard spike from consecutive states on one channel."""
-        if self._regime_hazard_detector is None:
-            return
-        key = (regime_state.symbol, regime_state.engine_name)
-        prev = self._last_regime_state.get(key)
-        self._last_regime_state[key] = regime_state
-        spike = self._regime_hazard_detector.detect(prev, regime_state)
-        if spike is None:
-            return
-        self._bus.publish(
-            RegimeHazardSpike(
-                timestamp_ns=spike.timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=self._hazard_seq.next(),
-                symbol=spike.symbol,
-                engine_name=spike.engine_name,
-                departing_state=spike.departing_state,
-                departing_posterior_prev=spike.departing_posterior_prev,
-                departing_posterior_now=spike.departing_posterior_now,
-                incoming_state=spike.incoming_state,
-                hazard_score=spike.hazard_score,
-            )
-        )
 
     def _escalate_risk(self, correlation_id: str) -> None:
         """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.

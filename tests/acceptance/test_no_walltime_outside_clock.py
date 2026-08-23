@@ -50,7 +50,7 @@ _WALL_CLOCK_CALL_ALLOWLIST: dict[str, frozenset[tuple[int | str, str]]] = {
             (1686, "time.perf_counter_ns()"),
             (1780, "time.perf_counter_ns()"),
             (1782, "time.perf_counter_ns()"),
-            (3823, "time.perf_counter_ns()"),
+            (3794, "time.perf_counter_ns()"),
             ("_process_tick_inner", "time.perf_counter_ns()"),
             ("_finalize_tick", "time.perf_counter_ns()"),
             ("_drain_async_fills", "time.perf_counter_ns()"),

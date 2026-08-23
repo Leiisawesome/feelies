@@ -23,7 +23,7 @@ from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
-from feelies.core.events import AlertSeverity, NBBOQuote, RegimeState
+from feelies.core.events import AlertSeverity, NBBOQuote, RegimeHazardSpike, RegimeState
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta
 
 
@@ -972,4 +972,34 @@ def _update_regime(self: Any, quote: NBBOQuote, correlation_id: str) -> None:
     )
     self._bus.publish(regime_state)
     self._regime_bus_published_symbols.add(quote.symbol)
-    self._maybe_publish_hazard_spike(regime_state, correlation_id)
+    _maybe_publish_hazard_spike(self, regime_state, correlation_id)
+
+
+def _maybe_publish_hazard_spike(
+    self: Any,
+    regime_state: RegimeState,
+    correlation_id: str,
+) -> None:
+    """Publish a hazard spike from consecutive states on one channel."""
+    if self._regime_hazard_detector is None:
+        return
+    key = (regime_state.symbol, regime_state.engine_name)
+    prev = self._last_regime_state.get(key)
+    self._last_regime_state[key] = regime_state
+    spike = self._regime_hazard_detector.detect(prev, regime_state)
+    if spike is None:
+        return
+    self._bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=spike.timestamp_ns,
+            correlation_id=correlation_id,
+            sequence=self._hazard_seq.next(),
+            symbol=spike.symbol,
+            engine_name=spike.engine_name,
+            departing_state=spike.departing_state,
+            departing_posterior_prev=spike.departing_posterior_prev,
+            departing_posterior_now=spike.departing_posterior_now,
+            incoming_state=spike.incoming_state,
+            hazard_score=spike.hazard_score,
+        )
+    )
