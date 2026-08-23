@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
 from tools.arch.clockscan import CLOCK_LEAVES, CLOCK_RECEIVERS
@@ -36,25 +37,16 @@ _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
     "ingestion/massive_ingestor.py": "live REST page-fetch progress timing (live-only path)",
 }
 
-# Call-granular orchestrator entries. Seven are (lineno, "root.attr()") and
-# stay line-pinned. G01's three proven per-event residuals are keyed by
-# enclosing symbol so S-32 survives insertions: _process_tick_inner,
-# _finalize_tick, _drain_async_fills. Latency telemetry into _tick_timings;
-# event timestamps still use the injected clock. G01 residual closed by S-32.
-_WALL_CLOCK_CALL_ALLOWLIST: dict[str, frozenset[tuple[int | str, str]]] = {
-    "kernel/orchestrator.py": frozenset(
-        {
-            (1642, "time.perf_counter_ns()"),
-            (1644, "time.perf_counter_ns()"),
-            (1684, "time.perf_counter_ns()"),
-            (1686, "time.perf_counter_ns()"),
-            (1780, "time.perf_counter_ns()"),
-            (1782, "time.perf_counter_ns()"),
-            (3794, "time.perf_counter_ns()"),
-            ("_process_tick_inner", "time.perf_counter_ns()"),
-            ("_finalize_tick", "time.perf_counter_ns()"),
-            ("_drain_async_fills", "time.perf_counter_ns()"),
-        }
+# Call-granular orchestrator entries. Keyed by enclosing symbol with
+# multiplicity (exactly-N, not up-to-N). Combined with the stale-entry
+# assertion, unspent budget fails and the message reports remaining n.
+# Line keys, if any remain, still match first. Latency telemetry into
+# _tick_timings; event timestamps still use the injected clock.
+_WALL_CLOCK_CALL_ALLOWLIST: dict[str, Sequence[tuple[int | str, str]]] = {
+    "kernel/orchestrator.py": (
+        *(("_process_tick_inner", "time.perf_counter_ns()"),) * 7,
+        ("_finalize_tick", "time.perf_counter_ns()"),
+        *(("_drain_async_fills", "time.perf_counter_ns()"),) * 2,
     ),
 }
 
@@ -99,37 +91,37 @@ def _enclosing_symbol(spans: list[tuple[int, int, str]], lineno: int) -> str | N
 
 
 def _split_allowlist(
-    allowed: frozenset[tuple[int | str, str]],
-) -> tuple[frozenset[tuple[int, str]], frozenset[tuple[str, str]]]:
+    allowed: Sequence[tuple[int | str, str]],
+) -> tuple[frozenset[tuple[int, str]], Counter[tuple[str, str]]]:
     by_line: set[tuple[int, str]] = set()
-    by_symbol: set[tuple[str, str]] = set()
+    by_symbol: Counter[tuple[str, str]] = Counter()
     for key, call in allowed:
         if isinstance(key, int):
             by_line.add((key, call))
         else:
-            by_symbol.add((key, call))
-    return frozenset(by_line), frozenset(by_symbol)
+            by_symbol[(key, call)] += 1
+    return frozenset(by_line), by_symbol
 
 
 def _consume_allowlist(
     path: Path,
-    allowed: frozenset[tuple[int | str, str]],
-) -> tuple[list[tuple[int, str]], list[tuple[str, str]]]:
+    allowed: Sequence[tuple[int | str, str]],
+) -> tuple[list[tuple[int, str]], list[tuple[str, str, int]]]:
     """Return (offenders, unused symbol entries) after applying line then symbol keys.
 
-    Each symbol entry admits one leftover call inside that function. A second
-    unmatched read in a symbol-keyed function is still an offender.
+    Each symbol occurrence admits one leftover call inside that function.
+    Unused budget is ``(symbol, call, remaining)`` so stale-entry is exactly-N.
     """
     hits = _wall_clock_calls(path)
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     spans = _function_spans(tree)
-    by_line, by_symbol = _split_allowlist(allowed)
+    by_line, budget = _split_allowlist(allowed)
     leftover: list[tuple[int, str, str | None]] = []
     for lineno, call in hits:
         if (lineno, call) in by_line:
             continue
         leftover.append((lineno, call, _enclosing_symbol(spans, lineno)))
-    budget: Counter[tuple[str, str]] = Counter(by_symbol)
+    leftover.sort()
     offenders: list[tuple[int, str]] = []
     for lineno, call, symbol in leftover:
         key = (symbol, call) if symbol is not None else None
@@ -137,7 +129,7 @@ def _consume_allowlist(
             budget[key] -= 1
             continue
         offenders.append((lineno, call))
-    unused = [entry for entry, n in budget.items() if n > 0]
+    unused = [(symbol, call, n) for (symbol, call), n in budget.items() if n > 0]
     return offenders, unused
 
 
@@ -155,7 +147,7 @@ def test_no_raw_wall_clock_outside_allowlist() -> None:
         rel = path.relative_to(_SRC).as_posix()
         if rel in _WALL_CLOCK_ALLOWLIST:
             continue
-        allowed_calls = _WALL_CLOCK_CALL_ALLOWLIST.get(rel, frozenset())
+        allowed_calls = _WALL_CLOCK_CALL_ALLOWLIST.get(rel, ())
         offenders_here, _unused = _consume_allowlist(path, allowed_calls)
         for lineno, call in offenders_here:
             offenders.append(f"{rel}:{lineno}  {call}")
@@ -195,6 +187,48 @@ def test_wall_clock_allowlist_has_no_stale_entries() -> None:
                     f"{rel}:{entry[0]} {entry[1]} (call gone — drop the call-allowlist entry)"
                 )
         _, unused_symbols = _consume_allowlist(path, allowed)
-        for symbol, call in sorted(unused_symbols):
-            stale.append(f"{rel}:{symbol} {call} (call gone — drop the call-allowlist entry)")
+        for symbol, call, n in sorted(unused_symbols):
+            stale.append(
+                f"{rel}:{symbol} {call} (remaining budget {n} — drop the call-allowlist entry)"
+            )
     assert not stale, f"stale _WALL_CLOCK_ALLOWLIST entries: {stale}"
+
+
+def _tick_timings_keys_written(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """String keys assigned on ``_tick_timings`` in *func* (AST targets only)."""
+    keys: set[str] = set()
+    for node in ast.walk(func):
+        if isinstance(node, ast.Assign):
+            targets: tuple[ast.expr, ...] = tuple(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = (node.target,)
+        elif isinstance(node, ast.AugAssign):
+            targets = (node.target,)
+        else:
+            continue
+        for target in targets:
+            if not isinstance(target, ast.Subscript):
+                continue
+            if not (isinstance(target.value, ast.Attribute) and target.value.attr == "_tick_timings"):
+                continue
+            slc = target.slice
+            if isinstance(slc, ast.Constant) and isinstance(slc.value, str):
+                keys.add(slc.value)
+    return keys
+
+
+def test_process_tick_inner_tick_timings_keys() -> None:
+    """Count budget alone allows same-count substitution; pin the keys it writes."""
+    path = _SRC / "kernel" / "orchestrator.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    func: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_process_tick_inner":
+            func = node
+            break
+    assert func is not None, "_process_tick_inner not found"
+    assert _tick_timings_keys_written(func) == {
+        "sensor_fanout_ns",
+        "signal_evaluate_ns",
+        "risk_check_ns",
+    }
