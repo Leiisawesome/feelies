@@ -701,12 +701,23 @@ class HorizonFeatureSnapshot(Event):
     # ``HorizonTick.boundary_ts_ns``.  ``timestamp_ns`` remains the trigger
     # time; this is the regular-grid anchor for IC labels / forensics.
     boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
-    values: dict[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
-    warm: dict[str, bool] = field(default_factory=dict)
-    stale: dict[str, bool] = field(default_factory=dict)
-    source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    feature_versions: dict[str, str] = field(default_factory=dict)
+    values: Mapping[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
+    warm: Mapping[str, bool] = field(default_factory=dict)
+    stale: Mapping[str, bool] = field(default_factory=dict)
+    source_sensors: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    feature_versions: Mapping[str, str] = field(default_factory=dict)
     parent_correlation_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
+        object.__setattr__(self, "warm", MappingProxyType(dict(self.warm)))
+        object.__setattr__(self, "stale", MappingProxyType(dict(self.stale)))
+        object.__setattr__(
+            self, "source_sensors", MappingProxyType(dict(self.source_sensors))
+        )
+        object.__setattr__(
+            self, "feature_versions", MappingProxyType(dict(self.feature_versions))
+        )
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
