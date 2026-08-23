@@ -724,16 +724,27 @@ class CrossSectionalContext(Event):
     horizon_seconds: int = field(metadata={"unit": "s"})
     boundary_index: int = field(metadata={"unit": "1"})
     universe: tuple[str, ...]
-    signals_by_symbol: dict[str, "Signal | None"] = field(default_factory=dict)
+    signals_by_symbol: Mapping[str, "Signal | None"] = field(default_factory=dict)
     # Per-symbol map strategy_id -> latest feeder Signal at the portfolio barrier.
     # Populated when :class:`~feelies.composition.synchronizer.UniverseSynchronizer`
     # is wired with ``upstream_strategy_ids`` so Layer-3 can aggregate SIGNAL
     # alphas whose ``horizon_seconds`` differ from the PORTFOLIO decision horizon.
-    signals_by_strategy_by_symbol: dict[str, dict[str, "Signal | None"]] = field(
+    signals_by_strategy_by_symbol: Mapping[str, dict[str, "Signal | None"]] = field(
         default_factory=dict,
     )
-    snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
+    snapshots_by_symbol: Mapping[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
     completeness: float = field(default=0.0, metadata={"unit": "1"})
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "signals_by_symbol", MappingProxyType(dict(self.signals_by_symbol)))
+        object.__setattr__(
+            self,
+            "signals_by_strategy_by_symbol",
+            MappingProxyType(dict(self.signals_by_strategy_by_symbol)),
+        )
+        object.__setattr__(
+            self, "snapshots_by_symbol", MappingProxyType(dict(self.snapshots_by_symbol))
+        )
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
