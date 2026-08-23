@@ -1,14 +1,14 @@
 {
-  "captured_at": "2026-08-22T13:38:30.087215+00:00",
+  "captured_at": "2026-08-23T02:02:37.692577+00:00",
   "determinism": {
     "command": "uv run pytest tests/determinism -q",
     "deselected": 0,
     "errors": 0,
-    "exit_code": 1,
-    "failed": 1,
-    "passed": 147,
+    "exit_code": 0,
+    "failed": 0,
+    "passed": 148,
     "skipped": 0,
-    "tail": "            \"re-baseline justification.\"\n        )\nE       AssertionError: Manifest fingerprint drift \u2014 one or more locked baselines changed!\nE           Expected: ec7af15d242a1aa6231b61ef3ee544182ad4dd3d3831927c96e07465f7886e06\nE           Actual:   dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b\nE         If intentional, update EXPECTED_MANIFEST_FINGERPRINT here in the same commit as the baseline change(s) that moved it, with the same re-baseline justification.\nE       assert 'dbcde6a64447...cc692b8e5e41b' == 'ec7af15d242a...07465f7886e06'\nE         \nE         - ec7af15d242a1aa6231b61ef3ee544182ad4dd3d3831927c96e07465f7886e06\nE         + dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b\n\ntests\\determinism\\test_parity_manifest.py:406: AssertionError\n=========================== short test summary info ===========================\nFAILED tests/determinism/test_parity_manifest.py::test_manifest_fingerprint_matches_locked_value\n1 failed, 147 passed in 9.35s"
+    "tail": "........................................................................ [ 48%]\n........................................................................ [ 97%]\n....                                                                     [100%]\n148 passed in 9.12s"
   },
   "evidence": {
     "alphaleak": {
@@ -27,14 +27,10 @@
     }
   },
   "git": {
-    "branch": "exec/S-17a",
-    "dirty": true,
-    "porcelain": [
-      "M tests/conformance/test_schema_drift.py",
-      " M tests/determinism/parity_manifest.py",
-      "?? docs/architecture/target/out/exec/baseline_pre-S-17a.json"
-    ],
-    "sha": "064d28ae2841ffdb4f40581a53a3d325a88366d4"
+    "branch": "arch/exec",
+    "dirty": false,
+    "porcelain": [],
+    "sha": "1a0a9fda9bcada586539fa26899eb7a4c0281e78"
   },
   "label": "post-S-17a",
   "parity": {
@@ -108,11 +104,11 @@
     "command": "uv run pytest -q",
     "deselected": 0,
     "errors": 0,
-    "exit_code": 1,
-    "failed": 1,
-    "passed": 4867,
+    "exit_code": 0,
+    "failed": 0,
+    "passed": 4868,
     "skipped": 19,
-    "tail": "  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:478: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_marginal_alpha_fails_validator\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:500: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_explicit_trial_variance_used\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:546: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev_default = build_dsr_evidence(\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ===========================\nFAILED tests/determinism/test_parity_manifest.py::test_manifest_fingerprint_matches_locked_value\n1 failed, 4867 passed, 19 skipped, 9 xfailed, 48 warnings in 247.07s (0:04:07)"
+    "tail": "\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_strong_alpha_passes_default_validator\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:478: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_marginal_alpha_fails_validator\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:500: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev = build_dsr_evidence(\n\ntests/research/test_dsr_unit.py::TestBuildDSREvidence::test_explicit_trial_variance_used\n  C:\\Users\\cheng.lei\\OneDrive\\Documents\\GitHub\\feelies\\tests\\research\\test_dsr_unit.py:546: UserWarning: build_dsr_evidence: trial_sharpe_variance not supplied; deflating against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST honest deflation \u2014 the empirical dispersion of the trials you actually explored is larger, so E[max] (and the deflation) are understated and the DSR is optimistic. Pass an empirically-measured variance of your explored trials' Sharpes for an honest deflation.\n    ev_default = build_dsr_evidence(\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n4868 passed, 19 skipped, 9 xfailed, 48 warnings in 269.02s (0:04:29)"
   },
   "tools_fingerprint": {
     "files": 2,
