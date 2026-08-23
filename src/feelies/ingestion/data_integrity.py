@@ -7,6 +7,7 @@ transitions to DEGRADED — execution stops.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from enum import Enum, auto
 from typing import Any
@@ -16,6 +17,8 @@ from feelies.core.events import AlertSeverity, Trade
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
 from feelies.kernel.macro import MacroState
+
+logger = logging.getLogger(__name__)
 
 
 class DataHealth(Enum):
@@ -240,3 +243,43 @@ def _data_health_blocks_trading(self: Any, symbol: str, correlation_id: str) -> 
             )
         return health.name
     return None
+
+
+def _verify_data_integrity(self: Any) -> bool:
+    """Verify data integrity for all configured symbols.
+
+    If a normalizer is available, checks that every configured
+    symbol is tracked and reports HEALTHY.
+
+    Without a normalizer (cached replay / offline logs), optional
+    ``PlatformConfig.require_healthy_disk_cache_manifests`` enforces
+    per-day ``ingestion_health`` rows supplied by the ingest/replay path.
+    """
+    if self._config is None:
+        return True
+
+    if self._normalizer is not None:
+        health = self._normalizer.all_health()
+        for symbol in self._config.symbols:
+            if symbol not in health or health[symbol] != DataHealth.HEALTHY:
+                return False
+        return True
+
+    if self._config.require_healthy_disk_cache_manifests:
+        rows = self._config.disk_cache_ingestion_health_rows
+        if not rows:
+            logger.warning(
+                "require_healthy_disk_cache_manifests=True but "
+                "disk_cache_ingestion_health_rows is empty — integrity fail"
+            )
+            return False
+        for sym, day, h in rows:
+            if h != "HEALTHY":
+                logger.warning(
+                    "disk cache ingestion_health=%s for %s/%s — integrity fail",
+                    h,
+                    sym,
+                    day,
+                )
+                return False
+    return True

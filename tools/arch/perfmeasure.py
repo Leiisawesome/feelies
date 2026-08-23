@@ -140,7 +140,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
         "E1.data_health_gate",
         "feelies.ingestion.data_integrity:_data_health_blocks_trading",
     ),
-    (1, "E1.verify_integrity", "feelies.kernel.orchestrator:Orchestrator._verify_data_integrity"),
+    (1, "E1.verify_integrity", "feelies.ingestion.data_integrity:_verify_data_integrity"),
     (1, "E1.update_halt_state", "feelies.ingestion.data_integrity:_update_halt_state"),
     (1, "E1.update_ssr_state", "feelies.ingestion.data_integrity:_update_ssr_state"),
     # -- engine 2: state / feature ----------------------------------------

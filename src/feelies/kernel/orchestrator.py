@@ -134,6 +134,7 @@ from feelies.ingestion.data_integrity import (
     _update_halt_state,
     _update_ssr_state,
     _data_health_blocks_trading,
+    _verify_data_integrity,
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
@@ -928,7 +929,7 @@ class Orchestrator:
             )
             return
 
-        if self._verify_data_integrity():
+        if _verify_data_integrity(self):
             self._macro.transition(
                 MacroState.READY,
                 trigger="DATA_INTEGRITY_OK",
@@ -1042,7 +1043,7 @@ class Orchestrator:
                 "recover_from_degraded: refused — kill switch is still active",
             )
             return False
-        if self._verify_data_integrity():
+        if _verify_data_integrity(self):
             self._macro.transition(
                 MacroState.READY,
                 trigger="RECOVERY_VALIDATED",
@@ -5200,44 +5201,6 @@ class Orchestrator:
                 context={"symbol": symbol, "reason": reason, "exception": repr(exc)},
             )
 
-    def _verify_data_integrity(self) -> bool:
-        """Verify data integrity for all configured symbols.
-
-        If a normalizer is available, checks that every configured
-        symbol is tracked and reports HEALTHY.
-
-        Without a normalizer (cached replay / offline logs), optional
-        ``PlatformConfig.require_healthy_disk_cache_manifests`` enforces
-        per-day ``ingestion_health`` rows supplied by the ingest/replay path.
-        """
-        if self._config is None:
-            return True
-
-        if self._normalizer is not None:
-            health = self._normalizer.all_health()
-            for symbol in self._config.symbols:
-                if symbol not in health or health[symbol] != DataHealth.HEALTHY:
-                    return False
-            return True
-
-        if self._config.require_healthy_disk_cache_manifests:
-            rows = self._config.disk_cache_ingestion_health_rows
-            if not rows:
-                logger.warning(
-                    "require_healthy_disk_cache_manifests=True but "
-                    "disk_cache_ingestion_health_rows is empty — integrity fail"
-                )
-                return False
-            for sym, day, h in rows:
-                if h != "HEALTHY":
-                    logger.warning(
-                        "disk cache ingestion_health=%s for %s/%s — integrity fail",
-                        h,
-                        sym,
-                        day,
-                    )
-                    return False
-        return True
 
     # ── Feature snapshot management ─────────────────────────────────
 
