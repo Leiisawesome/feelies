@@ -23,6 +23,7 @@ from typing import Any, Protocol
 logger = logging.getLogger(__name__)
 
 from feelies.core.events import NBBOQuote
+from feelies.storage.feature_snapshot import FeatureSnapshotMeta
 
 
 def regime_posterior_entropy_nats(posteriors: Sequence[float]) -> float:
@@ -801,3 +802,26 @@ def _regime_label_for(self: Any, symbol: str) -> str:
         return ""
     idx = max(range(len(post)), key=lambda i: post[i])
     return names[idx] if idx < len(names) else ""
+
+
+def _checkpoint_regime_snapshot(self: Any) -> None:
+    if self._feature_snapshots is None or self._regime_engine is None:
+        return
+    regime_version = self._REGIME_VERSION_PREFIX + type(self._regime_engine).__name__
+    try:
+        data = self._regime_engine.checkpoint()
+        checksum = hashlib.sha256(data).hexdigest()
+        meta = FeatureSnapshotMeta(
+            symbol=self._REGIME_SNAPSHOT_KEY,
+            feature_version=regime_version,
+            event_count=0,
+            last_sequence=0,
+            last_timestamp_ns=self._clock.now_ns(),
+            checksum=checksum,
+        )
+        self._feature_snapshots.save(meta, data)
+    except Exception:
+        logger.warning(
+            "Regime snapshot checkpoint failed -- next boot will cold-start regime engine",
+            exc_info=True,
+        )

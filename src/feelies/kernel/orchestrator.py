@@ -176,13 +176,14 @@ from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import (
     RegimeEngine,
+    _checkpoint_regime_snapshot,
     _regime_label_for,
     regime_posterior_entropy_nats,
 )
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
-from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
+from feelies.storage.feature_snapshot import FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal, TradeRecord
 
 if TYPE_CHECKING:
@@ -5580,26 +5581,5 @@ class Orchestrator:
         """Checkpoint regime state without blocking shutdown on failure."""
         if self._feature_snapshots is None:
             return
-        self._checkpoint_regime_snapshot()
+        _checkpoint_regime_snapshot(self)
 
-    def _checkpoint_regime_snapshot(self) -> None:
-        if self._feature_snapshots is None or self._regime_engine is None:
-            return
-        regime_version = self._REGIME_VERSION_PREFIX + type(self._regime_engine).__name__
-        try:
-            data = self._regime_engine.checkpoint()
-            checksum = hashlib.sha256(data).hexdigest()
-            meta = FeatureSnapshotMeta(
-                symbol=self._REGIME_SNAPSHOT_KEY,
-                feature_version=regime_version,
-                event_count=0,
-                last_sequence=0,
-                last_timestamp_ns=self._clock.now_ns(),
-                checksum=checksum,
-            )
-            self._feature_snapshots.save(meta, data)
-        except Exception:
-            logger.warning(
-                "Regime snapshot checkpoint failed -- next boot will cold-start regime engine",
-                exc_info=True,
-            )
