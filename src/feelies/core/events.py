@@ -254,9 +254,12 @@ class RiskVerdict(Event):
     action: RiskAction
     reason: str
     scaling_factor: float = field(default=1.0, metadata={"unit": "1"})
-    constraints: dict[str, float] = field(
+    constraints: Mapping[str, float] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "constraints", MappingProxyType(dict(self.constraints)))
 
 
 # ── Order Events ────────────────────────────────────────────────────────
