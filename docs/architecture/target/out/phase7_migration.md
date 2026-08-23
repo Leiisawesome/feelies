@@ -1923,8 +1923,8 @@ PROBLEM:         5 regime classification methods live in the kernel —
                  names as the anti-pattern. Inv-8.
 FILES:           src/feelies/kernel/orchestrator.py (the 5 methods)
                  src/feelies/services/regime_engine.py (destination — engine 3
-                 has no package of its own; it lives in `services/` alongside
-                 `src/feelies/services/regime_state_cache.py`, which is itself a finding: the engine
+                 has no package of its own; it lives in the services package alongside the regime state
+                 cache, which is itself a finding: the engine
                  CORE §E.3 requires to be singular is the one engine with no
                  package boundary to be singular inside of. This step moves the
                  methods to the existing module and does **not** create a
@@ -1935,9 +1935,8 @@ FILES:           src/feelies/kernel/orchestrator.py (the 5 methods)
                  The six at 1642/1644/1684/1686/1780/1782 sit above the five
                  methods and do not move. Pin 3968 sits in _drain_async_fills
                  below _calibrate_regime_engine/_update_regime/
-                 _maybe_publish_hazard_spike (171 lines); deleting those three
-                 moves it and test_wall_clock_allowlist_has_no_stale_entries
-                 fails. This file must be in FILES.)
+                 _maybe_publish_hazard_spike (171 lines); deleting those three shifts that pin and the stale-entry
+                 assertion then trips. This file must be in FILES.)
                  tests/kernel/test_orchestrator.py
                  (orch._calibrate_regime_engine() at :503. Common-shape step 4
                  deletes the delegating call; this is a live caller.)
