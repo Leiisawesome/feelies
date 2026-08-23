@@ -3869,6 +3869,127 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-18.json,
                  baseline_post-S-18.json, this ledger entry.
 
+---
+
+## S-19  2026-08-23T11:49:53+08:00
+  STEP:          S-19
+  BASE:          b34276956ec0dc072218789df59542ee51e5f684
+  RESULT SHA:    859779965ee2b866329067992995ca0d80a27b20
+  VERDICT:       passed
+  CONFORMANCE:   no new test. S2/S12/S14 held before and after.
+                 S2: 1 passed, 1 xfailed (G40) -> 1 passed, 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 level5_regime_hazard_spike and level6_regime_state
+                 held after every method.
+  TESTS:         4869 passed / 0 failed / 19 skipped / 8 xfailed
+                 -> 4869 passed / 0 failed / 19 skipped / 8 xfailed
+                 (post-S-19 capture GREEN). not-paper_rth: 4868 passed,
+                 6 skipped, 14 deselected, 8 xfailed, 0 failed.
+                 conformance 81 passed / 8 xfailed -> 81 passed /
+                 8 xfailed (no XPASS).
+                 mypy src/feelies: Success, 202 source files.
+  PARITY:        declared hold -- all 28 replay hashes and
+                 EXPECTED_MANIFEST_FINGERPRINT | actual 64/64 scanned
+                 constants identical (pre-S-19 vs post-S-19, and vs
+                 baseline_post-S-18.json); 28 hashes unmoved after
+                 every method; EXPECTED_MANIFEST_FINGERPRINT held at
+                 dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b
+                 | MATCH.
+  FILES:         4 real paths declared, 4 committed (clean vs 8597799).
+                 verify_step FILES declared 5, touched 4, "not touched
+                 orchestrator.py" -- fifth token is prose noise, bare
+                 filename vs path (frozen). git status --porcelain -- src
+                 empty after the method commits.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0, orchestrator lines -~200
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 567 -> 567 (+0)
+                 sloc 45499 -> 45501 (+2)
+                 n_edges 633 -> 634
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines 5622 -> 5406 (-216)
+                 orchestrator methods 126 -> 121 (-5)
+  DETERMINISM:   148 -> 148 passed after every method; no hash moved
+  VERIFY_STEP:   Four checks: FILES 4/4 real (oracle 5/4, prose noise);
+                 PARITY moved 0 holds; TESTS 4869->4869 passed, 0 failed;
+                 NET DELTA 0/0/0 with conceptual DELETES (oracle
+                 "compare by eye"). CLEAN, blast radius boundary --
+                 human gate required.
+  NOTES:         Five methods moved to services/regime_engine.py as
+                 module functions taking the orchestrator as self: Any,
+                 one per commit, _maybe_publish_hazard_spike last
+                 because it draws _hazard_seq. No shims. Determinism
+                 148 after every commit, level5_regime_hazard_spike
+                 held throughout. Orchestrator 5622 -> 5406 lines
+                 (-216), 126 -> 121 methods -- the plan's 123 -> 118
+                 was stale. SequenceGenerator constructions stayed at
+                 orchestrator.py:437 and :445, so S-13's
+                 SequenceAuthority bindings hold; S2, S12 and S14 all
+                 unchanged. Inv-10 pin 3968 -> 3794 retargeted in
+                 _drain_async_fills; the six above the cut did not
+                 move; guard proof: a throwaway perf_counter_ns in
+                 reset failed as :3814, restore byte-identical.
+                 test_orchestrator.py:503 rewritten to
+                 _calibrate_regime_engine(orch).
+                 WAVE-D METHOD, established here for S-20 onward: one
+                 method per commit; bodies copied unchanged as
+                 module-level functions taking the orchestrator; no
+                 delegating shim; SequenceGenerator constructions stay
+                 on Orchestrator; any sequence-drawing method goes
+                 last; do not add lines above the six Inv-10 pins;
+                 retarget only pins below the cut; prove the guard
+                 still names a throwaway.
+                 Order: _regime_label_for (285ff6d),
+                 _checkpoint_regime_snapshot (dea2141),
+                 _calibrate_regime_engine (3b59e8b), _update_regime
+                 (466da57), _maybe_publish_hazard_spike last
+                 (3fd6630); hashlib noqa pin-hold (8597799).
+  FINDINGS:      Three imports -- hashlib, itertools,
+                 RegimeHazardSpike -- are now dead on Orchestrator and
+                 were kept with noqa: F401 solely to hold the six line
+                 pins. That is dead code preserved to satisfy a
+                 line-number-keyed test, and every later extraction
+                 will either repeat the trick or move the pins.
+                 Re-keying by enclosing symbol is not available: all
+                 six live in _process_tick_inner, which holds seven
+                 perf_counter_ns calls, and the allowlist's symbol
+                 keys admit exactly one leftover call each -- a budget
+                 already spent on :1533. Re-keying would require
+                 changing the consumer to a count budget, which is a
+                 different guard property than "a second unmatched
+                 read is still an offender". The alternative is
+                 splitting _process_tick_inner so each timing pair has
+                 its own enclosing symbol, which is an orchestrator
+                 refactor. Either way it is a decision S-19's block
+                 does not contain. Needs its own step before wave D
+                 continues.
+                 Also: plan DELETES said 3 method calls through
+                 self._regime_engine; 4 module-function calls remain
+                 (calibrate, update, label_for, checkpoint).
+                 _checkpoint_regime_snapshot imported
+                 FeatureSnapshotMeta from storage (n_edges 633 ->
+                 634); S2 still 1 passed / 1 xfailed.
+                 Carried: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; verify_step frozen bugs; 152 research
+                 cache days stale (APP/2026-03-26 current); 11
+                 UNIT_UNDETERMINED block S-24; accepted baseline
+                 failure set is the four exempted tests; R6 14/31
+                 resets.
+  NEXT:          Own step: Inv-10 pin re-key or count-budget, before
+                 wave D continues. Then S-20 move 7 halt/integrity
+                 and feature-checkpoint methods out of the kernel
+                 (boundary). Not started. Do not begin S-20.
+                 Left uncommitted: baseline_pre-S-19.json,
+                 baseline_post-S-19.json, this ledger entry.
+
+
 
 
 
