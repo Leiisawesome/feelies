@@ -3643,6 +3643,116 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  baseline_pre-S-17.json,
                  baseline_post-S-17.json, this ledger entry.
 
+---
+
+## S-17a  2026-08-22T21:46:40+08:00
+  STEP:          S-17a
+  BASE:          064d28ae2841ffdb4f40581a53a3d325a88366d4
+  RESULT SHA:    b881cd593f896c3c23f1f1f15c304b730192ff97
+  VERDICT:       passed
+  CONFORMANCE:   S8 sibling test_s17a_field_add_moves_fingerprint_not_replay_hashes
+                 | failed-before: n/a -- the oracle proof is blindness,
+                 not S8. S8 fails by name if PINNED_PAYLOAD is not
+                 updated; that is not the gap.
+                 Blindness (before fold, Signal.s17a_probe present,
+                 PINNED_PAYLOAD untouched):
+                   tests/determinism/test_parity_manifest.py -k
+                   "fingerprint or entry_matches"
+                   29 passed, 5 deselected in 1.77s
+                 After fold, same probe:
+                   fingerprint dbcde6a6 -> 23f758b0
+                   EXPECTED_LEVEL2_SIGNAL_HASH held at e3b0c442
+                   28 entry_matches passed, fingerprint 1 failed
+                 After implement (no probe): schema-drift 2 passed
+                 (S8 + S-17a). After operator re-pin:
+                 test_manifest_fingerprint_matches_locked_value
+                 1 passed in 0.44s; determinism 148 passed / 0 failed.
+  TESTS:         4867 passed / 0 failed / 19 skipped / 9 xfailed
+                 -> 4867 passed / 1 failed / 19 skipped / 9 xfailed
+                 (post-S-17a capture, before re-pin). After operator
+                 re-pin, fingerprint 1 passed; determinism 148 passed
+                 / 0 failed. conformance 79 passed / 9 xfailed ->
+                 80 passed / 9 xfailed (S-17a assertion added, no
+                 XPASS). not-paper_rth: 1 failed, 4866 passed, 6
+                 skipped, 14 deselected, 9 xfailed -- the one failure
+                 was the unre-pinned fingerprint; none of the four
+                 exempted tests.
+  PARITY:        declared break EXPECTED_MANIFEST_FINGERPRINT only;
+                 28 replay hashes and counts do not move | actual
+                 28 hashes and counts unmoved; 64/64 scanned
+                 constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 ec7af15d242a1aa6231b61ef3ee544182ad4dd3d3831927c96e07465f7886e06
+                 ->
+                 dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b
+                 re-pinned by operator | MATCH.
+  FILES:         3 declared, 3 committed (clean vs b881cd5).
+                 verify_step S-17a --base 064d28ae uppercased the id
+                 to S-17A and exited "S-17A not in plan" (frozen).
+                 git status --porcelain -- src empty.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0, test files +0
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 567 -> 567 (+0)
+                 sloc 45452 -> 45452 (+0)
+                 n_edges 633 -> 633
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   148 -> 148 passed (1 failed before re-pin, then 148)
+  VERIFY_STEP:   Four checks by hand (oracle uppercased S-17a to
+                 S-17A): FILES 3/3 after re-pin (oracle would report
+                 touched 0 on the uncommitted tree); PARITY 28 replay
+                 hold, fingerprint pin moved as declared, scanner
+                 blind to FINGERPRINT; TESTS 4867->4867 passed,
+                 0->1 failed on the unre-pinned fingerprint, then
+                 fingerprint 1 passed and determinism 148 after
+                 re-pin; NET DELTA 0/0/0, DELETES is conceptual.
+                 CLEAN (platform-wide, then commit).
+  NOTES:         The fold hashes class names sorted, plus dataclass
+                 field names in dataclass order, for the 21 concrete
+                 Event subclasses -- Event itself excluded. Type
+                 annotations, defaults and Field.metadata are NOT
+                 hashed, so S-18's mutable-container conversions will
+                 not move the fingerprint. Encoding is
+                 ClassName|field1,field2,... per line, appended after
+                 the sorted manifest name|hash|count lines. Blindness
+                 proof: with Signal.s17a_probe present and
+                 PINNED_PAYLOAD untouched, test_manifest_fingerprint_matches_locked_value
+                 and all 28 test_manifest_entry_matches_replay passed
+                 -- 29 passed, 5 deselected. After the fold the same
+                 probe moved the fingerprint dbcde6a6 -> 23f758b0
+                 while EXPECTED_LEVEL2_SIGNAL_HASH held at e3b0c442.
+                 events.py restored byte-identical both times,
+                 SHA256 CE2CC0E8...; git status --porcelain -- src
+                 empty. The 28 replay hashes and counts and all 64
+                 scanned constants are unmoved.
+                 EXPECTED_MANIFEST_FINGERPRINT ec7af15d -> dbcde6a6.
+                 From here every field add or delete moves the
+                 fingerprint by design. S-23's new DeRiskRequirement
+                 class and S-31 step 1's 20 unread-field deletions
+                 both do, and S-31's "all baselines hold" line covers
+                 replay hashes only. The ~157 stale research cache
+                 days are now unblocked for re-ingest.
+  FINDINGS:      1. verify_step.py uppercases the step id, so S-17a
+                    becomes S-17A and is not found. Frozen -- worked
+                    around by hand. Carried: FILES touched 0 on
+                    uncommitted tree; PARITY blind to FINGERPRINT;
+                    NET DELTA stale counts; blast-radius substring
+                    matching; bare filenames in FILES prose.
+                 Carried: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader
+                 alpha_id test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; 11 UNIT_UNDETERMINED block S-24;
+                 accepted baseline failure set is the four
+                 exempted tests; R6 14/31 resets.
+  NEXT:          S-18 convert 8 mutable container fields on frozen
+                 events (boundary). Not started. Do not begin S-18.
+                 Left uncommitted: baseline_pre-S-17a.json,
+                 baseline_post-S-17a.json, this ledger entry.
+
+
 
 
 
