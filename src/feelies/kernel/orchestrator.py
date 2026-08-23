@@ -131,8 +131,10 @@ from feelies.execution.regulatory.borrow_availability import (
 )
 from feelies.ingestion.data_integrity import (
     DataHealth,
-    HaltSignal,
-    classify_halt_status,
+    _update_halt_state,
+    _update_ssr_state,
+    _data_health_blocks_trading,
+    _verify_data_integrity,
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
@@ -171,7 +173,7 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, _update_regime  # noqa: E501
+from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_feature_snapshots, _regime_label_for, _restore_feature_snapshots, _update_regime  # noqa: E501
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -927,13 +929,13 @@ class Orchestrator:
             )
             return
 
-        if self._verify_data_integrity():
+        if _verify_data_integrity(self):
             self._macro.transition(
                 MacroState.READY,
                 trigger="DATA_INTEGRITY_OK",
                 correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
-            self._restore_feature_snapshots()
+            _restore_feature_snapshots(self)
             _calibrate_regime_engine(self)
             self._pending_sized_intents.clear()
         else:
@@ -1041,7 +1043,7 @@ class Orchestrator:
                 "recover_from_degraded: refused — kill switch is still active",
             )
             return False
-        if self._verify_data_integrity():
+        if _verify_data_integrity(self):
             self._macro.transition(
                 MacroState.READY,
                 trigger="RECOVERY_VALIDATED",
@@ -1117,7 +1119,7 @@ class Orchestrator:
             if expire_moc is not None:
                 expire_moc()
             self._drain_async_fills(correlation_id="shutdown")
-        self._checkpoint_feature_snapshots()
+        _checkpoint_feature_snapshots(self)
         # Resolve operator cancel intent when no broker ack will arrive
         # (e.g. mid backtest router has no cancel_order API).
         for oid, (sm, _, order) in list(self._active_orders.items()):
@@ -1189,11 +1191,11 @@ class Orchestrator:
     def _process_trade_inner(self, trade: Trade) -> None:
         """Log and publish one trade, then drive trade-sensitive layers."""
         # Update halt state before applying the data-health gate.
-        self._update_halt_state(trade)
+        _update_halt_state(self, trade)
         # Update intraday SSR state from the trade tape.
-        self._update_ssr_state(trade)
+        _update_ssr_state(self, trade)
 
-        trade_block_reason = self._data_health_blocks_trading(trade.symbol, trade.correlation_id)
+        trade_block_reason = _data_health_blocks_trading(self, trade.symbol, trade.correlation_id)
         if trade_block_reason is not None:
             # Drop corrupt or gapped data. Halt prints remain observable, but
             # never reach the router or scheduler.
@@ -1586,7 +1588,7 @@ class Orchestrator:
             return
 
         # Runtime data integrity check.
-        quote_block_reason = self._data_health_blocks_trading(quote.symbol, cid)
+        quote_block_reason = _data_health_blocks_trading(self, quote.symbol, cid)
         if quote_block_reason is not None:
             # Report rejected quotes because none reach the event log.
             if self._normalizer is not None:
@@ -4955,99 +4957,14 @@ class Orchestrator:
 
     # LULD halt modeling.
 
-    def _update_halt_state(self, trade: Trade) -> None:
-        """Register halt and resume edges from the trade tape.
-
-        On halt-on for a symbol not already halted: mark it halted, cancel
-        any resting orders (Inv-11), and emit ``SymbolHalted``.  On resume:
-        clear the halt, open the entry blackout window, and emit the resume
-        ``SymbolHalted``.  Inert when no halt codes are configured.
-        """
-        if not self._halt_on_codes and not self._halt_off_codes:
-            return
-        status = classify_halt_status(
-            trade.conditions,
-            self._halt_on_codes,
-            self._halt_off_codes,
-        )
-        if status is None:
-            return
-        symbol = trade.symbol
-        if status is HaltSignal.HALT_ON:
-            if symbol not in self._halted_symbols:
-                self._halted_symbols.add(symbol)
-                self._halt_blackout_until_ns.pop(symbol, None)
-                self._cancel_resting_for_symbol(symbol, trade.correlation_id)
-                self._emit_symbol_halted(
-                    symbol,
-                    halted=True,
-                    reason="LULD_HALT",
-                    ts=trade.timestamp_ns,
-                    correlation_id=trade.correlation_id,
-                    blackout_until_ns=0,
-                )
-        elif symbol in self._halted_symbols:
-            self._halted_symbols.discard(symbol)
-            deadline = trade.timestamp_ns + self._halt_blackout_ns
-            self._halt_blackout_until_ns[symbol] = deadline
-            self._emit_symbol_halted(
-                symbol,
-                halted=False,
-                reason="LULD_RESUME",
-                ts=trade.timestamp_ns,
-                correlation_id=trade.correlation_id,
-                blackout_until_ns=deadline,
-            )
-
     def _in_halt_blackout(self, symbol: str, now_ns: int) -> bool:
         """True while a symbol is inside its post-resume entry blackout."""
         deadline = self._halt_blackout_until_ns.get(symbol)
         return deadline is not None and now_ns < deadline
 
-    def _emit_symbol_halted(
-        self,
-        symbol: str,
-        *,
-        halted: bool,
-        reason: str,
-        ts: int,
-        correlation_id: str,
-        blackout_until_ns: int,
-    ) -> None:
-        """Publish the forensic ``SymbolHalted`` marker."""
-        self._bus.publish(
-            SymbolHalted(
-                timestamp_ns=ts,
-                correlation_id=correlation_id,
-                sequence=self._seq.next(),
-                source_layer="kernel",
-                symbol=symbol,
-                halted=halted,
-                reason=reason,
-                blackout_until_ns=blackout_until_ns,
-            )
-        )
 
     # ── Reg-SHO / SSR short-sale restriction ────────────────────────
 
-    def _update_ssr_state(self, trade: Trade) -> None:
-        """Activate sticky session SSR state from trade condition codes."""
-        if not self._ssr_codes:
-            return
-        if not (set(trade.conditions) & self._ssr_codes):
-            return
-        symbol = trade.symbol.upper()
-        if symbol in self._ssr_active:
-            return
-        self._ssr_active.add(symbol)
-        self._publish_alert(
-            timestamp_ns=trade.timestamp_ns,
-            correlation_id=trade.correlation_id,
-            severity=AlertSeverity.INFO,
-            alert_name="ssr_triggered",
-            message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
-            context={"symbol": symbol},
-        )
 
     # ── Static borrow availability ───────────────────────────────────
 
@@ -5204,65 +5121,6 @@ class Orchestrator:
             context=context,
         )
 
-    def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> str | None:
-        """Return a fail-safe block reason for the symbol, or None when healthy.
-
-        Corruption degrades the platform; configured gaps do likewise."""
-        if self._normalizer is None:
-            return None
-        health = self._normalizer.health(symbol)
-        cfg_syms = (
-            {s.upper() for s in self._config.symbols} if self._config is not None else frozenset()
-        )
-        if self._config is not None and self._config.strict_normalizer_symbol_coverage:
-            if symbol.upper() in cfg_syms:
-                tracked = {k.upper() for k in self._normalizer.all_health()}
-                if symbol.upper() not in tracked:
-                    if self._macro.can_transition(MacroState.DEGRADED):
-                        self._macro.transition(
-                            MacroState.DEGRADED,
-                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
-                            correlation_id=correlation_id,
-                        )
-                    return "SYMBOL_UNTRACKED"
-        if health == DataHealth.CORRUPTED:
-            # Force-flatten the affected symbol before transitioning macro.
-            # CORRUPTED is terminal — leaving an open position to mark at
-            # the last-known quote would carry stale risk through DEGRADED.
-            self._force_flatten_symbol_on_degrade(
-                symbol,
-                correlation_id,
-                reason="DATA_CORRUPTED",
-            )
-            if self._macro.can_transition(MacroState.DEGRADED):
-                self._macro.transition(
-                    MacroState.DEGRADED,
-                    trigger=f"DATA_CORRUPTED:{symbol}",
-                    correlation_id=correlation_id,
-                )
-            return health.name
-        if health == DataHealth.HALTED:
-            # A recoverable LULD halt blocks the symbol without degrading macro state.
-            return health.name
-        degrade_gap = self._config is not None and self._config.degrade_on_data_gap
-        if degrade_gap and health == DataHealth.GAP_DETECTED:
-            # GAP_DETECTED can recover to HEALTHY, but the macro DEGRADED
-            # transition is sticky (requires explicit operator command).
-            # Unwind the affected symbol at the last-known mark so the
-            # book doesn't carry stale exposure through the gap window.
-            self._force_flatten_symbol_on_degrade(
-                symbol,
-                correlation_id,
-                reason="DATA_GAP_DETECTED",
-            )
-            if self._macro.can_transition(MacroState.DEGRADED):
-                self._macro.transition(
-                    MacroState.DEGRADED,
-                    trigger=f"DATA_GAP_DETECTED:{symbol}",
-                    correlation_id=correlation_id,
-                )
-            return health.name
-        return None
 
     def _force_flatten_symbol_on_degrade(
         self,
@@ -5320,61 +5178,12 @@ class Orchestrator:
                 context={"symbol": symbol, "reason": reason, "exception": repr(exc)},
             )
 
-    def _verify_data_integrity(self) -> bool:
-        """Verify data integrity for all configured symbols.
-
-        If a normalizer is available, checks that every configured
-        symbol is tracked and reports HEALTHY.
-
-        Without a normalizer (cached replay / offline logs), optional
-        ``PlatformConfig.require_healthy_disk_cache_manifests`` enforces
-        per-day ``ingestion_health`` rows supplied by the ingest/replay path.
-        """
-        if self._config is None:
-            return True
-
-        if self._normalizer is not None:
-            health = self._normalizer.all_health()
-            for symbol in self._config.symbols:
-                if symbol not in health or health[symbol] != DataHealth.HEALTHY:
-                    return False
-            return True
-
-        if self._config.require_healthy_disk_cache_manifests:
-            rows = self._config.disk_cache_ingestion_health_rows
-            if not rows:
-                logger.warning(
-                    "require_healthy_disk_cache_manifests=True but "
-                    "disk_cache_ingestion_health_rows is empty — integrity fail"
-                )
-                return False
-            for sym, day, h in rows:
-                if h != "HEALTHY":
-                    logger.warning(
-                        "disk cache ingestion_health=%s for %s/%s — integrity fail",
-                        h,
-                        sym,
-                        day,
-                    )
-                    return False
-        return True
 
     # ── Feature snapshot management ─────────────────────────────────
 
     _REGIME_SNAPSHOT_KEY = "__regime__"
     _REGIME_VERSION_PREFIX = "regime:"
 
-    def _restore_feature_snapshots(self) -> None:
-        """Restore regime-engine state from snapshots for warm-start.
-
-        Best-effort: if a snapshot is missing, corrupt, or version-
-        incompatible, the regime engine cold-starts.  Snapshot failures
-        never block boot.
-
-        """
-        if self._feature_snapshots is None:
-            return
-        self._restore_regime_snapshot()
 
     def _restore_regime_snapshot(self) -> None:
         if self._feature_snapshots is None or self._regime_engine is None:
@@ -5395,9 +5204,4 @@ class Orchestrator:
                 exc_info=True,
             )
 
-    def _checkpoint_feature_snapshots(self) -> None:
-        """Checkpoint regime state without blocking shutdown on failure."""
-        if self._feature_snapshots is None:
-            return
-        _checkpoint_regime_snapshot(self)
 

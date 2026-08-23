@@ -1003,3 +1003,23 @@ def _maybe_publish_hazard_spike(
             hazard_score=spike.hazard_score,
         )
     )
+
+
+def _restore_feature_snapshots(self: Any) -> None:
+    """Restore regime-engine state from snapshots for warm-start.
+
+    Best-effort: if a snapshot is missing, corrupt, or version-
+    incompatible, the regime engine cold-starts.  Snapshot failures
+    never block boot.
+
+    """
+    if self._feature_snapshots is None:
+        return
+    self._restore_regime_snapshot()
+
+
+def _checkpoint_feature_snapshots(self: Any) -> None:
+    """Checkpoint regime state without blocking shutdown on failure."""
+    if self._feature_snapshots is None:
+        return
+    _checkpoint_regime_snapshot(self)
