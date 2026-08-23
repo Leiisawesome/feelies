@@ -395,7 +395,10 @@ class MetricEvent(Event):
     name: str
     value: float = field(metadata={"unit": UNIT_UNDETERMINED})
     metric_type: MetricType
-    tags: dict[str, str] = field(default_factory=dict)
+    tags: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tags", MappingProxyType(dict(self.tags)))
 
 
 # ── Alert Events ────────────────────────────────────────────────────
