@@ -4093,5 +4093,127 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-19a.json,
                  baseline_post-S-19a.json, this ledger entry.
 
+---
+
+## S-20  2026-08-23T18:27:54+08:00
+  STEP:          S-20
+  BASE:          0412c0ca44e9361087888e76334c6716715e5438
+  RESULT SHA:    64a1e909ce6f8e0406e4a124b53e2dad0447607b
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. S2/S12/S14 held before
+                 and after.
+                 S2: 1 passed, 1 xfailed (G40) -> 1 passed, 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 kernel: 389 passed. ingestion: 147 passed /
+                 4 skipped. conformance 81 passed / 8 xfailed
+                 (no XPASS). mypy src/feelies: Success, 202 source
+                 files.
+  TESTS:         4870 passed / 0 failed / 19 skipped / 8 xfailed
+                 -> 4870 passed / 0 failed / 19 skipped / 8 xfailed
+                 (post-S-20 capture GREEN). not-paper_rth: 4869
+                 passed, 6 skipped, 14 deselected, 8 xfailed,
+                 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes,
+                 EXPECTED_MANIFEST_FINGERPRINT, and all 64 scanned
+                 constants | actual 64/64 identical (pre-S-20 vs
+                 post-S-20, and vs baseline_post-S-19a.json); 0
+                 moved; symbol_halted and market_data_canonical
+                 held after every method | MATCH.
+  FILES:         4 declared, 4 committed (clean vs 64a1e90).
+                 verify_step FILES declared 4, touched 4, CLEAN
+                 (post-commit). The mypy annotation that had been
+                 990e321 was folded into 99fbb03; tree at 64a1e90
+                 is byte-identical to 990e321
+                 (f815ae2aeace356f2f60a1280a9ce9eddf6eae39).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0, orchestrator lines -~300
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 567 -> 567 (+0)
+                 sloc 45498 -> 45507 (+9)
+                 n_edges 634 -> 636
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines 5403 -> 5207 (-196)
+                 orchestrator methods 121 -> 114 (-7)
+  DETERMINISM:   148 -> 148 passed after every method; no hash moved
+  VERIFY_STEP:   Four checks: FILES 4/4 CLEAN; PARITY moved 0
+                 holds; TESTS 4870->4870 passed, 0 failed; NET
+                 DELTA 0/0/+9 sloc, compare-by-eye (oracle still
+                 says "deletions with no negative delta" because
+                 it does not treat sloc or method-count as the
+                 deletion signal -- frozen). CLEAN, blast radius
+                 boundary -- human gate required.
+  NOTES:         Second wave-D extraction; the S-19 method held.
+                 Seven commits, engine 1's five first with
+                 _emit_symbol_halted last among them because it
+                 draws self._seq, then the two engine-2 wrappers.
+                 Determinism 148 after every one, no hash moved --
+                 including symbol_halted, which S-13 binds to the
+                 orchestrator stream, and market_data_canonical,
+                 which S-17 landed specifically so an
+                 ingestion-side mistake here would be visible.
+                 Orchestrator 5403 -> 5207 lines (-196),
+                 121 -> 114 methods.
+                 Order: _update_halt_state (318e185),
+                 _update_ssr_state (28d8c03),
+                 _data_health_blocks_trading (99fbb03; includes
+                 health: DataHealth annotation),
+                 _verify_data_integrity (f8088a7),
+                 _emit_symbol_halted last of engine 1 (0c87842),
+                 _restore_feature_snapshots (7da5c64),
+                 _checkpoint_feature_snapshots (64a1e90).
+                 The two engine-2 wrappers went to
+                 services/regime_engine.py rather than features/,
+                 because after S-19 they only touch regime
+                 snapshots. _restore_regime_snapshot stayed on
+                 Orchestrator as the callee -- it is not one of
+                 the seven. _in_halt_blackout stayed; its three
+                 bindings at tests/kernel/test_orchestrator.py:4181,
+                 :4182 and :4221 still pass.
+                 SequenceGenerator constructions unmoved at :436
+                 and :444. Inv-10 count budgets unchanged at
+                 7 / 1 / 2 -- none of the seven contained
+                 perf_counter_ns.
+                 perfmeasure.py: the four engine-1 probes
+                 retargeted to feelies.ingestion.data_integrity,
+                 and S-19's carried staleness fixed by retargeting
+                 E3.update_regime to
+                 feelies.services.regime_engine:_update_regime;
+                 _install_direct_probes wraps module-level
+                 functions so those paths resolve.
+                 Fold: 990e321 was an eighth commit; folded into
+                 99fbb03 (the _data_health_blocks_trading move
+                 that caused the no-any-return). New head 64a1e90
+                 tree-identical to 990e321
+                 (f815ae2aeace356f2f60a1280a9ce9eddf6eae39);
+                 determinism 148 at the rewritten head.
+  FINDINGS:      Copying a body onto `self: Any` erases the type
+                 narrowing the class provided. _data_health_blocks_trading
+                 returned health.name from a narrowed
+                 MarketDataNormalizer; as a module function on
+                 self: Any it became a no-any-return error at three
+                 sites, fixed by annotating health: DataHealth.
+                 Expect the same wherever an extracted body returns
+                 an attribute of self. It restores the type the
+                 class already had rather than adding an invariant.
+                 Carry into S-21 onward.
+                 Carried: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; verify_step frozen bugs; 152 research
+                 cache days stale (APP/2026-03-26 current); 11
+                 UNIT_UNDETERMINED block S-24; accepted baseline
+                 failure set is the four exempted tests; R6 14/31
+                 resets.
+  NEXT:          S-21 move 3 kernel accounting methods and 36
+                 store calls (platform-wide / boundary). Not
+                 started. Do not begin S-21.
+                 Left uncommitted: baseline_pre-S-20.json,
+                 baseline_post-S-20.json, this ledger entry.
+
 
 
