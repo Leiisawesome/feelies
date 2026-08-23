@@ -131,8 +131,7 @@ from feelies.execution.regulatory.borrow_availability import (
 )
 from feelies.ingestion.data_integrity import (
     DataHealth,
-    HaltSignal,
-    classify_halt_status,
+    _update_halt_state,
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
@@ -1189,7 +1188,7 @@ class Orchestrator:
     def _process_trade_inner(self, trade: Trade) -> None:
         """Log and publish one trade, then drive trade-sensitive layers."""
         # Update halt state before applying the data-health gate.
-        self._update_halt_state(trade)
+        _update_halt_state(self, trade)
         # Update intraday SSR state from the trade tape.
         self._update_ssr_state(trade)
 
@@ -4954,50 +4953,6 @@ class Orchestrator:
     # ── Configuration and data integrity ────────────────────────────
 
     # LULD halt modeling.
-
-    def _update_halt_state(self, trade: Trade) -> None:
-        """Register halt and resume edges from the trade tape.
-
-        On halt-on for a symbol not already halted: mark it halted, cancel
-        any resting orders (Inv-11), and emit ``SymbolHalted``.  On resume:
-        clear the halt, open the entry blackout window, and emit the resume
-        ``SymbolHalted``.  Inert when no halt codes are configured.
-        """
-        if not self._halt_on_codes and not self._halt_off_codes:
-            return
-        status = classify_halt_status(
-            trade.conditions,
-            self._halt_on_codes,
-            self._halt_off_codes,
-        )
-        if status is None:
-            return
-        symbol = trade.symbol
-        if status is HaltSignal.HALT_ON:
-            if symbol not in self._halted_symbols:
-                self._halted_symbols.add(symbol)
-                self._halt_blackout_until_ns.pop(symbol, None)
-                self._cancel_resting_for_symbol(symbol, trade.correlation_id)
-                self._emit_symbol_halted(
-                    symbol,
-                    halted=True,
-                    reason="LULD_HALT",
-                    ts=trade.timestamp_ns,
-                    correlation_id=trade.correlation_id,
-                    blackout_until_ns=0,
-                )
-        elif symbol in self._halted_symbols:
-            self._halted_symbols.discard(symbol)
-            deadline = trade.timestamp_ns + self._halt_blackout_ns
-            self._halt_blackout_until_ns[symbol] = deadline
-            self._emit_symbol_halted(
-                symbol,
-                halted=False,
-                reason="LULD_RESUME",
-                ts=trade.timestamp_ns,
-                correlation_id=trade.correlation_id,
-                blackout_until_ns=deadline,
-            )
 
     def _in_halt_blackout(self, symbol: str, now_ns: int) -> bool:
         """True while a symbol is inside its post-resume entry blackout."""

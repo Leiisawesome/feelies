@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from enum import Enum, auto
+from typing import Any
 
 from feelies.core.clock import Clock
+from feelies.core.events import Trade
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
 
@@ -111,3 +113,48 @@ def create_data_integrity_machine(
         transitions=_DATA_TRANSITIONS,
         clock=clock,
     )
+
+
+def _update_halt_state(self: Any, trade: Trade) -> None:
+    """Register halt and resume edges from the trade tape.
+
+    On halt-on for a symbol not already halted: mark it halted, cancel
+    any resting orders (Inv-11), and emit ``SymbolHalted``.  On resume:
+    clear the halt, open the entry blackout window, and emit the resume
+    ``SymbolHalted``.  Inert when no halt codes are configured.
+    """
+    if not self._halt_on_codes and not self._halt_off_codes:
+        return
+    status = classify_halt_status(
+        trade.conditions,
+        self._halt_on_codes,
+        self._halt_off_codes,
+    )
+    if status is None:
+        return
+    symbol = trade.symbol
+    if status is HaltSignal.HALT_ON:
+        if symbol not in self._halted_symbols:
+            self._halted_symbols.add(symbol)
+            self._halt_blackout_until_ns.pop(symbol, None)
+            self._cancel_resting_for_symbol(symbol, trade.correlation_id)
+            self._emit_symbol_halted(
+                symbol,
+                halted=True,
+                reason="LULD_HALT",
+                ts=trade.timestamp_ns,
+                correlation_id=trade.correlation_id,
+                blackout_until_ns=0,
+            )
+    elif symbol in self._halted_symbols:
+        self._halted_symbols.discard(symbol)
+        deadline = trade.timestamp_ns + self._halt_blackout_ns
+        self._halt_blackout_until_ns[symbol] = deadline
+        self._emit_symbol_halted(
+            symbol,
+            halted=False,
+            reason="LULD_RESUME",
+            ts=trade.timestamp_ns,
+            correlation_id=trade.correlation_id,
+            blackout_until_ns=deadline,
+        )

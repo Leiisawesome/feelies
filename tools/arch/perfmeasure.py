@@ -141,7 +141,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
         "feelies.kernel.orchestrator:Orchestrator._data_health_blocks_trading",
     ),
     (1, "E1.verify_integrity", "feelies.kernel.orchestrator:Orchestrator._verify_data_integrity"),
-    (1, "E1.update_halt_state", "feelies.kernel.orchestrator:Orchestrator._update_halt_state"),
+    (1, "E1.update_halt_state", "feelies.ingestion.data_integrity:_update_halt_state"),
     (1, "E1.update_ssr_state", "feelies.kernel.orchestrator:Orchestrator._update_ssr_state"),
     # -- engine 2: state / feature ----------------------------------------
     (
@@ -151,7 +151,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     ),
     (2, "E2.horizon_scheduler", "feelies.sensors.horizon_scheduler:HorizonScheduler.on_event"),
     # -- engine 3: regime --------------------------------------------------
-    (3, "E3.update_regime", "feelies.kernel.orchestrator:Orchestrator._update_regime"),
+    (3, "E3.update_regime", "feelies.services.regime_engine:_update_regime"),
     # -- engine 6: portfolio construction ---------------------------------
     (
         6,
@@ -348,9 +348,17 @@ def _install_direct_probes() -> None:
     _INSTALLED.add("direct")
     for engine, label, target in DIRECT_PROBES:
         mod_name, _, attr = target.partition(":")
-        cls_name, _, meth = attr.partition(".")
         try:
             mod = importlib.import_module(mod_name)
+            if "." not in attr:
+                fn = getattr(mod, attr, None)
+                if fn is None or not callable(fn):
+                    _UNRESOLVED.append(f"{target}  (not a plain method)")
+                    continue
+                setattr(mod, attr, _wrap(engine, label, fn))
+                _RESOLVED.append(f"{label}={target}")
+                continue
+            cls_name, _, meth = attr.partition(".")
             cls = getattr(mod, cls_name)
             fn = cls.__dict__.get(meth)
             if fn is None:
