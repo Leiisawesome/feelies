@@ -1967,6 +1967,92 @@ NET DELTA:       src modules 0, public symbols **0** (the methods are private on
                  both sides), branch points 0. Orchestrator lines **-~200**.
 ROLLBACK:        revert; the methods return to the kernel.
 ```
+```
+STEP:            S-19a
+CLOSES:          S-19 FINDING (Inv-10 line pins / dead-import hold)
+PROBLEM:         S-19 held the six Inv-10 line pins at
+                 1642/1644/1684/1686/1780/1782 by leaving three unused
+                 imports (`hashlib`, `itertools`, `RegimeHazardSpike`)
+                 with `# noqa: F401`. All six live in `_process_tick_inner`,
+                 which has seven `time.perf_counter_ns()` calls; the
+                 allowlist's symbol keys admit exactly one leftover each,
+                 already spent on `:1533`. Pin 3794 in `_drain_async_fills`
+                 is the same shape (two calls, one symbol leftover). Every
+                 later extraction that deletes lines above those pins
+                 either repeats the dead-import trick or retargets the
+                 pins. Re-keying by enclosing symbol is not available
+                 without a count budget. Splitting `_process_tick_inner`
+                 does not retire line pins by itself: each start/stop pair
+                 is two AST Call nodes, so each helper still needs a
+                 leftover pin or a count of 2, and the new methods sit
+                 above `_finalize_tick` / `_drain_async_fills` and move
+                 every pin below the cut.
+FILES:           tests/acceptance/test_no_walltime_outside_clock.py
+                 (consumer: `_split_allowlist` / `_consume_allowlist` /
+                 `_WALL_CLOCK_CALL_ALLOWLIST`; stale-entry assertion)
+                 src/feelies/kernel/orchestrator.py
+                 (delete the three unused imports only — after the
+                 pins are retired, so the deletion cannot shift a line
+                 key)
+WHY THIS OWNER:  S4 is the Inv-10 guard. S-07 left seven line pins and
+                 re-keyed three residuals by symbol with budget 1.
+                 S-19 proved that budget is already spent and that the
+                 only way to hold the six pins across a deletion above
+                 them is dead code. This step is the guard change that
+                 makes wave D's remaining orchestrator deletions
+                 (S-20…S-26, S-29, and S-31/S-32/S-34) stop paying
+                 Inv-10 tax. It is not an engine extraction.
+REFACTOR PATH:   **Do not split `_process_tick_inner`.** Test-only
+                 consumer change, then delete the S-19 pin-hold.
+                 Prove fail-then-pass on the guard before touching
+                 orchestrator.py. (1) Stop uniquing symbol keys in
+                 `_split_allowlist`: accumulate a `Counter`, not a
+                 `set`. `frozenset` cannot carry multiplicity — the
+                 allowlist type becomes a sequence of `(key, call)`
+                 pairs so duplicates count. Line keys, if any remain,
+                 still match first. (2) Drop all seven line pins
+                 (1642, 1644, 1684, 1686, 1780, 1782, 3794). Set
+                 `_process_tick_inner` budget 7, `_drain_async_fills`
+                 budget 2, keep `_finalize_tick` budget 1. Combined
+                 with `test_wall_clock_allowlist_has_no_stale_entries`
+                 this is exactly-N, not up-to-N; the stale message
+                 must include remaining budget `n` so a drop of two
+                 calls is visible. (3) Mutation: a throwaway
+                 `time.perf_counter_ns()` in `_process_tick_inner`
+                 MUST fail (8th leftover); a third call in
+                 `_drain_async_fills` MUST fail; restore, prove green.
+                 (4) Then delete `hashlib`, `itertools`, and
+                 `RegimeHazardSpike` from orchestrator.py (the three
+                 `# noqa: F401` imports). Do not add, rename, or move
+                 any other line in that file. (5) Repeat the 8th-call
+                 mutation after the import deletion — line numbers
+                 will have shifted; the count budget must still name
+                 the throwaway. Restore byte-identical. (6) Full
+                 suite, determinism 148, 64 constants. Do not run
+                 `scripts/rebaseline_parity_hashes.py`. (7) A count budget alone permits same-count substitution --
+                 delete one of the seven and add a different seventh elsewhere in
+                 the function, and the guard passes. Compensate: assert the
+                 _tick_timings KEYS written in _process_tick_inner are exactly
+                 {sensor_fanout_ns, signal_evaluate_ns, risk_check_ns}, by AST
+                 over the assignment targets. That is what the seven calls exist
+                 to produce, and it is stable across line moves. Prove it bites:
+                 rename one key, confirm the assertion fails, restore.
+BLAST RADIUS:    local
+VALIDATED BY:    tests/acceptance/test_no_walltime_outside_clock.py
+                 (both tests, plus the two mutation proofs),
+                 tests/kernel/test_orchestrator.py, determinism 148,
+                 the parity oracle, full suite `-m "not paper_rth"`
+PARITY IMPACT:   hold — all 28 replay hashes, EXPECTED_MANIFEST_FINGERPRINT,
+                 and all 64 scanned constants. Allowlist and unused
+                 imports are not on the hashed path. A moved hash
+                 means this step touched more than the three imports.
+DELETES:         7 line pins; 3 unused orchestrator imports
+                 (`hashlib`, `itertools`, `RegimeHazardSpike`)
+NET DELTA:       src modules 0, public symbols 0, branch points 0.
+                 Orchestrator lines -3.
+ROLLBACK:        revert; the line pins and the three dead imports
+                 return. Wave D must not continue on that tree.
+```
 
 ```
 STEP:            S-20
