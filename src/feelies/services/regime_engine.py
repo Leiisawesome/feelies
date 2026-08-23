@@ -23,7 +23,7 @@ from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
-from feelies.core.events import AlertSeverity, NBBOQuote
+from feelies.core.events import AlertSeverity, NBBOQuote, RegimeState
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta
 
 
@@ -924,3 +924,52 @@ def _calibrate_regime_engine(self: Any) -> None:
                 "total_quotes_in_log_at_least": max_q,
             },
         )
+
+
+def _update_regime(self: Any, quote: NBBOQuote, correlation_id: str) -> None:
+    """Update platform-level RegimeEngine and publish RegimeState event.
+
+    Called at M2 (STATE_UPDATE) — single-writer point for regime
+    state.  Downstream consumers (feature code, risk engine,
+    position sizer) read cached state; they never update.
+    """
+    if self._regime_engine is None:
+        return
+    posteriors = self._regime_engine.posterior(quote)
+    # Ties: lowest index wins (stable, deterministic replay).
+    dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
+    state_names = tuple(self._regime_engine.state_names)
+    engine_name = (
+        self._regime_engine_registry_name
+        if self._regime_engine_registry_name is not None
+        else type(self._regime_engine).__name__
+    )
+    # Prefer per-symbol separation because one symbol can collapse independently.
+    discriminability_for_symbol = getattr(
+        self._regime_engine, "discriminability_for_symbol", None
+    )
+    if callable(discriminability_for_symbol):
+        d_value = float(discriminability_for_symbol(quote.symbol))
+    else:
+        d_value = float(getattr(self._regime_engine, "discriminability", float("inf")))
+    regime_state = RegimeState(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=correlation_id,
+        sequence=self._seq.next(),
+        symbol=quote.symbol,
+        engine_name=engine_name,
+        state_names=state_names,
+        posteriors=tuple(posteriors),
+        dominant_state=dominant_idx,
+        dominant_name=state_names[dominant_idx]
+        if dominant_idx < len(state_names)
+        else "unknown",
+        posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
+        # Engines without a calibration flag opt out of the fail-closed gate.
+        calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
+        # Missing separation defaults to fully discriminative.
+        discriminability=d_value,
+    )
+    self._bus.publish(regime_state)
+    self._regime_bus_published_symbols.add(quote.symbol)
+    self._maybe_publish_hazard_spike(regime_state, correlation_id)

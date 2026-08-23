@@ -174,7 +174,7 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, regime_posterior_entropy_nats  # noqa: E501
+from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, _update_regime  # noqa: E501
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -1654,7 +1654,7 @@ class Orchestrator:
             trigger="event_logged",
             correlation_id=cid,
         )
-        self._update_regime(quote, cid)
+        _update_regime(self, quote, cid)
 
         # Optional sensor and horizon stages.
         self._dispatch_sensor_layer(quote, cid)
@@ -2349,54 +2349,6 @@ class Orchestrator:
             entry_cost_bps=entry_roundtrip_cost_bps,
             multiplier=self._reversal_min_edge_cost_multiplier,
         )
-
-    def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
-        """Update platform-level RegimeEngine and publish RegimeState event.
-
-        Called at M2 (STATE_UPDATE) — single-writer point for regime
-        state.  Downstream consumers (feature code, risk engine,
-        position sizer) read cached state; they never update.
-        """
-        if self._regime_engine is None:
-            return
-        posteriors = self._regime_engine.posterior(quote)
-        # Ties: lowest index wins (stable, deterministic replay).
-        dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
-        state_names = tuple(self._regime_engine.state_names)
-        engine_name = (
-            self._regime_engine_registry_name
-            if self._regime_engine_registry_name is not None
-            else type(self._regime_engine).__name__
-        )
-        # Prefer per-symbol separation because one symbol can collapse independently.
-        discriminability_for_symbol = getattr(
-            self._regime_engine, "discriminability_for_symbol", None
-        )
-        if callable(discriminability_for_symbol):
-            d_value = float(discriminability_for_symbol(quote.symbol))
-        else:
-            d_value = float(getattr(self._regime_engine, "discriminability", float("inf")))
-        regime_state = RegimeState(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            symbol=quote.symbol,
-            engine_name=engine_name,
-            state_names=state_names,
-            posteriors=tuple(posteriors),
-            dominant_state=dominant_idx,
-            dominant_name=state_names[dominant_idx]
-            if dominant_idx < len(state_names)
-            else "unknown",
-            posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
-            # Engines without a calibration flag opt out of the fail-closed gate.
-            calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
-            # Missing separation defaults to fully discriminative.
-            discriminability=d_value,
-        )
-        self._bus.publish(regime_state)
-        self._regime_bus_published_symbols.add(quote.symbol)
-        self._maybe_publish_hazard_spike(regime_state, correlation_id)
 
     def _trade_path_may_emit_horizon_ticks(self, symbol: str) -> bool:
         """Whether trade-path HorizonTicks are safe to emit for *symbol*.
