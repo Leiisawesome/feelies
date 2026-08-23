@@ -18,9 +18,11 @@ existing producers/consumers are unaffected (Inv-5 parity, §11.2).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum, auto
+from types import MappingProxyType
 from typing import Any, Literal
 
 # Pinned-code-per-log rule. Log-level invalidation is event_schema_hash
@@ -426,7 +428,10 @@ class Alert(Event):
     layer: str
     alert_name: str
     message: str
-    context: dict[str, Any] = field(default_factory=dict)
+    context: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "context", MappingProxyType(dict(self.context)))
 
 
 # ── Safety Events ───────────────────────────────────────────────────
