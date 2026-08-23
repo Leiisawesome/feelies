@@ -381,7 +381,10 @@ class StateTransition(Event):
     from_state: str
     to_state: str
     trigger: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 # ── Metric Events ───────────────────────────────────────────────────────
