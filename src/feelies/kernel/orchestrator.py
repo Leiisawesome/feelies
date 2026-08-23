@@ -173,7 +173,7 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, _update_regime  # noqa: E501
+from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, _restore_feature_snapshots, _update_regime  # noqa: E501
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -935,7 +935,7 @@ class Orchestrator:
                 trigger="DATA_INTEGRITY_OK",
                 correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
-            self._restore_feature_snapshots()
+            _restore_feature_snapshots(self)
             _calibrate_regime_engine(self)
             self._pending_sized_intents.clear()
         else:
@@ -5184,17 +5184,6 @@ class Orchestrator:
     _REGIME_SNAPSHOT_KEY = "__regime__"
     _REGIME_VERSION_PREFIX = "regime:"
 
-    def _restore_feature_snapshots(self) -> None:
-        """Restore regime-engine state from snapshots for warm-start.
-
-        Best-effort: if a snapshot is missing, corrupt, or version-
-        incompatible, the regime engine cold-starts.  Snapshot failures
-        never block boot.
-
-        """
-        if self._feature_snapshots is None:
-            return
-        self._restore_regime_snapshot()
 
     def _restore_regime_snapshot(self) -> None:
         if self._feature_snapshots is None or self._regime_engine is None:
