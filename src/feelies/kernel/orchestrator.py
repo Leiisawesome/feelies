@@ -174,7 +174,11 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine, regime_posterior_entropy_nats
+from feelies.services.regime_engine import (
+    RegimeEngine,
+    _regime_label_for,
+    regime_posterior_entropy_nats,
+)
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -4672,7 +4676,7 @@ class Orchestrator:
                             ),
                             trend_mechanism=_trade_mech,
                             expected_half_life_seconds=_trade_hl,
-                            regime_state=self._regime_label_for(ack.symbol),
+                            regime_state=_regime_label_for(self, ack.symbol),
                             # Preserve forced-exit class and producing layer on the
                             # trade; ``forced_exit_strategy_id`` keeps the synthetic
                             # author recoverable now that ``strategy_id`` names the
@@ -4684,27 +4688,6 @@ class Orchestrator:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
-
-    def _regime_label_for(self, symbol: str) -> str:
-        """Dominant regime-state name for *symbol* at fill time (forensics).
-
-        Pure provenance capture for the trade journal: reads the regime
-        engine's already-computed posterior (no new computation, no
-        decision — Inv-5-safe) and returns its argmax state name.  Returns
-        "" when there is no engine or no posterior yet for the symbol, so a
-        cold or regime-less deployment simply records an empty regime label.
-        """
-        engine = self._regime_engine
-        if engine is None:
-            return ""
-        post = engine.current_state(symbol)
-        if not post:
-            return ""
-        names = list(engine.state_names)
-        if not names:
-            return ""
-        idx = max(range(len(post)), key=lambda i: post[i])
-        return names[idx] if idx < len(names) else ""
 
     def _distribute_fill_to_strategies(
         self,

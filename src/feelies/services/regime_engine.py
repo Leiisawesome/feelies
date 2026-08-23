@@ -18,7 +18,7 @@ import logging
 import math
 import statistics
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -779,3 +779,25 @@ def get_regime_engine(name: str, **kwargs: object) -> RegimeEngine:
         raise KeyError(f"Unknown regime engine '{name}'. Available: hmm_3state_fractional")
     engine_cls: type[RegimeEngine] = HMM3StateFractional
     return engine_cls(**kwargs)
+
+
+def _regime_label_for(self: Any, symbol: str) -> str:
+    """Dominant regime-state name for *symbol* at fill time (forensics).
+
+    Pure provenance capture for the trade journal: reads the regime
+    engine's already-computed posterior (no new computation, no
+    decision — Inv-5-safe) and returns its argmax state name.  Returns
+    "" when there is no engine or no posterior yet for the symbol, so a
+    cold or regime-less deployment simply records an empty regime label.
+    """
+    engine = self._regime_engine
+    if engine is None:
+        return ""
+    post = engine.current_state(symbol)
+    if not post:
+        return ""
+    names = list(engine.state_names)
+    if not names:
+        return ""
+    idx = max(range(len(post)), key=lambda i: post[i])
+    return names[idx] if idx < len(names) else ""
