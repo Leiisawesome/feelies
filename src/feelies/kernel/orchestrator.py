@@ -8,8 +8,8 @@ modes share the same tick pipeline and publish every state transition.
 
 from __future__ import annotations
 
-import hashlib
-import itertools
+import hashlib  # noqa: F401
+import itertools  # noqa: F401
 import logging
 import time
 from collections import deque
@@ -63,7 +63,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     PositionUpdate,
-    RegimeHazardSpike,
+    RegimeHazardSpike,  # noqa: F401
     RegimeState,
     RiskAction,
     RiskVerdict,
@@ -174,11 +174,11 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine, regime_posterior_entropy_nats
+from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, _update_regime  # noqa: E501
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
-from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
+from feelies.storage.feature_snapshot import FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal, TradeRecord
 
 if TYPE_CHECKING:
@@ -937,7 +937,7 @@ class Orchestrator:
                 correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
             self._restore_feature_snapshots()
-            self._calibrate_regime_engine()
+            _calibrate_regime_engine(self)
             self._pending_sized_intents.clear()
         else:
             self._macro.transition(
@@ -1654,7 +1654,7 @@ class Orchestrator:
             trigger="event_logged",
             correlation_id=cid,
         )
-        self._update_regime(quote, cid)
+        _update_regime(self, quote, cid)
 
         # Optional sensor and horizon stages.
         self._dispatch_sensor_layer(quote, cid)
@@ -2350,151 +2350,6 @@ class Orchestrator:
             multiplier=self._reversal_min_edge_cost_multiplier,
         )
 
-    def _calibrate_regime_engine(self) -> None:
-        """Calibrate emissions from a bounded replay prefix.
-
-        The run replays its calibration prefix, so early prefix posteriors use
-        moments estimated from later prefix quotes. A prior-session fit is needed
-        when strict causal warm-up behavior matters.
-        """
-        if self._regime_engine is None:
-            return
-        calibrate_fn = getattr(self._regime_engine, "calibrate", None)
-        if calibrate_fn is None:
-            return
-        if getattr(self._regime_engine, "calibrated", False):
-            return
-
-        max_q = self._regime_calibration_max_quotes
-        if max_q is None:
-            # Placeholder emissions cannot support regime-gated entries.
-            logger.warning(
-                "Regime calibration skipped — regime_calibration_max_quotes "
-                "is unset.  Engine will run with placeholder emission "
-                "parameters that do not match real US-equity spreads; "
-                "RegimeState.calibrated will be False and every "
-                "P(state)/dominant/entropy entry gate will fail safe to OFF "
-                "(audit P0-1).  Configure a positive integer for a causal "
-                "warmup prefix to enable regime-conditioned entries."
-            )
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id="regime_calibration",
-                severity=AlertSeverity.CRITICAL,
-                alert_name="regime_calibration_unset",
-                message="RegimeEngine has no calibration prefix configured (regime_calibration_max_quotes is None). Posteriors use placeholder emission parameters; RegimeState is published with calibrated=False and all P(state)/dominant/entropy entry gates fail safe to OFF (Inv-11).  Configure a positive integer for a causal warmup prefix to enable regime-gated entries.",
-                context={},
-            )
-            return
-
-        precomputed = self._regime_calibration_quotes
-        if precomputed is not None:
-            quotes = list(precomputed)
-        else:
-            quote_stream = (
-                event for event in self._event_log.replay() if isinstance(event, NBBOQuote)
-            )
-            quotes = list(itertools.islice(quote_stream, max_q))
-        if not quotes:
-            logger.info("Regime calibration skipped — no quotes in event log")
-            return
-
-        prefix_n = len(quotes)
-        # Exact total only when the prefix exhausts the quote stream; otherwise
-        # counting the suffix is O(full log) at boot — report a lower bound.
-        exact_total = precomputed is not None or prefix_n < max_q
-
-        ok = calibrate_fn(quotes)
-        if ok:
-            if exact_total:
-                logger.info(
-                    "Regime engine calibrated from %d quotes (prefix cap=%d, total_log=%d)",
-                    prefix_n,
-                    max_q,
-                    prefix_n,
-                )
-            else:
-                logger.info(
-                    "Regime engine calibrated from %d quotes "
-                    "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
-                    prefix_n,
-                    max_q,
-                    max_q,
-                )
-        else:
-            logger.warning(
-                "Regime calibration failed (insufficient data in prefix: "
-                "%d quotes, cap=%d) — using default emission parameters",
-                prefix_n,
-                max_q,
-            )
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id="regime_calibration",
-                severity=AlertSeverity.CRITICAL,
-                alert_name="regime_calibration_failed",
-                message=f"Regime engine calibrate() returned False (prefix_quotes={prefix_n}, cap={max_q}). Posteriors may discriminate poorly until operators raise regime_calibration_max_quotes or supply cleaner data.",
-                context={
-                    "prefix_quote_count": prefix_n,
-                    "cap": max_q,
-                    "total_quotes_in_log": prefix_n,
-                }
-                if exact_total
-                else {
-                    "prefix_quote_count": prefix_n,
-                    "cap": max_q,
-                    "total_quotes_in_log_at_least": max_q,
-                },
-            )
-
-    def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
-        """Update platform-level RegimeEngine and publish RegimeState event.
-
-        Called at M2 (STATE_UPDATE) — single-writer point for regime
-        state.  Downstream consumers (feature code, risk engine,
-        position sizer) read cached state; they never update.
-        """
-        if self._regime_engine is None:
-            return
-        posteriors = self._regime_engine.posterior(quote)
-        # Ties: lowest index wins (stable, deterministic replay).
-        dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
-        state_names = tuple(self._regime_engine.state_names)
-        engine_name = (
-            self._regime_engine_registry_name
-            if self._regime_engine_registry_name is not None
-            else type(self._regime_engine).__name__
-        )
-        # Prefer per-symbol separation because one symbol can collapse independently.
-        discriminability_for_symbol = getattr(
-            self._regime_engine, "discriminability_for_symbol", None
-        )
-        if callable(discriminability_for_symbol):
-            d_value = float(discriminability_for_symbol(quote.symbol))
-        else:
-            d_value = float(getattr(self._regime_engine, "discriminability", float("inf")))
-        regime_state = RegimeState(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            symbol=quote.symbol,
-            engine_name=engine_name,
-            state_names=state_names,
-            posteriors=tuple(posteriors),
-            dominant_state=dominant_idx,
-            dominant_name=state_names[dominant_idx]
-            if dominant_idx < len(state_names)
-            else "unknown",
-            posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
-            # Engines without a calibration flag opt out of the fail-closed gate.
-            calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
-            # Missing separation defaults to fully discriminative.
-            discriminability=d_value,
-        )
-        self._bus.publish(regime_state)
-        self._regime_bus_published_symbols.add(quote.symbol)
-        self._maybe_publish_hazard_spike(regime_state, correlation_id)
-
     def _trade_path_may_emit_horizon_ticks(self, symbol: str) -> bool:
         """Whether trade-path HorizonTicks are safe to emit for *symbol*.
 
@@ -2515,35 +2370,6 @@ class Orchestrator:
         self._regime_bus_published_symbols.clear()
         if self._regime_hazard_detector is not None:
             self._regime_hazard_detector.reset()
-
-    def _maybe_publish_hazard_spike(
-        self,
-        regime_state: RegimeState,
-        correlation_id: str,
-    ) -> None:
-        """Publish a hazard spike from consecutive states on one channel."""
-        if self._regime_hazard_detector is None:
-            return
-        key = (regime_state.symbol, regime_state.engine_name)
-        prev = self._last_regime_state.get(key)
-        self._last_regime_state[key] = regime_state
-        spike = self._regime_hazard_detector.detect(prev, regime_state)
-        if spike is None:
-            return
-        self._bus.publish(
-            RegimeHazardSpike(
-                timestamp_ns=spike.timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=self._hazard_seq.next(),
-                symbol=spike.symbol,
-                engine_name=spike.engine_name,
-                departing_state=spike.departing_state,
-                departing_posterior_prev=spike.departing_posterior_prev,
-                departing_posterior_now=spike.departing_posterior_now,
-                incoming_state=spike.incoming_state,
-                hazard_score=spike.hazard_score,
-            )
-        )
 
     def _escalate_risk(self, correlation_id: str) -> None:
         """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
@@ -4672,7 +4498,7 @@ class Orchestrator:
                             ),
                             trend_mechanism=_trade_mech,
                             expected_half_life_seconds=_trade_hl,
-                            regime_state=self._regime_label_for(ack.symbol),
+                            regime_state=_regime_label_for(self, ack.symbol),
                             # Preserve forced-exit class and producing layer on the
                             # trade; ``forced_exit_strategy_id`` keeps the synthetic
                             # author recoverable now that ``strategy_id`` names the
@@ -4684,27 +4510,6 @@ class Orchestrator:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
-
-    def _regime_label_for(self, symbol: str) -> str:
-        """Dominant regime-state name for *symbol* at fill time (forensics).
-
-        Pure provenance capture for the trade journal: reads the regime
-        engine's already-computed posterior (no new computation, no
-        decision — Inv-5-safe) and returns its argmax state name.  Returns
-        "" when there is no engine or no posterior yet for the symbol, so a
-        cold or regime-less deployment simply records an empty regime label.
-        """
-        engine = self._regime_engine
-        if engine is None:
-            return ""
-        post = engine.current_state(symbol)
-        if not post:
-            return ""
-        names = list(engine.state_names)
-        if not names:
-            return ""
-        idx = max(range(len(post)), key=lambda i: post[i])
-        return names[idx] if idx < len(names) else ""
 
     def _distribute_fill_to_strategies(
         self,
@@ -5597,26 +5402,5 @@ class Orchestrator:
         """Checkpoint regime state without blocking shutdown on failure."""
         if self._feature_snapshots is None:
             return
-        self._checkpoint_regime_snapshot()
+        _checkpoint_regime_snapshot(self)
 
-    def _checkpoint_regime_snapshot(self) -> None:
-        if self._feature_snapshots is None or self._regime_engine is None:
-            return
-        regime_version = self._REGIME_VERSION_PREFIX + type(self._regime_engine).__name__
-        try:
-            data = self._regime_engine.checkpoint()
-            checksum = hashlib.sha256(data).hexdigest()
-            meta = FeatureSnapshotMeta(
-                symbol=self._REGIME_SNAPSHOT_KEY,
-                feature_version=regime_version,
-                event_count=0,
-                last_sequence=0,
-                last_timestamp_ns=self._clock.now_ns(),
-                checksum=checksum,
-            )
-            self._feature_snapshots.save(meta, data)
-        except Exception:
-            logger.warning(
-                "Regime snapshot checkpoint failed -- next boot will cold-start regime engine",
-                exc_info=True,
-            )
