@@ -4962,29 +4962,6 @@ class Orchestrator:
         deadline = self._halt_blackout_until_ns.get(symbol)
         return deadline is not None and now_ns < deadline
 
-    def _emit_symbol_halted(
-        self,
-        symbol: str,
-        *,
-        halted: bool,
-        reason: str,
-        ts: int,
-        correlation_id: str,
-        blackout_until_ns: int,
-    ) -> None:
-        """Publish the forensic ``SymbolHalted`` marker."""
-        self._bus.publish(
-            SymbolHalted(
-                timestamp_ns=ts,
-                correlation_id=correlation_id,
-                sequence=self._seq.next(),
-                source_layer="kernel",
-                symbol=symbol,
-                halted=halted,
-                reason=reason,
-                blackout_until_ns=blackout_until_ns,
-            )
-        )
 
     # ── Reg-SHO / SSR short-sale restriction ────────────────────────
 

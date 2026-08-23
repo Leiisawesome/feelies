@@ -13,7 +13,7 @@ from enum import Enum, auto
 from typing import Any
 
 from feelies.core.clock import Clock
-from feelies.core.events import AlertSeverity, Trade
+from feelies.core.events import AlertSeverity, SymbolHalted, Trade
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
 from feelies.kernel.macro import MacroState
@@ -142,7 +142,8 @@ def _update_halt_state(self: Any, trade: Trade) -> None:
             self._halted_symbols.add(symbol)
             self._halt_blackout_until_ns.pop(symbol, None)
             self._cancel_resting_for_symbol(symbol, trade.correlation_id)
-            self._emit_symbol_halted(
+            _emit_symbol_halted(
+                self,
                 symbol,
                 halted=True,
                 reason="LULD_HALT",
@@ -154,7 +155,8 @@ def _update_halt_state(self: Any, trade: Trade) -> None:
         self._halted_symbols.discard(symbol)
         deadline = trade.timestamp_ns + self._halt_blackout_ns
         self._halt_blackout_until_ns[symbol] = deadline
-        self._emit_symbol_halted(
+        _emit_symbol_halted(
+            self,
             symbol,
             halted=False,
             reason="LULD_RESUME",
@@ -283,3 +285,28 @@ def _verify_data_integrity(self: Any) -> bool:
                 )
                 return False
     return True
+
+
+def _emit_symbol_halted(
+    self: Any,
+    symbol: str,
+    *,
+    halted: bool,
+    reason: str,
+    ts: int,
+    correlation_id: str,
+    blackout_until_ns: int,
+) -> None:
+    """Publish the forensic ``SymbolHalted`` marker."""
+    self._bus.publish(
+        SymbolHalted(
+            timestamp_ns=ts,
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            source_layer="kernel",
+            symbol=symbol,
+            halted=halted,
+            reason=reason,
+            blackout_until_ns=blackout_until_ns,
+        )
+    )
