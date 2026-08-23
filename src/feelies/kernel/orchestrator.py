@@ -8,8 +8,6 @@ modes share the same tick pipeline and publish every state transition.
 
 from __future__ import annotations
 
-import hashlib  # noqa: F401
-import itertools  # noqa: F401
 import logging
 import time
 from collections import deque
@@ -63,7 +61,6 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     PositionUpdate,
-    RegimeHazardSpike,  # noqa: F401
     RegimeState,
     RiskAction,
     RiskVerdict,
