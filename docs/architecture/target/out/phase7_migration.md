@@ -1957,7 +1957,7 @@ BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, `level5_regime_hazard_spike`, `level6_regime_state`,
                  the parity oracle, full suite,
                  tests/acceptance/test_no_walltime_outside_clock.py
-PARITY IMPACT:   All 28 replay hashes and EXPECTED_MANIFEST_FINGERPRINT hold.
+PARITY IMPACT:   hold — all 28 replay hashes, and the manifest fingerprint too.
                  Pure move. No Event subclass is touched, so S-17a's fold does
                  not move. `level5_regime_hazard_spike` is the one to watch,
                  for the `_hazard_seq` reason above.
