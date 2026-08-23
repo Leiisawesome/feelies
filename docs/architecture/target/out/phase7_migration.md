@@ -2059,24 +2059,43 @@ STEP:            S-20
 CLOSES:          G11, G13
 PROBLEM:         Engine 1's responsibility is split across `ingestion/`,
                  `storage/` and 5 orchestrator methods
-                 (`_update_halt_state:5014` through `_verify_data_integrity:5379`).
-                 Engine 2's feature checkpoint/restore is authored in the kernel
-                 (`_restore_feature_snapshots:5423`,
-                 `_checkpoint_feature_snapshots:5454`) against a store that is
-                 always empty in the shipped configuration. Inv-8.
+                 (`_update_halt_state:4958`, `_emit_symbol_halted:5007`,
+                 `_update_ssr_state:5033`, `_data_health_blocks_trading:5207`,
+                 `_verify_data_integrity:5323`). Engine 2's named
+                 checkpoint/restore pair (`_restore_feature_snapshots:5367`,
+                 `_checkpoint_feature_snapshots:5398`) is authored in the
+                 kernel against a store that is always empty in the shipped
+                 configuration, and after S-19 both wrappers only touch
+                 regime snapshots. Inv-8.
 FILES:           src/feelies/kernel/orchestrator.py (7 methods)
-                 src/feelies/ingestion/, src/feelies/features/
+                 src/feelies/ingestion/data_integrity.py
+                 src/feelies/services/regime_engine.py
+                 tools/arch/perfmeasure.py:141-144 (binds
+                 _data_health_blocks_trading, _verify_data_integrity and
+                 _update_halt_state by module path; S-19 left the same file
+                 stale for the regime methods -- fix both here or record why not)
 WHY THIS OWNER:  Phase 2 engine 1 owns wire-to-canonical translation, sequence
                  stamping, gap detection and validation, and resolves §F.3
                  session/halt state to engine 1. Engine 2 owns the state it
-                 checkpoints.
-REFACTOR PATH:   the common shape, engine 1 first. **G13's honest disposition:**
-                 the checkpoint path is dead in the shipped configuration
-                 because the store is always empty, so Phase 1 §5 flags it as a
-                 removal candidate. This step **moves** it rather than removing
-                 it, because removal is a behaviour decision belonging to S-31,
-                 and moving dead code is reversible while deleting it is a
-                 judgment about whether persistence is ever wired.
+                 checkpoints; the remaining wrappers are regime state and
+                 land next to `_checkpoint_regime_snapshot`.
+REFACTOR PATH:   the common shape, engine 1 first, one method per commit,
+                 bodies copied unchanged as module-level functions taking
+                 the orchestrator, no delegating shim. SequenceGenerator
+                 constructions stay on Orchestrator. Draw-sequence last:
+                 `_emit_symbol_halted` last among the five engine-1 methods.
+                 `_in_halt_blackout:5002` stays on Orchestrator (reader;
+                 tests/kernel/test_orchestrator.py:4181 binds it).
+                 `_restore_regime_snapshot:5379` moves with the restore
+                 wrapper or remains as the callee. **G13's honest
+                 disposition:** the checkpoint path is dead in the shipped
+                 configuration because the store is always empty, so Phase 1
+                 §5 flags it as a removal candidate. This step **moves** it
+                 rather than removing it, because removal is a behaviour
+                 decision belonging to S-31, and moving dead code is
+                 reversible while deleting it is a judgment about whether
+                 persistence is ever wired. Destination for the two wrappers
+                 is `services/regime_engine.py`, not `features/`.
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, `symbol_halted`, the 5 engine-2 baselines, the
                  new `market_data_canonical` baseline from S-17, the oracle
@@ -2084,7 +2103,7 @@ PARITY IMPACT:   All 26 plus the new engine-1 baseline hold. Pure move. S-17
                  lands first specifically so this step has an engine-1 baseline
                  to be checked against — before S-17, an ingestion-side mistake
                  here is invisible until it moves a downstream hash.
-DELETES:         7 methods from the orchestrator (118 -> 111)
+DELETES:         7 methods from the orchestrator (121 -> 114)
 NET DELTA:       src modules 0, public symbols 0, branch points 0.
                  Orchestrator lines -~300.
 ROLLBACK:        revert.
