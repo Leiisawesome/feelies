@@ -1831,38 +1831,59 @@ ROLLBACK:        revert, and restore EXPECTED_MANIFEST_FINGERPRINT from the
 ```
 STEP:            S-18
 CLOSES:          G12
-PROBLEM:         All 21 event classes are frozen dataclasses and 8 carry mutable
-                 container fields — `HorizonFeatureSnapshot` has 5. Frozen-ness
-                 is advisory for the fields carrying the actual payload, and any
-                 holder can mutate a published event in place. Because
-                 `SizedPositionIntent` and `CrossSectionalContext` are each
-                 published to three subscribers, in-place mutation by one is
-                 invisible to the others. Inv-7 typed schemas.
-FILES:           src/feelies/core/events.py (the 8 classes)
-                 tests/conformance/test_event_immutability.py (S10 — authored in
-                 S-03; this step drops its xfail)
+PROBLEM:         All 21 event classes are frozen dataclasses and 8 of them
+                 carry mutable dict fields (17 fields). HorizonFeatureSnapshot
+                 has 5: values, warm, stale, source_sensors, feature_versions.
+                 The others: Alert.context; CrossSectionalContext
+                 signals_by_symbol, signals_by_strategy_by_symbol,
+                 snapshots_by_symbol; MetricEvent.tags; RiskVerdict.constraints;
+                 Signal.metadata; SizedPositionIntent target_positions,
+                 factor_exposures, mechanism_breakdown,
+                 disclosed_cost_total_bps_by_symbol; StateTransition.metadata.
+                 There is no list or set field on any Event subclass.
+                 Frozen-ness is advisory for those payloads; a holder can
+                 mutate a published event in place. SizedPositionIntent and
+                 CrossSectionalContext are each published to three subscribers,
+                 so in-place mutation by one is invisible to the others.
+                 Inv-7 typed schemas.
+FILES:           src/feelies/core/events.py (the 8 classes, 17 dict fields)
+                 tests/conformance/test_event_immutability.py (S10 — authored
+                 in S-03; this step drops its xfail after the last class)
 WHY THIS OWNER:  Immutability is a property of the contract, so it belongs in
                  Tier 0 with the contract.
-REFACTOR PATH:   (1) S10 as an assertion over
-                 `contracts.json:mutable_containers_in_frozen_events`,
-                 xfail(strict); (2) convert to immutable containers class by
-                 class, cheapest first; (3) drop the xfail.
-BLAST RADIUS:    boundary — every consumer that mutates a received event breaks
-                 loudly at that point, which is the intended discovery mechanism
-VALIDATED BY:    S10, all 26 baselines, the parity oracle, mypy, full suite
-PARITY IMPACT:   All 26 must hold. An immutable container hashes identically to
-                 a mutable one with the same contents — **unless a consumer was
-                 mutating a published event and the hash was reading the mutated
-                 value.** If a baseline moves, this step has found a live
-                 read-after-mutation defect, which is exactly what Phase 0 C-7
-                 warned was possible and nothing has ever tested.
-                 Convert one class per commit so that a moved hash names its
-                 own class.
-DELETES:         8 mutable container fields on frozen events
+REFACTOR PATH:   S10 already asserts the live AST
+                 (tools.arch.contracts mutable_container on dict/list/set
+                 annotations) with xfail(strict, GAP G12). contracts.json is a
+                 generated evidence file (key
+                 events_with_mutable_container_fields), not a test input, and
+                 is not in the tree. (1) freeze each class's dict fields as
+                 MappingProxyType (or an equivalent immutable mapping) inside
+                 the dataclass so publishers keep passing dict; do not rewrite
+                 construction sites. tuple/frozenset do not apply — zero
+                 list/set fields exist. Cheapest first. (2) drop the xfail on
+                 the last class. Convert one class per commit so a moved hash
+                 names its class.
+BLAST RADIUS:    boundary — every consumer that mutates a received event
+                 breaks loudly at that point, which is the intended discovery
+                 mechanism
+VALIDATED BY:    S10, all 28 baselines, the parity oracle, mypy, full suite
+PARITY IMPACT:   hold — all 28 replay hashes and
+                 EXPECTED_MANIFEST_FINGERPRINT. S-17a's fold hashes class names
+                 and field names only, not annotations, so a type change does
+                 not move the fingerprint. Replay helpers that read these
+                 fields use Mapping .items() / .get() / key indexing;
+                 MappingProxyType with the same contents hashes identically. A
+                 tuple-of-pairs conversion would AttributeError those helpers,
+                 not silently re-pin. **Unless a consumer was mutating a
+                 published event and the hash was reading the mutated value.**
+                 If a baseline moves, this step has found a live
+                 read-after-mutation defect (Phase 0 C-7). Convert one class
+                 per commit.
+DELETES:         17 mutable dict fields on 8 frozen event classes
 NET DELTA:       src modules 0, public symbols 0, branch points 0.
-                 Test files +1.
-ROLLBACK:        revert per class. Converting one class per commit is what makes
-                 this revertible at useful granularity.
+                 Test files +0 (drops xfail on S-03's S10).
+ROLLBACK:        revert per class. Converting one class per commit is what
+                 makes this revertible at useful granularity.
 ```
 
 ---
