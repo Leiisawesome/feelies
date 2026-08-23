@@ -8,7 +8,7 @@ modes share the same tick pipeline and publish every state transition.
 
 from __future__ import annotations
 
-import hashlib
+import hashlib  # noqa: F401
 import itertools  # noqa: F401
 import logging
 import time
