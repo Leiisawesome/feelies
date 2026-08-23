@@ -15,6 +15,7 @@ from feelies.core.clock import Clock
 from feelies.core.events import AlertSeverity, Trade
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
+from feelies.kernel.macro import MacroState
 
 
 class DataHealth(Enum):
@@ -178,3 +179,64 @@ def _update_ssr_state(self: Any, trade: Trade) -> None:
         message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
         context={"symbol": symbol},
     )
+
+
+def _data_health_blocks_trading(self: Any, symbol: str, correlation_id: str) -> str | None:
+    """Return a fail-safe block reason for the symbol, or None when healthy.
+
+    Corruption degrades the platform; configured gaps do likewise."""
+    if self._normalizer is None:
+        return None
+    health: DataHealth = self._normalizer.health(symbol)
+    cfg_syms = (
+        {s.upper() for s in self._config.symbols} if self._config is not None else frozenset()
+    )
+    if self._config is not None and self._config.strict_normalizer_symbol_coverage:
+        if symbol.upper() in cfg_syms:
+            tracked = {k.upper() for k in self._normalizer.all_health()}
+            if symbol.upper() not in tracked:
+                if self._macro.can_transition(MacroState.DEGRADED):
+                    self._macro.transition(
+                        MacroState.DEGRADED,
+                        trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
+                        correlation_id=correlation_id,
+                    )
+                return "SYMBOL_UNTRACKED"
+    if health == DataHealth.CORRUPTED:
+        # Force-flatten the affected symbol before transitioning macro.
+        # CORRUPTED is terminal — leaving an open position to mark at
+        # the last-known quote would carry stale risk through DEGRADED.
+        self._force_flatten_symbol_on_degrade(
+            symbol,
+            correlation_id,
+            reason="DATA_CORRUPTED",
+        )
+        if self._macro.can_transition(MacroState.DEGRADED):
+            self._macro.transition(
+                MacroState.DEGRADED,
+                trigger=f"DATA_CORRUPTED:{symbol}",
+                correlation_id=correlation_id,
+            )
+        return health.name
+    if health == DataHealth.HALTED:
+        # A recoverable LULD halt blocks the symbol without degrading macro state.
+        return health.name
+    degrade_gap = self._config is not None and self._config.degrade_on_data_gap
+    if degrade_gap and health == DataHealth.GAP_DETECTED:
+        # GAP_DETECTED can recover to HEALTHY, but the macro DEGRADED
+        # transition is sticky (requires explicit operator command).
+        # Unwind the affected symbol at the last-known mark so the
+        # book doesn't carry stale exposure through the gap window.
+        self._force_flatten_symbol_on_degrade(
+            symbol,
+            correlation_id,
+            reason="DATA_GAP_DETECTED",
+        )
+        if self._macro.can_transition(MacroState.DEGRADED):
+            self._macro.transition(
+                MacroState.DEGRADED,
+                trigger=f"DATA_GAP_DETECTED:{symbol}",
+                correlation_id=correlation_id,
+            )
+        return health.name
+    return None

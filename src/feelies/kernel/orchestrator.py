@@ -133,6 +133,7 @@ from feelies.ingestion.data_integrity import (
     DataHealth,
     _update_halt_state,
     _update_ssr_state,
+    _data_health_blocks_trading,
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
@@ -1193,7 +1194,7 @@ class Orchestrator:
         # Update intraday SSR state from the trade tape.
         _update_ssr_state(self, trade)
 
-        trade_block_reason = self._data_health_blocks_trading(trade.symbol, trade.correlation_id)
+        trade_block_reason = _data_health_blocks_trading(self, trade.symbol, trade.correlation_id)
         if trade_block_reason is not None:
             # Drop corrupt or gapped data. Halt prints remain observable, but
             # never reach the router or scheduler.
@@ -1586,7 +1587,7 @@ class Orchestrator:
             return
 
         # Runtime data integrity check.
-        quote_block_reason = self._data_health_blocks_trading(quote.symbol, cid)
+        quote_block_reason = _data_health_blocks_trading(self, quote.symbol, cid)
         if quote_block_reason is not None:
             # Report rejected quotes because none reach the event log.
             if self._normalizer is not None:
@@ -5142,65 +5143,6 @@ class Orchestrator:
             context=context,
         )
 
-    def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> str | None:
-        """Return a fail-safe block reason for the symbol, or None when healthy.
-
-        Corruption degrades the platform; configured gaps do likewise."""
-        if self._normalizer is None:
-            return None
-        health = self._normalizer.health(symbol)
-        cfg_syms = (
-            {s.upper() for s in self._config.symbols} if self._config is not None else frozenset()
-        )
-        if self._config is not None and self._config.strict_normalizer_symbol_coverage:
-            if symbol.upper() in cfg_syms:
-                tracked = {k.upper() for k in self._normalizer.all_health()}
-                if symbol.upper() not in tracked:
-                    if self._macro.can_transition(MacroState.DEGRADED):
-                        self._macro.transition(
-                            MacroState.DEGRADED,
-                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
-                            correlation_id=correlation_id,
-                        )
-                    return "SYMBOL_UNTRACKED"
-        if health == DataHealth.CORRUPTED:
-            # Force-flatten the affected symbol before transitioning macro.
-            # CORRUPTED is terminal — leaving an open position to mark at
-            # the last-known quote would carry stale risk through DEGRADED.
-            self._force_flatten_symbol_on_degrade(
-                symbol,
-                correlation_id,
-                reason="DATA_CORRUPTED",
-            )
-            if self._macro.can_transition(MacroState.DEGRADED):
-                self._macro.transition(
-                    MacroState.DEGRADED,
-                    trigger=f"DATA_CORRUPTED:{symbol}",
-                    correlation_id=correlation_id,
-                )
-            return health.name
-        if health == DataHealth.HALTED:
-            # A recoverable LULD halt blocks the symbol without degrading macro state.
-            return health.name
-        degrade_gap = self._config is not None and self._config.degrade_on_data_gap
-        if degrade_gap and health == DataHealth.GAP_DETECTED:
-            # GAP_DETECTED can recover to HEALTHY, but the macro DEGRADED
-            # transition is sticky (requires explicit operator command).
-            # Unwind the affected symbol at the last-known mark so the
-            # book doesn't carry stale exposure through the gap window.
-            self._force_flatten_symbol_on_degrade(
-                symbol,
-                correlation_id,
-                reason="DATA_GAP_DETECTED",
-            )
-            if self._macro.can_transition(MacroState.DEGRADED):
-                self._macro.transition(
-                    MacroState.DEGRADED,
-                    trigger=f"DATA_GAP_DETECTED:{symbol}",
-                    correlation_id=correlation_id,
-                )
-            return health.name
-        return None
 
     def _force_flatten_symbol_on_degrade(
         self,
