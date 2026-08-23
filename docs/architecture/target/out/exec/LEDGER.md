@@ -3989,9 +3989,109 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-19.json,
                  baseline_post-S-19.json, this ledger entry.
 
+---
 
-
-
+## S-19a  2026-08-23T16:44:57+08:00
+  STEP:          S-19a
+  BASE:          acb01d144879589e7c4b936baa0488904700ceb2
+  RESULT SHA:    a4a6e8134c5cb2fd1ab365299c2b1c500c1c22de
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. Allowlist tests 2 -> 3
+                 passed (added _tick_timings key assertion).
+                 tests/kernel: 389 passed. conformance 81 passed /
+                 8 xfailed -> 81 passed / 8 xfailed (no XPASS).
+                 mypy src/feelies: Success, 202 source files.
+  TESTS:         4869 passed / 0 failed / 19 skipped / 8 xfailed
+                 -> 4870 passed / 0 failed / 19 skipped / 8 xfailed
+                 (post-S-19a capture GREEN; +1 is
+                 test_process_tick_inner_tick_timings_keys).
+                 not-paper_rth: 4869 passed, 6 skipped, 14
+                 deselected, 8 xfailed, 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes,
+                 EXPECTED_MANIFEST_FINGERPRINT, and all 64 scanned
+                 constants | actual 64/64 identical (pre-S-19a vs
+                 post-S-19a, and vs baseline_post-S-19.json); 0
+                 moved | MATCH.
+  FILES:         2 declared, 2 committed (clean vs a4a6e81).
+                 verify_step FILES declared 2, touched 2, CLEAN
+                 (post-commit). Native `S-19a` uppercases to S-19A
+                 and exits 2 not-in-plan (frozen); workaround
+                 identity-upper ran the four checks.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0, orchestrator lines -3
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 567 -> 567 (+0)
+                 sloc 45501 -> 45498 (-3)
+                 n_edges 634 -> 634
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines -3 (three import deletions)
+  DETERMINISM:   148 -> 148 passed; no hash moved
+  VERIFY_STEP:   Four checks (workaround): FILES 2/2 CLEAN; PARITY
+                 moved 0 holds; NET DELTA 0/0/-3 sloc, compare-by-eye
+                 (oracle still says "deletions with no negative
+                 delta" because it does not treat sloc as the
+                 deletion signal -- frozen); CLEAN, blast radius
+                 local -- human gate required and given.
+                 False positives (frozen, not acted on): uppercase
+                 step id; hold text naming
+                 EXPECTED_MANIFEST_FINGERPRINT; numbered REFACTOR
+                 PATH flagged as multiple sub-changes.
+  NOTES:         Allowlist consumer moved from a frozenset with
+                 budget-1 symbol keys to a multiplicity-carrying
+                 sequence; all seven line pins retired --
+                 _process_tick_inner x7, _finalize_tick x1,
+                 _drain_async_fills x2. Exactly-N is enforced by the
+                 stale-entry test, whose message now reports the
+                 remaining count, so a dropped call fails visibly
+                 rather than silently: removing one call gave
+                 "_process_tick_inner time.perf_counter_ns()
+                 (remaining budget 1)". Leftover consumption is
+                 line-ordered so the extra call is the one named.
+                 What the count budget gives up: it no longer
+                 detects intra-function site identity, so a
+                 same-count substitution -- delete one of the seven,
+                 add a different seventh elsewhere in the function
+                 -- would pass. What compensates: an AST assertion
+                 that the _tick_timings keys written in
+                 _process_tick_inner are exactly
+                 {sensor_fanout_ns, signal_evaluate_ns,
+                 risk_check_ns}, which is what those seven calls
+                 exist to produce and is stable across line moves.
+                 Proven to bite: renaming sensor_fanout_ns failed
+                 the assertion; restore byte-identical.
+                 Three mutation proofs, all byte-identical
+                 restores: an 8th call in _process_tick_inner named
+                 at :1783; a 3rd in _drain_async_fills at :3798;
+                 the 8th repeated after the import deletion, named
+                 at :1780 with the line shift.
+                 _process_tick_inner was not split. Each start/stop
+                 pair is two AST Call nodes, so each helper would
+                 still have needed a count of 2, and the new
+                 methods would have sat above _finalize_tick and
+                 _drain_async_fills and moved every pin below the
+                 cut -- the S-07 problem again.
+                 Orchestrator diff is three deleted import lines
+                 and nothing else. Wave D's remaining eleven
+                 orchestrator-touching steps -- S-20 through S-26,
+                 S-29, S-31, S-32, S-34 -- no longer need a
+                 dead-import pin hold.
+  FINDINGS:      Carried: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; verify_step frozen bugs; 152 research
+                 cache days stale (APP/2026-03-26 current); 11
+                 UNIT_UNDETERMINED block S-24; accepted baseline
+                 failure set is the four exempted tests; R6 14/31
+                 resets.
+  NEXT:          S-20 move 7 halt/integrity and feature-checkpoint
+                 methods out of the kernel (boundary). Not started.
+                 Do not begin S-20.
+                 Left uncommitted: baseline_pre-S-19a.json,
+                 baseline_post-S-19a.json, this ledger entry.
 
 
 
