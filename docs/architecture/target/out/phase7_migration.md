@@ -1916,9 +1916,9 @@ is in one.
 STEP:            S-19
 CLOSES:          G14
 PROBLEM:         5 regime classification methods live in the kernel —
-                 `_calibrate_regime_engine:2335`, `_update_regime:2432`,
-                 `_maybe_publish_hazard_spike:2501`, `_regime_label_for:4556`,
-                 `_checkpoint_regime_snapshot:5460`. The engine CORE §E most
+                 `_calibrate_regime_engine:2353`, `_update_regime:2450`,
+                 `_maybe_publish_hazard_spike:2519`, `_regime_label_for:4688`,
+                 `_checkpoint_regime_snapshot:5602`. The engine CORE §E most
                  insists must be singular is authored in the module CORE §J
                  names as the anti-pattern. Inv-8.
 FILES:           src/feelies/kernel/orchestrator.py (the 5 methods)
@@ -1930,21 +1930,38 @@ FILES:           src/feelies/kernel/orchestrator.py (the 5 methods)
                  methods to the existing module and does **not** create a
                  package, because creating one is a naming decision for S-34's
                  residual classification, not a prerequisite for this move.)
+                 tests/acceptance/test_no_walltime_outside_clock.py
+                 (Inv-10 call allowlist. Seven line pins on orchestrator.py.
+                 The six at 1642/1644/1684/1686/1780/1782 sit above the five
+                 methods and do not move. Pin 3968 sits in _drain_async_fills
+                 below _calibrate_regime_engine/_update_regime/
+                 _maybe_publish_hazard_spike (171 lines); deleting those three
+                 moves it and test_wall_clock_allowlist_has_no_stale_entries
+                 fails. This file must be in FILES.)
+                 tests/kernel/test_orchestrator.py
+                 (orch._calibrate_regime_engine() at :503. Common-shape step 4
+                 deletes the delegating call; this is a live caller.)
 WHY THIS OWNER:  Engine 3 already has the platform's strongest contract
                  discipline — a single declared read path at
-                 `src/feelies/bootstrap.py:289`, two parity baselines, and a
-                 gate correctly off by default. Only its placement is wrong,
-                 which makes it the cheapest first extraction and the one that
-                 proves the wave's method.
+                 `src/feelies/bootstrap.py:299` (`_create_regime_engine`), two
+                 parity baselines, and a gate correctly off by default. Only
+                 its placement is wrong, which makes it the cheapest first
+                 extraction and the one that proves the wave's method.
 REFACTOR PATH:   the common shape. Move `_maybe_publish_hazard_spike` **last**:
-                 it draws from `self._hazard_seq` (`:2519`), a separate
+                 it draws from `self._hazard_seq` (`:2537`), a separate
                  generator, so it is the one method in this step whose move
-                 could shift a sequence family.
+                 could shift a sequence family. Leave SequenceGenerator
+                 construction for streams `orchestrator` and `hazard` on
+                 Orchestrator (S12 binds the construction class, not the
+                 method).
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, `level5_regime_hazard_spike`, `level6_regime_state`,
-                 the parity oracle, full suite
-PARITY IMPACT:   All 26 hold. Pure move. `level5_regime_hazard_spike` is the one
-                 to watch, for the `_hazard_seq` reason above.
+                 the parity oracle, full suite,
+                 tests/acceptance/test_no_walltime_outside_clock.py
+PARITY IMPACT:   All 28 replay hashes and EXPECTED_MANIFEST_FINGERPRINT hold.
+                 Pure move. No Event subclass is touched, so S-17a's fold does
+                 not move. `level5_regime_hazard_spike` is the one to watch,
+                 for the `_hazard_seq` reason above.
 DELETES:         5 methods from the orchestrator (123 -> 118); 3 method calls
                  through `self._regime_engine`
 NET DELTA:       src modules 0, public symbols **0** (the methods are private on
