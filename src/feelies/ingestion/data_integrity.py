@@ -12,7 +12,7 @@ from enum import Enum, auto
 from typing import Any
 
 from feelies.core.clock import Clock
-from feelies.core.events import Trade
+from feelies.core.events import AlertSeverity, Trade
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
 
@@ -158,3 +158,23 @@ def _update_halt_state(self: Any, trade: Trade) -> None:
             correlation_id=trade.correlation_id,
             blackout_until_ns=deadline,
         )
+
+
+def _update_ssr_state(self: Any, trade: Trade) -> None:
+    """Activate sticky session SSR state from trade condition codes."""
+    if not self._ssr_codes:
+        return
+    if not (set(trade.conditions) & self._ssr_codes):
+        return
+    symbol = trade.symbol.upper()
+    if symbol in self._ssr_active:
+        return
+    self._ssr_active.add(symbol)
+    self._publish_alert(
+        timestamp_ns=trade.timestamp_ns,
+        correlation_id=trade.correlation_id,
+        severity=AlertSeverity.INFO,
+        alert_name="ssr_triggered",
+        message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
+        context={"symbol": symbol},
+    )

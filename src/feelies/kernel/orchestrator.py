@@ -132,6 +132,7 @@ from feelies.execution.regulatory.borrow_availability import (
 from feelies.ingestion.data_integrity import (
     DataHealth,
     _update_halt_state,
+    _update_ssr_state,
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
@@ -1190,7 +1191,7 @@ class Orchestrator:
         # Update halt state before applying the data-health gate.
         _update_halt_state(self, trade)
         # Update intraday SSR state from the trade tape.
-        self._update_ssr_state(trade)
+        _update_ssr_state(self, trade)
 
         trade_block_reason = self._data_health_blocks_trading(trade.symbol, trade.correlation_id)
         if trade_block_reason is not None:
@@ -4985,24 +4986,6 @@ class Orchestrator:
 
     # ── Reg-SHO / SSR short-sale restriction ────────────────────────
 
-    def _update_ssr_state(self, trade: Trade) -> None:
-        """Activate sticky session SSR state from trade condition codes."""
-        if not self._ssr_codes:
-            return
-        if not (set(trade.conditions) & self._ssr_codes):
-            return
-        symbol = trade.symbol.upper()
-        if symbol in self._ssr_active:
-            return
-        self._ssr_active.add(symbol)
-        self._publish_alert(
-            timestamp_ns=trade.timestamp_ns,
-            correlation_id=trade.correlation_id,
-            severity=AlertSeverity.INFO,
-            alert_name="ssr_triggered",
-            message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
-            context={"symbol": symbol},
-        )
 
     # ── Static borrow availability ───────────────────────────────────
 

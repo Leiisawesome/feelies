@@ -142,7 +142,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     ),
     (1, "E1.verify_integrity", "feelies.kernel.orchestrator:Orchestrator._verify_data_integrity"),
     (1, "E1.update_halt_state", "feelies.ingestion.data_integrity:_update_halt_state"),
-    (1, "E1.update_ssr_state", "feelies.kernel.orchestrator:Orchestrator._update_ssr_state"),
+    (1, "E1.update_ssr_state", "feelies.ingestion.data_integrity:_update_ssr_state"),
     # -- engine 2: state / feature ----------------------------------------
     (
         2,
