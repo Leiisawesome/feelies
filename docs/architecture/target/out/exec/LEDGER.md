@@ -3752,6 +3752,123 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-17a.json,
                  baseline_post-S-17a.json, this ledger entry.
 
+---
+
+## S-18  2026-08-23T10:40:04+08:00
+  STEP:          S-18
+  BASE:          555a7bd58b980eb682adbb2ec4661e3cd710ce9e
+  RESULT SHA:    b1341db5961de0004e42d4dd3e551000c82b16c7
+  VERDICT:       passed
+  CONFORMANCE:   S10 | failed-before: yes | passes-after: yes
+                 | mutation: yes
+                 Fail-before (--runxfail, xfail(strict, GAP G12) still on):
+                   FAILED tests/conformance/test_event_immutability.py::
+                   test_frozen_events_carry_no_mutable_container
+                   AssertionError: frozen events with mutable container
+                   fields (G12): Alert=['context'],
+                   CrossSectionalContext=['signals_by_symbol',
+                   'signals_by_strategy_by_symbol',
+                   'snapshots_by_symbol'],
+                   HorizonFeatureSnapshot=['values', 'warm', 'stale',
+                   'source_sensors', 'feature_versions'],
+                   MetricEvent=['tags'], RiskVerdict=['constraints'],
+                   Signal=['metadata'],
+                   SizedPositionIntent=['target_positions',
+                   'factor_exposures', 'mechanism_breakdown',
+                   'disclosed_cost_total_bps_by_symbol'],
+                   StateTransition=['metadata']
+                   1 failed in 0.56s
+                 After last class + xfail drop: 1 passed in 0.42s.
+                 Mutation: HorizonFeatureSnapshot.values annotation
+                 Mapping[str, float] -> dict[str, float]; S10 failed
+                 naming HorizonFeatureSnapshot=['values']; restore
+                 SHA256 4570911D728997F01C8FAF9DA457F7302C384C8432E4B7286A843DB1DACC8408
+                 BYTE_IDENTICAL; restored S10 1 passed. pycache purged
+                 between mutate and restore.
+  TESTS:         4868 passed / 0 failed / 19 skipped / 9 xfailed
+                 -> 4869 passed / 0 failed / 19 skipped / 8 xfailed
+                 (post-S-18 capture GREEN). not-paper_rth: 4868 passed,
+                 6 skipped, 14 deselected, 8 xfailed, 0 failed.
+                 conformance 80 passed / 9 xfailed -> 81 passed /
+                 8 xfailed (S10 xfail dropped, no XPASS).
+                 mypy src/feelies: Success, 202 source files.
+  PARITY:        declared hold -- all 28 replay hashes and
+                 EXPECTED_MANIFEST_FINGERPRINT | actual 64/64 scanned
+                 constants identical (pre-S-18 vs post-S-18, and vs
+                 baseline_post-S-17a.json); 28 hashes unmoved;
+                 EXPECTED_MANIFEST_FINGERPRINT held at
+                 dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b
+                 | MATCH. PINNED_PAYLOAD not touched
+                 (test_schema_drift.py empty diff; 2 passed).
+  FILES:         2 declared, 2 committed (clean vs b1341db).
+                 verify_step FILES declared 2, touched 2, clean.
+                 git status --porcelain -- src empty.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0, test files +0
+                 actual modules 202 -> 202 (+0)
+                 public_symbols 567 -> 567 (+0)
+                 sloc 45452 -> 45499 (+47)  (__post_init__ wrappers)
+                 n_edges 633 -> 633
+                 n_modules 164 -> 164
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   148 -> 148 passed after every class; no hash moved
+  VERIFY_STEP:   Four checks: FILES 2/2 clean; PARITY moved 0 holds
+                 (oracle parsed declared hold as FINGERPRINT only --
+                 frozen substring match; 64 constants and FINGERPRINT
+                 checked by hand, unmoved); NET DELTA 0/0/0 with
+                 conceptual DELETES (oracle "compare by eye"); CLEAN,
+                 blast radius boundary -- human gate required.
+                 Worked around: scanner blind to FINGERPRINT; DELETES
+                 is conceptual not a file deletion.
+  NOTES:         Freeze is MappingProxyType(dict(field)) via
+                 object.__setattr__ in each class's __post_init__,
+                 with annotations dict[...] -> Mapping[...].
+                 Copy-then-wrap, so the proxy is not a live view of
+                 the caller's dict. Publishers still pass plain dict
+                 and no construction site was edited.
+                 CrossSectionalContext.signals_by_strategy_by_symbol
+                 is a shallow freeze -- the outer mapping only,
+                 inner dict values remain dict; a limit, not a defect.
+                 Eight commits, cheapest first by field count:
+                 Alert 2055bed, MetricEvent 26ea043,
+                 RiskVerdict a6a7054, Signal 2318a49,
+                 StateTransition c9479d4 (1 field each),
+                 CrossSectionalContext 28951ac (3),
+                 SizedPositionIntent ab60f89 (4),
+                 HorizonFeatureSnapshot b1341db (5, with the S10
+                 xfail drop). Determinism 148 passed after every
+                 one, no hash moved at any point.
+                 EXPECTED_MANIFEST_FINGERPRINT identical before and
+                 after at dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b,
+                 confirming S-17a's fold hashes field names only
+                 and not annotations. PINNED_PAYLOAD untouched.
+                 Mutation proof: HorizonFeatureSnapshot.values
+                 reverted to dict made S10 name it; restore
+                 SHA256 4570911D728997F01C8FAF9DA457F7302C384C8432E4B7286A843DB1DACC8408
+                 BYTE_IDENTICAL.
+  FINDINGS:      No consumer broke. The block's blast-radius
+                 rationale was that every consumer mutating a
+                 received event would break loudly -- none did,
+                 across all 17 fields and 8 classes. Phase 0 C-7
+                 warned read-after-mutation was possible and
+                 untested; this step tested it and found none.
+                 Cleared risk, not an absence of evidence.
+                 Carried: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 test (S-04c); serialization.py missing
+                 __schema_version__ tag as current version
+                 (fail-open); ci.yml G40 continue-on-error: true
+                 until G40; verify_step frozen bugs; 152 research
+                 cache days stale (APP/2026-03-26 current; S-18
+                 does not re-invalidate); 11 UNIT_UNDETERMINED
+                 block S-24; accepted baseline failure set is the
+                 four exempted tests; R6 14/31 resets.
+  NEXT:          S-19 move 5 regime methods out of the kernel
+                 (boundary). Not started. Do not begin S-19.
+                 Left uncommitted: baseline_pre-S-18.json,
+                 baseline_post-S-18.json, this ledger entry.
+
 
 
 
