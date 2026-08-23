@@ -173,7 +173,7 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, _restore_feature_snapshots, _update_regime  # noqa: E501
+from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_feature_snapshots, _regime_label_for, _restore_feature_snapshots, _update_regime  # noqa: E501
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -1119,7 +1119,7 @@ class Orchestrator:
             if expire_moc is not None:
                 expire_moc()
             self._drain_async_fills(correlation_id="shutdown")
-        self._checkpoint_feature_snapshots()
+        _checkpoint_feature_snapshots(self)
         # Resolve operator cancel intent when no broker ack will arrive
         # (e.g. mid backtest router has no cancel_order API).
         for oid, (sm, _, order) in list(self._active_orders.items()):
@@ -5204,9 +5204,4 @@ class Orchestrator:
                 exc_info=True,
             )
 
-    def _checkpoint_feature_snapshots(self) -> None:
-        """Checkpoint regime state without blocking shutdown on failure."""
-        if self._feature_snapshots is None:
-            return
-        _checkpoint_regime_snapshot(self)
 

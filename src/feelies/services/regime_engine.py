@@ -1016,3 +1016,10 @@ def _restore_feature_snapshots(self: Any) -> None:
     if self._feature_snapshots is None:
         return
     self._restore_regime_snapshot()
+
+
+def _checkpoint_feature_snapshots(self: Any) -> None:
+    """Checkpoint regime state without blocking shutdown on failure."""
+    if self._feature_snapshots is None:
+        return
+    _checkpoint_regime_snapshot(self)
