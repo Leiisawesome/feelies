@@ -7,12 +7,9 @@ subclass is ``frozen=True``) and the payload half (no ``dict``/``list``/
 
 from __future__ import annotations
 
-import pytest
-
 from tools.arch.contracts import collect_classes, event_closure
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G12")
 def test_frozen_events_carry_no_mutable_container() -> None:
     events = event_closure(collect_classes())
     assert events, "contracts scanner found no Event subclasses"

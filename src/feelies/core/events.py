@@ -18,9 +18,11 @@ existing producers/consumers are unaffected (Inv-5 parity, §11.2).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum, auto
+from types import MappingProxyType
 from typing import Any, Literal
 
 # Pinned-code-per-log rule. Log-level invalidation is event_schema_hash
@@ -225,13 +227,16 @@ class Signal(Event):
     # Combined exit and entry cost for a reversal; zero for other signals.
     reversal_cost_estimate_bps: float = field(default=0.0, metadata={"unit": "bps"})
     disclosed_margin_ratio: float = field(default=0.0, metadata={"unit": "1"})
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
     layer: Literal["SIGNAL", "PORTFOLIO"] = "SIGNAL"
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
     regime_gate_state: Literal["ON", "OFF", "N/A"] = "N/A"
     consumed_features: tuple[str, ...] = ()
     trend_mechanism: TrendMechanism | None = None
     expected_half_life_seconds: int = field(default=0, metadata={"unit": "s"})
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 # ── Risk Events ─────────────────────────────────────────────────────────
@@ -252,9 +257,12 @@ class RiskVerdict(Event):
     action: RiskAction
     reason: str
     scaling_factor: float = field(default=1.0, metadata={"unit": "1"})
-    constraints: dict[str, float] = field(
+    constraints: Mapping[str, float] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "constraints", MappingProxyType(dict(self.constraints)))
 
 
 # ── Order Events ────────────────────────────────────────────────────────
@@ -373,7 +381,10 @@ class StateTransition(Event):
     from_state: str
     to_state: str
     trigger: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 # ── Metric Events ───────────────────────────────────────────────────────
@@ -393,7 +404,10 @@ class MetricEvent(Event):
     name: str
     value: float = field(metadata={"unit": UNIT_UNDETERMINED})
     metric_type: MetricType
-    tags: dict[str, str] = field(default_factory=dict)
+    tags: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tags", MappingProxyType(dict(self.tags)))
 
 
 # ── Alert Events ────────────────────────────────────────────────────
@@ -426,7 +440,10 @@ class Alert(Event):
     layer: str
     alert_name: str
     message: str
-    context: dict[str, Any] = field(default_factory=dict)
+    context: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "context", MappingProxyType(dict(self.context)))
 
 
 # ── Safety Events ───────────────────────────────────────────────────
@@ -684,12 +701,23 @@ class HorizonFeatureSnapshot(Event):
     # ``HorizonTick.boundary_ts_ns``.  ``timestamp_ns`` remains the trigger
     # time; this is the regular-grid anchor for IC labels / forensics.
     boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
-    values: dict[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
-    warm: dict[str, bool] = field(default_factory=dict)
-    stale: dict[str, bool] = field(default_factory=dict)
-    source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    feature_versions: dict[str, str] = field(default_factory=dict)
+    values: Mapping[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
+    warm: Mapping[str, bool] = field(default_factory=dict)
+    stale: Mapping[str, bool] = field(default_factory=dict)
+    source_sensors: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    feature_versions: Mapping[str, str] = field(default_factory=dict)
     parent_correlation_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
+        object.__setattr__(self, "warm", MappingProxyType(dict(self.warm)))
+        object.__setattr__(self, "stale", MappingProxyType(dict(self.stale)))
+        object.__setattr__(
+            self, "source_sensors", MappingProxyType(dict(self.source_sensors))
+        )
+        object.__setattr__(
+            self, "feature_versions", MappingProxyType(dict(self.feature_versions))
+        )
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -707,16 +735,27 @@ class CrossSectionalContext(Event):
     horizon_seconds: int = field(metadata={"unit": "s"})
     boundary_index: int = field(metadata={"unit": "1"})
     universe: tuple[str, ...]
-    signals_by_symbol: dict[str, "Signal | None"] = field(default_factory=dict)
+    signals_by_symbol: Mapping[str, "Signal | None"] = field(default_factory=dict)
     # Per-symbol map strategy_id -> latest feeder Signal at the portfolio barrier.
     # Populated when :class:`~feelies.composition.synchronizer.UniverseSynchronizer`
     # is wired with ``upstream_strategy_ids`` so Layer-3 can aggregate SIGNAL
     # alphas whose ``horizon_seconds`` differ from the PORTFOLIO decision horizon.
-    signals_by_strategy_by_symbol: dict[str, dict[str, "Signal | None"]] = field(
+    signals_by_strategy_by_symbol: Mapping[str, dict[str, "Signal | None"]] = field(
         default_factory=dict,
     )
-    snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
+    snapshots_by_symbol: Mapping[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
     completeness: float = field(default=0.0, metadata={"unit": "1"})
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "signals_by_symbol", MappingProxyType(dict(self.signals_by_symbol)))
+        object.__setattr__(
+            self,
+            "signals_by_strategy_by_symbol",
+            MappingProxyType(dict(self.signals_by_strategy_by_symbol)),
+        )
+        object.__setattr__(
+            self, "snapshots_by_symbol", MappingProxyType(dict(self.snapshots_by_symbol))
+        )
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -735,22 +774,38 @@ class SizedPositionIntent(Event):
     strategy_id: str
     layer: Literal["PORTFOLIO"] = "PORTFOLIO"
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
-    target_positions: dict[str, TargetPosition] = field(
+    target_positions: Mapping[str, TargetPosition] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
-    factor_exposures: dict[str, float] = field(
+    factor_exposures: Mapping[str, float] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
     expected_turnover_usd: float = field(default=0.0, metadata={"unit": "USD"})
     expected_gross_exposure_usd: float = field(default=0.0, metadata={"unit": "USD"})
-    mechanism_breakdown: dict[TrendMechanism, float] = field(
+    mechanism_breakdown: Mapping[TrendMechanism, float] = field(
         default_factory=dict, metadata={"unit": "1"}
     )
     # Per-symbol one-way cost disclosed by the consumed signals.
-    disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
+    disclosed_cost_total_bps_by_symbol: Mapping[str, float] = field(
         default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
     )
     # Digest of the signals, positions, and parameters that produced the targets.
     decision_basis_hash: str = ""
     # Optimizer terminal status; empty means not recorded.
     solver_status: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "target_positions", MappingProxyType(dict(self.target_positions))
+        )
+        object.__setattr__(
+            self, "factor_exposures", MappingProxyType(dict(self.factor_exposures))
+        )
+        object.__setattr__(
+            self, "mechanism_breakdown", MappingProxyType(dict(self.mechanism_breakdown))
+        )
+        object.__setattr__(
+            self,
+            "disclosed_cost_total_bps_by_symbol",
+            MappingProxyType(dict(self.disclosed_cost_total_bps_by_symbol)),
+        )
