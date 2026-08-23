@@ -60,6 +60,7 @@ from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.escalation import RiskLevel
+from feelies.services.regime_engine import _calibrate_regime_engine
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -500,7 +501,7 @@ class TestOrchestratorBoot:
         )
         orch._regime_calibration_max_quotes = 3
 
-        orch._calibrate_regime_engine()
+        _calibrate_regime_engine(orch)
 
         assert regime_engine.calibration_count == 3
         assert event_log.events_yielded == 3

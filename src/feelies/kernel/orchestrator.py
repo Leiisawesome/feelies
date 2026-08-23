@@ -9,7 +9,7 @@ modes share the same tick pipeline and publish every state transition.
 from __future__ import annotations
 
 import hashlib
-import itertools
+import itertools  # noqa: F401
 import logging
 import time
 from collections import deque
@@ -174,12 +174,7 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import (
-    RegimeEngine,
-    _checkpoint_regime_snapshot,
-    _regime_label_for,
-    regime_posterior_entropy_nats,
-)
+from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_regime_snapshot, _regime_label_for, regime_posterior_entropy_nats  # noqa: E501
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -942,7 +937,7 @@ class Orchestrator:
                 correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
             self._restore_feature_snapshots()
-            self._calibrate_regime_engine()
+            _calibrate_regime_engine(self)
             self._pending_sized_intents.clear()
         else:
             self._macro.transition(
@@ -2354,103 +2349,6 @@ class Orchestrator:
             entry_cost_bps=entry_roundtrip_cost_bps,
             multiplier=self._reversal_min_edge_cost_multiplier,
         )
-
-    def _calibrate_regime_engine(self) -> None:
-        """Calibrate emissions from a bounded replay prefix.
-
-        The run replays its calibration prefix, so early prefix posteriors use
-        moments estimated from later prefix quotes. A prior-session fit is needed
-        when strict causal warm-up behavior matters.
-        """
-        if self._regime_engine is None:
-            return
-        calibrate_fn = getattr(self._regime_engine, "calibrate", None)
-        if calibrate_fn is None:
-            return
-        if getattr(self._regime_engine, "calibrated", False):
-            return
-
-        max_q = self._regime_calibration_max_quotes
-        if max_q is None:
-            # Placeholder emissions cannot support regime-gated entries.
-            logger.warning(
-                "Regime calibration skipped — regime_calibration_max_quotes "
-                "is unset.  Engine will run with placeholder emission "
-                "parameters that do not match real US-equity spreads; "
-                "RegimeState.calibrated will be False and every "
-                "P(state)/dominant/entropy entry gate will fail safe to OFF "
-                "(audit P0-1).  Configure a positive integer for a causal "
-                "warmup prefix to enable regime-conditioned entries."
-            )
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id="regime_calibration",
-                severity=AlertSeverity.CRITICAL,
-                alert_name="regime_calibration_unset",
-                message="RegimeEngine has no calibration prefix configured (regime_calibration_max_quotes is None). Posteriors use placeholder emission parameters; RegimeState is published with calibrated=False and all P(state)/dominant/entropy entry gates fail safe to OFF (Inv-11).  Configure a positive integer for a causal warmup prefix to enable regime-gated entries.",
-                context={},
-            )
-            return
-
-        precomputed = self._regime_calibration_quotes
-        if precomputed is not None:
-            quotes = list(precomputed)
-        else:
-            quote_stream = (
-                event for event in self._event_log.replay() if isinstance(event, NBBOQuote)
-            )
-            quotes = list(itertools.islice(quote_stream, max_q))
-        if not quotes:
-            logger.info("Regime calibration skipped — no quotes in event log")
-            return
-
-        prefix_n = len(quotes)
-        # Exact total only when the prefix exhausts the quote stream; otherwise
-        # counting the suffix is O(full log) at boot — report a lower bound.
-        exact_total = precomputed is not None or prefix_n < max_q
-
-        ok = calibrate_fn(quotes)
-        if ok:
-            if exact_total:
-                logger.info(
-                    "Regime engine calibrated from %d quotes (prefix cap=%d, total_log=%d)",
-                    prefix_n,
-                    max_q,
-                    prefix_n,
-                )
-            else:
-                logger.info(
-                    "Regime engine calibrated from %d quotes "
-                    "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
-                    prefix_n,
-                    max_q,
-                    max_q,
-                )
-        else:
-            logger.warning(
-                "Regime calibration failed (insufficient data in prefix: "
-                "%d quotes, cap=%d) — using default emission parameters",
-                prefix_n,
-                max_q,
-            )
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id="regime_calibration",
-                severity=AlertSeverity.CRITICAL,
-                alert_name="regime_calibration_failed",
-                message=f"Regime engine calibrate() returned False (prefix_quotes={prefix_n}, cap={max_q}). Posteriors may discriminate poorly until operators raise regime_calibration_max_quotes or supply cleaner data.",
-                context={
-                    "prefix_quote_count": prefix_n,
-                    "cap": max_q,
-                    "total_quotes_in_log": prefix_n,
-                }
-                if exact_total
-                else {
-                    "prefix_quote_count": prefix_n,
-                    "cap": max_q,
-                    "total_quotes_in_log_at_least": max_q,
-                },
-            )
 
     def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
         """Update platform-level RegimeEngine and publish RegimeState event.

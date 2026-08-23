@@ -13,6 +13,7 @@ position sizing and drawdown gating.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import logging
 import math
@@ -22,7 +23,7 @@ from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
-from feelies.core.events import NBBOQuote
+from feelies.core.events import AlertSeverity, NBBOQuote
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta
 
 
@@ -824,4 +825,102 @@ def _checkpoint_regime_snapshot(self: Any) -> None:
         logger.warning(
             "Regime snapshot checkpoint failed -- next boot will cold-start regime engine",
             exc_info=True,
+        )
+
+
+def _calibrate_regime_engine(self: Any) -> None:
+    """Calibrate emissions from a bounded replay prefix.
+
+    The run replays its calibration prefix, so early prefix posteriors use
+    moments estimated from later prefix quotes. A prior-session fit is needed
+    when strict causal warm-up behavior matters.
+    """
+    if self._regime_engine is None:
+        return
+    calibrate_fn = getattr(self._regime_engine, "calibrate", None)
+    if calibrate_fn is None:
+        return
+    if getattr(self._regime_engine, "calibrated", False):
+        return
+
+    max_q = self._regime_calibration_max_quotes
+    if max_q is None:
+        # Placeholder emissions cannot support regime-gated entries.
+        logger.warning(
+            "Regime calibration skipped — regime_calibration_max_quotes "
+            "is unset.  Engine will run with placeholder emission "
+            "parameters that do not match real US-equity spreads; "
+            "RegimeState.calibrated will be False and every "
+            "P(state)/dominant/entropy entry gate will fail safe to OFF "
+            "(audit P0-1).  Configure a positive integer for a causal "
+            "warmup prefix to enable regime-conditioned entries."
+        )
+        self._publish_alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id="regime_calibration",
+            severity=AlertSeverity.CRITICAL,
+            alert_name="regime_calibration_unset",
+            message="RegimeEngine has no calibration prefix configured (regime_calibration_max_quotes is None). Posteriors use placeholder emission parameters; RegimeState is published with calibrated=False and all P(state)/dominant/entropy entry gates fail safe to OFF (Inv-11).  Configure a positive integer for a causal warmup prefix to enable regime-gated entries.",
+            context={},
+        )
+        return
+
+    precomputed = self._regime_calibration_quotes
+    if precomputed is not None:
+        quotes = list(precomputed)
+    else:
+        quote_stream = (
+            event for event in self._event_log.replay() if isinstance(event, NBBOQuote)
+        )
+        quotes = list(itertools.islice(quote_stream, max_q))
+    if not quotes:
+        logger.info("Regime calibration skipped — no quotes in event log")
+        return
+
+    prefix_n = len(quotes)
+    # Exact total only when the prefix exhausts the quote stream; otherwise
+    # counting the suffix is O(full log) at boot — report a lower bound.
+    exact_total = precomputed is not None or prefix_n < max_q
+
+    ok = calibrate_fn(quotes)
+    if ok:
+        if exact_total:
+            logger.info(
+                "Regime engine calibrated from %d quotes (prefix cap=%d, total_log=%d)",
+                prefix_n,
+                max_q,
+                prefix_n,
+            )
+        else:
+            logger.info(
+                "Regime engine calibrated from %d quotes "
+                "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
+                prefix_n,
+                max_q,
+                max_q,
+            )
+    else:
+        logger.warning(
+            "Regime calibration failed (insufficient data in prefix: "
+            "%d quotes, cap=%d) — using default emission parameters",
+            prefix_n,
+            max_q,
+        )
+        self._publish_alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id="regime_calibration",
+            severity=AlertSeverity.CRITICAL,
+            alert_name="regime_calibration_failed",
+            message=f"Regime engine calibrate() returned False (prefix_quotes={prefix_n}, cap={max_q}). Posteriors may discriminate poorly until operators raise regime_calibration_max_quotes or supply cleaner data.",
+            context={
+                "prefix_quote_count": prefix_n,
+                "cap": max_q,
+                "total_quotes_in_log": prefix_n,
+            }
+            if exact_total
+            else {
+                "prefix_quote_count": prefix_n,
+                "cap": max_q,
+                "total_quotes_in_log_at_least": max_q,
+            },
         )
