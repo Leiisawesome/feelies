@@ -2112,59 +2112,93 @@ ROLLBACK:        revert.
 ```
 STEP:            S-21
 CLOSES:          G21, G34
-PROBLEM:         **36 direct store calls from the kernel** (`self._positions`
-                 23, `self._strategy_positions` 13 — re-measured in
-                 `gapscan.json:orchestrator.store_access`, with 34 and 20 bare
-                 references respectively), plus 3 accounting methods in the
-                 kernel (`_reconcile_fills:4229`,
-                 `_distribute_fill_to_strategies:4577`,
-                 `_record_fill_attribution:4057`) and a 4th in engine 5's
-                 package (`src/feelies/alpha/fill_attribution.py`). §F.4 broker
-                 reconciliation is 23 sites, 14 in the kernel. CORE §C.6 single
-                 source of truth; Inv-8.
-FILES:           src/feelies/kernel/orchestrator.py (3 methods, 36 call sites)
-                 src/feelies/alpha/fill_attribution.py -> src/feelies/portfolio/
-                 src/feelies/portfolio/strategy_position_store.py:145-148
-                 src/feelies/portfolio/ (read-only view type)
-WHY THIS OWNER:  Engine 7 is the sole book of record. Phase 2 makes the
-                 enforcement concrete: **a read-only view type for every
-                 consumer**, because "everything reads this; nothing else
-                 computes it" is unenforceable through a mutable handle — and
-                 that view is what makes S-05's substitution structurally
-                 impossible rather than merely removed.
-REFACTOR PATH:   the common shape, plus two specifics. (1) **Return an ordered
-                 mapping from the store**: `:148` returns
-                 `{sym: ... for sym in symbols}` over `symbols: set[str]`
-                 (`:145`), whose key order is seed-dependent, and three
-                 consumers currently neutralise it independently
-                 (`src/feelies/kernel/orchestrator.py:2611`, `src/feelies/risk/basic_risk.py:764`,
-                 `src/feelies/harness/backtest_report.py:193`). One line at the producer
-                 retires an open defect three consumers carry. (2) Introduce the
-                 read-only view before moving the 36 call sites, so the moves
-                 land against the target surface.
-BLAST RADIUS:    platform-wide by call-site count, boundary by behaviour.
-                 **Justified early despite the reach**: S-05's P0 fix is
-                 complete only when substitution is impossible, and 36 call
-                 sites is the measure of how thoroughly the invariant is held by
-                 coupling rather than by contract.
+PROBLEM:         **36 direct store method calls from the kernel** (`self._positions`
+                 23, `self._strategy_positions` 13 — 34 and 20 bare references
+                 including the two assignments). Counts re-measured on post-S-20
+                 orchestrator.py (5207 lines, 114 methods). Plus 3 accounting
+                 methods in the kernel (`_record_fill_attribution:4014`,
+                 `_reconcile_fills:4186`,
+                 `_distribute_fill_to_strategies:4513`) and a 4th in engine 5's
+                 package (`src/feelies/alpha/fill_attribution.py`).
+                 `StrategyPositionStore.all_aggregate_positions:143-148` still
+                 builds `{sym: ... for sym in symbols}` over a `set[str]`,
+                 seed-dependent; `as_aggregate()` has zero production callers.
+                 The three "independent sort-neutralisers" cited in the previous
+                 block do not exist as stated: orchestrator.py:2454 sorts
+                 MemoryPositionStore keys for emergency-flatten OrderRequest
+                 order (lex vs insertion, not the set-comprehension);
+                 basic_risk.py:831 and backtest_report.py:190 sum .values().
+                 CORE §C.6; Inv-8. S-05 closed substitution-on-exception in
+                 composition; this step is the engine-7 half only if the view
+                 actually reaches bootstrap's `_position_lookup` and
+                 `inventory_provider`.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/alpha/fill_attribution.py -> src/feelies/portfolio/fill_attribution.py
+                 src/feelies/alpha/__init__.py
+                 src/feelies/bootstrap.py
+                 src/feelies/portfolio/strategy_position_store.py
+                 src/feelies/portfolio/position_book_view.py (new; named file, not the package)
+                 tests/kernel/test_fill_attribution_seam.py
+                 tests/kernel/test_orchestrator.py
+                 tests/portfolio/test_strategy_position_store.py
+WHY THIS OWNER:  Engine 7 is the sole book of record. Split the work: (A) the
+                 S-19/S-20 extraction of the three methods plus the package
+                 move of fill_attribution.py; (B) a read-only view type whose
+                 write methods raise. Do not silently adopt a new nominal type
+                 on RiskEngine.check_*. If (B) requires a new nominal type
+                 that existing PositionStore parameters must take, STOP and
+                 add every consumer (risk/engine.py, risk/basic_risk.py,
+                 alpha/risk_wrapper.py, risk/stop_exit.py, risk/hazard_exit.py,
+                 risk/exit_composer.py, risk/deferral_cap.py,
+                 risk/post_exit_position_view.py,
+                 execution/sized_intent_legs.py, and the tests that construct
+                 them) before editing. PostExitPositionView is a different
+                 type; do not reuse it.
+REFACTOR PATH:   the common shape for (A): copy bodies onto module functions
+                 `self: Any`, no shim; engine-7 destination. `_reconcile_fills`
+                 last of the three because it draws `self._seq` twice
+                 (`:4229`, `:4411`) and publishes PositionUpdate. Keep those
+                 draws on the orchestrator generator; do not add, drop, or
+                 reorder them (S-13). For the S-20 finding: annotate
+                 store-derived locals (`Position`, `Decimal`) before returning
+                 or publishing; `_distribute_fill_to_strategies` returns
+                 `slice_position.realized_pnl - prev_slice`. Then (B): named
+                 view file; `Orchestrator.position_store` returns the view;
+                 writers keep the store. Ordered mapping at
+                 all_aggregate_positions: `sorted(symbols)`, not a claim that
+                 this retires three consumer sorts. Do not delete
+                 orchestrator.py:2454. R1 under PYTHONHASHSEED=random still
+                 required. Move fill_attribution.py and update
+                 alpha/__init__.py + bootstrap.py + the two kernel tests in
+                 the same step as the import path change.
+BLAST RADIUS:    boundary by behaviour. Do not write "platform-wide" in this
+                 field; --list escalates if both classes are named (S-07,
+                 S-19). Reach is 36 kernel call sites plus the named
+                 importers; that is FILES, not a second blast class.
 VALIDATED BY:    C2 (conservation identities at **every event**, not run end),
                  C5, X11, S12, `position_pnl`, `forced_exit_attribution`,
-                 `halt_position_update`, R1 under a random seed, the oracle
-PARITY IMPACT:   All 26 hold. The ordered-mapping change is the one to reason
-                 about: it makes an order **deterministic** that three consumers
-                 already sorted, so output is unchanged — **unless a fourth
-                 consumer iterates unsorted**, which Phase 1 budget row 2a names
-                 as the live risk. R1 under `PYTHONHASHSEED=random` is the test
-                 that distinguishes "no fourth consumer" from "we did not look."
-DELETES:         3 kernel accounting methods (111 -> 108); 36 direct store
-                 calls; `src/feelies/alpha/fill_attribution.py` from engine 5's
-                 package; the three independent sort-neutralisers at the
-                 consumers
-NET DELTA:       src modules 0 (one moves), public symbols **+1 -0** (the
-                 read-only view; net +1 is a contract definition and is the one
-                 §G.10-exempt addition in this wave), branch points 0.
-                 Orchestrator lines -~250.
-ROLLBACK:        revert. The read-only view disappears and the 36 call sites
+                 `halt_position_update`, R1 under a random seed, S14
+                 (class-to-engine after the package move), the oracle
+PARITY IMPACT:   All 64 constants hold. No Event field add or delete
+                 (S-17a fingerprint). PositionUpdate is published from
+                 `_reconcile_fills` with two orchestrator-stream sequence
+                 draws; copy preserves them. The ordered-mapping change is
+                 on StrategyPositionStore.all_aggregate_positions, which has
+                 no production caller; it must not be used as a reason to
+                 drop the emergency-flatten lex sort. R1 under
+                 PYTHONHASHSEED=random is the test that the set-comprehension
+                 is gone and that no hashed payload observed the old order.
+DELETES:         3 kernel accounting methods (114 -> 111);
+                 src/feelies/alpha/fill_attribution.py from engine 5's package
+                 (re-export from alpha/__init__.py is a decision: drop or
+                 shim — pick one in the step, do not leave both); the
+                 set-comprehension at strategy_position_store.py:145-148.
+                 Not deleted: orchestrator.py:2454; not 36 store calls
+                 (retargeted, not removed); not the two .values() sums.
+NET DELTA:       src modules 0 (fill_attribution.py moves; position_book_view.py
+                 is the §G.10-exempt contract definition, public symbols
+                 **+1 -0**). branch points 0. Orchestrator lines -~250.
+ROLLBACK:        revert. The read-only view disappears and the three methods
                  return. Ship as its own release.
 ```
 
