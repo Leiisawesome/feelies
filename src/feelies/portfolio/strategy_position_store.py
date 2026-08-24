@@ -145,7 +145,7 @@ class StrategyPositionStore:
         symbols: set[str] = set()
         for store in self._stores.values():
             symbols.update(store.all_positions().keys())
-        return {sym: self.get_aggregate(sym) for sym in symbols}
+        return {sym: self.get_aggregate(sym) for sym in sorted(symbols)}
 
     def total_exposure(self) -> Decimal:
         """Gross notional exposure across all strategies."""

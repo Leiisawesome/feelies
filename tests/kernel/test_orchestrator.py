@@ -418,6 +418,16 @@ def _build_orchestrator(
     )
 
 
+def test_position_store_property_is_read_only_view() -> None:
+    from feelies.portfolio.position_book_view import PositionBookView
+
+    clock = SimulatedClock(start_ns=1000)
+    orch = _build_orchestrator(clock)
+    view = orch.position_store
+    assert isinstance(view, PositionBookView)
+    assert view.get("AAPL") == 0.0
+
+
 def _boot_to_ready(orch: Orchestrator) -> None:
     """Boot orchestrator: INIT → DATA_SYNC → READY."""
     config = _MinimalConfig()

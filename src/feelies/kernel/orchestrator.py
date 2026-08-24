@@ -153,6 +153,7 @@ from feelies.monitoring.latency_budget import (
 )
 from feelies.monitoring.paper_session_recorder import PaperSessionRecorder
 from feelies.monitoring.telemetry import MetricCollector
+from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
@@ -722,8 +723,8 @@ class Orchestrator:
         return self._trade_journal
 
     @property
-    def position_store(self) -> PositionStore:
-        return self._positions
+    def position_store(self) -> PositionBookView:
+        return PositionBookView.from_store(self._positions)
 
     @property
     def lot_ledger(self) -> LotLedger:
@@ -785,7 +786,7 @@ class Orchestrator:
         bind = getattr(router, "bind_position_qty", None)
         if not callable(bind):
             return
-        bind(lambda sym: self._positions.get(sym).quantity)
+        bind(lambda sym: int(PositionBookView.from_store(self._positions).get(sym)))
 
     def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
         """Switch buying-power phase at each resolved RTH close.

@@ -159,6 +159,11 @@ class TestAsAggregate:
         all_pos = agg.all_positions()
         assert set(all_pos.keys()) == {"AAPL", "MSFT"}
 
+    def test_all_aggregate_positions_keys_are_sorted(self, store: StrategyPositionStore) -> None:
+        store.update("a", "MSFT", 50, Decimal("20"))
+        store.update("b", "AAPL", 100, Decimal("10"))
+        assert list(store.all_aggregate_positions().keys()) == ["AAPL", "MSFT"]
+
     def test_total_exposure_delegates(self, store: StrategyPositionStore) -> None:
         store.update("a", "AAPL", 100, Decimal("10"))
         agg = store.as_aggregate()
