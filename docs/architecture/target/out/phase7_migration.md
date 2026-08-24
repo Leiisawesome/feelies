@@ -2197,7 +2197,10 @@ DELETES:         3 kernel accounting methods (114 -> 111);
                  (retargeted, not removed); not the two .values() sums.
 NET DELTA:       src modules 0 (fill_attribution.py moves; position_book_view.py
                  is the §G.10-exempt contract definition, public symbols
-                 **+1 -0**). branch points 0. Orchestrator lines -~250.
+                 **+1 -0**). branch points **+2, both inside the exempt view**
+                 (__contains__ isinstance check, all_positions None check);
+                 0 outside it -- no new branch in orchestrator, bootstrap or
+                 strategy_position_store.
 ROLLBACK:        revert. The read-only view disappears and the three methods
                  return. Ship as its own release.
 ```
