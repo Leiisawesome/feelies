@@ -426,6 +426,8 @@ def test_position_store_property_is_read_only_view() -> None:
     view = orch.position_store
     assert isinstance(view, PositionBookView)
     assert view.get("AAPL") == 0.0
+    with pytest.raises(TypeError):
+        view["AAPL"] = 0.0  # type: ignore[index]
 
 
 def _boot_to_ready(orch: Orchestrator) -> None:

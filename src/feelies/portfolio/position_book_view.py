@@ -11,8 +11,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Protocol
 
 from feelies.portfolio.position_store import Position
+
+
+class _ReadableBook(Protocol):
+    def all_positions(self) -> Mapping[str, Position]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,15 +35,16 @@ class PositionBookView:
     _positions: Callable[[], Mapping[str, Position]] | None = None
 
     @classmethod
-    def from_store(cls, store: object) -> PositionBookView:
-        """Live view over a store that offers ``get`` and ``all_positions``."""
+    def from_store(cls, store: _ReadableBook) -> PositionBookView:
+        """Live view over a store that offers ``all_positions``."""
 
         def quantities() -> Mapping[str, float]:
-            all_pos = store.all_positions()  # type: ignore[attr-defined]
+            all_pos = store.all_positions()
             return {sym: float(pos.quantity) for sym, pos in all_pos.items()}
 
         def positions() -> Mapping[str, Position]:
-            return store.all_positions()  # type: ignore[attr-defined]
+            snapshot: Mapping[str, Position] = store.all_positions()
+            return snapshot
 
         return cls(_quantities=quantities, _positions=positions)
 
