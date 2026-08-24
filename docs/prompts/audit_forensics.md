@@ -84,7 +84,7 @@ fills + durable Signal / intent provenance (trend_mechanism, expected_half_life,
 - `src/feelies/storage/trade_journal.py` — durable mechanism/regime fill provenance
 - `src/feelies/forensics/decay_detector.py` — drift detection
 - `src/feelies/forensics/analyzer.py` — orchestration / reporting
-- `src/feelies/alpha/fill_attribution.py` — fill → alpha lineage
+- `src/feelies/portfolio/fill_attribution.py` — fill → alpha lineage
 
 ### Trigger surface
 

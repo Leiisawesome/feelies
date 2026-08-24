@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from feelies.alpha.discovery import load_and_register
-from feelies.alpha.fill_attribution import FillAttributionLedger
+from feelies.portfolio.fill_attribution import FillAttributionLedger
 from feelies.alpha.layer_validator import validate_decouple_symbol_scope
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.portfolio_layer_module import (
@@ -106,6 +106,7 @@ from feelies.monitoring.in_memory import (
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.buying_power import BuyingPowerConfig
@@ -487,7 +488,9 @@ def build_platform(
     tilted_sizer = EdgeWeightedSizer(
         base_sizer,
         sizer_tilt_config,
-        inventory_provider=lambda symbol: position_store.get(symbol).quantity,
+        inventory_provider=lambda symbol: int(
+            PositionBookView.from_store(position_store).get(symbol)
+        ),
     )
     position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
     # Live tilted sizing may exceed the base size, so surface it at startup.
@@ -1638,10 +1641,16 @@ def _create_composition_layer(
     def _position_lookup(strategy_id: str, symbol: str) -> float:
         # Turnover is strategy-scoped; market marks remain shared by symbol.
         pos = strategy_positions.get(strategy_id, symbol)
+        slice_book = PositionBookView.from_quantities(
+            {
+                sym: float(p.quantity)
+                for sym, p in strategy_positions.open_positions(strategy_id).items()
+            }
+        )
         mark = position_store.latest_mark(symbol)
         if mark is None:
             mark = pos.avg_entry_price
-        return float(int(pos.quantity) * Decimal(mark))
+        return float(int(slice_book.get(symbol)) * Decimal(mark))
 
     engine = CompositionEngine(
         bus=bus,

@@ -59,14 +59,15 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/cost_arithmetic.py": "audit_signal_alpha",
     "alpha/arbitration.py": "audit_signal_alpha",
     "alpha/portfolio_layer_module.py": "audit_composition",
-    "alpha/fill_attribution.py": "audit_forensics",
     "alpha/risk_wrapper.py": "audit_risk_engine",
     # ── portfolio/ ──────────────────────────────────────────────────
     "portfolio/cross_sectional_tracker.py": "audit_composition",
+    "portfolio/fill_attribution.py": "audit_forensics",
     "portfolio/position_store.py": "audit_position_management",
     "portfolio/memory_position_store.py": "audit_position_management",
     "portfolio/strategy_position_store.py": "audit_position_management",
     "portfolio/lot_ledger.py": "audit_position_management",
+    "portfolio/position_book_view.py": "audit_position_management",
     # ── storage/ overrides (PnL fill journal) ───────────────────────
     "storage/trade_journal.py": "audit_position_management",
     "storage/memory_trade_journal.py": "audit_position_management",

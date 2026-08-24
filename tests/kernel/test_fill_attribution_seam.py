@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from feelies.alpha.fill_attribution import FillAttributionLedger
+from feelies.portfolio.fill_attribution import FillAttributionLedger
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     OrderAck,

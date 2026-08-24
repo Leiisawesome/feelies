@@ -21,13 +21,13 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from feelies.alpha.fill_attribution import FillAttributionLedger
+    from feelies.portfolio.fill_attribution import FillAttributionLedger
     from feelies.alpha.registry import AlphaRegistry
     from feelies.composition.engine import CompositionEngine
     from feelies.risk.hazard_exit import HazardExitController
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
-from feelies.alpha.fill_attribution import largest_remainder_split, split_fees
+from feelies.portfolio.fill_attribution import largest_remainder_split, split_fees
 from feelies.alpha.arbitration import (
     EdgeWeightedArbitrator,
     SignalArbitrator,
@@ -153,6 +153,7 @@ from feelies.monitoring.latency_budget import (
 )
 from feelies.monitoring.paper_session_recorder import PaperSessionRecorder
 from feelies.monitoring.telemetry import MetricCollector
+from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
@@ -722,8 +723,8 @@ class Orchestrator:
         return self._trade_journal
 
     @property
-    def position_store(self) -> PositionStore:
-        return self._positions
+    def position_store(self) -> PositionBookView:
+        return PositionBookView.from_store(self._positions)
 
     @property
     def lot_ledger(self) -> LotLedger:
@@ -785,7 +786,7 @@ class Orchestrator:
         bind = getattr(router, "bind_position_qty", None)
         if not callable(bind):
             return
-        bind(lambda sym: self._positions.get(sym).quantity)
+        bind(lambda sym: int(PositionBookView.from_store(self._positions).get(sym)))
 
     def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
         """Switch buying-power phase at each resolved RTH close.
@@ -4022,7 +4023,7 @@ class Orchestrator:
         Single-slice orders self-attribute; symbol-net exits allocate across live slices."""
         if self._fill_ledger is None or not _order_owns_one_slice(order):
             return
-        from feelies.alpha.fill_attribution import AlphaContribution, AttributionRecord
+        from feelies.portfolio.fill_attribution import AlphaContribution, AttributionRecord
 
         self._fill_ledger.record(
             AttributionRecord(

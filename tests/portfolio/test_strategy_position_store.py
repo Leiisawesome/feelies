@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from types import MappingProxyType
 
 import pytest
 
+from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
 
@@ -159,6 +161,11 @@ class TestAsAggregate:
         all_pos = agg.all_positions()
         assert set(all_pos.keys()) == {"AAPL", "MSFT"}
 
+    def test_all_aggregate_positions_keys_are_sorted(self, store: StrategyPositionStore) -> None:
+        store.update("a", "MSFT", 50, Decimal("20"))
+        store.update("b", "AAPL", 100, Decimal("10"))
+        assert list(store.all_aggregate_positions().keys()) == ["AAPL", "MSFT"]
+
     def test_total_exposure_delegates(self, store: StrategyPositionStore) -> None:
         store.update("a", "AAPL", 100, Decimal("10"))
         agg = store.as_aggregate()
@@ -168,3 +175,15 @@ class TestAsAggregate:
         agg = store.as_aggregate()
         with pytest.raises(RuntimeError, match="Cannot update aggregate view"):
             agg.update("AAPL", 100, Decimal("10"))
+
+
+class TestPositionBookViewSubstitution:
+    def test_item_assignment_is_unconstructible(self) -> None:
+        view = PositionBookView.from_quantities({"AAPL": 10.0})
+        with pytest.raises(TypeError):
+            view["AAPL"] = 0.0  # type: ignore[index]
+        mapping = view.as_mapping()
+        assert isinstance(mapping, MappingProxyType)
+        with pytest.raises(TypeError):
+            mapping["AAPL"] = 0.0  # type: ignore[index]
+        assert not hasattr(view, "__setitem__")

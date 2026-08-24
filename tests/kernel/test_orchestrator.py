@@ -418,6 +418,18 @@ def _build_orchestrator(
     )
 
 
+def test_position_store_property_is_read_only_view() -> None:
+    from feelies.portfolio.position_book_view import PositionBookView
+
+    clock = SimulatedClock(start_ns=1000)
+    orch = _build_orchestrator(clock)
+    view = orch.position_store
+    assert isinstance(view, PositionBookView)
+    assert view.get("AAPL") == 0.0
+    with pytest.raises(TypeError):
+        view["AAPL"] = 0.0  # type: ignore[index]
+
+
 def _boot_to_ready(orch: Orchestrator) -> None:
     """Boot orchestrator: INIT → DATA_SYNC → READY."""
     config = _MinimalConfig()
@@ -1490,7 +1502,7 @@ class TestForcedExitReasonClassification:
         siphoned the closing ``realized_pnl`` out of that alpha's evidence, biasing
         every per-alpha estimator upward (Inv-3 / Inv-13).
         """
-        from feelies.alpha.fill_attribution import FillAttributionLedger
+        from feelies.portfolio.fill_attribution import FillAttributionLedger
         from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
         alpha_id = "sig_alpha_v1"
@@ -1648,7 +1660,7 @@ class TestStrategyFillDistribution:
         Quantising each share to the cent leaves a residue; it goes to the last
         non-zero allocation. Asserted as an outcome on ``cumulative_fees`` rather
         than on which store call delivers it — the kernel and the ledger now share
-        one fee split (``alpha.fill_attribution.split_fees``), so the remainder
+        one fee split (``portfolio.fill_attribution.split_fees``), so the remainder
         rides the allocation itself instead of a separate ``debit_fees``.
         """
         clock = SimulatedClock(start_ns=1000)
