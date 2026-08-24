@@ -4215,5 +4215,134 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-20.json,
                  baseline_post-S-20.json, this ledger entry.
 
+---
+
+## S-21  2026-08-24T10:52:27+08:00
+  STEP:          S-21
+  BASE:          0a6fe518dfae3f6ae9784425e159c910ebef49b2
+  RESULT SHA:    5d37eebf2a2e48712dfd70357b4861bd7d50f20e
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. S2/S12/S14 held before
+                 and after (S2/S14 re-run immediately after
+                 commit 3).
+                 S2: 1 passed, 1 xfailed (G40) -> 1 passed, 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed; 12x98 matrix unchanged
+                 (class name, not module path).
+                 kernel: 390 passed. portfolio: 52 passed.
+                 conformance 81 passed / 8 xfailed (no XPASS).
+                 mypy src/feelies: Success, 203 source files.
+  TESTS:         4870 passed / 0 failed / 19 skipped / 8 xfailed
+                 -> 4873 passed / 0 failed / 19 skipped / 8 xfailed
+                 (post-S-21 capture GREEN). not-paper_rth: 4872
+                 passed, 6 skipped, 14 deselected, 8 xfailed,
+                 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes,
+                 EXPECTED_MANIFEST_FINGERPRINT, and all 64 scanned
+                 constants | actual 64/64 identical (pre-S-21 vs
+                 post-S-21); 0 moved at any of the five commits
+                 | MATCH.
+  FILES:         12 declared after plan amend c737efe on
+                 arch/exec (9 original plus docs/prompts/
+                 audit_forensics.md, docs/prompts/README.md,
+                 tests/docs/test_prompt_coverage_map.py), 12
+                 committed (clean vs 5d37eeb). fill_attribution
+                 is one move (R100). Fifth commit is the three
+                 coverage files only.
+  NET DELTA:     declared src modules 0 (G.10-exempt view),
+                 public symbols +1 -0, branch points +2 inside
+                 the exempt view, 0 outside, orchestrator
+                 lines -~250
+                 actual modules 202 -> 203 (+1)
+                 public_symbols 567 -> 568 (+1)
+                 sloc 45507 -> 45561 (+54)
+                 n_edges 636 -> 638
+                 n_modules 164 -> 165
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines 5207 -> 5208 (+1)
+                 orchestrator methods 114 -> 114
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   Four checks: FILES 12/12 CLEAN against the
+                 amended plan; PARITY moved 0 holds; TESTS
+                 4870->4873 passed, 0 failed; NET DELTA +1
+                 module / +1 symbol (G.10 view), compare-by-eye.
+                 CLEAN, blast radius boundary -- human gate
+                 required.
+  NOTES:         Five commits. Four implementation in the
+                 block's order, plus a fifth docs-only commit
+                 repairing what the move invalidated. No hash
+                 moved at any point; 28 replay hashes, the
+                 fingerprint and all 64 constants unmoved.
+                 The view is portfolio/position_book_view.py --
+                 PositionBookView, a read-only quantity surface
+                 exposing get, as_mapping, __contains__ and
+                 all_positions. No __setitem__ and no accessor
+                 returning a mutable dict, so
+                 current_positions[s] = 0.0 is a mypy error and
+                 a runtime TypeError rather than a discouraged
+                 habit. That is the half S-05 left open: S-05
+                 fixed the silent-flat handler, S-21 makes the
+                 failure shape unconstructible.
+                 Eight call sites adopted, none of which mutated
+                 the mapping today -- the view closes a latent
+                 shape, not an active defect. Commit 3 moved
+                 alpha/fill_attribution.py to
+                 portfolio/fill_attribution.py and dropped the
+                 alpha re-export; S2 and S14 were re-run
+                 immediately after and held, S14's matrix
+                 unchanged because it reads class names not
+                 module paths. No no-any-return encountered.
+                 StrategyPositionStore.all_aggregate_positions
+                 now returns sorted keys, removing an Inv-5
+                 dict-ordering dependency; substrate's
+                 unsorted-mapping count fell 134 -> 133.
+                 NET DELTA: +1 module and +1 public symbol,
+                 both the G.10 view; branch points +2 inside
+                 it, 0 outside.
+                 Order: 7535e87 (view), bde2c75 (adopt + sorted
+                 keys), 3c0b920 (move + drop re-export),
+                 6a0f053 (unconstructible), 5d37eeb (prompt
+                 coverage).
+  FINDINGS:      Wave D: a package move breaks bindings that no
+                 source scan sees. tests/docs/
+                 test_prompt_coverage_map.py maintains a
+                 _FILE_OWNERS map and tests/docs/
+                 test_internal_links.py resolves path citations
+                 in docs/prompts/. The move failed four of
+                 them, none in FILES, and neither S2 nor S14
+                 could have caught it -- one reads the import
+                 graph, the other reads class names. Every
+                 remaining wave-D step that moves or renames a
+                 module must declare those three files.
+                 Owners assigned deliberately:
+                 portfolio/fill_attribution.py to
+                 audit_forensics, because its job is Inv-1 /
+                 Inv-13 fill-to-alpha lineage rather than
+                 ledger math; portfolio/position_book_view.py
+                 to audit_position_management, alongside
+                 position_store and strategy_position_store.
+                 The three kernel accounting methods named in
+                 DELETES were not extracted (114 -> 114); this
+                 landing is the view, the move, and the
+                 coverage repair.
+                 Carried: copying a body onto `self: Any`
+                 erases class narrowing (S-20); G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id test (S-04c);
+                 serialization.py missing __schema_version__
+                 tag as current version (fail-open); ci.yml
+                 G40 continue-on-error: true until G40;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); 11
+                 UNIT_UNDETERMINED block S-24; accepted
+                 baseline failure set is the four exempted
+                 tests; R6 14/31 resets.
+  NEXT:          S-22 move sizing, escalation and emergency
+                 flatten out of the kernel (boundary). Not
+                 started. Do not begin S-22.
+                 Left uncommitted: baseline_pre-S-21.json,
+                 baseline_post-S-21.json, this ledger entry.
+
 
 
