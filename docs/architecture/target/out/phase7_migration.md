@@ -2191,59 +2191,75 @@ PARITY IMPACT:   All 64 constants hold. No Event field add or delete
                  drop the emergency-flatten lex sort. R1 under
                  PYTHONHASHSEED=random is the test that the set-comprehension
                  is gone and that no hashed payload observed the old order.
-DELETES:         3 kernel accounting methods (114 -> 111);
-                 src/feelies/alpha/fill_attribution.py from engine 5's package
+DELETES:         src/feelies/alpha/fill_attribution.py from engine 5's package
                  (re-export from alpha/__init__.py is a decision: drop or
                  shim — pick one in the step, do not leave both); the
                  set-comprehension at strategy_position_store.py:145-148.
                  Not deleted: orchestrator.py:2454; not 36 store calls
-                 (retargeted, not removed); not the two .values() sums.
+                 (retargeted, not removed); not the two .values() sums;
+                 not _record_fill_attribution, _reconcile_fills, or
+                 _distribute_fill_to_strategies — they remain on
+                 Orchestrator (114 -> 114) for a later engine-7
+                 extraction; no later step currently names them.
 NET DELTA:       src modules 0 (fill_attribution.py moves; position_book_view.py
                  is the §G.10-exempt contract definition, public symbols
                  **+1 -0**). branch points **+2, both inside the exempt view**
                  (__contains__ isinstance check, all_positions None check);
                  0 outside it -- no new branch in orchestrator, bootstrap or
                  strategy_position_store.
-ROLLBACK:        revert. The read-only view disappears and the three methods
-                 return. Ship as its own release.
 ```
 
 ```
 STEP:            S-22
 CLOSES:          G22
 PROBLEM:         Sizing, escalation and emergency flatten are in the kernel —
-                 `_compute_target_quantity:2718`, `_escalate_risk:2530`,
-                 `_emergency_flatten_all:2601`,
-                 `_maybe_flip_buying_power_at_rth_close:782`. Risk policy cannot
+                 `_compute_target_quantity:2562`, `_escalate_risk:2374`,
+                 `_emergency_flatten_all:2445`,
+                 `_maybe_flip_buying_power_at_rth_close:791`. Risk policy cannot
                  be reviewed, tested or versioned as a unit. Inv-8; CORE §J.4
-                 policy in mechanics.
-FILES:           src/feelies/kernel/orchestrator.py (4 methods)
-                 src/feelies/risk/
-                 src/feelies/alpha/risk_wrapper.py -> src/feelies/risk/
+                 policy in mechanics. `_escalate_risk:2433` and
+                 `_emergency_flatten_all:2461` draw `self._seq` (S-13).
+FILES:           src/feelies/kernel/orchestrator.py (4 methods; keep both
+                 `self._seq.next()` draws on the orchestrator generator)
+                 src/feelies/alpha/risk_wrapper.py -> src/feelies/risk/risk_wrapper.py
+                 src/feelies/alpha/__init__.py
+                 src/feelies/bootstrap.py
+                 src/feelies/risk/engine.py
+                 src/feelies/risk/basic_risk.py
+                 tools/arch/perfmeasure.py
+                 tests/kernel/test_orchestrator.py
+                 tests/alpha/test_risk_wrapper.py
+                 tests/conformance/test_per_alpha_budget.py
+                 tests/bootstrap/test_per_alpha_risk_budget_wiring.py
+                 docs/prompts/audit_risk_engine.md
+                 docs/prompts/README.md
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 Do not declare src/feelies/risk/ as a directory scope.
 WHY THIS OWNER:  Phase 2 engine 8 owns the veto and it is monotone: every path
                  yields `min(asked, permitted)`. That property is provable only
                  if every path is in one place. The per-alpha wrapper moves here
                  too — S-06 fixed its failure direction; this step fixes its
                  address.
-REFACTOR PATH:   the common shape. Land X1 in this step, not earlier: X1 is a
-                 property over the **enumerable** degradation set, and that
-                 enumeration is the gate registry from S-11 plus this step's
-                 consolidated ON-DEGRADED-INPUT table. Also land X2's
-                 monotonicity property — for any input, permitted <= requested,
-                 and `_compose_scaled_quantity` never produces a factor
-                 exceeding either input's.
+REFACTOR PATH:   … Draw-sequence last among the four: `_emergency_flatten_all`
+                 then `_escalate_risk`. For the S-20 finding: annotate the
+                 sizer-derived return of `_compute_target_quantity` before
+                 returning (`self._position_sizer` on `self: Any` is
+                 no-any-return). `_compose_scaled_quantity:3270` is a
+                 staticmethod cited for X2; it is not one of the four moves
+                 unless FILES is amended to say so.
 BLAST RADIUS:    boundary
 VALIDATED BY:    X1, X2, X3 (from S-02, must still pass), X4, `risk_verdict`,
                  `level4_hazard_exit_order`, `decoupled_risk_flatten_order`,
                  the oracle
-PARITY IMPACT:   All 26 hold. Pure move. **Note the two baselines that make this
-                 step's boundary ambiguous:** `level4_hazard_exit_order` and
-                 `decoupled_risk_flatten_order` are *orders*, so engine 8's
-                 parity coverage today partly pins output that S-23 says belongs
-                 to engine 9. They hold here and re-pin in S-23. That is the
-                 declared sequence, not a surprise.
-DELETES:         4 methods from the orchestrator (108 -> 104);
-                 `src/feelies/alpha/risk_wrapper.py` from engine 5's package
+PARITY IMPACT:   All 28 replay hashes, EXPECTED_MANIFEST_FINGERPRINT, and all
+                 64 scanned constants hold. No Event subclass. Sequence draws
+                 stay on the orchestrator stream (S-13); a moved hash means a
+                 draw was added, dropped, or reordered. `level4_hazard_exit_order`
+                 and `decoupled_risk_flatten_order` hold here and re-pin in S-23.
+DELETES:         4 methods from the orchestrator (114 -> 110);
+                 src/feelies/alpha/risk_wrapper.py from engine 5's package
+                 (re-export from alpha/__init__.py: drop or shim, not both).
 NET DELTA:       src modules 0 (one moves), public symbols 0, branch points 0.
                  Orchestrator lines -~200.
 ROLLBACK:        revert.
