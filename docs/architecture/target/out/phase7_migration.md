@@ -2141,6 +2141,9 @@ FILES:           src/feelies/kernel/orchestrator.py
                  tests/kernel/test_fill_attribution_seam.py
                  tests/kernel/test_orchestrator.py
                  tests/portfolio/test_strategy_position_store.py
+                 docs/prompts/audit_forensics.md
+                 docs/prompts/README.md
+                 tests/docs/test_prompt_coverage_map.py (_FILE_OWNERS)
 WHY THIS OWNER:  Engine 7 is the sole book of record. Split the work: (A) the
                  S-19/S-20 extraction of the three methods plus the package
                  move of fill_attribution.py; (B) a read-only view type whose
