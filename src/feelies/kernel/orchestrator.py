@@ -21,13 +21,13 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from feelies.alpha.fill_attribution import FillAttributionLedger
+    from feelies.portfolio.fill_attribution import FillAttributionLedger
     from feelies.alpha.registry import AlphaRegistry
     from feelies.composition.engine import CompositionEngine
     from feelies.risk.hazard_exit import HazardExitController
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
-from feelies.alpha.fill_attribution import largest_remainder_split, split_fees
+from feelies.portfolio.fill_attribution import largest_remainder_split, split_fees
 from feelies.alpha.arbitration import (
     EdgeWeightedArbitrator,
     SignalArbitrator,
@@ -4023,7 +4023,7 @@ class Orchestrator:
         Single-slice orders self-attribute; symbol-net exits allocate across live slices."""
         if self._fill_ledger is None or not _order_owns_one_slice(order):
             return
-        from feelies.alpha.fill_attribution import AlphaContribution, AttributionRecord
+        from feelies.portfolio.fill_attribution import AlphaContribution, AttributionRecord
 
         self._fill_ledger.record(
             AttributionRecord(

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from feelies.alpha.discovery import load_and_register
-from feelies.alpha.fill_attribution import FillAttributionLedger
+from feelies.portfolio.fill_attribution import FillAttributionLedger
 from feelies.alpha.layer_validator import validate_decouple_symbol_scope
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.portfolio_layer_module import (
