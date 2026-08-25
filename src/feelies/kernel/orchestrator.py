@@ -49,6 +49,7 @@ from feelies.core.errors import (
 from feelies.core.events import (
     Alert,
     AlertSeverity,
+    DeRiskRequirement,
     Event,
     HorizonTick,
     LatencyBreach,
@@ -594,8 +595,10 @@ class Orchestrator:
         # Hazard IDs remain deduplicated after terminal orders leave _active_orders.
         self._hazard_submitted_order_ids: set[str] = set()
 
-        # Route only controller-authored hazard exits. The handler submits,
-        # acknowledges, and reconciles without republishing the bus order.
+        # Route only controller-authored hazard exits. DeRiskRequirement is
+        # converted to an outbound OrderRequest (author sequence copied);
+        # the inbound OrderRequest subscribe remains until authors retarget.
+        self._bus.subscribe(DeRiskRequirement, self._on_bus_derisk_requirement)
         self._bus.subscribe(OrderRequest, self._on_bus_hazard_order)
 
     # ── Optional SIGNAL → order diagnostic sink ─────────────────────
@@ -4629,6 +4632,34 @@ class Orchestrator:
             self._pending_sized_intents.append(event)
         else:
             self._submit_portfolio_leg_without_micro_walk(event, event.correlation_id)
+
+    def _order_request_from_derisk(self, event: DeRiskRequirement) -> OrderRequest:
+        """Copy the author's envelope and payload; fill MARKET. No sequence draw."""
+        return OrderRequest(
+            timestamp_ns=event.timestamp_ns,
+            correlation_id=event.correlation_id,
+            sequence=event.sequence,
+            source_layer=event.source_layer,
+            order_id=event.order_id,
+            symbol=event.symbol,
+            side=event.side,
+            order_type=OrderType.MARKET,
+            quantity=event.quantity,
+            strategy_id=event.strategy_id,
+            reason=event.reason,
+        )
+
+    def _on_bus_derisk_requirement(self, event: Event) -> None:
+        """Publish an outbound OrderRequest for a risk-layer de-risk command.
+
+        Sequence and order_id are the author's. The inbound OrderRequest
+        handler still submits until that subscribe is deleted.
+        """
+        if not isinstance(event, DeRiskRequirement):
+            return
+        if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
+            return
+        self._bus.publish(self._order_request_from_derisk(event))
 
     # Import the controller's signature so hazard filtering cannot drift.
 
