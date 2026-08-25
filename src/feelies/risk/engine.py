@@ -9,18 +9,26 @@ signal-to-execution path exists.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Any, Protocol
 
 from feelies.core.events import (
+    AlertSeverity,
     NBBOQuote,
+    OrderAckStatus,
     OrderRequest,
+    OrderType,
     RiskVerdict,
+    Side,
     Signal,
     SizedPositionIntent,
 )
+from feelies.core.identifiers import derive_order_id
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
+
+logger = logging.getLogger(__name__)
 
 
 class RiskEngine(Protocol):
@@ -165,3 +173,98 @@ def _maybe_flip_buying_power_at_rth_close(self: Any, quote: NBBOQuote) -> None:
 
     set_phase(BuyingPowerPhase.OVERNIGHT)
     self._rth_close_bp_flipped = True
+
+
+def _emergency_flatten_all(
+    self: Any,
+    correlation_id: str,
+) -> tuple[dict[str, str], dict[str, int]]:
+    """Cancel resting orders and submit market exits for every open position."""
+    positions = self._positions.all_positions()
+    failures: dict[str, str] = {}
+    # Iterate in lexicographic symbol order so the emitted
+    # OrderRequest stream is bit-identical across replays even
+    # when the position store's insertion order differs (Inv-5).
+    for symbol in sorted(positions):
+        pos = positions[symbol]
+        if pos.quantity == 0:
+            continue
+        side = Side.SELL if pos.quantity > 0 else Side.BUY
+        qty = abs(pos.quantity)
+        seq = self._seq.next()
+        order_id = derive_order_id(f"emergency_flatten:{correlation_id}:{symbol}:{seq}")
+
+        order = OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=seq,
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=qty,
+            strategy_id="emergency_flatten",
+            # Price lockdown fills with panic slippage and depleted depth.
+            reason="FORCE_FLATTEN",
+        )
+
+        try:
+            self._track_order(order_id, side, order)
+            submit_exc = self._submit_tracked_order(
+                order,
+                trigger="emergency_flatten",
+            )
+            if submit_exc is not None:
+                failures[symbol] = f"submit_exception: {submit_exc!r}"
+                continue
+
+            self._bus.publish(order)
+            acks = self._settle_router_acks(correlation_id, expected_order_ids={order_id})
+            # A reject / zero-fill ack still leaves the position open.
+            # Surface it as a failure so the residual alert sees it.
+            non_fill_acks = [
+                a
+                for a in acks
+                if a.order_id == order_id
+                and (a.filled_quantity or 0) == 0
+                and a.status in (OrderAckStatus.REJECTED, OrderAckStatus.CANCELLED)
+            ]
+            if non_fill_acks:
+                failures[symbol] = (
+                    f"{non_fill_acks[0].status.name}: {non_fill_acks[0].reason or 'no reason'}"
+                )
+        except Exception as exc:
+            logger.exception(
+                "Emergency flatten failed for %s (qty=%d) -- "
+                "position may remain open at LOCKED",
+                symbol,
+                pos.quantity,
+            )
+            failures[symbol] = f"submit_exception: {exc!r}"
+            if order_id in self._active_orders:
+                self._force_order_terminal_after_pipeline_error(
+                    order,
+                    exc,
+                    context="emergency_flatten",
+                )
+
+    residual: dict[str, int] = {
+        sym: p.quantity
+        for sym, p in self._positions.all_positions().items()
+        if p.quantity != 0
+    }
+    if residual or failures:
+        msg = (
+            f"Emergency flatten incomplete — residual positions: "
+            f"{residual}, total_exposure={self._positions.total_exposure()}, "
+            f"failures={failures}"
+        )
+        logger.critical(msg)
+        self._publish_alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            severity=AlertSeverity.CRITICAL,
+            alert_name="emergency_flatten_incomplete",
+            message=msg,
+        )
+    return failures, residual
