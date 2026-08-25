@@ -398,7 +398,7 @@ def test_scanner_sees_dict_and_underscore_bindings(tmp_path: Path) -> None:
 # ``StrategyPositionStore`` or hashes order/state streams rather than the journal,
 # so per-strategy re-attribution was invisible to the whole corpus. See
 # ``test_forced_exit_attribution_replay.py``.
-EXPECTED_MANIFEST_FINGERPRINT = "82fac390f76c84734eed4d13f0fe82ae9d56d070eeb0f4c4d3854bdff0eab5a1"
+EXPECTED_MANIFEST_FINGERPRINT = "43df4a99d9b460b31a3b51f96df9dfb863369017b6b7367a0b06bfd9ca54eeab"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:

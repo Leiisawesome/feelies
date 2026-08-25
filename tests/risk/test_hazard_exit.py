@@ -9,7 +9,7 @@ from hypothesis import given, settings, strategies as st
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    OrderRequest,
+    DeRiskRequirement,
     RegimeHazardSpike,
     Trade,
 )
@@ -28,7 +28,7 @@ def _build_controller(
     HazardExitController,
     MemoryPositionStore,
     EventBus,
-    list[OrderRequest],
+    list[DeRiskRequirement],
 ]:
     bus = EventBus()
     store = MemoryPositionStore()
@@ -41,8 +41,8 @@ def _build_controller(
                 timestamp_ns=opened_at_ns,
             )
 
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
 
     controller = HazardExitController(
         bus=bus,
@@ -62,7 +62,7 @@ def _build_controller(
     return controller, store, bus, received
 
 
-def _serialize(orders: list[OrderRequest]) -> str:
+def _serialize(orders: list[DeRiskRequirement]) -> str:
     rows = []
     for o in orders:
         d = {
@@ -135,8 +135,8 @@ def test_min_age_safeguard_blocks_premature_exit():
     bus2 = EventBus()
     store2 = MemoryPositionStore()
     store2.update("AAPL", 100, Decimal("100"), timestamp_ns=2_000_000_000)
-    received: list[OrderRequest] = []
-    bus2.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus2.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     controller = HazardExitController(
         bus=bus2,
         sequence_generator=SequenceGenerator(),
@@ -173,8 +173,8 @@ def test_min_age_safeguard_allows_exit_at_exact_threshold():
     bus = EventBus()
     store = MemoryPositionStore()
     store.update("AAPL", 100, Decimal("100"), timestamp_ns=2_000_000_000)
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     controller = HazardExitController(
         bus=bus,
         sequence_generator=SequenceGenerator(),
@@ -259,8 +259,8 @@ def test_hard_exit_age_uses_new_open_episode_after_sign_flip():
     reverse_ts_ns = 700 * 1_000_000_000
     store.update("AAPL", -200, Decimal("99"), timestamp_ns=reverse_ts_ns)
 
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     controller = HazardExitController(
         bus=bus,
         sequence_generator=SequenceGenerator(),
@@ -660,8 +660,8 @@ def _controller_with_regimes(applies, seed=("AAPL", 100, 1_000_000_000)):
     store = MemoryPositionStore()
     if seed:
         store.update(seed[0], seed[1], Decimal("100"), timestamp_ns=seed[2])
-    out: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, out.append)  # type: ignore[arg-type]
+    out: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, out.append)  # type: ignore[arg-type]
     controller = HazardExitController(
         bus=bus,
         sequence_generator=SequenceGenerator(start=10_000),

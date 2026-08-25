@@ -16,8 +16,7 @@ from typing import Mapping
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    OrderRequest,
-    OrderType,
+    DeRiskRequirement,
     RegimeHazardSpike,
     Side,
     Trade,
@@ -31,7 +30,7 @@ _logger = logging.getLogger(__name__)
 _DEFAULT_HAZARD_SCORE_THRESHOLD: float = 0.85
 _DEFAULT_MIN_AGE_SECONDS: int = 30
 
-# ── Hazard-exit OrderRequest signature (single source of truth) ──────────
+# ── Hazard-exit DeRiskRequirement signature (single source of truth) ─────
 # Export the controller signature used by the orchestrator's hazard bridge.
 HAZARD_EXIT_SOURCE_LAYER: str = "RISK"
 HAZARD_EXIT_REASON_SPIKE: str = "HAZARD_SPIKE"
@@ -241,7 +240,7 @@ class HazardExitController:
 
         order_id = derive_order_id(f"{correlation_id}:{trigger_ts_ns}:{symbol}:{reason}")
 
-        order = OrderRequest(
+        req = DeRiskRequirement(
             timestamp_ns=trigger_ts_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
@@ -249,14 +248,13 @@ class HazardExitController:
             order_id=order_id,
             symbol=symbol,
             side=side,
-            order_type=OrderType.MARKET,
             quantity=quantity,
             strategy_id=strategy_id,
             reason=reason,
         )
         self._emitted_for_episode.add(key)
         self._pending_exit_symbols[symbol] = (opened, position.quantity)
-        self._bus.publish(order)
+        self._bus.publish(req)
         _logger.info(
             "HazardExitController emitted %s exit for %s (strategy=%s, qty=%d, side=%s)",
             reason,
