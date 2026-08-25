@@ -311,7 +311,7 @@ class TestComposerSignatureRouted:
             bus.publish(_composer_order(reason=reason, order_id=f"cx-{reason}"))
 
             assert [o.reason for o in router.submitted] == [reason], (
-                f"composer reason {reason!r} was not routed by Orchestrator._on_bus_hazard_order"
+                f"composer reason {reason!r} was not routed by Orchestrator._on_bus_derisk_requirement"
             )
 
 

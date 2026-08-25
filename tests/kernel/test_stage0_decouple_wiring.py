@@ -268,7 +268,7 @@ def test_bridge_routes_every_reason_from_every_risk_layer_exit_author() -> None:
     """Each author's writer set must be a subset of what the bridge routes.
 
     Regression: ``MAX_HOLD_AFTER_SAFE_OFF`` and ``SESSION_FLATTEN`` were dropped
-    at ``Orchestrator._on_bus_hazard_order``'s reason filter, so the bounded
+    at ``Orchestrator._on_bus_derisk_requirement``, so the bounded
     deferral could never reach the execution backend.
     """
     for writer_set, name in (
@@ -290,7 +290,7 @@ def test_each_deferral_reason_reaches_the_router(reason: str) -> None:
     bus.publish(_composer_order(reason=reason, order_id=f"dc-{reason}"))
 
     assert [o.reason for o in router.submitted] == [reason], (
-        f"deferral-cap reason {reason!r} was silently dropped by Orchestrator._on_bus_hazard_order"
+        f"deferral-cap reason {reason!r} was silently dropped by Orchestrator._on_bus_derisk_requirement"
     )
 
 
