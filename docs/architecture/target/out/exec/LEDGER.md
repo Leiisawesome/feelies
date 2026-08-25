@@ -4344,5 +4344,132 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-21.json,
                  baseline_post-S-21.json, this ledger entry.
 
+---
 
+## S-22  2026-08-25T09:37:07+08:00
+  STEP:          S-22
+  BASE:          1de32443eed50364c0b1da3d95dee470e9816d6a
+  RESULT SHA:    054ba2aab3ff10ca40b599ec0ba8a093ffa5a9fe
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. S2/S12/S14 held before
+                 and after (S2/S14 re-run immediately after
+                 the move commit).
+                 S2: 1 passed, 1 xfailed (G40) -> 1 passed, 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 kernel: 390 passed. risk: 336 passed.
+                 alpha: 441 passed.
+                 conformance 81 passed / 8 xfailed (no XPASS).
+                 mypy src/feelies: Success, 203 source files.
+  TESTS:         4873 passed / 0 failed / 19 skipped / 8 xfailed
+                 -> 4873 passed / 0 failed / 19 skipped / 8 xfailed
+                 (post-S-22 capture GREEN). not-paper_rth: 4872
+                 passed, 6 skipped, 14 deselected, 8 xfailed,
+                 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes,
+                 the manifest fingerprint, and all 64 scanned
+                 constants | actual 64/64 identical (pre-S-22 vs
+                 post-S-22, and vs baseline_post-S-21.json); 0
+                 moved at any of the five commits. level4_hazard_exit_order
+                 and decoupled_risk_flatten_order held | MATCH.
+  FILES:         16 declared, 13 in the commit diff (clean vs
+                 054ba2a). The rename of risk_wrapper is one move
+                 (R100). verify_step counted the rename source as
+                 not-touched and also listed basic_risk.py and
+                 test_internal_links.py as not-touched -- neither
+                 needed an edit. Coverage-map repair landed in the
+                 move commit, not as a trailing fix.
+  NET DELTA:     declared src modules 0 (one moves), public
+                 symbols 0, branch points 0, orchestrator
+                 lines -~200
+                 actual modules 203 -> 203 (+0)
+                 public_symbols 568 -> 568 (+0)
+                 sloc 45561 -> 45576 (+15)
+                 n_edges 638 -> 641
+                 n_modules 165 -> 165
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines 5208 -> 4977 (-231)
+                 orchestrator methods 114 -> 110 (-4)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   Four checks: FILES 16 declared / 13 touched CLEAN
+                 (rename-blind on the source path; parsed
+                 src/feelies/risk/ as a directory scope despite
+                 FILES forbidding it -- frozen); PARITY moved 0
+                 holds; TESTS 4873->4873 passed, 0 failed; NET
+                 DELTA 0/0/+15 sloc, compare-by-eye (oracle still
+                 says "deletions with no negative delta" because
+                 it does not treat sloc or method-count as the
+                 deletion signal -- frozen). CLEAN, blast radius
+                 boundary -- human gate required.
+  NOTES:         Fourth wave-D extraction; first module move since
+                 S-21. Five commits. Four methods then the wrapper
+                 move. Determinism 148 after every one, no hash
+                 moved -- including level4_hazard_exit_order and
+                 decoupled_risk_flatten_order, which hold here and
+                 re-pin in S-23.
+                 Orchestrator 5208 -> 4977 lines (-231),
+                 114 -> 110 methods.
+                 Order: _compute_target_quantity (670e277),
+                 _maybe_flip_buying_power_at_rth_close (b96f59c),
+                 _emergency_flatten_all then _escalate_risk last
+                 because they draw self._seq (db597f4, 20b327d),
+                 then the module move with coverage repair
+                 (054ba2a).
+                 Both self._seq.next() draws stayed on the
+                 orchestrator generator (self is the Orchestrator;
+                 constructions unmoved at orchestrator.py:442 and
+                 :450). A moved hash would have meant a draw was
+                 added, dropped, or reordered; none moved.
+                 SequenceGenerator constructions did not move.
+                 Coverage-map repair landed with the move, not
+                 trailing it. New owner of
+                 risk/risk_wrapper.py is audit_risk_engine,
+                 assigned deliberately: the wrapper is engine 8's
+                 per-alpha veto (min of asked, permitted), which
+                 is the risk-engine audit's subject. It already
+                 had that owner while living in alpha/; the move
+                 aligns address with owner. Not alpha_lifecycle --
+                 it enforces budgets rather than loading
+                 manifests. Explicit _FILE_OWNERS entry so a
+                 future risk/ package split cannot silently
+                 reassign it. Re-export from alpha/__init__.py
+                 dropped, not shimmed.
+                 docs tests after the move: 101 passed, including
+                 test_prompt_coverage_map and test_internal_links.
+  FINDINGS:      verify_step counts a git-mv source as not-touched
+                 and still parses "Do not declare src/feelies/risk/
+                 as a directory scope" as a directory scope.
+                 Worked around; not fixed (frozen).
+                 Stale citations outside FILES, not fixed:
+                 src/feelies/risk/sized_intent_orders.py Sphinx
+                 class ref feelies.alpha.risk_wrapper;
+                 tools/arch/microcost.py path
+                 alpha/risk_wrapper.py:329;
+                 tests/kernel/test_fill_attribution_seam.py
+                 Sphinx class ref. test_internal_links does not
+                 scan those files, so the move stayed green.
+                 no-any-return: _compute_target_quantity annotated
+                 qty: int before returning (plan). _emergency_flatten_all
+                 annotated residual: dict[str, int] (S-20 finding:
+                 dict built from self._positions on self: Any).
+                 mypy Success.
+                 Carried: copying a body onto self: Any erases
+                 class narrowing (S-20); a package move breaks
+                 bindings no source scan sees (S-21); G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id test (S-04c);
+                 serialization.py missing __schema_version__
+                 tag as current version (fail-open); ci.yml
+                 G40 continue-on-error: true until G40;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); 11
+                 UNIT_UNDETERMINED block S-24; accepted
+                 baseline failure set is the four exempted
+                 tests; R6 14/31 resets.
+  NEXT:          S-23 split OrderRequest inbound de-risk into
+                 DeRiskRequirement (platform-wide). Not
+                 started. Do not begin S-23.
+                 Left uncommitted: baseline_pre-S-22.json,
+                 baseline_post-S-22.json, this ledger entry.
 
