@@ -18,7 +18,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 from feelies.bus.event_bus import EventBus
-from feelies.core.events import OrderRequest, SafetyStateChange, Trade
+from feelies.core.events import DeRiskRequirement, SafetyStateChange, Trade
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.session_clock import rth_close_ns, rth_open_ns
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
@@ -67,11 +67,11 @@ def _make(
     session_flatten_enabled: bool = False,
     session_flatten_seconds_before_close: int = 0,
     seq_start: int = 10_000,
-) -> tuple[DeferralCapController, StrategyPositionStore, EventBus, list[OrderRequest]]:
+) -> tuple[DeferralCapController, StrategyPositionStore, EventBus, list[DeRiskRequirement]]:
     bus = EventBus()
     store = store if store is not None else StrategyPositionStore()
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     controller = DeferralCapController(
         bus=bus,
         sequence_generator=SequenceGenerator(start=seq_start),
@@ -130,7 +130,7 @@ def _trade(ts_ns: int, *, symbol: str = _SYMBOL, cid: str | None = None) -> Trad
     )
 
 
-def _serialize(orders: list[OrderRequest]) -> str:
+def _serialize(orders: list[DeRiskRequirement]) -> str:
     return json.dumps(
         [
             {
@@ -550,8 +550,8 @@ def test_deterministic_replay() -> None:
 def test_attach_without_policies_is_noop() -> None:
     bus = EventBus()
     store = StrategyPositionStore()
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     controller = DeferralCapController(
         bus=bus,
         sequence_generator=SequenceGenerator(),

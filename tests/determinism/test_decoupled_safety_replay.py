@@ -49,6 +49,7 @@ from typing import Any, Mapping
 from feelies.alpha.cost_arithmetic import CostArithmetic
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    DeRiskRequirement,
     HorizonFeatureSnapshot,
     OrderRequest,
     OrderType,
@@ -306,7 +307,7 @@ def _build_risk_authors(
 
 
 def _replay_risk_flatten() -> tuple[str, int]:
-    """Composer + deferral flatten ``OrderRequest`` stream from one decoupled log.
+    """Composer + deferral flatten stream from one decoupled log.
 
     Clean transition on ``_SYMBOL`` → composer HOLDs, deferral anchors the clock
     and fires ``MAX_HOLD_AFTER_SAFE_OFF`` on the first trade past the deadline.
@@ -314,8 +315,14 @@ def _replay_risk_flatten() -> tuple[str, int]:
     immediate ``SAFETY_FAIL_CLOSED`` exit.  One log, both authors, both streams.
     """
     bus = EventBus()
-    captured: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, captured.append)  # type: ignore[arg-type]
+    captured: list[DeRiskRequirement | OrderRequest] = []
+
+    def _capture(event: object) -> None:
+        if isinstance(event, (DeRiskRequirement, OrderRequest)):
+            captured.append(event)
+
+    bus.subscribe(DeRiskRequirement, _capture)
+    bus.subscribe(OrderRequest, _capture)
 
     store = StrategyPositionStore()
     _seed_open_book(store)
@@ -337,12 +344,12 @@ def _replay_risk_flatten() -> tuple[str, int]:
     return _hash_order_stream(captured), len(captured)
 
 
-def _hash_order_stream(orders: list[OrderRequest]) -> str:
+def _hash_order_stream(orders: list[DeRiskRequirement | OrderRequest]) -> str:
     lines: list[str] = []
     for o in orders:
         lines.append(
             f"{o.sequence}|{o.timestamp_ns}|{o.order_id}|{o.symbol}|"
-            f"{o.side.name}|{o.order_type.name}|{o.quantity}|"
+            f"{o.side.name}|{o.quantity}|"
             f"{o.strategy_id}|{o.reason}|{o.correlation_id}|"
             f"src={o.source_layer}"
         )
@@ -359,7 +366,7 @@ EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_HASH = (
 EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_COUNT = 1
 
 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH = (
-    "87445b362a294c75abc6c63f2318e99c2d3da359501222b5b281efba4a62ac14"
+    "3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8"
 )
 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_COUNT = 2
 
@@ -432,8 +439,14 @@ def test_two_replays_produce_identical_risk_flatten_hash() -> None:
 def test_risk_flatten_stream_reasons_and_authors() -> None:
     """Sanity guard: composer SAFETY_FAIL_CLOSED + deferral MAX_HOLD, slice-scoped."""
     bus = EventBus()
-    captured: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, captured.append)  # type: ignore[arg-type]
+    captured: list[DeRiskRequirement | OrderRequest] = []
+
+    def _capture(event: object) -> None:
+        if isinstance(event, (DeRiskRequirement, OrderRequest)):
+            captured.append(event)
+
+    bus.subscribe(DeRiskRequirement, _capture)
+    bus.subscribe(OrderRequest, _capture)
     store = StrategyPositionStore()
     _seed_open_book(store)
     _build_risk_authors(store, bus)
