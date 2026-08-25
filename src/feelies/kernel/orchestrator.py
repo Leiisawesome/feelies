@@ -51,7 +51,6 @@ from feelies.core.events import (
     AlertSeverity,
     Event,
     HorizonTick,
-    KillSwitchActivation,
     LatencyBreach,
     MetricEvent,
     MetricType,
@@ -160,6 +159,7 @@ from feelies.risk.engine import (
     RiskEngine,
     _compute_target_quantity,
     _emergency_flatten_all,
+    _escalate_risk,
     _maybe_flip_buying_power_at_rth_close,
 )
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
@@ -1325,7 +1325,7 @@ class Orchestrator:
 
             sized = self._risk_engine.check_sized_intent(intent, self._positions)
             if sized.requires_global_risk_escalation:
-                self._escalate_risk(correlation_id)
+                _escalate_risk(self, correlation_id)
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
                     trigger="portfolio_intent_risk_escalation",
@@ -1407,7 +1407,7 @@ class Orchestrator:
         """Fail-safe submit when micro cannot enter ``RISK_CHECK`` (should be rare)."""
         sized = self._risk_engine.check_sized_intent(intent, self._positions)
         if sized.requires_global_risk_escalation:
-            self._escalate_risk(correlation_id)
+            _escalate_risk(self, correlation_id)
             return
         orders: list[OrderRequest] = list(sized.orders)
         if not orders:
@@ -1778,7 +1778,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._escalate_risk(cid)
+                _escalate_risk(self, cid)
                 self._micro.reset(
                     trigger="pipeline_abort:risk_lockdown",
                     correlation_id=cid,
@@ -1907,7 +1907,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._escalate_risk(cid)
+                _escalate_risk(self, cid)
                 self._micro.reset(
                     trigger="pipeline_abort:check_order_lockdown",
                     correlation_id=cid,
@@ -2344,77 +2344,6 @@ class Orchestrator:
         if self._regime_hazard_detector is not None:
             self._regime_hazard_detector.reset()
 
-    def _escalate_risk(self, correlation_id: str) -> None:
-        """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
-
-        Monotonically tightens safety (platform inv 11).  Once R1
-        (WARNING) is entered, de-escalation is impossible without
-        completing the full cycle to R4 and human unlock.
-
-        At R3 (FORCED_FLATTEN) we attempt to close all non-zero
-        positions via emergency market orders before transitioning
-        to R4 (LOCKED).
-        """
-        level = self._risk_escalation.state
-
-        if level == RiskLevel.NORMAL:
-            self._risk_escalation.transition(
-                RiskLevel.WARNING,
-                trigger="risk_threshold_approaching",
-                correlation_id=correlation_id,
-            )
-            level = RiskLevel.WARNING
-
-        if level == RiskLevel.WARNING:
-            self._risk_escalation.transition(
-                RiskLevel.BREACH_DETECTED,
-                trigger="risk_breach_confirmed",
-                correlation_id=correlation_id,
-            )
-            level = RiskLevel.BREACH_DETECTED
-
-        if level == RiskLevel.BREACH_DETECTED:
-            self._risk_escalation.transition(
-                RiskLevel.FORCED_FLATTEN,
-                trigger="forced_flatten_initiated",
-                correlation_id=correlation_id,
-            )
-            level = RiskLevel.FORCED_FLATTEN
-
-        if level == RiskLevel.FORCED_FLATTEN:
-            failures, residual = _emergency_flatten_all(self, correlation_id)
-            flatten_clean = not failures and not residual
-            self._risk_escalation.transition(
-                RiskLevel.LOCKED,
-                trigger=(
-                    "positions_zero_flatten_complete"
-                    if flatten_clean
-                    else "emergency_flatten_incomplete_residual_exposure"
-                ),
-                correlation_id=correlation_id,
-            )
-
-        if self._kill_switch is not None:
-            self._kill_switch.activate(
-                reason="risk_escalation_lockdown",
-                activated_by="orchestrator",
-            )
-            self._bus.publish(
-                KillSwitchActivation(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=correlation_id,
-                    sequence=self._seq.next(),
-                    reason="risk_escalation_lockdown",
-                    activated_by="orchestrator",
-                )
-            )
-
-        self._macro.transition(
-            MacroState.RISK_LOCKDOWN,
-            trigger="RISK_BREACH",
-            correlation_id=correlation_id,
-        )
-
     def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
         """True once the quote crosses the session-flatten deadline.
 
@@ -2720,7 +2649,7 @@ class Orchestrator:
                 # _emergency_flatten_all() closes this leg (and every other
                 # open position) directly with a properly-tagged flatten,
                 # so defer to it here rather than also submitting this leg.
-                self._escalate_risk(cid)
+                _escalate_risk(self, cid)
                 self._finalize_tick(t_wall_start, cid, "reverse_exit_force_flatten_escalation")
                 return
             # BACKTEST_MODE has no reachable lockdown transition, so there

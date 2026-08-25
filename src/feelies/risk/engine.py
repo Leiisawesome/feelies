@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 from feelies.core.events import (
     AlertSeverity,
+    KillSwitchActivation,
     NBBOQuote,
     OrderAckStatus,
     OrderRequest,
@@ -25,7 +26,9 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.identifiers import derive_order_id
+from feelies.kernel.macro import MacroState
 from feelies.portfolio.position_store import PositionStore
+from feelies.risk.escalation import RiskLevel
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
 logger = logging.getLogger(__name__)
@@ -268,3 +271,75 @@ def _emergency_flatten_all(
             message=msg,
         )
     return failures, residual
+
+
+def _escalate_risk(self: Any, correlation_id: str) -> None:
+    """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
+
+    Monotonically tightens safety (platform inv 11).  Once R1
+    (WARNING) is entered, de-escalation is impossible without
+    completing the full cycle to R4 and human unlock.
+
+    At R3 (FORCED_FLATTEN) we attempt to close all non-zero
+    positions via emergency market orders before transitioning
+    to R4 (LOCKED).
+    """
+    level = self._risk_escalation.state
+
+    if level == RiskLevel.NORMAL:
+        self._risk_escalation.transition(
+            RiskLevel.WARNING,
+            trigger="risk_threshold_approaching",
+            correlation_id=correlation_id,
+        )
+        level = RiskLevel.WARNING
+
+    if level == RiskLevel.WARNING:
+        self._risk_escalation.transition(
+            RiskLevel.BREACH_DETECTED,
+            trigger="risk_breach_confirmed",
+            correlation_id=correlation_id,
+        )
+        level = RiskLevel.BREACH_DETECTED
+
+    if level == RiskLevel.BREACH_DETECTED:
+        self._risk_escalation.transition(
+            RiskLevel.FORCED_FLATTEN,
+            trigger="forced_flatten_initiated",
+            correlation_id=correlation_id,
+        )
+        level = RiskLevel.FORCED_FLATTEN
+
+    if level == RiskLevel.FORCED_FLATTEN:
+        failures, residual = _emergency_flatten_all(self, correlation_id)
+        flatten_clean = not failures and not residual
+        self._risk_escalation.transition(
+            RiskLevel.LOCKED,
+            trigger=(
+                "positions_zero_flatten_complete"
+                if flatten_clean
+                else "emergency_flatten_incomplete_residual_exposure"
+            ),
+            correlation_id=correlation_id,
+        )
+
+    if self._kill_switch is not None:
+        self._kill_switch.activate(
+            reason="risk_escalation_lockdown",
+            activated_by="orchestrator",
+        )
+        self._bus.publish(
+            KillSwitchActivation(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                reason="risk_escalation_lockdown",
+                activated_by="orchestrator",
+            )
+        )
+
+    self._macro.transition(
+        MacroState.RISK_LOCKDOWN,
+        trigger="RISK_BREACH",
+        correlation_id=correlation_id,
+    )
