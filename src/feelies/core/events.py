@@ -324,6 +324,23 @@ class OrderRequest(Event):
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
+class DeRiskRequirement(Event):
+    """Inbound de-risk command from a risk-layer exit author.
+
+    Engine 8 names the reduction; engine 9 constructs the outbound
+    ``OrderRequest``. ``sequence`` is the author's; the kernel copies it
+    and fills ``order_type=MARKET``. ``quantity`` is in shares.
+    """
+
+    order_id: str
+    symbol: str
+    side: Side
+    quantity: int = field(metadata={"unit": "share"})
+    strategy_id: str = ""
+    reason: str = ""
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
 class OrderAck(Event):
     """Acknowledgement of order state change from execution backend.
 
