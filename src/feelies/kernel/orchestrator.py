@@ -156,7 +156,7 @@ from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
-from feelies.risk.engine import RiskEngine
+from feelies.risk.engine import RiskEngine, _compute_target_quantity
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.deferral_cap import (
     DEFERRAL_EXIT_REASONS,
@@ -1702,7 +1702,7 @@ class Orchestrator:
             return
 
         # ── Position sizing: compute target quantity from risk budget ──
-        target_qty = self._compute_target_quantity(signal, quote)
+        target_qty = _compute_target_quantity(self, signal, quote)
         self._record_size_shadow(signal, quote)
 
         # ── Decision: Signal × Position → OrderIntent ──────────────────
@@ -2559,45 +2559,6 @@ class Orchestrator:
             at_ns=at_ns,
         )
 
-    def _compute_target_quantity(
-        self,
-        signal: Signal,
-        quote: NBBOQuote,
-    ) -> int | None:
-        """Use PositionSizer + AlphaRegistry to compute target quantity.
-
-        Returns None if the registry is not available, letting the
-        IntentTranslator fall back to its default.
-        """
-        if self._alpha_registry is None:
-            return None
-
-        try:
-            alpha = self._alpha_registry.get(signal.strategy_id)
-        except KeyError:
-            return None
-
-        risk_budget = alpha.manifest.risk_budget
-        mid_price = (quote.bid + quote.ask) / Decimal(2)
-        if mid_price <= 0:
-            return 0
-
-        # The alpha's declared risk budget is the sizing authority: this result
-        # is never inflated.  ``platform_min_order_shares`` used to raise any
-        # nonzero target up to the floor, which made the floor the binding
-        # constraint and ``capital_allocation_pct`` inert — at 50k equity and
-        # APP near $396 a 25% budget asks for 15-31 shares and every one of them
-        # was raised to 50, so the platform traded 2.4x what the budget
-        # sanctioned.  A control that autonomously *increases* exposure over a
-        # declared budget is a loosening, and Inv-11 reserves those for a human.
-        # The floor is now a venue lot-size veto only (see platform.yaml).
-        return self._position_sizer.compute_target_quantity(
-            signal=signal,
-            risk_budget=risk_budget,
-            symbol_price=mid_price,
-            account_equity=self._account_equity,
-        )
-
     def _record_size_shadow(self, signal: Signal, quote: NBBOQuote) -> None:
         """Compare the edge/vol/inventory-tilted target with the base.
 
@@ -2771,7 +2732,7 @@ class Orchestrator:
         )
 
         def _signed_target(sig: Signal) -> int:
-            tq = self._compute_target_quantity(sig, quote)
+            tq = _compute_target_quantity(self, sig, quote)
             return desired_from_signal(
                 sig,
                 tq,
@@ -2788,7 +2749,7 @@ class Orchestrator:
                 continue  # synthetic kernel signal, not an alpha target
             desired = desired_from_signal(
                 sig,
-                self._compute_target_quantity(sig, quote),
+                _compute_target_quantity(self, sig, quote),
                 default_target_quantity=default_target,
             )
             self._desired_target_book.put(

@@ -10,9 +10,10 @@ signal-to-execution path exists.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 from feelies.core.events import (
+    NBBOQuote,
     OrderRequest,
     RiskVerdict,
     Signal,
@@ -90,3 +91,44 @@ class RiskEngine(Protocol):
         :meth:`check_signal` and :meth:`check_order` remain separate paths.
         """
         ...
+
+
+def _compute_target_quantity(
+    self: Any,
+    signal: Signal,
+    quote: NBBOQuote,
+) -> int | None:
+    """Use PositionSizer + AlphaRegistry to compute target quantity.
+
+    Returns None if the registry is not available, letting the
+    IntentTranslator fall back to its default.
+    """
+    if self._alpha_registry is None:
+        return None
+
+    try:
+        alpha = self._alpha_registry.get(signal.strategy_id)
+    except KeyError:
+        return None
+
+    risk_budget = alpha.manifest.risk_budget
+    mid_price = (quote.bid + quote.ask) / Decimal(2)
+    if mid_price <= 0:
+        return 0
+
+    # The alpha's declared risk budget is the sizing authority: this result
+    # is never inflated.  ``platform_min_order_shares`` used to raise any
+    # nonzero target up to the floor, which made the floor the binding
+    # constraint and ``capital_allocation_pct`` inert — at 50k equity and
+    # APP near $396 a 25% budget asks for 15-31 shares and every one of them
+    # was raised to 50, so the platform traded 2.4x what the budget
+    # sanctioned.  A control that autonomously *increases* exposure over a
+    # declared budget is a loosening, and Inv-11 reserves those for a human.
+    # The floor is now a venue lot-size veto only (see platform.yaml).
+    qty: int = self._position_sizer.compute_target_quantity(
+        signal=signal,
+        risk_budget=risk_budget,
+        symbol_price=mid_price,
+        account_equity=self._account_equity,
+    )
+    return qty

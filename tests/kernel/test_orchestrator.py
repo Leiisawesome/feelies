@@ -59,6 +59,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.engine import _compute_target_quantity
 from feelies.risk.escalation import RiskLevel
 from feelies.services.regime_engine import _calibrate_regime_engine
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -4753,8 +4754,8 @@ class TestRiskBudgetIsTheSizingAuthority:
         small = self._orch_with_budget(5.0, min_order_shares=50)
         large = self._orch_with_budget(50.0, min_order_shares=50)
 
-        small_target = small._compute_target_quantity(self._signal(), quote)
-        large_target = large._compute_target_quantity(self._signal(), quote)
+        small_target = _compute_target_quantity(small, self._signal(), quote)
+        large_target = _compute_target_quantity(large, self._signal(), quote)
 
         # 50000 * 5% / 400 = 6 ; 50000 * 50% / 400 = 62
         assert small_target == 6
@@ -4773,6 +4774,6 @@ class TestRiskBudgetIsTheSizingAuthority:
         """
         quote = _make_quote(bid="399.50", ask="400.50")
         orch = self._orch_with_budget(5.0, min_order_shares=1000)
-        target = orch._compute_target_quantity(self._signal(), quote)
+        target = _compute_target_quantity(orch, self._signal(), quote)
         assert target == 6, "sized target was inflated toward min_order_shares"
         assert target < orch._min_order_shares

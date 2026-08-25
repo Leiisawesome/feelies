@@ -199,7 +199,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         8,
         "E8.compute_target_qty",
-        "feelies.kernel.orchestrator:Orchestrator._compute_target_quantity",
+        "feelies.risk.engine:_compute_target_quantity",
     ),
     (
         8,
