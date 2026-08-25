@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from feelies.bus.event_bus import EventBus
-from feelies.core.events import NBBOQuote, OrderRequest, OrderType, Side
+from feelies.core.events import NBBOQuote, DeRiskRequirement, Side
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.execution.trading_session import (
     TradingSessionBounds,
@@ -51,10 +51,10 @@ from feelies.portfolio.position_store import PositionStore
 
 _logger = logging.getLogger(__name__)
 
-# ── Stop-exit OrderRequest signature (single source of truth) ────────────
-# The kernel's forced-exit bridge (``Orchestrator._on_bus_hazard_order``) routes
-# any ``OrderRequest`` carrying this source layer and one of these reasons
-# through the non-vetoable submission path, mirroring the hazard controller and
+# ── Stop-exit DeRiskRequirement signature (single source of truth) ───────
+# The kernel converts this requirement to an outbound OrderRequest. Any
+# requirement carrying this source layer and one of these reasons
+# is routed through the non-vetoable submission path, mirroring the hazard controller and
 # exit composer so all four risk-layer authors share one routing contract.
 STOP_EXIT_SOURCE_LAYER: str = "RISK"
 # A stop-loss or trailing-stop trigger.  This token is also listed in
@@ -282,7 +282,7 @@ class StopExitController:
             del self._pending_exit_symbols[symbol]
 
         side = Side.SELL if quantity > 0 else Side.BUY
-        order = OrderRequest(
+        req = DeRiskRequirement(
             timestamp_ns=quote.timestamp_ns,
             correlation_id=quote.correlation_id,
             sequence=self._seq.next(),
@@ -292,7 +292,6 @@ class StopExitController:
             ),
             symbol=symbol,
             side=side,
-            order_type=OrderType.MARKET,
             quantity=abs(quantity),
             # Symbol-net: this control belongs to no alpha.  The kernel splits
             # the fill across whichever slices held the symbol.
@@ -300,7 +299,7 @@ class StopExitController:
             reason=reason,
         )
         self._pending_exit_symbols[symbol] = (opened, quantity)
-        self._bus.publish(order)
+        self._bus.publish(req)
         _logger.info(
             "StopExitController emitted %s for %s (qty=%d, side=%s)",
             reason,
