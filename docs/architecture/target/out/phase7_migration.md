@@ -2272,16 +2272,36 @@ CLOSES:          G19 (the `OrderRequest` clause)
 PROBLEM:         `OrderRequest` carries **two jobs** — the outbound order of
                  hop 33 and the inbound de-risk command from four exit authors
                  in `risk/` — "disambiguated only by the free-text `reason`
-                 field" (`src/feelies/core/events.py:290`). Publishers:
-                 `src/feelies/risk/stop_exit.py:297`, `src/feelies/risk/hazard_exit.py:253`,
-                 `src/feelies/risk/deferral_cap.py:378`, `src/feelies/risk/exit_composer.py:486`; re-entry at
-                 `src/feelies/kernel/orchestrator.py:585` ->
-                 `_on_bus_hazard_order:4919`. CORE §C.8 contract-first
-                 boundaries: two meanings on one type distinguished by prose.
+                 field" (`src/feelies/core/events.py:299` class, `:323` reason).
+                 Publishers: `src/feelies/risk/stop_exit.py:285`,
+                 `src/feelies/risk/hazard_exit.py:244`,
+                 `src/feelies/risk/deferral_cap.py:370`,
+                 `src/feelies/risk/exit_composer.py:477`. Re-entry at
+                 `src/feelies/kernel/orchestrator.py:599`
+                 (`self._bus.subscribe(OrderRequest, self._on_bus_hazard_order)`)
+                 -> `_on_bus_hazard_order:4635`. All four authors publish
+                 `source_layer="RISK"`; the handler admits that layer and
+                 `_RISK_FORCED_EXIT_REASONS`. CORE §C.8: two meanings on one
+                 type distinguished by prose.
 FILES:           src/feelies/core/events.py (DeRiskRequirement, new)
-                 the four exit authors above
-                 src/feelies/kernel/orchestrator.py:585, :4919 (delete)
-                 src/feelies/risk/exit_composer.py, src/feelies/risk/sized_intent_orders.py
+                 src/feelies/risk/stop_exit.py
+                 src/feelies/risk/hazard_exit.py
+                 src/feelies/risk/deferral_cap.py
+                 src/feelies/risk/exit_composer.py
+                 src/feelies/risk/sized_intent_orders.py
+                 src/feelies/kernel/orchestrator.py (:599 subscribe; :4635 handler)
+                 src/feelies/core/sequence_authority.py
+                 src/feelies/core/wiring_manifest.py
+                 tests/conformance/test_schema_drift.py
+                 tests/determinism/parity_manifest.py
+                 tests/determinism/test_parity_manifest.py
+                 tests/determinism/test_hazard_exit_replay.py
+                 tests/determinism/test_decoupled_safety_replay.py
+                 Construction of outbound OrderRequest from a DeRiskRequirement
+                 stays on Orchestrator this step (replace the inbound
+                 OrderRequest handler). Do not land an execution/ constructor
+                 here unless FILES names that module. Not a module move; do
+                 not add docs/prompts/.
 WHY THIS OWNER:  Phase 2 resolves it on engine 9's sheet: deciding *how* to
                  reduce — which legs, what urgency, what limit price, whether to
                  net against a pending order — is the same job engine 9 does for
@@ -2290,42 +2310,35 @@ WHY THIS OWNER:  Phase 2 resolves it on engine 9's sheet: deciding *how* to
                  constructs the plan. **This removes a use rather than adding a
                  type**, and it collapses four independent engine-7 reads with
                  four independent staleness policies into one.
-REFACTOR PATH:   (1) `DeRiskRequirement` on the envelope; (2) one author at a
-                 time — convert `stop_exit` first, because the repo has already
-                 done exactly this move for it and documented the result;
-                 (3) engine 9 constructs the plan; (4) delete the inbound
-                 `OrderRequest` path at `:585` -> `:4919`; (5) C4's discharge
-                 identity: every requirement is discharged by named orders, or
-                 outstanding, or emitted as dropped — no fourth outcome.
+REFACTOR PATH:   (1) DeRiskRequirement on the envelope; PINNED_PAYLOAD row
+                 in the same commit as the class. (2) one author at a time —
+                 convert stop_exit first. (3) Orchestrator consumes
+                 DeRiskRequirement and still emits outbound OrderRequest.
+                 (4) delete subscribe at :599 and _on_bus_hazard_order at
+                 :4635; retarget wiring Subscription 30 and the four
+                 S-13 OrderRequest contracts. (5) C4 discharge identity.
+                 (6) re-pin one author per commit.
 BLAST RADIUS:    platform-wide — a hot-path contract changes meaning
-VALIDATED BY:    C4, X1, X2, X3, H4, and the four re-pinned baselines below
-PARITY IMPACT:   **Four baselines break, and the repo has already run this
-                 experiment.** `tests/determinism/test_orchestrator_replay.py:273-278`
-                 documents the outcome of the earlier stop-exit decoupling: the
-                 order hash moved (`source_layer` RISK where it was SIGNAL,
-                 `strategy_id` `""` where it was `__stop_exit__`, and a new
-                 content-derived order id from the new author), the
-                 position-update hash moved "because the stop no longer draws
-                 from the kernel's signal family", and the intent hash was
-                 **unchanged** "which is the point." Expect the same three
-                 outcomes for the remaining three authors:
-                 `level4_hazard_exit_order` and `decoupled_risk_flatten_order`
-                 re-pin because the author and the order id change;
-                 `halt_order` and `symbol_halted` re-pin because the halt path
-                 is engine 1/9 shared; `position_pnl` re-pins if a draw family
-                 changes. **Re-pin one author per commit** so each moved hash
-                 names its own cause. A batched re-pin of four baselines is
-                 indistinguishable from a mistake.
-                 After S-17a, the new DeRiskRequirement class adds a field set
-                 and moves EXPECTED_MANIFEST_FINGERPRINT in addition to the
-                 named replay hashes.
-DELETES:         the inbound `OrderRequest` direction; `_on_bus_hazard_order`;
-                 the bus re-entry at `:585`; four `OrderRequest` publishers
-                 become requirement publishers; three redundant engine-7 read
-                 paths with three staleness policies
-NET DELTA:       src modules 0, public symbols **+1 -1 = 0** (`DeRiskRequirement`
-                 added, `_on_bus_hazard_order` deleted), branch points **-1**
-                 (the free-text `reason` disambiguation disappears).
+VALIDATED BY:    C4, X1, X2, X3, H4, S8, S12, S14, the two re-pinned
+                 order baselines below, the fingerprint
+PARITY IMPACT:   break -- EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH and
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH re-pin, one
+                 author per commit; EXPECTED_MANIFEST_FINGERPRINT moves
+                 because DeRiskRequirement adds a field set (S-17a).
+                 All other EXPECTED_*_HASH values hold, including intent
+                 hashes, EXPECTED_HALT_ORDER_HASH, EXPECTED_SYMBOL_HALTED_HASH,
+                 and EXPECTED_POSITION_PNL_HASH. If halt_order, symbol_halted,
+                 position_pnl, or forced_exit_attribution moves, STOP and
+                 amend; do not fold them into this declaration. COUNT
+                 constants hold; a COUNT move is a STOP. Re-pin
+                 EXPECTED_MANIFEST_FINGERPRINT in the commit that adds the
+                 class, not batched with an author conversion.
+DELETES:         the inbound OrderRequest direction; _on_bus_hazard_order;
+                 the bus re-entry at :599; four OrderRequest publishers
+                 become requirement publishers
+NET DELTA:       src modules 0, public symbols +1 -1 = 0 (DeRiskRequirement
+                 added, _on_bus_hazard_order deleted), branch points -1
+                 (free-text reason disambiguation on the inbound path).
 ROLLBACK:        revert per author, restoring that author's baseline value from
                  git history in the same commit. Because each author is one
                  commit with one re-pin, rollback granularity equals re-pin
