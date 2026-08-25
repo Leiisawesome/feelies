@@ -59,7 +59,6 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/cost_arithmetic.py": "audit_signal_alpha",
     "alpha/arbitration.py": "audit_signal_alpha",
     "alpha/portfolio_layer_module.py": "audit_composition",
-    "alpha/risk_wrapper.py": "audit_risk_engine",
     # ── portfolio/ ──────────────────────────────────────────────────
     "portfolio/cross_sectional_tracker.py": "audit_composition",
     "portfolio/fill_attribution.py": "audit_forensics",
@@ -74,6 +73,7 @@ _FILE_OWNERS: dict[str, str] = {
     # ── risk/ overrides (sizing economics) ──────────────────────────
     "risk/position_sizer.py": "audit_position_management",
     "risk/edge_weighted_sizer.py": "audit_position_management",
+    "risk/risk_wrapper.py": "audit_risk_engine",
     # ── execution/ ──────────────────────────────────────────────────
     "execution/intent.py": "audit_position_management",
     "execution/order_admission.py": "audit_position_management",

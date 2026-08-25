@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml  # pyright: ignore[reportMissingModuleSource]
 
-from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
+from feelies.risk.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.bootstrap import build_platform
 from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig

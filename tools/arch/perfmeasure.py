@@ -189,7 +189,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         8,
         "E8.budget_check_signal",
-        "feelies.alpha.risk_wrapper:AlphaBudgetRiskWrapper.check_signal",
+        "feelies.risk.risk_wrapper:AlphaBudgetRiskWrapper.check_signal",
     ),
     (
         8,

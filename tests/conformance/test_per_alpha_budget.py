@@ -23,7 +23,7 @@ import yaml
 
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
-from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
+from feelies.risk.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.core.events import (
     OrderRequest,
     OrderType,
