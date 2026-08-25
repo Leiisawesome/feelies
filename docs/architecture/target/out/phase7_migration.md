@@ -2283,12 +2283,23 @@ PROBLEM:         `OrderRequest` carries **two jobs** — the outbound order of
                  `source_layer="RISK"`; the handler admits that layer and
                  `_RISK_FORCED_EXIT_REASONS`. CORE §C.8: two meanings on one
                  type distinguished by prose.
+                 Consumers of `OrderRequest.reason` (nine outbound remain;
+                 inbound retargets to `DeRiskRequirement.reason`):
+                 `_order_owns_one_slice:244`, `_is_forced_market_exit:260`,
+                 `_trade_journal_legs:288`,
+                 `_forced_exit_closable_quantity:3338`,
+                 `_on_bus_hazard_order:4643` (inbound; also `:4688`, `:4707`,
+                 `:4715`), `_emit_forced_exit_resized_alert:4773`,
+                 `_emit_forced_exit_stood_down_alert:4799`,
+                 `execution/market_fill.py:196`,
+                 `monitoring/horizon_metrics.py:276`,
+                 `forensics/gate_close_attribution.py:212`.
+                 A tenth undeclared reader is a FILES stop.
 FILES:           src/feelies/core/events.py (DeRiskRequirement, new)
                  src/feelies/risk/stop_exit.py
                  src/feelies/risk/hazard_exit.py
                  src/feelies/risk/deferral_cap.py
                  src/feelies/risk/exit_composer.py
-                 src/feelies/risk/sized_intent_orders.py
                  src/feelies/kernel/orchestrator.py (:599 subscribe; :4635 handler)
                  src/feelies/core/sequence_authority.py
                  src/feelies/core/wiring_manifest.py
@@ -2297,11 +2308,23 @@ FILES:           src/feelies/core/events.py (DeRiskRequirement, new)
                  tests/determinism/test_parity_manifest.py
                  tests/determinism/test_hazard_exit_replay.py
                  tests/determinism/test_decoupled_safety_replay.py
+                 tests/risk/test_stop_exit_controller.py
+                 tests/risk/test_hazard_exit.py
+                 tests/risk/test_deferral_cap.py
+                 tests/risk/test_exit_composer.py
+                 tests/risk/test_exit_composer_revocation.py
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 tests/kernel/test_orchestrator_exit_composer_routing.py
+                 tests/kernel/test_stage0_decouple_wiring.py
+                 tests/kernel/test_orchestrator.py
+                 tests/determinism/test_forced_exit_attribution_replay.py
                  Construction of outbound OrderRequest from a DeRiskRequirement
                  stays on Orchestrator this step (replace the inbound
-                 OrderRequest handler). Do not land an execution/ constructor
-                 here unless FILES names that module. Not a module move; do
-                 not add docs/prompts/.
+                 OrderRequest handler). Kernel copies the author's sequence
+                 and order_id; does not draw self._seq on conversion.
+                 Do not land an execution/ constructor here unless FILES
+                 names that module. Not a module move; do not add
+                 docs/prompts/. sized_intent_orders.py is not an author.
 WHY THIS OWNER:  Phase 2 resolves it on engine 9's sheet: deciding *how* to
                  reduce — which legs, what urgency, what limit price, whether to
                  net against a pending order — is the same job engine 9 does for
@@ -2310,29 +2333,44 @@ WHY THIS OWNER:  Phase 2 resolves it on engine 9's sheet: deciding *how* to
                  constructs the plan. **This removes a use rather than adding a
                  type**, and it collapses four independent engine-7 reads with
                  four independent staleness policies into one.
-REFACTOR PATH:   (1) DeRiskRequirement on the envelope; PINNED_PAYLOAD row
-                 in the same commit as the class. (2) one author at a time —
-                 convert stop_exit first. (3) Orchestrator consumes
-                 DeRiskRequirement and still emits outbound OrderRequest.
-                 (4) delete subscribe at :599 and _on_bus_hazard_order at
-                 :4635; retarget wiring Subscription 30 and the four
-                 S-13 OrderRequest contracts. (5) C4 discharge identity.
-                 (6) re-pin one author per commit.
+REFACTOR PATH:   (1) DeRiskRequirement on the envelope; PINNED_PAYLOAD
+                 (order_id, symbol, side, quantity, strategy_id, reason)
+                 in the same commit as the class. quantity unit share.
+                 Author sets envelope (sequence from its stream,
+                 source_layer=RISK) and all six payload fields; order_id
+                 stays content-derived on the existing per-author seeds.
+                 Kernel fills OrderRequest.order_type=MARKET, copies the
+                 rest, publishes; no self._seq draw. (2) one author at a
+                 time — convert stop_exit first. Isolated author tests
+                 retarget bus.subscribe from OrderRequest to
+                 DeRiskRequirement. (3) Orchestrator consumes
+                 DeRiskRequirement and emits outbound OrderRequest
+                 field-identical to today's author emit. (4) delete
+                 subscribe at :599 and _on_bus_hazard_order at :4635;
+                 retarget wiring Subscription 30 to DeRiskRequirement
+                 and the four S-13 OrderRequest contracts to
+                 DeRiskRequirement (contract retarget, not stream merge).
+                 (5) C4 discharge identity. (6) re-pin the two isolated
+                 order hashes one author/test commit at a time; fingerprint
+                 with the class, then again with each of those two re-pins.
 BLAST RADIUS:    platform-wide — a hot-path contract changes meaning
 VALIDATED BY:    C4, X1, X2, X3, H4, S8, S12, S14, the two re-pinned
-                 order baselines below, the fingerprint
+                 isolated order baselines below, the fingerprint
 PARITY IMPACT:   break -- EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH and
-                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH re-pin, one
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH re-pin (isolated
+                 fixtures hash DeRiskRequirement; COUNTs 3 and 2 hold), one
                  author per commit; EXPECTED_MANIFEST_FINGERPRINT moves
-                 because DeRiskRequirement adds a field set (S-17a).
+                 because DeRiskRequirement adds a field set (S-17a) and
+                 again when those two registered hashes re-pin.
                  All other EXPECTED_*_HASH values hold, including intent
                  hashes, EXPECTED_HALT_ORDER_HASH, EXPECTED_SYMBOL_HALTED_HASH,
-                 and EXPECTED_POSITION_PNL_HASH. If halt_order, symbol_halted,
-                 position_pnl, or forced_exit_attribution moves, STOP and
-                 amend; do not fold them into this declaration. COUNT
-                 constants hold; a COUNT move is a STOP. Re-pin
-                 EXPECTED_MANIFEST_FINGERPRINT in the commit that adds the
-                 class, not batched with an author conversion.
+                 EXPECTED_POSITION_PNL_HASH, EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH,
+                 and EXPECTED_STOP_EXIT_STREAMS. If halt_order, symbol_halted,
+                 position_pnl, forced_exit_attribution, or the stop-exit
+                 orchestrator streams move, STOP and amend; do not fold them
+                 into this declaration. COUNT constants hold; a COUNT move
+                 is a STOP. Conversion copies the author sequence — a new
+                 orchestrator draw is a merge, which this step does not do.
 DELETES:         the inbound OrderRequest direction; _on_bus_hazard_order;
                  the bus re-entry at :599; four OrderRequest publishers
                  become requirement publishers
