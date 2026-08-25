@@ -132,3 +132,36 @@ def _compute_target_quantity(
         account_equity=self._account_equity,
     )
     return qty
+
+
+def _maybe_flip_buying_power_at_rth_close(self: Any, quote: NBBOQuote) -> None:
+    """Switch buying-power phase at each resolved RTH close.
+
+    Multi-day replays re-arm the latch when the session date changes."""
+    bounds = self._trading_session_bounds
+    if bounds is None:
+        return
+    effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+    set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+
+    # New NY session date → reopen on the intraday cap and re-arm the flip.
+    if effective.session_date != self._rth_bp_session_date:
+        self._rth_bp_session_date = effective.session_date
+        if self._rth_close_bp_flipped:
+            self._rth_close_bp_flipped = False
+            if callable(set_phase):
+                from feelies.risk.buying_power import BuyingPowerPhase
+
+                set_phase(BuyingPowerPhase.INTRADAY)
+
+    if self._rth_close_bp_flipped:
+        return
+    if quote.exchange_timestamp_ns < effective.rth_close_ns:
+        return
+    if not callable(set_phase):
+        self._rth_close_bp_flipped = True
+        return
+    from feelies.risk.buying_power import BuyingPowerPhase
+
+    set_phase(BuyingPowerPhase.OVERNIGHT)
+    self._rth_close_bp_flipped = True

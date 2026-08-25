@@ -156,7 +156,11 @@ from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
-from feelies.risk.engine import RiskEngine, _compute_target_quantity
+from feelies.risk.engine import (
+    RiskEngine,
+    _compute_target_quantity,
+    _maybe_flip_buying_power_at_rth_close,
+)
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.deferral_cap import (
     DEFERRAL_EXIT_REASONS,
@@ -787,38 +791,6 @@ class Orchestrator:
         if not callable(bind):
             return
         bind(lambda sym: int(PositionBookView.from_store(self._positions).get(sym)))
-
-    def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
-        """Switch buying-power phase at each resolved RTH close.
-
-        Multi-day replays re-arm the latch when the session date changes."""
-        bounds = self._trading_session_bounds
-        if bounds is None:
-            return
-        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
-        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
-
-        # New NY session date → reopen on the intraday cap and re-arm the flip.
-        if effective.session_date != self._rth_bp_session_date:
-            self._rth_bp_session_date = effective.session_date
-            if self._rth_close_bp_flipped:
-                self._rth_close_bp_flipped = False
-                if callable(set_phase):
-                    from feelies.risk.buying_power import BuyingPowerPhase
-
-                    set_phase(BuyingPowerPhase.INTRADAY)
-
-        if self._rth_close_bp_flipped:
-            return
-        if quote.exchange_timestamp_ns < effective.rth_close_ns:
-            return
-        if not callable(set_phase):
-            self._rth_close_bp_flipped = True
-            return
-        from feelies.risk.buying_power import BuyingPowerPhase
-
-        set_phase(BuyingPowerPhase.OVERNIGHT)
-        self._rth_close_bp_flipped = True
 
     def _reset_buying_power_phase_for_session(self) -> None:
         """Reset the RTH latch and restore intraday buying power."""
@@ -1643,7 +1615,7 @@ class Orchestrator:
         self._bus.publish(quote)
         self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
         # Use exchange time so risk and routing cross the RTH close together.
-        self._maybe_flip_buying_power_at_rth_close(quote)
+        _maybe_flip_buying_power_at_rth_close(self, quote)
 
         # Reconcile quote-triggered fills and cancels before evaluating signals.
         self._reconcile_resting_fills(cid)
