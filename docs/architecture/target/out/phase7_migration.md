@@ -2207,6 +2207,7 @@ NET DELTA:       src modules 0 (fill_attribution.py moves; position_book_view.py
                  (__contains__ isinstance check, all_positions None check);
                  0 outside it -- no new branch in orchestrator, bootstrap or
                  strategy_position_store.
+ROLLBACK:        revert; the view disappears and the readers take the store back.                 
 ```
 
 ```
@@ -2252,8 +2253,8 @@ BLAST RADIUS:    boundary
 VALIDATED BY:    X1, X2, X3 (from S-02, must still pass), X4, `risk_verdict`,
                  `level4_hazard_exit_order`, `decoupled_risk_flatten_order`,
                  the oracle
-PARITY IMPACT:   All 28 replay hashes, EXPECTED_MANIFEST_FINGERPRINT, and all
-                 64 scanned constants hold. No Event subclass. Sequence draws
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint, and all 64 scanned
+                 constants. No Event subclass. Sequence draws
                  stay on the orchestrator stream (S-13); a moved hash means a
                  draw was added, dropped, or reordered. `level4_hazard_exit_order`
                  and `decoupled_risk_flatten_order` hold here and re-pin in S-23.
