@@ -12,7 +12,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from feelies.bus.event_bus import EventBus
-from feelies.core.events import OrderRequest, Side
+from feelies.core.events import DeRiskRequirement, Side
 from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.exit_composer import (
@@ -30,11 +30,11 @@ def _make(
     *,
     policies: dict[str, ExitComposerPolicy] | None = None,
     seq_start: int = 70_000,
-) -> tuple[ExitComposer, StrategyPositionStore, EventBus, list[OrderRequest]]:
+) -> tuple[ExitComposer, StrategyPositionStore, EventBus, list[DeRiskRequirement]]:
     bus = EventBus()
     store = StrategyPositionStore()
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     composer = ExitComposer(
         bus=bus,
         sequence_generator=SequenceGenerator(start=seq_start),
@@ -44,7 +44,7 @@ def _make(
         else {_SID: ExitComposerPolicy(strategy_id=_SID)},
     )
     # No attach() needed — revoke_and_flatten publishes directly; the kernel's
-    # OrderRequest bridge routes it regardless of the SafetyStateChange subscription.
+    # DeRiskRequirement bridge routes it regardless of the SafetyStateChange subscription.
     return composer, store, bus, received
 
 

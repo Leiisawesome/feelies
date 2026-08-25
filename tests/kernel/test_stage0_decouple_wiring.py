@@ -41,8 +41,8 @@ from feelies.bootstrap import (
 )
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    DeRiskRequirement,
     HorizonFeatureSnapshot,
-    OrderRequest,
     RegimeState,
     SafetyStateChange,
     Signal,
@@ -304,8 +304,8 @@ def test_revocation_hook_is_wired_to_the_composer() -> None:
     _, composer = _build_authors(bus, store)
     assert composer is not None
 
-    emitted: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, emitted.append)  # type: ignore[arg-type]
+    emitted: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, emitted.append)  # type: ignore[arg-type]
 
     registry = _registry(**{_SID: _decouple_block()})
     _wire_decouple_revocation_hook(registry, composer, None)

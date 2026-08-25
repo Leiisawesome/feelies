@@ -15,7 +15,7 @@ It is a risk-layer author co-located with
   (:class:`~feelies.portfolio.strategy_position_store.StrategyPositionStore`), so
   a flatten never crosses into another strategy's slice on a shared symbol — a
   symbol-net unwind under a multi-strategy book is a defect (§3.3).
-- Its ``EXIT`` emits a **raw** flatten :class:`~feelies.core.events.OrderRequest`
+- Its ``EXIT`` emits a **raw** flatten :class:`~feelies.core.events.DeRiskRequirement`
   that the kernel routes through the same non-vetoable bridge the hazard
   controller uses (``check_order``, not ``check_sized_intent``): a cost/edge gate
   may suppress an *entry*, never a mandated safety exit (§3.3, Inv-11).
@@ -59,8 +59,7 @@ from typing import Mapping
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    OrderRequest,
-    OrderType,
+    DeRiskRequirement,
     SafetyReason,
     SafetyStateChange,
     Side,
@@ -70,10 +69,10 @@ from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
 _logger = logging.getLogger(__name__)
 
-# ── Exit-composer OrderRequest signature (single source of truth) ────────
-# The kernel's forced-exit bridge (``Orchestrator._on_bus_hazard_order``) routes
-# any ``OrderRequest`` carrying this source layer and one of these reasons
-# through the non-vetoable submission path — mirroring the hazard controller's
+# ── Exit-composer DeRiskRequirement signature (single source of truth) ───
+# The kernel converts this requirement to an outbound OrderRequest. Any
+# requirement carrying this source layer and one of these reasons
+# is routed through the non-vetoable submission path — mirroring the hazard controller's
 # signature so the two authors share one routing contract (Inv-11).
 EXIT_COMPOSER_SOURCE_LAYER: str = "RISK"
 # Fail-closed unwind driven by a gate error path (missing binding / gate error /
@@ -235,7 +234,7 @@ class ExitComposer:
 
     The composer subscribes to :class:`~feelies.core.events.SafetyStateChange`
     and, on a ``safe=False`` event for an *open* slice it owns, emits a raw
-    strategy-slice flatten :class:`~feelies.core.events.OrderRequest` when
+    strategy-slice flatten :class:`~feelies.core.events.DeRiskRequirement` when
     :func:`compose_exit` returns ``EXIT``.  Per-episode dedup keeps two safety
     events (e.g. an error path arriving while a prior exit is still in flight
     under async fills) from double-flattening one slice.
@@ -359,7 +358,7 @@ class ExitComposer:
         *,
         now_ns: int,
         correlation_id: str,
-    ) -> list[OrderRequest]:
+    ) -> list[DeRiskRequirement]:
         """Immediately flatten a decoupled strategy's open deferred book (§2.5).
 
         The revocation-symmetry hook for Inv-11: when a decoupled alpha's Stage-0
@@ -386,7 +385,7 @@ class ExitComposer:
         policy = self._policies.get(strategy_id)
         if policy is None:
             return []
-        emitted: list[OrderRequest] = []
+        emitted: list[DeRiskRequirement] = []
         open_slices = self._position_store.open_positions(strategy_id)
         # Lex-sorted so the emitted order IDs / sequence are replayable (Inv-5).
         for symbol in sorted(open_slices):
@@ -452,8 +451,8 @@ class ExitComposer:
         correlation_id: str,
         reason: str,
         id_seed: str,
-    ) -> OrderRequest | None:
-        """Emit one strategy-slice flatten ``OrderRequest``, dedup-guarded.
+    ) -> DeRiskRequirement | None:
+        """Emit one strategy-slice flatten ``DeRiskRequirement``, dedup-guarded.
 
         Shared by the safety-event fail-closed path (:meth:`_emit_flatten`) and
         the revocation path (:meth:`revoke_and_flatten`).  Returns the published
@@ -474,7 +473,7 @@ class ExitComposer:
         exit_quantity = abs(quantity)
         order_id = derive_order_id(id_seed)
 
-        order = OrderRequest(
+        req = DeRiskRequirement(
             timestamp_ns=timestamp_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
@@ -482,13 +481,12 @@ class ExitComposer:
             order_id=order_id,
             symbol=symbol,
             side=side,
-            order_type=OrderType.MARKET,
             quantity=exit_quantity,
             strategy_id=strategy_id,
             reason=reason,
         )
         self._pending_exit[key] = (opened, quantity)
-        self._bus.publish(order)
+        self._bus.publish(req)
         _logger.info(
             "ExitComposer emitted %s EXIT for %s (strategy=%s, qty=%d, side=%s)",
             reason,
@@ -497,7 +495,7 @@ class ExitComposer:
             exit_quantity,
             side.name,
         )
-        return order
+        return req
 
     def _clear_episode_if_flat(self, strategy_id: str, symbol: str) -> None:
         """Release the duplicate-close guard once the slice returns to flat."""

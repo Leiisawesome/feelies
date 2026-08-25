@@ -22,7 +22,7 @@ from decimal import Decimal
 import pytest
 
 from feelies.bus.event_bus import EventBus
-from feelies.core.events import OrderRequest, SafetyReason, SafetyStateChange
+from feelies.core.events import DeRiskRequirement, SafetyReason, SafetyStateChange
 from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.exit_composer import (
@@ -205,11 +205,11 @@ def _make(
     store: StrategyPositionStore | None = None,
     policies: dict[str, ExitComposerPolicy] | None = None,
     seq_start: int = 20_000,
-) -> tuple[ExitComposer, StrategyPositionStore, EventBus, list[OrderRequest]]:
+) -> tuple[ExitComposer, StrategyPositionStore, EventBus, list[DeRiskRequirement]]:
     bus = EventBus()
     store = store if store is not None else StrategyPositionStore()
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     composer = ExitComposer(
         bus=bus,
         sequence_generator=SequenceGenerator(start=seq_start),
@@ -246,7 +246,7 @@ def _safety(
     )
 
 
-def _serialize(orders: list[OrderRequest]) -> str:
+def _serialize(orders: list[DeRiskRequirement]) -> str:
     return json.dumps(
         [
             {
@@ -374,8 +374,8 @@ def test_deterministic_replay() -> None:
 def test_attach_without_policies_is_noop() -> None:
     bus = EventBus()
     store = StrategyPositionStore()
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
     composer = ExitComposer(
         bus=bus,
         sequence_generator=SequenceGenerator(),

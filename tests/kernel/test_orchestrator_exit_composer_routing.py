@@ -28,6 +28,7 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
+    DeRiskRequirement,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
@@ -173,8 +174,8 @@ def _composer_order(
     reason: str = EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED,
     source_layer: str = EXIT_COMPOSER_SOURCE_LAYER,
     sequence: int = 1,
-) -> OrderRequest:
-    return OrderRequest(
+) -> DeRiskRequirement:
+    return DeRiskRequirement(
         timestamp_ns=2000,
         correlation_id="cx-corr-1",
         sequence=sequence,
@@ -182,7 +183,6 @@ def _composer_order(
         order_id=order_id,
         symbol=symbol,
         side=side,
-        order_type=OrderType.MARKET,
         quantity=quantity,
         strategy_id=_SID,
         reason=reason,
@@ -224,7 +224,21 @@ class TestComposerOrderRouting:
     def test_risk_layer_unrelated_reason_still_ignored(self) -> None:
         bus = EventBus()
         _, router, _ = _build_orchestrator(bus=bus)
-        bus.publish(_composer_order(reason="some_other_risk_event", order_id="cx-x"))
+        bus.publish(
+            OrderRequest(
+                timestamp_ns=2000,
+                correlation_id="cx-corr-1",
+                sequence=1,
+                source_layer=EXIT_COMPOSER_SOURCE_LAYER,
+                order_id="cx-x",
+                symbol=_SYMBOL,
+                side=Side.SELL,
+                order_type=OrderType.MARKET,
+                quantity=100,
+                strategy_id=_SID,
+                reason="some_other_risk_event",
+            )
+        )
         assert router.submitted == []
 
 

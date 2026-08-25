@@ -315,14 +315,8 @@ def _replay_risk_flatten() -> tuple[str, int]:
     immediate ``SAFETY_FAIL_CLOSED`` exit.  One log, both authors, both streams.
     """
     bus = EventBus()
-    captured: list[DeRiskRequirement | OrderRequest] = []
-
-    def _capture(event: object) -> None:
-        if isinstance(event, (DeRiskRequirement, OrderRequest)):
-            captured.append(event)
-
-    bus.subscribe(DeRiskRequirement, _capture)
-    bus.subscribe(OrderRequest, _capture)
+    captured: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, captured.append)  # type: ignore[arg-type]
 
     store = StrategyPositionStore()
     _seed_open_book(store)
@@ -344,7 +338,7 @@ def _replay_risk_flatten() -> tuple[str, int]:
     return _hash_order_stream(captured), len(captured)
 
 
-def _hash_order_stream(orders: list[DeRiskRequirement | OrderRequest]) -> str:
+def _hash_order_stream(orders: list[DeRiskRequirement]) -> str:
     lines: list[str] = []
     for o in orders:
         lines.append(
@@ -439,14 +433,8 @@ def test_two_replays_produce_identical_risk_flatten_hash() -> None:
 def test_risk_flatten_stream_reasons_and_authors() -> None:
     """Sanity guard: composer SAFETY_FAIL_CLOSED + deferral MAX_HOLD, slice-scoped."""
     bus = EventBus()
-    captured: list[DeRiskRequirement | OrderRequest] = []
-
-    def _capture(event: object) -> None:
-        if isinstance(event, (DeRiskRequirement, OrderRequest)):
-            captured.append(event)
-
-    bus.subscribe(DeRiskRequirement, _capture)
-    bus.subscribe(OrderRequest, _capture)
+    captured: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, captured.append)  # type: ignore[arg-type]
     store = StrategyPositionStore()
     _seed_open_book(store)
     _build_risk_authors(store, bus)
