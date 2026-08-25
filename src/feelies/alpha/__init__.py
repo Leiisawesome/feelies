@@ -38,11 +38,9 @@ from feelies.alpha.module import (
     ParameterDef,
 )
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
-from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.validation import validate_alpha_set
 
 __all__ = [
-    "AlphaBudgetRiskWrapper",
     "AlphaLoadError",
     "AlphaLoader",
     "AlphaManifest",

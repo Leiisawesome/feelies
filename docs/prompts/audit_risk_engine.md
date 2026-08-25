@@ -95,7 +95,7 @@ M6  OrderRequest → check_order  → emit / veto
 - `src/feelies/risk/sized_intent_orders.py`, `sized_intent_result.py` — intent → per-leg
   decomposition + per-leg veto
 - `src/feelies/risk/hazard_exit.py` — `HazardExitController` (exit-only)
-- `src/feelies/alpha/risk_wrapper.py` — per-alpha risk param wiring
+- `src/feelies/risk/risk_wrapper.py` — per-alpha risk param wiring
 
 ### Tests (spec + gap analysis)
 

@@ -51,7 +51,6 @@ from feelies.core.events import (
     AlertSeverity,
     Event,
     HorizonTick,
-    KillSwitchActivation,
     LatencyBreach,
     MetricEvent,
     MetricType,
@@ -156,7 +155,13 @@ from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
-from feelies.risk.engine import RiskEngine
+from feelies.risk.engine import (
+    RiskEngine,
+    _compute_target_quantity,
+    _emergency_flatten_all,
+    _escalate_risk,
+    _maybe_flip_buying_power_at_rth_close,
+)
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.deferral_cap import (
     DEFERRAL_EXIT_REASONS,
@@ -788,38 +793,6 @@ class Orchestrator:
             return
         bind(lambda sym: int(PositionBookView.from_store(self._positions).get(sym)))
 
-    def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
-        """Switch buying-power phase at each resolved RTH close.
-
-        Multi-day replays re-arm the latch when the session date changes."""
-        bounds = self._trading_session_bounds
-        if bounds is None:
-            return
-        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
-        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
-
-        # New NY session date → reopen on the intraday cap and re-arm the flip.
-        if effective.session_date != self._rth_bp_session_date:
-            self._rth_bp_session_date = effective.session_date
-            if self._rth_close_bp_flipped:
-                self._rth_close_bp_flipped = False
-                if callable(set_phase):
-                    from feelies.risk.buying_power import BuyingPowerPhase
-
-                    set_phase(BuyingPowerPhase.INTRADAY)
-
-        if self._rth_close_bp_flipped:
-            return
-        if quote.exchange_timestamp_ns < effective.rth_close_ns:
-            return
-        if not callable(set_phase):
-            self._rth_close_bp_flipped = True
-            return
-        from feelies.risk.buying_power import BuyingPowerPhase
-
-        set_phase(BuyingPowerPhase.OVERNIGHT)
-        self._rth_close_bp_flipped = True
-
     def _reset_buying_power_phase_for_session(self) -> None:
         """Reset the RTH latch and restore intraday buying power."""
         self._rth_close_bp_flipped = False
@@ -1352,7 +1325,7 @@ class Orchestrator:
 
             sized = self._risk_engine.check_sized_intent(intent, self._positions)
             if sized.requires_global_risk_escalation:
-                self._escalate_risk(correlation_id)
+                _escalate_risk(self, correlation_id)
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
                     trigger="portfolio_intent_risk_escalation",
@@ -1434,7 +1407,7 @@ class Orchestrator:
         """Fail-safe submit when micro cannot enter ``RISK_CHECK`` (should be rare)."""
         sized = self._risk_engine.check_sized_intent(intent, self._positions)
         if sized.requires_global_risk_escalation:
-            self._escalate_risk(correlation_id)
+            _escalate_risk(self, correlation_id)
             return
         orders: list[OrderRequest] = list(sized.orders)
         if not orders:
@@ -1643,7 +1616,7 @@ class Orchestrator:
         self._bus.publish(quote)
         self._tick_timings["sensor_fanout_ns"] = time.perf_counter_ns() - t_pub
         # Use exchange time so risk and routing cross the RTH close together.
-        self._maybe_flip_buying_power_at_rth_close(quote)
+        _maybe_flip_buying_power_at_rth_close(self, quote)
 
         # Reconcile quote-triggered fills and cancels before evaluating signals.
         self._reconcile_resting_fills(cid)
@@ -1702,7 +1675,7 @@ class Orchestrator:
             return
 
         # ── Position sizing: compute target quantity from risk budget ──
-        target_qty = self._compute_target_quantity(signal, quote)
+        target_qty = _compute_target_quantity(self, signal, quote)
         self._record_size_shadow(signal, quote)
 
         # ── Decision: Signal × Position → OrderIntent ──────────────────
@@ -1805,7 +1778,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._escalate_risk(cid)
+                _escalate_risk(self, cid)
                 self._micro.reset(
                     trigger="pipeline_abort:risk_lockdown",
                     correlation_id=cid,
@@ -1934,7 +1907,7 @@ class Orchestrator:
                     ),
                     trading_intent=intent.intent.name,
                 )
-                self._escalate_risk(cid)
+                _escalate_risk(self, cid)
                 self._micro.reset(
                     trigger="pipeline_abort:check_order_lockdown",
                     correlation_id=cid,
@@ -2371,171 +2344,6 @@ class Orchestrator:
         if self._regime_hazard_detector is not None:
             self._regime_hazard_detector.reset()
 
-    def _escalate_risk(self, correlation_id: str) -> None:
-        """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
-
-        Monotonically tightens safety (platform inv 11).  Once R1
-        (WARNING) is entered, de-escalation is impossible without
-        completing the full cycle to R4 and human unlock.
-
-        At R3 (FORCED_FLATTEN) we attempt to close all non-zero
-        positions via emergency market orders before transitioning
-        to R4 (LOCKED).
-        """
-        level = self._risk_escalation.state
-
-        if level == RiskLevel.NORMAL:
-            self._risk_escalation.transition(
-                RiskLevel.WARNING,
-                trigger="risk_threshold_approaching",
-                correlation_id=correlation_id,
-            )
-            level = RiskLevel.WARNING
-
-        if level == RiskLevel.WARNING:
-            self._risk_escalation.transition(
-                RiskLevel.BREACH_DETECTED,
-                trigger="risk_breach_confirmed",
-                correlation_id=correlation_id,
-            )
-            level = RiskLevel.BREACH_DETECTED
-
-        if level == RiskLevel.BREACH_DETECTED:
-            self._risk_escalation.transition(
-                RiskLevel.FORCED_FLATTEN,
-                trigger="forced_flatten_initiated",
-                correlation_id=correlation_id,
-            )
-            level = RiskLevel.FORCED_FLATTEN
-
-        if level == RiskLevel.FORCED_FLATTEN:
-            failures, residual = self._emergency_flatten_all(correlation_id)
-            flatten_clean = not failures and not residual
-            self._risk_escalation.transition(
-                RiskLevel.LOCKED,
-                trigger=(
-                    "positions_zero_flatten_complete"
-                    if flatten_clean
-                    else "emergency_flatten_incomplete_residual_exposure"
-                ),
-                correlation_id=correlation_id,
-            )
-
-        if self._kill_switch is not None:
-            self._kill_switch.activate(
-                reason="risk_escalation_lockdown",
-                activated_by="orchestrator",
-            )
-            self._bus.publish(
-                KillSwitchActivation(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=correlation_id,
-                    sequence=self._seq.next(),
-                    reason="risk_escalation_lockdown",
-                    activated_by="orchestrator",
-                )
-            )
-
-        self._macro.transition(
-            MacroState.RISK_LOCKDOWN,
-            trigger="RISK_BREACH",
-            correlation_id=correlation_id,
-        )
-
-    def _emergency_flatten_all(
-        self,
-        correlation_id: str,
-    ) -> tuple[dict[str, str], dict[str, int]]:
-        """Cancel resting orders and submit market exits for every open position."""
-        positions = self._positions.all_positions()
-        failures: dict[str, str] = {}
-        # Iterate in lexicographic symbol order so the emitted
-        # OrderRequest stream is bit-identical across replays even
-        # when the position store's insertion order differs (Inv-5).
-        for symbol in sorted(positions):
-            pos = positions[symbol]
-            if pos.quantity == 0:
-                continue
-            side = Side.SELL if pos.quantity > 0 else Side.BUY
-            qty = abs(pos.quantity)
-            seq = self._seq.next()
-            order_id = derive_order_id(f"emergency_flatten:{correlation_id}:{symbol}:{seq}")
-
-            order = OrderRequest(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=correlation_id,
-                sequence=seq,
-                order_id=order_id,
-                symbol=symbol,
-                side=side,
-                order_type=OrderType.MARKET,
-                quantity=qty,
-                strategy_id="emergency_flatten",
-                # Price lockdown fills with panic slippage and depleted depth.
-                reason="FORCE_FLATTEN",
-            )
-
-            try:
-                self._track_order(order_id, side, order)
-                submit_exc = self._submit_tracked_order(
-                    order,
-                    trigger="emergency_flatten",
-                )
-                if submit_exc is not None:
-                    failures[symbol] = f"submit_exception: {submit_exc!r}"
-                    continue
-
-                self._bus.publish(order)
-                acks = self._settle_router_acks(correlation_id, expected_order_ids={order_id})
-                # A reject / zero-fill ack still leaves the position open.
-                # Surface it as a failure so the residual alert sees it.
-                non_fill_acks = [
-                    a
-                    for a in acks
-                    if a.order_id == order_id
-                    and (a.filled_quantity or 0) == 0
-                    and a.status in (OrderAckStatus.REJECTED, OrderAckStatus.CANCELLED)
-                ]
-                if non_fill_acks:
-                    failures[symbol] = (
-                        f"{non_fill_acks[0].status.name}: {non_fill_acks[0].reason or 'no reason'}"
-                    )
-            except Exception as exc:
-                logger.exception(
-                    "Emergency flatten failed for %s (qty=%d) -- "
-                    "position may remain open at LOCKED",
-                    symbol,
-                    pos.quantity,
-                )
-                failures[symbol] = f"submit_exception: {exc!r}"
-                if order_id in self._active_orders:
-                    self._force_order_terminal_after_pipeline_error(
-                        order,
-                        exc,
-                        context="emergency_flatten",
-                    )
-
-        residual = {
-            sym: p.quantity
-            for sym, p in self._positions.all_positions().items()
-            if p.quantity != 0
-        }
-        if residual or failures:
-            msg = (
-                f"Emergency flatten incomplete — residual positions: "
-                f"{residual}, total_exposure={self._positions.total_exposure()}, "
-                f"failures={failures}"
-            )
-            logger.critical(msg)
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=correlation_id,
-                severity=AlertSeverity.CRITICAL,
-                alert_name="emergency_flatten_incomplete",
-                message=msg,
-            )
-        return failures, residual
-
     def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
         """True once the quote crosses the session-flatten deadline.
 
@@ -2557,45 +2365,6 @@ class Orchestrator:
             enabled=self._session_flatten_enabled,
             seconds_before_close=self._session_flatten_seconds_before_close,
             at_ns=at_ns,
-        )
-
-    def _compute_target_quantity(
-        self,
-        signal: Signal,
-        quote: NBBOQuote,
-    ) -> int | None:
-        """Use PositionSizer + AlphaRegistry to compute target quantity.
-
-        Returns None if the registry is not available, letting the
-        IntentTranslator fall back to its default.
-        """
-        if self._alpha_registry is None:
-            return None
-
-        try:
-            alpha = self._alpha_registry.get(signal.strategy_id)
-        except KeyError:
-            return None
-
-        risk_budget = alpha.manifest.risk_budget
-        mid_price = (quote.bid + quote.ask) / Decimal(2)
-        if mid_price <= 0:
-            return 0
-
-        # The alpha's declared risk budget is the sizing authority: this result
-        # is never inflated.  ``platform_min_order_shares`` used to raise any
-        # nonzero target up to the floor, which made the floor the binding
-        # constraint and ``capital_allocation_pct`` inert — at 50k equity and
-        # APP near $396 a 25% budget asks for 15-31 shares and every one of them
-        # was raised to 50, so the platform traded 2.4x what the budget
-        # sanctioned.  A control that autonomously *increases* exposure over a
-        # declared budget is a loosening, and Inv-11 reserves those for a human.
-        # The floor is now a venue lot-size veto only (see platform.yaml).
-        return self._position_sizer.compute_target_quantity(
-            signal=signal,
-            risk_budget=risk_budget,
-            symbol_price=mid_price,
-            account_equity=self._account_equity,
         )
 
     def _record_size_shadow(self, signal: Signal, quote: NBBOQuote) -> None:
@@ -2771,7 +2540,7 @@ class Orchestrator:
         )
 
         def _signed_target(sig: Signal) -> int:
-            tq = self._compute_target_quantity(sig, quote)
+            tq = _compute_target_quantity(self, sig, quote)
             return desired_from_signal(
                 sig,
                 tq,
@@ -2788,7 +2557,7 @@ class Orchestrator:
                 continue  # synthetic kernel signal, not an alpha target
             desired = desired_from_signal(
                 sig,
-                self._compute_target_quantity(sig, quote),
+                _compute_target_quantity(self, sig, quote),
                 default_target_quantity=default_target,
             )
             self._desired_target_book.put(
@@ -2880,7 +2649,7 @@ class Orchestrator:
                 # _emergency_flatten_all() closes this leg (and every other
                 # open position) directly with a properly-tagged flatten,
                 # so defer to it here rather than also submitting this leg.
-                self._escalate_risk(cid)
+                _escalate_risk(self, cid)
                 self._finalize_tick(t_wall_start, cid, "reverse_exit_force_flatten_escalation")
                 return
             # BACKTEST_MODE has no reachable lockdown transition, so there

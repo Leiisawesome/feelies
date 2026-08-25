@@ -39,7 +39,7 @@ from feelies.alpha.dependency_graph import (
     warn_unread_sensor_dependencies,
 )
 from feelies.alpha.registry import AlphaRegistry
-from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
+from feelies.risk.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock, SimulatedClock, WallClock

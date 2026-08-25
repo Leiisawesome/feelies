@@ -115,7 +115,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `promotion/evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
 | `alpha/portfolio_layer_module.py` | composition |
 | `portfolio/fill_attribution.py` | forensics |
-| `alpha/risk_wrapper.py` | risk_engine |
+| `risk/risk_wrapper.py` | risk_engine |
 | `composition/`, `portfolio/cross_sectional_tracker.py` | composition |
 | `portfolio/position_store.py`, `memory_position_store.py`, `strategy_position_store.py`, `lot_ledger.py`, `position_book_view.py` | position_management (PnL ledger) |
 | `storage/trade_journal.py`, `memory_trade_journal.py` | position_management (fill journal) |

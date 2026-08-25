@@ -189,7 +189,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         8,
         "E8.budget_check_signal",
-        "feelies.alpha.risk_wrapper:AlphaBudgetRiskWrapper.check_signal",
+        "feelies.risk.risk_wrapper:AlphaBudgetRiskWrapper.check_signal",
     ),
     (
         8,
@@ -199,12 +199,12 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         8,
         "E8.compute_target_qty",
-        "feelies.kernel.orchestrator:Orchestrator._compute_target_quantity",
+        "feelies.risk.engine:_compute_target_quantity",
     ),
     (
         8,
         "E8.buying_power_flip",
-        "feelies.kernel.orchestrator:Orchestrator._maybe_flip_buying_power_at_rth_close",
+        "feelies.risk.engine:_maybe_flip_buying_power_at_rth_close",
     ),
     # -- engine 9: execution decision -------------------------------------
     (9, "E9.plan", "feelies.execution.position_manager:TargetPositionManager.plan"),

@@ -59,6 +59,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.engine import _compute_target_quantity, _emergency_flatten_all
 from feelies.risk.escalation import RiskLevel
 from feelies.services.regime_engine import _calibrate_regime_engine
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -1106,7 +1107,7 @@ class TestOrchestratorFillReconcileGuards:
         _boot_to_backtest(orch)
         orch._positions.update("AAPL", 100, Decimal("150.00"))
 
-        failures, residual = orch._emergency_flatten_all("esc-cid")
+        failures, residual = _emergency_flatten_all(orch, "esc-cid")
 
         assert "AAPL" in failures
         assert residual["AAPL"] == 100
@@ -1562,7 +1563,7 @@ class TestForcedExitReasonClassification:
         orch._positions.update("AAPL", 100, Decimal("150.00"))
         orch._backend.order_router.on_quote(_make_quote(ts=2000, seq=7))  # type: ignore[attr-defined]
 
-        orch._emergency_flatten_all("esc-cid")
+        _emergency_flatten_all(orch, "esc-cid")
 
         flat_orders = [o for o in orders if o.strategy_id == "emergency_flatten"]
         assert len(flat_orders) == 1
@@ -3851,7 +3852,7 @@ class TestForcedExitPanicReason:
         )
         _boot_to_backtest(orch)
 
-        orch._emergency_flatten_all("esc-cid")
+        _emergency_flatten_all(orch, "esc-cid")
 
         flatten_orders = [o for o in orders if o.strategy_id == "emergency_flatten"]
         assert len(flatten_orders) == 1
@@ -4753,8 +4754,8 @@ class TestRiskBudgetIsTheSizingAuthority:
         small = self._orch_with_budget(5.0, min_order_shares=50)
         large = self._orch_with_budget(50.0, min_order_shares=50)
 
-        small_target = small._compute_target_quantity(self._signal(), quote)
-        large_target = large._compute_target_quantity(self._signal(), quote)
+        small_target = _compute_target_quantity(small, self._signal(), quote)
+        large_target = _compute_target_quantity(large, self._signal(), quote)
 
         # 50000 * 5% / 400 = 6 ; 50000 * 50% / 400 = 62
         assert small_target == 6
@@ -4773,6 +4774,6 @@ class TestRiskBudgetIsTheSizingAuthority:
         """
         quote = _make_quote(bid="399.50", ask="400.50")
         orch = self._orch_with_budget(5.0, min_order_shares=1000)
-        target = orch._compute_target_quantity(self._signal(), quote)
+        target = _compute_target_quantity(orch, self._signal(), quote)
         assert target == 6, "sized target was inflated toward min_order_shares"
         assert target < orch._min_order_shares
