@@ -4473,3 +4473,357 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-22.json,
                  baseline_post-S-22.json, this ledger entry.
 
+---
+
+## S-23  2026-08-25T10:15:30+08:00
+  STEP:          S-23
+  BASE:          6c5f8403474c8a6893639d1a4e49865970ce3603
+  RESULT SHA:    not started — blocked at pre-flight, no branch cut, no edit made
+  VERDICT:       blocked
+  CONFORMANCE:   S2, S8, S12, S14 | failed-before: not run | passes-after: not run
+  TESTS:         not run -> not run
+  PARITY:        declared (operator) six movers; declared (STEP block)
+                 two hashes + fingerprint, halt/symbol_halted/position_pnl
+                 hold | actual unmoved — no implement
+  FILES:         14 declared, 0 touched. HEAD arch/exec @ 6c5f840.
+                 exec/S-23 not cut. tools/exec diff vs exec-tools-v1
+                 empty. Working tree clean aside from this ledger entry.
+                 No capture.
+  NET DELTA:     declared src modules 0, public symbols +1 -1 = 0,
+                 branch points -1 | actual 0 / 0 / 0
+  DETERMINISM:   not run
+  VERIFY_STEP:   not run — no implement
+  NOTES:         Pre-flight: porcelain empty, HEAD arch/exec, tools/exec
+                 vs exec-tools-v1 empty. Capture not run (same hand-back
+                 as S-15 first blocked). Current values that the operator
+                 prompt names as movers (not re-pinned):
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                   79b35ea6d10038ec5e36b7844172afadda521734b298b3c8628bd98995bdbd81
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                   87445b362a294c75abc6c63f2318e99c2d3da359501222b5b281efba4a62ac14
+                 EXPECTED_HALT_ORDER_HASH
+                   f791d994712762590eda4281830a0b4ce1af8b20cd295e2defcbbcd34e4a11e7
+                 EXPECTED_SYMBOL_HALTED_HASH
+                   a7b5c52139086e62019a282a6e3ec9352c677917dda2eaf2d13c7000af06c564
+                 EXPECTED_POSITION_PNL_HASH
+                   7add366c6db014c0d20d0c4900f3bf192ab20d96738a0d28670ba003afdd6a05
+                 EXPECTED_MANIFEST_FINGERPRINT
+                   dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b
+                 6c5f840 claimed to name the eight consumers of
+                 OrderRequest.reason; the STEP block still does not.
+                 Production readers found (not named in the block):
+                 orchestrator._order_owns_one_slice:244,
+                 _is_forced_market_exit:260,
+                 _trade_journal_legs:288,
+                 slice-scoped clamp:3338,
+                 _on_bus_hazard_order:4643,
+                 _emit_forced_exit_resized_alert:4773,
+                 _emit_forced_exit_stood_down_alert:4799,
+                 execution/market_fill.py:196,
+                 monitoring/horizon_metrics.py:276,
+                 forensics/gate_close_attribution.py:212.
+                 Outbound copies of reason would leave market_fill,
+                 horizon_metrics, and forensics unedited; they are
+                 still unnamed consumers. A ninth (those three plus
+                 resized/stood_down beyond a named eight) is a FILES
+                 question if any of them must change.
+  FINDINGS:      PLAN DEFECT — FILES cannot land the type split.
+                 1. Author tests subscribe to OrderRequest and would
+                    go silent when publishers emit DeRiskRequirement.
+                    Not in FILES:
+                      tests/risk/test_stop_exit_controller.py
+                      tests/risk/test_hazard_exit.py
+                      tests/risk/test_deferral_cap.py
+                      tests/risk/test_exit_composer.py
+                      tests/risk/test_exit_composer_revocation.py
+                    test_stop_exit_controller.py:101 also asserts
+                    order.order_type is MARKET, which a requirement
+                    without that field cannot satisfy.
+                 2. Kernel tests publish OrderRequest as the inbound
+                    de-risk command. Deleting subscribe(OrderRequest,
+                    _on_bus_hazard_order) fails them. Not in FILES:
+                      tests/kernel/test_orchestrator_hazard_exit_routing.py
+                      tests/kernel/test_orchestrator_exit_composer_routing.py
+                      tests/kernel/test_stage0_decouple_wiring.py
+                      tests/kernel/test_orchestrator.py
+                      tests/determinism/test_forced_exit_attribution_replay.py
+                    The last also pins
+                    EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH; the STEP
+                    block says if that hash moves, STOP and amend.
+                 3. Parity declarations conflict. Operator prompt:
+                    five replay hashes + fingerprint move. STEP
+                    PARITY IMPACT: only the two order hashes +
+                    fingerprint; halt_order, symbol_halted,
+                    position_pnl hold, and a move is amend-not-fold.
+                    Retargeting the four S-13 contracts to
+                    DeRiskRequirement makes Orchestrator the sole
+                    OrderRequest producer, which draws self._seq —
+                    that is the halt/pnl shift G.7 already named.
+                    Implementing S-13 as written violates the STEP
+                    block's hold; obeying the hold leaves four
+                    author streams still producing OrderRequest
+                    sequences. The step needs one declaration.
+                 4. DeRiskRequirement payload is unspecified.
+                    Authors today set order_id (derived),
+                    order_type=MARKET, sequence from their
+                    generator, source_layer=RISK, symbol, side,
+                    quantity, strategy_id, reason. Whether the
+                    requirement carries order_id and order_type,
+                    and whether the kernel copies sequence or
+                    draws orchestrator _seq, is a decision the
+                    block does not contain.
+                 5. sized_intent_orders.py is in FILES and is not
+                    an inbound de-risk author (outbound PORTFOLIO
+                    legs). The tests that will fail are not.
+                 Standing rule: a fifteenth file means STOP; do
+                 not edit undeclared tests; do not skip them to
+                 stay inside FILES. No implement.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id test (S-04c);
+                 serialization.py missing __schema_version__
+                 tag as current version (fail-open); ci.yml
+                 G40 continue-on-error: true until G40;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); 11
+                 UNIT_UNDETERMINED block S-24; accepted
+                 baseline failure set is the four exempted
+                 tests; R6 14/31 resets; S-20 no-any-return;
+                 S-21 package-move bindings.
+  NEXT:          Amend the S-23 block: name the eight consumers;
+                 add the author tests and kernel inbound-publish
+                 tests to FILES; pick one parity set; specify
+                 DeRiskRequirement's fields and which generator
+                 stamps outbound OrderRequest.sequence. Then
+                 retry S-23. Do not begin S-24.
+                 Left uncommitted: this ledger entry.
+
+---
+
+## S-23  2026-08-25T11:20:24+08:00
+  STEP:          S-23
+  BASE:          e2d6b8a338f1d5cbe08071a5033be2e8c89e57b4
+  RESULT SHA:    e29a328cc0686bc08beec5c41b038181c0aa418b (exec/S-23; not merged)
+  VERDICT:       blocked
+  CONFORMANCE:   S2 1 passed / 1 xfailed (G40) held
+                 S8 2 passed (PINNED_PAYLOAD failed-before missing=['DeRiskRequirement'], then passed with the class)
+                 S12 2 passed after every commit
+                 S14 2 passed
+                 schema_drift 2 passed; conformance 81 passed / 8 xfailed
+                 kernel 390; risk 336; docs 101; mypy Success (203 files)
+  TESTS:         capture pre-S-23 GREEN 4873 passed / 0 failed / 19 skipped
+                 -> not-paper_rth 4868 passed / 4 failed / 6 skipped / 14 deselected / 8 xfailed
+                 Failures outside the four exempted tests (stop):
+                   tests/bootstrap/test_bus_subscription_order.py::test_order_request_handler_order
+                   tests/integration/test_hazard_exit_e2e.py::test_hazard_spike_closes_an_open_position
+                   tests/integration/test_hazard_exit_e2e.py::test_short_position_exits_via_buy_side
+                   tests/promotion/test_lifecycle_revocation.py::test_quarantine_flattens_open_deferred_book_immediately
+                 post-S-23 capture not run (suite red).
+  PARITY:        declared 3 movers | actual 3 on exec/S-23 | MATCH on branch
+                 LEVEL4_HAZARD_EXIT_ORDER_HASH
+                   79b35ea6d10038ec5e36b7844172afadda521734b298b3c8628bd98995bdbd81
+                   -> a7cc224630daf399c65f21cfcb39687f1c25206bd2bbf57ab87dd80b7ee065b3
+                   (d4fd91a hazard_exit)
+                 DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                   87445b362a294c75abc6c63f2318e99c2d3da359501222b5b281efba4a62ac14
+                   -> 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                   (e67ba70 deferral_cap; composer commit held)
+                 MANIFEST_FINGERPRINT
+                   dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b
+                   -> 82fac390f76c84734eed4d13f0fe82ae9d56d070eeb0f4c4d3854bdff0eab5a1 (3b5ea73 class)
+                   -> 43df4a99d9b460b31a3b51f96df9dfb863369017b6b7367a0b06bfd9ca54eeab (d4fd91a)
+                   -> e5fe32165d5efbbd55987c120f1268d5cddc305475ad4ff1ab589ca5d180f7e2 (e67ba70)
+                 Hold set unmoved: halt_order, symbol_halted, position_pnl,
+                 forced_exit_attribution, STOP_EXIT_STREAMS; COUNTs 3 and 2.
+  FILES:         23 declared, 21 in e2d6b8a..e29a328 (clean vs declared).
+                 Untouched declared: parity_manifest.py (imports only),
+                 tests/kernel/test_orchestrator.py (kernel re-publish kept
+                 OrderRequest subscribers green).
+                 Three failing files are not in FILES — 24th/25th/26th.
+                 No 25th production file edited.
+  NET DELTA:     declared src modules 0, public symbols +1 -1 = 0,
+                 branch points -1 | not landed on arch/exec
+  DETERMINISM:   148 passed after every commit
+  VERIFY_STEP:   not run — TESTS failed stop-the-line before capture/verify
+  NOTES:         Commit order on exec/S-23:
+                 3b5ea73 event + PINNED_PAYLOAD (fingerprint)
+                 38a2313 wiring / dual-subscribe converter (none)
+                 48fa030 stop_exit (none; STOP_EXIT_STREAMS held)
+                 d4fd91a hazard_exit (LEVEL4 hash + fingerprint)
+                 e67ba70 deferral_cap (flatten hash + fingerprint)
+                 be5b654 exit_composer (none; flatten held)
+                 e29a328 kernel conversion, delete inbound OrderRequest (none)
+                 Arrangement: kernel-constructs, author-stamps. Converter
+                 copies event.sequence; no self._seq on conversion.
+                 DeRiskRequirement payload: order_id, symbol, side, quantity
+                 (share), strategy_id, reason. Author sets envelope + all six;
+                 kernel fills OrderRequest.order_type=MARKET and publishes.
+                 Ten production reason consumers: 1-4 outbound orchestrator
+                 stay on OrderRequest; 5 inbound handler deleted (type is
+                 admission); 6-7 alerts stay on outbound OrderRequest; 8-10
+                 market_fill / horizon_metrics / gate_close_attribution
+                 unedited. No eleventh production reader found.
+                 no-any-return: _order_request_from_derisk(event:
+                 DeRiskRequirement) -> OrderRequest; mypy clean.
+                 Author generators kept stamping. Dual-subscribe existed
+                 only until e29a328 so undeclared STOP_EXIT_STREAMS and
+                 registration_order stayed green through author commits.
+  FINDINGS:      PLAN DEFECT — FILES still incomplete after the four
+                 prior fixes. Isolated author and kernel tests were
+                 added; a second ring was not:
+                 1. tests/bootstrap/test_bus_subscription_order.py
+                    asserts Orchestrator remains subscribed to
+                    OrderRequest (HorizonMetricsCollector before
+                    Orchestrator). DELETES of subscribe(OrderRequest)
+                    fails it. Not a .reason reader.
+                 2. tests/integration/test_hazard_exit_e2e.py
+                    _wire subscribes to OrderRequest and filters
+                    o.reason == "HAZARD_SPIKE". Author now emits
+                    DeRiskRequirement. Two positive tests fail; four
+                    negative tests stay green while still listening
+                    to OrderRequest, so they would not catch a
+                    spurious DeRiskRequirement.
+                 3. tests/promotion/test_lifecycle_revocation.py
+                    subscribes to OrderRequest and asserts
+                    order.reason == DECOUPLING_REVOKED on composer
+                    flatten. Same author-emit gap as (2).
+                 Standing rule: a 25th file is STOP; do not edit
+                 undeclared tests; do not skip them to stay inside
+                 FILES. Branch retained for inspection; not merged;
+                 not deleted. Amend FILES with those three, then
+                 retry S-23 from exec/S-23 or a fresh cut.
+                 Carried, not fixed: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days stale
+                 (APP/2026-03-26 current); 11 UNIT_UNDETERMINED block
+                 S-24; R6 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; four exempted baseline tests.
+  NEXT:          Amend S-23 FILES with the three test files above.
+                 Retry S-23. Do not begin S-24.
+                 Left uncommitted: baseline_pre-S-23.json, this ledger
+                 entry (no post capture).
+
+---
+
+## S-23  2026-08-27T10:39:01+08:00
+  STEP:          S-23
+  BASE:          e2d6b8a338f1d5cbe08071a5033be2e8c89e57b4
+  RESULT SHA:    cb8fd6327e73ef50a6d0091165489b04384ee7b2 (exec/S-23; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   S2 1 passed / 1 xfailed (G40) held
+                 S8 2 passed (PINNED_PAYLOAD failed-before missing=['DeRiskRequirement'])
+                 S12 2 passed after every commit
+                 S14 2 passed
+                 schema_drift 2; conformance 81 passed / 8 xfailed
+                 kernel 390; risk 336; docs 101; mypy Success (203 files)
+  TESTS:         capture 4873 passed / 0 failed / 19 skipped
+                 -> 4863 passed / 0 failed / 29 skipped (GREEN)
+                 not-paper_rth: 4862 passed, 16 skipped, 14 deselected,
+                 8 xfailed, 0 failed. Zero failures outside the four
+                 exempted environmental tests. Skip +10 vs pre is a
+                 two-day host delta (capture exit 0); not a new fail.
+  PARITY:        declared 3 movers | actual 3 | MATCH
+                 LEVEL4_HAZARD_EXIT_ORDER_HASH
+                   79b35ea6d10038ec5e36b7844172afadda521734b298b3c8628bd98995bdbd81
+                   -> a7cc224630daf399c65f21cfcb39687f1c25206bd2bbf57ab87dd80b7ee065b3
+                   (d4fd91a hazard_exit)
+                 DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                   87445b362a294c75abc6c63f2318e99c2d3da359501222b5b281efba4a62ac14
+                   -> 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                   (e67ba70 deferral_cap; composer commit held)
+                 MANIFEST_FINGERPRINT
+                   dbcde6a64447f6c55cde6a1221a873ddfacd7d4ab4a42af71b7cc692b8e5e41b
+                   -> 82fac390f76c84734eed4d13f0fe82ae9d56d070eeb0f4c4d3854bdff0eab5a1 (3b5ea73)
+                   -> 43df4a99d9b460b31a3b51f96df9dfb863369017b6b7367a0b06bfd9ca54eeab (d4fd91a)
+                   -> e5fe32165d5efbbd55987c120f1268d5cddc305475ad4ff1ab589ca5d180f7e2 (e67ba70)
+                 Hold set unmoved: halt_order, symbol_halted, position_pnl,
+                 forced_exit_attribution, STOP_EXIT_STREAMS; COUNTs 3 and 2.
+                 baseline.py's 64-constant map does not include the
+                 fingerprint (frozen); capture moved 2 of 64; fingerprint
+                 is the third, in test_parity_manifest.py.
+  FILES:         amended plan (arch/exec 651324c) 26 declared;
+                 e2d6b8a..cb8fd63 24 touched, clean vs amended list.
+                 Declared untouched: parity_manifest.py (imports only),
+                 tests/kernel/test_orchestrator.py (kernel re-publish).
+                 Eighth commit cb8fd63 retargeted the three second-ring
+                 files, including the four negative e2e cases.
+  NET DELTA:     declared src modules 0, public symbols +1 -1 = 0,
+                 branch points -1
+                 actual modules 203 -> 203 (+0)
+                 public_symbols 568 -> 569 (+1) — DeRiskRequirement;
+                 _on_bus_hazard_order was a method, not a module symbol
+                 sloc 45576 -> 45600 (+24)
+                 n_edges 641 -> 641; n_modules 165; cycles 1; alphaleak 2
+  DETERMINISM:   148 passed after every commit
+  VERIFY_STEP:   Four checks (frozen oracle has no TESTS section):
+                 FILES FAIL — parsed exec/S-23's pre-amend FILES
+                 (sized_intent_orders.py still listed; three second-ring
+                 files UNDECLARED). Working-tree plan is e2d6b8a's;
+                 amend lives on arch/exec 651324c. Also parsed
+                 "execution/" from "Do not land an execution/ constructor".
+                 PARITY declared break, matches the two scanned hashes;
+                 fingerprint unscanned. HUMAN RE-BASELINE REQUIRED.
+                 NET DELTA compare-by-eye (public_symbols +1 vs
+                 declared 0; method delete is not a public symbol).
+                 blast platform-wide — human gate required.
+                 Also grepped hold-set EXPECTED_* names into declared
+                 movers (frozen).
+  NOTES:         Eight commits. Kernel-constructs / author-stamps: the
+                 four author generators still stamp the outbound
+                 sequence -- stop_exit:288, hazard_exit:246,
+                 deferral_cap:372, exit_composer:479 -- and the kernel
+                 copies event.sequence without drawing self._seq. That
+                 is what kept halt_order, symbol_halted, position_pnl
+                 and forced_exit_attribution unmoved; merging the
+                 streams onto the orchestrator generator would have
+                 moved all four, which is why the block rejected it.
+                 DeRiskRequirement carries envelope plus order_id,
+                 symbol, side, quantity in shares, strategy_id and
+                 reason; the kernel fills only order_type=MARKET.
+                 Three constants moved, each in its own commit --
+                 LEVEL4 in d4fd91a, flatten in e67ba70, the fingerprint
+                 accumulating across 3b5ea73, d4fd91a and e67ba70.
+                 The inbound OrderRequest subscribe is deleted, so
+                 consumer 5 is gone and the remaining nine readers are
+                 unchanged. One no-any-return, resolved by typing the
+                 conversion helper's parameter.
+                 Re-pin: the three values were already those strings in
+                 the owning modules (d4fd91a, e67ba70, fingerprint
+                 chain). parity_manifest.py has no hash literals; it
+                 imports the owning constants. No ninth commit.
+                 Operator confirmation 2026-08-27: determinism 148,
+                 test_parity_manifest 34 passed, post-S-23 capture GREEN.
+  FINDINGS:      The second ring of listeners was invisible to the
+                 first FILES pass.
+                 tests/bootstrap/test_bus_subscription_order.py asserted
+                 the deleted subscribe; tests/integration/
+                 test_hazard_exit_e2e.py filtered on OrderRequest
+                 reason; and tests/promotion/
+                 test_lifecycle_revocation.py asserted a composer-flatten
+                 reason. Worse, four NEGATIVE cases in the e2e file
+                 stayed green while listening to the wrong type -- a
+                 negative assertion against a type the code no longer
+                 emits asserts nothing. Every remaining step that
+                 changes an event type must enumerate negative
+                 assertions as well as positive ones; a passing test is
+                 not evidence the listener is still bound to the right
+                 type.
+                 verify_step FILES is branch-plan-blind (frozen): the
+                 worktree plan on exec/S-23 is e2d6b8a's, so the three
+                 second-ring files looked undeclared after 651324c
+                 landed only on arch/exec.
+                 Carried, not fixed: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days stale
+                 (APP/2026-03-26 current); 11 UNIT_UNDETERMINED block
+                 S-24; R6 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; four exempted baseline tests.
+  NEXT:          S-24 9 of engine 9's methods sit in the kernel
+                 (boundary). Not started. Do not begin S-24.
+                 Left uncommitted: baseline_pre-S-23.json,
+                 baseline_post-S-23.json, this ledger entry.
+
