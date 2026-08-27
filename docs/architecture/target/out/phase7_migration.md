@@ -2325,6 +2325,15 @@ FILES:           src/feelies/core/events.py (DeRiskRequirement, new)
                  Do not land an execution/ constructor here unless FILES
                  names that module. Not a module move; do not add
                  docs/prompts/. sized_intent_orders.py is not an author.
+                 tests/bootstrap/test_bus_subscription_order.py (asserts
+                 Orchestrator still subscribes to OrderRequest; that subscribe
+                 is what DELETES removes)
+                 tests/integration/test_hazard_exit_e2e.py (_wire captures
+                 OrderRequest and filters reason == "HAZARD_SPIKE"; retarget
+                 the four negative cases too, or they stay green while listening
+                 to the wrong type)
+                 tests/promotion/test_lifecycle_revocation.py (asserts
+                 order.reason == DECOUPLING_REVOKED on composer flatten)
 WHY THIS OWNER:  Phase 2 resolves it on engine 9's sheet: deciding *how* to
                  reduce — which legs, what urgency, what limit price, whether to
                  net against a pending order — is the same job engine 9 does for
