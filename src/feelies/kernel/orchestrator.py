@@ -49,6 +49,7 @@ from feelies.core.errors import (
 from feelies.core.events import (
     Alert,
     AlertSeverity,
+    DeRiskRequirement,
     Event,
     HorizonTick,
     LatencyBreach,
@@ -594,9 +595,9 @@ class Orchestrator:
         # Hazard IDs remain deduplicated after terminal orders leave _active_orders.
         self._hazard_submitted_order_ids: set[str] = set()
 
-        # Route only controller-authored hazard exits. The handler submits,
-        # acknowledges, and reconciles without republishing the bus order.
-        self._bus.subscribe(OrderRequest, self._on_bus_hazard_order)
+        # Route only controller-authored de-risk commands. The handler
+        # copies the author's sequence onto an outbound OrderRequest.
+        self._bus.subscribe(DeRiskRequirement, self._on_bus_derisk_requirement)
 
     # ── Optional SIGNAL → order diagnostic sink ─────────────────────
 
@@ -1972,7 +1973,7 @@ class Orchestrator:
 
         # Suppress duplicates while an order is pending.  Mandated exits are no
         # longer authored here — they arrive on the bus and supersede resting
-        # orders inside ``_on_bus_hazard_order`` — so this path only ever blocks;
+        # orders inside ``_on_bus_derisk_requirement`` — so this path only ever blocks;
         # it never cancels, and therefore has no cancel-then-submit window in
         # which the book could move under an already-built order.
         if self._has_pending_order_for_symbol(order.symbol):
@@ -3262,7 +3263,7 @@ class Orchestrator:
         synchronous so this filter is usually a no-op there.  PORTFOLIO
         has no native supersede-pending semantics — a later boundary's
         leg is dropped rather than cancel-replaced.  Hazard-exit orders
-        bypass this path via :meth:`_on_bus_hazard_order` (Inv-11).
+        bypass this path via :meth:`_on_bus_derisk_requirement` (Inv-11).
         """
         filtered: list[OrderRequest] = []
         for order in orders:
@@ -3353,7 +3354,7 @@ class Orchestrator:
 
         Covers both mandated-exit authors — the kernel's synthetic stop /
         session-flat and the RISK-layer controllers routed through
-        :meth:`_on_bus_hazard_order` — so neither can stack on the other.
+        :meth:`_on_bus_derisk_requirement` — so neither can stack on the other.
         """
         return any(
             order.symbol == symbol
@@ -4630,26 +4631,42 @@ class Orchestrator:
         else:
             self._submit_portfolio_leg_without_micro_walk(event, event.correlation_id)
 
-    # Import the controller's signature so hazard filtering cannot drift.
+    def _order_request_from_derisk(self, event: DeRiskRequirement) -> OrderRequest:
+        """Copy the author's envelope and payload; fill MARKET. No sequence draw."""
+        return OrderRequest(
+            timestamp_ns=event.timestamp_ns,
+            correlation_id=event.correlation_id,
+            sequence=event.sequence,
+            source_layer=event.source_layer,
+            order_id=event.order_id,
+            symbol=event.symbol,
+            side=event.side,
+            order_type=OrderType.MARKET,
+            quantity=event.quantity,
+            strategy_id=event.strategy_id,
+            reason=event.reason,
+        )
 
-    def _on_bus_hazard_order(self, event: Event) -> None:
-        """Submit non-vetoable risk-layer exits received on the bus.
+    def _on_bus_derisk_requirement(self, event: Event) -> None:
+        """Submit non-vetoable risk-layer exits received as DeRiskRequirement.
 
+        Sequence and order_id are the author's. The outbound OrderRequest is
+        published with order_type=MARKET; the kernel does not draw self._seq.
         Orders are clamped to currently closable exposure and deduplicated."""
-        if not isinstance(event, OrderRequest):
+        if not isinstance(event, DeRiskRequirement):
             return
         if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
             return
-        if event.reason not in _RISK_FORCED_EXIT_REASONS:
-            return
+        order = self._order_request_from_derisk(event)
+        self._bus.publish(order)
         # Hazard IDs remain in a dedicated set after active orders are pruned.
-        if event.order_id in self._hazard_submitted_order_ids:
+        if order.order_id in self._hazard_submitted_order_ids:
             return
-        self._hazard_submitted_order_ids.add(event.order_id)
-        hv = self._risk_engine.check_order(event, self._positions)
+        self._hazard_submitted_order_ids.add(order.order_id)
+        hv = self._risk_engine.check_order(order, self._positions)
         # Trust the exit fail-safe only when the order reduces live exposure.
-        current_qty = self._positions.get(event.symbol).quantity
-        order_reduces = self._forced_exit_reduces(event)
+        current_qty = self._positions.get(order.symbol).quantity
+        order_reduces = self._forced_exit_reduces(order)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
@@ -4657,63 +4674,63 @@ class Orchestrator:
             # Non-exit order carrying a hazard reason: REJECT is authoritative.
             self._publish_alert(
                 timestamp_ns=self._clock.now_ns(),
-                correlation_id=event.correlation_id,
+                correlation_id=order.correlation_id,
                 severity=AlertSeverity.CRITICAL,
                 alert_name="hazard_exit_nonreducing_reject_blocked",
-                message=f"check_order returned REJECT on a hazard-tagged order that does not reduce the live position (strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, current_qty={current_qty}, side={event.side.name}, order_qty={event.quantity}, reason={hv.reason!r}) — blocking submission (REJECT is authoritative for non-exit orders).",
-                context={"order_id": event.order_id, "risk_reason": hv.reason},
+                message=f"check_order returned REJECT on a hazard-tagged order that does not reduce the live position (strategy_id={order.strategy_id!r}, symbol={order.symbol!r}, current_qty={current_qty}, side={order.side.name}, order_qty={order.quantity}, reason={hv.reason!r}) — blocking submission (REJECT is authoritative for non-exit orders).",
+                context={"order_id": order.order_id, "risk_reason": hv.reason},
             )
             return
         if hv.action == RiskAction.REJECT:
             self._publish_alert(
                 timestamp_ns=self._clock.now_ns(),
-                correlation_id=event.correlation_id,
+                correlation_id=order.correlation_id,
                 severity=AlertSeverity.WARNING,
                 alert_name="hazard_exit_defensive_check_order_reject",
-                message=f"Defensive check_order returned REJECT on a hazard exit (strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, reason={hv.reason!r}) — submitting anyway (Inv-11 exit fail-safe).",
-                context={"order_id": event.order_id, "risk_reason": hv.reason},
+                message=f"Defensive check_order returned REJECT on a hazard exit (strategy_id={order.strategy_id!r}, symbol={order.symbol!r}, reason={hv.reason!r}) — submitting anyway (Inv-11 exit fail-safe).",
+                context={"order_id": order.order_id, "risk_reason": hv.reason},
             )
         # Resting-order guard, mirroring the SIGNAL path's forced-exit branch.
         # Deferred until here so an exit that ends up blocked above never cancels
         # a resting order without replacing it: cancelling a resting *cover* and
         # then bailing would leave the book more exposed, not less (Inv-11).
-        if self._has_pending_order_for_symbol(event.symbol):
-            if self._has_pending_forced_exit_for_symbol(event.symbol):
+        if self._has_pending_order_for_symbol(order.symbol):
+            if self._has_pending_forced_exit_for_symbol(order.symbol):
                 # A mandated exit is already crossing; a second aggressive leg
                 # would overshoot the position it is closing.
                 logger.info(
                     "Forced exit already pending for %s; skipping duplicate "
                     "%s exit (order_id=%s, strategy_id=%s).",
-                    event.symbol,
-                    event.reason,
-                    event.order_id,
-                    event.strategy_id,
+                    order.symbol,
+                    order.reason,
+                    order.order_id,
+                    order.strategy_id,
                 )
                 return
-            self._emit_forced_exit_supersedes_pending_alert(event, event.correlation_id)
-            self._cancel_resting_for_symbol(event.symbol, event.correlation_id)
+            self._emit_forced_exit_supersedes_pending_alert(order, order.correlation_id)
+            self._cancel_resting_for_symbol(order.symbol, order.correlation_id)
 
         # Re-clamp after cancellations because queued fills may have moved the book.
-        closable = self._forced_exit_closable_quantity(event)
+        closable = self._forced_exit_closable_quantity(order)
         if closable <= 0:
-            self._emit_forced_exit_stood_down_alert(event)
+            self._emit_forced_exit_stood_down_alert(order)
             return
-        if closable < event.quantity:
-            self._emit_forced_exit_resized_alert(event, closable)
+        if closable < order.quantity:
+            self._emit_forced_exit_resized_alert(order, closable)
             # Preserve announced size on the trade without republishing bus data.
-            self._forced_exit_announced_quantity[event.order_id] = event.quantity
-            event = replace(event, quantity=closable)
-        self._track_order(event.order_id, event.side, event)
-        submit_error = self._submit_tracked_order(event, trigger=event.reason)
+            self._forced_exit_announced_quantity[order.order_id] = order.quantity
+            order = replace(order, quantity=closable)
+        self._track_order(order.order_id, order.side, order)
+        submit_error = self._submit_tracked_order(order, trigger=order.reason)
         if submit_error is not None:
             logger.error(
                 "Hazard exit order submission failed for %s "
                 "(strategy_id=%s, reason=%s, order_id=%s); position "
                 "remains open and will be retried on the next spike.",
-                event.symbol,
-                event.strategy_id,
-                event.reason,
-                event.order_id,
+                order.symbol,
+                order.strategy_id,
+                order.reason,
+                order.order_id,
                 exc_info=(
                     type(submit_error),
                     submit_error,
@@ -4721,7 +4738,7 @@ class Orchestrator:
                 ),
             )
             return
-        self._settle_router_acks(event.correlation_id, expected_order_ids={event.order_id})
+        self._settle_router_acks(order.correlation_id, expected_order_ids={order.order_id})
 
     # ── Configuration and data integrity ────────────────────────────
 

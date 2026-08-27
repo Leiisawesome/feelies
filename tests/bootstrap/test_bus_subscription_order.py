@@ -11,6 +11,7 @@ from __future__ import annotations
 from feelies.bootstrap import build_platform
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    DeRiskRequirement,
     Event,
     HorizonFeatureSnapshot,
     HorizonTick,
@@ -99,7 +100,17 @@ def test_sized_intent_handler_order() -> None:
 
 
 def test_order_request_handler_order() -> None:
-    # HorizonMetricsCollector (composition layer) records every order before the
-    # Orchestrator's hazard bridge — constructed later — filters/routes it.
-    names = _owner_names(_build_platform()._bus, OrderRequest)
-    _assert_before(names, "HorizonMetricsCollector", "Orchestrator")
+    # HorizonMetricsCollector records outbound OrderRequest. The hazard bridge
+    # consumes DeRiskRequirement; Orchestrator is not an OrderRequest subscriber.
+    bus = _build_platform()._bus
+    order_names = _owner_names(bus, OrderRequest)
+    assert "HorizonMetricsCollector" in order_names, (
+        f"HorizonMetricsCollector not subscribed to OrderRequest (got {order_names})"
+    )
+    assert "Orchestrator" not in order_names, (
+        f"Orchestrator must not subscribe to OrderRequest (got {order_names})"
+    )
+    derisk_names = _owner_names(bus, DeRiskRequirement)
+    assert "Orchestrator" in derisk_names, (
+        f"Orchestrator not subscribed to DeRiskRequirement (got {derisk_names})"
+    )

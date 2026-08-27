@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from feelies.bus.event_bus import EventBus
-from feelies.core.events import NBBOQuote, OrderRequest, OrderType, Side
+from feelies.core.events import NBBOQuote, DeRiskRequirement, Side
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.moc_session import et_clock_to_ns
 from feelies.execution.trading_session import resolve_trading_session_bounds
@@ -48,10 +48,10 @@ def _build(
     *,
     positions: MemoryPositionStore | None = None,
     bounds: object = None,
-) -> tuple[StopExitController, list[OrderRequest], MemoryPositionStore]:
+) -> tuple[StopExitController, list[DeRiskRequirement], MemoryPositionStore]:
     bus = EventBus()
-    orders: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+    orders: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, orders.append)  # type: ignore[arg-type]
     positions = positions if positions is not None else MemoryPositionStore()
     controller = StopExitController(
         bus=bus,
@@ -98,7 +98,6 @@ def test_percentage_stop_fires_on_adverse_move() -> None:
     order = orders[0]
     assert order.reason == STOP_EXIT_REASON_STOP
     assert order.source_layer == STOP_EXIT_SOURCE_LAYER
-    assert order.order_type is OrderType.MARKET
     assert order.side is Side.SELL
     assert order.quantity == 100
     # Symbol-net: the control belongs to no alpha.

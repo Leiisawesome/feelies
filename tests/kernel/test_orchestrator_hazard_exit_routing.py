@@ -32,6 +32,7 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
     AlertSeverity,
+    DeRiskRequirement,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
@@ -264,8 +265,8 @@ def _make_hazard_order(
     reason: str = "HAZARD_SPIKE",
     source_layer: str = "RISK",
     sequence: int = 1,
-) -> OrderRequest:
-    return OrderRequest(
+) -> DeRiskRequirement:
+    return DeRiskRequirement(
         timestamp_ns=2000,
         correlation_id="hz-corr-1",
         sequence=sequence,
@@ -273,7 +274,6 @@ def _make_hazard_order(
         order_id=order_id,
         symbol=symbol,
         side=side,
-        order_type=OrderType.MARKET,
         quantity=quantity,
         strategy_id="test_alpha",
         reason=reason,
@@ -378,8 +378,17 @@ class TestHandlerFiltersOutNonHazardOrders:
         _, router, _ = _build_orchestrator(bus=bus)
 
         bus.publish(
-            _make_hazard_order(
+            OrderRequest(
+                timestamp_ns=2000,
+                correlation_id="hz-corr-1",
+                sequence=1,
                 source_layer="RISK",
+                order_id="hz-1",
+                symbol="AAPL",
+                side=Side.SELL,
+                order_type=OrderType.MARKET,
+                quantity=100,
+                strategy_id="test_alpha",
                 reason="some_other_risk_event",
             )
         )
@@ -714,7 +723,7 @@ class TestHazardSignatureSingleSourceOfTruth:
     """The bridge filter and controller share one
     definition of the hazard-exit signature, so they cannot drift.
 
-    ``Orchestrator._on_bus_hazard_order`` imports ``HAZARD_EXIT_REASONS`` and
+    ``Orchestrator._on_bus_derisk_requirement`` imports ``HAZARD_EXIT_REASONS`` and
     ``HAZARD_EXIT_SOURCE_LAYER`` from ``feelies.risk.hazard_exit`` — the sole
     writer — rather than re-declaring the literals.  Adding a new hazard reason
     to the writer's set therefore automatically extends what the bridge routes;
@@ -750,7 +759,7 @@ class TestHazardSignatureSingleSourceOfTruth:
 
             assert [o.reason for o in router.submitted] == [reason], (
                 f"hazard reason {reason!r} from HAZARD_EXIT_REASONS was not "
-                f"routed by Orchestrator._on_bus_hazard_order"
+                f"routed by Orchestrator._on_bus_derisk_requirement"
             )
 
 

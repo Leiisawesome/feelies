@@ -28,11 +28,11 @@ from decimal import Decimal
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
+    DeRiskRequirement,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
-    OrderType,
     Side,
 )
 from feelies.execution.backend import ExecutionBackend
@@ -153,7 +153,7 @@ def _replay() -> tuple[str, int]:
     orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
     orch._micro.reset(trigger="session_start:test")
 
-    exit_order = OrderRequest(
+    exit_order = DeRiskRequirement(
         timestamp_ns=2_000,
         correlation_id="forced-exit-corr",
         sequence=1,
@@ -161,7 +161,6 @@ def _replay() -> tuple[str, int]:
         order_id="forced-exit-1",
         symbol=_SYMBOL,
         side=Side.SELL,
-        order_type=OrderType.MARKET,
         quantity=_QTY_A + _QTY_B,
         strategy_id=_ALPHA_A,  # one policy triggered; the fill spans both slices
         reason="HAZARD_SPIKE",
@@ -286,7 +285,7 @@ def test_forced_exit_closes_both_slices_and_mints_no_sentinel() -> None:
     orch._micro.reset(trigger="session_start:test")
 
     bus.publish(
-        OrderRequest(
+        DeRiskRequirement(
             timestamp_ns=2_000,
             correlation_id="forced-exit-corr",
             sequence=1,
@@ -294,7 +293,6 @@ def test_forced_exit_closes_both_slices_and_mints_no_sentinel() -> None:
             order_id="forced-exit-1",
             symbol=_SYMBOL,
             side=Side.SELL,
-            order_type=OrderType.MARKET,
             quantity=_QTY_A + _QTY_B,
             strategy_id=_ALPHA_A,
             reason="HAZARD_SPIKE",
@@ -394,7 +392,7 @@ def test_legs_need_not_sum_to_symbol_net_when_slices_survive_the_exit() -> None:
     orch._micro.reset(trigger="session_start:test")
 
     bus.publish(
-        OrderRequest(
+        DeRiskRequirement(
             timestamp_ns=2_000,
             correlation_id="forced-exit-corr",
             sequence=1,
@@ -402,7 +400,6 @@ def test_legs_need_not_sum_to_symbol_net_when_slices_survive_the_exit() -> None:
             order_id="forced-exit-mixed",
             symbol=_SYMBOL,
             side=Side.SELL,
-            order_type=OrderType.MARKET,
             quantity=100,
             strategy_id=_ALPHA_A,
             reason="HAZARD_SPIKE",

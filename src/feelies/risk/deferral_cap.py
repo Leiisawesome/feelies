@@ -60,8 +60,7 @@ from typing import Mapping
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    OrderRequest,
-    OrderType,
+    DeRiskRequirement,
     SafetyStateChange,
     Side,
     Trade,
@@ -74,7 +73,7 @@ _logger = logging.getLogger(__name__)
 
 _NS_PER_SECOND: int = 1_000_000_000
 
-# ── Deferral-cap OrderRequest signature (single source of truth) ─────────
+# ── Deferral-cap DeRiskRequirement signature (single source of truth) ────
 DEFERRAL_EXIT_SOURCE_LAYER: str = "RISK"
 # ``HARD_EXIT_AGE`` deliberately reuses HazardExitController's reason token so
 # forensics keyed on the age backstop read one lineage across both authors.
@@ -367,7 +366,7 @@ class DeferralCapController:
         # at one trade derive distinct, replayable order IDs (Inv-5).
         order_id = derive_order_id(f"{correlation_id}:{now_ns}:{symbol}:{strategy_id}:{reason}")
 
-        order = OrderRequest(
+        req = DeRiskRequirement(
             timestamp_ns=now_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
@@ -375,13 +374,12 @@ class DeferralCapController:
             order_id=order_id,
             symbol=symbol,
             side=side,
-            order_type=OrderType.MARKET,
             quantity=quantity,
             strategy_id=strategy_id,
             reason=reason,
         )
         self._pending_exit[key] = (opened, position.quantity)
-        self._bus.publish(order)
+        self._bus.publish(req)
         _logger.info(
             "DeferralCapController emitted %s exit for %s (strategy=%s, qty=%d, side=%s)",
             reason,

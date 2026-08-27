@@ -74,7 +74,7 @@ SUBSCRIPTIONS: tuple[Subscription, ...] = (
     Subscription(27, "Alert", "Orchestrator", "_on_alert_event"),
     Subscription(28, "Signal", "Orchestrator", "_on_bus_signal"),
     Subscription(29, "SizedPositionIntent", "Orchestrator", "_on_bus_sized_intent"),
-    Subscription(30, "OrderRequest", "Orchestrator", "_on_bus_hazard_order"),
+    Subscription(30, "DeRiskRequirement", "Orchestrator", "_on_bus_derisk_requirement"),
     Subscription(31, "OrderAck", "_NotificationObserver", "on_event"),
     Subscription(32, "PositionUpdate", "_NotificationObserver", "on_event"),
     Subscription(33, "RiskVerdict", "_NotificationObserver", "on_event"),

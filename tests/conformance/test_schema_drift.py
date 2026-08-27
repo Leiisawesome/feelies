@@ -42,6 +42,14 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "snapshots_by_symbol",
         "completeness",
     ),
+    "DeRiskRequirement": (
+        "order_id",
+        "symbol",
+        "side",
+        "quantity",
+        "strategy_id",
+        "reason",
+    ),
     "HorizonFeatureSnapshot": (
         "symbol",
         "horizon_seconds",

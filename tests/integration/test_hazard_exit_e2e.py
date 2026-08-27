@@ -6,14 +6,14 @@ This integration locks the full regime-to-hazard behavior:
       → RegimeHazardDetector.detect()
       → RegimeHazardSpike on the bus
       → HazardExitController._on_spike()
-      → OrderRequest(reason="HAZARD_SPIKE") on the bus
+      → DeRiskRequirement(reason="HAZARD_SPIKE") on the bus
 
 The fixture reuses the synthetic 7-tick regime-flip sequence from
 ``tests/determinism/test_regime_hazard_replay.py`` so the spike
 stream is the same one the Level-5 hazard-replay parity hash locks.
 A position is pre-seeded into :class:`MemoryPositionStore` long
 enough to clear the controller's ``min_age_seconds`` guard, and we
-assert that the controller emits exactly one ``OrderRequest`` per
+assert that the controller emits exactly one ``DeRiskRequirement`` per
 detected spike (modulo episode-suppression), with the right side
 (``SELL`` for the long), the right quantity (the full position), and
 the right reason tag.
@@ -26,7 +26,7 @@ from decimal import Decimal
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    OrderRequest,
+    DeRiskRequirement,
     RegimeState,
     Side,
 )
@@ -102,11 +102,11 @@ def _wire(
     bus: EventBus,
     position_store: MemoryPositionStore,
     policies: list[HazardPolicy],
-) -> tuple[RegimeHazardDetector, HazardExitController, list[OrderRequest]]:
+) -> tuple[RegimeHazardDetector, HazardExitController, list[DeRiskRequirement]]:
     """Build a detector + controller pair attached to ``bus`` and
-    return them along with a captured list of OrderRequest events."""
-    captured: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, captured.append)  # type: ignore[arg-type]
+    return them along with a captured list of DeRiskRequirement events."""
+    captured: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, captured.append)  # type: ignore[arg-type]
 
     detector = RegimeHazardDetector(hysteresis_threshold=0.30)
 
@@ -164,7 +164,7 @@ def _seed_long_position(
 
 def test_hazard_spike_closes_an_open_position() -> None:
     """Headline behavior: an open position aged past ``min_age_seconds``
-    is closed by an emitted ``OrderRequest(reason="HAZARD_SPIKE")``
+    is closed by an emitted ``DeRiskRequirement(reason="HAZARD_SPIKE")``
     the first time a spike clears the per-alpha threshold."""
     bus = EventBus()
     store = MemoryPositionStore()
@@ -196,7 +196,7 @@ def test_hazard_spike_closes_an_open_position() -> None:
     assert spike_count == 3
 
     hazard_orders = [
-        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, DeRiskRequirement) and o.reason == "HAZARD_SPIKE"
     ]
     assert len(hazard_orders) == 1, (
         "Exactly one HAZARD_SPIKE order is expected — the controller "
@@ -214,7 +214,7 @@ def test_hazard_spike_closes_an_open_position() -> None:
 
 def test_hazard_spike_below_threshold_does_not_exit() -> None:
     """When the controller's ``hazard_score_threshold`` is above every
-    spike's score, no OrderRequest is emitted.  This is the
+    spike's score, no DeRiskRequirement is emitted.  This is the
     contrapositive that proves the threshold gate is wired."""
     bus = EventBus()
     store = MemoryPositionStore()
@@ -243,7 +243,7 @@ def test_hazard_spike_below_threshold_does_not_exit() -> None:
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, DeRiskRequirement) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == []
 
@@ -279,7 +279,7 @@ def test_min_age_blocks_exit_until_position_seasons() -> None:
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, DeRiskRequirement) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == [], (
         "Position that hasn't aged past min_age_seconds must NOT be closed by a hazard spike"
@@ -308,7 +308,7 @@ def test_no_open_position_does_not_emit_order() -> None:
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, DeRiskRequirement) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == []
 
@@ -341,7 +341,7 @@ def test_short_position_exits_via_buy_side() -> None:
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, DeRiskRequirement) and o.reason == "HAZARD_SPIKE"
     ]
     assert len(hazard_orders) == 1
     order = hazard_orders[0]
@@ -379,7 +379,7 @@ def test_universe_filter_excludes_off_universe_symbols() -> None:
     _drive(detector, bus, _fixture_states())  # AAPL spikes only.
 
     hazard_orders = [
-        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, DeRiskRequirement) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == [], (
         "Spike on AAPL must not trigger an exit when the policy's universe is MSFT-only"

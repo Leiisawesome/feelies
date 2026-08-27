@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
-    OrderRequest,
+    DeRiskRequirement,
     RegimeHazardSpike,
     Trade,
 )
@@ -71,8 +71,8 @@ def _make_trade(*, symbol: str, ts_offset_s: int, seq: int) -> Trade:
 
 def _replay() -> tuple[str, int]:
     bus = EventBus()
-    captured: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, captured.append)  # type: ignore[arg-type]
+    captured: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, captured.append)  # type: ignore[arg-type]
 
     store = MemoryPositionStore()
     _seed_open_positions(store)
@@ -117,21 +117,21 @@ def _replay() -> tuple[str, int]:
     return _hash_order_stream(captured), len(captured)
 
 
-def _hash_order_stream(orders: list[OrderRequest]) -> str:
+def _hash_order_stream(orders: list[DeRiskRequirement]) -> str:
     lines: list[str] = []
     for o in orders:
         lines.append(
             f"{o.sequence}|{o.timestamp_ns}|{o.order_id}|{o.symbol}|"
-            f"{o.side.name}|{o.order_type.name}|{o.quantity}|"
+            f"{o.side.name}|{o.quantity}|"
             f"{o.strategy_id}|{o.reason}|{o.correlation_id}|"
             f"src={o.source_layer}"
         )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-# Locked hazard-exit OrderRequest baseline.
+# Locked hazard-exit DeRiskRequirement baseline.
 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH = (
-    "79b35ea6d10038ec5e36b7844172afadda521734b298b3c8628bd98995bdbd81"
+    "a7cc224630daf399c65f21cfcb39687f1c25206bd2bbf57ab87dd80b7ee065b3"
 )
 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT = 3
 
@@ -143,7 +143,7 @@ def test_hazard_exit_order_stream_matches_locked_baseline() -> None:
         f"{EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT}, got {actual_count}"
     )
     assert actual_hash == EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH, (
-        "Level-4 hazard-exit OrderRequest hash drift!\n"
+        "Level-4 hazard-exit DeRiskRequirement hash drift!\n"
         f"  Expected: {EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH}\n"
         f"  Actual:   {actual_hash}\n"
         "If intentional, update the constant in the same commit and "
@@ -161,7 +161,7 @@ def test_two_replays_produce_identical_hazard_exit_hash() -> None:
         f"hazard-exit order count drift across replays: {count_a} vs {count_b}"
     )
     assert hash_a == hash_b, (
-        "Hazard-exit OrderRequest hash drift across identical "
+        "Hazard-exit DeRiskRequirement hash drift across identical "
         f"replays!\n  a: {hash_a}\n  b: {hash_b}"
     )
 
@@ -169,8 +169,8 @@ def test_two_replays_produce_identical_hazard_exit_hash() -> None:
 def test_expected_order_count_and_reasons() -> None:
     """Sanity guard: AAPL+MSFT (HAZARD_SPIKE) + GOOG (HARD_EXIT_AGE)."""
     bus = EventBus()
-    captured: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, captured.append)  # type: ignore[arg-type]
+    captured: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, captured.append)  # type: ignore[arg-type]
 
     store = MemoryPositionStore()
     _seed_open_positions(store)
