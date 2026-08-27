@@ -19,7 +19,7 @@ from feelies.promotion.lifecycle import (
 from feelies.alpha.registry import AlphaRegistry
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
-from feelies.core.events import OrderRequest
+from feelies.core.events import DeRiskRequirement
 from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.exit_composer import (
@@ -151,8 +151,8 @@ def test_registry_hook_detach_with_none() -> None:
 def test_quarantine_flattens_open_deferred_book_immediately() -> None:
     sid = "sig_decoupled_v1"
     bus = EventBus()
-    received: list[OrderRequest] = []
-    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    received: list[DeRiskRequirement] = []
+    bus.subscribe(DeRiskRequirement, received.append)  # type: ignore[arg-type]
 
     store = StrategyPositionStore()
     composer = ExitComposer(
