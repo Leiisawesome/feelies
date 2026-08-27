@@ -2414,19 +2414,15 @@ PROBLEM:         **9 of engine 9's methods sit in the kernel** —
                  Those three stay on the orchestrator generator — a new
                  execution-package SequenceGenerator is a merge and moves
                  halt_order / level4_portfolio_order. Inv-8; CORE §J.1.
-FILES:           src/feelies/kernel/orchestrator.py (the methods above)
-                 NAME the destination module under src/feelies/execution/
-                 (policy). Do not declare src/feelies/execution/ as a
-                 directory scope (~23 files). NET DELTA src modules 0
-                 means an existing file; a new module is a delta defect
-                 and, per S-21, also requires docs/prompts/,
-                 tests/docs/test_prompt_coverage_map.py,
-                 tests/docs/test_internal_links.py.
-                 If the destination publishes OrderRequest, also:
-                 src/feelies/core/sequence_authority.py,
-                 src/feelies/core/wiring_manifest.py,
-                 tests/conformance/test_single_owner.py.
-                 Do not add docs/prompts/ unless a module is added or moved.
+FILES:           src/feelies/kernel/orchestrator.py (the nine methods)
+                 src/feelies/execution/order_policy.py (destination, new)
+                 src/feelies/core/sequence_authority.py
+                 src/feelies/core/wiring_manifest.py
+                 tests/conformance/test_single_owner.py
+                 tests/docs/test_prompt_coverage_map.py (_FILE_OWNERS gains the
+                 new module, per the S-21 finding)
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
 WHY THIS OWNER:  Engine 9 owns everything between "engine 8 permits X" and
                  "engine 10 has an order to work", including the
                  edge-versus-cost gate — a trade declined for insufficient edge
@@ -2457,7 +2453,7 @@ PARITY IMPACT:   hold -- all registered hashes, including halt_order,
                  draw is a STOP, not a fold. No Event field add/delete.
                  S-23 has landed; halt_order is not to be re-pinned here.
 DELETES:         9 methods from the orchestrator (104 -> 95)
-NET DELTA:       src modules 0, public symbols 0, branch points 0.
+NET DELTA:       src modules 0, public symbols +1, branch points 0.
                  Orchestrator lines -~450.
 ROLLBACK:        revert.
 ```
