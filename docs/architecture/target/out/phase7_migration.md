@@ -2396,37 +2396,66 @@ ROLLBACK:        revert per author, restoring that author's baseline value from
 STEP:            S-24
 CLOSES:          G24
 PROBLEM:         **9 of engine 9's methods sit in the kernel** —
-                 `_plan_for_signal:2814`, `_try_build_order_from_intent:3278`,
-                 `_resolve_order_route:3371`,
-                 `_filter_portfolio_orders_for_admission:3505`,
-                 `_execute_reverse:2984`, and the four cost-gate methods at
-                 `:2184`, `:2226`, `:2266`, `:2295`. The most dispersed engine in
-                 the platform; order-emission logic cannot be unit-tested without
-                 constructing the orchestrator. Inv-8; CORE §J.1.
-FILES:           src/feelies/kernel/orchestrator.py (9 methods)
-                 src/feelies/execution/ (policy side only)
+                 `_plan_for_signal:2428`, `_execute_reverse:2598`,
+                 `_try_build_order_from_intent:2892`,
+                 `_resolve_order_route:2985`,
+                 `_filter_portfolio_orders_for_admission:3119`,
+                 and the four cost-gate methods
+                 `_edge_clears_round_trip_cost:2176`,
+                 `_signal_passes_edge_cost_gate:2218`,
+                 `_round_trip_cost_bps:2258`,
+                 `_reversal_passes_combined_edge_gate:2287`.
+                 Siblings the nine are not closed without, name them or
+                 STOP: `_emit_signal_edge_gate_suppression_alert:2152`,
+                 `_portfolio_leg_edge_block:3189` (the
+                 `target_positions` read at :3226).
+                 `_execute_reverse` draws self._seq at :2625 and :2753;
+                 `_try_build_order_from_intent` draws self._seq at :2910.
+                 Those three stay on the orchestrator generator — a new
+                 execution-package SequenceGenerator is a merge and moves
+                 halt_order / level4_portfolio_order. Inv-8; CORE §J.1.
+FILES:           src/feelies/kernel/orchestrator.py (the methods above)
+                 NAME the destination module under src/feelies/execution/
+                 (policy). Do not declare src/feelies/execution/ as a
+                 directory scope (~23 files). NET DELTA src modules 0
+                 means an existing file; a new module is a delta defect
+                 and, per S-21, also requires docs/prompts/,
+                 tests/docs/test_prompt_coverage_map.py,
+                 tests/docs/test_internal_links.py.
+                 If the destination publishes OrderRequest, also:
+                 src/feelies/core/sequence_authority.py,
+                 src/feelies/core/wiring_manifest.py,
+                 tests/conformance/test_single_owner.py.
+                 Do not add docs/prompts/ unless a module is added or moved.
 WHY THIS OWNER:  Engine 9 owns everything between "engine 8 permits X" and
                  "engine 10 has an order to work", including the
                  edge-versus-cost gate — a trade declined for insufficient edge
                  is an execution-policy decision, not a risk veto, and
                  conflating them makes the veto non-monotone in a way no test
                  would catch.
-REFACTOR PATH:   the common shape. **Blocked on S-10** if
-                 `SizedPositionIntent.target_positions`' unit is still
-                 `undetermined`: `_compute_target_quantity` (engine 8) appears on
-                 the SIGNAL path at hop 29 and at no hop on the PORTFOLIO path,
-                 so if the portfolio path arrives pre-sized then engine 6 has
-                 performed engine 8's job for that path and engine 8's
-                 monotonicity guarantee covers half the platform. One field read
-                 settles it and it must be settled before this step, not during.
+REFACTOR PATH:   the common shape. **Still blocked:** 
+                 `SizedPositionIntent.target_positions` unit is still
+                 `UNIT_UNDETERMINED` (events.py:794). Settle that field
+                 before this step, not during. The other ten
+                 UNIT_UNDETERMINED fields are not a dependency of G24.
+                 `_compute_target_quantity` already lives in
+                 `feelies.risk.engine` (S-22); the SIGNAL path still calls
+                 it at orchestrator :1679. Copied bodies: annotate `self`
+                 and returns (`_plan_for_signal` -> PositionPlan) so
+                 no-any-return does not fire (S-20). Keep the three
+                 sequence draws on orchestrator self._seq.
 BLAST RADIUS:    boundary
 VALIDATED BY:    C4, X1, X6, S14, `level4_portfolio_order`, `halt_order`, the
                  oracle
-PARITY IMPACT:   All 26 hold **given S-23 has already re-pinned the four order
-                 baselines**. Pure move. If S-23 has not landed, this step and
-                 S-23 will both move `halt_order` and the causes become
-                 indistinguishable — which is the specific reason S-23 precedes
-                 S-24 despite S-24 being the larger extraction.
+PARITY IMPACT:   hold -- all registered hashes, including halt_order,
+                 level4_portfolio_order, and the three S-23 re-pins
+                 (LEVEL4_HAZARD_EXIT_ORDER_HASH,
+                 DECOUPLED_RISK_FLATTEN_ORDER_HASH,
+                 EXPECTED_MANIFEST_FINGERPRINT). Pure move of method
+                 bodies. Sequence draws stay on the orchestrator
+                 generator, same order; a dropped, added, or re-homed
+                 draw is a STOP, not a fold. No Event field add/delete.
+                 S-23 has landed; halt_order is not to be re-pinned here.
 DELETES:         9 methods from the orchestrator (104 -> 95)
 NET DELTA:       src modules 0, public symbols 0, branch points 0.
                  Orchestrator lines -~450.
