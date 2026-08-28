@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from feelies.core.events import NBBOQuote, Side
+from feelies.core.events import NBBOQuote, Side, Signal
 from feelies.execution.position_manager import entry_edge_clears_cost, round_trip_cost_bps
 
 
@@ -80,3 +80,44 @@ def _edge_clears_round_trip_cost(
         basis=self._signal_edge_cost_basis,
     )
     return passes, effective_edge_bps, factor
+
+
+def _signal_passes_edge_cost_gate(
+    self: Any,
+    signal: Signal,
+    *,
+    symbol: str,
+    entry_side: Side,
+    quantity: int,
+    quote: NBBOQuote,
+    is_taker_entry: bool,
+    is_short_entry: bool,
+    correlation_id: str,
+    detail: str,
+) -> bool:
+    """Return whether calibrated edge clears modeled round-trip cost."""
+    passes, effective_edge_bps, factor = _edge_clears_round_trip_cost(self,
+        strategy_id=signal.strategy_id,
+        edge_estimate_bps=signal.edge_estimate_bps,
+        symbol=symbol,
+        entry_side=entry_side,
+        quantity=quantity,
+        quote=quote,
+        is_taker_entry=is_taker_entry,
+        is_short_entry=is_short_entry,
+    )
+    if passes:
+        return True
+    gate_detail = (
+        detail
+        if factor >= 1.0
+        else f"{detail}; realization factor={factor:.3f} "
+        f"(disclosed {signal.edge_estimate_bps:.2f} -> {effective_edge_bps:.2f} bps)"
+    )
+    self._emit_signal_edge_gate_suppression_alert(
+        signal,
+        symbol,
+        correlation_id,
+        detail=gate_detail,
+    )
+    return False

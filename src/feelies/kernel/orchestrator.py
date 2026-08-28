@@ -101,6 +101,7 @@ from feelies.execution.order_admission import (
 from feelies.execution.order_policy import (
     _edge_clears_round_trip_cost,
     _round_trip_cost_bps,
+    _signal_passes_edge_cost_gate,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.execution.portfolio_netter import (
@@ -2175,46 +2176,6 @@ class Orchestrator:
             },
         )
 
-    def _signal_passes_edge_cost_gate(
-        self,
-        signal: Signal,
-        *,
-        symbol: str,
-        entry_side: Side,
-        quantity: int,
-        quote: NBBOQuote,
-        is_taker_entry: bool,
-        is_short_entry: bool,
-        correlation_id: str,
-        detail: str,
-    ) -> bool:
-        """Return whether calibrated edge clears modeled round-trip cost."""
-        passes, effective_edge_bps, factor = _edge_clears_round_trip_cost(self,
-            strategy_id=signal.strategy_id,
-            edge_estimate_bps=signal.edge_estimate_bps,
-            symbol=symbol,
-            entry_side=entry_side,
-            quantity=quantity,
-            quote=quote,
-            is_taker_entry=is_taker_entry,
-            is_short_entry=is_short_entry,
-        )
-        if passes:
-            return True
-        gate_detail = (
-            detail
-            if factor >= 1.0
-            else f"{detail}; realization factor={factor:.3f} "
-            f"(disclosed {signal.edge_estimate_bps:.2f} -> {effective_edge_bps:.2f} bps)"
-        )
-        self._emit_signal_edge_gate_suppression_alert(
-            signal,
-            symbol,
-            correlation_id,
-            detail=gate_detail,
-        )
-        return False
-
     def _reversal_passes_combined_edge_gate(
         self,
         *,
@@ -2666,7 +2627,7 @@ class Orchestrator:
 
             # Check entry edge against cost unless the reversal guard already
             # suppressed the flip.
-            entry_passes_edge_gate = reversal_edge_passes and self._signal_passes_edge_cost_gate(
+            entry_passes_edge_gate = reversal_edge_passes and _signal_passes_edge_cost_gate(self,
                 intent.signal,
                 symbol=intent.symbol,
                 entry_side=entry_side,
@@ -2865,7 +2826,7 @@ class Orchestrator:
         if (
             not is_exit_or_stop
             and quote is not None
-            and not self._signal_passes_edge_cost_gate(
+            and not _signal_passes_edge_cost_gate(self,
                 intent.signal,
                 symbol=intent.symbol,
                 entry_side=side,
