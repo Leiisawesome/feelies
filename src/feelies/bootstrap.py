@@ -385,7 +385,7 @@ def build_platform(
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
         # Warn in PAPER when an entry gate is not wired.
-        warn_on_inert_entry_gates=config.mode == OperatingMode.PAPER,
+        warn_on_inert_entry_gates=config.mode.name == "PAPER",
     )
 
     cost_model = DefaultCostModel(
@@ -412,7 +412,7 @@ def build_platform(
         )
     )
     # PAPER shares one normalizer between the feed and orchestrator.
-    if normalizer is None and config.mode == OperatingMode.PAPER:
+    if normalizer is None and config.mode.name == "PAPER":
         normalizer = MassiveNormalizer(
             clock=clock,
             halt_on_codes=frozenset(config.halt_on_condition_codes),
@@ -442,7 +442,7 @@ def build_platform(
         bus.subscribe(NBBOQuote, _on_backtest_quote)
 
     position_store = MemoryPositionStore()
-    if config.mode != OperatingMode.BACKTEST:
+    if config.mode.name != "BACKTEST":
         router = getattr(backend, "order_router", None)
         ib_conn = bundle.ib_connection
         can_bind_ib = ib_conn is not None and hasattr(
