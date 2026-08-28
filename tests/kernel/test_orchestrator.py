@@ -46,7 +46,7 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
-from feelies.execution.order_policy import _round_trip_cost_bps
+from feelies.execution.order_policy import _plan_for_signal, _round_trip_cost_bps
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
@@ -2520,7 +2520,7 @@ class TestExecutionCostContext:
         orch._cost_model = replacement_cost_model
         quote = _make_quote(bid="99.80", ask="100.20")
         signal = _make_signal(quote)
-        orch._plan_for_signal(
+        _plan_for_signal(orch,
             signal,
             Position(symbol="AAPL"),
             target_qty=100,

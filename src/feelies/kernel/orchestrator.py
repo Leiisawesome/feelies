@@ -100,6 +100,7 @@ from feelies.execution.order_admission import (
 )
 from feelies.execution.order_policy import (
     _edge_clears_round_trip_cost,
+    _plan_for_signal,
     _reversal_passes_combined_edge_gate,
     _round_trip_cost_bps,
     _signal_passes_edge_cost_gate,
@@ -117,8 +118,6 @@ from feelies.execution.position_manager import (
     MarketContext,
     PlanLeg,
     PositionManager,
-    PositionManagerConfig,
-    PositionPlan,
     desired_from_signal,
     order_intent_from_plan,
 )
@@ -192,7 +191,6 @@ from feelies.storage.trade_journal import TradeJournal, TradeRecord
 
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
-    from feelies.portfolio.position_store import Position
 
 # Stable correlation IDs for lifecycle transitions.
 _PLATFORM_BOOT_CORRELATION_ID = "platform_boot"
@@ -1696,7 +1694,7 @@ class Orchestrator:
                     signal.symbol,
                     int(quote.timestamp_ns),
                 )
-                plan = self._plan_for_signal(
+                plan = _plan_for_signal(self,
                     signal,
                     current_position,
                     target_qty,
@@ -1708,7 +1706,7 @@ class Orchestrator:
                     direction=_int_to_direction(net_desired.direction),
                 )
             else:
-                plan = self._plan_for_signal(
+                plan = _plan_for_signal(self,
                     signal,
                     current_position,
                     target_qty,
@@ -2275,51 +2273,6 @@ class Orchestrator:
                 inventory_qty=bd.inventory_qty,
                 timestamp_ns=int(quote.exchange_timestamp_ns),
             )
-        )
-
-    def _plan_for_signal(
-        self,
-        signal: Signal,
-        current_position: Position,
-        target_qty: int | None,
-        quote: NBBOQuote,
-        *,
-        desired: DesiredPosition | None = None,
-    ) -> PositionPlan:
-        """Build the planner's ``PositionPlan`` for a signal.
-
-        Shared by shadow comparison and the active planner path.
-        Resolves the ``None`` sizer target via the translator default so
-        the planner sees the translator's effective magnitude.
-        ``desired`` overrides the per-signal target with a net target.
-        """
-        assert self._position_manager is not None
-        if desired is None:
-            default_target = getattr(
-                self._intent_translator,
-                "_default_target",
-                100,
-            )
-            desired = desired_from_signal(
-                signal,
-                target_qty,
-                default_target_quantity=default_target,
-            )
-        return self._position_manager.plan(
-            desired=desired,
-            current=current_position,
-            market=replace(
-                self._market_context,
-                quote=quote,
-                cost_model=self._cost_model,
-            ),
-            config=PositionManagerConfig(
-                shadow=False,
-                enabled=True,
-                enable_trim=self._position_manager_enable_trim,
-                trim_edge_gate_multiplier=(self._position_manager_trim_edge_gate_multiplier),
-                urgency_exec=self._position_manager_urgency_exec,
-            ),
         )
 
     def _record_portfolio_net_shadow(self, intent: SizedPositionIntent) -> None:

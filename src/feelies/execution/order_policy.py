@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
 from feelies.core.events import NBBOQuote, Side, Signal
 from feelies.execution.position_manager import (
+    DesiredPosition,
+    PositionManagerConfig,
+    PositionPlan,
+    desired_from_signal,
     entry_edge_clears_cost,
     reversal_edge_gate,
     round_trip_cost_bps,
 )
+from feelies.portfolio.position_store import Position
 
 
 def _round_trip_cost_bps(
@@ -165,4 +171,50 @@ def _reversal_passes_combined_edge_gate(
         exit_cost_bps=exit_roundtrip_cost_bps,
         entry_cost_bps=entry_roundtrip_cost_bps,
         multiplier=self._reversal_min_edge_cost_multiplier,
+    )
+
+
+def _plan_for_signal(
+    self: Any,
+    signal: Signal,
+    current_position: Position,
+    target_qty: int | None,
+    quote: NBBOQuote,
+    *,
+    desired: DesiredPosition | None = None,
+) -> PositionPlan:
+    """Build the planner's ``PositionPlan`` for a signal.
+
+    Shared by shadow comparison and the active planner path.
+    Resolves the ``None`` sizer target via the translator default so
+    the planner sees the translator's effective magnitude.
+    ``desired`` overrides the per-signal target with a net target.
+    """
+    assert self._position_manager is not None
+    if desired is None:
+        default_target = getattr(
+            self._intent_translator,
+            "_default_target",
+            100,
+        )
+        desired = desired_from_signal(
+            signal,
+            target_qty,
+            default_target_quantity=default_target,
+        )
+    return self._position_manager.plan(
+        desired=desired,
+        current=current_position,
+        market=replace(
+            self._market_context,
+            quote=quote,
+            cost_model=self._cost_model,
+        ),
+        config=PositionManagerConfig(
+            shadow=False,
+            enabled=True,
+            enable_trim=self._position_manager_enable_trim,
+            trim_edge_gate_multiplier=(self._position_manager_trim_edge_gate_multiplier),
+            urgency_exec=self._position_manager_urgency_exec,
+        ),
     )
