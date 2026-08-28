@@ -5569,4 +5569,134 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-26.json,
                  baseline_post-S-26.json, this ledger entry.
 
+---
+
+## S-27  2026-08-28T16:25:00+08:00
+  STEP:          S-27
+  BASE:          cd1ed133aef1d9556329cb29bb58e6f7fe49b071
+  RESULT SHA:    1b608350d00517d7800058f396a599ad03a4c38c (exec/S-27; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   A2 (test_cold_engines.py
+                 test_governance_and_forensics_zero_reads_on_tick_path)
+                 | failed-before: yes (engine 12 imports
+                 feelies.promotion.evidence at cost_circuit_breaker.py:14)
+                 | passes-after: yes
+                 behavioural test_engine_5_demotion_always_commits |
+                 failed-before: yes (no apply_recommendation /
+                 QuarantineRecommendation) | passes-after: yes
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 tests/docs 101 passed
+                 conformance 85 passed / 8 xfailed -> 86 passed /
+                 8 xfailed (no XPASS). +1 is A2.
+                 mypy src/feelies: Success, 205 source files.
+  TESTS:         capture pre-S-27 GREEN 4878 passed / 0 failed / 18 skipped
+                 -> post-S-27 GREEN 4880 passed / 0 failed / 18 skipped
+                 / 8 xfailed. not-paper_rth: 4879 passed, 5 skipped,
+                 14 deselected, 8 xfailed, 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes, the manifest
+                 fingerprint, and all 64 scanned constants | actual
+                 64/64 identical (pre-S-27 vs post-S-27); 0 moved at
+                 either commit | MATCH.
+  FILES:         10 declared tokens, 6 touched (verify_step CLEAN).
+                 Touched: cost_circuit_breaker.py, lifecycle.py,
+                 cli/forensics.py, test_cost_circuit_breaker.py,
+                 test_cold_engines.py (new), gapscan.py.
+                 Declared-but-unneeded: tests/cli/test_forensics_circuit_breaker.py,
+                 src/feelies/alpha/registry.py (actor argument was not
+                 added). Bare aliases lifecycle.py and
+                 cost_circuit_breaker.py scored as not-touched;
+                 the full paths were edited.
+  NET DELTA:     declared src modules 0, public symbols +1 -1 = 0,
+                 branch points 0
+                 actual modules 205 -> 205 (+0)
+                 public_symbols 572 -> 572 (+0;
+                 +QuarantineRecommendation, -apply_cost_circuit_breaker)
+                 sloc 45733 -> 45756 (+23)
+                 n_edges 659 -> 659 (forensics->promotion.evidence
+                 dropped; promotion.lifecycle->forensics added)
+                 n_modules 167 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   Four checks: FILES 10 declared / 6 touched CLEAN
+                 (registry.py and the CLI circuit-breaker test
+                 declared-but-unneeded; two bare filenames scored
+                 not-touched); PARITY moved 0 holds; TESTS
+                 4878->4880 passed, 0 failed; NET DELTA
+                 compare-by-eye (oracle still says "deletions with
+                 no negative delta" because it does not treat a
+                 swapped public name as a deletion -- frozen;
+                 DELETES apply_cost_circuit_breaker matched by
+                 absence). CLEAN, blast radius boundary -- human
+                 gate required.
+  NOTES:         Two commits on exec/S-27. Order and why: 58723af
+                 (emit QuarantineRecommendation, engine-5
+                 apply_recommendation, delete
+                 apply_cost_circuit_breaker, rebind CLI, retarget
+                 gapscan) first, because emit, write, delete and
+                 caller rebind cannot be split without a second
+                 writer or a delegating shim; 1b60835 A2 second,
+                 after it had failed on the pre-move tree. Not a
+                 wave-D extraction. No hash moved at either commit.
+                 Determinism 148 and S12 2 passed after both.
+                 A2 forbids three things on
+                 src/feelies/forensics/cost_circuit_breaker.py: a
+                 feelies.promotion import, a .quarantine( call,
+                 and a remaining apply_cost_circuit_breaker
+                 def. If the engine-12 write returned, any one
+                 of those three would fail the test; the read
+                 half (HARN-1 plus is_live/is_active wraps) was
+                 already green before the move and does not
+                 substitute for the write half. A2 is a
+                 behavioural guard, not a hash: Phase 1 §6.1
+                 records no manifest entry for engine 5, so
+                 the oracle is structurally blind to whether
+                 LIVE -> QUARANTINED still commits.
+                 AlphaLifecycle.quarantine and
+                 AlphaRegistry.quarantine stay on their classes
+                 because engine 5 is the intended writer. That is
+                 the destination the step named
+                 (quarantine :359), not leftover extraction.
+                 apply_recommendation is wired: CLI --apply calls
+                 it. quarantine() signature unchanged.
+                 Declared NET DELTA: src modules 0, public
+                 symbols +1 -1 = 0, branch points 0.
+                 Measured: modules 205 -> 205 (+0),
+                 public_symbols 572 -> 572 (+0;
+                 +QuarantineRecommendation,
+                 -apply_cost_circuit_breaker), sloc 45733 ->
+                 45756 (+23), n_edges 659 -> 659, cycles 1,
+                 alphaleak 2. MATCH on the declared cells.
+                 Clone is C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      The two is_live sites this step deleted are still
+                 in S-28's mode-branch scope (the 7 outside
+                 bootstrap). Named at S-27 BASE, before the
+                 delete: src/feelies/forensics/cost_circuit_breaker.py:64
+                 (_Quarantinable.is_live) and :180
+                 (apply_cost_circuit_breaker's lifecycle.is_live).
+                 S-28 still lists them as :63 and :172. They are
+                 gone with apply and the protocol. S-28's
+                 before-state of those seven is therefore five
+                 remaining, not seven. The plan said amend S-28
+                 here (−7 -> −5). FILES does not contain the plan;
+                 not edited.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6 14/31
+                 resets; S-20 no-any-return; S-21 package-move
+                 bindings; S-23 negative assertions; S-24
+                 operator NOTES; S-26 unused
+                 selection_policy injection; four exempted
+                 baseline tests.
+  NEXT:          S-28 in-engine mode branches (boundary). Not
+                 started. Do not begin S-28.
+                 Left uncommitted: baseline_pre-S-27.json,
+                 baseline_post-S-27.json, this ledger entry.
+
 
