@@ -26,6 +26,7 @@ from feelies.execution.order_admission import (
     blocks_for_min_size,
     exposure_delta_from_intent,
 )
+from feelies.execution.order_lifecycle import _submit_tracked_order
 from feelies.execution.position_manager import (
     DesiredPosition,
     ExecStyle,
@@ -690,7 +691,7 @@ def _execute_reverse(
         exit_order,
         trading_intent=intent.intent.name,
     )
-    exit_submit_error = self._submit_tracked_order(exit_order)
+    exit_submit_error = _submit_tracked_order(self, exit_order)
     if exit_submit_error is not None:
         self._micro.transition(
             MicroState.ORDER_ACK,
@@ -720,7 +721,7 @@ def _execute_reverse(
             entry_order,
             trading_intent=entry_intent_name,
         )
-        if self._submit_tracked_order(entry_order) is None:
+        if _submit_tracked_order(self, entry_order) is None:
             self._bus.publish(entry_order)
             entry_submitted_ok = True
 

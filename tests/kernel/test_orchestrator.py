@@ -46,6 +46,12 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
+from feelies.execution.order_lifecycle import (
+    _apply_ack_to_order,
+    _drain_async_fills,
+    _transition_order,
+    cancel_order,
+)
 from feelies.execution.order_policy import (
     _plan_for_signal,
     _round_trip_cost_bps,
@@ -846,6 +852,7 @@ class TestOrchestratorFullPipeline:
 class TestOrchestratorAckProcessing:
     def test_async_acks_preserve_exact_event_order_and_reconciliation_lineage(
         self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
@@ -864,7 +871,7 @@ class TestOrchestratorAckProcessing:
             strategy_id="alpha_1",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -892,9 +899,12 @@ class TestOrchestratorAckProcessing:
                 fees=Decimal("0.10"),
             ),
         ]
-        orch._poll_order_router_acks = lambda _expected=None: acks  # type: ignore[method-assign]
+        monkeypatch.setattr(
+            "feelies.kernel.orchestrator._poll_order_router_acks",
+            lambda _self, _expected=None: acks,
+        )
 
-        orch._drain_async_fills("reconcile-cid")
+        _drain_async_fills(orch, "reconcile-cid")
 
         assert [type(event) for event in events] == [
             OrderAck,
@@ -949,7 +959,7 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -995,7 +1005,7 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1039,13 +1049,13 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=1300,
                 correlation_id="c3",
@@ -1055,7 +1065,7 @@ class TestOrchestratorFillReconcileGuards:
                 status=OrderAckStatus.ACKNOWLEDGED,
             )
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=1310,
                 correlation_id="c3",
@@ -1067,7 +1077,7 @@ class TestOrchestratorFillReconcileGuards:
                 fill_price=Decimal("150"),
             )
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=1320,
                 correlation_id="c3",
@@ -1143,13 +1153,13 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="cc",
@@ -1160,7 +1170,7 @@ class TestOrchestratorFillReconcileGuards:
             )
         )
 
-        assert orch.cancel_order(order.order_id) is True
+        assert cancel_order(orch, order.order_id) is True
         assert order.order_id not in orch._active_orders
         assert any(a.alert_name == "cancel_order_router_unsupported" for a in alerts)
 
@@ -1182,13 +1192,13 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="sd",
@@ -3781,8 +3791,8 @@ class TestRestingOrderGuardAfterRisk:
         orch._track_order(cover.order_id, Side.BUY, cover, trading_intent="EXIT")
         # Mirror a real resting passive order: SUBMITTED → ACKNOWLEDGED so a
         # broker CANCELLED ack is a valid (non-terminal → terminal) transition.
-        orch._transition_order(cover.order_id, OrderState.SUBMITTED, "submitted")
-        orch._transition_order(cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+        _transition_order(orch,cover.order_id, OrderState.SUBMITTED, "submitted")
+        _transition_order(orch,cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         assert orch._has_pending_order_for_symbol("AAPL")
 
         alerts: list[Alert] = []
@@ -4315,8 +4325,8 @@ class TestHaltModeling:
         for req in (resting, deferred):
             router.submit(req)
             orch._track_order(req.order_id, req.side, req)
-            orch._transition_order(req.order_id, OrderState.SUBMITTED, "submitted")
-            orch._transition_order(req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+            _transition_order(orch,req.order_id, OrderState.SUBMITTED, "submitted")
+            _transition_order(orch,req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         router.poll_acks()  # drain the two ACKNOWLEDGED acks
         assert router.resting_order_count == 1
 

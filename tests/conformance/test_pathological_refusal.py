@@ -247,6 +247,7 @@ def _drive_duplicate_id() -> None:
         Side,
         SizedPositionIntent,
     )
+    from feelies.execution.order_lifecycle import _transition_order
     from feelies.execution.order_state import OrderState
     from tests.kernel.test_orchestrator import _build_orchestrator
 
@@ -264,7 +265,7 @@ def _drive_duplicate_id() -> None:
         strategy_id="alpha_x",
     )
     orch._track_order(pending.order_id, pending.side, pending)
-    orch._transition_order(pending.order_id, OrderState.SUBMITTED, "submitted")
+    _transition_order(orch, pending.order_id, OrderState.SUBMITTED, "submitted")
     later = OrderRequest(
         timestamp_ns=clock.now_ns(),
         correlation_id="x6-dup-2",

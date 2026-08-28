@@ -44,6 +44,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backend import ExecutionBackend
+from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
@@ -496,7 +497,7 @@ class TestRestingOrderGuard:
             reason="",
         )
         orch._track_order(resting.order_id, resting.side, resting)
-        orch._transition_order(resting.order_id, OrderState.SUBMITTED, "submitted")
+        _transition_order(orch, resting.order_id, OrderState.SUBMITTED, "submitted")
         router.register_resting(resting)
         return resting
 
@@ -870,7 +871,7 @@ class TestSliceScopedForcedExitClamp:
             reason="",
         )
         orch._track_order(resting.order_id, resting.side, resting)
-        orch._transition_order(resting.order_id, OrderState.SUBMITTED, "submitted")
+        _transition_order(orch, resting.order_id, OrderState.SUBMITTED, "submitted")
         router.register_resting(resting)
 
         orch._bus.publish(
@@ -920,7 +921,7 @@ class TestSliceScopedForcedExitClamp:
             reason="",
         )
         orch._track_order(resting.order_id, resting.side, resting)
-        orch._transition_order(resting.order_id, OrderState.SUBMITTED, "submitted")
+        _transition_order(orch, resting.order_id, OrderState.SUBMITTED, "submitted")
         router.register_resting(resting)
 
         orch._bus.publish(

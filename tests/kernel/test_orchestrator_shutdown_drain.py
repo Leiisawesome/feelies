@@ -17,6 +17,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.order_lifecycle import _apply_ack_to_order, _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
@@ -151,8 +152,8 @@ def _submit_and_acknowledge(orch: Orchestrator, router: _DelayedAckRouter) -> st
         strategy_id="paper_smoke_v1",
     )
     orch._track_order(order.order_id, order.side, order)
-    orch._transition_order(order.order_id, OrderState.SUBMITTED, "submitted")
-    orch._apply_ack_to_order(
+    _transition_order(orch, order.order_id, OrderState.SUBMITTED, "submitted")
+    _apply_ack_to_order(orch,
         OrderAck(
             timestamp_ns=1_000_100,
             correlation_id=order.correlation_id,
