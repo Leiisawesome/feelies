@@ -98,6 +98,7 @@ from feelies.execution.order_admission import (
 )
 from feelies.execution.order_policy import (
     _edge_clears_round_trip_cost,
+    _execute_reverse,
     _filter_portfolio_orders_for_admission,
     _plan_for_signal,
     _resolve_order_route,
@@ -129,7 +130,6 @@ from feelies.execution.trading_session import (
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
     build_borrow_table,
-    htb_fee_applies,
     parse_borrow_tier,
 )
 from feelies.ingestion.data_integrity import (
@@ -180,7 +180,6 @@ from feelies.risk.edge_weighted_sizer import (
     apply_tilt,
 )
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
-from feelies.risk.post_exit_position_view import PostExitPositionView
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_feature_snapshots, _regime_label_for, _restore_feature_snapshots, _update_regime  # noqa: E501
@@ -1861,7 +1860,7 @@ class Orchestrator:
             TradingIntent.REVERSE_LONG_TO_SHORT,
             TradingIntent.REVERSE_SHORT_TO_LONG,
         ):
-            self._execute_reverse(intent, verdict, cid, quote, t_wall_start)
+            _execute_reverse(self, intent, verdict, cid, quote, t_wall_start)
             return
 
         order, order_build_reason = _try_build_order_from_intent(self,
@@ -2400,300 +2399,6 @@ class Orchestrator:
                     detail=f"net={net.target_qty} winner={winner_target}",
                 )
             )
-
-    def _execute_reverse(
-        self,
-        intent: OrderIntent,
-        verdict: RiskVerdict,
-        cid: str,
-        quote: NBBOQuote,
-        t_wall_start: int,
-    ) -> None:
-        """Execute a REVERSE intent as EXIT(MARKET) + ENTRY(LIMIT).
-
-        H2/H3/H7: Decomposes reversals so the closing leg is aggressive
-        (guaranteed fill) and the entry leg is passive (spread savings).
-        Prevents position-trapping where a combined passive order sits
-        in the queue while the position is stuck in the wrong direction.
-
-        The EXIT leg is always MARKET and bypasses min_order_shares
-        (you must be able to close any position).  The ENTRY leg uses
-        the normal passive/active mode and is subject to all gates.
-        """
-        close_qty = abs(intent.current_quantity)
-        entry_qty_raw = intent.target_quantity - close_qty
-
-        # ── Cancel any resting orders for this symbol ──────────────
-        self._cancel_resting_for_symbol(intent.symbol, cid)
-
-        # ── EXIT leg: aggressive MARKET close ──────────────────────
-        exit_side = Side.SELL if intent.current_quantity > 0 else Side.BUY
-        seq_exit = self._seq.next()
-        exit_order_id = derive_order_id(f"{cid}:{seq_exit}:exit")
-
-        exit_order = OrderRequest(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=cid,
-            sequence=seq_exit,
-            order_id=exit_order_id,
-            symbol=intent.symbol,
-            side=exit_side,
-            order_type=OrderType.MARKET,
-            quantity=close_qty,
-            strategy_id=intent.strategy_id,
-            is_short=False,
-        )
-
-        # Shared exposure and drawdown checks cannot block or resize a full close.
-        exit_verdict = self._risk_engine.check_order(
-            exit_order,
-            self._positions,
-        )
-        self._bus.publish(exit_verdict)
-        if exit_verdict.action == RiskAction.FORCE_FLATTEN:
-            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                # Same global halt as standalone SIGNAL/order gates —
-                # _emergency_flatten_all() closes this leg (and every other
-                # open position) directly with a properly-tagged flatten,
-                # so defer to it here rather than also submitting this leg.
-                _escalate_risk(self, cid)
-                self._finalize_tick(t_wall_start, cid, "reverse_exit_force_flatten_escalation")
-                return
-            # BACKTEST_MODE has no reachable lockdown transition, so there
-            # is no compensating flatten to rely on — normalize to ALLOW so
-            # this reduce still submits instead of stranding the position.
-            exit_verdict = replace(exit_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
-        elif exit_verdict.action != RiskAction.ALLOW:
-            exit_verdict = replace(exit_verdict, action=RiskAction.ALLOW, scaling_factor=1.0)
-
-        # ── ENTRY leg: passive LIMIT (or MARKET if passive disabled) ─
-        #
-        # Risk-check entry against the position expected after the exit leg.
-        entry_order: OrderRequest | None = None
-        entry_qty = round(entry_qty_raw * verdict.scaling_factor)
-        # Attach combined reversal cost only when the entry leg is evaluated.
-        reverse_signal: Signal = intent.signal
-
-        # Signed adjustment: the exit leg removes close_qty from position.
-        exit_signed_adj = -close_qty if exit_side == Side.SELL else close_qty
-        post_exit_positions = PostExitPositionView(
-            self._positions,
-            intent.symbol,
-            exit_signed_adj,
-        )
-
-        if entry_qty >= self._min_order_shares:
-            entry_side = exit_side  # same direction for both legs
-            short_sale = intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
-            tier = self._borrow_tier_for(intent.symbol)
-            is_short = htb_fee_applies(tier, short_sale)
-
-            # The reversal entry must cover both legs using the same calibrated
-            # edge as the ordinary entry gate. The exit always submits.
-            edge_calibration_factor = self._edge_calibration_factors.get(
-                intent.signal.strategy_id, 1.0
-            )
-            effective_edge_bps = intent.signal.edge_estimate_bps * edge_calibration_factor
-            (
-                reversal_cost_bps,
-                reversal_required_bps,
-                reversal_edge_passes,
-            ) = _reversal_passes_combined_edge_gate(self,
-                edge_estimate_bps=effective_edge_bps,
-                symbol=intent.symbol,
-                exit_side=exit_side,
-                exit_qty=close_qty,
-                entry_side=entry_side,
-                entry_qty=entry_qty,
-                quote=quote,
-                is_short_entry=is_short,
-            )
-            # Expose combined cost to traces and alerts.
-            reverse_signal = replace(
-                intent.signal,
-                reversal_cost_estimate_bps=reversal_cost_bps,
-            )
-
-            if not reversal_edge_passes:
-                deficit_bps = reversal_required_bps - effective_edge_bps
-                calibration_note = (
-                    ""
-                    if edge_calibration_factor >= 1.0
-                    else f"; realization factor={edge_calibration_factor:.3f} "
-                    f"(disclosed {intent.signal.edge_estimate_bps:.2f} -> "
-                    f"{effective_edge_bps:.2f} bps)"
-                )
-                self._publish_alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=cid,
-                    severity=AlertSeverity.WARNING,
-                    alert_name="reversal_edge_insufficient",
-                    message=f"Reversal entry suppressed (flatten-only): edge_bps={effective_edge_bps:.4f} below required {reversal_required_bps:.4f} ({self._reversal_min_edge_cost_multiplier}× combined round-trip cost {reversal_cost_bps:.4f}); deficit={deficit_bps:.4f} bps (symbol={intent.symbol!r}, strategy_id={intent.strategy_id!r}){calibration_note}.",
-                    context={
-                        "edge_bps": effective_edge_bps,
-                        "required_bps": reversal_required_bps,
-                        "deficit_bps": deficit_bps,
-                        "symbol": intent.symbol,
-                        "strategy_id": intent.strategy_id,
-                        "order_id": exit_order.order_id,
-                    },
-                )
-
-            # Check entry edge against cost unless the reversal guard already
-            # suppressed the flip.
-            entry_passes_edge_gate = reversal_edge_passes and _signal_passes_edge_cost_gate(self,
-                intent.signal,
-                symbol=intent.symbol,
-                entry_side=entry_side,
-                quantity=entry_qty,
-                quote=quote,
-                is_taker_entry=(
-                    not self._use_passive_entries or self._min_cost_policy is not None
-                ),
-                is_short_entry=is_short,
-                correlation_id=cid,
-                detail="reverse_entry_leg_suppressed",
-            )
-
-            if entry_passes_edge_gate:
-                seq_entry = self._seq.next()
-                entry_order_id = derive_order_id(f"{cid}:{seq_entry}:entry")
-
-                order_type, limit_price, entry_is_moc = _resolve_order_route(self,
-                    strategy_id=intent.strategy_id,
-                    symbol=intent.symbol,
-                    side=entry_side,
-                    quantity=entry_qty,
-                    quote=quote,
-                    is_short=is_short,
-                    is_exit_or_stop=False,
-                    edge_bps=intent.signal.edge_estimate_bps,
-                )
-
-                entry_order = OrderRequest(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=cid,
-                    sequence=seq_entry,
-                    order_id=entry_order_id,
-                    symbol=intent.symbol,
-                    side=entry_side,
-                    order_type=order_type,
-                    quantity=entry_qty,
-                    limit_price=limit_price,
-                    strategy_id=intent.strategy_id,
-                    is_short=is_short,
-                    is_moc=entry_is_moc,
-                    g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
-                )
-
-                # Risk check entry leg against post-exit position view.
-                entry_rv = self._risk_engine.check_order(
-                    entry_order,
-                    post_exit_positions,
-                )
-                self._bus.publish(entry_rv)
-                if entry_rv.action in (
-                    RiskAction.REJECT,
-                    RiskAction.FORCE_FLATTEN,
-                ):
-                    entry_order = None
-                elif entry_rv.action == RiskAction.SCALE_DOWN:
-                    scaled = self._compose_scaled_quantity(
-                        entry_qty_raw,
-                        verdict.scaling_factor,
-                        entry_rv.scaling_factor,
-                    )
-                    if scaled < self._min_order_shares:
-                        entry_order = None
-                    elif scaled != entry_order.quantity:
-                        entry_order = replace(
-                            entry_order,
-                            quantity=scaled,
-                        )
-
-        # ── M6 → M7: ORDER_SUBMIT ─────────────────────────────────
-        self._micro.transition(
-            MicroState.ORDER_SUBMIT,
-            trigger="reverse_orders_constructed",
-            correlation_id=cid,
-        )
-
-        # Attribute the reversal to its exit leg; stamp the new entry separately.
-        self._track_order(
-            exit_order.order_id,
-            exit_order.side,
-            exit_order,
-            trading_intent=intent.intent.name,
-        )
-        exit_submit_error = self._submit_tracked_order(exit_order)
-        if exit_submit_error is not None:
-            self._micro.transition(
-                MicroState.ORDER_ACK,
-                trigger="reverse_exit_submit_failed",
-                correlation_id=cid,
-            )
-            self._settle_router_acks(
-                cid,
-                expected_order_ids={exit_order.order_id},
-                position_update_trigger="reverse_acks_after_failed_exit_submit",
-            )
-            self._finalize_tick(t_wall_start, cid, "reverse_aborted_exit_submit_failed")
-            return
-
-        self._bus.publish(exit_order)
-
-        entry_submitted_ok = False
-        if entry_order is not None:
-            entry_intent_name = (
-                TradingIntent.ENTRY_SHORT.name
-                if intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
-                else TradingIntent.ENTRY_LONG.name
-            )
-            self._track_order(
-                entry_order.order_id,
-                entry_order.side,
-                entry_order,
-                trading_intent=entry_intent_name,
-            )
-            if self._submit_tracked_order(entry_order) is None:
-                self._bus.publish(entry_order)
-                entry_submitted_ok = True
-
-        # ── M7 → M8: ORDER_ACK ────────────────────────────────────
-        self._micro.transition(
-            MicroState.ORDER_ACK,
-            trigger="reverse_orders_submitted",
-            correlation_id=cid,
-        )
-        expected_order_ids = {exit_order.order_id}
-        if entry_order is not None and entry_submitted_ok:
-            expected_order_ids.add(entry_order.order_id)
-        # ── M8 → M9: POSITION_UPDATE ──────────────────────────────
-        self._settle_router_acks(
-            cid,
-            expected_order_ids=expected_order_ids,
-            position_update_trigger="reverse_acks_received",
-        )
-
-        if self._signal_order_trace_sink is not None:
-            leg = (
-                "exit_plus_entry"
-                if entry_order is not None and entry_submitted_ok
-                else "exit_only"
-            )
-            self._append_signal_order_trace(
-                quote,
-                reverse_signal,
-                outcome="ORDER_SUBMITTED",
-                reasons=(
-                    f"reverse_{leg}_submitted",
-                    f"exit_order_id={exit_order.order_id}",
-                ),
-                trading_intent=intent.intent.name,
-            )
-
-        # ── M9 → M10: LOG_AND_METRICS ─────────────────────────────
-        self._finalize_tick(t_wall_start, cid, "reverse_position_updated")
 
     @staticmethod
     def _compose_scaled_quantity(base_quantity: int, *factors: float) -> int:
