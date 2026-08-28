@@ -30,7 +30,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.order_lifecycle import _transition_order
+from feelies.execution.order_lifecycle import _apply_ack_to_order, _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.kernel.macro import MacroState
@@ -97,7 +97,7 @@ def _track_submitted_order(orch: Orchestrator) -> OrderRequest:
         OrderState.SUBMITTED,
         "submitted",
     )
-    orch._apply_ack_to_order(
+    _apply_ack_to_order(orch,
         OrderAck(
             timestamp_ns=orch._clock.now_ns(),
             correlation_id="paper-order",

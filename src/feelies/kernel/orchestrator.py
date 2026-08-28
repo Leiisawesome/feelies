@@ -96,6 +96,7 @@ from feelies.execution.order_admission import (
     side_for_intent,
 )
 from feelies.execution.order_lifecycle import (
+    _apply_ack_to_order,
     _poll_order_router_acks,
     _transition_order,
 )
@@ -2701,7 +2702,7 @@ class Orchestrator:
         """Publish router acks in order, then advance their order state machines."""
         for ack in acks:
             self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
+            _apply_ack_to_order(self, ack)
 
     def _submit_tracked_order(
         self,
@@ -3070,115 +3071,6 @@ class Orchestrator:
                     ),
                 ),
             )
-        )
-
-    def _apply_ack_to_order(self, ack: OrderAck) -> None:
-        """Update an order's SM based on a broker acknowledgement.
-
-        Uses typed ``OrderAckStatus`` enum — exhaustive matching ensures
-        every status is handled explicitly (invariant 7, hard rule 2).
-        When a valid status cannot be applied because the order SM is
-        in an incompatible state, an alert is emitted instead of
-        silently dropping the ack (invariant 13: full provenance).
-        """
-        cid = ack.correlation_id
-        if ack.order_id not in self._active_orders:
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=cid,
-                severity=AlertSeverity.WARNING,
-                alert_name="ack_for_unknown_order",
-                message=f"Ack for unknown order_id={ack.order_id}, status={ack.status.name}",
-                context={"order_id": ack.order_id, "status": ack.status.name},
-            )
-            return
-        sm = self._active_orders[ack.order_id][0]
-
-        if ack.status == OrderAckStatus.REJECTED:
-            if sm.can_transition(OrderState.REJECTED):
-                sm.transition(
-                    OrderState.REJECTED,
-                    trigger=f"broker_reject:{ack.reason}",
-                    correlation_id=cid,
-                )
-            else:
-                self._emit_ack_drop_alert(ack, sm)
-            return
-
-        if ack.status == OrderAckStatus.ACKNOWLEDGED:
-            if sm.state == OrderState.SUBMITTED:
-                sm.transition(
-                    OrderState.ACKNOWLEDGED,
-                    trigger="broker_ack",
-                    correlation_id=cid,
-                )
-            return
-
-        # Ensure ACKNOWLEDGED before any fill/cancel/expiry transition.
-        if sm.state == OrderState.SUBMITTED:
-            sm.transition(
-                OrderState.ACKNOWLEDGED,
-                trigger="broker_ack",
-                correlation_id=cid,
-            )
-
-        if ack.status == OrderAckStatus.FILLED:
-            if sm.state == OrderState.FILLED:
-                self._publish_alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=cid,
-                    severity=AlertSeverity.WARNING,
-                    alert_name="duplicate_terminal_fill_ack",
-                    message=f"Ignoring duplicate FILLED ack for order_id={ack.order_id} (already terminal FILLED).",
-                    context={"order_id": ack.order_id},
-                )
-                return
-            if sm.can_transition(OrderState.FILLED):
-                sm.transition(
-                    OrderState.FILLED,
-                    trigger="fill_complete",
-                    correlation_id=cid,
-                )
-            else:
-                self._emit_ack_drop_alert(ack, sm)
-            return
-
-        if ack.status == OrderAckStatus.PARTIALLY_FILLED:
-            if sm.can_transition(OrderState.PARTIALLY_FILLED):
-                sm.transition(
-                    OrderState.PARTIALLY_FILLED,
-                    trigger="partial_fill",
-                    correlation_id=cid,
-                )
-            else:
-                self._emit_ack_drop_alert(ack, sm)
-            return
-
-        if ack.status == OrderAckStatus.CANCELLED:
-            if sm.can_transition(OrderState.CANCELLED):
-                sm.transition(
-                    OrderState.CANCELLED,
-                    trigger="broker_cancel",
-                    correlation_id=cid,
-                )
-            else:
-                self._emit_ack_drop_alert(ack, sm)
-            return
-
-        if ack.status == OrderAckStatus.EXPIRED:
-            if sm.can_transition(OrderState.EXPIRED):
-                sm.transition(
-                    OrderState.EXPIRED,
-                    trigger="order_expired",
-                    correlation_id=cid,
-                )
-            else:
-                self._emit_ack_drop_alert(ack, sm)
-            return
-
-        raise ValueError(
-            f"Unhandled OrderAckStatus: {ack.status!r}. "
-            f"Fail-safe: all enum members must be explicitly handled."
         )
 
     def _emit_ack_drop_alert(self, ack: OrderAck, sm: StateMachine[OrderState]) -> None:

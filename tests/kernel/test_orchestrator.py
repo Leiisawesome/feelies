@@ -46,7 +46,7 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
-from feelies.execution.order_lifecycle import _transition_order
+from feelies.execution.order_lifecycle import _apply_ack_to_order, _transition_order
 from feelies.execution.order_policy import (
     _plan_for_signal,
     _round_trip_cost_bps,
@@ -1050,7 +1050,7 @@ class TestOrchestratorFillReconcileGuards:
             "submitted",
             correlation_id=order.correlation_id,
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=1300,
                 correlation_id="c3",
@@ -1060,7 +1060,7 @@ class TestOrchestratorFillReconcileGuards:
                 status=OrderAckStatus.ACKNOWLEDGED,
             )
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=1310,
                 correlation_id="c3",
@@ -1072,7 +1072,7 @@ class TestOrchestratorFillReconcileGuards:
                 fill_price=Decimal("150"),
             )
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=1320,
                 correlation_id="c3",
@@ -1154,7 +1154,7 @@ class TestOrchestratorFillReconcileGuards:
             "submitted",
             correlation_id=order.correlation_id,
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="cc",
@@ -1193,7 +1193,7 @@ class TestOrchestratorFillReconcileGuards:
             "submitted",
             correlation_id=order.correlation_id,
         )
-        orch._apply_ack_to_order(
+        _apply_ack_to_order(orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="sd",
