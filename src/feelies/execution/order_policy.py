@@ -227,7 +227,7 @@ def _plan_for_signal(
             target_qty,
             default_target_quantity=default_target,
         )
-    return self._position_manager.plan(
+    plan: PositionPlan = self._position_manager.plan(
         desired=desired,
         current=current_position,
         market=replace(
@@ -243,6 +243,7 @@ def _plan_for_signal(
             urgency_exec=self._position_manager_urgency_exec,
         ),
     )
+    return plan
 
 
 def _resolve_order_route(
