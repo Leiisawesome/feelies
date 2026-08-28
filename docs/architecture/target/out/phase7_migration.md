@@ -2545,17 +2545,43 @@ CLOSES:          G15, G19 (the reducer clause)
 PROBLEM:         Reducing N forecasts to one portfolio — engine 6's defining
                  responsibility — exists in **three places**: `composition/`,
                  `_select_bus_signal` in the kernel (def at
-                 `src/feelies/kernel/orchestrator.py:4831`, tick-path call at
-                 `:1676`), and `src/feelies/alpha/arbitration.py` in engine 5's
-                 package. Three implementations of one rule and nothing asserts
-                 they agree. CORE §C.6; Inv-8.
-FILES:           src/feelies/kernel/orchestrator.py:4831, :1676
-                 src/feelies/alpha/arbitration.py
-                 src/feelies/composition/
-                 tests/conformance/test_composition_identity.py (C6)
-                 tests/conformance/fixtures/shape_adversarial/ (FIX-2 — required
-                 by C6 and by A3 in S-29; Phase 6 §4.1 established that neither
-                 existing fixture covers this role)
+                 `src/feelies/kernel/orchestrator.py:3587`, tick-path call at
+                 `:1662` in `_process_tick_inner`), and
+                 `src/feelies/alpha/arbitration.py` in engine 5's package.
+                 Three implementations of one rule and nothing asserts they
+                 agree. CORE §C.6; Inv-8.
+FILES:           src/feelies/kernel/orchestrator.py
+                   (_select_bus_signal :3587; call :1662;
+                    _trace_buffered_signals_arbitration def :656, call :1669)
+                 src/feelies/alpha/arbitration.py (deleted)
+                 src/feelies/alpha/__init__.py
+                   (re-exports EdgeWeightedArbitrator, SignalArbitrator)
+                 src/feelies/composition/<named-policy-module>.py
+                   (destination for top-1 as a declared construction policy;
+                    NEW — name it; do not declare composition/ as a directory)
+                 src/feelies/composition/engine.py
+                 src/feelies/composition/protocol.py
+                 src/feelies/composition/__init__.py
+                 tests/conformance/test_composition_identity.py (C6, new)
+                 tests/conformance/fixtures/shape_adversarial/ (FIX-2, new)
+                 tests/alpha/test_arbitration.py
+                 tests/kernel/test_standalone_signal_ownership.py
+                 tests/kernel/test_orchestrator.py
+                   (winner-take-all :3094, :3284)
+                 tests/kernel/test_micro_sm_signal_props.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
+                 tools/arch/gapscan.py
+                   (CITATIONS _select_bus_signal still at :1676)
+                 scripts/compare_multialpha_runs.py
+                 src/feelies/core/events.py
+                   (new published arbitration record — required by path (5))
+                 src/feelies/core/sequence_authority.py
+                 src/feelies/core/wiring_manifest.py
+                 tests/conformance/test_single_owner.py
+                 tests/conformance/test_emission_registry.py
+                 Do not declare src/feelies/composition/ as a directory scope.
 WHY THIS OWNER:  Phase 2 resolves it on engine 6's sheet with an argument rather
                  than an assertion: selecting one forecast from N and sizing it
                  **is** portfolio construction with a concentration constraint
@@ -2587,10 +2613,13 @@ PARITY IMPACT:   **Expected to hold at A=1 and this is the step's honest
                  is why FIX-2 is a precondition here and not merely a wave-4
                  nicety. Shipping S-26 without FIX-2 ships an untested
                  consolidation with a green oracle.
-DELETES:         `_select_bus_signal` from the orchestrator (89 -> 88);
+DELETES:         `_select_bus_signal` from the orchestrator (96 -> 95);
                  `src/feelies/alpha/arbitration.py` (**a module deleted**);
                  two of three reducer implementations
-NET DELTA:       src modules **-1**, public symbols **-1**, branch points 0.
+NET DELTA:       src modules **-1** (delete arbitration.py; +1 if the named
+                 composition policy is a new file — net 0 in that case; state
+                 which), public symbols **-1** (adjust if the policy publishes
+                 new names), branch points 0.
 ROLLBACK:        revert. Both deleted implementations return from git history.
 ```
 
