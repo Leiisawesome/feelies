@@ -847,6 +847,7 @@ class TestOrchestratorFullPipeline:
 class TestOrchestratorAckProcessing:
     def test_async_acks_preserve_exact_event_order_and_reconciliation_lineage(
         self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
@@ -893,7 +894,10 @@ class TestOrchestratorAckProcessing:
                 fees=Decimal("0.10"),
             ),
         ]
-        orch._poll_order_router_acks = lambda _expected=None: acks  # type: ignore[method-assign]
+        monkeypatch.setattr(
+            "feelies.kernel.orchestrator._poll_order_router_acks",
+            lambda _self, _expected=None: acks,
+        )
 
         orch._drain_async_fills("reconcile-cid")
 

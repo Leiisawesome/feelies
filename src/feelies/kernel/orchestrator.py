@@ -96,6 +96,7 @@ from feelies.execution.order_admission import (
     side_for_intent,
 )
 from feelies.execution.order_lifecycle import (
+    _poll_order_router_acks,
     _transition_order,
 )
 from feelies.execution.order_policy import (
@@ -2685,7 +2686,7 @@ class Orchestrator:
         """Poll and reconcile acknowledgements for one submission phase.
 
         Expected orders without an ack remain active for later asynchronous drains."""
-        acks = self._poll_order_router_acks(expected_order_ids)
+        acks = _poll_order_router_acks(self, expected_order_ids)
         self._publish_and_apply_order_acks(acks)
         if position_update_trigger is not None:
             self._micro.transition(
@@ -2695,38 +2696,6 @@ class Orchestrator:
             )
         self._reconcile_fills(acks, correlation_id)
         return acks
-
-    def _poll_order_router_acks(
-        self,
-        expected_order_ids: set[str] | None = None,
-    ) -> list[OrderAck]:
-        """Drain router acks, buffering unrelated ones for the next caller.
-
-        The execution backend exposes a single pending-ack queue shared by
-        immediate submit/cancel acks and quote-driven fills from previously
-        resting orders.  Callers that just submitted a specific order family
-        must not steal unrelated pending acks and reconcile them under the
-        wrong correlation lineage.
-        """
-        polled = self._backend.order_router.poll_acks()
-        if self._deferred_router_acks:
-            all_acks = [*self._deferred_router_acks, *polled]
-            self._deferred_router_acks.clear()
-        else:
-            all_acks = polled
-
-        if expected_order_ids is None:
-            return all_acks
-
-        matched: list[OrderAck] = []
-        deferred: list[OrderAck] = []
-        for ack in all_acks:
-            if ack.order_id in expected_order_ids:
-                matched.append(ack)
-            else:
-                deferred.append(ack)
-        self._deferred_router_acks.extend(deferred)
-        return matched
 
     def _publish_and_apply_order_acks(self, acks: list[OrderAck]) -> None:
         """Publish router acks in order, then advance their order state machines."""
