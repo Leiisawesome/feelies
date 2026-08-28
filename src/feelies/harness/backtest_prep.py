@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import time
 
 from feelies.core.events import Event, NBBOQuote, Trade
-from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.platform_config import PlatformConfig
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.storage.reference.corporate_actions import (
     exchange_timestamp_to_ny_date,
@@ -148,9 +148,7 @@ def prepare_backtest_event_log(
 ) -> BacktestEventLogPrep:
     """Single pass: optional RTH filter + counts + spans + calibration prefix."""
     filter_rth = config.session_kind == "RTH"
-    max_cal = (
-        config.regime_calibration_max_quotes if config.mode == OperatingMode.BACKTEST else None
-    )
+    max_cal = config.regime_calibration_max_quotes
 
     kept: list[Event] = []
     first_ts: int | None = None
