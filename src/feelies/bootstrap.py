@@ -16,7 +16,7 @@ from datetime import date
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from feelies.alpha.discovery import load_and_register
 from feelies.portfolio.fill_attribution import FillAttributionLedger
@@ -282,19 +282,20 @@ def build_platform(
             "build_platform (e.g. scripts/run_backtest.py after ingest).",
         )
 
+    clock = _select_clock(config.mode)
+    replay_clock = isinstance(clock, SimulatedClock)
+    config = _ensure_session_open_ns_for_paper(config, clock)
+
     if event_log is None:
         # Live feeds log arrival order, which need not be timestamp-monotonic.
         # Replays retain strict ordering.
-        enforce_market_order = config.mode.name != "PAPER"
-        event_log = InMemoryEventLog(enforce_market_order=enforce_market_order)
+        event_log = InMemoryEventLog(enforce_market_order=replay_clock)
     _enforce_ex_date_replay_guard(
         config,
         event_log,
         precomputed_spans=precomputed_ex_date_spans,
     )
 
-    clock = _select_clock(config.mode)
-    config = _ensure_session_open_ns_for_paper(config, clock)
     bus = EventBus()
 
     regime_engine = _create_regime_engine(
@@ -304,7 +305,7 @@ def build_platform(
     if config.enforce_regime_state_scale_alignment and regime_engine is not None:
         _validate_regime_engine_risk_scale_alignment(regime_engine)
 
-    registry_clock = None if config.mode.name == "BACKTEST" else clock
+    registry_clock = None if replay_clock else clock
     promotion_ledger = (
         PromotionLedger(config.promotion_ledger_path)
         if config.promotion_ledger_path is not None
@@ -355,7 +356,7 @@ def build_platform(
             _vacuous_threshold_shares,
         )
     # Isolate risk alerts so they cannot shift orchestrator event IDs.
-    _seq_thread_safe = config.mode.name != "BACKTEST"
+    _seq_thread_safe = not replay_clock
     risk_alert_seq = SequenceGenerator(stream="risk_alert", thread_safe=_seq_thread_safe)
     pdt_constraint = PDTConstraint(
         PDTConfig(
@@ -385,7 +386,7 @@ def build_platform(
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
         # Warn in PAPER when an entry gate is not wired.
-        warn_on_inert_entry_gates=config.mode.name == "PAPER",
+        warn_on_inert_entry_gates=not replay_clock,
     )
 
     cost_model = DefaultCostModel(
@@ -430,33 +431,17 @@ def build_platform(
         session_bounds=trading_session_bounds,
     )
     backend = bundle.backend
-    if config.mode.name == "BACKTEST":
-        backtest_router = cast(
-            BacktestOrderRouter | PassiveLimitOrderRouter,
-            backend.order_router,
-        )
-
+    router = getattr(backend, "order_router", None)
+    if isinstance(
+        router,
+        (BacktestOrderRouter, PassiveLimitOrderRouter),
+    ):
         def _on_backtest_quote(event: NBBOQuote) -> None:
-            backtest_router.on_quote(event)
+            router.on_quote(event)
 
         bus.subscribe(NBBOQuote, _on_backtest_quote)
 
     position_store = MemoryPositionStore()
-    if config.mode.name != "BACKTEST":
-        router = getattr(backend, "order_router", None)
-        ib_conn = bundle.ib_connection
-        can_bind_ib = ib_conn is not None and hasattr(
-            ib_conn, "bind_submitted_order_journal"
-        )
-        if router is not None or can_bind_ib:
-            submitted_order_journal = DurableSubmittedOrderJournal(
-                _submitted_order_journal_path(config),
-                clock=clock,
-            )
-            if router is not None:
-                submitted_order_journal.install_on(router)
-            if ib_conn is not None and hasattr(ib_conn, "bind_submitted_order_journal"):
-                ib_conn.bind_submitted_order_journal(submitted_order_journal)
     strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
@@ -512,7 +497,7 @@ def build_platform(
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
     metric_collector: InMemoryMetricCollector
-    if config.mode.name == "BACKTEST":
+    if replay_clock:
         metric_collector = _BacktestMetricCollector()
     else:
         metric_collector = InMemoryMetricCollector()
@@ -1001,6 +986,17 @@ def _create_backend(
             ib_client_id=config.ib_client_id,
             massive_ws_url=config.massive_ws_url,
         )
+        router = getattr(backend, "order_router", None)
+        can_bind_ib = hasattr(ib_conn, "bind_submitted_order_journal")
+        if router is not None or can_bind_ib:
+            submitted_order_journal = DurableSubmittedOrderJournal(
+                _submitted_order_journal_path(config),
+                clock=clock,
+            )
+            if router is not None:
+                submitted_order_journal.install_on(router)
+            if can_bind_ib:
+                ib_conn.bind_submitted_order_journal(submitted_order_journal)
         return _BackendBundle(
             backend=backend,
             live_feed=live_feed,
@@ -1263,7 +1259,7 @@ def _create_sensor_layer(
             sequence_generator=sensor_seq,
             symbols=frozenset(config.symbols),
             metric_collector=metric_collector,
-            emit_reading_metrics=config.mode.name != "BACKTEST",
+            emit_reading_metrics=thread_safe_sequences,
         )
         # Inject the runtime calendar object that YAML cannot represent.
         import dataclasses as _dc
