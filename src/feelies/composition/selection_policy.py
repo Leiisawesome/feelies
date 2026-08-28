@@ -1,17 +1,21 @@
-"""Signal arbitration — conflict resolution when multiple alphas fire.
+"""Declared construction policy: reduce N forecasts to one (or none).
 
-When multiple alpha modules produce signals for the same symbol on
-the same tick, the arbitrator selects a single winner.  The protocol
-is injectable so that research can experiment with different policies
-(edge-weighted, ensemble voting, capital-weighted, etc.).
+Engine 6's job is N forecasts → one desired portfolio. Top-1 selection is
+one such construction — a concentration constraint of one — not a kernel
+detail and not an alpha-package concern. Other :class:`SelectionPolicy`
+implementations are admissible; top-1 is the default, not the only
+reachable behaviour.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
 
+from feelies.composition.protocol import (
+    ForecastExclusion,
+    SelectionResult,
+)
 from feelies.core.events import Signal, SignalDirection
 
 
@@ -94,29 +98,12 @@ class StandaloneArbitrationCollision:
     harmless: bool
 
 
-class SignalArbitrator(Protocol):
-    """Selects a single signal from multiple alpha outputs.
-
-    Receives all non-None signals produced by active alphas for a
-    single tick and returns the winning signal, or None if the
-    arbitrator determines no action is warranted (e.g., directional
-    conflict within a dead-zone).
-    """
-
-    def arbitrate(self, signals: Sequence[Signal]) -> Signal | None:
-        """Select the best signal from competing candidates.
-
-        ``signals`` is guaranteed non-empty by the caller.
-        """
-        ...
-
-
-class EdgeWeightedArbitrator:
-    """Default arbitrator: highest edge_estimate_bps * strength wins.
+class Top1SelectionPolicy:
+    """Default construction policy: highest edge_estimate_bps * strength wins.
 
     Directional conflicts (LONG vs SHORT) are resolved by comparing
     composite scores.  If the winning score falls below the dead-zone
-    threshold, no signal is emitted (returns None).
+    threshold, no signal is emitted (empty contributors).
 
     FLAT is privileged: any alpha emitting FLAT triggers an immediate
     exit regardless of competing directional signals.  FLAT is a
@@ -132,22 +119,39 @@ class EdgeWeightedArbitrator:
         Args:
             dead_zone_bps: If the best composite score
                 (edge_estimate_bps * strength) is below this threshold,
-                the arbitrator returns None.  Prevents acting on weak,
+                contributors is empty.  Prevents acting on weak,
                 contested signals.
         """
         self._dead_zone_bps = dead_zone_bps
 
-    def arbitrate(self, signals: Sequence[Signal]) -> Signal | None:
+    def select(self, signals: Sequence[Signal]) -> SelectionResult:
+        in_scope = tuple(signals)
         if not signals:
-            return None
+            return SelectionResult(in_scope=(), contributors=(), exclusions=())
 
         if len(signals) == 1:
-            return signals[0]
+            return SelectionResult(
+                in_scope=in_scope,
+                contributors=(signals[0],),
+                exclusions=(),
+            )
 
         flats = [s for s in signals if s.direction == SignalDirection.FLAT]
         if flats:
             # Strategy ID makes equal-strength ties independent of input order.
-            return min(flats, key=lambda s: (-s.strength, s.strategy_id))
+            winner = min(flats, key=lambda s: (-s.strength, s.strategy_id))
+            return SelectionResult(
+                in_scope=in_scope,
+                contributors=(winner,),
+                exclusions=tuple(
+                    ForecastExclusion(
+                        signal=s,
+                        reason=f"not_selected_in_arbitration_winner_is:{winner.strategy_id}",
+                    )
+                    for s in signals
+                    if s is not winner
+                ),
+            )
 
         # Strategy ID makes equal-score ties independent of input order.
         best = min(
@@ -156,6 +160,27 @@ class EdgeWeightedArbitrator:
         )
 
         if best.edge_estimate_bps * best.strength < self._dead_zone_bps:
-            return None
+            return SelectionResult(
+                in_scope=in_scope,
+                contributors=(),
+                exclusions=tuple(
+                    ForecastExclusion(
+                        signal=s,
+                        reason="arbitration_returned_none_dead_zone_or_conflict",
+                    )
+                    for s in signals
+                ),
+            )
 
-        return best
+        return SelectionResult(
+            in_scope=in_scope,
+            contributors=(best,),
+            exclusions=tuple(
+                ForecastExclusion(
+                    signal=s,
+                    reason=f"not_selected_in_arbitration_winner_is:{best.strategy_id}",
+                )
+                for s in signals
+                if s is not best
+            ),
+        )

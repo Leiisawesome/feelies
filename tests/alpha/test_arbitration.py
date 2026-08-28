@@ -1,9 +1,9 @@
-"""Unit tests for signal arbitration."""
+"""Unit tests for the declared Top-1 construction policy."""
 
 from __future__ import annotations
 
 
-from feelies.alpha.arbitration import EdgeWeightedArbitrator
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.core.events import Signal, SignalDirection
 
 
@@ -24,47 +24,47 @@ def _sig(
     )
 
 
-class TestEdgeWeightedArbitrator:
-    """Tests for EdgeWeightedArbitrator."""
+class TestTop1SelectionPolicy:
+    """Tests for Top1SelectionPolicy."""
 
     def test_empty_returns_none(self) -> None:
-        arb = EdgeWeightedArbitrator()
-        assert arb.arbitrate([]) is None
+        arb = Top1SelectionPolicy()
+        assert arb.select([]).winner is None
 
     def test_single_signal_returns_it(self) -> None:
-        arb = EdgeWeightedArbitrator()
+        arb = Top1SelectionPolicy()
         s = _sig(SignalDirection.LONG)
-        assert arb.arbitrate([s]) is s
+        assert arb.select([s]).winner is s
 
     def test_multiple_picks_highest_composite_score(self) -> None:
-        arb = EdgeWeightedArbitrator(dead_zone_bps=0.0)
+        arb = Top1SelectionPolicy(dead_zone_bps=0.0)
         low = _sig(SignalDirection.LONG, strength=0.5, edge_bps=5.0)  # 2.5
         high = _sig(SignalDirection.LONG, strength=1.0, edge_bps=20.0)  # 20
         mid = _sig(SignalDirection.SHORT, strength=0.8, edge_bps=10.0)  # 8
-        result = arb.arbitrate([low, high, mid])
-        assert result is high
+        result = arb.select([low, high, mid])
+        assert result.winner is high
 
     def test_dead_zone_below_threshold_returns_none(self) -> None:
-        arb = EdgeWeightedArbitrator(dead_zone_bps=5.0)
+        arb = Top1SelectionPolicy(dead_zone_bps=5.0)
         weak1 = _sig(SignalDirection.LONG, strength=0.1, edge_bps=10.0)  # 1.0
         weak2 = _sig(SignalDirection.LONG, strength=0.2, edge_bps=15.0)  # 3.0
-        assert arb.arbitrate([weak1, weak2]) is None
+        assert arb.select([weak1, weak2]).winner is None
 
     def test_dead_zone_above_threshold_returns_signal(self) -> None:
-        arb = EdgeWeightedArbitrator(dead_zone_bps=0.5)
+        arb = Top1SelectionPolicy(dead_zone_bps=0.5)
         strong = _sig(SignalDirection.LONG, strength=1.0, edge_bps=10.0)  # 10
-        assert arb.arbitrate([strong]) is strong
+        assert arb.select([strong]).winner is strong
 
     def test_all_flat_returns_first(self) -> None:
-        arb = EdgeWeightedArbitrator()
+        arb = Top1SelectionPolicy()
         f1 = _sig(SignalDirection.FLAT)
         f2 = _sig(SignalDirection.FLAT)
-        result = arb.arbitrate([f1, f2])
-        assert result is f1
+        result = arb.select([f1, f2])
+        assert result.winner is f1
 
     def test_directional_conflict_picks_highest_score(self) -> None:
-        arb = EdgeWeightedArbitrator(dead_zone_bps=0.0)
+        arb = Top1SelectionPolicy(dead_zone_bps=0.0)
         long_sig = _sig(SignalDirection.LONG, strength=0.9, edge_bps=15.0)
         short_sig = _sig(SignalDirection.SHORT, strength=0.5, edge_bps=5.0)
-        result = arb.arbitrate([long_sig, short_sig])
-        assert result is long_sig
+        result = arb.select([long_sig, short_sig])
+        assert result.winner is long_sig

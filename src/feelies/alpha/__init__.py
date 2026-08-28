@@ -24,7 +24,6 @@ is load-time and runtime only. ``AlphaRegistry`` depends on that package;
 nothing there depends back on this one.
 """
 
-from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
 from feelies.alpha.discovery import (
     discover_alpha_specs,
     discover_research_alpha_specs,
@@ -50,9 +49,7 @@ __all__ = [
     "AlphaRiskBudget",
     "discover_alpha_specs",
     "discover_research_alpha_specs",
-    "EdgeWeightedArbitrator",
     "load_and_register",
     "ParameterDef",
-    "SignalArbitrator",
     "validate_alpha_set",
 ]

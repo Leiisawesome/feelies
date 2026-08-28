@@ -5,6 +5,12 @@ dispatches each context to every registered :class:`PortfolioAlpha`
 (or the canonical default pipeline), and publishes one
 :class:`SizedPositionIntent` per context per alpha.
 
+Standalone SIGNAL reduction (N forecasts → one) is
+:class:`~feelies.composition.protocol.SelectionPolicy`, default
+:class:`~feelies.composition.selection_policy.Top1SelectionPolicy`.
+The kernel invokes that policy at M4; this engine is not constructed
+for SIGNAL-only deployments.
+
 Determinism (§7.5)
 ------------------
 

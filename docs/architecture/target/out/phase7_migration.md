@@ -2615,10 +2615,14 @@ PARITY IMPACT:   **Expected to hold at A=1 and this is the step's honest
 DELETES:         `_select_bus_signal` from the orchestrator (96 -> 95);
                  `src/feelies/alpha/arbitration.py` (**a module deleted**);
                  two of three reducer implementations
-NET DELTA:       src modules **-1** (delete arbitration.py; +1 if the named
-                 composition policy is a new file — net 0 in that case; state
-                 which), public symbols **-1** (adjust if the policy publishes
-                 new names), branch points 0.
+NET DELTA:       src modules 0 (arbitration.py deleted, selection_policy.py
+                 added). public symbols **+2** measured by measure.py's
+                 top-level-public rule: -6 from arbitration.py, +5 from
+                 selection_policy.py, +3 from protocol.py's ForecastExclusion,
+                 SelectionResult and SelectionPolicy. G.6 branch points 0 --
+                 no mode branch, fail-quiet handler or runtime gate site is
+                 touched. C6 and the emission-registry test are under tests/ and
+                 exempt per G.10.
 ROLLBACK:        revert. Both deleted implementations return from git history.
 ```
 
@@ -3144,7 +3148,7 @@ the reconciliation requirement.
 | S-23 | 0 | 0 | −1 | 202 | 597 | 359 | +1 |
 | S-24 | 0 | 0 | 0 | 202 | 597 | 359 | 0 |
 | S-25 | 0 | −1 | 0 | 202 | 596 | 359 | +1 |
-| S-26 | −1 | −1 | 0 | 201 | 595 | 359 | +2 |
+| S-26 | 0 | +2 | 0 | 201 | 595 | 359 | +2 |
 | S-27 | 0 | 0 | −2 | 201 | 595 | 357 | +1 |
 | S-28 | 0 | 0 | −7 | 201 | 595 | 350 | +1 |
 | S-29 | 0 | −1 | −1 | 201 | 594 | 349 | +1 |

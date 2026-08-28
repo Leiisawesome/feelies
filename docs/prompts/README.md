@@ -110,7 +110,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `sensors/`, `features/` | sensor |
 | `services/`, `signals/regime_gate.py` | regime |
 | `signals/horizon_engine.py`, `signals/horizon_protocol.py` | signal_alpha |
-| `alpha/cost_arithmetic.py`, `arbitration.py` | signal_alpha |
+| `alpha/cost_arithmetic.py` | signal_alpha |
 | `promotion/lifecycle.py`, `promotion_ledger.py`, `registry.py`, `loader.py`, `validation.py`, `discovery.py`, `layer_validator.py`, `module.py`, `signal_layer_module.py` | alpha_lifecycle |
 | `promotion/evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
 | `alpha/portfolio_layer_module.py` | composition |

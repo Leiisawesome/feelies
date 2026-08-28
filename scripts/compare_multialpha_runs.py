@@ -7,7 +7,7 @@ reports:
 * fleet net P&L and fill counts per config
 * fill-leg price diffs (benign vs multialpha)
 * **exit hijacks** — closing fills tagged with a passive alpha (gate-close
-  FLAT only) that opened no positions, typical of ``EdgeWeightedArbitrator``
+  FLAT only) that opened no positions, typical of ``Top1SelectionPolicy``
   interference
 * per-alpha cost-survival split under multialpha (attribution artifact warning)
 * directional vs gate-close signal counts from the bus recorder

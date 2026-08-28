@@ -55,6 +55,9 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset(
         "src/feelies/research/hypothesis_status.py",
         # Retired path kept in migration documentation for fork searches.
         "tests/determinism/test_legacy_alpha_parity.py",
+        # Retired path kept in audit_signal_alpha.md; FILES for S-26 did not
+        # include that prompt, so the citation is not retargeted this step.
+        "src/feelies/alpha/arbitration.py",
     }
 )
 

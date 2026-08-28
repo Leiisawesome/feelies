@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from dataclasses import replace
 
-from feelies.alpha.arbitration import (
+from feelies.composition.selection_policy import (
     collision_is_harmless_flat_gate_close,
     is_redundant_gate_close_flat,
     standalone_signal_actionable_for_strategy,

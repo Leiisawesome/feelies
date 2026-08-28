@@ -28,10 +28,10 @@ if TYPE_CHECKING:
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
 from feelies.portfolio.fill_attribution import largest_remainder_split, split_fees
-from feelies.alpha.arbitration import (
-    EdgeWeightedArbitrator,
-    SignalArbitrator,
+from feelies.composition.protocol import SelectionPolicy
+from feelies.composition.selection_policy import (
     StandaloneArbitrationCollision,
+    Top1SelectionPolicy,
     collision_is_harmless_flat_gate_close,
     is_redundant_gate_close_flat,
     standalone_signal_actionable_for_strategy,
@@ -372,7 +372,7 @@ class Orchestrator:
         hazard_exit_controller: "HazardExitController | None" = None,
         trading_session_bounds: TradingSessionBounds | None = None,
         moc_bounds_configured: bool = False,
-        signal_arbitrator: SignalArbitrator | None = None,
+        selection_policy: SelectionPolicy | None = None,
         edge_calibration_factors: Mapping[str, float] | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
@@ -456,8 +456,8 @@ class Orchestrator:
         # references support orchestration and inspection.
         self._composition_engine = composition_engine
         self._hazard_exit_controller = hazard_exit_controller
-        self._signal_arbitrator: SignalArbitrator = (
-            signal_arbitrator if signal_arbitrator is not None else EdgeWeightedArbitrator()
+        self._selection_policy: SelectionPolicy = (
+            selection_policy if selection_policy is not None else Top1SelectionPolicy()
         )
         self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = signal_order_trace_sink
         self._paper_session_recorder: PaperSessionRecorder | None = None
@@ -1659,7 +1659,69 @@ class Orchestrator:
         signal: Signal | None = None
         if buf_snapshot:
             t0 = time.perf_counter_ns()
-            signal = self._select_bus_signal()
+            buf = self._filter_standalone_signals_by_strategy_ownership(
+                buf_snapshot,
+            )
+            trace_quote = self._tick_quote_for_trace
+            if trace_quote is not None and self._signal_order_trace_sink is not None:
+                actionable_ids = {id(s) for s in buf}
+                for s in buf_snapshot:
+                    if id(s) in actionable_ids:
+                        continue
+                    self._append_signal_order_trace(
+                        trace_quote,
+                        s,
+                        outcome="NO_ORDER",
+                        reasons=("filtered_no_strategy_position_for_exit",),
+                    )
+            if buf:
+                if len(buf) > 1:
+                    agg_qty = self._positions.get(buf[0].symbol).quantity
+                    harmless = collision_is_harmless_flat_gate_close(buf, agg_qty)
+                    self._arbitration_collisions.append(
+                        StandaloneArbitrationCollision(
+                            candidate_count=len(buf),
+                            strategy_ids=tuple(sorted({s.strategy_id for s in buf})),
+                            kinds=tuple(
+                                sorted(
+                                    (s.strategy_id, s.direction.name, s.regime_gate_state)
+                                    for s in buf
+                                )
+                            ),
+                            harmless=harmless,
+                        )
+                    )
+                    ids = sorted({s.strategy_id for s in buf})
+                    if harmless:
+                        if not self._logged_harmless_arbitration_collision:
+                            self._logged_harmless_arbitration_collision = True
+                            logger.debug(
+                                "orchestrator: %d standalone SIGNAL candidate(s) from %d "
+                                "alpha id(s) on flat book (%s); all gate-close FLAT — "
+                                "no order impact.",
+                                len(buf),
+                                len(ids),
+                                ids,
+                            )
+                    elif not self._warned_multi_standalone_signals:
+                        self._warned_multi_standalone_signals = True
+                        logger.warning(
+                            "orchestrator: %d standalone SIGNAL candidate(s) from %d "
+                            "alpha id(s) fired on the same tick (%s); arbitrating via "
+                            "%s — the winner takes the tick and the other alphas' "
+                            "conviction is discarded, not blended.  Routing these ids "
+                            "through a PORTFOLIO alpha's depends_on_signals would "
+                            "aggregate rather than arbitrate, but that path is "
+                            "unexercised on the cached corpus and its legs skip the "
+                            "SSR, locate, halt-blackout, B4 edge/cost and "
+                            "min-order-shares gates this one applies; it is not a "
+                            "drop-in remedy.  See configs/bt_multialpha.yaml.",
+                            len(buf),
+                            len(ids),
+                            ids,
+                            type(self._selection_policy).__name__,
+                        )
+                signal = self._selection_policy.select(buf).winner
             self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
         # Stop-loss and session flatten are authored by
@@ -3583,72 +3645,6 @@ class Orchestrator:
     ) -> list[Signal]:
         """Drop cross-alpha gate-close hijacks and foreign exit signals."""
         return [s for s in signals if self._standalone_signal_actionable_for_strategy_ownership(s)]
-
-    def _select_bus_signal(self) -> Signal | None:
-        """Select one deterministic standalone winner from the buffered signals."""
-        if not self._signal_buffer:
-            return None
-        buf = self._filter_standalone_signals_by_strategy_ownership(
-            self._signal_buffer,
-        )
-        quote = self._tick_quote_for_trace
-        if quote is not None and self._signal_order_trace_sink is not None:
-            actionable_ids = {id(s) for s in buf}
-            for s in self._signal_buffer:
-                if id(s) in actionable_ids:
-                    continue
-                self._append_signal_order_trace(
-                    quote,
-                    s,
-                    outcome="NO_ORDER",
-                    reasons=("filtered_no_strategy_position_for_exit",),
-                )
-        if not buf:
-            return None
-        if len(buf) > 1:
-            agg_qty = self._positions.get(buf[0].symbol).quantity
-            harmless = collision_is_harmless_flat_gate_close(buf, agg_qty)
-            self._arbitration_collisions.append(
-                StandaloneArbitrationCollision(
-                    candidate_count=len(buf),
-                    strategy_ids=tuple(sorted({s.strategy_id for s in buf})),
-                    kinds=tuple(
-                        sorted((s.strategy_id, s.direction.name, s.regime_gate_state) for s in buf)
-                    ),
-                    harmless=harmless,
-                )
-            )
-            ids = sorted({s.strategy_id for s in buf})
-            if harmless:
-                if not self._logged_harmless_arbitration_collision:
-                    self._logged_harmless_arbitration_collision = True
-                    logger.debug(
-                        "orchestrator: %d standalone SIGNAL candidate(s) from %d "
-                        "alpha id(s) on flat book (%s); all gate-close FLAT — "
-                        "no order impact.",
-                        len(buf),
-                        len(ids),
-                        ids,
-                    )
-            elif not self._warned_multi_standalone_signals:
-                self._warned_multi_standalone_signals = True
-                logger.warning(
-                    "orchestrator: %d standalone SIGNAL candidate(s) from %d "
-                    "alpha id(s) fired on the same tick (%s); arbitrating via "
-                    "%s — the winner takes the tick and the other alphas' "
-                    "conviction is discarded, not blended.  Routing these ids "
-                    "through a PORTFOLIO alpha's depends_on_signals would "
-                    "aggregate rather than arbitrate, but that path is "
-                    "unexercised on the cached corpus and its legs skip the "
-                    "SSR, locate, halt-blackout, B4 edge/cost and "
-                    "min-order-shares gates this one applies; it is not a "
-                    "drop-in remedy.  See configs/bt_multialpha.yaml.",
-                    len(buf),
-                    len(ids),
-                    ids,
-                    type(self._signal_arbitrator).__name__,
-                )
-        return self._signal_arbitrator.arbitrate(buf)
 
     # Bus-driven sized-intent handler.
 
