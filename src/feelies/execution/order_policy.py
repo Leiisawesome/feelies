@@ -6,7 +6,16 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
-from feelies.core.events import NBBOQuote, OrderType, Side, Signal
+from feelies.core.events import (
+    AlertSeverity,
+    NBBOQuote,
+    OrderRequest,
+    OrderType,
+    Side,
+    Signal,
+    SizedPositionIntent,
+)
+from feelies.execution.order_admission import ExposureDelta, admission_block_reason
 from feelies.execution.position_manager import (
     DesiredPosition,
     ExecStyle,
@@ -17,6 +26,7 @@ from feelies.execution.position_manager import (
     reversal_edge_gate,
     round_trip_cost_bps,
 )
+from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.portfolio.position_store import Position
 
 
@@ -274,3 +284,74 @@ def _resolve_order_route(
             False,
         )
     return OrderType.MARKET, None, False
+
+
+def _filter_portfolio_orders_for_admission(
+    self: Any,
+    orders: list[OrderRequest],
+    *,
+    intent: SizedPositionIntent,
+    correlation_id: str,
+    quote: NBBOQuote | None = None,
+) -> list[OrderRequest]:
+    """Drop PORTFOLIO legs refused by the shared Inv-11 admission gates.
+
+    Until this filter existed the composition path reached
+    ``order_router.submit`` without passing the halt blackout, the
+    session-flatten window, SSR, locate availability or the minimum-order
+    floor — every one of which the standalone SIGNAL path applies.  The
+    policy is :func:`~feelies.execution.order_admission.admission_block_reason`;
+    this method only supplies the environment and the per-leg exposure
+    delta.
+
+    The delta is re-read from the live book rather than carried from
+    ``plan_leg``: a leg is admitted against the book as it stands now, not
+    as it stood when the intent was priced.
+
+    Reducing legs are exempt from every gate by construction (the policy
+    conditions each one on the order adding exposure), so a PORTFOLIO
+    unwind can never be refused by a halt or an SSR flag.
+    """
+    filtered: list[OrderRequest] = []
+    for order in orders:
+        current = self._positions.get(order.symbol).quantity
+        signed = order.quantity if order.side is Side.BUY else -order.quantity
+        delta = ExposureDelta(current_quantity=current, signed_quantity=signed)
+        block = admission_block_reason(
+            opens_exposure=delta.opens_or_increases_exposure,
+            opens_short=delta.opens_or_increases_short,
+            in_halt_blackout=self._in_halt_blackout(order.symbol, intent.timestamp_ns),
+            in_session_flatten_window=self._in_session_flatten_window_at(intent.timestamp_ns),
+            ssr_active=order.symbol.upper() in self._ssr_active,
+            locate_unavailable=(self._borrow_tier_for(order.symbol) == BorrowTier.UNAVAILABLE),
+            quantity=order.quantity,
+            min_order_shares=self._min_order_shares,
+            exempt_from_min_size=not delta.opens_or_increases_exposure,
+        )
+        if block is None:
+            block = self._portfolio_leg_edge_block(
+                order,
+                intent=intent,
+                delta=delta,
+                quote=quote,
+            )
+        if block is None:
+            filtered.append(order)
+            continue
+        self._publish_alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            severity=AlertSeverity.WARNING,
+            alert_name="portfolio_leg_admission_blocked",
+            message=f"PORTFOLIO leg refused by {block}: {order.symbol!r} {order.side.name} {order.quantity} (strategy={intent.strategy_id!r}, position={current}).",
+            context={
+                "order_id": order.order_id,
+                "symbol": order.symbol,
+                "strategy_id": intent.strategy_id,
+                "block_reason": block,
+                "side": order.side.name,
+                "quantity": order.quantity,
+                "position_quantity": current,
+            },
+        )
+    return filtered
