@@ -2423,6 +2423,13 @@ FILES:           src/feelies/kernel/orchestrator.py (the nine methods)
                  new module, per the S-21 finding)
                  tests/docs/test_internal_links.py
                  docs/prompts/README.md
+                 tests/kernel/test_orchestrator.py (:1458, :2522, :2538 bind
+                 _try_build_order_from_intent, _plan_for_signal,
+                 _round_trip_cost_bps as attributes)
+                 tests/kernel/test_orchestrator_order_routing.py (:63 binds
+                 _resolve_order_route)
+                 tests/kernel/test_orchestrator_edge_calibration.py (:46 binds
+                 _signal_passes_edge_cost_gate)
 WHY THIS OWNER:  Engine 9 owns everything between "engine 8 permits X" and
                  "engine 10 has an order to work", including the
                  edge-versus-cost gate — a trade declined for insufficient edge
@@ -2452,7 +2459,7 @@ PARITY IMPACT:   hold -- all registered hashes, including halt_order,
                  generator, same order; a dropped, added, or re-homed
                  draw is a STOP, not a fold. No Event field add/delete.
                  S-23 has landed; halt_order is not to be re-pinned here.
-DELETES:         9 methods from the orchestrator (104 -> 95)
+DELETES:         9 methods from the orchestrator (111 -> 102)
 NET DELTA:       src modules 0, public symbols +1, branch points 0.
                  Orchestrator lines -~450.
 ROLLBACK:        revert.
