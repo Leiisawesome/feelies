@@ -2469,12 +2469,46 @@ ROLLBACK:        revert.
 STEP:            S-25
 CLOSES:          G27
 PROBLEM:         **6 order-lifecycle transitions in the kernel** —
-                 `_submit_tracked_order:3831`, `_poll_order_router_acks:3793`,
-                 `_apply_ack_to_order:4103`, `_transition_order:4086`,
-                 `_drain_async_fills:3936`, `cancel_order:3438`. Order state can
-                 be advanced from two modules. Inv-8; Inv-9.
-FILES:           src/feelies/kernel/orchestrator.py (6 methods)
-                 src/feelies/execution/ (mechanics side)
+                 `_submit_tracked_order:2734`, `_poll_order_router_acks:2696`,
+                 `_apply_ack_to_order:3120`, `_transition_order:3103`,
+                 `_drain_async_fills:2839`, `cancel_order:2411`.
+                 Order state can be advanced from two modules. Inv-8; Inv-9.
+                 None of the six draw self._seq / self._hazard_seq.
+                 `_drain_async_fills` reads time.perf_counter_ns twice
+                 (:2843, :2853); keep that allowlist with the body.
+                 Siblings the six are not closed without, name them or
+                 STOP: `_submit_to_router:2965`,
+                 `_reject_order_after_submit_failure:2754`,
+                 `_settle_router_acks:2675`,
+                 `_publish_and_apply_order_acks:2728`,
+                 `_prune_terminal_orders:3671`,
+                 `_emit_ack_drop_alert:3229`,
+                 `_escalate_unfilled_working_exits:2972`.
+                 `_poll_order_router_acks` and `_transition_order` close
+                 alone; the other four do not.
+FILES:           src/feelies/kernel/orchestrator.py (the six methods)
+                 src/feelies/execution/order_lifecycle.py (destination, new)
+                 src/feelies/execution/order_policy.py
+                   (_execute_reverse calls _submit_tracked_order)
+                 src/feelies/risk/engine.py
+                   (_emergency_flatten_all calls _submit_tracked_order)
+                 tests/kernel/test_orchestrator.py
+                 tests/kernel/test_orchestrator_order_routing.py
+                 tests/kernel/test_orchestrator_idle_tick.py
+                 tests/kernel/test_orchestrator_shutdown_drain.py
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 tests/kernel/test_orchestrator_async_fill_latency.py
+                 tests/kernel/test_orchestrator_bus_sized_intent.py
+                 tests/conformance/test_pathological_refusal.py
+                 tests/integration/test_paper_rth_safety.py
+                 tests/acceptance/test_no_walltime_outside_clock.py
+                   (_drain_async_fills ×2 allowlist)
+                 tools/arch/perfmeasure.py
+                   (E10.submit_tracked_order qualified name)
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
+                 Do not declare src/feelies/execution/ as a directory scope.
 WHY THIS OWNER:  Engine 10 owns the order state machine and the fact that its
                  transitions are **total**. Two modules advancing one state
                  machine is how a (state, event) pair goes undefined.
@@ -2487,13 +2521,20 @@ REFACTOR PATH:   the common shape, plus H4: every (state, event) pair defined,
 BLAST RADIUS:    boundary
 VALIDATED BY:    H4, H1 (must still pass), H2, `market_fill_acks`, `halt_ack`,
                  the oracle
-PARITY IMPACT:   All 26 hold. Pure move. `cancel_order:3438` is the one to check:
-                 Phase 2 records it as mechanics with **no measured policy
-                 caller**, so if moving it changes anything, it had a caller
-                 nobody found.
-DELETES:         6 methods from the orchestrator (95 -> 89)
-NET DELTA:       src modules 0, public symbols **-1** (`cancel_order` is public
-                 on the orchestrator today and becomes engine-10-internal),
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint,
+                 and all 64 scanned constants, including market_fill,
+                 halt_ack, halt_order, level4_portfolio_order,
+                 level4_hazard_exit_order, decoupled_risk_flatten_order,
+                 and the APP trade parity hash. Pure move. No Event
+                 field add/delete. No sequence draw in the six. A moved
+                 hash is a STOP, not a fold. `cancel_order` still has no
+                 production policy caller (only
+                 tests/kernel/test_orchestrator.py:1163); if moving it
+                 changes a hash, it had a caller nobody found.
+DELETES:         6 methods from the orchestrator (102 -> 96)
+NET DELTA:       src modules 0 (new file in execution/; no new package),
+                 public symbols **-1** (`cancel_order` is public on the
+                 orchestrator today and becomes engine-10-internal),
                  branch points 0. Orchestrator lines -~300.
 ROLLBACK:        revert.
 ```
