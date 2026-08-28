@@ -6039,4 +6039,248 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-28a.json,
                  baseline_post-S-28a.json, this ledger entry.
 
+---
+
+## S-28b  2026-08-28T22:56:00+08:00
+  STEP:          S-28b
+  BASE:          faa8b4adf978f6bd3b1e66253d2de91233a8f2a7
+  RESULT SHA:    da0e95d651299d074ac82f05983f799122fa0ac4
+                 (exec/S-28b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   S7 (test_mode_seam.py) | failed-before: yes
+                 (commit 1 named 10: 288, 307, 358, 388, 415,
+                 433, 445, 515, 760, 1266; first :288) |
+                 passes-after: yes
+                 H3 | failed-before: no (already green) |
+                 passes-after: yes | green after every commit
+                 conformance 88 passed / 7 xfailed -> 88
+                 passed / 7 xfailed (no XPASS)
+                 mypy src/feelies: Success, 205 source files.
+  TESTS:         capture pre-S-28b 4891 passed / 2 failed / 7
+                 skipped / 7 xfailed
+                 -> post-S-28b 4890 passed / 3 failed / 7
+                 skipped / 7 xfailed. Shared failures are the
+                 exempted IB after-hours test and
+                 test_g12_cost_exceeds_disclosure_alert.
+                 Extra post failure:
+                 test_websocket_feed_emits_live_massive_event.
+                 not-paper_rth: 4880 passed, 1 failed (IB
+                 EXEMPTION), 5 skipped, 14 deselected, 7
+                 xfailed.
+  PARITY:        declared hold -- all 28 replay hashes, the
+                 manifest fingerprint, and all 64 scanned
+                 constants | actual 64/64 identical
+                 (pre-S-28b vs post-S-28b); 0 moved at any of
+                 the five step commits | MATCH. tools/exec
+                 fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         2 declared, 2 touched (verify_step missed
+                 the plan key -- uppercase S-28B; four checks
+                 by hand CLEAN). Touched:
+                 tests/conformance/test_mode_seam.py,
+                 src/feelies/bootstrap.py.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points -18
+                 actual modules 205 -> 205 (+0)
+                 public_symbols 572 -> 572 (+0)
+                 sloc 45756 -> 45752 (-4)
+                 n_edges 659 -> 659
+                 n_modules 167 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 S7-illegal decisions 10 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   Four checks by hand (oracle `.upper()` looks
+                 up S-28B, plan key is S-28b -- frozen): FILES
+                 2 declared / 2 touched CLEAN; PARITY moved 0
+                 holds; TESTS 4891->4890 passed, failed 2->3
+                 (extra named in FINDINGS); NET DELTA
+                 compare-by-eye MISMATCH on declared -18.
+                 CLEAN, blast radius boundary -- human gate
+                 required.
+  NOTES:         Five commits on exec/S-28b, in this order
+                 because each needs the one before it. S7
+                 first (be5ec75), while the ten still exist,
+                 so the new walk is proven red on this tree
+                 and names them: 288, 307, 358, 388, 415,
+                 433, 445, 515, 760, 1266. Quote-subscribe
+                 next (d5dcda6) because it is one branch and
+                 does not need a new _create_backend argument
+                 if it follows the router the factory already
+                 returned. Journal third (98fcf2b) because it
+                 is the only one of the ten that can move
+                 into _create_backend without a signature
+                 change -- the PAPER arm already has the
+                 router, the IB handle, the clock, and the
+                 path helper. Replay flags fourth (c241740)
+                 as one group: they are the same boolean,
+                 already decided by which clock
+                 _select_clock returned, and splitting them
+                 would leave S7 failing on siblings of a
+                 flag that had already moved. Permit of the
+                 two leftovers last (da0e95d), after the
+                 moves, so S7 cannot pass while a target is
+                 still unaccounted for.
+                 No hash moved at any of the five. H3 stayed
+                 green after every commit -- it still
+                 file-scopes bootstrap and pins that
+                 _create_backend calls the three builders
+                 and branches on OperatingMode.
+                 Dispositions of the ten:
+                   288 default event-log order -- follows
+                     the selected clock (SimulatedClock
+                     enforces market order; WallClock does
+                     not)
+                   307 registry clock None vs live --
+                     follows the selected clock
+                   358 sequence thread-safety -- follows
+                     the selected clock
+                   388 warn_on_inert_entry_gates -- follows
+                     the selected clock
+                   415 PAPER auto-construct of
+                     MassiveNormalizer -- left in
+                     build_platform; finding, legal
+                   433 NBBOQuote subscribe -- follows the
+                     router type the factory returned
+                     (BacktestOrderRouter or
+                     PassiveLimitOrderRouter), not mode
+                   445 durable submitted-order journal --
+                     into _create_backend's PAPER arm
+                   515 _BacktestMetricCollector vs
+                     InMemoryMetricCollector -- follows
+                     the selected clock
+                   760 _select_clock -- left as the clock
+                     column; finding, legal
+                   1266 emit_reading_metrics -- the
+                     thread_safe_sequences argument
+                     _create_sensor_layer already takes,
+                     which is the same boolean as 358
+                 The eight that stay are composition, not
+                 ExecutionBackend selection, and S7 names
+                 them rather than failing to see them. Four
+                 are build_platform If-tests permitted by a
+                 unique marker in the unparsed test
+                 (ib_port == 4001, backtest_enforce_ingest_
+                 terminal_health, sizer_tilt_drive,
+                 resolved_edge_factors). Three are whole
+                 helpers whose only mode branch is the
+                 admit/anchor they exist to do
+                 (_ensure_session_open_ns_for_paper,
+                 _enforce_ex_date_replay_guard,
+                 _enforce_factor_loadings_freshness), listed
+                 in _LEGAL_COMPOSITION_FNS. One is the H10
+                 If inside _create_sensor_layer, permitted
+                 only when the body contains the H10 admit
+                 string, so the emit_reading_metrics compare
+                 in the same function was never covered by
+                 that permit. A new mode-dependent If in
+                 build_platform that does not carry one of
+                 those markers still fails.
+                 Detection: the existing repo-wide
+                 OperatingMode token scan, plus an AST walk
+                 of bootstrap.py over If, IfExp, and
+                 Compare nodes that are not already the
+                 inner compare of an If-test. A hit is any
+                 unparse containing OperatingMode,
+                 .mode.name, a bare mode.name, or a
+                 BACKTEST/PAPER literal compared with mode.
+                 _create_backend is the seam. What it still
+                 misses: match/case; a dict keyed by mode;
+                 isinstance(clock, SimulatedClock) and the
+                 replay_clock local this step bound;
+                 isinstance of router classes; a bool bound
+                 inside _create_backend and later read as
+                 if is_backtest; str(config.mode); an
+                 f-string of mode.name that is not a
+                 Compare; .mode.name outside bootstrap.py
+                 (platform_config.py:508 and
+                 orchestrator.py:823, S-28's into-config
+                 leftovers).
+                 After landing, a probe inserted after
+                 validate, one spelling at a time:
+                 `if config.mode == OperatingMode.BACKTEST:
+                 pass`, then `if config.mode.name ==
+                 "PAPER": pass`, then `mode = config.mode;
+                 if mode.name == "BACKTEST": pass`. S7
+                 failed naming each line. git checkout
+                 restored bootstrap.py after each;
+                 SHA256
+                 CC4A6F70409EEA2E15C18AEE5FF9EF89D5D91A5C6D2D5B6BFC26EEA8058D0923
+                 and git hash-object
+                 df6737c141f8fd484241cf807884fd8590a8a9c4
+                 matched the pre-probe values. S7 and H3
+                 passed again. test_mode_seam.py was not
+                 edited by the probe.
+                 Declared NET DELTA: src modules 0, public
+                 symbols 0, branch points -18. Measured:
+                 modules 205 -> 205, public_symbols 572 ->
+                 572, sloc 45756 -> 45752, n_edges 659,
+                 cycles 1, alphaleak 2, S7-illegal 10 -> 0
+                 with the eight named legal sites still
+                 present and two of the ten reclassified.
+                 MISMATCH on -18. _create_backend and
+                 _BackendBundle signatures unchanged.
+                 Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      Two of the ten are legal composition, which
+                 the plan allowed as a finding but did not
+                 name. :760 is the clock column; build_
+                 platform needs the clock before the factory
+                 runs, so moving selection into
+                 _create_backend means returning the clock,
+                 which is a signature change. :415 is the
+                 shared PAPER MassiveNormalizer; paper_
+                 backend.py's own docstring says bootstrap
+                 threads one instance through the feed and
+                 the orchestrator, so constructing it inside
+                 the factory without a bundle field splits
+                 that instance. S7 permits both by name.
+                 The plan's three dispositions were into
+                 _create_backend, into config, or deleted.
+                 Only :445 went into _create_backend. :433
+                 follows the router type instead of taking a
+                 bus argument (that would have been a
+                 signature change). :288 :307 :358 :388 :515
+                 follow isinstance(clock, SimulatedClock)
+                 instead of new bundle fields. :1266 reuses
+                 thread_safe_sequences rather than a mode
+                 compare. None of the ten were deleted.
+                 Those clock-type and router-type follows
+                 are invisible to S7 -- the S-28a hole,
+                 restated, not closed for those six.
+                 The fenced S-28b block still says prove S7
+                 fails naming all 18 and DELETES 18. The
+                 operator amendment (faa8b4a message, not
+                 the block body) is what this tree executed:
+                 ten targets, eight legal. :2030 was "last,
+                 with the factor-loadings test in FILES";
+                 FILES never listed that test, so :2030
+                 stayed in the eight.
+                 Post-capture grew
+                 test_websocket_feed_emits_live_massive_event,
+                 not in the four-name exemption set. This
+                 step did not touch ingestion/. S-13 already
+                 recorded that test flipping on a quiet
+                 feed. not-paper_rth was 4880 passed / 1
+                 failed (IB only). Not a regression of this
+                 step.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6 14/31
+                 resets; S-20 no-any-return; S-21 package-move
+                 bindings; S-23 negative assertions; S-24
+                 operator NOTES; S-26 unused
+                 selection_policy injection; four exempted
+                 baseline tests.
+  NEXT:          S-29 moc_strategy_ids hardcoded default
+                 (boundary). Not started. Do not begin S-29.
+                 Left uncommitted: baseline_pre-S-28b.json,
+                 baseline_post-S-28b.json, this ledger entry.
+
+
 
