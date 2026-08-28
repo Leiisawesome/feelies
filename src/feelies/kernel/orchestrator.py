@@ -99,6 +99,7 @@ from feelies.execution.order_admission import (
     side_for_intent,
 )
 from feelies.execution.order_policy import (
+    _edge_clears_round_trip_cost,
     _round_trip_cost_bps,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
@@ -117,7 +118,6 @@ from feelies.execution.position_manager import (
     PositionManagerConfig,
     PositionPlan,
     desired_from_signal,
-    entry_edge_clears_cost,
     order_intent_from_plan,
     reversal_edge_gate,
 )
@@ -2175,48 +2175,6 @@ class Orchestrator:
             },
         )
 
-    def _edge_clears_round_trip_cost(
-        self,
-        *,
-        strategy_id: str,
-        edge_estimate_bps: float,
-        symbol: str,
-        entry_side: Side,
-        quantity: int,
-        quote: NBBOQuote,
-        is_taker_entry: bool,
-        is_short_entry: bool,
-    ) -> tuple[bool, float, float]:
-        """Inv-12 B4 in one place: does calibrated edge clear modelled cost?
-
-        Returns ``(passes, effective_edge_bps, realization_factor)`` so callers
-        can report *why* without re-deriving the arithmetic.  Both order paths
-        run this: the SIGNAL path via
-        :meth:`_signal_passes_edge_cost_gate` (which owns the forensic alert),
-        the PORTFOLIO path via :meth:`_portfolio_leg_clears_edge_gate`, whose
-        legs carry ``TargetPosition.expected_edge_bps`` instead of a ``Signal``.
-        """
-        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
-            return True, edge_estimate_bps, 1.0
-        rt_cost_bps = _round_trip_cost_bps(self,
-            symbol=symbol,
-            entry_side=entry_side,
-            quantity=quantity,
-            quote=quote,
-            is_taker_entry=is_taker_entry,
-            is_short_entry=is_short_entry,
-        )
-        # Gate on realization-calibrated edge; missing factors default to one.
-        factor = self._edge_calibration_factors.get(strategy_id, 1.0)
-        effective_edge_bps = edge_estimate_bps * factor
-        passes = entry_edge_clears_cost(
-            edge_bps=effective_edge_bps,
-            rt_cost_bps=rt_cost_bps,
-            min_ratio=self._signal_min_edge_cost_ratio,
-            basis=self._signal_edge_cost_basis,
-        )
-        return passes, effective_edge_bps, factor
-
     def _signal_passes_edge_cost_gate(
         self,
         signal: Signal,
@@ -2231,7 +2189,7 @@ class Orchestrator:
         detail: str,
     ) -> bool:
         """Return whether calibrated edge clears modeled round-trip cost."""
-        passes, effective_edge_bps, factor = self._edge_clears_round_trip_cost(
+        passes, effective_edge_bps, factor = _edge_clears_round_trip_cost(self,
             strategy_id=signal.strategy_id,
             edge_estimate_bps=signal.edge_estimate_bps,
             symbol=symbol,
@@ -3198,7 +3156,7 @@ class Orchestrator:
             return record_verdict("RT.COST_GATE", "FAIL", BLOCK_EDGE_UNPRICEABLE) or BLOCK_EDGE_UNPRICEABLE
         target = intent.target_positions.get(order.symbol)
         edge_bps = target.expected_edge_bps if target is not None else 0.0
-        passes, effective_bps, factor = self._edge_clears_round_trip_cost(
+        passes, effective_bps, factor = _edge_clears_round_trip_cost(self,
             strategy_id=intent.strategy_id,
             edge_estimate_bps=edge_bps,
             symbol=order.symbol,
