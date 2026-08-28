@@ -2861,15 +2861,20 @@ PROBLEM:         S-28a narrowed S7's allowlist to _create_backend and removed 20
                  compare, so the guard is honest about its token and blind to the
                  behaviour. CORE sec. C.4 asks that mode differences live behind
                  ExecutionBackend, which is about decisions, not spellings.
+                 :2030 lives in _enforce_factor_loadings_freshness, which
+                 tests/bootstrap/test_factor_loadings_freshness.py imports and
+                 drives via config.mode. Closing that site is a FILES amendment,
+                 not a silent third-file edit.
 WHY THIS OWNER:  The Kernel owns composition. A composition root that branches on
                  mode eighteen times has a seam in name only.
-REFACTOR PATH:   (1) extend S7 to detect mode-dependent branching by any
-                 spelling -- config.mode.name, string literals, or the enum --
-                 outside _create_backend; prove it FAILS naming all 18; (2)
-                 resolve them one at a time into _create_backend, into config, or
-                 by deletion, reporting each disposition; (3) any that is
-                 genuinely legal where it stands is a finding, not a move -- say
-                 what that implies for reaching zero.
+REFACTOR PATH:   (1) extend S7 in test_mode_seam.py (not coupling.py -- not in
+                 FILES) with an AST walk that treats OperatingMode, .mode.name,
+                 and "BACKTEST"/"PAPER" string compares as mode-dependent;
+                 prove it FAILS naming all 18; (2) resolve them one at a time
+                 into _create_backend, into config, or by deletion, reporting
+                 each disposition; (3) :2030 last, with the factor-loadings
+                 test in FILES; (4) any that is genuinely legal where it stands is
+                 a finding, not a move -- say what that implies for reaching zero.
 FILES:           tests/conformance/test_mode_seam.py
                  src/feelies/bootstrap.py
 BLAST RADIUS:    boundary -- unless a _create_backend or _BackendBundle signature
