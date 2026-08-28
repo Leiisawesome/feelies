@@ -4827,3 +4827,352 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-23.json,
                  baseline_post-S-23.json, this ledger entry.
 
+---
+
+## S-24  2026-08-27T14:11:21+08:00
+  STEP:          S-24
+  BASE:          843fabf6bd499bcc8bff224cf898c1243832b159
+  RESULT SHA:    not started — blocked at before-state, no branch cut, no edit made
+  VERDICT:       blocked
+  CONFORMANCE:   S2 1 passed / 1 xfailed (G40)
+                 S12 2 passed
+                 S14 2 passed
+                 tests/docs 101 passed
+  TESTS:         reference post-S-23 4873 passed / 0 failed / 19 skipped
+                 -> not run. Capture not run (FILES defect found in
+                 before-state; same hand-back as S-15 first blocked).
+  PARITY:        declared hold | actual 64/64 MATCH vs
+                 baseline_post-S-23.json via baseline.parity_constants();
+                 0 moved. No implement.
+  FILES:         8 declared, 0 touched. HEAD arch/exec @ 843fabf.
+                 exec/S-24 not cut. tools/exec diff vs exec-tools-v1
+                 empty. Working tree clean aside from this ledger entry.
+  NET DELTA:     declared src modules 0, public symbols +1, branch
+                 points 0, orchestrator 104 -> 95 | actual 0 / 0 / 0.
+                 Live orchestrator 4994 lines, 111 methods (plan 104
+                 stale). SequenceGenerator at :443 and :451.
+  DETERMINISM:   not run
+  VERIFY_STEP:   not run — no implement
+  NOTES:         Pre-flight: porcelain empty, HEAD arch/exec, tools/exec
+                 vs exec-tools-v1 empty, 64 constants identical to
+                 post-S-23. Orchestrator 4994 / 111. Nine spans:
+                 _edge_clears_round_trip_cost 2176-2216 (no draw),
+                 _signal_passes_edge_cost_gate 2218-2256 (no draw),
+                 _round_trip_cost_bps 2258-2285 (no draw),
+                 _reversal_passes_combined_edge_gate 2287-2325 (no draw),
+                 _plan_for_signal 2428-2471 (no draw),
+                 _execute_reverse 2598-2890 (self._seq.next at :2625
+                 and :2753),
+                 _try_build_order_from_intent 2892-2983 (self._seq.next
+                 at :2910),
+                 _resolve_order_route 2985-3037 (no draw),
+                 _filter_portfolio_orders_for_admission 3119-3187
+                 (no draw). Named siblings stay:
+                 _emit_signal_edge_gate_suppression_alert 2152-2174,
+                 _portfolio_leg_edge_block 3189-3251.
+                 Five attribute-call sites outside orchestrator.py, in
+                 three files not in FILES:
+                 tests/kernel/test_orchestrator.py:1458
+                   orch._try_build_order_from_intent
+                   (test_signal_path_orders_are_never_tagged_as_panic)
+                 tests/kernel/test_orchestrator.py:2522, :2538
+                   orch._plan_for_signal, orch._round_trip_cost_bps
+                   (test_cost_inputs_are_shared_by_gate_and_position_planner)
+                 tests/kernel/test_orchestrator_order_routing.py:63
+                   orch._resolve_order_route
+                   (test_order_route_precedence, 5 parametrize rows)
+                 tests/kernel/test_orchestrator_edge_calibration.py:46
+                   orch._signal_passes_edge_cost_gate via _gate()
+                   (four tests).
+                 WAVE-D forbids a delegating shim, so those tests
+                 AttributeError after the move. A ninth file is STOP.
+                 Destination bodies construct OrderRequest
+                 (_try_build_order_from_intent returns one;
+                 _execute_reverse publishes via self._bus.publish).
+                 SequenceGenerator constructions stay on Orchestrator;
+                 S12 keys on those sites, not publish calls. Retargeting
+                 SequenceAuthority would add a generator (merge;
+                 halt_order / level4_portfolio_order move). Therefore
+                 sequence_authority.py, wiring_manifest.py, and
+                 test_single_owner.py are declared-but-unneeded.
+                 The ledger note that S-24 is blocked on eleven
+                 UNIT_UNDETERMINED fields is stale: S-10 closed the
+                 unit mechanism; this step moves methods and does not
+                 intersect that field.
+  FINDINGS:      PLAN DEFECT — FILES cannot land the extraction.
+                 Three kernel tests bind the methods as Orchestrator
+                 attributes and are not declared. Standing rule: a
+                 ninth file is STOP; do not edit undeclared tests;
+                 do not skip them to stay inside FILES; do not leave
+                 a shim. No implement.
+                 Carried, not fixed: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days stale
+                 (APP/2026-03-26 current); R6 14/31 resets; S-20
+                 no-any-return; S-21 package-move bindings; S-23
+                 negative assertions bound to a type the code no
+                 longer emits; four exempted baseline tests.
+  NEXT:          Amend S-24 FILES with
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_orchestrator_order_routing.py,
+                 tests/kernel/test_orchestrator_edge_calibration.py.
+                 Retry S-24. Do not begin S-25.
+                 Left uncommitted: this ledger entry.
+
+---
+
+## S-24  2026-08-28T09:08:17+08:00
+  STEP:          S-24
+  BASE:          843fabf6bd499bcc8bff224cf898c1243832b159
+  RESULT SHA:    not started — blocked at before-state, no branch cut, no edit made
+  VERDICT:       blocked
+  CONFORMANCE:   S2 1 passed / 1 xfailed (G40)
+                 S12 2 passed
+                 S14 2 passed
+                 tests/docs 101 passed
+  TESTS:         capture pre-S-24 GREEN 4873 passed / 0 failed / 19 skipped
+                 determinism 148 passed. -> not implemented.
+  PARITY:        declared hold | actual 64/64 MATCH vs
+                 baseline_post-S-23.json; capture 64 constants, 0 moved.
+  FILES:         8 declared, 0 touched. HEAD arch/exec @ 843fabf.
+                 exec/S-24 not cut. tools/exec diff vs exec-tools-v1
+                 empty. Plan FILES unchanged from the 2026-08-27 block.
+  NET DELTA:     declared src modules 0, public symbols +1, branch
+                 points 0, orchestrator 104 -> 95 | actual 0 / 0 / 0.
+                 Live orchestrator 4994 lines, 111 methods.
+                 SequenceGenerator at :443 and :451.
+  DETERMINISM:   148 passed (pre-capture only)
+  VERIFY_STEP:   not run — no implement
+  NOTES:         Fresh cut from 843fabf as instructed; 4dd6f9f still
+                 absent. Pre-flight: porcelain empty after stashing the
+                 prior blocked ledger, HEAD arch/exec, tools/exec empty,
+                 capture GREEN. Draws verified in code: of the nine,
+                 only _execute_reverse (:2625, :2753) and
+                 _try_build_order_from_intent (:2910) draw self._seq.
+                 The plan's naming of those two is right. The other
+                 seven do not draw. Commit order if FILES were complete
+                 would be cheapest-first with those two last.
+                 Same five attribute-call sites in three files still
+                 not in FILES:
+                 tests/kernel/test_orchestrator.py:1458
+                   orch._try_build_order_from_intent
+                 tests/kernel/test_orchestrator.py:2522, :2538
+                   orch._plan_for_signal, orch._round_trip_cost_bps
+                 tests/kernel/test_orchestrator_order_routing.py:63
+                   orch._resolve_order_route
+                 tests/kernel/test_orchestrator_edge_calibration.py:46
+                   orch._signal_passes_edge_cost_gate
+                 WAVE-D forbids a shim. A ninth file is STOP.
+                 The ledger note that S-24 is blocked on eleven
+                 UNIT_UNDETERMINED fields is stale: S-10 closed the
+                 unit mechanism; this step moves methods and does not
+                 intersect that field.
+  FINDINGS:      PLAN DEFECT — FILES still cannot land the extraction.
+                 The three kernel tests from the 2026-08-27 block were
+                 not added. Standing rule: a ninth file is STOP. No
+                 implement.
+                 Carried, not fixed: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days stale
+                 (APP/2026-03-26 current); R6 14/31 resets; S-20
+                 no-any-return; S-21 package-move bindings; S-23
+                 negative assertions bound to a type the code no
+                 longer emits; four exempted baseline tests.
+  NEXT:          Amend S-24 FILES with the three kernel tests named
+                 above. Retry S-24. Do not begin S-25.
+                 Left uncommitted: baseline_pre-S-24.json, this ledger
+                 entry (both S-24 blocked records).
+
+---
+
+## S-24  2026-08-28T10:30:00+08:00
+  STEP:          S-24
+  BASE:          566017ca53e773b533375ed02f2ea6f52f4a3f01
+  RESULT SHA:    6bedb2676348b40ab94ce5fff9fe811491b1f5e7 (exec/S-24; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. S2/S12/S14 held before
+                 and after.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 tests/docs 101 passed in commit 1 and again in
+                 section 4.
+                 conformance 81 passed / 8 xfailed (no XPASS).
+                 kernel 390; execution 865; docs 101.
+                 mypy src/feelies: Success, 204 source files.
+  TESTS:         capture pre-S-24 GREEN 4873 passed / 0 failed / 19 skipped
+                 -> post-S-24 GREEN 4873 passed / 0 failed / 19 skipped
+                 / 8 xfailed. not-paper_rth: 4872 passed, 6 skipped,
+                 14 deselected, 8 xfailed, 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes, including
+                 halt_order, level4_portfolio_order, and the three
+                 S-23 re-pins (LEVEL4_HAZARD_EXIT_ORDER_HASH,
+                 DECOUPLED_RISK_FLATTEN_ORDER_HASH,
+                 EXPECTED_MANIFEST_FINGERPRINT), plus the remaining
+                 scanned constants | actual 64/64 identical
+                 (pre-S-24 vs post-S-24); 0 moved at any of the
+                 eleven commits | MATCH.
+  FILES:         11 declared, 7 touched (verify_step CLEAN).
+                 Touched: orchestrator.py, order_policy.py (new),
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_orchestrator_order_routing.py,
+                 tests/kernel/test_orchestrator_edge_calibration.py.
+                 Declared-but-unneeded, not skipped scope:
+                 sequence_authority.py, wiring_manifest.py,
+                 tests/conformance/test_single_owner.py,
+                 tests/docs/test_internal_links.py.
+  NET DELTA:     declared src modules 0, public symbols +1,
+                 branch points 0, orchestrator lines -~450,
+                 methods 111 -> 102
+                 actual modules 203 -> 204 (+1, the new file;
+                 no new package)
+                 public_symbols 569 -> 569 (+0; every extracted
+                 name is _-prefixed)
+                 sloc 45600 -> 45638 (+38)
+                 n_edges 641 -> 652
+                 n_modules 165 -> 166
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines 4994 -> 4283 (-711)
+                 orchestrator methods 111 -> 102 (-9)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   Four checks: FILES 11 declared / 7 touched CLEAN
+                 (four declared-but-unneeded); PARITY moved 0 holds;
+                 TESTS 4873->4873 passed, 0 failed; NET DELTA
+                 compare-by-eye (oracle still says "deletions with
+                 no negative delta" because it does not treat
+                 method-count as the deletion signal -- frozen;
+                 DELETES 111 -> 102 matched). CLEAN, blast radius
+                 boundary -- human gate required.
+  NOTES:         Sixth wave-D extraction. Eleven commits on
+                 exec/S-24, not nine: nine method moves, then a
+                 no-any-return annotation, then unused-import
+                 cleanup. One method per move commit, non-drawing
+                 first in callee-before-caller order, then the two
+                 drawing methods last -- _try_build_order_from_intent
+                 then _execute_reverse -- matching the plan's naming,
+                 which was verified in the source. Determinism 148
+                 and S12 2 passed after every commit; no hash moved
+                 at any point.
+                 Order and orchestrator lines/methods:
+                 4d1f392 _round_trip_cost_bps + order_policy.py
+                   + _FILE_OWNERS  4994/111 -> 4967/110
+                 18681f2 _edge_clears_round_trip_cost     4925/109
+                 91a6408 _signal_passes_edge_cost_gate    4886/108
+                 9e79c48 _reversal_passes_combined_edge_gate 4846/107
+                 4963d6b _plan_for_signal                 4799/106
+                 0f1fda8 _resolve_order_route             4746/105
+                 cf28279 _filter_portfolio_orders_for_admission 4677/104
+                 8889385 _try_build_order_from_intent (one
+                   self._seq.next)                        4583/103
+                 403ea6c _execute_reverse (two
+                   self._seq.next)                        4288/102
+                 174c55c annotate _plan_for_signal result 4288/102
+                 6bedb26 drop imports the nine no longer
+                   need                                   4283/102
+                 Draws: only those two methods. The other seven
+                 do not draw. All three draws are self._seq.next()
+                 on the orchestrator instance. SequenceGenerator
+                 constructions stay on Orchestrator -- at HEAD
+                 :439 stream=orchestrator and :447 stream=hazard
+                 (the gate cited :444 / :452; 6bedb26 deleted five
+                 import lines above __init__). order_policy.py
+                 does not construct a generator and does not
+                 publish in the S-13 sense. _execute_reverse
+                 submits via self._submit_tracked_order and
+                 publishes OrderRequest / RiskVerdict through
+                 self._bus.publish; _try_build_order_from_intent
+                 returns an OrderRequest for the caller to publish.
+                 There is no _submit_to_router call. S12 confirms
+                 Orchestrator remains the sole authority for the
+                 orchestrator stream, which is why
+                 sequence_authority.py and wiring_manifest.py
+                 (and test_single_owner.py) are declared-but-unneeded
+                 rather than skipped scope.
+                 Owner is audit_execution_fills, assigned in
+                 commit 1 next to min_cost_policy.py. The nine are
+                 engine-9 order-decision policy -- planning, routing,
+                 admission filtering and cost gating -- which is
+                 Inv-12 execution policy, not kernel dispatch.
+                 There is no audit_execution_pipeline prompt; that
+                 name was not used. _FILE_OWNERS repair landed in
+                 commit 1 with the module, tests/docs passing in
+                 the same commit -- the S-21 pattern on its third
+                 reuse (S-21, S-22, S-24).
+                 Siblings left in place, as the block named them
+                 only for this judgment: _emit_signal_edge_gate_suppression_alert
+                 (HEAD :2148) is alerting called by the moved
+                 _signal_passes_edge_cost_gate via self; 
+                 _portfolio_leg_edge_block (HEAD :2478) reads
+                 target_positions on the composition path and is
+                 called by the moved _filter_portfolio_orders_for_admission
+                 via self. Both are called by the nine but are not
+                 engine-9 policy, and the nine close without moving
+                 them.
+                 Two no-any-return sites, both resolved by
+                 annotating rather than casting: _plan_for_signal
+                 assigns the planner result to plan: PositionPlan
+                 before return (174c55c); _execute_reverse annotates
+                 edge_calibration_factor: float and
+                 effective_edge_bps: float on Decimal/float
+                 arithmetic over attributes of self: Any (403ea6c).
+                 The plan's UNIT_UNDETERMINED blocker was stale --
+                 S-10 fixed the unit mechanism; this step moves
+                 methods and the two do not intersect.
+                 Two prior S-24 attempts plus one S-21 attempt were
+                 executed in an ephemeral Copilot workspace at
+                 C:\Users\cheng.lei\.copilot\repos\feelies and lost
+                 when it was deleted; every step prompt now carries
+                 a clone-check preamble. This landing is in the
+                 canonical clone.
+  FINDINGS:      Operator-supplied NOTES are not authoritative.
+                 The operator has now dictated NOTES containing
+                 invented SHAs and invented facts three times --
+                 S-21, S-22 and S-24. On this step the dictated
+                 NOTES named SHA 2fd8b8b (absent from this object
+                 database, the reflog, and origin), claimed nine
+                 commits and orchestrator 4994 -> 4550, named
+                 owner audit_execution_pipeline (no such prompt),
+                 claimed _submit_to_router (no such call), and
+                 placed the no-any-return sites in
+                 _round_trip_cost_bps. Observed: HEAD 6bedb26,
+                 eleven commits, 4994 -> 4283, owner
+                 audit_execution_fills, self._submit_tracked_order
+                 and self._bus.publish, no-any-return in
+                 _plan_for_signal and _execute_reverse. The
+                 executing session's observations take precedence;
+                 do not copy dictated NOTES into the ledger when
+                 they contradict the tree.
+                 order_admission.py still comments
+                 Orchestrator._edge_clears_round_trip_cost
+                 (outside FILES; not fixed).
+                 Pre-existing unused SymbolHalted and
+                 _emergency_flatten_all imports on Orchestrator
+                 left in place.
+                 One recapture failed on
+                 tests/ingestion/test_massive_functional.py::
+                 test_rest_ingest_uses_live_massive_data (live
+                 Massive REST, marked functional). Retry passed;
+                 recapture at HEAD GREEN. Not in the four
+                 accepted environmental names; treated as flake.
+                 Carried, not fixed: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days stale
+                 (APP/2026-03-26 current); R6 14/31 resets; S-20
+                 no-any-return; S-21 package-move bindings; S-23
+                 negative assertions bound to a type the code no
+                 longer emits; four exempted baseline tests.
+  NEXT:          S-25 6 order-lifecycle transitions in the kernel
+                 (boundary). Not started. Do not begin S-25.
+                 Left uncommitted: baseline_pre-S-24.json,
+                 baseline_post-S-24.json, this ledger entry.
+
+
