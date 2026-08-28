@@ -5699,4 +5699,212 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-27.json,
                  baseline_post-S-27.json, this ledger entry.
 
+---
+
+## S-28  2026-08-28T19:40:00+08:00
+  STEP:          S-28
+  BASE:          253bda92cf6bfba38ab058159e824f7dce0614a4
+  RESULT SHA:    d2c509606a805358e9f0bfae30cc63645e1fe4a9 (exec/S-28; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   S7 (test_mode_seam.py) | failed-before: yes
+                 (--runxfail: 4 OperatingMode branches outside
+                 allowlist; first platform_config.py:508) |
+                 passes-after: yes (xfail dropped)
+                 H3 (test_mode_parity.py
+                 test_h3_backend_substitution_is_composition_root_construction_only)
+                 | failed-before: yes (same 4 in-engine branches;
+                 _create_backend already selected the three
+                 builders) | passes-after: yes
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 conformance 86 passed / 8 xfailed -> 88 passed /
+                 7 xfailed (no XPASS). +2 are S7 (xfail dropped)
+                 and H3.
+                 mypy src/feelies: Success, 205 source files.
+  TESTS:         capture pre-S-28 GREEN 4880 passed / 0 failed / 18 skipped
+                 / 8 xfailed
+                 -> post-S-28 4881 passed / 1 failed / 18 skipped
+                 / 7 xfailed. The one failure is the exempted
+                 IB after-hours test
+                 (test_after_hours_reject_surfaces_as_rejected).
+                 not-paper_rth: 4881 passed, 5 skipped,
+                 14 deselected, 7 xfailed, 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes, the manifest
+                 fingerprint, and all 64 scanned constants | actual
+                 64/64 identical (pre-S-28 vs post-S-28); 0
+                 moved at any of the four commits | MATCH.
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         6 declared, 6 touched (verify_step CLEAN).
+                 Touched: platform_config.py, backtest_prep.py,
+                 backtest_runner.py, orchestrator.py,
+                 test_mode_seam.py, test_mode_parity.py (new).
+                 verify_step also inferred execution/ and broker/
+                 as directory scopes from FILES prose (the S7
+                 allowlist comment) -- frozen weak guard; 0 files
+                 matched under those scopes.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points -4, test files +1 (H3)
+                 actual modules 205 -> 205 (+0)
+                 public_symbols 572 -> 572 (+0)
+                 sloc 45756 -> 45756 (+0)
+                 n_edges 659 -> 659
+                 n_modules 167 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 illegal OperatingMode branches 4 -> 0
+                 S7 operating_mode hits 26 -> 22 (all remaining
+                 are bootstrap.py)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   Four checks: FILES 6 declared / 6 touched CLEAN
+                 (execution/ broker/ inferred, 0 extra);
+                 PARITY moved 0 holds; TESTS 4880->4881 passed,
+                 failed 0->1 is the exempted IB after-hours test;
+                 NET DELTA compare-by-eye (oracle still says
+                 "deletions with no negative delta" because
+                 OperatingMode-branch count is not its deletion
+                 signal -- frozen; DELETES 4 in-engine
+                 OperatingMode branches matched by S7 going
+                 4 illegal -> 0). CLEAN, blast radius boundary
+                 -- human gate required.
+  NOTES:         Four commits on exec/S-28, not five. The
+                 requested "H3 first as a commit, then the four
+                 src files" is not this tree. H3 was authored
+                 and proven red on the uncommitted working
+                 tree before any src edit (failed on the four
+                 in-engine OperatingMode branches, first
+                 platform_config.py:508, not a missing
+                 fixture). It was not a first commit: a red
+                 H3 cannot land, and S7 was already the
+                 fail-before-fix xfail. Order and why:
+                 config-time first (no replay path), then the
+                 two harness deletions on the oracle path (a
+                 moved hash is nameable to a commit), then
+                 orchestrator last (live-only observe skip;
+                 APP hashes are blind to it) in the same
+                 commit as H3 and the S7 xfail drop, which
+                 can only land once all four OperatingMode.
+                 compares are gone.
+                 5d36f62 platform_config.py:508 -> config
+                   (mode.name; PAPER+flag still errors)
+                   illegal 4 -> 3; determinism 148
+                 4929d26 backtest_prep.py:152 -> deletion
+                   (always use regime_calibration_max_quotes)
+                   illegal 3 -> 2; determinism 148
+                 e9c6606 backtest_runner.py:190 -> deletion
+                   (helper is only called from the backtest
+                   runner) illegal 2 -> 1; determinism 148
+                 d2c5096 orchestrator.py:2177 -> config
+                   (_observe_latency_budgets bound at boot;
+                   _finalize_tick reads the flag). H3 lands.
+                   S7 xfail dropped. illegal 1 -> 0;
+                   determinism 148
+                 No hash moved at any of the four commits.
+                 _observe_latency_budgets is wired: boot()
+                 sets it from cfg.mode.name, _finalize_tick
+                 reads it. Not a constructor injection, not
+                 decorative (contrast S-26 selection_policy).
+                 H3 catches what S7 cannot: that
+                 bootstrap._create_backend is the
+                 composition-root construction -- it must
+                 call build_backtest_backend,
+                 build_passive_limit_backend and
+                 build_paper_backend, and it must branch on
+                 OperatingMode. S7 only forbids OperatingMode
+                 compares outside the allowlist; it would
+                 stay green if _create_backend stopped
+                 selecting backends. H3's second half (no
+                 in-engine OperatingMode compares) duplicates
+                 S7.
+                 The 22 bootstrap OperatingMode branches
+                 were not touched. execution/ and broker/
+                 contain 0 OperatingMode compares
+                 (git diff 253bda92..HEAD -- bootstrap.py
+                 execution/ broker/ is empty). This tree's
+                 S7 classifier measured 26 OperatingMode
+                 hits before (22 bootstrap + 4 illegal) and
+                 22 after, not the plan's 33 / 29. coupling.py
+                 also reports 3 other_mode_concept hits
+                 (alpha safety-exit `mode`, not
+                 OperatingMode). S-24: the 29-legal figure
+                 is not what this tree shows.
+                 Declared NET DELTA: src modules 0, public
+                 symbols 0, branch points -4, test files +1.
+                 Measured: modules 205 -> 205, public_symbols
+                 572 -> 572, sloc 45756 -> 45756, n_edges
+                 659, cycles 1, alphaleak 2, illegal
+                 OperatingMode 4 -> 0. MATCH on the declared
+                 cells. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      None of the four were legal. Prep and runner
+                 were redundant with their call sites -- the
+                 function is already the backtest path -- but
+                 both were S7 hits until deleted. Config
+                 validate and orchestrator observe were
+                 in-engine OperatingMode compares, not
+                 composition-root selection.
+                 Closing site 1 required a decision the plan
+                 did not contain. REFACTOR PATH said move to
+                 the composition root or remove. Moving the
+                 PAPER+flag rejection onto bootstrap.py, or
+                 deleting it, would have been a seventh file
+                 (bootstrap.py:274 is the composition-root
+                 twin; tests/core/test_platform_config.py::
+                 test_enforce_only_in_backtest_mode binds the
+                 ConfigurationError). FILES has six paths.
+                 The compare was rewritten to mode.name so
+                 S7 no longer classifies it and the existing
+                 core test stays green. Site 4 is the same
+                 shape: bound at Orchestrator.boot rather
+                 than moved onto bootstrap.
+                 The mode seam is not genuinely single. S7's
+                 allowlist is the whole of bootstrap.py plus
+                 execution/ and broker/. After this step, 22
+                 OperatingMode branches remain, all in
+                 bootstrap.py; only two of them sit inside
+                 _create_backend (:936, :982). The other 20
+                 are clock selection, event-log ordering,
+                 journals, metrics collectors, calibration,
+                 warnings, and emit_reading_metrics --
+                 composition-root selection of more than the
+                 backend. execution/ and broker/ have zero
+                 OperatingMode compares; CORE §C.4's declared
+                 seam is empty of the token S7 counts. H3
+                 pins _create_backend and does not fail on
+                 those 20.
+                 Callers of the four paths outside their
+                 defining module, none of them in FILES, none
+                 edited: prepare_backtest_event_log is also
+                 imported by tests/harness/test_backtest_prep.py,
+                 tests/acceptance/test_backtest_app_baseline.py,
+                 scripts/run_backtest.py,
+                 scripts/compare_multialpha_runs.py,
+                 scripts/regime_diagnostics.py,
+                 tools/arch/perfmeasure.py, and re-exported
+                 from harness/__init__.py.
+                 _ensure_backtest_session_anchor has no caller
+                 outside backtest_runner.py.
+                 test_latency_budget.py AST-reads
+                 _finalize_tick (X10); not in FILES; still
+                 green because _latency_monitor.observe remains.
+                 G.10 still lists S-28 branch points as -7
+                 (stale vs the rewritten -4). Not edited.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6 14/31
+                 resets; S-20 no-any-return; S-21 package-move
+                 bindings; S-23 negative assertions; S-24
+                 operator NOTES; S-26 unused
+                 selection_policy injection; four exempted
+                 baseline tests.
+  NEXT:          S-29 moc_strategy_ids hardcoded default
+                 (boundary). Not started. Do not begin S-29.
+                 Left uncommitted: baseline_pre-S-28.json,
+                 baseline_post-S-28.json, this ledger entry.
+
 
