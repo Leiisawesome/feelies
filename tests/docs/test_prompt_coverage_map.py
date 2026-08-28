@@ -88,6 +88,7 @@ _FILE_OWNERS: dict[str, str] = {
     "execution/backtest_router.py": "audit_execution_fills",
     "execution/passive_limit_router.py": "audit_execution_fills",
     "execution/min_cost_policy.py": "audit_execution_fills",
+    "execution/order_policy.py": "audit_execution_fills",
     "execution/market_fill.py": "audit_execution_fills",
     "execution/_fill_helpers.py": "audit_execution_fills",
     "execution/moc_fill.py": "audit_execution_fills",

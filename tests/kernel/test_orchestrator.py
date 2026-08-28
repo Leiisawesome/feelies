@@ -46,6 +46,11 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
+from feelies.execution.order_policy import (
+    _plan_for_signal,
+    _round_trip_cost_bps,
+    _try_build_order_from_intent,
+)
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
@@ -1455,8 +1460,8 @@ class TestForcedExitReasonClassification:
             reason="ok",
         )
 
-        alpha_order, _ = orch._try_build_order_from_intent(
-            self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
+        alpha_order, _ = _try_build_order_from_intent(
+            orch, self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
         )
         assert alpha_order is not None and alpha_order.reason == ""
 
@@ -2519,7 +2524,7 @@ class TestExecutionCostContext:
         orch._cost_model = replacement_cost_model
         quote = _make_quote(bid="99.80", ask="100.20")
         signal = _make_signal(quote)
-        orch._plan_for_signal(
+        _plan_for_signal(orch,
             signal,
             Position(symbol="AAPL"),
             target_qty=100,
@@ -2535,7 +2540,7 @@ class TestExecutionCostContext:
         assert market.within_l1_impact_factor == Decimal("0.21")
         assert market.permanent_impact_coefficient == Decimal("0.04")
 
-        actual_cost_bps = orch._round_trip_cost_bps(
+        actual_cost_bps = _round_trip_cost_bps(orch,
             symbol="AAPL",
             entry_side=Side.BUY,
             quantity=100,
