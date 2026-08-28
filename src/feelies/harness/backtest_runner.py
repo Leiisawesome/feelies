@@ -83,7 +83,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.errors import ConfigurationError
-from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.platform_config import PlatformConfig
 from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.ingest_health import terminal_symbol_health_rows
 from feelies.ingestion.massive_ingestor import IngestResult
@@ -187,7 +187,7 @@ def _ensure_backtest_session_anchor(
     *first_event_ts_ns* must be the first event in replay order — identical
     anchor to :class:`HorizonScheduler` auto-binding when ordering matches.
     """
-    if config.mode != OperatingMode.BACKTEST or config.session_open_ns is not None:
+    if config.session_open_ns is not None:
         return config
     if first_event_ts_ns is None:
         return config

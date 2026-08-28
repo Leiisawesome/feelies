@@ -505,7 +505,7 @@ class PlatformConfig:
                     )
 
         if self.backtest_enforce_ingest_terminal_health:
-            if self.mode != OperatingMode.BACKTEST:
+            if self.mode.name != "BACKTEST":
                 raise ConfigurationError(
                     "backtest_enforce_ingest_terminal_health is only valid in BACKTEST mode",
                 )
