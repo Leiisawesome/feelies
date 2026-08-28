@@ -2838,9 +2838,53 @@ PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint, and all
                  the most consequential movement in this campaign: STOP and name
                  it immediately.
 DELETES:         the file-scoped bootstrap exemption in S7's allowlist; the 20
-                 OperatingMode branches outside _create_backend
-NET DELTA:       src modules 0, public symbols 0, branch points -20
+                 OperatingMode enum comparisons outside _create_backend. NOT the
+                 decisions: 12 mode-dependent branches remain in build_platform
+                 and six in helpers, rewritten to config.mode.name. The seam now
+                 permits _create_backend only, and S7 fails on a new
+                 OperatingMode compare anywhere else in bootstrap -- proven by
+                 probe -- but a string compare is invisible to it.
+NET DELTA:       src modules 0, public symbols 0, OperatingMode branch tokens
+                 -20 (22 -> 2). Mode-dependent DECISIONS moved: 0. The figure is
+                 booked against the token S7 counts, not against behaviour.
 ROLLBACK:        revert; the allowlist widens again and the branches return.
+```
+```
+STEP:            S-28b
+CLOSES:          new -- S-28a ledger finding (the decisions did not move)
+PROBLEM:         S-28a narrowed S7's allowlist to _create_backend and removed 20
+                 OperatingMode enum comparisons, but rewrote them to
+                 config.mode.name rather than relocating what they decide. 12
+                 mode-dependent branches remain in build_platform (268, 275, 288,
+                 307, 358, 388, 415, 433, 445, 497, 515, 628) and six in helpers
+                 (760, 770, 1266, 1303, 1968, 2030). S7 cannot see a string
+                 compare, so the guard is honest about its token and blind to the
+                 behaviour. CORE sec. C.4 asks that mode differences live behind
+                 ExecutionBackend, which is about decisions, not spellings.
+WHY THIS OWNER:  The Kernel owns composition. A composition root that branches on
+                 mode eighteen times has a seam in name only.
+REFACTOR PATH:   (1) extend S7 to detect mode-dependent branching by any
+                 spelling -- config.mode.name, string literals, or the enum --
+                 outside _create_backend; prove it FAILS naming all 18; (2)
+                 resolve them one at a time into _create_backend, into config, or
+                 by deletion, reporting each disposition; (3) any that is
+                 genuinely legal where it stands is a finding, not a move -- say
+                 what that implies for reaching zero.
+FILES:           tests/conformance/test_mode_seam.py
+                 src/feelies/bootstrap.py
+BLAST RADIUS:    boundary -- unless a _create_backend or _BackendBundle signature
+                 change is required, which breaks tests/bootstrap callers and is
+                 a STOP for a FILES amendment rather than a silent widening.
+VALIDATED BY:    S7 extended, failing before and passing after; H3 unchanged; all
+                 registered hashes; the parity oracle
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint, and all
+                 64 scanned constants. A moved hash means a backtest path
+                 changed: STOP and name it immediately.
+DELETES:         18 mode-dependent branches from bootstrap outside
+                 _create_backend
+NET DELTA:       src modules 0, public symbols 0, branch points -18
+ROLLBACK:        revert; the branches return and S7 narrows back to token
+                 detection.
 ```
 
 ```
