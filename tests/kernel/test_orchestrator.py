@@ -46,7 +46,11 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
-from feelies.execution.order_policy import _plan_for_signal, _round_trip_cost_bps
+from feelies.execution.order_policy import (
+    _plan_for_signal,
+    _round_trip_cost_bps,
+    _try_build_order_from_intent,
+)
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
@@ -1456,8 +1460,8 @@ class TestForcedExitReasonClassification:
             reason="ok",
         )
 
-        alpha_order, _ = orch._try_build_order_from_intent(
-            self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
+        alpha_order, _ = _try_build_order_from_intent(
+            orch, self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
         )
         assert alpha_order is not None and alpha_order.reason == ""
 

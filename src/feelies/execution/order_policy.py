@@ -11,11 +11,20 @@ from feelies.core.events import (
     NBBOQuote,
     OrderRequest,
     OrderType,
+    RiskVerdict,
     Side,
     Signal,
     SizedPositionIntent,
 )
-from feelies.execution.order_admission import ExposureDelta, admission_block_reason
+from feelies.core.identifiers import derive_order_id
+from feelies.execution.intent import OrderIntent, TradingIntent
+from feelies.execution.order_admission import (
+    BLOCK_BELOW_MIN_ORDER_SHARES,
+    ExposureDelta,
+    admission_block_reason,
+    blocks_for_min_size,
+    exposure_delta_from_intent,
+)
 from feelies.execution.position_manager import (
     DesiredPosition,
     ExecStyle,
@@ -26,7 +35,7 @@ from feelies.execution.position_manager import (
     reversal_edge_gate,
     round_trip_cost_bps,
 )
-from feelies.execution.regulatory.borrow_availability import BorrowTier
+from feelies.execution.regulatory.borrow_availability import BorrowTier, htb_fee_applies
 from feelies.portfolio.position_store import Position
 
 
@@ -355,3 +364,97 @@ def _filter_portfolio_orders_for_admission(
             },
         )
     return filtered
+
+
+def _try_build_order_from_intent(
+    self: Any,
+    intent: OrderIntent,
+    verdict: RiskVerdict,
+    correlation_id: str,
+    quote: NBBOQuote | None = None,
+    *,
+    exec_style: ExecStyle | None = None,
+) -> tuple[OrderRequest | None, str | None]:
+    """Construct an order and return a stable failure token on suppression.
+
+    When ``exec_style`` is ``ExecStyle.PASSIVE``, a discretionary working
+    leg posts near the BBO regardless of the static
+    ``_use_passive_entries`` flag. ``None`` uses default routing.
+    Stop-exits and MOC orders always short-circuit to MARKET and ignore
+    the hint (Inv-11).
+    """
+    side = self._side_from_intent(intent)
+    seq = self._seq.next()
+    order_id = derive_order_id(f"{correlation_id}:{seq}")
+
+    # Exits bypass minimum size and risk scaling so any position can close.
+    is_exit_or_stop = (
+        intent.intent == TradingIntent.EXIT or intent.signal.strategy_id == "__stop_exit__"
+    )
+    quantity = (
+        intent.target_quantity
+        if is_exit_or_stop
+        else round(intent.target_quantity * verdict.scaling_factor)
+    )
+    if quantity <= 0:
+        return None, "rounded_quantity_after_risk_scaling_le_zero"
+    if blocks_for_min_size(quantity, self._min_order_shares, exempt=is_exit_or_stop):
+        return None, BLOCK_BELOW_MIN_ORDER_SHARES
+
+    # Only hard-tier short sales carry the HTB fee flag;
+    # ``OrderRequest.is_short``; ``available`` omits HTB even when
+    # cost_htb_borrow_annual_bps is configured.
+    short_sale = exposure_delta_from_intent(intent).opens_or_increases_short
+    tier = self._borrow_tier_for(intent.symbol)
+    is_short = htb_fee_applies(tier, short_sale)
+
+    if (
+        not is_exit_or_stop
+        and quote is not None
+        and not _signal_passes_edge_cost_gate(self,
+            intent.signal,
+            symbol=intent.symbol,
+            entry_side=side,
+            quantity=quantity,
+            quote=quote,
+            is_taker_entry=(
+                not self._use_passive_entries or self._min_cost_policy is not None
+            ),
+            is_short_entry=is_short,
+            correlation_id=correlation_id,
+            detail="standalone_intent_suppressed",
+        )
+    ):
+        return None, "signal_edge_below_min_edge_cost_ratio_gate"
+
+    order_type, limit_price, is_moc = _resolve_order_route(self,
+        strategy_id=intent.strategy_id,
+        symbol=intent.symbol,
+        side=side,
+        quantity=quantity,
+        quote=quote,
+        is_short=is_short,
+        is_exit_or_stop=is_exit_or_stop,
+        edge_bps=intent.signal.edge_estimate_bps,
+        exec_style=exec_style,
+    )
+
+    return (
+        OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=seq,
+            order_id=order_id,
+            symbol=intent.symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            limit_price=limit_price,
+            strategy_id=intent.strategy_id,
+            is_short=is_short,
+            is_moc=is_moc,
+            reason="",
+            g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
+        ),
+        None,
+    )
