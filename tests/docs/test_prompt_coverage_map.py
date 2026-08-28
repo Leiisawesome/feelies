@@ -59,6 +59,7 @@ _FILE_OWNERS: dict[str, str] = {
     "alpha/cost_arithmetic.py": "audit_signal_alpha",
     "alpha/arbitration.py": "audit_signal_alpha",
     "alpha/portfolio_layer_module.py": "audit_composition",
+    "composition/selection_policy.py": "audit_composition",
     # ── portfolio/ ──────────────────────────────────────────────────
     "portfolio/cross_sectional_tracker.py": "audit_composition",
     "portfolio/fill_attribution.py": "audit_forensics",

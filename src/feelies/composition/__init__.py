@@ -21,7 +21,18 @@ See ``docs/three_layer_architecture.md`` §6.5 for the design.
 
 from feelies.composition.protocol import (
     CompositionContextError,
+    ForecastExclusion,
     PortfolioAlpha,
+    SelectionPolicy,
+    SelectionResult,
 )
+from feelies.composition.selection_policy import Top1SelectionPolicy
 
-__all__ = ["PortfolioAlpha", "CompositionContextError"]
+__all__ = [
+    "CompositionContextError",
+    "ForecastExclusion",
+    "PortfolioAlpha",
+    "SelectionPolicy",
+    "SelectionResult",
+    "Top1SelectionPolicy",
+]
