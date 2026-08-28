@@ -100,6 +100,7 @@ from feelies.execution.order_admission import (
 )
 from feelies.execution.order_policy import (
     _edge_clears_round_trip_cost,
+    _reversal_passes_combined_edge_gate,
     _round_trip_cost_bps,
     _signal_passes_edge_cost_gate,
 )
@@ -120,7 +121,6 @@ from feelies.execution.position_manager import (
     PositionPlan,
     desired_from_signal,
     order_intent_from_plan,
-    reversal_edge_gate,
 )
 from feelies.execution.trading_session import (
     TradingSessionBounds,
@@ -2176,46 +2176,6 @@ class Orchestrator:
             },
         )
 
-    def _reversal_passes_combined_edge_gate(
-        self,
-        *,
-        edge_estimate_bps: float,
-        symbol: str,
-        exit_side: Side,
-        exit_qty: int,
-        entry_side: Side,
-        entry_qty: int,
-        quote: NBBOQuote,
-        is_short_entry: bool,
-    ) -> tuple[float, float, bool]:
-        """Return whether reversal edge clears the combined exit and entry cost."""
-        if self._reversal_min_edge_cost_multiplier <= 0 or self._cost_model is None:
-            return 0.0, 0.0, True
-        # The aggressive close is a taker but never a new short.
-        exit_roundtrip_cost_bps = _round_trip_cost_bps(self,
-            symbol=symbol,
-            entry_side=exit_side,
-            quantity=exit_qty,
-            quote=quote,
-            is_taker_entry=True,
-            is_short_entry=False,
-        )
-        # Price the new-direction entry on the same basis as the entry gate.
-        entry_roundtrip_cost_bps = _round_trip_cost_bps(self,
-            symbol=symbol,
-            entry_side=entry_side,
-            quantity=entry_qty,
-            quote=quote,
-            is_taker_entry=(not self._use_passive_entries or self._min_cost_policy is not None),
-            is_short_entry=is_short_entry,
-        )
-        return reversal_edge_gate(
-            edge_bps=edge_estimate_bps,
-            exit_cost_bps=exit_roundtrip_cost_bps,
-            entry_cost_bps=entry_roundtrip_cost_bps,
-            multiplier=self._reversal_min_edge_cost_multiplier,
-        )
-
     def _trade_path_may_emit_horizon_ticks(self, symbol: str) -> bool:
         """Whether trade-path HorizonTicks are safe to emit for *symbol*.
 
@@ -2584,7 +2544,7 @@ class Orchestrator:
                 reversal_cost_bps,
                 reversal_required_bps,
                 reversal_edge_passes,
-            ) = self._reversal_passes_combined_edge_gate(
+            ) = _reversal_passes_combined_edge_gate(self,
                 edge_estimate_bps=effective_edge_bps,
                 symbol=intent.symbol,
                 exit_side=exit_side,

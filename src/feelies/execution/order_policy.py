@@ -6,7 +6,11 @@ from decimal import Decimal
 from typing import Any
 
 from feelies.core.events import NBBOQuote, Side, Signal
-from feelies.execution.position_manager import entry_edge_clears_cost, round_trip_cost_bps
+from feelies.execution.position_manager import (
+    entry_edge_clears_cost,
+    reversal_edge_gate,
+    round_trip_cost_bps,
+)
 
 
 def _round_trip_cost_bps(
@@ -121,3 +125,44 @@ def _signal_passes_edge_cost_gate(
         detail=gate_detail,
     )
     return False
+
+
+def _reversal_passes_combined_edge_gate(
+    self: Any,
+    *,
+    edge_estimate_bps: float,
+    symbol: str,
+    exit_side: Side,
+    exit_qty: int,
+    entry_side: Side,
+    entry_qty: int,
+    quote: NBBOQuote,
+    is_short_entry: bool,
+) -> tuple[float, float, bool]:
+    """Return whether reversal edge clears the combined exit and entry cost."""
+    if self._reversal_min_edge_cost_multiplier <= 0 or self._cost_model is None:
+        return 0.0, 0.0, True
+    # The aggressive close is a taker but never a new short.
+    exit_roundtrip_cost_bps = _round_trip_cost_bps(self,
+        symbol=symbol,
+        entry_side=exit_side,
+        quantity=exit_qty,
+        quote=quote,
+        is_taker_entry=True,
+        is_short_entry=False,
+    )
+    # Price the new-direction entry on the same basis as the entry gate.
+    entry_roundtrip_cost_bps = _round_trip_cost_bps(self,
+        symbol=symbol,
+        entry_side=entry_side,
+        quantity=entry_qty,
+        quote=quote,
+        is_taker_entry=(not self._use_passive_entries or self._min_cost_policy is not None),
+        is_short_entry=is_short_entry,
+    )
+    return reversal_edge_gate(
+        edge_bps=edge_estimate_bps,
+        exit_cost_bps=exit_roundtrip_cost_bps,
+        entry_cost_bps=entry_roundtrip_cost_bps,
+        multiplier=self._reversal_min_edge_cost_multiplier,
+    )
