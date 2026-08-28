@@ -222,7 +222,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         10,
         "E10.submit_tracked_order",
-        "feelies.kernel.orchestrator:Orchestrator._submit_tracked_order",
+        "feelies.execution.order_lifecycle:_submit_tracked_order",
     ),
     (10, "E10.settle_router_acks", "feelies.kernel.orchestrator:Orchestrator._settle_router_acks"),
     (

@@ -26,6 +26,7 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.identifiers import derive_order_id
+from feelies.execution.order_lifecycle import _submit_tracked_order
 from feelies.kernel.macro import MacroState
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.escalation import RiskLevel
@@ -213,7 +214,8 @@ def _emergency_flatten_all(
 
         try:
             self._track_order(order_id, side, order)
-            submit_exc = self._submit_tracked_order(
+            submit_exc = _submit_tracked_order(
+                self,
                 order,
                 trigger="emergency_flatten",
             )

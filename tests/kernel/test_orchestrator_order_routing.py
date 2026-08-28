@@ -10,6 +10,7 @@ import pytest
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import Alert, NBBOQuote, OrderRequest, OrderType, Side
+from feelies.execution.order_lifecycle import _submit_tracked_order
 from feelies.execution.order_policy import _resolve_order_route
 from feelies.execution.position_manager import ExecStyle
 
@@ -104,7 +105,7 @@ def test_submit_exception_rejects_and_prunes_order(monkeypatch) -> None:
 
     monkeypatch.setattr(orch._backend.order_router, "submit", raise_on_submit)
 
-    error = orch._submit_tracked_order(order)
+    error = _submit_tracked_order(orch, order)
 
     assert isinstance(error, RuntimeError)
     assert order.order_id not in orch._active_orders

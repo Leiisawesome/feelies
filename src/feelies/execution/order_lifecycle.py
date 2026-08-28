@@ -8,6 +8,7 @@ from feelies.core.events import (
     AlertSeverity,
     OrderAck,
     OrderAckStatus,
+    OrderRequest,
 )
 from feelies.execution.order_state import OrderState
 
@@ -232,3 +233,24 @@ def cancel_order(self: Any, order_id: str, *, reason: str = "operator") -> bool:
                 )
     self._prune_terminal_orders()
     return True
+
+
+def _submit_tracked_order(
+    self: Any,
+    order: OrderRequest,
+    *,
+    trigger: str = "submitted",
+) -> Exception | None:
+    """Submit a tracked order and terminalize its state if routing fails."""
+    _transition_order(self,
+        order.order_id,
+        OrderState.SUBMITTED,
+        trigger,
+        correlation_id=order.correlation_id,
+    )
+    try:
+        self._submit_to_router(order, triggering_quote=self._in_flight_quote)
+    except Exception as exc:
+        self._reject_order_after_submit_failure(order, exc)
+        return exc
+    return None

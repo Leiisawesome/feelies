@@ -98,6 +98,7 @@ from feelies.execution.order_admission import (
 from feelies.execution.order_lifecycle import (
     _apply_ack_to_order,
     _poll_order_router_acks,
+    _submit_tracked_order,
     _transition_order,
 )
 from feelies.execution.order_policy import (
@@ -2016,7 +2017,7 @@ class Orchestrator:
             trigger="order_constructed",
             correlation_id=cid,
         )
-        submit_error = self._submit_tracked_order(order)
+        submit_error = _submit_tracked_order(self, order)
         if submit_error is not None:
             self._append_signal_order_trace(
                 quote,
@@ -2644,26 +2645,6 @@ class Orchestrator:
             self._bus.publish(ack)
             _apply_ack_to_order(self, ack)
 
-    def _submit_tracked_order(
-        self,
-        order: OrderRequest,
-        *,
-        trigger: str = "submitted",
-    ) -> Exception | None:
-        """Submit a tracked order and terminalize its state if routing fails."""
-        _transition_order(self,
-            order.order_id,
-            OrderState.SUBMITTED,
-            trigger,
-            correlation_id=order.correlation_id,
-        )
-        try:
-            self._submit_to_router(order, triggering_quote=self._in_flight_quote)
-        except Exception as exc:
-            self._reject_order_after_submit_failure(order, exc)
-            return exc
-        return None
-
     def _reject_order_after_submit_failure(
         self,
         order: OrderRequest,
@@ -2937,7 +2918,7 @@ class Orchestrator:
             reason="WORKING_EXIT_FALLBACK",
         )
         self._track_order(order.order_id, order.side, order, trading_intent="EXIT")
-        if self._submit_tracked_order(order) is not None:
+        if _submit_tracked_order(self, order) is not None:
             return
         self._bus.publish(order)
         self._publish_alert(
@@ -3797,7 +3778,7 @@ class Orchestrator:
             self._forced_exit_announced_quantity[order.order_id] = order.quantity
             order = replace(order, quantity=closable)
         self._track_order(order.order_id, order.side, order)
-        submit_error = self._submit_tracked_order(order, trigger=order.reason)
+        submit_error = _submit_tracked_order(self, order, trigger=order.reason)
         if submit_error is not None:
             logger.error(
                 "Hazard exit order submission failed for %s "
