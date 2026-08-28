@@ -2556,9 +2556,8 @@ FILES:           src/feelies/kernel/orchestrator.py
                  src/feelies/alpha/arbitration.py (deleted)
                  src/feelies/alpha/__init__.py
                    (re-exports EdgeWeightedArbitrator, SignalArbitrator)
-                 src/feelies/composition/<named-policy-module>.py
-                   (destination for top-1 as a declared construction policy;
-                    NEW — name it; do not declare composition/ as a directory)
+                 src/feelies/composition/selection_policy.py (destination, new --
+                 top-1 as a declared construction policy)
                  src/feelies/composition/engine.py
                  src/feelies/composition/protocol.py
                  src/feelies/composition/__init__.py
