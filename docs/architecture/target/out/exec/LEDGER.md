@@ -5356,4 +5356,217 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-25.json,
                  baseline_post-S-25.json, this ledger entry.
 
+---
+
+## S-26  2026-08-28T13:50:00+08:00
+  STEP:          S-26
+  BASE:          27a772fab1ad476b3b4c8ae8ad12b956a0ac2494
+  RESULT SHA:    022f5473939ad90450e72f3f5400d0d4497f648f (exec/S-26; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   C6 (test_composition_identity.py) | failed-before: yes
+                 (ImportError SelectionResult) | passes-after: yes (3 passed)
+                 emission-registry discarded-forecast contract |
+                 failed-before: yes (ModuleNotFoundError
+                 selection_policy) | passes-after: yes
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed (after commit 1; a duplicate
+                 StandaloneArbitrationCollision was removed before
+                 that commit landed)
+                 S8: PINNED_PAYLOAD unmoved; events.py not edited
+                 tests/docs 101 passed after the create, the delete,
+                 and section 4.
+                 conformance 81 passed / 8 xfailed -> 85 passed /
+                 8 xfailed (no XPASS). +4 are C6 x3 and the
+                 selection-result contract.
+                 kernel 390; composition 61; alpha 441; docs 101.
+                 mypy src/feelies: Success, 205 source files.
+  TESTS:         capture pre-S-26 GREEN 4873 passed / 0 failed / 19 skipped
+                 -> post-S-26 GREEN 4877 passed / 0 failed / 19 skipped
+                 / 8 xfailed. not-paper_rth: 4876 passed, 6 skipped,
+                 14 deselected, 8 xfailed, 0 failed.
+  PARITY:        declared hold at A=1 -- all 28 replay hashes, the
+                 manifest fingerprint, and all 64 scanned constants |
+                 actual 64/64 identical (pre-S-26 vs post-S-26); 0
+                 moved at any of the five commits | MATCH.
+  FILES:         22 declared, 18 touched (verify_step CLEAN).
+                 Touched: selection_policy.py (new; git recorded
+                 R062 from arbitration.py), protocol.py, engine.py,
+                 composition/__init__.py, orchestrator.py,
+                 alpha/__init__.py, test_arbitration.py,
+                 test_standalone_signal_ownership.py,
+                 test_micro_sm_signal_props.py,
+                 test_composition_identity.py,
+                 shape_adv_long.alpha.yaml, shape_adv_short.alpha.yaml,
+                 test_emission_registry.py,
+                 test_prompt_coverage_map.py, test_internal_links.py,
+                 docs/prompts/README.md, gapscan.py,
+                 compare_multialpha_runs.py.
+                 Declared-but-unneeded: events.py,
+                 sequence_authority.py, wiring_manifest.py,
+                 test_single_owner.py, test_orchestrator.py.
+                 verify_step listed arbitration.py as "not touched"
+                 because it scored the delete as a rename onto
+                 selection_policy.py; the module is gone from disk.
+  NET DELTA:     declared (amended 1e761d2) src modules 0, public
+                 symbols +2, branch points 0, orchestrator methods
+                 96 -> 95
+                 actual modules 205 -> 205 (+0)
+                 public_symbols 570 -> 572 (+2; measure.py
+                 top-level-public: -6 arbitration.py, +5
+                 selection_policy.py, +3 protocol.py
+                 ForecastExclusion / SelectionResult /
+                 SelectionPolicy)
+                 sloc 45659 -> 45733 (+74)
+                 n_edges 657 -> 659
+                 n_modules 167 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines 4033 -> 4029 (-4)
+                 orchestrator methods 96 -> 95 (-1)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   Four checks: FILES 22 declared / 18 touched CLEAN
+                 (five declared-but-unneeded; composition/ inferred
+                 as a directory scope despite FILES forbidding that
+                 declaration -- frozen weak guard);
+                 PARITY moved 0 holds; TESTS 4873->4877 passed,
+                 0 failed; NET DELTA compare-by-eye (oracle still
+                 says "deletions with no negative delta" because
+                 method-count is not its deletion signal -- frozen;
+                 DELETES 96 -> 95 matched; modules net 0 matched).
+                 CLEAN, blast radius platform-wide -- human gate
+                 required. Go at 022f547.
+  NOTES:         Eighth wave-D step, not a pure extraction. Five
+                 implementation commits on exec/S-26, then the
+                 operator's plan amendment 1e761d2. Commit order
+                 and why: create the declared policy first so S14
+                 never sees two classes of the same name (a first
+                 attempt duplicated StandaloneArbitrationCollision
+                 while arbitration.py still existed); bind M4 and
+                 delete _select_bus_signal second so the tick path
+                 is not a dangling call; delete arbitration.py
+                 third, in the same commit as the _FILE_OWNERS
+                 prune and the docs/prompts repair; restore the
+                 SCHEMA.md placeholder fourth because that prune
+                 had replaced the retired-path token
+                 tests/determinism/test_legacy_alpha_parity.py;
+                 land C6 / FIX-2 / the emission contract last,
+                 after they had failed. No hash moved at any of
+                 the five implementation commits. Determinism 148
+                 and S12 2 passed after every one of them.
+                 Order and orchestrator lines/methods:
+                 b96d7a9 selection_policy.py + protocol
+                   SelectionPolicy/SelectionResult + _FILE_OWNERS
+                   add  4033/96 (unchanged)
+                 72b6f63 M4 calls
+                   self._selection_policy.select(buf).winner;
+                   _select_bus_signal deleted  4029/95
+                 9dbe5f5 arbitration.py deleted; re-exports
+                   dropped; _FILE_OWNERS prune; README;
+                   docs/prompts placeholder for the omitted
+                   audit_signal_alpha.md citation  4029/95
+                 958684c restore
+                   tests/determinism/test_legacy_alpha_parity.py
+                   in _PLACEHOLDER_PATH_TOKENS (SCHEMA.md)
+                 022f547 C6 + FIX-2 + emission contract
+                 Orchestrator delta: 4033/96 -> 4029/95. The
+                 method drop is _select_bus_signal. The four-line
+                 drop is that body leaving; the filter/collision
+                 logging that used to live in it was inlined into
+                 _process_tick_inner.
+                 Arbitration deletion: 9dbe5f5 is the one commit.
+                 Production importers were orchestrator.py and
+                 alpha/__init__.py (re-exports unused by any other
+                 src import). Test importers: test_arbitration.py,
+                 test_standalone_signal_ownership.py. Same commit
+                 dropped alpha/arbitration.py from _FILE_OWNERS,
+                 dropped it from the signal_alpha prompt list in
+                 docs/prompts/README.md, and grandfathered
+                 src/feelies/alpha/arbitration.py in
+                 _PLACEHOLDER_PATH_TOKENS.
+                 events.py was declared-but-unneeded. Path (5) is
+                 SelectionResult.exclusions, not a new Event (S8
+                 PINNED_PAYLOAD is exact equality;
+                 test_schema_drift.py is not in FILES; a new class
+                 would move the fingerprint). sequence_authority.py,
+                 wiring_manifest.py, test_single_owner.py and
+                 test_orchestrator.py were also declared-but-unneeded.
+                 Two new conformance tests failed before and
+                 passed after: C6
+                 (tests/conformance/test_composition_identity.py;
+                 collection ImportError: cannot import name
+                 SelectionResult) and the discarded-forecast
+                 emission contract
+                 (test_discarded_forecasts_are_named_on_the_selection_result;
+                 ModuleNotFoundError:
+                 feelies.composition.selection_policy). After
+                 022f547: C6 3 passed; emission contract 1 passed.
+                 FIX-2 is the two shape_adversarial YAML fixtures
+                 C6's third test reads, not a third test file.
+                 No no-any-return sites. This was not a self: Any
+                 extraction. mypy Success, 205 source files.
+                 Draws: none of the moved bodies draw self._seq.
+                 SequenceGenerator constructions stay on
+                 Orchestrator at :446 stream=orchestrator and
+                 :454 stream=hazard. Inv-10: the deleted method
+                 contained no perf_counter_ns; the wrapping reads
+                 stay on _process_tick_inner. Budgets remain 5/1/2.
+                 Clone is C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      SELECTION_POLICY_ID does not exist in this tree
+                 and there is no policy registry. What landed is
+                 an unused injection point -- the constructor
+                 kwarg selection_policy defaults to
+                 Top1SelectionPolicy() and no caller in src/ or
+                 tests/ passes it, so the instance is always
+                 Top1. The SelectionPolicy protocol is a type,
+                 not a dispatch. "Declared rather than relocated"
+                 therefore means package placement, a protocol
+                 and audit_composition ownership -- not a
+                 selectable policy. A second reachable policy is
+                 documented (selection_policy.py module docstring;
+                 WHY THIS OWNER: "it stops being the only
+                 reachable behaviour"), not wired. No later locked
+                 step wires one: S-27 is LIVE->QUARANTINED write
+                 authority, S-28 mode branches, S-29, S-30 symbol
+                 identity / exception taxonomy, S-31 unread
+                 fields, S-32 hot-path, S-33 G41, S-34 residual
+                 classification. The gap is open.
+                 G.10 S-26 delta cells were amended in 1e761d2 to
+                 0 / +2 / 0. Running columns were left at 201 /
+                 595 / 359, which only reconcile with the old
+                 −1 / −1. From S-25's 202 / 596 / 359 they should
+                 be 202 / 598 / 359. Wave D subtotal, S-27–S-34
+                 running, whole-plan, and the G.6 prose "Wave D
+                 nets +1 module only because S-26 deletes
+                 arbitration.py" still assume the old deltas.
+                 G.4 still says every wave-D step must be
+                 net-neutral or net-negative; the amended step
+                 declares +2 public symbols. Not edited.
+                 docs/prompts/audit_signal_alpha.md cites
+                 `src/feelies/alpha/arbitration.py` and is not
+                 in FILES. That is the undeclared 23rd. The
+                 citation was grandfathered in
+                 _PLACEHOLDER_PATH_TOKENS rather than retargeted.
+                 tests/kernel/test_fill_attribution_seam.py
+                 still names
+                 feelies.alpha.arbitration.standalone_signal_actionable_for_strategy
+                 in a docstring; not an importer, not in FILES.
+                 verify_step scored the module delete as a
+                 rename onto selection_policy.py and reported
+                 arbitration.py not touched.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6 14/31
+                 resets; S-20 no-any-return; S-21 package-move
+                 bindings; S-23 negative assertions; S-24
+                 operator NOTES; four exempted baseline tests.
+  NEXT:          S-27 LIVE -> QUARANTINED write authority
+                 (boundary). Not started. Do not begin S-27.
+                 Left uncommitted: baseline_pre-S-26.json,
+                 baseline_post-S-26.json, this ledger entry.
+
 
