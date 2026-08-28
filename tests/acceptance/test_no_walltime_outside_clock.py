@@ -46,6 +46,8 @@ _WALL_CLOCK_CALL_ALLOWLIST: dict[str, Sequence[tuple[int | str, str]]] = {
     "kernel/orchestrator.py": (
         *(("_process_tick_inner", "time.perf_counter_ns()"),) * 7,
         ("_finalize_tick", "time.perf_counter_ns()"),
+    ),
+    "execution/order_lifecycle.py": (
         *(("_drain_async_fills", "time.perf_counter_ns()"),) * 2,
     ),
 }

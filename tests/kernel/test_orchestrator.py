@@ -48,6 +48,7 @@ from feelies.execution.order_admission import (
 )
 from feelies.execution.order_lifecycle import (
     _apply_ack_to_order,
+    _drain_async_fills,
     _transition_order,
     cancel_order,
 )
@@ -903,7 +904,7 @@ class TestOrchestratorAckProcessing:
             lambda _self, _expected=None: acks,
         )
 
-        orch._drain_async_fills("reconcile-cid")
+        _drain_async_fills(orch, "reconcile-cid")
 
         assert [type(event) for event in events] == [
             OrderAck,

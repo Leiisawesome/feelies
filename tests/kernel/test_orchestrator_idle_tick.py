@@ -17,6 +17,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from decimal import Decimal
 
+import pytest
+
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
@@ -30,7 +32,11 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.order_lifecycle import _apply_ack_to_order, _transition_order
+from feelies.execution.order_lifecycle import (
+    _apply_ack_to_order,
+    _drain_async_fills,
+    _transition_order,
+)
 from feelies.execution.order_state import OrderState
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.kernel.macro import MacroState
@@ -259,7 +265,7 @@ def test_idle_tick_no_op_when_router_empty() -> None:
     assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
 
 
-def test_idle_tick_after_macro_halt_breaks_loop() -> None:
+def test_idle_tick_after_macro_halt_breaks_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = SimulatedClock(start_ns=1_000_000)
     halted = {"yes": False}
 
@@ -277,15 +283,18 @@ def test_idle_tick_after_macro_halt_breaks_loop() -> None:
     # The pipeline check happens at the top of each iteration; the
     # second IdleTick must NOT be processed.
     drain_calls: list[str] = []
-    original = orch._drain_async_fills
+    original = _drain_async_fills
 
-    def spy(correlation_id: str) -> None:
+    def spy(self: object, correlation_id: str) -> None:
         drain_calls.append(correlation_id)
         if halted["yes"]:
             orch.halt()
-        original(correlation_id)
+        original(self, correlation_id)
 
-    orch._drain_async_fills = spy  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "feelies.kernel.orchestrator._drain_async_fills",
+        spy,
+    )
     orch._run_pipeline()
     # First IdleTick triggers spy (no halt yet); after that the iterator
     # flips `halted["yes"]` then yields a second IdleTick that spy

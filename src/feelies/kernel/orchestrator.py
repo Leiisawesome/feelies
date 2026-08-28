@@ -97,6 +97,7 @@ from feelies.execution.order_admission import (
 )
 from feelies.execution.order_lifecycle import (
     _apply_ack_to_order,
+    _drain_async_fills,
     _poll_order_router_acks,
     _submit_tracked_order,
     _transition_order,
@@ -1095,7 +1096,7 @@ class Orchestrator:
             )
             if expire_moc is not None:
                 expire_moc()
-            self._drain_async_fills(correlation_id="shutdown")
+            _drain_async_fills(self, correlation_id="shutdown")
         _checkpoint_feature_snapshots(self)
         # Resolve operator cancel intent when no broker ack will arrive
         # (e.g. mid backtest router has no cancel_order API).
@@ -1151,7 +1152,7 @@ class Orchestrator:
             elif isinstance(event, IdleTick):
                 if self._paper_session_recorder is not None:
                     self._paper_session_recorder.record_idle_tick()
-                self._drain_async_fills(
+                _drain_async_fills(self,
                     correlation_id=f"idle:{event.timestamp_ns}",
                 )
 
@@ -2730,25 +2731,6 @@ class Orchestrator:
             context,
         )
 
-    def _drain_async_fills(self, correlation_id: str) -> None:
-        """Apply broker acknowledgements received outside the quote submission path.
-
-        This path updates order state and positions without walking the micro machine."""
-        t0 = time.perf_counter_ns()
-        acks = self._settle_router_acks(correlation_id)
-        if acks:
-            # Escalate an unfilled working exit to a market fallback
-            # unfilled to a guaranteed MARKET fallback (after reconcile, so
-            # the residual reflects this drain's fills).
-            self._escalate_unfilled_working_exits(acks, correlation_id)
-        if self._paper_session_recorder is not None:
-            self._paper_session_recorder.record_timing(
-                kind="drain_async_fills",
-                duration_ns=time.perf_counter_ns() - t0,
-                correlation_id=correlation_id,
-                extra={"ack_count": len(acks)},
-            )
-
     def reset(
         self,
         trigger: str = "reset",
@@ -2944,7 +2926,7 @@ class Orchestrator:
         trigger name is kept distinct from ``_drain_async_fills`` so
         metric / log attribution stays greppable.
         """
-        self._drain_async_fills(cid)
+        _drain_async_fills(self, cid)
 
     def _track_order(
         self,
