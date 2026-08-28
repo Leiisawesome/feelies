@@ -16,7 +16,7 @@ from datetime import date
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from feelies.alpha.discovery import load_and_register
 from feelies.portfolio.fill_attribution import FillAttributionLedger
@@ -430,11 +430,11 @@ def build_platform(
         session_bounds=trading_session_bounds,
     )
     backend = bundle.backend
-    if config.mode.name == "BACKTEST":
-        backtest_router = cast(
-            BacktestOrderRouter | PassiveLimitOrderRouter,
-            backend.order_router,
-        )
+    if isinstance(
+        backend.order_router,
+        (BacktestOrderRouter, PassiveLimitOrderRouter),
+    ):
+        backtest_router = backend.order_router
 
         def _on_backtest_quote(event: NBBOQuote) -> None:
             backtest_router.on_quote(event)
