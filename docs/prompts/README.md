@@ -122,6 +122,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `risk/` | risk_engine |
 | `risk/position_sizer.py`, `edge_weighted_sizer.py` | position_management (sizing economics) |
 | `execution/` (backtest fill/cost/routers) | execution_fills |
+| `execution/order_policy.py` | execution_fills |
 | `execution/intent.py`, `position_manager.py`, `portfolio_netter.py` | position_management |
 | `execution/paper_backend.py`, `order_state.py`, `trading_session.py` | live_execution |
 | `broker/` | live_execution |

@@ -46,6 +46,7 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
+from feelies.execution.order_policy import _round_trip_cost_bps
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
@@ -2535,7 +2536,7 @@ class TestExecutionCostContext:
         assert market.within_l1_impact_factor == Decimal("0.21")
         assert market.permanent_impact_coefficient == Decimal("0.04")
 
-        actual_cost_bps = orch._round_trip_cost_bps(
+        actual_cost_bps = _round_trip_cost_bps(orch,
             symbol="AAPL",
             entry_side=Side.BUY,
             quantity=100,

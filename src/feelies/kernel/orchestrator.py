@@ -98,6 +98,9 @@ from feelies.execution.order_admission import (
     exposure_delta_from_intent,
     side_for_intent,
 )
+from feelies.execution.order_policy import (
+    _round_trip_cost_bps,
+)
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.execution.portfolio_netter import (
     DesiredTargetBook,
@@ -117,7 +120,6 @@ from feelies.execution.position_manager import (
     entry_edge_clears_cost,
     order_intent_from_plan,
     reversal_edge_gate,
-    round_trip_cost_bps,
 )
 from feelies.execution.trading_session import (
     TradingSessionBounds,
@@ -2196,7 +2198,7 @@ class Orchestrator:
         """
         if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
             return True, edge_estimate_bps, 1.0
-        rt_cost_bps = self._round_trip_cost_bps(
+        rt_cost_bps = _round_trip_cost_bps(self,
             symbol=symbol,
             entry_side=entry_side,
             quantity=quantity,
@@ -2255,35 +2257,6 @@ class Orchestrator:
         )
         return False
 
-    def _round_trip_cost_bps(
-        self,
-        *,
-        symbol: str,
-        entry_side: Side,
-        quantity: int,
-        quote: NBBOQuote,
-        is_taker_entry: bool,
-        is_short_entry: bool,
-    ) -> float:
-        """Model entry plus taker-exit cost using current quote and impact settings."""
-        assert self._cost_model is not None
-        return round_trip_cost_bps(
-            self._cost_model,
-            symbol=symbol,
-            entry_side=entry_side,
-            quantity=quantity,
-            mid_price=(quote.bid + quote.ask) / Decimal("2"),
-            half_spread=(quote.ask - quote.bid) / Decimal("2"),
-            is_taker_entry=is_taker_entry,
-            is_short_entry=is_short_entry,
-            bid_size=quote.bid_size,
-            ask_size=quote.ask_size,
-            market_impact_factor=self._market_context.market_impact_factor,
-            max_impact_half_spreads=self._market_context.max_impact_half_spreads,
-            within_l1_impact_factor=self._market_context.within_l1_impact_factor,
-            permanent_impact_coefficient=(self._market_context.permanent_impact_coefficient),
-        )
-
     def _reversal_passes_combined_edge_gate(
         self,
         *,
@@ -2300,7 +2273,7 @@ class Orchestrator:
         if self._reversal_min_edge_cost_multiplier <= 0 or self._cost_model is None:
             return 0.0, 0.0, True
         # The aggressive close is a taker but never a new short.
-        exit_roundtrip_cost_bps = self._round_trip_cost_bps(
+        exit_roundtrip_cost_bps = _round_trip_cost_bps(self,
             symbol=symbol,
             entry_side=exit_side,
             quantity=exit_qty,
@@ -2309,7 +2282,7 @@ class Orchestrator:
             is_short_entry=False,
         )
         # Price the new-direction entry on the same basis as the entry gate.
-        entry_roundtrip_cost_bps = self._round_trip_cost_bps(
+        entry_roundtrip_cost_bps = _round_trip_cost_bps(self,
             symbol=symbol,
             entry_side=entry_side,
             quantity=entry_qty,
