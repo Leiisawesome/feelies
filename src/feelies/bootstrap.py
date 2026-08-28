@@ -430,7 +430,7 @@ def build_platform(
         session_bounds=trading_session_bounds,
     )
     backend = bundle.backend
-    if config.mode == OperatingMode.BACKTEST:
+    if config.mode.name == "BACKTEST":
         backtest_router = cast(
             BacktestOrderRouter | PassiveLimitOrderRouter,
             backend.order_router,
@@ -512,7 +512,7 @@ def build_platform(
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
     metric_collector: InMemoryMetricCollector
-    if config.mode == OperatingMode.BACKTEST:
+    if config.mode.name == "BACKTEST":
         metric_collector = _BacktestMetricCollector()
     else:
         metric_collector = InMemoryMetricCollector()
