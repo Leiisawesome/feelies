@@ -430,33 +430,17 @@ def build_platform(
         session_bounds=trading_session_bounds,
     )
     backend = bundle.backend
+    router = getattr(backend, "order_router", None)
     if isinstance(
-        backend.order_router,
+        router,
         (BacktestOrderRouter, PassiveLimitOrderRouter),
     ):
-        backtest_router = backend.order_router
-
         def _on_backtest_quote(event: NBBOQuote) -> None:
-            backtest_router.on_quote(event)
+            router.on_quote(event)
 
         bus.subscribe(NBBOQuote, _on_backtest_quote)
 
     position_store = MemoryPositionStore()
-    if config.mode.name != "BACKTEST":
-        router = getattr(backend, "order_router", None)
-        ib_conn = bundle.ib_connection
-        can_bind_ib = ib_conn is not None and hasattr(
-            ib_conn, "bind_submitted_order_journal"
-        )
-        if router is not None or can_bind_ib:
-            submitted_order_journal = DurableSubmittedOrderJournal(
-                _submitted_order_journal_path(config),
-                clock=clock,
-            )
-            if router is not None:
-                submitted_order_journal.install_on(router)
-            if ib_conn is not None and hasattr(ib_conn, "bind_submitted_order_journal"):
-                ib_conn.bind_submitted_order_journal(submitted_order_journal)
     strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
@@ -1001,6 +985,17 @@ def _create_backend(
             ib_client_id=config.ib_client_id,
             massive_ws_url=config.massive_ws_url,
         )
+        router = getattr(backend, "order_router", None)
+        can_bind_ib = hasattr(ib_conn, "bind_submitted_order_journal")
+        if router is not None or can_bind_ib:
+            submitted_order_journal = DurableSubmittedOrderJournal(
+                _submitted_order_journal_path(config),
+                clock=clock,
+            )
+            if router is not None:
+                submitted_order_journal.install_on(router)
+            if can_bind_ib:
+                ib_conn.bind_submitted_order_journal(submitted_order_journal)
         return _BackendBundle(
             backend=backend,
             live_feed=live_feed,
