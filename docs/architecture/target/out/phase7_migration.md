@@ -2757,16 +2757,24 @@ STEP:            S-29
 CLOSES:          G25
 PROBLEM:         `src/feelies/core/platform_config.py` names an alpha as a
                  default value: `moc_strategy_ids: tuple[str, ...] =
-                 ("sig_moc_imbalance_v1",)` at `:108` (read this session),
-                 repeated at `:910`. It reaches `_moc_strategy_ids` at
-                 `src/feelies/kernel/orchestrator.py:876`, is tested at `:3386`
-                 to set `OrderRequest.is_moc`, and thereby diverts the order
-                 from the continuous book to the closing auction. **No file
-                 under `configs/` or `platform.yaml` sets it, so every
-                 deployment inherits the hardcoded default.** Inv-6
-                 alpha-agnosticism; CORE §C.7, §I.
-FILES:           src/feelies/core/platform_config.py:108, :910
-                 src/feelies/kernel/orchestrator.py:876, :3386
+                 ("sig_moc_imbalance_v1",)` at `:169`, repeated in
+                 `from_dict` at `:979-980`. `Orchestrator.boot` copies it
+                 to `_moc_strategy_ids` at `:864`. The identity check is
+                 `src/feelies/execution/order_policy.py:264-270` inside
+                 `_resolve_order_route` (`:250`): `strategy_id in
+                 self._moc_strategy_ids` sets `OrderRequest.is_moc` and
+                 diverts the order from the continuous book to the
+                 closing auction. `bootstrap._resolve_moc_bounds:907`
+                 is `None` when the tuple is empty. **No file under
+                 `configs/` or `platform.yaml` sets it, so every
+                 deployment inherits the hardcoded default.** Inv-6;
+                 CORE §C.7, §I.
+FILES:           src/feelies/core/platform_config.py:169, :979-980
+                 src/feelies/kernel/orchestrator.py:548, :864
+                 src/feelies/execution/order_policy.py:250-270
+                 src/feelies/bootstrap.py:905-908
+                 tests/kernel/test_orchestrator_order_routing.py
+                 tests/conformance/test_alpha_agnosticism.py (S3)
                  alphas/ (manifest declaration of the routing property)
 WHY THIS OWNER:  Route selection is engine 9 policy. A route selected by a
                  string literal in platform config is that policy expressed as
@@ -2798,6 +2806,41 @@ DELETES:         the platform's **only** alpha-id leak into core; the
 NET DELTA:       src modules 0, public symbols **-1**, branch points **-1**.
                  Test files +1.
 ROLLBACK:        revert; the default returns.
+```
+```
+STEP:            S-28a
+CLOSES:          new -- S-28 ledger finding (the mode seam is not single)
+PROBLEM:         S-28 closed the four illegal OperatingMode branches outside the
+                 seam, but S7's allowlist still names all of bootstrap.py, where
+                 22 branches remain. Only :936 and :982 sit inside
+                 _create_backend, the construction point the seam is supposed to
+                 be. The other 20 decide behaviour elsewhere in bootstrap and are
+                 permitted only because the allowlist is file-scoped rather than
+                 function-scoped. execution/ and broker/ have zero, so bootstrap
+                 is the whole remaining surface. CORE sec. C.4: mode differences
+                 live behind ExecutionBackend and nowhere else.
+WHY THIS OWNER:  The Kernel owns composition. A seam that permits 22 branches in
+                 the composition root is a file-level exemption, not a seam.
+REFACTOR PATH:   (1) narrow S7's allowlist from bootstrap.py to
+                 bootstrap.py::_create_backend and prove it FAILS, naming the 20
+                 branches outside; (2) resolve them one at a time -- to config,
+                 to _create_backend, or to deletion -- reporting the disposition
+                 of each; (3) drop the widened allowlist entry only when the
+                 count reaches zero.
+FILES:           tests/conformance/test_mode_seam.py
+                 src/feelies/bootstrap.py
+BLAST RADIUS:    boundary
+VALIDATED BY:    S7 with the narrowed allowlist, failing before and passing
+                 after; H3 unchanged; all registered hashes; the parity oracle
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint, and all
+                 64 scanned constants. Mode branches decide backtest-versus-live
+                 behaviour, so a moved hash means a backtest path changed and is
+                 the most consequential movement in this campaign: STOP and name
+                 it immediately.
+DELETES:         the file-scoped bootstrap exemption in S7's allowlist; the 20
+                 OperatingMode branches outside _create_backend
+NET DELTA:       src modules 0, public symbols 0, branch points -20
+ROLLBACK:        revert; the allowlist widens again and the branches return.
 ```
 
 ```
