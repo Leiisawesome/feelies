@@ -2674,8 +2674,8 @@ BLAST RADIUS:    boundary — cold path only; nothing in flight
 VALIDATED BY:    A2, S2 (from S-04), the promotion ledger's append-only
                  property, and a test that **demotion still always commits** —
                  the safety outcome must not regress while the authority moves
-PARITY IMPACT:   All 28 replay hashes, EXPECTED_MANIFEST_FINGERPRINT, and
-                 all 64 scanned constants hold. Cold path, no sequence draw,
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint, and all 64 scanned  
+                 constants. Cold path, no sequence draw,
                  no hashed field. Engine 5's outputs are outside the
                  manifest entirely (Phase 1 §6.1 records no manifest entry
                  for engine 5), which is exactly why this step needs a
