@@ -95,6 +95,9 @@ from feelies.execution.order_admission import (
     exposure_delta_from_intent,
     side_for_intent,
 )
+from feelies.execution.order_lifecycle import (
+    _transition_order,
+)
 from feelies.execution.order_policy import (
     _edge_clears_round_trip_cost,
     _execute_reverse,
@@ -1369,7 +1372,7 @@ class Orchestrator:
             )
             for order in orders:
                 self._track_order(order.order_id, order.side, order)
-                self._transition_order(
+                _transition_order(self,
                     order.order_id,
                     OrderState.SUBMITTED,
                     "submitted",
@@ -1424,7 +1427,7 @@ class Orchestrator:
             return
         for order in orders:
             self._track_order(order.order_id, order.side, order)
-            self._transition_order(
+            _transition_order(self,
                 order.order_id,
                 OrderState.SUBMITTED,
                 "submitted",
@@ -2738,7 +2741,7 @@ class Orchestrator:
         trigger: str = "submitted",
     ) -> Exception | None:
         """Submit a tracked order and terminalize its state if routing fails."""
-        self._transition_order(
+        _transition_order(self,
             order.order_id,
             OrderState.SUBMITTED,
             trigger,
@@ -3099,23 +3102,6 @@ class Orchestrator:
                 ),
             )
         )
-
-    def _transition_order(
-        self,
-        order_id: str,
-        target: OrderState,
-        trigger: str,
-        *,
-        correlation_id: str = "",
-    ) -> None:
-        """Transition an order's state machine."""
-        if order_id in self._active_orders:
-            sm = self._active_orders[order_id][0]
-            sm.transition(
-                target,
-                trigger=trigger,
-                correlation_id=correlation_id,
-            )
 
     def _apply_ack_to_order(self, ack: OrderAck) -> None:
         """Update an order's SM based on a broker acknowledgement.
@@ -4227,7 +4213,7 @@ class Orchestrator:
         )
         try:
             self._track_order(order_id, side, order)
-            self._transition_order(
+            _transition_order(self,
                 order_id,
                 OrderState.SUBMITTED,
                 f"degrade_flatten:{reason}",

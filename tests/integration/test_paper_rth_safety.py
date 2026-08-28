@@ -23,6 +23,7 @@ from feelies.core.events import (
     Signal,
 )
 from feelies.kernel.macro import MacroState
+from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_state import OrderState
 
 from tests.kernel.test_orchestrator import (
@@ -149,7 +150,7 @@ def test_g12_cost_exceeds_disclosure_alert(paper_session) -> None:
         g12_disclosed_cost_total_bps=2.5,
     )
     orchestrator._track_order(order_id, Side.BUY, req)
-    orchestrator._transition_order(
+    _transition_order(orchestrator,
         order_id,
         OrderState.SUBMITTED,
         "paper_e2e_g12",

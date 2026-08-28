@@ -81,6 +81,7 @@ _FILE_OWNERS: dict[str, str] = {
     "execution/portfolio_netter.py": "audit_position_management",
     "execution/sized_intent_legs.py": "audit_position_management",
     "execution/paper_backend.py": "audit_live_execution",
+    "execution/order_lifecycle.py": "audit_live_execution",
     "execution/order_state.py": "audit_live_execution",
     "execution/trading_session.py": "audit_live_execution",
     "execution/backend.py": "audit_execution_fills",

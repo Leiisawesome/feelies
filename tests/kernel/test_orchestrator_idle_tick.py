@@ -30,6 +30,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.kernel.macro import MacroState
@@ -91,7 +92,7 @@ def _track_submitted_order(orch: Orchestrator) -> OrderRequest:
         strategy_id="alpha_x",
     )
     orch._track_order(order.order_id, order.side, order)
-    orch._transition_order(
+    _transition_order(orch,
         order.order_id,
         OrderState.SUBMITTED,
         "submitted",

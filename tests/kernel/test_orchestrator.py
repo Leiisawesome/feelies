@@ -46,6 +46,7 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
+from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_policy import (
     _plan_for_signal,
     _round_trip_cost_bps,
@@ -864,7 +865,7 @@ class TestOrchestratorAckProcessing:
             strategy_id="alpha_1",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -949,7 +950,7 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -995,7 +996,7 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1039,7 +1040,7 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1143,7 +1144,7 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1182,7 +1183,7 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        orch._transition_order(
+        _transition_order(orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -3781,8 +3782,8 @@ class TestRestingOrderGuardAfterRisk:
         orch._track_order(cover.order_id, Side.BUY, cover, trading_intent="EXIT")
         # Mirror a real resting passive order: SUBMITTED → ACKNOWLEDGED so a
         # broker CANCELLED ack is a valid (non-terminal → terminal) transition.
-        orch._transition_order(cover.order_id, OrderState.SUBMITTED, "submitted")
-        orch._transition_order(cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+        _transition_order(orch,cover.order_id, OrderState.SUBMITTED, "submitted")
+        _transition_order(orch,cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         assert orch._has_pending_order_for_symbol("AAPL")
 
         alerts: list[Alert] = []
@@ -4315,8 +4316,8 @@ class TestHaltModeling:
         for req in (resting, deferred):
             router.submit(req)
             orch._track_order(req.order_id, req.side, req)
-            orch._transition_order(req.order_id, OrderState.SUBMITTED, "submitted")
-            orch._transition_order(req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+            _transition_order(orch,req.order_id, OrderState.SUBMITTED, "submitted")
+            _transition_order(orch,req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         router.poll_acks()  # drain the two ACKNOWLEDGED acks
         assert router.resting_order_count == 1
 

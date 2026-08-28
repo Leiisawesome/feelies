@@ -49,6 +49,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import DefaultCostModel, ZeroCostModel
+from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
@@ -625,7 +626,7 @@ class TestFillReconciliation:
             strategy_id="standalone_signal_alpha",
         )
         orch._track_order(resting_order.order_id, resting_order.side, resting_order)
-        orch._transition_order(
+        _transition_order(orch,
             resting_order.order_id,
             OrderState.SUBMITTED,
             "seed_resting_order",
