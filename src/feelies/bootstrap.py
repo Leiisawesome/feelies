@@ -757,7 +757,7 @@ def _wire_decouple_revocation_hook(
 
 
 def _select_clock(mode: OperatingMode) -> Clock:
-    if mode == OperatingMode.BACKTEST:
+    if mode.name == "BACKTEST":
         return SimulatedClock()
     return WallClock()
 
