@@ -272,7 +272,7 @@ def build_platform(
         )
 
     if (
-        config.mode == OperatingMode.BACKTEST
+        config.mode.name == "BACKTEST"
         and config.backtest_enforce_ingest_terminal_health
         and not config.ingest_terminal_symbol_health
     ):
@@ -767,7 +767,7 @@ def _ensure_session_open_ns_for_paper(
     clock: Clock,
 ) -> PlatformConfig:
     """Anchor PAPER horizon boundaries to the current RTH open when absent."""
-    if config.mode == OperatingMode.BACKTEST:
+    if config.mode.name == "BACKTEST":
         return config
     if config.session_open_ns is not None:
         return config
@@ -1300,7 +1300,7 @@ def _create_sensor_layer(
         # Live boundary indices need an explicit anchor; deterministic replays may
         # bind to their first ordered event.
         if config.session_open_ns is None:
-            if config.mode != OperatingMode.BACKTEST:
+            if config.mode.name != "BACKTEST":
                 raise ConfigurationError(
                     "H10: session_open_ns must be set explicitly for "
                     f"mode={config.mode.name} deployments.  "
@@ -1965,7 +1965,7 @@ def _enforce_ex_date_replay_guard(
     """Refuse backtests whose replay span crosses a known ex-date."""
     if not config.backtest_enforce_ex_date_guard:
         return
-    if config.mode != OperatingMode.BACKTEST:
+    if config.mode.name != "BACKTEST":
         return
     if config.ex_date_calendar_path is None:
         return
@@ -2027,7 +2027,7 @@ def _enforce_factor_loadings_freshness(
 
     if config.session_open_ns is not None:
         reference_time = config.session_open_ns / 1_000_000_000
-    elif config.mode is not OperatingMode.BACKTEST:
+    elif config.mode.name != "BACKTEST":
         reference_time = clock.now_ns() / 1_000_000_000
         logger.warning(
             "factor loadings freshness: no session_open_ns configured; using the "
