@@ -22,6 +22,14 @@ are permitted by name, not by silence:
 * ``_enforce_ex_date_replay_guard`` (BACKTEST-only replay guard)
 * ``_enforce_factor_loadings_freshness`` (clock-vs-refuse freshness)
 
+Two further sites were targets that are legal on closer reading
+(moving them into ``_create_backend`` requires a ``_BackendBundle``
+field or an optional ``clock`` return — a signature change, which is
+a stop):
+
+* ``_select_clock`` (clock column of the mode table)
+* ``build_platform`` PAPER auto-construct of the shared ``MassiveNormalizer``
+
 They compose the platform; they do not select an ``ExecutionBackend``.
 """
 
@@ -40,24 +48,26 @@ _COMPOSITION_ROOT = "src/feelies/bootstrap.py"
 _COMPOSITION_ROOT_FN = "_create_backend"
 _BOOTSTRAP = _ROOT / "src" / "feelies" / "bootstrap.py"
 
-# Helpers whose only mode branch is a composition-time admit / clock-adjacent
-# policy.  Not ``_select_clock`` (clock selection is a target) and not
-# ``_create_sensor_layer`` (mixed: H10 is legal, emit_reading_metrics is not).
+# Helpers whose only mode branch is a composition-time admit, clock
+# selection, or freshness policy.  Not ``_create_sensor_layer`` (mixed:
+# H10 is legal; emit_reading_metrics was a target and is gone).
 _LEGAL_COMPOSITION_FNS = frozenset(
     {
         "_ensure_session_open_ns_for_paper",
         "_enforce_ex_date_replay_guard",
         "_enforce_factor_loadings_freshness",
+        "_select_clock",
     }
 )
 
-# Unique substrings of the If-test that identify the four legal
+# Unique substrings of the If-test that identify the legal
 # build_platform composition decisions.  A match is a permit, not a skip.
 _LEGAL_BUILD_PLATFORM_MARKERS = (
     "ib_port == 4001",
     "backtest_enforce_ingest_terminal_health",
     "sizer_tilt_drive",
     "resolved_edge_factors",
+    "normalizer is None",
 )
 
 _H10_ADMIT = "H10: session_open_ns must be set"
