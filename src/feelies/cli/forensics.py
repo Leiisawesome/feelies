@@ -17,7 +17,8 @@ Read-only unless ``--apply``
 Evaluation is pure.  ``--apply`` is the only path that writes lifecycle state,
 and it only ever *tightens* — LIVE to QUARANTINED, never the reverse (Inv-11:
 loosening requires human re-authorization, which is what ``feelies promote``
-is for).  Non-LIVE alphas are skipped by the breaker itself.
+is for).  Engine 12 emits a :class:`QuarantineRecommendation`; engine 5 performs
+the transition.  Non-LIVE alphas are skipped.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ from feelies.forensics.cost_circuit_breaker import (
     ACTION_WATCH,
     CircuitBreakerDecision,
     CircuitBreakerPolicy,
-    apply_cost_circuit_breaker,
+    QuarantineRecommendation,
     evaluate_cost_circuit_breaker,
 )
 from feelies.monitoring.paper_session_recorder import trade_records_from_dicts
@@ -98,7 +99,7 @@ def _sorted_decisions(
 
 def _render_text(
     decisions: list[CircuitBreakerDecision],
-    applied: list[CircuitBreakerDecision],
+    applied: list[QuarantineRecommendation],
 ) -> None:
     if not decisions:
         print("No fills in window — nothing to score.")
@@ -138,18 +139,21 @@ def _handle_circuit_breaker(args: argparse.Namespace) -> int:
     )
     decisions = _sorted_decisions(list(evaluate_cost_circuit_breaker(records, policy=policy)))
 
-    applied: list[CircuitBreakerDecision] = []
+    applied: list[QuarantineRecommendation] = []
     if args.apply:
         lifecycles = _resolve_lifecycles(args)
         if lifecycles is None:
             return EXIT_USER_ERROR
-        applied = list(
-            apply_cost_circuit_breaker(
-                decisions,
-                lifecycles,
+        for rec in QuarantineRecommendation.from_decisions(decisions):
+            lifecycle = lifecycles.get(rec.strategy_id)
+            if lifecycle is None:
+                continue
+            if lifecycle.apply_recommendation(
+                rec,
+                actor="cost-circuit-breaker",
                 correlation_id=args.correlation_id,
-            )
-        )
+            ):
+                applied.append(rec)
 
     if args.emit_json:
         print(

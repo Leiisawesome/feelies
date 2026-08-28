@@ -64,7 +64,7 @@ LINE_TOKENS: list[tuple[str, str, int, str]] = [
     ("E3", "bootstrap.py", 289, "regime"),
     ("E4", "signals/horizon_engine.py", 196, "regime"),
     ("E6", "composition/cross_sectional.py", 75, "sort"),
-    ("E5/E12", "forensics/cost_circuit_breaker.py", 159, "QUARANTINE"),
+    ("E5/E12", "promotion/lifecycle.py", 413, "QUARANTINE"),
     ("E11", "core/events.py", 416, "published on the bus"),
 ]
 
