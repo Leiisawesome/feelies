@@ -285,7 +285,7 @@ def build_platform(
     if event_log is None:
         # Live feeds log arrival order, which need not be timestamp-monotonic.
         # Replays retain strict ordering.
-        enforce_market_order = config.mode != OperatingMode.PAPER
+        enforce_market_order = config.mode.name != "PAPER"
         event_log = InMemoryEventLog(enforce_market_order=enforce_market_order)
     _enforce_ex_date_replay_guard(
         config,
@@ -304,7 +304,7 @@ def build_platform(
     if config.enforce_regime_state_scale_alignment and regime_engine is not None:
         _validate_regime_engine_risk_scale_alignment(regime_engine)
 
-    registry_clock = None if config.mode == OperatingMode.BACKTEST else clock
+    registry_clock = None if config.mode.name == "BACKTEST" else clock
     promotion_ledger = (
         PromotionLedger(config.promotion_ledger_path)
         if config.promotion_ledger_path is not None
@@ -355,7 +355,7 @@ def build_platform(
             _vacuous_threshold_shares,
         )
     # Isolate risk alerts so they cannot shift orchestrator event IDs.
-    _seq_thread_safe = config.mode != OperatingMode.BACKTEST
+    _seq_thread_safe = config.mode.name != "BACKTEST"
     risk_alert_seq = SequenceGenerator(stream="risk_alert", thread_safe=_seq_thread_safe)
     pdt_constraint = PDTConstraint(
         PDTConfig(
@@ -1263,7 +1263,7 @@ def _create_sensor_layer(
             sequence_generator=sensor_seq,
             symbols=frozenset(config.symbols),
             metric_collector=metric_collector,
-            emit_reading_metrics=config.mode != OperatingMode.BACKTEST,
+            emit_reading_metrics=config.mode.name != "BACKTEST",
         )
         # Inject the runtime calendar object that YAML cannot represent.
         import dataclasses as _dc
