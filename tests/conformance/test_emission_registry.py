@@ -36,3 +36,33 @@ def test_every_published_type_has_a_subscriber() -> None:
         "event types published to zero static subscribers: "
         + ", ".join(published_never_subscribed)
     )
+
+
+def test_discarded_forecasts_are_named_on_the_selection_result() -> None:
+    """A discarded forecast that appears in no contract cannot be attributed.
+
+    Path (5): losers used to exist only in the tick trace. The declared
+    construction policy emits them as ``SelectionResult.exclusions``.
+    """
+    from feelies.composition.selection_policy import Top1SelectionPolicy
+    from feelies.core.events import Signal, SignalDirection
+
+    def _sig(strategy_id: str, strength: float, edge_bps: float) -> Signal:
+        return Signal(
+            timestamp_ns=1,
+            correlation_id="emit",
+            sequence=1,
+            symbol="AAPL",
+            strategy_id=strategy_id,
+            direction=SignalDirection.LONG,
+            strength=strength,
+            edge_estimate_bps=edge_bps,
+        )
+
+    winner = _sig("alpha_a", 1.0, 20.0)
+    loser = _sig("alpha_b", 0.2, 5.0)
+    result = Top1SelectionPolicy(dead_zone_bps=0.0).select([loser, winner])
+    assert result.winner is winner
+    named = [e.signal for e in result.exclusions]
+    assert loser in named, "losing forecast is absent from the selection contract"
+    assert all(e.reason for e in result.exclusions)
