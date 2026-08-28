@@ -46,7 +46,11 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
-from feelies.execution.order_lifecycle import _apply_ack_to_order, _transition_order
+from feelies.execution.order_lifecycle import (
+    _apply_ack_to_order,
+    _transition_order,
+    cancel_order,
+)
 from feelies.execution.order_policy import (
     _plan_for_signal,
     _round_trip_cost_bps,
@@ -1165,7 +1169,7 @@ class TestOrchestratorFillReconcileGuards:
             )
         )
 
-        assert orch.cancel_order(order.order_id) is True
+        assert cancel_order(orch, order.order_id) is True
         assert order.order_id not in orch._active_orders
         assert any(a.alert_name == "cancel_order_router_unsupported" for a in alerts)
 
