@@ -265,7 +265,7 @@ def build_platform(
             _edge_ratio,
         )
 
-    if config.mode == OperatingMode.PAPER and config.ib_port == 4001:
+    if config.mode.name == "PAPER" and config.ib_port == 4001:
         logger.warning(
             "PAPER mode configured with ib_port=4001 (typically LIVE/TWS). "
             "IB Gateway paper accounts usually listen on port 4002.",
@@ -494,7 +494,7 @@ def build_platform(
     )
     position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
     # Live tilted sizing may exceed the base size, so surface it at startup.
-    if config.sizer_tilt_drive and config.mode == OperatingMode.PAPER:
+    if config.sizer_tilt_drive and config.mode.name == "PAPER":
         logger.warning(
             "bootstrap: sizer_tilt_drive=true in %s mode — the position "
             "sizer can size SIGNAL-path orders above the single-factor "
@@ -625,7 +625,7 @@ def build_platform(
     if (
         config.signal_min_edge_cost_ratio > 0
         and not resolved_edge_factors
-        and config.mode == OperatingMode.PAPER
+        and config.mode.name == "PAPER"
     ):
         logger.warning(
             "B4 edge-vs-cost gate is active (signal_min_edge_cost_ratio=%s) but no "
