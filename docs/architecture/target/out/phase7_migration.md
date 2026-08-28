@@ -2696,21 +2696,35 @@ ROLLBACK:        revert.
 ```
 STEP:            S-28
 CLOSES:          G26
-PROBLEM:         27 mode branches, **all outside `execution/` and `broker/`** —
-                 and zero inside, so the seam itself is clean and the platform
-                 routes around it. 20 are in `src/feelies/bootstrap.py`, which
-                 is the composition root choosing the seam and is where mode
-                 branching belongs. **The 7 outside bootstrap are the gap**:
-                 `src/feelies/core/platform_config.py:58,:447`,
-                 `src/feelies/forensics/cost_circuit_breaker.py:63,:172`,
-                 `src/feelies/harness/backtest_prep.py:141`,
-                 `src/feelies/harness/backtest_runner.py:190`,
-                 `src/feelies/promotion/lifecycle.py:570`
-                 (`VERIFIED`, `gapscan.json:mode_branches.sites`, enumerated
-                 this session). Inv-9 backtest/live parity; CORE §C.4.
-FILES:           the 7 sites above
-                 tests/conformance/test_mode_seam.py (S7 — authored in S-03;
-                 this step drops its xfail)
+PROBLEM:         OperatingMode branches outside the composition root and the
+                 declared seam (`execution/`, `broker/`). S7
+                 (`tools.arch.coupling.mode_branches`, kind=operating_mode)
+                 measures **26** such branches, **all** outside the seam, of
+                 which **21–22 are in `src/feelies/bootstrap.py`** (allowed)
+                 and **4 are the gap**:
+                 `src/feelies/core/platform_config.py:508`
+                   (`self.mode != OperatingMode.BACKTEST`)
+                 `src/feelies/harness/backtest_prep.py:152`
+                   (`config.mode == OperatingMode.BACKTEST`)
+                 `src/feelies/harness/backtest_runner.py:190`
+                   (`config.mode != OperatingMode.BACKTEST`)
+                 `src/feelies/kernel/orchestrator.py:2177`
+                   (`self._config.mode is not OperatingMode.BACKTEST`
+                    inside `_finalize_tick`)
+                 The previous "7 outside bootstrap" mixed gapscan's
+                 `\bis_live\b` into G26. Those two forensics sites
+                 (`cost_circuit_breaker.py:64` `_Quarantinable.is_live` and
+                 `:180` apply `lifecycle.is_live`; plan cited `:63,:172`)
+                 were deleted in S-27 and were never S7 hits.
+                 `lifecycle.py` `:421` / `:597` are lifecycle LIVE, not
+                 OperatingMode — out of this step. Inv-9; CORE §C.4.
+FILES:           src/feelies/core/platform_config.py:508
+                 src/feelies/harness/backtest_prep.py:152
+                 src/feelies/harness/backtest_runner.py:190
+                 src/feelies/kernel/orchestrator.py:2177
+                 tests/conformance/test_mode_seam.py (S7 — drop xfail
+                   after the four are gone; allowlist already names
+                   bootstrap + execution/ + broker/)
                  tests/conformance/test_mode_parity.py (H3, new)
 WHY THIS OWNER:  Phase 2 engine 10 draws the line: **composition-root selection
                  is legitimate, in-engine mode branching is not.** Those are
@@ -2726,16 +2740,15 @@ VALIDATED BY:    S7, H3, H1, the oracle, and `src/feelies/bootstrap.py:203`'s
                  `enforce_market_order = config.mode != OperatingMode.PAPER` —
                  Phase 1's open defect on silent reordering, which stays in
                  bootstrap and must be **declared** there rather than moved
-PARITY IMPACT:   hold — all 26 baselines, conditional on each of the 7 moves
-                 being behaviour-preserving.
-                 All 26 hold if each move is behaviour-preserving.
-                 `src/feelies/harness/backtest_prep.py:141` and `src/feelies/harness/backtest_runner.py:190` are on the
-                 oracle's own path, so a mistake there breaks the oracle
-                 immediately — which makes them the safest two to move and the
-                 right two to move first.
-DELETES:         7 in-engine mode branches
-NET DELTA:       src modules 0, public symbols 0, branch points **-7**.
-                 Test files +2.
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint,
+                 and all 64 scanned constants, conditional on each of
+                 the 4 moves being behaviour-preserving. Prep `:152` and
+                 runner `:190` are on the oracle's own path. Orchestrator
+                 `:2177` is skipped in BACKTEST, so the APP hashes will
+                 not catch a live-only change there.
+DELETES:         4 in-engine OperatingMode branches
+NET DELTA:       src modules 0, public symbols 0, branch points **-4**.
+                 Test files +1 (H3). S7 already exists.
 ROLLBACK:        revert per site.
 ```
 
