@@ -101,6 +101,7 @@ from feelies.execution.order_admission import (
 from feelies.execution.order_policy import (
     _edge_clears_round_trip_cost,
     _plan_for_signal,
+    _resolve_order_route,
     _reversal_passes_combined_edge_gate,
     _round_trip_cost_bps,
     _signal_passes_edge_cost_gate,
@@ -2558,7 +2559,7 @@ class Orchestrator:
                 seq_entry = self._seq.next()
                 entry_order_id = derive_order_id(f"{cid}:{seq_entry}:entry")
 
-                order_type, limit_price, entry_is_moc = self._resolve_order_route(
+                order_type, limit_price, entry_is_moc = _resolve_order_route(self,
                     strategy_id=intent.strategy_id,
                     symbol=intent.symbol,
                     side=entry_side,
@@ -2755,7 +2756,7 @@ class Orchestrator:
         ):
             return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
-        order_type, limit_price, is_moc = self._resolve_order_route(
+        order_type, limit_price, is_moc = _resolve_order_route(self,
             strategy_id=intent.strategy_id,
             symbol=intent.symbol,
             side=side,
@@ -2786,60 +2787,6 @@ class Orchestrator:
             ),
             None,
         )
-
-    def _resolve_order_route(
-        self,
-        *,
-        strategy_id: str,
-        symbol: str,
-        side: Side,
-        quantity: int,
-        quote: NBBOQuote | None,
-        is_short: bool,
-        is_exit_or_stop: bool,
-        edge_bps: float,
-        exec_style: ExecStyle | None = None,
-    ) -> tuple[OrderType, Decimal | None, bool]:
-        """Resolve order type, limit price, and MOC flag from execution policy."""
-        is_moc = (
-            strategy_id in self._moc_strategy_ids
-            and self._moc_bounds_configured
-            and not is_exit_or_stop
-        )
-        if is_moc:
-            return OrderType.MARKET, None, True
-
-        if exec_style is ExecStyle.PASSIVE and quote is not None:
-            limit_price = quote.bid if side == Side.BUY else quote.ask
-            return OrderType.LIMIT, limit_price, False
-
-        if not self._use_passive_entries or quote is None:
-            return OrderType.MARKET, None, False
-
-        use_passive = True
-        if self._min_cost_policy is not None:
-            use_passive = (
-                self._min_cost_policy.decide(
-                    symbol=symbol,
-                    side=side,
-                    quantity=quantity,
-                    mid_price=(quote.bid + quote.ask) / Decimal("2"),
-                    half_spread=(quote.ask - quote.bid) / Decimal("2"),
-                    is_short=is_short,
-                    force_aggressive=is_exit_or_stop,
-                    bid_size=quote.bid_size,
-                    ask_size=quote.ask_size,
-                    edge_bps=edge_bps,
-                )
-                == "passive"
-            )
-        if use_passive:
-            return (
-                OrderType.LIMIT,
-                quote.bid if side == Side.BUY else quote.ask,
-                False,
-            )
-        return OrderType.MARKET, None, False
 
     @staticmethod
     def _compose_scaled_quantity(base_quantity: int, *factors: float) -> int:

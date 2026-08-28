@@ -10,6 +10,7 @@ import pytest
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import Alert, NBBOQuote, OrderRequest, OrderType, Side
+from feelies.execution.order_policy import _resolve_order_route
 from feelies.execution.position_manager import ExecStyle
 
 from tests.kernel.test_orchestrator import _build_orchestrator, _make_quote
@@ -60,7 +61,7 @@ def test_order_route_precedence(
         orch._moc_strategy_ids = frozenset({"test_strat"})
         orch._moc_bounds_configured = True
 
-    order_type, limit_price, is_moc = orch._resolve_order_route(
+    order_type, limit_price, is_moc = _resolve_order_route(orch,
         strategy_id="test_strat",
         symbol="AAPL",
         side=Side.BUY,

@@ -6,9 +6,10 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
-from feelies.core.events import NBBOQuote, Side, Signal
+from feelies.core.events import NBBOQuote, OrderType, Side, Signal
 from feelies.execution.position_manager import (
     DesiredPosition,
+    ExecStyle,
     PositionManagerConfig,
     PositionPlan,
     desired_from_signal,
@@ -218,3 +219,58 @@ def _plan_for_signal(
             urgency_exec=self._position_manager_urgency_exec,
         ),
     )
+
+
+def _resolve_order_route(
+    self: Any,
+    *,
+    strategy_id: str,
+    symbol: str,
+    side: Side,
+    quantity: int,
+    quote: NBBOQuote | None,
+    is_short: bool,
+    is_exit_or_stop: bool,
+    edge_bps: float,
+    exec_style: ExecStyle | None = None,
+) -> tuple[OrderType, Decimal | None, bool]:
+    """Resolve order type, limit price, and MOC flag from execution policy."""
+    is_moc = (
+        strategy_id in self._moc_strategy_ids
+        and self._moc_bounds_configured
+        and not is_exit_or_stop
+    )
+    if is_moc:
+        return OrderType.MARKET, None, True
+
+    if exec_style is ExecStyle.PASSIVE and quote is not None:
+        limit_price = quote.bid if side == Side.BUY else quote.ask
+        return OrderType.LIMIT, limit_price, False
+
+    if not self._use_passive_entries or quote is None:
+        return OrderType.MARKET, None, False
+
+    use_passive = True
+    if self._min_cost_policy is not None:
+        use_passive = (
+            self._min_cost_policy.decide(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                mid_price=(quote.bid + quote.ask) / Decimal("2"),
+                half_spread=(quote.ask - quote.bid) / Decimal("2"),
+                is_short=is_short,
+                force_aggressive=is_exit_or_stop,
+                bid_size=quote.bid_size,
+                ask_size=quote.ask_size,
+                edge_bps=edge_bps,
+            )
+            == "passive"
+        )
+    if use_passive:
+        return (
+            OrderType.LIMIT,
+            quote.bid if side == Side.BUY else quote.ask,
+            False,
+        )
+    return OrderType.MARKET, None, False
