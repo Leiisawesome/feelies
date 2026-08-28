@@ -2631,13 +2631,31 @@ STEP:            S-27
 CLOSES:          G18, G30 (the authority clause)
 PROBLEM:         The `LIVE -> QUARANTINED` transition is written from
                  **engine-12 code** at
-                 `src/feelies/forensics/cost_circuit_breaker.py:159`. Demotion
+                 `src/feelies/forensics/cost_circuit_breaker.py:182`
+                 (`apply_cost_circuit_breaker` def `:161`). Demotion
                  always commits, which is the exposure-reducing direction, so
                  the safety outcome is correct and only the authority boundary is
                  violated. CORE §C.6 single source of truth.
-FILES:           src/feelies/forensics/cost_circuit_breaker.py:159
+FILES:           src/feelies/forensics/cost_circuit_breaker.py
+                   (apply_cost_circuit_breaker :161; lifecycle.quarantine :182;
+                    _Quarantinable.is_live :64; apply is_live :180 —
+                    not :159)
                  src/feelies/promotion/lifecycle.py
-                 tests/conformance/test_cold_engines.py (A2)
+                   (quarantine :359 — the engine-5 writer)
+                 src/feelies/cli/forensics.py
+                   (apply_cost_circuit_breaker :147)
+                 tests/forensics/test_cost_circuit_breaker.py
+                 tests/cli/test_forensics_circuit_breaker.py
+                 tests/conformance/test_cold_engines.py (A2, new)
+                 tools/arch/gapscan.py
+                   (LINE_TOKENS E5/E12 still at cost_circuit_breaker.py:159)
+                 Land the recommendation type on lifecycle.py or
+                 cost_circuit_breaker.py so src modules stay 0. If it is a
+                 new src module, that is a plan defect: add the path here
+                 and the S-21 docs/prompts trio, and amend G.10.
+                 If AlphaLifecycle.quarantine grows an actor argument,
+                 also: src/feelies/alpha/registry.py:445 and every
+                 .quarantine call site in tests/promotion and tests/alpha.
 WHY THIS OWNER:  Phase 2: a closed loop is a decision **driven by** forensics,
                  not a write **performed by** forensics. Engine 12 emits
                  evidence and a recommendation; engine 5 performs the
@@ -2656,18 +2674,22 @@ BLAST RADIUS:    boundary — cold path only; nothing in flight
 VALIDATED BY:    A2, S2 (from S-04), the promotion ledger's append-only
                  property, and a test that **demotion still always commits** —
                  the safety outcome must not regress while the authority moves
-PARITY IMPACT:   All 26 hold. Cold path, no sequence draw, no hashed field.
-                 Engine 5's outputs are outside the manifest entirely (Phase 1
-                 §6.1 records no manifest entry for engine 5), which is exactly
-                 why this step needs a behavioural test rather than a hash.
-DELETES:         the cross-engine state write at
-                 `src/feelies/forensics/cost_circuit_breaker.py:159`; one of the two writers to the
-                 lifecycle state machine
+PARITY IMPACT:   All 28 replay hashes, EXPECTED_MANIFEST_FINGERPRINT, and
+                 all 64 scanned constants hold. Cold path, no sequence draw,
+                 no hashed field. Engine 5's outputs are outside the
+                 manifest entirely (Phase 1 §6.1 records no manifest entry
+                 for engine 5), which is exactly why this step needs a
+                 behavioural test rather than a hash.
 NET DELTA:       src modules 0, public symbols +1 -1 = 0 (recommendation
-                 contract added, cross-engine write path removed), branch
-                 points **-2** (two of the seven non-bootstrap mode branches are
-                 in `src/feelies/forensics/cost_circuit_breaker.py` at `:63` and `:172`; this step
-                 removes them or moves them to the composition root — see S-28).
+                 contract added, apply_cost_circuit_breaker removed),
+                 branch points 0. Do not claim the two is_live sites
+                 (`:64`, `:180`) — S-28 lists them (stale as `:63`, `:172`).
+                 If this step deletes apply and those sites vanish, amend
+                 S-28 in the same change (drop those two of its seven,
+                 −7 -> −5) rather than double-count here.
+DELETES:         apply_cost_circuit_breaker and the cross-engine
+                 lifecycle.quarantine call at :182; one of the two writers
+                 to the lifecycle state machine
 ROLLBACK:        revert.
 ```
 
@@ -3148,18 +3170,18 @@ the reconciliation requirement.
 | S-23 | 0 | 0 | −1 | 202 | 597 | 359 | +1 |
 | S-24 | 0 | 0 | 0 | 202 | 597 | 359 | 0 |
 | S-25 | 0 | −1 | 0 | 202 | 596 | 359 | +1 |
-| S-26 | 0 | +2 | 0 | 201 | 595 | 359 | +2 |
-| S-27 | 0 | 0 | −2 | 201 | 595 | 357 | +1 |
-| S-28 | 0 | 0 | −7 | 201 | 595 | 350 | +1 |
-| S-29 | 0 | −1 | −1 | 201 | 594 | 349 | +1 |
-| S-30 | +2 | +5 | −18 | 203 | 599 | 331 | +1 |
-| **wave D** | **+1** | **+3** | **−29** | **203** | **599** | **331** | **+10** |
-| S-31 | 0 | −12 | 0 | 203 | 587 | 331 | 0 |
-| S-32 | 0 | 0 | 0 | 203 | 587 | 331 | 0 |
-| S-33 | 0 | 0 | 0 | 203 | 587 | 331 | 0 |
-| S-34 | 0 | −14 | 0 | 203 | 573 | 331 | 0 |
-| **wave E** | **0** | **−26** | **0** | **203** | **573** | **331** | **0** |
-| **whole plan** | **+7** | **+22** | **−25** | **203** | **573** | **331** | **+51** |
+| S-26 | 0 | +2 | 0 | 202 | 598 | 359 | +2 |
+| S-27 | 0 | 0 | −2 | 202 | 598 | 357 | +1 |
+| S-28 | 0 | 0 | −7 | 202 | 598 | 350 | +1 |
+| S-29 | 0 | −1 | −1 | 202 | 597 | 349 | +1 |
+| S-30 | +2 | +5 | −18 | 204 | 602 | 331 | +1 |
+| **wave D** | **+1** | **+3** | **−29** | **204** | **602** | **331** | **+10** |
+| S-31 | 0 | −12 | 0 | 204 | 590 | 331 | 0 |
+| S-32 | 0 | 0 | 0 | 204 | 590 | 331 | 0 |
+| S-33 | 0 | 0 | 0 | 204 | 590 | 331 | 0 |
+| S-34 | 0 | −14 | 0 | 204 | 576 | 331 | 0 |
+| **wave E** | **0** | **−26** | **0** | **204** | **576** | **331** | **0** |
+| **whole plan** | **+7** | **+22** | **−25** | **204** | **576** | **331** | **+51** |
 
 **The S-31 row was −106 and is now −12** (X1, A5.4 closed FALSE). Every figure
 downstream of it in this table moved by +94, and the whole-plan symbol column
