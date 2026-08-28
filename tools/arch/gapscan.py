@@ -38,7 +38,7 @@ CITATIONS: list[tuple[str, str, str, int]] = [
     ("E3", "kernel/orchestrator.py", "_maybe_publish_hazard_spike", 2501),
     ("E3", "kernel/orchestrator.py", "_regime_label_for", 4556),
     ("E3", "kernel/orchestrator.py", "_checkpoint_regime_snapshot", 5460),
-    ("E4", "composition/selection_policy.py", "select", 116),
+    ("E4", "composition/selection_policy.py", "select", 127),
     ("E7", "kernel/orchestrator.py", "_reconcile_fills", 4229),
     ("E7", "kernel/orchestrator.py", "_distribute_fill_to_strategies", 4577),
     ("E7", "kernel/orchestrator.py", "_record_fill_attribution", 4057),

@@ -41,7 +41,7 @@ class TickConfig:
     :data:`feelies.kernel.micro._MICRO_TRANSITIONS`.
 
     Multi-alpha arbitration is handled bus-side before M4 in production
-    (:meth:`feelies.kernel.orchestrator.Orchestrator._select_bus_signal`);
+    (:meth:`feelies.composition.selection_policy.Top1SelectionPolicy.select`);
     the micro SM always walks ``SIGNAL_EVALUATE → RISK_CHECK`` when a
     signal is emitted.
     """

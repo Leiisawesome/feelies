@@ -10,6 +10,7 @@ reachable behaviour.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from feelies.composition.protocol import (
     ForecastExclusion,
@@ -85,6 +86,16 @@ def collision_is_harmless_flat_gate_close(
         signal.direction == SignalDirection.FLAT and signal.regime_gate_state == "OFF"
         for signal in candidates
     )
+
+
+@dataclass(frozen=True, slots=True)
+class StandaloneArbitrationCollision:
+    """One post-filter standalone-signal arbitration tick (forensics)."""
+
+    candidate_count: int
+    strategy_ids: tuple[str, ...]
+    kinds: tuple[tuple[str, str, str], ...]
+    harmless: bool
 
 
 class Top1SelectionPolicy:

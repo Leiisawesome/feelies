@@ -30,12 +30,12 @@ if TYPE_CHECKING:
 from feelies.portfolio.fill_attribution import largest_remainder_split, split_fees
 from feelies.composition.protocol import SelectionPolicy
 from feelies.composition.selection_policy import (
+    StandaloneArbitrationCollision,
     Top1SelectionPolicy,
     collision_is_harmless_flat_gate_close,
     is_redundant_gate_close_flat,
     standalone_signal_actionable_for_strategy,
 )
-from feelies.alpha.arbitration import StandaloneArbitrationCollision
 from feelies.core.gate_registry import record_verdict
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
