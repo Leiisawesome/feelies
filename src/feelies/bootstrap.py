@@ -265,14 +265,14 @@ def build_platform(
             _edge_ratio,
         )
 
-    if config.mode == OperatingMode.PAPER and config.ib_port == 4001:
+    if config.mode.name == "PAPER" and config.ib_port == 4001:
         logger.warning(
             "PAPER mode configured with ib_port=4001 (typically LIVE/TWS). "
             "IB Gateway paper accounts usually listen on port 4002.",
         )
 
     if (
-        config.mode == OperatingMode.BACKTEST
+        config.mode.name == "BACKTEST"
         and config.backtest_enforce_ingest_terminal_health
         and not config.ingest_terminal_symbol_health
     ):
@@ -285,7 +285,7 @@ def build_platform(
     if event_log is None:
         # Live feeds log arrival order, which need not be timestamp-monotonic.
         # Replays retain strict ordering.
-        enforce_market_order = config.mode != OperatingMode.PAPER
+        enforce_market_order = config.mode.name != "PAPER"
         event_log = InMemoryEventLog(enforce_market_order=enforce_market_order)
     _enforce_ex_date_replay_guard(
         config,
@@ -304,7 +304,7 @@ def build_platform(
     if config.enforce_regime_state_scale_alignment and regime_engine is not None:
         _validate_regime_engine_risk_scale_alignment(regime_engine)
 
-    registry_clock = None if config.mode == OperatingMode.BACKTEST else clock
+    registry_clock = None if config.mode.name == "BACKTEST" else clock
     promotion_ledger = (
         PromotionLedger(config.promotion_ledger_path)
         if config.promotion_ledger_path is not None
@@ -355,7 +355,7 @@ def build_platform(
             _vacuous_threshold_shares,
         )
     # Isolate risk alerts so they cannot shift orchestrator event IDs.
-    _seq_thread_safe = config.mode != OperatingMode.BACKTEST
+    _seq_thread_safe = config.mode.name != "BACKTEST"
     risk_alert_seq = SequenceGenerator(stream="risk_alert", thread_safe=_seq_thread_safe)
     pdt_constraint = PDTConstraint(
         PDTConfig(
@@ -385,7 +385,7 @@ def build_platform(
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
         # Warn in PAPER when an entry gate is not wired.
-        warn_on_inert_entry_gates=config.mode == OperatingMode.PAPER,
+        warn_on_inert_entry_gates=config.mode.name == "PAPER",
     )
 
     cost_model = DefaultCostModel(
@@ -412,7 +412,7 @@ def build_platform(
         )
     )
     # PAPER shares one normalizer between the feed and orchestrator.
-    if normalizer is None and config.mode == OperatingMode.PAPER:
+    if normalizer is None and config.mode.name == "PAPER":
         normalizer = MassiveNormalizer(
             clock=clock,
             halt_on_codes=frozenset(config.halt_on_condition_codes),
@@ -430,7 +430,7 @@ def build_platform(
         session_bounds=trading_session_bounds,
     )
     backend = bundle.backend
-    if config.mode == OperatingMode.BACKTEST:
+    if config.mode.name == "BACKTEST":
         backtest_router = cast(
             BacktestOrderRouter | PassiveLimitOrderRouter,
             backend.order_router,
@@ -442,7 +442,7 @@ def build_platform(
         bus.subscribe(NBBOQuote, _on_backtest_quote)
 
     position_store = MemoryPositionStore()
-    if config.mode != OperatingMode.BACKTEST:
+    if config.mode.name != "BACKTEST":
         router = getattr(backend, "order_router", None)
         ib_conn = bundle.ib_connection
         can_bind_ib = ib_conn is not None and hasattr(
@@ -494,7 +494,7 @@ def build_platform(
     )
     position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
     # Live tilted sizing may exceed the base size, so surface it at startup.
-    if config.sizer_tilt_drive and config.mode == OperatingMode.PAPER:
+    if config.sizer_tilt_drive and config.mode.name == "PAPER":
         logger.warning(
             "bootstrap: sizer_tilt_drive=true in %s mode — the position "
             "sizer can size SIGNAL-path orders above the single-factor "
@@ -512,7 +512,7 @@ def build_platform(
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
     metric_collector: InMemoryMetricCollector
-    if config.mode == OperatingMode.BACKTEST:
+    if config.mode.name == "BACKTEST":
         metric_collector = _BacktestMetricCollector()
     else:
         metric_collector = InMemoryMetricCollector()
@@ -625,7 +625,7 @@ def build_platform(
     if (
         config.signal_min_edge_cost_ratio > 0
         and not resolved_edge_factors
-        and config.mode == OperatingMode.PAPER
+        and config.mode.name == "PAPER"
     ):
         logger.warning(
             "B4 edge-vs-cost gate is active (signal_min_edge_cost_ratio=%s) but no "
@@ -757,7 +757,7 @@ def _wire_decouple_revocation_hook(
 
 
 def _select_clock(mode: OperatingMode) -> Clock:
-    if mode == OperatingMode.BACKTEST:
+    if mode.name == "BACKTEST":
         return SimulatedClock()
     return WallClock()
 
@@ -767,7 +767,7 @@ def _ensure_session_open_ns_for_paper(
     clock: Clock,
 ) -> PlatformConfig:
     """Anchor PAPER horizon boundaries to the current RTH open when absent."""
-    if config.mode == OperatingMode.BACKTEST:
+    if config.mode.name == "BACKTEST":
         return config
     if config.session_open_ns is not None:
         return config
@@ -1263,7 +1263,7 @@ def _create_sensor_layer(
             sequence_generator=sensor_seq,
             symbols=frozenset(config.symbols),
             metric_collector=metric_collector,
-            emit_reading_metrics=config.mode != OperatingMode.BACKTEST,
+            emit_reading_metrics=config.mode.name != "BACKTEST",
         )
         # Inject the runtime calendar object that YAML cannot represent.
         import dataclasses as _dc
@@ -1300,7 +1300,7 @@ def _create_sensor_layer(
         # Live boundary indices need an explicit anchor; deterministic replays may
         # bind to their first ordered event.
         if config.session_open_ns is None:
-            if config.mode != OperatingMode.BACKTEST:
+            if config.mode.name != "BACKTEST":
                 raise ConfigurationError(
                     "H10: session_open_ns must be set explicitly for "
                     f"mode={config.mode.name} deployments.  "
@@ -1965,7 +1965,7 @@ def _enforce_ex_date_replay_guard(
     """Refuse backtests whose replay span crosses a known ex-date."""
     if not config.backtest_enforce_ex_date_guard:
         return
-    if config.mode != OperatingMode.BACKTEST:
+    if config.mode.name != "BACKTEST":
         return
     if config.ex_date_calendar_path is None:
         return
@@ -2027,7 +2027,7 @@ def _enforce_factor_loadings_freshness(
 
     if config.session_open_ns is not None:
         reference_time = config.session_open_ns / 1_000_000_000
-    elif config.mode is not OperatingMode.BACKTEST:
+    elif config.mode.name != "BACKTEST":
         reference_time = clock.now_ns() / 1_000_000_000
         logger.warning(
             "factor loadings freshness: no session_open_ns configured; using the "
