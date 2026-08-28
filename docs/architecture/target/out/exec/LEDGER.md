@@ -5907,4 +5907,136 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-28.json,
                  baseline_post-S-28.json, this ledger entry.
 
+---
+
+## S-28a  2026-08-28T21:35:00+08:00
+  STEP:          S-28a
+  BASE:          f9351cc939061f39726ba079b571f287fbfb6ccd
+  RESULT SHA:    cb82c9da3e1848602e33eb0a5fd1f42c1ec7883b
+                 (last step commit). Branch HEAD is
+                 ec925002ae8baec2d968b0e32431c870498e6960,
+                 a duplicate of the arch/exec plan commit;
+                 it disappears in the merge.
+  VERDICT:       passed
+  CONFORMANCE:   S7 (test_mode_seam.py) | failed-before: yes
+                 (commit 1 named 20 OperatingMode tokens
+                 outside bootstrap.py::_create_backend; first
+                 bootstrap.py:268) | passes-after: yes
+                 H3 | failed-before: no (already green on
+                 arch/exec) | passes-after: yes | green after
+                 every commit
+                 conformance 88 passed / 7 xfailed -> 88
+                 passed / 7 xfailed (no XPASS)
+                 mypy src/feelies: Success, 205 source files.
+  TESTS:         capture pre-S-28a 4881 passed / 1 failed / 18
+                 skipped / 7 xfailed
+                 -> post-S-28a 4881 passed / 1 failed / 18
+                 skipped / 7 xfailed. The one failure is the
+                 exempted IB after-hours test
+                 (test_after_hours_reject_surfaces_as_rejected).
+                 not-paper_rth: 4880 passed, 1 failed, 5
+                 skipped, 14 deselected, 7 xfailed -- failed 1
+                 is the same IB EXEMPTION.
+  PARITY:        declared hold -- all 28 replay hashes, the
+                 manifest fingerprint, and all 64 scanned
+                 constants | actual 64/64 identical (pre-S-28a
+                 vs post-S-28a); 0 moved at any of the seven
+                 step commits | MATCH. tools/exec fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         2 declared, 2 touched (verify_step missed
+                 the plan key -- uppercase S-28A; four checks
+                 by hand CLEAN). Touched:
+                 tests/conformance/test_mode_seam.py,
+                 src/feelies/bootstrap.py.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 OperatingMode branch tokens -20 (22 -> 2).
+                 Mode-dependent DECISIONS moved: 0.
+                 actual modules 205 -> 205 (+0)
+                 public_symbols 572 -> 572 (+0)
+                 sloc 45756 -> 45756 (+0)
+                 n_edges 659 -> 659
+                 n_modules 167 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 S7 operating_mode hits 22 -> 2 (both remaining
+                 are bootstrap.py::_create_backend :936, :982)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   Four checks by hand (oracle `.upper()` looks
+                 up S-28A, plan key is S-28a -- frozen): FILES
+                 2 declared / 2 touched CLEAN; PARITY moved 0
+                 holds; TESTS 4881->4881 passed, failed 1->1
+                 is the exempted IB after-hours test; NET DELTA
+                 compare-by-eye MATCH on tokens 22 -> 2, and
+                 on DECISIONS moved: 0. CLEAN, blast radius
+                 boundary -- human gate required.
+  NOTES:         Seven step commits on exec/S-28a, then the
+                 duplicate plan commit. Order:
+                 c7e09de narrow S7 to _create_backend; S7
+                   failed naming 20; H3 green; det 148
+                 4711f4d PAPER warnings :268, :497, :625/:628
+                   rewritten to config.mode.name; 16 tokens
+                   remaining; det 148
+                 945c153 guards :274/:275, :770, :1303, :1968,
+                   :2030 rewritten; 10 remaining; det 148
+                 8ab9722 clock :760 rewritten; 9 remaining;
+                   det 148
+                 5236bf1 determinism flags :288, :307, :358,
+                   :1266 rewritten; 5 remaining; det 148
+                 294704b live-session handles :388, :415, :445
+                   rewritten; 2 remaining; det 148
+                 cb82c9d quote-subscribe :433 and metric
+                   collector :515 rewritten; 0 tokens outside
+                   _create_backend; S7 passes; det 148
+                 None of the 20 were relocated into
+                 _create_backend. None were deleted. Each was
+                 rewritten in place from an OperatingMode enum
+                 compare to config.mode.name (or mode.name in
+                 _select_clock). 274/275 and 625/628 are
+                 BoolOp+Compare double-counts of one decision
+                 each, so 20 tokens / 18 unique sites.
+                 After landing, a probe inserted
+                 `if config.mode == OperatingMode.BACKTEST: pass`
+                 in build_platform after validate (line 252).
+                 S7 failed naming that line. git checkout
+                 restored bootstrap.py; SHA256
+                 41BB9C737D51E367ECC0262709192AD5771468E870F4241BC2D8FBD0946C1162
+                 and git hash-object 9f3c95bfc8c04d11708309e9211306de86e12c74
+                 matched the pre-probe values. S7 passed
+                 again. test_mode_seam.py was not touched.
+                 H3 stayed green throughout -- it still
+                 file-scopes all of bootstrap.py. Final
+                 OperatingMode token count in bootstrap.py is
+                 2, both inside _create_backend (:936, :982).
+                 No hash moved at any commit. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      The -20 in NET DELTA is booked against the
+                 token S7 counts, not against behaviour. Zero
+                 mode-dependent decisions left bootstrap. 12
+                 remain in build_platform at 268, 275, 288,
+                 307, 358, 388, 415, 433, 445, 497, 515 and
+                 628, and six in helpers at 760, 770, 1266,
+                 1303, 1968 and 2030. S7 cannot see a string
+                 compare, so the guard is honest about its
+                 token and blind to the behaviour. S-28b is
+                 written to close that and is the next step.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6 14/31
+                 resets; S-20 no-any-return; S-21 package-move
+                 bindings; S-23 negative assertions; S-24
+                 operator NOTES; S-26 unused
+                 selection_policy injection; four exempted
+                 baseline tests.
+  NEXT:          S-28b move the eighteen mode-dependent
+                 decisions (boundary). Not started. Do not
+                 begin S-28b.
+                 Left uncommitted: baseline_pre-S-28a.json,
+                 baseline_post-S-28a.json, this ledger entry.
+
 
