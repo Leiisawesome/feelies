@@ -5175,4 +5175,185 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-24.json,
                  baseline_post-S-24.json, this ledger entry.
 
+---
+
+## S-25  2026-08-28T11:23:50+08:00
+  STEP:          S-25
+  BASE:          98bd4cc681430291f9f24e83e02052807118cb08
+  RESULT SHA:    c7e985133920c639a0026a16718e509b98d88856 (exec/S-25; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. S2/S12/S14 held before
+                 and after.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 tests/docs 101 passed in commit 1 and again in
+                 section 4.
+                 conformance 81 passed / 8 xfailed (no XPASS).
+                 kernel 390; execution 865; risk 336; docs 101.
+                 mypy src/feelies: Success, 205 source files.
+  TESTS:         capture pre-S-25 GREEN 4873 passed / 0 failed / 19 skipped
+                 -> post-S-25 GREEN 4873 passed / 0 failed / 19 skipped
+                 / 8 xfailed. not-paper_rth: 4872 passed, 6 skipped,
+                 14 deselected, 8 xfailed, 0 failed.
+  PARITY:        declared hold -- all 28 replay hashes, the manifest
+                 fingerprint, and all 64 scanned constants, including
+                 market_fill, halt_ack, halt_order,
+                 level4_portfolio_order, level4_hazard_exit_order,
+                 decoupled_risk_flatten_order, and the APP trade
+                 parity hash | actual 64/64 identical (pre-S-25 vs
+                 post-S-25); 0 moved at any of the six commits | MATCH.
+  FILES:         18 declared, 17 touched (verify_step CLEAN).
+                 Touched: orchestrator.py, order_lifecycle.py (new),
+                 order_policy.py, risk/engine.py,
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_orchestrator_order_routing.py,
+                 tests/kernel/test_orchestrator_idle_tick.py,
+                 tests/kernel/test_orchestrator_shutdown_drain.py,
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py,
+                 tests/kernel/test_orchestrator_async_fill_latency.py,
+                 tests/kernel/test_orchestrator_bus_sized_intent.py,
+                 tests/conformance/test_pathological_refusal.py,
+                 tests/integration/test_paper_rth_safety.py,
+                 tests/acceptance/test_no_walltime_outside_clock.py,
+                 tools/arch/perfmeasure.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Declared-but-unneeded, not skipped scope:
+                 tests/docs/test_internal_links.py.
+                 sequence_authority.py and wiring_manifest.py were
+                 not in FILES and were not edited.
+  NET DELTA:     declared src modules 0, public symbols -1,
+                 branch points 0, orchestrator lines -~300,
+                 methods 102 -> 96
+                 actual modules 204 -> 205 (+1, the new file;
+                 no new package)
+                 public_symbols 569 -> 570 (+1; cancel_order is a
+                 non-underscore module-level name)
+                 sloc 45638 -> 45659 (+21)
+                 n_edges 652 -> 657
+                 n_modules 166 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 2
+                 orchestrator lines 4283 -> 4033 (-250)
+                 orchestrator methods 102 -> 96 (-6)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   Four checks: FILES 18 declared / 17 touched CLEAN
+                 (test_internal_links declared-but-unneeded);
+                 PARITY moved 0 holds; TESTS 4873->4873 passed,
+                 0 failed; NET DELTA compare-by-eye (oracle still
+                 says "deletions with no negative delta" because it
+                 does not treat method-count as the deletion signal
+                 -- frozen; DELETES 102 -> 96 matched). CLEAN, blast
+                 radius boundary -- human gate required. verify_step
+                 also inferred src/feelies/execution/ as a directory
+                 scope (~25 files permitted) despite FILES listing
+                 specific files and forbidding that declaration --
+                 frozen weak guard; this tree only added
+                 order_lifecycle.py and retargeted order_policy.py
+                 under that package.
+  NOTES:         Seventh wave-D extraction. Six commits on
+                 exec/S-25, one method per commit, callee-before-caller,
+                 Inv-10 body last. None of the six draw
+                 self._seq / self._hazard_seq. Determinism 148 and
+                 S12 2 passed after every commit; no hash moved at
+                 any point.
+                 Order and orchestrator lines/methods:
+                 0e5232e _transition_order + order_lifecycle.py
+                   + _FILE_OWNERS  4283/102 -> 4269/101
+                 6cedeac _poll_order_router_acks              4238/100
+                 83801b0 _apply_ack_to_order                  4130/99
+                 d1920a2 cancel_order                         4070/98
+                 1d83401 _submit_tracked_order                4051/97
+                 c7e9851 _drain_async_fills (Inv-10 body;
+                   two time.perf_counter_ns)                  4033/96
+                 Draws: none. There is no _emit_order_ack on this
+                 branch, in the six, or in order_lifecycle.py.
+                 Last commit is _drain_async_fills because it
+                 carries the wall-clock reads, not because it draws.
+                 SequenceGenerator constructions stay on
+                 Orchestrator -- at HEAD :446 stream=orchestrator
+                 and :454 stream=hazard (were :439 / :447 at BASE;
+                 the order_lifecycle import block added lines above
+                 __init__). order_lifecycle.py does not construct a
+                 generator and does not publish in the S-13 sense.
+                 It is not in execution/__init__.py. The six stamp
+                 nothing of their own: alerts and acks go through
+                 self._publish_alert / self._bus.publish /
+                 self._settle_router_acks on the orchestrator
+                 instance. That is why sequence_authority.py and
+                 wiring_manifest.py were not in FILES and needed no
+                 edit -- not declared-but-unneeded; absent from the
+                 declared set.
+                 Owner is audit_live_execution, assigned in
+                 commit 1 next to order_state.py. Engine 10 owns
+                 the order state machine and that its transitions
+                 are total -- Inv-8 / Inv-9, not fill/cost
+                 (audit_execution_fills). _FILE_OWNERS repair
+                 landed in commit 1 with the module, tests/docs
+                 passing in the same commit -- the S-21 pattern on
+                 its fourth reuse (S-21, S-22, S-24, S-25).
+                 Inv-10: before, kernel/orchestrator.py had
+                 _process_tick_inner x7, _finalize_tick x1,
+                 _drain_async_fills x2. After, orchestrator keeps
+                 x7+x1; execution/order_lifecycle.py takes
+                 _drain_async_fills x2 with the body. Throwaway
+                 proof: mutating the new symbol to
+                 _drain_async_fills_THROWWAY failed
+                 test_wall_clock_allowlist_has_no_stale_entries
+                 (remaining budget 2); restore passed (that file
+                 3 passed).
+                 No no-any-return sites. mypy Success, 205 source
+                 files. Param types from the class were kept on
+                 self: Any; nothing needed a later annotation
+                 commit.
+                 Siblings left in place, as the block named them
+                 only for this judgment: _submit_to_router,
+                 _reject_order_after_submit_failure,
+                 _settle_router_acks,
+                 _publish_and_apply_order_acks,
+                 _prune_terminal_orders, _emit_ack_drop_alert,
+                 _escalate_unfilled_working_exits. _poll_order_router_acks
+                 and _transition_order close alone. The other four
+                 call those siblings via self and are not closed
+                 without them; the siblings are not themselves
+                 order-SM transitions, so they stay on Orchestrator.
+                 cancel_order still has no production policy caller;
+                 moving it did not move a hash.
+                 Clone is C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      Operator-supplied NOTES are not authoritative.
+                 Go named SHA 1e79f5b, which is absent from this
+                 object database, the reflog, and origin. Dictated
+                 NOTES asked for a seven-commit order with
+                 _emit_order_ack last as the only drawing method,
+                 and for order_lifecycle.py's three draws and where
+                 they stamp. Observed: HEAD c7e9851, six commits,
+                 no _emit_order_ack anywhere in the six or in
+                 order_lifecycle.py, zero draws, no stamp of
+                 sequence from the new module. The executing
+                 session's observations take precedence; do not
+                 copy dictated NOTES into the ledger when they
+                 contradict the tree.
+                 Plan NET DELTA public symbols -1 assumed
+                 cancel_order would drop out of the public-symbol
+                 counter; it is still a non-underscore module-level
+                 name, so the counter rose 569 -> 570.
+                 REFACTOR PATH still cites orchestrator.py:1984
+                 for the exhaustiveness raise; live site at BASE
+                 was _apply_ack_to_order:3224, now in
+                 order_lifecycle.py. Not edited.
+                 Carried, not fixed: G6 vs empty depends_on_sensors;
+                 config-path attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days stale
+                 (APP/2026-03-26 current); R6 14/31 resets; S-20
+                 no-any-return; S-21 package-move bindings; S-23
+                 negative assertions bound to a type the code no
+                 longer emits; four exempted baseline tests.
+  NEXT:          S-26 reducing N forecasts to one portfolio
+                 (platform-wide). Not started. Do not begin S-26.
+                 Left uncommitted: baseline_pre-S-25.json,
+                 baseline_post-S-25.json, this ledger entry.
+
 
