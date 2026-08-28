@@ -63,7 +63,6 @@ from feelies.core.events import (
     PositionUpdate,
     RegimeState,
     RiskAction,
-    RiskVerdict,
     Signal,
     SignalDirection,
     Side,
@@ -101,10 +100,6 @@ from feelies.execution.order_policy import (
     _execute_reverse,
     _filter_portfolio_orders_for_admission,
     _plan_for_signal,
-    _resolve_order_route,
-    _reversal_passes_combined_edge_gate,
-    _round_trip_cost_bps,
-    _signal_passes_edge_cost_gate,
     _try_build_order_from_intent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
