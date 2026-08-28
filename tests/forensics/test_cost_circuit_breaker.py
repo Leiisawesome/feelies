@@ -25,7 +25,7 @@ from feelies.forensics.cost_circuit_breaker import (
     ACTION_WATCH,
     CircuitBreakerDecision,
     CircuitBreakerPolicy,
-    apply_cost_circuit_breaker,
+    QuarantineRecommendation,
     evaluate_cost_circuit_breaker,
 )
 from feelies.storage.trade_journal import TradeRecord
@@ -115,7 +115,7 @@ def test_policy_min_fills_is_respected() -> None:
     assert d.action == ACTION_INSUFFICIENT
 
 
-# ── apply (drives the real lifecycle) ───────────────────────────────────
+# ── apply (engine 5 commits the demotion) ─────────────────────────────
 
 
 def _live_lifecycle(
@@ -164,9 +164,10 @@ def test_apply_quarantines_live_alpha_and_records_ledger(tmp_path) -> None:
         realized_margin_ratio=0.0,
         decay_z=None,
     )
-    applied = apply_cost_circuit_breaker([decision], {"bleeder": lc}, correlation_id="cb1")
+    rec = QuarantineRecommendation.from_decision(decision)
+    applied = lc.apply_recommendation(rec, correlation_id="cb1")
 
-    assert [d.strategy_id for d in applied] == ["bleeder"]
+    assert applied is True
     assert lc.state == AlphaLifecycleState.QUARANTINED
     entry = ledger.latest_for("bleeder")
     assert entry is not None
@@ -190,8 +191,9 @@ def test_apply_skips_non_live_alpha() -> None:
         realized_margin_ratio=0.0,
         decay_z=None,
     )
-    applied = apply_cost_circuit_breaker([decision], {"research_only": lc})
-    assert applied == []
+    rec = QuarantineRecommendation.from_decision(decision)
+    applied = lc.apply_recommendation(rec)
+    assert applied is False
     assert lc.state == AlphaLifecycleState.RESEARCH
 
 
@@ -210,8 +212,8 @@ def test_apply_ignores_non_quarantine_decisions() -> None:
         realized_margin_ratio=5.0,
         decay_z=None,
     )
-    applied = apply_cost_circuit_breaker([ok], {"good": lc})
-    assert applied == []
+    recs = QuarantineRecommendation.from_decisions([ok])
+    assert recs == ()
     assert lc.state == AlphaLifecycleState.LIVE
 
 
@@ -233,7 +235,10 @@ def test_apply_records_structured_quarantine_evidence(tmp_path) -> None:
         realized_margin_ratio=0.0,
         decay_z=None,
     )
-    apply_cost_circuit_breaker([decision], {"bleeder": lc}, correlation_id="cb1")
+    lc.apply_recommendation(
+        QuarantineRecommendation.from_decision(decision),
+        correlation_id="cb1",
+    )
 
     entry = ledger.latest_for("bleeder")
     assert entry is not None
@@ -246,6 +251,35 @@ def test_apply_records_structured_quarantine_evidence(tmp_path) -> None:
     # A genuine cost bleed maps to compression 0.0 → crosses the documented
     # threshold, so it is NOT mislabelled spurious.
     assert ev.pnl_compression_ratio_5d == 0.0
+
+
+def test_engine_5_demotion_always_commits(tmp_path) -> None:
+    """Behavioural: engine 5 commits LIVE -> QUARANTINED from an engine-12
+    recommendation. The oracle has no engine-5 manifest entry, so a hash
+    cannot catch a dropped demotion."""
+    clock = SimulatedClock(start_ns=0)
+    ledger = PromotionLedger(tmp_path / "ledger.jsonl")
+    lc = _live_lifecycle("bleeder", clock, ledger)
+    rec = QuarantineRecommendation.from_decision(
+        CircuitBreakerDecision(
+            strategy_id="bleeder",
+            action=ACTION_QUARANTINE,
+            reason="net -50.00 <= 0 over 40 fills (paying fees for no edge)",
+            n_fills=40,
+            net=-50.0,
+            mean_edge_bps=0.0,
+            mean_cost_bps=2.0,
+            realized_margin_ratio=0.0,
+            decay_z=None,
+        )
+    )
+    assert lc.apply_recommendation(rec, correlation_id="cb1") is True
+    assert lc.state == AlphaLifecycleState.QUARANTINED
+    entry = ledger.latest_for("bleeder")
+    assert entry is not None
+    assert entry.from_state == "LIVE"
+    assert entry.to_state == "QUARANTINED"
+    assert "cost-circuit-breaker" in entry.metadata.get("reason", "")
 
 
 def test_spurious_trigger_still_commits_and_warns(caplog) -> None:

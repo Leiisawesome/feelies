@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -36,10 +37,12 @@ from feelies.promotion.evidence import (
     CapitalStageTier,
     GateId,
     GateThresholds,
+    QuarantineTriggerEvidence,
     evidence_to_metadata,
     validate_gate,
 )
 from feelies.promotion.ledger import PromotionLedger, PromotionLedgerEntry
+from feelies.forensics.cost_circuit_breaker import QuarantineRecommendation
 from feelies.core.clock import Clock
 from feelies.core.state_machine import StateMachine, TransitionRecord
 
@@ -399,6 +402,30 @@ class AlphaLifecycle:
             correlation_id=correlation_id,
             metadata=metadata,
         )
+
+    def apply_recommendation(
+        self,
+        recommendation: QuarantineRecommendation,
+        *,
+        actor: str = "cost-circuit-breaker",
+        correlation_id: str = "",
+    ) -> bool:
+        """LIVE -> QUARANTINED from an engine-12 recommendation.
+
+        Records actor, reason and evidence on the ledger.  Returns True
+        if the demotion was applied.  Non-LIVE alphas are skipped: a
+        RESEARCH/PAPER alpha cannot be quarantined (the gate that blocks
+        its *promotion* is the relevant control there).  Inv-11: the
+        demotion always commits once this method calls :meth:`quarantine`.
+        """
+        if not self.is_live:
+            return False
+        self.quarantine(
+            f"{actor}: {recommendation.reason}",
+            structured_evidence=[_recommendation_to_quarantine_evidence(recommendation)],
+            correlation_id=correlation_id,
+        )
+        return True
 
     def revalidate_to_paper(
         self,
@@ -823,6 +850,43 @@ class AlphaLifecycle:
                 "Direct state restoration requires the internal token. Use restore(data) instead."
             )
         self._sm._state = target  # noqa: SLF001
+
+
+def _recommendation_to_quarantine_evidence(
+    decision: QuarantineRecommendation,
+) -> QuarantineTriggerEvidence:
+    """Project a circuit-breaker decision into structured quarantine evidence.
+
+    Inv-13: the durable ledger entry should carry *why* the alpha was demoted
+    in machine-readable form, not only a free-text reason.  The cost-survival
+    breaker is a different trigger model than the documented decay-metric
+    thresholds, so the realized signals are recorded faithfully:
+
+    * the qualitative trip drivers go into ``crowding_symptoms`` as tags;
+    * the realized gross margin is exposed via ``pnl_compression_ratio_5d``
+      (clamped to ``>= 0``) so a genuine cost bleed (margin <= 0) crosses the
+      documented quarantine threshold and is not mislabelled spurious.
+
+    A trip that keys only on a fragile-but-positive margin or a decay z-score
+    may still draw a ``validate_quarantine_trigger`` "spurious-looking" flag;
+    that is benign — the demotion is fail-safe (Inv-11) and the free-form
+    ``reason`` records the real driver.
+    """
+    symptoms: list[str] = []
+    if decision.net <= 0.0:
+        symptoms.append("net_negative_over_window")
+    if decision.mean_cost_bps > 0.0 and decision.realized_margin_ratio < 1.0:
+        symptoms.append("realized_edge_below_cost")
+    if decision.decay_z is not None and decision.decay_z > 2.0:
+        symptoms.append("edge_decay_zscore")
+
+    margin = decision.realized_margin_ratio
+    compression = 1.0 if not math.isfinite(margin) else max(0.0, margin)
+
+    return QuarantineTriggerEvidence(
+        crowding_symptoms=tuple(symptoms),
+        pnl_compression_ratio_5d=compression,
+    )
 
 
 def _evidence_to_dict(evidence: PromotionEvidence) -> dict[str, Any]:

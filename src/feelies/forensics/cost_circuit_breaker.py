@@ -1,17 +1,16 @@
-"""Evaluate and apply cost-based alpha quarantine decisions.
+"""Evaluate cost-based alpha quarantine recommendations.
 
 ``evaluate_cost_circuit_breaker`` is a pure function of fills and policy.
-``apply_cost_circuit_breaker`` writes lifecycle state and must run only at a
-session or epoch boundary. Insufficient fill history produces no action.
+``QuarantineRecommendation`` is the engine-12 output: evidence plus a
+recommendation. Engine 5 performs the ``LIVE -> QUARANTINED`` write.
+Insufficient fill history produces no action.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Iterable
 
-from feelies.promotion.evidence import QuarantineTriggerEvidence
 from feelies.forensics.cost_survival import per_alpha_cost_survival
 from feelies.forensics.decay_detector import DecayDetector
 from feelies.storage.trade_journal import TradeRecord
@@ -56,20 +55,44 @@ class CircuitBreakerDecision:
     run_fingerprint: str = ""
 
 
-@runtime_checkable
-class _Quarantinable(Protocol):
-    """Structural type the driver needs from an alpha lifecycle."""
+@dataclass(frozen=True, kw_only=True)
+class QuarantineRecommendation:
+    """Engine-12 recommendation that engine 5 may demote a LIVE alpha.
 
-    @property
-    def is_live(self) -> bool: ...
+    Engine 12 emits this; it does not write lifecycle state.
+    """
 
-    def quarantine(
-        self,
-        reason: str,
-        *,
-        structured_evidence: Sequence[object] | None = None,
-        correlation_id: str = "",
-    ) -> None: ...
+    strategy_id: str
+    reason: str
+    n_fills: int
+    net: float
+    mean_edge_bps: float
+    mean_cost_bps: float
+    realized_margin_ratio: float
+    decay_z: float | None
+    run_fingerprint: str = ""
+
+    @classmethod
+    def from_decision(cls, decision: CircuitBreakerDecision) -> QuarantineRecommendation:
+        return cls(
+            strategy_id=decision.strategy_id,
+            reason=decision.reason,
+            n_fills=decision.n_fills,
+            net=decision.net,
+            mean_edge_bps=decision.mean_edge_bps,
+            mean_cost_bps=decision.mean_cost_bps,
+            realized_margin_ratio=decision.realized_margin_ratio,
+            decay_z=decision.decay_z,
+            run_fingerprint=decision.run_fingerprint,
+        )
+
+    @classmethod
+    def from_decisions(
+        cls, decisions: Iterable[CircuitBreakerDecision]
+    ) -> tuple[QuarantineRecommendation, ...]:
+        return tuple(
+            cls.from_decision(d) for d in decisions if d.action == ACTION_QUARANTINE
+        )
 
 
 def evaluate_cost_circuit_breaker(
@@ -158,73 +181,6 @@ def evaluate_cost_circuit_breaker(
     return decisions
 
 
-def apply_cost_circuit_breaker(
-    decisions: Iterable[CircuitBreakerDecision],
-    lifecycles: Mapping[str, _Quarantinable],
-    *,
-    correlation_id: str = "",
-) -> list[CircuitBreakerDecision]:
-    """Drive ``LIVE -> QUARANTINED`` for each QUARANTINE decision whose
-    alpha is currently LIVE.  Returns the decisions actually applied.
-
-    MUST be called at a session / epoch boundary (never per-tick) — see the
-    module docstring.  Non-LIVE alphas are skipped: a RESEARCH/PAPER alpha
-    cannot be quarantined (the gate that blocks its *promotion* is the
-    relevant control there).
-    """
-    applied: list[CircuitBreakerDecision] = []
-    for decision in decisions:
-        if decision.action != ACTION_QUARANTINE:
-            continue
-        lifecycle = lifecycles.get(decision.strategy_id)
-        if lifecycle is None or not lifecycle.is_live:
-            continue
-        lifecycle.quarantine(
-            f"cost-circuit-breaker: {decision.reason}",
-            structured_evidence=[_decision_to_quarantine_evidence(decision)],
-            correlation_id=correlation_id,
-        )
-        applied.append(decision)
-    return applied
-
-
-def _decision_to_quarantine_evidence(
-    decision: CircuitBreakerDecision,
-) -> QuarantineTriggerEvidence:
-    """Project a circuit-breaker decision into structured quarantine evidence.
-
-    Inv-13: the durable ledger entry should carry *why* the alpha was demoted
-    in machine-readable form, not only a free-text reason.  The cost-survival
-    breaker is a different trigger model than the documented decay-metric
-    thresholds, so the realized signals are recorded faithfully:
-
-    * the qualitative trip drivers go into ``crowding_symptoms`` as tags;
-    * the realized gross margin is exposed via ``pnl_compression_ratio_5d``
-      (clamped to ``>= 0``) so a genuine cost bleed (margin <= 0) crosses the
-      documented quarantine threshold and is not mislabelled spurious.
-
-    A trip that keys only on a fragile-but-positive margin or a decay z-score
-    may still draw a ``validate_quarantine_trigger`` "spurious-looking" flag;
-    that is benign — the demotion is fail-safe (Inv-11) and the free-form
-    ``reason`` records the real driver.
-    """
-    symptoms: list[str] = []
-    if decision.net <= 0.0:
-        symptoms.append("net_negative_over_window")
-    if decision.mean_cost_bps > 0.0 and decision.realized_margin_ratio < 1.0:
-        symptoms.append("realized_edge_below_cost")
-    if decision.decay_z is not None and decision.decay_z > 2.0:
-        symptoms.append("edge_decay_zscore")
-
-    margin = decision.realized_margin_ratio
-    compression = 1.0 if not math.isfinite(margin) else max(0.0, margin)
-
-    return QuarantineTriggerEvidence(
-        crowding_symptoms=tuple(symptoms),
-        pnl_compression_ratio_5d=compression,
-    )
-
-
 __all__ = [
     "ACTION_QUARANTINE",
     "ACTION_WATCH",
@@ -232,6 +188,6 @@ __all__ = [
     "ACTION_INSUFFICIENT",
     "CircuitBreakerPolicy",
     "CircuitBreakerDecision",
+    "QuarantineRecommendation",
     "evaluate_cost_circuit_breaker",
-    "apply_cost_circuit_breaker",
 ]
