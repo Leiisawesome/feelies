@@ -8,8 +8,6 @@ branches are G26.  The root is an explicit allowlist, not a hard-coded
 
 from __future__ import annotations
 
-import pytest
-
 from tools.arch.coupling import mode_branches
 
 _SEAM_PREFIXES = ("src/feelies/execution/", "src/feelies/broker/")
@@ -20,7 +18,6 @@ def _allowed(path: str) -> bool:
     return path == _COMPOSITION_ROOT or path.startswith(_SEAM_PREFIXES)
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G26")
 def test_mode_branches_only_at_composition_root() -> None:
     hits = [h for h in mode_branches() if h["kind"] == "operating_mode"]
     assert hits, "scanner found no OperatingMode branch — the seam check is vacuous"

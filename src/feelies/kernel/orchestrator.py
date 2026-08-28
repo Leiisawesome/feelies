@@ -40,7 +40,7 @@ from feelies.core.gate_registry import record_verdict
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
-from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.platform_config import PlatformConfig
 from feelies.core.errors import (
     ConfigurationError,
     OrchestratorPipelineAbortError,
@@ -573,6 +573,7 @@ class Orchestrator:
         self._bus.subscribe(MetricEvent, self._on_metric_event)
 
         self._latency_monitor = _LatencyBudgetMonitor()
+        self._observe_latency_budgets = False
         self._latency_reduce_only = False
         self._bus.subscribe(LatencyBreach, self._on_latency_breach)
 
@@ -819,6 +820,7 @@ class Orchestrator:
             config.validate()
             cfg = _resolve_boot_config(config)
             self._config = cfg
+            self._observe_latency_budgets = cfg.mode.name != "BACKTEST"
             market_impact_factor = Decimal(str(cfg.cost_market_impact_factor))
             max_impact_half_spreads = Decimal(str(cfg.cost_max_impact_half_spreads))
             within_l1_impact_factor = Decimal(str(cfg.cost_within_l1_impact_factor))
@@ -2174,7 +2176,7 @@ class Orchestrator:
         # Record always-on timers directly so they cannot shift kernel event IDs.
         _attribution_timing_keys = frozenset({"sensor_fanout_ns", "sm_transition_ns"})
         timings = getattr(self, "_tick_timings", {})
-        if self._config is not None and self._config.mode is not OperatingMode.BACKTEST:
+        if self._observe_latency_budgets:
             samples: dict[str, int] = {str(k): int(v) for k, v in timings.items()}
             samples["tick_to_decision_latency_ns"] = latency_ns
             for breach in self._latency_monitor.observe(
