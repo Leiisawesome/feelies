@@ -2911,7 +2911,11 @@ ROLLBACK:        revert; the branches return and S7 narrows back to token
 
 ```
 STEP:            S-30a
-CLOSES:          G36 (residual fail-quiet / exception taxonomy)
+CLOSES:          nothing. Establishes the KernelFault taxonomy that S-30b, S-30c,
+                 S-30d, S-30e and S-30f fail into, and converts the one handler
+                 in FILES. G36 stays OPEN: seventeen fail-quiet handlers remain
+                 unconverted, S6 stays xfail(strict) as its guard, and no step in
+                 the plan currently closes it.
 PROBLEM:         No single exception taxonomy. Remaining fail-quiet
                  handlers (18 after S-05/S-06) have nothing typed to
                  fail into. CORE §J.5; Inv-11.
@@ -2936,6 +2940,9 @@ PARITY IMPACT:   hold -- all 28 replay hashes, the manifest
                  undeclared behaviour change.
 DELETES:         fail-quiet handlers this step converts onto the
                  taxonomy (count named at fail-before)
+                 One handler, orchestrator.py:1454. The other seventeen are out
+                 of scope, not adjudicated -- none was inspected and ruled
+                 legitimate. The live record is fail_quiet_handlers() and S6.
 NET DELTA:       src modules +1, public symbols +1, branch points
                  negative by the handlers converted
 ROLLBACK:        revert; independently revertible until a later step
@@ -3093,6 +3100,39 @@ PARITY IMPACT:   hold on replay hashes (intraday, no corporate
 DELETES:         nothing -- net-new
 NET DELTA:       src modules +1, public symbols +1
 ROLLBACK:        revert; nothing depended on it.
+```
+```
+STEP:            S-30g
+CLOSES:          G36
+PROBLEM:         S-30a landed the KernelFault taxonomy and converted one handler;
+                 seventeen fail-quiet handlers remain, each swallowing without
+                 raising. They were left because they were outside S-30a's FILES,
+                 not because any was ruled legitimate. S6 still
+                 xfail(strict, GAP G36) and still asserts an empty quiet list, so
+                 the only durable record of the seventeen is
+                 fail_quiet_handlers(). CORE sec. J.5; Inv-11.
+WHY THIS OWNER:  The Kernel owns the taxonomy; each engine owns whether its own
+                 handler is a fault or a legitimate quiet path.
+REFACTOR PATH:   (1) enumerate the seventeen from fail_quiet_handlers() and
+                 classify each: convert to KernelFault, or keep as a named,
+                 justified exception; (2) convert the first set; (3) record the
+                 second set in an explicit allowlist S6 reads, with a one-line
+                 reason per entry -- a keeper that is merely undetected is the
+                 S-28a failure repeated; (4) drop S6's xfail only when the quiet
+                 list is empty of unallowlisted entries.
+FILES:           tests/conformance/test_fail_quiet.py (S6)
+                 <the modules holding the seventeen, enumerated at plan time from
+                 fail_quiet_handlers() -- name them before this step runs>
+BLAST RADIUS:    boundary -- unless conversion changes an exposure path, which is
+                 a STOP for re-scoping
+VALIDATED BY:    S6 with the allowlist, failing before and passing after; the
+                 parity oracle; all registered hashes
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint, all 64
+                 constants. A converted handler that changes what a caller sees
+                 is a behaviour change, not a type change: STOP and name it.
+DELETES:         the unconverted fail-quiet residue; S6's xfail
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert; the handlers return and S6 re-xfails.
 ```
 
 ---
