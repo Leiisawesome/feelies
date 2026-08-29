@@ -2951,31 +2951,50 @@ ROLLBACK:        revert; independently revertible until a later step
 ```
 STEP:            S-30b
 CLOSES:          G33
-PROBLEM:         Session/halt authority is 165 sites across 9 packages.
+PROBLEM:         Session/halt tradeability has no single owner. Phase 5's 165/9
+                 (kernel 65, ingestion 52) is not reproducible: measured
+                 non-comment halt-word sites are 108/9 (ingestion 51, kernel 8).
+                 Writer functions live in ingestion/data_integrity.py;
+                 the store, config copy, reset, and _in_halt_blackout remain on
+                 Orchestrator; massive_normalizer keeps a second _halt_on_codes.
+                 Enumerate sites at fail-before; do not inherit 165.
 FILES:           src/feelies/ingestion/data_integrity.py
-                 src/feelies/ingestion/ (new session authority module
-                 if one is created; name it, do not directory-scope)
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/kernel/exception_taxonomy.py
                  src/feelies/bootstrap.py
                  src/feelies/core/forbidden_reads.py
-                 src/feelies/core/platform_config.py
+                 src/feelies/core/sequence_authority.py
+                 src/feelies/core/wiring_manifest.py
+                 src/feelies/execution/order_admission.py
+                 src/feelies/execution/order_policy.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 tests/conformance/test_session_halt_authority.py
+                 tests/conformance/registry.py
+                 tests/kernel/test_orchestrator.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
                  tests/acceptance/test_backtest_app_baseline.py
-                 tests/conformance/ (new G33 closure scan, named)
-                 plus every production file this step actually edits
-                 among the 165 sites -- enumerate at fail-before, do
-                 not use a directory scope
+                 plus every production file fail-before names among remaining
+                 halt/session write sites -- named files only, no directory scope.
+                 If a new engine-1 module is created, name it here and add
+                 docs/prompts/audit_data_ingestion.md.
 WHY THIS OWNER:  Engine 1.
-REFACTOR PATH:   Authority in engine 1. Other sites become readers.
-                 Enumerate the 165 at fail-before; a ninth package is
-                 a FILES amendment. Do not add a PlatformConfig field
-                 unless the acceptance re-pin is declared.
+REFACTOR PATH:   Engine 1 is the sole writer of halt/session tradeability.
+                 Other sites read. Raise KernelFault(kind=SESSION_HALT) on
+                 conflict or missing authority; do not leave SESSION_HALT unused.
+                 Author test_session_halt_authority as the G33 scan (not C3).
+                 Register it; C3 stays ingress conservation. Do not add a
+                 PlatformConfig field unless the acceptance re-pin is declared.
+                 A ninth package is a FILES amendment.
 BLAST RADIUS:    platform-wide by site count
-VALIDATED BY:    C3, S14
+VALIDATED BY:    the new G33 test, S12, S14, symbol_halted replay
 PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A site
                  disagreement discovered here is a finding, not a silent re-pin.
                  The config-contract checksum also holds unless a PlatformConfig
                  field is added or deleted; if one is, declare the re-pin and
                  keep tests/acceptance/test_backtest_app_baseline.py in FILES.
-DELETES:         164 of 165 session/halt authorities
+DELETES:         every halt/session write outside the engine-1 authority
+                 (count named at fail-before, not 164 of 165)
 NET DELTA:       src modules 0 or +1, public symbols 0, branch points 0
 ROLLBACK:        revert this step only.
 ```
@@ -3120,9 +3139,16 @@ REFACTOR PATH:   (1) enumerate the seventeen from fail_quiet_handlers() and
                  reason per entry -- a keeper that is merely undetected is the
                  S-28a failure repeated; (4) drop S6's xfail only when the quiet
                  list is empty of unallowlisted entries.
-FILES:           tests/conformance/test_fail_quiet.py (S6)
-                 <the modules holding the seventeen, enumerated at plan time from
-                 fail_quiet_handlers() -- name them before this step runs>
+FILES:           tests/conformance/test_fail_quiet.py
+                 src/feelies/alpha/layer_validator.py
+                 src/feelies/bootstrap.py
+                 src/feelies/broker/ib/connection.py
+                 src/feelies/cli/env.py
+                 src/feelies/cli/promote.py
+                 src/feelies/composition/factor_neutralizer.py
+                 src/feelies/harness/backtest_runner.py
+                 src/feelies/ingestion/massive_ingestor.py
+                 src/feelies/ingestion/massive_ws.py
 BLAST RADIUS:    boundary -- unless conversion changes an exposure path, which is
                  a STOP for re-scoping
 VALIDATED BY:    S6 with the allowlist, failing before and passing after; the
