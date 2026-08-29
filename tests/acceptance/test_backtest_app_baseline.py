@@ -198,7 +198,7 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # ``platform_min_order_shares`` is part of the config snapshot.  Note this
 # constant pins the raw ``from_yaml`` snapshot; the operator report prints the
 # post-CLI-override hash, which is a different value for the same run.
-_BASELINE_CONFIG_HASH = "89d43554e749134925b9407c9e810a2fa2e7ce56a3efa26bf596818d0e3cd64c"
+_BASELINE_CONFIG_HASH = "bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95"
 _BASELINE_TRADE_PARITY_HASH = "0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3"
 # Content-bound identifier for the input tape (per-day event counts + ingestion
 # health). Distinct from the parity hashes: this pins what went *in*.
