@@ -2759,23 +2759,28 @@ PROBLEM:         `src/feelies/core/platform_config.py` names an alpha as a
                  default value: `moc_strategy_ids: tuple[str, ...] =
                  ("sig_moc_imbalance_v1",)` at `:169`, repeated in
                  `from_dict` at `:979-980`. `Orchestrator.boot` copies it
-                 to `_moc_strategy_ids` at `:864`. The identity check is
-                 `src/feelies/execution/order_policy.py:264-270` inside
-                 `_resolve_order_route` (`:250`): `strategy_id in
+                 to `_moc_strategy_ids` at `:864`. `_resolve_boot_config:207`
+                 constructs `PlatformConfig(moc_strategy_ids=())`. The
+                 identity check is `src/feelies/execution/order_policy.py:264-270`
+                 inside `_resolve_order_route` (`:250`): `strategy_id in
                  self._moc_strategy_ids` sets `OrderRequest.is_moc` and
                  diverts the order from the continuous book to the
-                 closing auction. `bootstrap._resolve_moc_bounds:907`
-                 is `None` when the tuple is empty. **No file under
+                 closing auction. `bootstrap._resolve_moc_bounds:892`
+                 returns `None` when the tuple is empty. **No file under
                  `configs/` or `platform.yaml` sets it, so every
                  deployment inherits the hardcoded default.** Inv-6;
                  CORE §C.7, §I.
 FILES:           src/feelies/core/platform_config.py:169, :979-980
-                 src/feelies/kernel/orchestrator.py:548, :864
-                 src/feelies/execution/order_policy.py:250-270
-                 src/feelies/bootstrap.py:905-908
+                 src/feelies/kernel/orchestrator.py:207, :548, :864
+                 src/feelies/execution/order_policy.py:250-270, :437, :628
+                 src/feelies/bootstrap.py:890-903
+                 src/feelies/alpha/loader.py
+                 alphas/SCHEMA.md
+                 alphas/_template/template_signal.alpha.yaml
+                 alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml
                  tests/kernel/test_orchestrator_order_routing.py
                  tests/conformance/test_alpha_agnosticism.py (S3)
-                 alphas/ (manifest declaration of the routing property)
+                 tests/conformance/test_a3_zero_core_edits.py (A3, new)
 WHY THIS OWNER:  Route selection is engine 9 policy. A route selected by a
                  string literal in platform config is that policy expressed as
                  an identity check. The target is **route-by-declared-property**
@@ -2804,7 +2809,7 @@ PARITY IMPACT:   Expected to hold. `sig_moc_imbalance_v1` is not the APP
 DELETES:         the platform's **only** alpha-id leak into core; the
                  `moc_strategy_ids` field; one identity-check branch
 NET DELTA:       src modules 0, public symbols **-1**, branch points **-1**.
-                 Test files +1.
+                 Test files +1 (A3).
 ROLLBACK:        revert; the default returns.
 ```
 ```
@@ -2852,19 +2857,23 @@ ROLLBACK:        revert; the allowlist widens again and the branches return.
 ```
 STEP:            S-28b
 CLOSES:          new -- S-28a ledger finding (the decisions did not move)
-PROBLEM:         S-28a narrowed S7's allowlist to _create_backend and removed 20
-                 OperatingMode enum comparisons, but rewrote them to
-                 config.mode.name rather than relocating what they decide. 12
-                 mode-dependent branches remain in build_platform (268, 275, 288,
-                 307, 358, 388, 415, 433, 445, 497, 515, 628) and six in helpers
-                 (760, 770, 1266, 1303, 1968, 2030). S7 cannot see a string
-                 compare, so the guard is honest about its token and blind to the
-                 behaviour. CORE sec. C.4 asks that mode differences live behind
-                 ExecutionBackend, which is about decisions, not spellings.
-                 :2030 lives in _enforce_factor_loadings_freshness, which
-                 tests/bootstrap/test_factor_loadings_freshness.py imports and
-                 drives via config.mode. Closing that site is a FILES amendment,
-                 not a silent third-file edit.
+PROBLEM:         S-28a rewrote 18 mode-dependent decisions to config.mode.name
+                 rather than relocating them. Eight of those are legal
+                 composition (operator warnings, ingest-health admit, session
+                 anchor, H10, ex-date guard, factor-loadings freshness) and
+                 stay, permitted by name. The target is the other ten:
+                 build_platform 288, 307, 358, 388, 415, 433, 445, 515 and
+                 helpers 760, 1266. Two of the ten are legal on closer
+                 reading: :760 (_select_clock) because the clock is needed
+                 before the factory, and :415 (PAPER MassiveNormalizer) because
+                 one instance is shared with the orchestrator — returning
+                 either is a _create_backend / _BackendBundle signature
+                 change, which is a STOP. Of the remaining eight, only :445
+                 (submitted-order journal) entered _create_backend. :433
+                 follows the returned router type; :288 :307 :358 :388 :515
+                 :1266 follow the selected clock. :2030 stays in the legal
+                 eight; closing it needs tests/bootstrap/test_factor_loadings_
+                 freshness.py in FILES.
 WHY THIS OWNER:  The Kernel owns composition. A composition root that branches on
                  mode eighteen times has a seam in name only.
 REFACTOR PATH:   (1) extend S7 in test_mode_seam.py (not coupling.py -- not in
