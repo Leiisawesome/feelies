@@ -2910,98 +2910,190 @@ ROLLBACK:        revert; the branches return and S7 narrows back to token
 ```
 
 ```
-STEP:            S-30
-CLOSES:          G31, G32, G33, G35, G36
-PROBLEM:         Five §F responsibilities with no single owner. G31 universe:
-                 **200 sites across 11 packages**, so every layer forms its own
-                 view and disagreement between them is undetectable. G32 symbol
-                 identity: **3 sites**, no CUSIP/FIGI mapping, no
-                 corporate-action handling — unimplemented rather than
-                 misplaced. G33 session/halt: 165 sites across 9 packages. G35
-                 backpressure: 4 sites, no queue-depth or drop policy. G36
-                 exception propagation: 20 fail-quiet handlers, of which S-05 and
-                 S-06 removed the two on decision paths, leaving 18 on cold or
-                 benign paths. Inv-11; Inv-8; CORE §J.5.
-FILES:           src/feelies/alpha/ (universe, §F.1 -> engine 5)
-                 src/feelies/portfolio/ (symbol identity, §F.2 -> engine 7)
-                 src/feelies/ingestion/ (session/halt, §F.3 -> engine 1;
-                 backpressure ingress, §F.6 -> engine 1)
-                 src/feelies/kernel/ (exception taxonomy, §F.5 -> Kernel)
-                 src/feelies/monitoring/ (budget-breach shedding, §F.6 -> engine 11)
-                 src/feelies/sensors/ (horizon grid, §F.8 -> engine 2)
-                 src/feelies/composition/, src/feelies/features/ (§F.8
-                 consumers: the private grid views these two hold)
-WHY THIS OWNER:  Phase 2 resolves all six and this step only implements the
-                 resolutions: §F.1 and §F.2 to engine 5 and engine 7
-                 respectively, §F.3 to engine 1, §F.5 to the Kernel, §F.6 split
-                 between engine 1 (ingress shedding) and engine 11 (budget
-                 breach — already landed in S-07), and **§F.8 to engine 2**.
-                 §F.8 was resolved in X1 as an addendum to Phase 2 rather than
-                 by Phase 2 itself, on that phase's own uncontested
-                 recommendation; it lands here because this is where §F is
-                 implemented, and because it is structurally identical to §F.1
-                 — both are frozen composition-time artifacts hashed into the
-                 run fingerprint.
-REFACTOR PATH:   **Ship as six independent commits, one per §F item**, in this
-                 order: §F.5 exception taxonomy first (every other step's ON
-                 EXCEPTION clause assumes one exists to fail into), then §F.3,
-                 §F.1, **§F.8**, §F.6 ingress, §F.2 last. §F.8 must follow §F.3
-                 because the grid's anchor is the session open §F.3 assigns to
-                 engine 1, and it follows §F.1 so the `UniverseSnapshot`
-                 pattern is already in place to copy. **G32 is the only gap in
-                 the plan that is net-new capability rather than remediation**
-                 — no symbol-identity handling exists to move — so it is the
-                 one candidate for deferral if scope must be cut; see G.9.
-BLAST RADIUS:    platform-wide for §F.1 and §F.3 by site count; boundary for the
-                 rest, §F.8 included (three holders across three packages)
-VALIDATED BY:    C2, C3, X1, X6, X7, S6, S14, the oracle. **G31 and G32 have no
-                 Phase 6 test (G.0.4)**, so this step must author its own gates
-                 and register them in S-01's registry, or S1 stays xfailed.
-                 §F.8 has no Phase 6 test either and authors one: an AST scan
-                 asserting no module outside engine 2 holds a sorted horizon
-                 collection, on the pattern of
-                 `tests/acceptance/test_no_walltime_outside_clock.py:72`.
-PARITY IMPACT:   hold — all 26 baselines. This step pre-authorises no re-pin
-                 and G.7 does not schedule one for it, so a moved baseline is
-                 an undeclared change: stop the line under CORE-EXEC §D.2 and
-                 hand the disagreement to the operator.
-                 §F.5, §F.6 and §F.2 hold — taxonomy, policy and net-new
-                 capability, none of which changes a draw or a hashed field.
-                 §F.1 and §F.3 are the risk: consolidating 200 and 165 sites
-                 onto one authority will change behaviour anywhere the current
-                 views **disagree**, and a disagreement is precisely what is
-                 undetectable today. Expect at most one baseline to move per §F
-                 item; a moved baseline here is a discovered disagreement, which
-                 is the finding, not the failure. One commit per item so the
-                 cause is nameable.
-                 **§F.8 holds, and its acceptance condition is not the hashes.**
-                 The grid is composition-time data that enters no hash helper's
-                 field list, so by Phase 1 §8's table the oracle is blind to it
-                 — the same property as `schema_version` under §F.7. Accept
-                 §F.8 on the removal of the three private views, not on a green
-                 suite: if `_horizons_sorted`, `_signal_horizons_sorted` and the
-                 composition-root derivation survive the commit, the contract
-                 was added without removing what it replaced and the
-                 disagreement it exists to prevent is still possible. It is
-                 also the one §F item here that could move a baseline for a
-                 *benign* reason — publishing one ordered grid where three
-                 independently sorted views existed changes nothing only if
-                 they already agreed, which is the same discovered-disagreement
-                 case as §F.1.
-DELETES:         199 of 200 universe definition points; 164 of 165 session/halt
-                 authorities; up to 18 fail-quiet handlers (18 -> 0); the three
-                 private horizon-grid views (`horizon_scheduler.py:97`,
-                 `synchronizer.py:74`, and the `_composition_signal_horizons`
-                 derivation at `bootstrap.py:1471`)
-NET DELTA:       src modules **+2** (symbol identity, exception taxonomy),
-                 public symbols +5 (+4, plus `HorizonGrid` declared in an
-                 existing engine-2 module — §K.5 rules §F.8 a contract to
-                 declare, not a capability to build, so it adds no module),
-                 branch points **-18** (fail-quiet handlers).
-ROLLBACK:        revert per §F item. §F.2's revert is trivial (nothing depended
-                 on it); §F.1's is the hardest in the plan. §F.8's is cheap —
-                 restore the three private views — which is the other reason it
-                 is safe to carry in the plan's widest step.
+STEP:            S-30a
+CLOSES:          G36 (residual fail-quiet / exception taxonomy)
+PROBLEM:         No single exception taxonomy. Remaining fail-quiet
+                 handlers (18 after S-05/S-06) have nothing typed to
+                 fail into. CORE §J.5; Inv-11.
+FILES:           src/feelies/kernel/exception_taxonomy.py (new)
+                 src/feelies/kernel/orchestrator.py
+                 tests/conformance/test_exception_containment.py
+                 tests/conformance/registry.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+WHY THIS OWNER:  Kernel owns the taxonomy. Later §F items may fail into
+                 it; they do not require it in order to exist.
+REFACTOR PATH:   (1) the taxonomy type; (2) orchestrator fail-into on
+                 the remaining decision-path handlers this step owns;
+                 (3) S6 still fails on any new fail-quiet handler.
+                 A taxonomy with no caller is an S-26 unused seam:
+                 STOP and say so rather than leaving it decorative.
+BLAST RADIUS:    boundary
+VALIDATED BY:    S6, X6, X7
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest
+                 fingerprint, and _BASELINE_CONFIG_HASH. No
+                 PlatformConfig field. A moved replay hash is an
+                 undeclared behaviour change.
+DELETES:         fail-quiet handlers this step converts onto the
+                 taxonomy (count named at fail-before)
+NET DELTA:       src modules +1, public symbols +1, branch points
+                 negative by the handlers converted
+ROLLBACK:        revert; independently revertible until a later step
+                 calls the type.
+```
+```
+STEP:            S-30b
+CLOSES:          G33
+PROBLEM:         Session/halt authority is 165 sites across 9 packages.
+FILES:           src/feelies/ingestion/data_integrity.py
+                 src/feelies/ingestion/ (new session authority module
+                 if one is created; name it, do not directory-scope)
+                 src/feelies/bootstrap.py
+                 src/feelies/core/forbidden_reads.py
+                 src/feelies/core/platform_config.py
+                 tests/acceptance/test_backtest_app_baseline.py
+                 tests/conformance/ (new G33 closure scan, named)
+                 plus every production file this step actually edits
+                 among the 165 sites -- enumerate at fail-before, do
+                 not use a directory scope
+WHY THIS OWNER:  Engine 1.
+REFACTOR PATH:   Authority in engine 1. Other sites become readers.
+                 Enumerate the 165 at fail-before; a ninth package is
+                 a FILES amendment. Do not add a PlatformConfig field
+                 unless the acceptance re-pin is declared.
+BLAST RADIUS:    platform-wide by site count
+VALIDATED BY:    C3, S14
+PARITY IMPACT:   replay hashes: hold unless a site disagreement is
+                 discovered (finding, not silent re-pin).
+                 _BASELINE_CONFIG_HASH: hold if no field add/delete;
+                 moves if a field is added or deleted -- declare
+                 89d43554-class re-pin and keep the acceptance file
+                 in FILES. G.7 currently schedules none.
+DELETES:         164 of 165 session/halt authorities
+NET DELTA:       src modules 0 or +1, public symbols 0, branch points 0
+ROLLBACK:        revert this step only.
+```
+```
+STEP:            S-30c
+CLOSES:          G31
+PROBLEM:         Universe definition is 200 sites across 11 packages.
+                 No Phase 6 test (G.0.4).
+FILES:           the alpha module that holds UniverseSnapshot
+                 tests/conformance/ (new G31 gate)
+                 tests/conformance/registry.py
+                 tests/conformance/test_registry_closure.py
+                 src/feelies/core/forbidden_reads.py
+                 src/feelies/core/platform_config.py
+                 tests/acceptance/test_backtest_app_baseline.py
+                 plus every production file this step actually edits
+                 among the 200 sites -- enumerate at fail-before
+WHY THIS OWNER:  Engine 5.
+REFACTOR PATH:   One UniverseSnapshot. Author the G31 gate and
+                 register it; shrink _KNOWN_UNCOVERED by G31 only
+                 (G32 remains until S-30f). Equality, not
+                 `not uncovered`.
+BLAST RADIUS:    platform-wide by site count
+VALIDATED BY:    the new G31 test, S1, C2, S14
+PARITY IMPACT:   same shape as S-30b. Adding UniverseSnapshot as a
+                 PlatformConfig field moves _BASELINE_CONFIG_HASH
+                 even if configs/ never change (S-29 finding).
+                 Deriving it from existing `symbols` does not.
+DELETES:         199 of 200 universe definition points
+NET DELTA:       src modules 0, public symbols +1 if the snapshot
+                 is a new public type in an existing module
+ROLLBACK:        revert this step only. Hardest of the six.
+```
+```
+STEP:            S-30d
+CLOSES:          new -- §F.8 horizon grid (no Phase 5 gap ID in
+                 CLOSES; X1 addendum)
+PROBLEM:         Three private sorted-horizon views:
+                 sensors/horizon_scheduler.py _horizons_sorted,
+                 composition/synchronizer.py _signal_horizons_sorted,
+                 bootstrap.py _composition_signal_horizons.
+FILES:           src/feelies/sensors/horizon_scheduler.py
+                 src/feelies/composition/synchronizer.py
+                 src/feelies/features/aggregator.py
+                 src/feelies/bootstrap.py
+                 tests/conformance/ (AST scan: no sorted horizon
+                 collection outside engine 2)
+                 src/feelies/core/platform_config.py
+                 tests/acceptance/test_backtest_app_baseline.py
+WHY THIS OWNER:  Engine 2. Structurally the UniverseSnapshot pattern.
+REFACTOR PATH:   Declare HorizonGrid on an existing engine-2 module.
+                 Delete the three private views in the same commit.
+                 If they survive beside the contract, the step failed.
+                 Do not add a PlatformConfig field; keep
+                 horizons_seconds as the input. Anchor is existing
+                 session_open_ns -- does not require S-30b to have
+                 moved it, but must not mint a second session open.
+BLAST RADIUS:    boundary (three holders)
+VALIDATED BY:    the new AST scan, not a green replay suite
+PARITY IMPACT:   hold on replay hashes if the three views already
+                 agreed. A moved replay hash is a discovered
+                 disagreement. _BASELINE_CONFIG_HASH holds unless
+                 a field is added. The manifest fingerprint is
+                 blind to the grid (Phase 1 §8) -- do not accept
+                 on hashes.
+DELETES:         the three private views
+NET DELTA:       src modules 0, public symbols +1 (HorizonGrid)
+ROLLBACK:        restore the three views.
+```
+```
+STEP:            S-30e
+CLOSES:          G35 (ingress half; engine-11 budget-breach is S-07)
+PROBLEM:         No queue-depth or drop policy on ingest (4 sites).
+FILES:           the named ingestion admit/drop sites (enumerate at
+                 fail-before; do not directory-scope ingestion/)
+                 src/feelies/core/platform_config.py
+                 tests/acceptance/test_backtest_app_baseline.py
+WHY THIS OWNER:  Engine 1 owns ingress shedding.
+REFACTOR PATH:   Policy on the ingest path with a caller. A config
+                 field with no reader is S-26 -- do not add it.
+                 Do not edit monitoring/latency_budget.py (S-07/S-11).
+BLAST RADIUS:    boundary
+VALIDATED BY:    X1
+PARITY IMPACT:   hold -- all 28 replay hashes and fingerprint -- if
+                 no PlatformConfig field is added. Adding
+                 queue_depth / drop_policy moves _BASELINE_CONFIG_HASH
+                 by construction (S-29). Declare the re-pin or do
+                 not add the field. Current "F.6 holds, none of which
+                 changes a hashed field" is false if the field is
+                 added.
+DELETES:         ad-hoc drop paths this step replaces
+NET DELTA:       src modules 0, public symbols 0
+ROLLBACK:        revert this step only.
+```
+```
+STEP:            S-30f
+CLOSES:          G32
+PROBLEM:         Symbol identity unimplemented (3 sites). No CUSIP/
+                 FIGI, no corporate-action handling. No Phase 6 test.
+                 Deferrable per G.9 -- the platform is intraday.
+FILES:           src/feelies/portfolio/<named new module>.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
+                 tests/conformance/ (new G32 gate)
+                 tests/conformance/registry.py
+                 tests/conformance/test_registry_closure.py
+                 src/feelies/core/platform_config.py
+                 tests/acceptance/test_backtest_app_baseline.py
+WHY THIS OWNER:  Engine 7. Net-new capability, not a move.
+REFACTOR PATH:   If deferred, this step is a no-op and G.9 stays.
+                 If built: one module, one caller on a path the
+                 platform actually runs, or it is an S-26 unused
+                 injection. Register G32; shrink _KNOWN_UNCOVERED
+                 to (). Split package: _FILE_OWNERS is mandatory.
+BLAST RADIUS:    boundary
+VALIDATED BY:    the new G32 test, S1
+PARITY IMPACT:   hold on replay hashes (intraday, no corporate
+                 action on APP/2026-03-26). _BASELINE_CONFIG_HASH
+                 moves if a figi/cusip field is added to
+                 PlatformConfig; declare or do not add it.
+DELETES:         nothing -- net-new
+NET DELTA:       src modules +1, public symbols +1
+ROLLBACK:        revert; nothing depended on it.
 ```
 
 ---
