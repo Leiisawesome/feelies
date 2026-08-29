@@ -659,6 +659,7 @@ def build_platform(
         hazard_exit_controller=hazard_exit_controller,
         trading_session_bounds=trading_session_bounds,
         moc_bounds_configured=moc_bounds is not None,
+        session_by_strategy=loader.declared_sessions(),
         edge_calibration_factors=resolved_edge_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
@@ -888,9 +889,7 @@ def _resolve_trading_session_bounds(
 
 
 def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:
-    """Resolve closing-auction bounds, or ``None`` when disabled."""
-    if not config.moc_strategy_ids:
-        return None
+    """Resolve closing-auction bounds, or ``None`` when no session date exists."""
     cal_path = str(config.event_calendar_path) if config.event_calendar_path is not None else None
     return build_moc_bounds_from_platform(
         moc_session_date=config.moc_session_date,

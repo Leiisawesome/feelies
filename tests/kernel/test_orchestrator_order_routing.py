@@ -59,7 +59,7 @@ def test_order_route_precedence(
     policy = _FixedRoutePolicy(policy_decision) if policy_decision else None
     orch._min_cost_policy = policy  # type: ignore[assignment]
     if moc:
-        orch._moc_strategy_ids = frozenset({"test_strat"})
+        orch._session_by_strategy = {"test_strat": "closing_auction"}
         orch._moc_bounds_configured = True
 
     order_type, limit_price, is_moc = _resolve_order_route(orch,

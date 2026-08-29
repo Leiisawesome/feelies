@@ -262,7 +262,7 @@ def _resolve_order_route(
 ) -> tuple[OrderType, Decimal | None, bool]:
     """Resolve order type, limit price, and MOC flag from execution policy."""
     is_moc = (
-        strategy_id in self._moc_strategy_ids
+        self._session_by_strategy.get(strategy_id) == "closing_auction"
         and self._moc_bounds_configured
         and not is_exit_or_stop
     )

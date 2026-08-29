@@ -104,6 +104,7 @@ def test_a3_declared_closing_auction_routes_without_core_edits(tmp_path: Path) -
         sensor_specs=_SENSOR_SPECS,
         horizons_seconds=frozenset({30}),
         session_open_ns=SESSION_OPEN_NS,
+        moc_session_date="2026-01-15",
         account_equity=1_000_000.0,
         enforce_trend_mechanism=False,
     )

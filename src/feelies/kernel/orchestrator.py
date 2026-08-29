@@ -204,7 +204,6 @@ def _resolve_boot_config(config: Configuration) -> PlatformConfig:
     if isinstance(config, PlatformConfig):
         return config
     baseline = PlatformConfig(
-        moc_strategy_ids=(),
         rth_session_gating_enabled=False,
         session_flatten_enabled=False,
     )
@@ -385,6 +384,7 @@ class Orchestrator:
         size_shadow_sizer: "EdgeWeightedSizer | None" = None,
         size_shadow_sink: "list[SizeDivergence] | None" = None,
         thread_safe_sequences: bool = True,
+        session_by_strategy: Mapping[str, str] | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -544,8 +544,8 @@ class Orchestrator:
         # AVAILABLE is optimistic; use hard or unavailable for conservative universes.
         self._borrow_default_tier: BorrowTier = BorrowTier.AVAILABLE
 
-        # Strategies routed to MOC once session bounds resolve.
-        self._moc_strategy_ids: frozenset[str] = frozenset()
+        # Manifest-declared session route; closing_auction diverts to MOC.
+        self._session_by_strategy: dict[str, str] = dict(session_by_strategy or {})
         self._moc_bounds_configured = moc_bounds_configured
 
         # RTH entry suppression and close buying-power transition.
@@ -860,8 +860,6 @@ class Orchestrator:
                     "cost_htb_borrow_annual_bps for HARD-to-borrow names.",
                     self._borrow_default_tier.value,
                 )
-
-            self._moc_strategy_ids = frozenset(cfg.moc_strategy_ids)
 
             self._use_passive_entries = cfg.execution_mode in (
                 "passive_limit",
