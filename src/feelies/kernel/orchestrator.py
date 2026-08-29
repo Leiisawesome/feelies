@@ -137,6 +137,11 @@ from feelies.execution.regulatory.borrow_availability import (
 )
 from feelies.ingestion.data_integrity import (
     DataHealth,
+    _HaltTradeability,
+    _bind_halt_tradeability,
+    _configure_halt_from_config,
+    _require_halt_authority,
+    _reset_halt_state,
     _update_halt_state,
     _update_ssr_state,
     _data_health_blocks_trading,
@@ -386,6 +391,7 @@ class Orchestrator:
         size_shadow_sink: "list[SizeDivergence] | None" = None,
         thread_safe_sequences: bool = True,
         session_by_strategy: Mapping[str, str] | None = None,
+        halt_tradeability: _HaltTradeability | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -529,12 +535,8 @@ class Orchestrator:
         # unknown macro/micro pairing).
         self._pipeline_abort_requested = False
 
-        # LULD state and post-resume entry blackout; empty codes disable modeling.
-        self._halted_symbols: set[str] = set()
-        self._halt_blackout_until_ns: dict[str, int] = {}
-        self._halt_on_codes: frozenset[int] = frozenset()
-        self._halt_off_codes: frozenset[int] = frozenset()
-        self._halt_blackout_ns: int = 0
+        # LULD state lives on the engine-1 store; Orchestrator reads.
+        self._halt_tradeability = _bind_halt_tradeability(halt_tradeability, normalizer)
 
         # Session-sticky SSR symbols; empty inputs disable the restriction.
         self._ssr_active: set[str] = set()
@@ -844,9 +846,7 @@ class Orchestrator:
                     portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
                 )
 
-            self._halt_on_codes = frozenset(cfg.halt_on_condition_codes)
-            self._halt_off_codes = frozenset(cfg.halt_off_condition_codes)
-            self._halt_blackout_ns = cfg.halt_resolution_blackout_seconds * 1_000_000_000
+            _configure_halt_from_config(self, cfg)
             self._ssr_active = {symbol.upper() for symbol in cfg.ssr_active_symbols}
             self._ssr_codes = frozenset(cfg.ssr_trigger_condition_codes)
             self._borrow_tier = build_borrow_table(cfg.borrow_availability)
@@ -2866,8 +2866,7 @@ class Orchestrator:
         self._deferred_router_acks.clear()
         self._events_prelogged = False
         self._pipeline_abort_requested = False
-        self._halted_symbols.clear()
-        self._halt_blackout_until_ns.clear()
+        _reset_halt_state(self)
         self._ssr_active.clear()
         self._rth_close_bp_flipped = False
         self._rth_bp_session_date = None
@@ -3787,12 +3786,52 @@ class Orchestrator:
 
     # ── Configuration and data integrity ────────────────────────────
 
-    # LULD halt modeling.
+    # LULD halt modeling — store is engine 1; these attributes rebind tests
+    # onto that object. Tape updates go through ``_update_halt_state``.
+
+    @property
+    def _halted_symbols(self) -> set[str]:
+        return _require_halt_authority(self).halted_symbols
+
+    @_halted_symbols.setter
+    def _halted_symbols(self, value: set[str]) -> None:
+        _require_halt_authority(self).halted_symbols = value
+
+    @property
+    def _halt_blackout_until_ns(self) -> dict[str, int]:
+        return _require_halt_authority(self).blackout_until_ns
+
+    @_halt_blackout_until_ns.setter
+    def _halt_blackout_until_ns(self, value: dict[str, int]) -> None:
+        _require_halt_authority(self).blackout_until_ns = value
+
+    @property
+    def _halt_on_codes(self) -> frozenset[int]:
+        return _require_halt_authority(self).on_codes
+
+    @_halt_on_codes.setter
+    def _halt_on_codes(self, value: frozenset[int]) -> None:
+        _require_halt_authority(self).on_codes = value
+
+    @property
+    def _halt_off_codes(self) -> frozenset[int]:
+        return _require_halt_authority(self).off_codes
+
+    @_halt_off_codes.setter
+    def _halt_off_codes(self, value: frozenset[int]) -> None:
+        _require_halt_authority(self).off_codes = value
+
+    @property
+    def _halt_blackout_ns(self) -> int:
+        return _require_halt_authority(self).blackout_ns
+
+    @_halt_blackout_ns.setter
+    def _halt_blackout_ns(self, value: int) -> None:
+        _require_halt_authority(self).blackout_ns = value
 
     def _in_halt_blackout(self, symbol: str, now_ns: int) -> bool:
         """True while a symbol is inside its post-resume entry blackout."""
-        deadline = self._halt_blackout_until_ns.get(symbol)
-        return deadline is not None and now_ns < deadline
+        return _require_halt_authority(self).in_blackout(symbol, now_ns)
 
 
     # ── Reg-SHO / SSR short-sale restriction ────────────────────────
