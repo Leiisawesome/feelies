@@ -107,6 +107,9 @@ parameters:
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 120
 
+# Entries participate in the closing auction, not the continuous book.
+session: closing_auction
+
 # ── Risk Budget ───────────────────────────────────────────
 risk_budget:
   max_position_per_symbol: 150

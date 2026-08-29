@@ -84,6 +84,11 @@ parameters:
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 300                  # ≥ 30; must be in platform horizons set
 
+# ── Session route (optional; omit = continuous book) ──────
+# Closed set: continuous | closing_auction. closing_auction diverts
+# entries to the closing auction once session bounds resolve.
+# session: closing_auction
+
 # ── Risk Budget ───────────────────────────────────────────
 risk_budget:
   max_position_per_symbol: 200

@@ -145,6 +145,7 @@ Alphas can be placed in either layout:
 | `mechanism` | string | No (Phase 3) | Free-text mechanism summary; complementary to the v0.3 `trend_mechanism` block below. |
 | `trend_mechanism` | dict | No (Phase 1.1 parsed, Phase 3.1 enforced) | v0.3 mechanism descriptor, see below. |
 | `hazard_exit` | dict | No (Phase 1.1 parsed, Phase 4.1 enforced) | v0.3 hazard-rate exit policy, see below. |
+| `session` | string | No | Order-route session. Closed set: `continuous` (default when omitted) or `closing_auction`. `closing_auction` diverts entry orders to the closing auction once MOC session bounds resolve; exits stay on the continuous book. Engine 9 reads this property — never an alpha-id list in platform config. |
 | `promotion` | dict | No (Workstream F-5) | Per-alpha override of the platform `GateThresholds` used by `validate_gate(...)` at promotion time, see below. |
 | `lifecycle_state` | string | No (BT-13) | Only `"RESEARCH"` is accepted. Caps the alpha at RESEARCH — blocks PAPER/LIVE promotion — while it still loads for backtest/integration use, see below. |
 

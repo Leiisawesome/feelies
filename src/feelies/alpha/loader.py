@@ -101,6 +101,10 @@ _LAYER_PHASE_MAP = {
     "PORTFOLIO": "Phase 4 (composition layer)",
 }
 
+_SESSION_CONTINUOUS = "continuous"
+_SESSION_CLOSING_AUCTION = "closing_auction"
+_ALLOWED_SESSIONS = frozenset({_SESSION_CONTINUOUS, _SESSION_CLOSING_AUCTION})
+
 # Closed taxonomy for declared trend-formation mechanisms.
 _TREND_MECHANISM_FAMILIES = {
     "KYLE_INFO",
@@ -226,6 +230,7 @@ class AlphaLoader:
         self._enforce_trend_mechanism = bool(enforce_trend_mechanism)
         self._enforce_layer_gates = bool(enforce_layer_gates)
         self._regime_engine_options = dict(regime_engine_options or {})
+        self._declared_sessions: dict[str, str] = {}
 
     def load(
         self,
@@ -251,6 +256,15 @@ class AlphaLoader:
             source=str(path),
             manifest_hash=compute_manifest_hash(path),
         )
+
+    def declared_sessions(self) -> dict[str, str]:
+        """Alpha id → declared ``session`` for every spec this loader parsed.
+
+        Absent ``session:`` is recorded as ``continuous``. Engine 9 reads
+        this map at composition; it is not an identity list in platform
+        config.
+        """
+        return dict(self._declared_sessions)
 
     def load_from_dict(
         self,
@@ -308,6 +322,7 @@ class AlphaLoader:
         3. **Mandatory** ``cost_arithmetic`` and ``regime_gate`` blocks.
         """
         alpha_id = spec["alpha_id"]
+        self._declared_sessions[str(alpha_id)] = self._parse_session(spec, source)
         param_defs = self._parse_parameters(spec.get("parameters", {}), source)
         params = self._resolve_params(param_defs, param_overrides or {}, source)
 
@@ -446,6 +461,7 @@ class AlphaLoader:
            operate on signals whose family is outside the whitelist.
         """
         alpha_id = spec["alpha_id"]
+        self._declared_sessions[str(alpha_id)] = self._parse_session(spec, source)
         param_defs = self._parse_parameters(spec.get("parameters", {}), source)
         params = self._resolve_params(param_defs, param_overrides or {}, source)
 
@@ -614,6 +630,24 @@ class AlphaLoader:
                 f"{list(sig.parameters)}"
             )
         return fn
+
+    @staticmethod
+    def _parse_session(spec: dict[str, Any], source: str) -> str:
+        """Closed session route: ``continuous`` (default) or ``closing_auction``."""
+        raw = spec.get("session")
+        if raw is None:
+            return _SESSION_CONTINUOUS
+        if not isinstance(raw, str):
+            raise AlphaLoadError(
+                f"{source}: 'session' must be a string, got {type(raw).__name__}"
+            )
+        session = raw.strip()
+        if session not in _ALLOWED_SESSIONS:
+            raise AlphaLoadError(
+                f"{source}: session {session!r} is not in the closed set "
+                f"{sorted(_ALLOWED_SESSIONS)}."
+            )
+        return session
 
     @staticmethod
     def _parse_horizon_seconds(spec: dict[str, Any], source: str) -> int:
