@@ -6664,5 +6664,215 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-29.json,
                  baseline_post-S-29.json, this ledger entry.
 
+---
+
+## S-30a  2026-08-29T12:00:14+08:00
+  STEP:          S-30a
+  BASE:          745afe19a68afbe32669acd4378bb86847df52d1
+  RESULT SHA:    7b14f412c7f357a48670acfdb3d7043085efb06e
+                 (exec/S-30a; not merged). HEAD also carries
+                 d707506 (plan amendment; duplicate of
+                 arch/exec 5051a28; disappears in the merge).
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. G36 stays OPEN. S6 remains
+                 xfail(strict, GAP G36) as its guard.
+                 S6 | failed-before: xfail G20 G23 G36 |
+                 passes-after: xfail G36 (17 unconverted)
+                 X7 | failed-before: no | passes-after: yes
+                 X6 | failed-before: no | passes-after: yes
+                 test_orchestrator_tick_handler_is_not_fail_quiet
+                 | failed-before: yes (orchestrator.py:1454
+                 except Exception) | passes-after: yes
+                 test_kernel_fault_taxonomy_kinds |
+                 failed-before: yes (ModuleNotFoundError) |
+                 passes-after: yes
+                 test_process_tick_fails_into_kernel_fault |
+                 failed-before: yes (handlers=['Exception']) |
+                 passes-after: yes
+                 conformance 91 passed / 6 xfailed -> 94
+                 passed / 6 xfailed (+3 new; no XPASS)
+                 mypy src/feelies: Success, 206 source files
+                 (205 -> 206). No type: ignore added.
+  TESTS:         capture pre-S-30a 4874 passed / 0 failed /
+                 29 skipped / 6 xfailed (GREEN; Saturday,
+                 the four exempted tests skipped)
+                 -> post-S-30a 4877 passed / 0 failed / 29
+                 skipped / 6 xfailed (GREEN; determinism
+                 148). not-paper_rth: 4876 passed, 0 failed,
+                 16 skipped, 14 deselected, 6 xfailed.
+                 +3 passed = the three new containment
+                 tests. Nothing previously passing moved.
+  PARITY:        declared hold -- all 28 replay hashes, the
+                 manifest fingerprint, and
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical (pre-S-30a vs post-S-30a); 0
+                 changed | MATCH. tools/exec fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         6 declared, 4 touched. verify_step missed
+                 the plan key (see VERIFY_STEP). Touched:
+                 src/feelies/kernel/exception_taxonomy.py
+                 src/feelies/kernel/orchestrator.py
+                 tests/conformance/test_exception_containment.py
+                 tests/conformance/registry.py
+                 Not touched (kernel is package-owned;
+                 no new path citation in scanned docs):
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 Nothing outside FILES.
+  NET DELTA:     declared src modules +1, public symbols +1,
+                 branch points negative by the handlers
+                 converted
+                 actual modules 205 -> 206 (+1)
+                 public_symbols 572 -> 573 (+1)
+                 sloc 45776 -> 45812 (+36)
+                 n_edges 659 -> 661 (+2)
+                 n_modules 167 -> 168 (+1)
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 fail-quiet handlers 18 -> 17
+                 DELETES: one handler, orchestrator.py:1454.
+                 The other seventeen are out of scope, not
+                 adjudicated.
+  DETERMINISM:   148 -> 148 after every commit; no replay
+                 hash moved
+  VERIFY_STEP:   `S-30A` not in plan (known key is `S-30a`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 6 declared, 4 touched, 0 extra CLEAN;
+                 PARITY moved 0 holds; TESTS 4874->4877
+                 passed, failed 0->0; NET DELTA compare-by-eye
+                 MATCH on modules +1 and public symbols +1.
+                 Fail-quiet -1 is the converted handler.
+                 Blast radius boundary -- human gate.
+  NOTES:         Two agent commits on exec/S-30a, in that
+                 order because a taxonomy with no caller is
+                 the S-26 unused seam. Fail-before tests
+                 first (942f8ce): three assertions red on
+                 this tree -- orchestrator.py:1454 still
+                 fail-quiet, feelies.kernel.exception_taxonomy
+                 absent, _process_tick handlers=['Exception'].
+                 Taxonomy and tick fail-into second
+                 (7b14f41), together, so KernelFault is
+                 constructed and caught in the same commit.
+                 d707506 is the plan amendment cherry-picked
+                 onto this branch; arch/exec has the same
+                 text as 5051a28. It disappears in the merge.
+                 KernelFault is one public type
+                 (FeeliesError, FailureMode.DEGRADE) with a
+                 nested Kind enum. Kind is not a measure.py
+                 public symbol, which is why public_symbols
+                 moved by one and not by seven.
+                 Exactly one handler was converted:
+                 orchestrator.py:1454. The scanner counted
+                 `except Exception: self._handle_tick_failure`
+                 as quiet because the except body itself
+                 neither raises, returns, nor logs. After
+                 the nested raise/catch of
+                 KernelFault(TICK_PIPELINE), that site is
+                 gone. 18 -> 17 is the real count.
+                 _process_tick wraps a bare Exception as
+                 TICK_PIPELINE and catches KernelFault;
+                 _handle_tick_failure still names
+                 type(__cause__), so SM triggers do not
+                 become KernelFault.
+                 What the next five fail into, and do not
+                 raise today: S-30b SESSION_HALT, S-30c
+                 UNIVERSE, S-30d HORIZON_GRID, S-30e
+                 INGRESS_ADMIT, S-30f SYMBOL_IDENTITY.
+                 No PlatformConfig field was added.
+                 No hash moved (64/64, fingerprint unmoved).
+                 Declared NET DELTA src modules +1, public
+                 symbols +1, branch points negative by the
+                 handlers converted. Measured: 205->206,
+                 572->573, sloc +36, n_edges +2
+                 (exception_taxonomy -> core.errors,
+                 orchestrator -> exception_taxonomy),
+                 cycles 1, alphaleak 0. MATCH on the two
+                 declared figures. Branch points: one
+                 fail-quiet except became a nested
+                 raise/catch; measure.py does not count it.
+                 Fail-quiet -1 is the named delete.
+                 S2 still xfail G40; S12 pass; S14 pass.
+                 Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      The seventeen remaining handlers were left
+                 because they were outside FILES, not
+                 because any was inspected and ruled
+                 legitimate. This is scope, not
+                 adjudication. G36 stays OPEN. S6 stays
+                 xfail(strict) as its guard. The only
+                 durable record of the seventeen is
+                 fail_quiet_handlers() and that xfail. This
+                 ledger entry is the only prose list -- if
+                 it stays uncommitted, a later reader has
+                 the scanner or nothing. The seventeen,
+                 from the fail-before dump:
+                 src/feelies/alpha/layer_validator.py:1190
+                   except (TypeError, ValueError)
+                 src/feelies/bootstrap.py:1516
+                   except KeyError
+                 src/feelies/bootstrap.py:1807
+                   except (TypeError, ValueError)
+                 src/feelies/broker/ib/connection.py:337
+                   except queue.Empty
+                 src/feelies/broker/ib/connection.py:413
+                   except (TypeError, ValueError)
+                 src/feelies/cli/env.py:22
+                   except ImportError
+                 src/feelies/cli/promote.py:172
+                   except StopIteration
+                 src/feelies/cli/promote.py:174
+                   except ValueError
+                 src/feelies/composition/factor_neutralizer.py:28
+                   except ImportError
+                 src/feelies/composition/factor_neutralizer.py:139
+                   except np.linalg.LinAlgError
+                 src/feelies/harness/backtest_runner.py:591
+                   except Exception
+                 src/feelies/harness/backtest_runner.py:796
+                   except Exception
+                 src/feelies/harness/backtest_runner.py:833
+                   except Exception
+                 src/feelies/ingestion/massive_ingestor.py:73
+                   except TypeError
+                 src/feelies/ingestion/massive_ws.py:184
+                   except queue.Empty
+                 src/feelies/ingestion/massive_ws.py:227
+                   except asyncio.CancelledError
+                 src/feelies/ingestion/massive_ws.py:343
+                   except asyncio.TimeoutError
+                 GAP_REGISTRY G36 still names S-30a as a
+                 closing step. The amended block says S-30a
+                 closes nothing and S-30g closes G36. G.8
+                 still says S-05, S-06, S-30. Not edited
+                 (not a FILES repair this step).
+                 verify_step.py uppercases the step id, so
+                 S-30A does not match plan key S-30a.
+                 Frozen; four checks by hand.
+                 audit_kernel.md does not list
+                 kernel/exception_taxonomy.py. Owned via
+                 _PACKAGE_OWNERS["kernel"]. S-21 shape;
+                 docs/prompts not in FILES.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26
+                 unused selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; four exempted baseline tests.
+  NEXT:          S-30b session/halt authority (platform-wide).
+                 G36 remains open until S-30g. Not started.
+                 Do not begin S-30b.
+                 Left uncommitted: baseline_pre-S-30a.json,
+                 baseline_post-S-30a.json, this ledger entry.
+
 
 
