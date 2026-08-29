@@ -46,6 +46,7 @@ from feelies.core.errors import (
     OrchestratorPipelineAbortError,
     SessionEntryBlockedError,
 )
+from feelies.kernel.exception_taxonomy import KernelFault
 from feelies.core.events import (
     Alert,
     AlertSeverity,
@@ -1450,16 +1451,25 @@ class Orchestrator:
         cid = quote.correlation_id
         self._quote_tick_in_flight = True; self._in_flight_quote = quote
         try:
-            self._process_tick_inner(quote)
-        except Exception as exc:
-            self._handle_tick_failure(cid, exc)
+            try:
+                self._process_tick_inner(quote)
+            except KernelFault:
+                raise
+            except Exception as exc:
+                raise KernelFault(str(exc), kind=KernelFault.Kind.TICK_PIPELINE) from exc
+        except KernelFault as fault:
+            self._handle_tick_failure(cid, fault)
+            return
         finally:
             self._quote_tick_in_flight = False; self._in_flight_quote = None
             self._micro.bind_timing_sink(None)
 
     def _handle_tick_failure(self, cid: str, original: Exception) -> None:
         """Recover state machines after a tick-processing exception."""
-        exc_name = type(original).__name__
+        if isinstance(original, KernelFault) and original.__cause__ is not None:
+            exc_name = type(original.__cause__).__name__
+        else:
+            exc_name = type(original).__name__
 
         try:
             self.reset(

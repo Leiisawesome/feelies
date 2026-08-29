@@ -46,11 +46,7 @@ def test_composition_position_lookup_handler_is_not_fail_quiet() -> None:
 def test_orchestrator_tick_handler_is_not_fail_quiet() -> None:
     """S-30a — the decision-path handler this step owns is no longer fail-quiet."""
     quiet = fail_quiet_handlers()
-    hits = [
-        h
-        for h in quiet
-        if h["path"].replace("\\", "/").endswith(_ORCHESTRATOR_POSIX)
-    ]
+    hits = [h for h in quiet if h["path"].replace("\\", "/").endswith(_ORCHESTRATOR_POSIX)]
     assert not hits, (
         "orchestrator still has fail-quiet except handler(s): "
         f"{hits[0]['path']}:{hits[0]['line']} except {hits[0]['exc_type']}"
@@ -89,12 +85,9 @@ def test_process_tick_fails_into_kernel_fault() -> None:
         if isinstance(n, ast.ExceptHandler) and n.type is not None
     ]
     ctor = [
-        n
-        for n in ast.walk(fn)
-        if isinstance(n, ast.Call) and ast.unparse(n.func) == "KernelFault"
+        n for n in ast.walk(fn) if isinstance(n, ast.Call) and ast.unparse(n.func) == "KernelFault"
     ]
     assert any("KernelFault" in t for t in handler_types), (
-        "_process_tick has no except KernelFault handler; "
-        f"handlers={handler_types!r}"
+        f"_process_tick has no except KernelFault handler; handlers={handler_types!r}"
     )
     assert ctor, "_process_tick never constructs KernelFault"
