@@ -6282,5 +6282,387 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-28b.json,
                  baseline_post-S-28b.json, this ledger entry.
 
+---
+
+## S-29  2026-08-29T10:30:00+08:00
+  STEP:          S-29
+  BASE:          77ad87f999ac17ae70a911206525ce44c8dbbc39
+  RESULT SHA:    362cbaddb3f29da05f1ad1c5e67cc428388130e8
+                 (exec/S-29; not merged)
+  VERDICT:       blocked
+  CONFORMANCE:   A3 | failed-before: yes (2 failed: core
+                 literals at platform_config.py:169 and :979;
+                 is_moc False for a3_probe_closing_auction) |
+                 passes-after: yes (after 362cbad)
+                 S3 | failed-before: xfail G25 | passes-after:
+                 yes (xfail dropped)
+                 conformance 88 passed / 7 xfailed -> 91
+                 passed / 6 xfailed (S3 un-xfailed, A3 +2;
+                 no XPASS)
+                 mypy src/feelies: Success, 205 source files
+                 after every commit. pyproject.toml mypy
+                 block not edited.
+  TESTS:         capture pre-S-29 4871 passed / 0 failed / 29
+                 skipped / 7 xfailed (GREEN; Saturday, the
+                 four exempted tests skipped)
+                 -> post-S-29 4873 passed / 1 failed / 29
+                 skipped / 7 xfailed in the capture summary
+                 (determinism 148). not-paper_rth: 4872
+                 passed, 1 failed, 16 skipped, 14 deselected,
+                 6 xfailed.
+                 Failure:
+                 tests/acceptance/test_backtest_app_baseline.py
+                 ::test_app_baseline_config_contract_hash
+                 computed
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95
+                 != pinned
+                 89d43554e749134925b9407c9e810a2fa2e7ce56a3efa26bf596818d0e3cd64c.
+                 Not in the four-name exemption set. APP yaml
+                 does not name sig_moc_imbalance_v1; the hash
+                 is PlatformConfig.snapshot over every
+                 dataclass field, so deleting moc_strategy_ids
+                 moves the checksum without moving the 28
+                 replay hashes. The pin lives in
+                 tests/acceptance/test_backtest_app_baseline.py
+                 which is not in FILES. Re-pin is a twelfth
+                 file.
+  PARITY:        declared hold -- all 28 replay hashes, the
+                 manifest fingerprint, and all 64 scanned
+                 constants | actual file constants 64/64
+                 identical (pre-S-29 vs post-S-29); 0 pinned
+                 constants edited | MATCH on the map.
+                 Runtime _BASELINE_CONFIG_HASH diverged at
+                 362cbad | MISMATCH with declared hold.
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         11 declared, 11 touched. verify_step CLEAN
+                 on FILES. Touched:
+                 src/feelies/core/platform_config.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_policy.py
+                 src/feelies/bootstrap.py
+                 src/feelies/alpha/loader.py
+                 alphas/SCHEMA.md
+                 alphas/_template/template_signal.alpha.yaml
+                 alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml
+                 tests/kernel/test_orchestrator_order_routing.py
+                 tests/conformance/test_alpha_agnosticism.py
+                 tests/conformance/test_a3_zero_core_edits.py
+  NET DELTA:     declared src modules 0, public symbols -1,
+                 branch points -1, test files +1 (A3)
+                 actual modules 205 -> 205 (+0)
+                 public_symbols 572 -> 572 (+0)
+                 sloc 45752 -> 45776 (+24)
+                 n_edges 659 -> 659
+                 n_modules 167 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 0
+  DETERMINISM:   148 -> 148 after every commit; no replay
+                 hash moved
+  VERIFY_STEP:   FILES 11/11 CLEAN; PARITY moved 0 on the
+                 file map holds; TESTS 4871->4873 passed,
+                 failed 0->1 (named above); NET DELTA
+                 compare-by-eye MISMATCH on declared public
+                 symbols -1 (dataclass field is not a
+                 measure.py public symbol). Oracle says
+                 CLEAN, blast radius boundary -- but the
+                 config-hash test is a stop.
+  NOTES:         Four commits on exec/S-29, in this order
+                 because each needs the one before it. A3
+                 first (0584d28), while the leak and the
+                 identity check still exist, so both halves
+                 are proven red on this tree. Manifest
+                 session property second (738527b) so the
+                 YAML and loader record closing_auction
+                 before routing reads it. Resolver third
+                 (a70ca30) because _resolve_order_route
+                 already takes exec_style, quote, passive
+                 flags and cost policy -- open question
+                 answered: not a one-line default change;
+                 only the MOC source changes from
+                 strategy_id in _moc_strategy_ids to
+                 _session_by_strategy.get ==
+                 "closing_auction". Field deletion last
+                 (362cbad) so S3 cannot pass while the
+                 literals remain.
+                 mypy config: operator NOTES and the plan
+                 commit message said it was named in FILES.
+                 The FILES field lists eleven paths and no
+                 pyproject.toml / mypy.ini. Not edited. No
+                 type: ignore added.
+                 Eight callers of moc_strategy_ids /
+                 _moc_strategy_ids in src+tests before this
+                 step, all in FILES. No ninth. Attribute
+                 sites after: none.
+                 Guard spelling: session ==
+                 "closing_auction" after strip. Evades:
+                 session: moc, session: MOC, session:
+                 Closing Auction, fill_model.session,
+                 is_moc: true, route: moc, a non-string
+                 session (rejected at load, not at route).
+                 No hash moved at commits 1-3. Commit 4
+                 moved the computed APP config-contract
+                 hash; pinned constants were not edited.
+                 H3/S2/S12/S14: S2 still xfail G40; S12
+                 pass; S14 pass; S3 xfail -> pass.
+                 Declared NET DELTA public symbols -1,
+                 branch points -1. Measured: public_symbols
+                 572 -> 572, alphaleak 2 -> 0, sloc +24.
+                 The empty-tuple short-circuit in
+                 _resolve_moc_bounds was deleted; the
+                 identity check was replaced by a property
+                 read. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      Closing G25 by deleting moc_strategy_ids
+                 necessarily moves _BASELINE_CONFIG_HASH.
+                 snapshot() hashes every dataclass field;
+                 APP/2026-03-26 never listed that alpha, so
+                 trade parity holds and the config-contract
+                 pin does not. Defaulting the field to ()
+                 would also move it. Re-pin requires
+                 tests/acceptance/test_backtest_app_baseline.py
+                 in FILES. Plan declared HOLD and did not
+                 name this constant.
+                 Operator NOTES: "the eight callers and the
+                 mypy config are named." Tree: eleven FILES
+                 entries, no mypy config. S-24: NOTES are
+                 not authoritative.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26
+                 unused selection_policy injection; S-28a
+                 token-vs-spelling; four exempted baseline
+                 tests.
+  NEXT:          S-30 five §F responsibilities (platform-wide
+                 for G31/G33). Not started. Stop resolved by
+                 FILES amendment + fifth commit; see the
+                 following S-29 entry.
+                 Left uncommitted: baseline_pre-S-29.json,
+                 baseline_post-S-29.json, this ledger entry.
+
+---
+
+## S-29  2026-08-29T11:04:11+08:00
+  STEP:          S-29
+  BASE:          77ad87f999ac17ae70a911206525ce44c8dbbc39
+  RESULT SHA:    16a1b4b6f793172bdab8be8cc301716e65e161c8
+                 (exec/S-29; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   A3 | failed-before: yes (2 failed: core
+                 literals at platform_config.py:169 and :979;
+                 is_moc False for a3_probe_closing_auction) |
+                 passes-after: yes (after 362cbad)
+                 S3 | failed-before: xfail G25 | passes-after:
+                 yes (xfail dropped)
+                 conformance 88 passed / 7 xfailed -> 91
+                 passed / 6 xfailed (S3 un-xfailed, A3 +2;
+                 no XPASS)
+                 mypy src/feelies: Success, 205 source files
+                 after every commit including 16a1b4b.
+                 No type: ignore added.
+  TESTS:         capture pre-S-29 4871 passed / 0 failed / 29
+                 skipped / 7 xfailed (GREEN; Saturday, the
+                 four exempted tests skipped)
+                 -> post-S-29 recapture after re-pin 4874
+                 passed / 0 failed / 29 skipped / 6 xfailed
+                 (GREEN; determinism 148). not-paper_rth
+                 after re-pin: 4873 passed, 0 failed, 16
+                 skipped, 14 deselected, 6 xfailed.
+                 +3 passed = A3 +2 and S3 un-xfailed.
+  PARITY:        declared _BASELINE_CONFIG_HASH 89d43554 ->
+                 bb67b1c7; 28 replay hashes and the
+                 fingerprint hold | actual 64 constants, 1
+                 changed (_BASELINE_CONFIG_HASH full
+                 89d43554e749134925b9407c9e810a2fa2e7ce56a3efa26bf596818d0e3cd64c
+                 ->
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95);
+                 0 other parity diffs | MATCH. tools/exec
+                 fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         12 declared, 12 touched. verify_step CLEAN
+                 (process artifacts 1 ignored). Touched:
+                 src/feelies/core/platform_config.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_policy.py
+                 src/feelies/bootstrap.py
+                 src/feelies/alpha/loader.py
+                 alphas/SCHEMA.md
+                 alphas/_template/template_signal.alpha.yaml
+                 alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml
+                 tests/kernel/test_orchestrator_order_routing.py
+                 tests/conformance/test_alpha_agnosticism.py
+                 tests/conformance/test_a3_zero_core_edits.py
+                 tests/acceptance/test_backtest_app_baseline.py
+  NET DELTA:     declared src modules 0, public symbols **0**,
+                 branch points **-1**. Test files +1 (A3),
+                 alphaleak 2 -> 0.
+                 actual modules 205 -> 205 (+0)
+                 public_symbols 572 -> 572 (+0)
+                 sloc 45752 -> 45776 (+24)
+                 n_edges 659 -> 659
+                 n_modules 167 -> 167
+                 cycles 1 -> 1
+                 alphaleak 2 -> 0
+  DETERMINISM:   148 -> 148 after every commit; no replay
+                 hash moved
+  VERIFY_STEP:   FILES 12/12 CLEAN; PARITY moved 1
+                 (_BASELINE_CONFIG_HASH) declared break,
+                 matches; TESTS 4871->4874 passed, failed
+                 0->0; NET DELTA compare-by-eye MATCH on
+                 public symbols 0 and alphaleak 2 -> 0.
+  NOTES:         Five agent commits on exec/S-29, in this
+                 order because each needs the one before it.
+                 A3 first (0584d28) while the leak and the
+                 identity check still exist, so both halves
+                 of the new test are proven red on this
+                 tree. Manifest session property second
+                 (738527b) so the YAML and the loader record
+                 closing_auction before routing reads it.
+                 Resolver third (a70ca30) because
+                 _resolve_order_route already takes
+                 exec_style, quote, passive flags and cost
+                 policy -- the open question is answered:
+                 this is not a one-line default change; only
+                 the MOC source changes, from
+                 strategy_id in _moc_strategy_ids to
+                 _session_by_strategy.get ==
+                 "closing_auction". Field deletion fourth
+                 (362cbad) so S3 cannot pass while the
+                 literals remain. Re-pin fifth (16a1b4b)
+                 after the FILES amendment named the
+                 acceptance file. Operator plan commit
+                 061a331 sits between 4 and 5; not agent.
+                 The 28 replay hashes and the manifest
+                 fingerprint held. _BASELINE_CONFIG_HASH
+                 moved 89d43554 -> bb67b1c7 at the field
+                 deletion (362cbad), not at the re-pin.
+                 16a1b4b only updates the pin to the value
+                 already computed. Why it moved:
+                 PlatformConfig.snapshot() walks
+                 dataclasses.fields and hashes every field
+                 (cache_dir excepted). compute_config_hash
+                 is that checksum. Removing moc_strategy_ids
+                 changes the snapshot even though
+                 configs/bt_app.yaml never named
+                 sig_moc_imbalance_v1 and no APP order
+                 carried is_moc from the default. Replay
+                 behaviour did not change; the contract
+                 checksum did. Defaulting the field to ()
+                 would have moved it too.
+                 The mypy config was never in FILES. The
+                 earlier operator instruction that it was
+                 named was wrong. pyproject.toml was left
+                 untouched because it was not declared, not
+                 because that scope was skipped.
+                 git diff 77ad87f..HEAD -- pyproject.toml
+                 is empty. [tool.mypy] remains strict =
+                 true, python_version = 3.12, no
+                 ignore_errors overrides.
+                 alphaleak went 2 -> 0. That closed the
+                 last two alpha-literal leaks measure.py
+                 has flagged in core since Phase 0. At
+                 77ad87f the only quoted ALPHA_IDS hits
+                 under src/ were platform_config.py:169
+                 (field default
+                 ("sig_moc_imbalance_v1",)) and :980
+                 (from_dict fallback, same literal). The
+                 ledger recorded alphaleak 2 -> 2 from
+                 S-01 through S-28b; those lines drifted
+                 from :152/:954. After deletion:
+                 measure.py alphaleak CLEAN, n 0, hits [].
+                 git grep sig_moc_imbalance_v1 HEAD --
+                 src/ is empty.
+                 Eight callers of moc_strategy_ids /
+                 _moc_strategy_ids before, all in FILES,
+                 no ninth: platform_config.py:169,
+                 :979-980; orchestrator.py:207, :548,
+                 :864; order_policy.py:265;
+                 bootstrap.py:892;
+                 test_orchestrator_order_routing.py:62.
+                 After: none in src/ or tests/.
+                 Session guard: session ==
+                 "closing_auction" after strip. Catches
+                 the closed-set spelling the loader
+                 records. Evades: session: moc, session:
+                 MOC, session: Closing Auction,
+                 fill_model.session, is_moc: true, route:
+                 moc. A non-string session is rejected at
+                 load, not at route.
+                 Declared NET DELTA: src modules 0, public
+                 symbols 0, branch points -1, test files
+                 +1 (A3), alphaleak 2 -> 0. Measured:
+                 modules 205 -> 205, public_symbols 572
+                 -> 572, sloc +24, n_edges 659, cycles 1,
+                 alphaleak 2 -> 0. MATCH on modules,
+                 public symbols, and alphaleak. Branch
+                 points -1 is the identity-check in
+                 _resolve_order_route, replaced by a
+                 property read; measure.py does not count
+                 it. The empty-tuple short-circuit in
+                 _resolve_moc_bounds was also deleted.
+                 S2 still xfail G40; S12 pass; S14 pass;
+                 S3 xfail -> pass. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      The config-contract hash is sensitive to
+                 any PlatformConfig field add or delete,
+                 independently of whether the field affects
+                 behaviour or appears in any config file.
+                 snapshot() hashes dataclasses.fields; the
+                 APP yaml is irrelevant. That is a second
+                 oracle with a different sensitivity from
+                 the manifest fingerprint (event-schema
+                 field names, moved by S-17a and by S-31
+                 step 1's unread-event deletions). Replay
+                 hashes can hold while _BASELINE_CONFIG_HASH
+                 moves, which is what happened here.
+                 Every remaining step that adds or deletes
+                 a PlatformConfig field should expect the
+                 config-contract hash to move, and should
+                 have tests/acceptance/test_backtest_app_
+                 baseline.py in FILES. G.7 still schedules
+                 no such re-pin after S-16.
+                 Of S-30 through S-34, none currently list
+                 platform_config.py in FILES.
+                 S-30 is the remaining step whose work
+                 (universe, session/halt, symbol identity,
+                 backpressure, horizon grid) is the
+                 composition-time surface that would add
+                 or delete a PlatformConfig field if those
+                 authorities become config. Its PARITY
+                 IMPACT currently says hold and "G.7 does
+                 not schedule one" -- the same shape as
+                 this step's first stop.
+                 S-31 deletes unread event fields and
+                 moves the manifest fingerprint
+                 (declared); it does not change
+                 PlatformConfig.
+                 S-32, S-33, S-34 do not touch
+                 PlatformConfig.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26
+                 unused selection_policy injection; S-28a
+                 token-vs-spelling; four exempted baseline
+                 tests.
+  NEXT:          S-30 five §F responsibilities (platform-wide
+                 for G31/G33). Not started. Do not begin
+                 S-30.
+                 Left uncommitted: baseline_pre-S-29.json,
+                 baseline_post-S-29.json, this ledger entry.
+
 
 
