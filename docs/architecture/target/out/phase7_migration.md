@@ -2963,12 +2963,11 @@ REFACTOR PATH:   Authority in engine 1. Other sites become readers.
                  unless the acceptance re-pin is declared.
 BLAST RADIUS:    platform-wide by site count
 VALIDATED BY:    C3, S14
-PARITY IMPACT:   replay hashes: hold unless a site disagreement is
-                 discovered (finding, not silent re-pin).
-                 _BASELINE_CONFIG_HASH: hold if no field add/delete;
-                 moves if a field is added or deleted -- declare
-                 89d43554-class re-pin and keep the acceptance file
-                 in FILES. G.7 currently schedules none.
+PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A site
+                 disagreement discovered here is a finding, not a silent re-pin.
+                 The config-contract checksum also holds unless a PlatformConfig
+                 field is added or deleted; if one is, declare the re-pin and
+                 keep tests/acceptance/test_backtest_app_baseline.py in FILES.
 DELETES:         164 of 165 session/halt authorities
 NET DELTA:       src modules 0 or +1, public symbols 0, branch points 0
 ROLLBACK:        revert this step only.
@@ -2994,10 +2993,11 @@ REFACTOR PATH:   One UniverseSnapshot. Author the G31 gate and
                  `not uncovered`.
 BLAST RADIUS:    platform-wide by site count
 VALIDATED BY:    the new G31 test, S1, C2, S14
-PARITY IMPACT:   same shape as S-30b. Adding UniverseSnapshot as a
-                 PlatformConfig field moves _BASELINE_CONFIG_HASH
-                 even if configs/ never change (S-29 finding).
-                 Deriving it from existing `symbols` does not.
+PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A site
+                 disagreement discovered here is a finding, not a silent re-pin.
+                 The config-contract checksum also holds unless a PlatformConfig
+                 field is added or deleted; if one is, declare the re-pin and
+                 keep tests/acceptance/test_backtest_app_baseline.py in FILES.
 DELETES:         199 of 200 universe definition points
 NET DELTA:       src modules 0, public symbols +1 if the snapshot
                  is a new public type in an existing module
@@ -3070,15 +3070,14 @@ CLOSES:          G32
 PROBLEM:         Symbol identity unimplemented (3 sites). No CUSIP/
                  FIGI, no corporate-action handling. No Phase 6 test.
                  Deferrable per G.9 -- the platform is intraday.
-FILES:           src/feelies/portfolio/<named new module>.py
+FILES:           src/feelies/portfolio/symbol_identity.py
+                 tests/conformance/test_symbol_identity.py (new G32 gate)
+                 tests/conformance/registry.py
+                 tests/conformance/test_registry_closure.py
                  tests/docs/test_prompt_coverage_map.py
                  tests/docs/test_internal_links.py
                  docs/prompts/README.md
-                 tests/conformance/ (new G32 gate)
-                 tests/conformance/registry.py
-                 tests/conformance/test_registry_closure.py
                  src/feelies/core/platform_config.py
-                 tests/acceptance/test_backtest_app_baseline.py
 WHY THIS OWNER:  Engine 7. Net-new capability, not a move.
 REFACTOR PATH:   If deferred, this step is a no-op and G.9 stays.
                  If built: one module, one caller on a path the
