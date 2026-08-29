@@ -166,7 +166,6 @@ class PlatformConfig:
     borrow_availability: dict[str, str] = field(default_factory=dict)
 
     # MOC and closing-auction fill modeling.
-    moc_strategy_ids: tuple[str, ...] = ("sig_moc_imbalance_v1",)
     moc_session_date: str | None = None
     moc_cutoff_et: str = "15:50"
     official_close_et: str = "16:00"
@@ -976,9 +975,6 @@ class PlatformConfig:
                 str(k).upper(): str(v).lower()
                 for k, v in (data.get("borrow_availability") or {}).items()
             },
-            moc_strategy_ids=tuple(
-                str(s) for s in data.get("moc_strategy_ids", ("sig_moc_imbalance_v1",))
-            ),
             moc_session_date=(
                 str(data["moc_session_date"]) if data.get("moc_session_date") is not None else None
             ),

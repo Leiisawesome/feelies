@@ -2781,6 +2781,11 @@ FILES:           src/feelies/core/platform_config.py:169, :979-980
                  tests/kernel/test_orchestrator_order_routing.py
                  tests/conformance/test_alpha_agnosticism.py (S3)
                  tests/conformance/test_a3_zero_core_edits.py (A3, new)
+                 tests/acceptance/test_backtest_app_baseline.py
+                 (_BASELINE_CONFIG_HASH re-pin; PlatformConfig.snapshot() hashes
+                 every dataclass field, so deleting moc_strategy_ids moves the
+                 config-contract checksum even though the APP yaml never names
+                 sig_moc_imbalance_v1)
 WHY THIS OWNER:  Route selection is engine 9 policy. A route selected by a
                  string literal in platform config is that policy expressed as
                  an identity check. The target is **route-by-declared-property**
@@ -2806,10 +2811,13 @@ PARITY IMPACT:   Expected to hold. `sig_moc_imbalance_v1` is not the APP
                  and the reason is that an order moves from the closing auction
                  to the continuous book, which is a behaviour change and must be
                  stated as one.
+                 _BASELINE_CONFIG_HASH moves by construction at the field
+                 deletion: 89d43554 -> bb67b1c7. The 28 replay hashes and the
+                 manifest fingerprint hold. Operator re-pins; the agent does not.
 DELETES:         the platform's **only** alpha-id leak into core; the
                  `moc_strategy_ids` field; one identity-check branch
-NET DELTA:       src modules 0, public symbols **-1**, branch points **-1**.
-                 Test files +1 (A3).
+NET DELTA:       src modules 0, public symbols **0**, branch points **-1**.
+                 Test files +1 (A3), alphaleak 2 -> 0.
 ROLLBACK:        revert; the default returns.
 ```
 ```

@@ -2,18 +2,14 @@
 
 Inv-6: core does not branch on alpha identity.  The scanner is
 ``tools.arch.gapscan.alpha_literal_leaks``; this test is the assertion
-over its output.  G25 is the remaining leak
-(``moc_strategy_ids`` defaulting to ``sig_moc_imbalance_v1``).
+over its output.
 """
 
 from __future__ import annotations
 
-import pytest
-
 from tools.arch.gapscan import alpha_literal_leaks
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G25")
 def test_no_alpha_shape_literal_outside_alphas_and_config() -> None:
     report = alpha_literal_leaks()
     ids = report["known_alpha_ids"]
