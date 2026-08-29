@@ -72,7 +72,7 @@ GAP_REGISTRY: dict[str, GapEntry] = {
     "G33": GapEntry("P1", ("S-30",), ("C3",)),
     "G34": GapEntry("P1", ("S-21",), ("C2", "X11")),
     "G35": GapEntry("P1", ("S-30",), ("X1",)),
-    "G36": GapEntry("P1", ("S-05", "S-06", "S-30"), ("S6", "R6", "X6", "X7")),
+    "G36": GapEntry("P1", ("S-05", "S-06", "S-30a"), ("S6", "R6", "X6", "X7")),
     "G37": GapEntry("P1", ("S-14",), ("S14",)),
     "G38": GapEntry("P1", ("S-11",), ("S13", "C4", "X6")),
     "G39": GapEntry("P1", ("S-12",), ("S15", "S17")),
