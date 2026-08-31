@@ -3001,22 +3001,53 @@ ROLLBACK:        revert this step only.
 ```
 STEP:            S-30c
 CLOSES:          G31
-PROBLEM:         Universe definition is 200 sites across 11 packages.
-                 No Phase 6 test (G.0.4).
-FILES:           the alpha module that holds UniverseSnapshot
-                 tests/conformance/ (new G31 gate)
-                 tests/conformance/registry.py
-                 tests/conformance/test_registry_closure.py
+PROBLEM:         Universe definition has no single owner. Phase 5's 200/11
+                 is not reproducible: measured non-comment universe-word
+                 sites are 216/12 (composition 79, root 36, alpha 30,
+                 core 23, sensors 22, risk 13). Almost all are mentions.
+                 Competing membership sources are three:
+                 PlatformConfig.symbols, the PORTFOLIO module.universe
+                 union in bootstrap.py:1586, and
+                 UniverseSynchronizer._universe_sorted. No Phase 6 test
+                 (G.0.4). Enumerate writers at fail-before; do not inherit
+                 200.
+FILES:           src/feelies/alpha/registry.py
+                 src/feelies/alpha/portfolio_layer_module.py
+                 src/feelies/alpha/layer_validator.py
+                 src/feelies/bootstrap.py
+                 src/feelies/composition/synchronizer.py
+                 src/feelies/kernel/exception_taxonomy.py
                  src/feelies/core/forbidden_reads.py
                  src/feelies/core/platform_config.py
+                 tests/conformance/test_universe_authority.py
+                 tests/conformance/registry.py
+                 tests/conformance/test_registry_closure.py
                  tests/acceptance/test_backtest_app_baseline.py
-                 plus every production file this step actually edits
-                 among the 200 sites -- enumerate at fail-before
+                 plus every production file fail-before names among
+                 remaining membership writers -- named files only, no
+                 directory scope. Do not create a new module. If a new
+                 engine-5 module is required, that is a FILES amendment
+                 and add docs/prompts/audit_alpha_lifecycle.md,
+                 tests/docs/test_prompt_coverage_map.py, and
+                 tests/docs/test_internal_links.py.
 WHY THIS OWNER:  Engine 5.
-REFACTOR PATH:   One UniverseSnapshot. Author the G31 gate and
-                 register it; shrink _KNOWN_UNCOVERED by G31 only
+REFACTOR PATH:   One UniverseSnapshot as a public type on an existing
+                 engine-5 module (registry.py). Author
+                 test_universe_authority as the G31 scan (not C2).
+                 Register it; shrink _KNOWN_UNCOVERED by G31 only
                  (G32 remains until S-30f). Equality, not
-                 `not uncovered`.
+                 `not uncovered`. Raise KernelFault(kind=UNIVERSE) on
+                 conflict, empty, or missing snapshot; do not leave
+                 UNIVERSE unused. Bootstrap publishes the snapshot and
+                 refuses to compose without it; UniverseSynchronizer
+                 reads it and drops _universe_sorted as a definition.
+                 Bind existing GOV.UNIVERSE_RESOLVE / RT.IN_UNIVERSE;
+                 do not add gate rows. Do not add a PlatformConfig
+                 field; keep symbols as the config input. Do not put
+                 universe_hash into the run fingerprint this step
+                 (that moves the fingerprint by construction). Do not
+                 add UniverseSnapshot as a bus Event; do not add fields
+                 to CrossSectionalContext.
 BLAST RADIUS:    platform-wide by site count
 VALIDATED BY:    the new G31 test, S1, C2, S14
 PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A site
@@ -3054,15 +3085,16 @@ REFACTOR PATH:   Declare HorizonGrid on an existing engine-2 module.
                  session_open_ns -- does not require S-30b to have
                  moved it, but must not mint a second session open.
 BLAST RADIUS:    boundary (three holders)
-VALIDATED BY:    the new AST scan, not a green replay suite
-PARITY IMPACT:   hold on replay hashes if the three views already
-                 agreed. A moved replay hash is a discovered
-                 disagreement. _BASELINE_CONFIG_HASH holds unless
-                 a field is added. The manifest fingerprint is
-                 blind to the grid (Phase 1 §8) -- do not accept
-                 on hashes.
-DELETES:         the three private views
-NET DELTA:       src modules 0, public symbols +1 (HorizonGrid)
+VALIDATED BY:    the new G31 test, S1, C2, S14
+PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A
+                 site disagreement discovered here is a finding, not a
+                 silent re-pin. _BASELINE_CONFIG_HASH holds; no
+                 PlatformConfig field. Adding a field or folding
+                 universe_hash into the fingerprint is a declared re-pin.
+DELETES:         the bootstrap set-union and the synchronizer private
+                 membership view (count named at fail-before, not 199
+                 of 200)
+NET DELTA:       src modules 0, public symbols +1, branch points 0
 ROLLBACK:        restore the three views.
 ```
 ```
@@ -3160,7 +3192,55 @@ DELETES:         the unconverted fail-quiet residue; S6's xfail
 NET DELTA:       src modules 0, public symbols 0, branch points 0
 ROLLBACK:        revert; the handlers return and S6 re-xfails.
 ```
-
+```
+STEP:            S-30h
+CLOSES:          new -- health-vs-store halt gate (no Phase 5 gap ID;
+                 S-30b FINDING)
+PROBLEM:         S-30b made _HaltTradeability the sole writer of halt-store
+                 state. DataHealth.HALTED still transitions in
+                 massive_normalizer._apply_halt_status off the shared
+                 codebook, so a tick can be blocked by health HALTED while
+                 _halted_symbols was not updated. TestHaltedGate documents
+                 that path; it is reachable when a normalizer is attached
+                 but the trade never went through on_message. The reverse
+                 split (store updated, health HEALTHY) lets a later trade
+                 reach the router. One producer of halt-store state; a
+                 second gate on health remains. Not S-30e (ingress
+                 shedding) and not S-30g (fail-quiet handlers).
+FILES:           src/feelies/ingestion/data_integrity.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/bootstrap.py
+                 tests/kernel/test_data_integrity_runtime.py
+                 tests/conformance/test_session_halt_authority.py
+                 tests/conformance/registry.py
+                 tests/acceptance/test_backtest_app_baseline.py
+                 named files only, no directory scope. Do not add a
+                 PlatformConfig field. No new module.
+WHY THIS OWNER:  Engine 1. It already owns the halt store and the
+                 DataHealth SM.
+REFACTOR PATH:   Merge the two writes into one engine-1 function that
+                 updates _HaltTradeability and the trade-feed health SM
+                 together. Call it from on_message and from
+                 _process_trade_inner. Keep both reads; raise
+                 KernelFault(kind=SESSION_HALT) if health HALTED xor
+                 store membership at a trading decision. Rewrite
+                 TestHaltedGate off the split. Extend the G33 scan so a
+                 health transition that does not go through the store
+                 fails. Do not leave SESSION_HALT unused on this path.
+                 Do not add a Kind. Do not add a PlatformConfig field.
+BLAST RADIUS:    boundary (two writers of one fact, same engine)
+VALIDATED BY:    G33, TestHaltedGate, S12, S14, symbol_halted replay
+PARITY IMPACT:   hold -- replay hashes, EXPECTED_SYMBOL_HALTED_HASH,
+                 EXPECTED_HALT_ORDER_HASH, and the manifest fingerprint.
+                 A remaining disagreement is a finding, not a silent
+                 re-pin. _BASELINE_CONFIG_HASH holds; no PlatformConfig
+                 field.
+DELETES:         the independent DataHealth.HALTED trading write in
+                 _apply_halt_status (count named at fail-before)
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert this step only.
+```
 ---
 
 ### G.5 Wave E — cost and retirement
