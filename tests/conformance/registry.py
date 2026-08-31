@@ -69,7 +69,7 @@ GAP_REGISTRY: dict[str, GapEntry] = {
     # gates and registers them here; until then S1 fails on exactly these two.
     "G31": GapEntry("P1", ("S-30",), ()),
     "G32": GapEntry("P1", ("S-30",), ()),
-    "G33": GapEntry("P1", ("S-30",), ("C3",)),
+    "G33": GapEntry("P1", ("S-30b",), ("G33",)),
     "G34": GapEntry("P1", ("S-21",), ("C2", "X11")),
     "G35": GapEntry("P1", ("S-30",), ("X1",)),
     "G36": GapEntry("P1", ("S-05", "S-06", "S-30a"), ("S6", "R6", "X6", "X7")),

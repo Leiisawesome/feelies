@@ -94,6 +94,7 @@ from feelies.features.impl.sensor_passthrough import (
     TupleSignedImbalanceFeature,
 )
 from feelies.features.protocol import HorizonFeature
+from feelies.ingestion.data_integrity import _HaltTradeability
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.orchestrator import Orchestrator as KernelOrchestrator
@@ -412,14 +413,30 @@ def build_platform(
             spread_floor_taker_only=config.cost_spread_floor_taker_only,
         )
     )
+    halt_tradeability = _HaltTradeability()
+    halt_tradeability.configure(
+        frozenset(config.halt_on_condition_codes),
+        frozenset(config.halt_off_condition_codes),
+        config.halt_resolution_blackout_seconds * 1_000_000_000,
+    )
     # PAPER shares one normalizer between the feed and orchestrator.
     if normalizer is None and config.mode.name == "PAPER":
         normalizer = MassiveNormalizer(
             clock=clock,
-            halt_on_codes=frozenset(config.halt_on_condition_codes),
-            halt_off_codes=frozenset(config.halt_off_condition_codes),
+            halt_tradeability=halt_tradeability,
         )
         normalizer.register_symbols(config.symbols)
+    elif normalizer is not None:
+        existing = getattr(normalizer, "_halt_tradeability", None)
+        if isinstance(existing, _HaltTradeability):
+            halt_tradeability = existing
+            halt_tradeability.configure(
+                frozenset(config.halt_on_condition_codes),
+                frozenset(config.halt_off_condition_codes),
+                config.halt_resolution_blackout_seconds * 1_000_000_000,
+                peer_on=existing.on_codes,
+                peer_off=existing.off_codes,
+            )
 
     bundle = _create_backend(
         config,
@@ -666,6 +683,7 @@ def build_platform(
         size_shadow_sizer=tilted_sizer if size_shadow_sink is not None else None,
         size_shadow_sink=size_shadow_sink,
         normalizer=normalizer,
+        halt_tradeability=halt_tradeability,
         regime_calibration_quotes=regime_calibration_quotes,
         thread_safe_sequences=_seq_thread_safe,
         position_manager=position_manager,

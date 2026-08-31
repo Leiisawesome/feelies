@@ -16,6 +16,7 @@ from feelies.core.clock import Clock
 from feelies.core.events import AlertSeverity, SymbolHalted, Trade
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
+from feelies.kernel.exception_taxonomy import KernelFault
 from feelies.kernel.macro import MacroState
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,107 @@ def classify_halt_status(
     return None
 
 
+class _HaltTradeability:
+    """Engine-1 store for LULD halt tradeability (G33).
+
+    Orchestrator and MassiveNormalizer hold a reference and read. Tape
+    updates, config, and reset write here. ``KernelFault(SESSION_HALT)``
+    on a missing owner or a second codebook that disagrees.
+    """
+
+    def __init__(self) -> None:
+        self.halted_symbols: set[str] = set()
+        self.blackout_until_ns: dict[str, int] = {}
+        self.on_codes: frozenset[int] = frozenset()
+        self.off_codes: frozenset[int] = frozenset()
+        self.blackout_ns: int = 0
+
+    def configure(
+        self,
+        on_codes: frozenset[int],
+        off_codes: frozenset[int],
+        blackout_ns: int,
+        *,
+        peer_on: frozenset[int] | None = None,
+        peer_off: frozenset[int] | None = None,
+    ) -> None:
+        if peer_on is not None and peer_off is not None:
+            if (peer_on, peer_off) != (on_codes, off_codes):
+                raise KernelFault(
+                    "halt codebook conflict between session/halt authorities",
+                    kind=KernelFault.Kind.SESSION_HALT,
+                )
+        self.on_codes = on_codes
+        self.off_codes = off_codes
+        self.blackout_ns = blackout_ns
+
+    def reset(self) -> None:
+        self.halted_symbols.clear()
+        self.blackout_until_ns.clear()
+
+    def in_blackout(self, symbol: str, now_ns: int) -> bool:
+        deadline = self.blackout_until_ns.get(symbol)
+        return deadline is not None and now_ns < deadline
+
+
+def _require_halt_authority(self: Any) -> _HaltTradeability:
+    """Return the engine-1 halt store, or raise ``KernelFault(SESSION_HALT)``."""
+    authority = getattr(self, "_halt_tradeability", None)
+    if not isinstance(authority, _HaltTradeability):
+        raise KernelFault(
+            "session/halt tradeability authority is missing",
+            kind=KernelFault.Kind.SESSION_HALT,
+        )
+    return authority
+
+
+def _bind_halt_tradeability(
+    halt_tradeability: _HaltTradeability | None,
+    normalizer: object | None,
+) -> _HaltTradeability:
+    """Single engine-1 store: the injected one, or the normalizer's, or new."""
+    inherited = getattr(normalizer, "_halt_tradeability", None) if normalizer is not None else None
+    if halt_tradeability is not None:
+        if inherited is not None and inherited is not halt_tradeability:
+            raise KernelFault(
+                "halt tradeability authority conflict: orchestrator and "
+                "normalizer disagree",
+                kind=KernelFault.Kind.SESSION_HALT,
+            )
+        return halt_tradeability
+    if isinstance(inherited, _HaltTradeability):
+        return inherited
+    return _HaltTradeability()
+
+
+def _configure_halt_from_config(self: Any, cfg: Any) -> None:
+    """Copy halt codes and blackout duration from boot config onto the store."""
+    authority = _require_halt_authority(self)
+    on_codes = frozenset(cfg.halt_on_condition_codes)
+    off_codes = frozenset(cfg.halt_off_condition_codes)
+    blackout_ns = cfg.halt_resolution_blackout_seconds * 1_000_000_000
+    peer_on: frozenset[int] | None = None
+    peer_off: frozenset[int] | None = None
+    normalizer = getattr(self, "_normalizer", None)
+    if normalizer is not None:
+        peer = getattr(normalizer, "_halt_tradeability", None)
+        if peer is not None and peer is not authority:
+            peer_on = peer.on_codes
+            peer_off = peer.off_codes
+    authority.configure(
+        on_codes,
+        off_codes,
+        blackout_ns,
+        peer_on=peer_on,
+        peer_off=peer_off,
+    )
+
+
+def _reset_halt_state(self: Any) -> None:
+    """Clear halted symbols and blackout deadlines; keep the codebook."""
+    _require_halt_authority(self).reset()
+
+
 def create_data_integrity_machine(
     symbol: str,
     clock: Clock,
@@ -127,6 +229,7 @@ def _update_halt_state(self: Any, trade: Trade) -> None:
     clear the halt, open the entry blackout window, and emit the resume
     ``SymbolHalted``.  Inert when no halt codes are configured.
     """
+    _require_halt_authority(self)
     if not self._halt_on_codes and not self._halt_off_codes:
         return
     status = classify_halt_status(

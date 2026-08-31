@@ -28,6 +28,7 @@ from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.ingestion.data_integrity import (
     DataHealth,
     HaltSignal,
+    _HaltTradeability,
     classify_halt_status,
     create_data_integrity_machine,
 )
@@ -219,8 +220,7 @@ class MassiveNormalizer:
         "_oversized_frames",
         "_anonymous_malformed_frames",
         "_enable_rest_sequence_gap_detection",
-        "_halt_on_codes",
-        "_halt_off_codes",
+        "_halt_tradeability",
         "_max_raw_frame_bytes",
         "_ts_lookback_ns",
         "_ts_lookahead_ns",
@@ -245,14 +245,31 @@ class MassiveNormalizer:
         enable_rest_sequence_gap_detection: bool = False,
         halt_on_codes: frozenset[int] | None = None,
         halt_off_codes: frozenset[int] | None = None,
+        halt_tradeability: _HaltTradeability | None = None,
         max_raw_frame_bytes: int = _DEFAULT_MAX_RAW_FRAME_BYTES,
     ) -> None:
         self._clock = clock
         self._seq = SequenceGenerator(start=1, stream="massive", thread_safe=True)
         # Tape condition codes mark halt and resume events. Empty sets disable
-        # halt detection.
-        self._halt_on_codes: frozenset[int] = halt_on_codes or frozenset()
-        self._halt_off_codes: frozenset[int] = halt_off_codes or frozenset()
+        # halt detection. Production shares one engine-1 store with Orchestrator.
+        if halt_tradeability is not None:
+            self._halt_tradeability = halt_tradeability
+            if halt_on_codes is not None or halt_off_codes is not None:
+                halt_tradeability.configure(
+                    halt_on_codes or frozenset(),
+                    halt_off_codes or frozenset(),
+                    halt_tradeability.blackout_ns,
+                    peer_on=halt_tradeability.on_codes,
+                    peer_off=halt_tradeability.off_codes,
+                )
+        else:
+            self._halt_tradeability = _HaltTradeability()
+            if halt_on_codes is not None or halt_off_codes is not None:
+                self._halt_tradeability.configure(
+                    halt_on_codes or frozenset(),
+                    halt_off_codes or frozenset(),
+                    0,
+                )
         self._health_machines: dict[tuple[str, str], StateMachine[DataHealth]] = {}
         self._registered_symbols: frozenset[str] = frozenset()
         self._transition_callback = transition_callback
@@ -883,8 +900,8 @@ class MassiveNormalizer:
         """
         status = classify_halt_status(
             conditions,
-            self._halt_on_codes,
-            self._halt_off_codes,
+            self._halt_tradeability.on_codes,
+            self._halt_tradeability.off_codes,
         )
         if status is None:
             return
