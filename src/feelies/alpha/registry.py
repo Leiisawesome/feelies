@@ -24,7 +24,7 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 from feelies.promotion.lifecycle import (
     AlphaLifecycle,
@@ -44,7 +44,9 @@ from feelies.promotion.evidence import (
 from feelies.promotion.ledger import PromotionLedger
 from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
+from feelies.core.gate_registry import record_verdict
 from feelies.features.definition import FeatureDefinition
+from feelies.kernel.exception_taxonomy import KernelFault
 
 _logger = logging.getLogger(__name__)
 
@@ -64,6 +66,75 @@ class UnresolvedDependencyError(AlphaRegistryError):
     :py:meth:`AlphaRegistry.resolve_signal_dependencies` to fail fast at
     boot rather than silently evaluating with missing sensors.
     """
+
+
+class UniverseSnapshot:
+    """Engine-5 ordered membership for the tradable universe (G31).
+
+    Bootstrap publishes one snapshot from ``PlatformConfig.symbols``.
+    Other sites read. ``KernelFault(UNIVERSE)`` on a missing, empty, or
+    conflicting membership.
+    """
+
+    __slots__ = ("_universe_sorted", "_universe_frozenset", "universe_hash")
+
+    def __init__(self, symbols: Iterable[str]) -> None:
+        self._universe_sorted: tuple[str, ...] = tuple(sorted(set(symbols)))
+        self._universe_frozenset: frozenset[str] = frozenset(self._universe_sorted)
+        payload = json.dumps(list(self._universe_sorted), separators=(",", ":"))
+        self.universe_hash: str = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @property
+    def symbols(self) -> tuple[str, ...]:
+        return self._universe_sorted
+
+    @property
+    def members(self) -> frozenset[str]:
+        return self._universe_frozenset
+
+    def contains(self, symbol: str) -> bool:
+        return symbol in self._universe_frozenset
+
+
+def _require_universe(snapshot: object) -> UniverseSnapshot:
+    """Return the engine-5 snapshot, or raise ``KernelFault(UNIVERSE)``."""
+    if not isinstance(snapshot, UniverseSnapshot):
+        raise KernelFault(
+            "universe snapshot is missing",
+            kind=KernelFault.Kind.UNIVERSE,
+        )
+    if not snapshot.symbols:
+        raise KernelFault(
+            "universe is empty",
+            kind=KernelFault.Kind.UNIVERSE,
+        )
+    return snapshot
+
+
+def _publish_universe(
+    symbols: Iterable[str],
+    *,
+    peer: Iterable[str] | None = None,
+) -> UniverseSnapshot:
+    """Build the snapshot from config input; refuse empty or conflicting peers."""
+    snapshot = UniverseSnapshot(symbols)
+    if not snapshot.symbols:
+        record_verdict("GOV.UNIVERSE_RESOLVE", "FAIL", "empty")
+        raise KernelFault(
+            "universe is empty",
+            kind=KernelFault.Kind.UNIVERSE,
+        )
+    if peer is not None:
+        extra = tuple(sorted(set(peer) - set(snapshot.symbols)))
+        if extra:
+            record_verdict("GOV.UNIVERSE_RESOLVE", "FAIL", "conflict")
+            raise KernelFault(
+                "universe conflict: declared membership is not a subset "
+                f"of the platform universe: {extra!r}",
+                kind=KernelFault.Kind.UNIVERSE,
+            )
+    record_verdict("GOV.UNIVERSE_RESOLVE", "PASS")
+    return snapshot
 
 
 class AlphaRegistry:
@@ -103,6 +174,7 @@ class AlphaRegistry:
         # lifecycle (existing and future) so a demotion flattens the decoupled
         # alpha's open deferred book immediately.
         self._lifecycle_revocation_hook: Callable[[LifecycleRevocation], None] | None = None
+        self._universe_snapshot: UniverseSnapshot | None = None
 
     def reset(self) -> None:
         """Invalidate the feature cache; registered alphas and hooks stay."""
@@ -121,6 +193,21 @@ class AlphaRegistry:
         )
         payload = json.dumps(rows, separators=(",", ":"))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def bind_universe(self, snapshot: UniverseSnapshot) -> None:
+        """Attach the engine-5 membership snapshot. One producer."""
+        current = self._universe_snapshot
+        if current is not None and current.symbols != snapshot.symbols:
+            raise KernelFault(
+                "universe authority conflict: registry already bound to a "
+                "different membership",
+                kind=KernelFault.Kind.UNIVERSE,
+            )
+        self._universe_snapshot = snapshot
+
+    def universe_snapshot(self) -> UniverseSnapshot | None:
+        """Published membership, or ``None`` before bind."""
+        return self._universe_snapshot
 
     def register(self, alpha: AlphaModule) -> None:
         """Register an alpha module.
