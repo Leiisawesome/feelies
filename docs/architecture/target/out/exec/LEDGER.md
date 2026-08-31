@@ -6874,5 +6874,172 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-30a.json,
                  baseline_post-S-30a.json, this ledger entry.
 
+---
+
+## S-30b  2026-08-29T15:53:00+08:00
+  STEP:          S-30b
+  BASE:          35a9d2bd9bcf1b7cbf5bcefcaa2df33a051d3cf7
+  RESULT SHA:    c5f4e9b69f87433df1f24bf9ab95aac2db80ef53
+                 (exec/S-30b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   G33 (test_session_halt_authority.py) | failed-before: yes
+                 (4 failed: 12 illegal halt-store writes, first
+                 massive_normalizer.py:254; SESSION_HALT never
+                 constructed; _require_halt_authority /
+                 _HaltTradeability ImportError) | passes-after: yes
+                 (4 passed)
+                 C3 remains ingress conservation; G33 no longer
+                 cites it.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every src commit
+                 S14: 2 passed -> 2 passed
+                 conformance 94 passed / 6 xfailed -> 98 passed /
+                 6 xfailed (no XPASS). +4 are G33.
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-30b GREEN 4877 passed / 0 failed /
+                 29 skipped / 6 xfailed (Saturday, the four
+                 exempted tests skipped)
+                 -> post-S-30b GREEN 4881 passed / 0 failed / 29
+                 skipped / 6 xfailed. not-paper_rth: 4880 passed,
+                 0 failed, 16 skipped, 14 deselected, 6 xfailed.
+                 +4 passed = the four G33 tests.
+  PARITY:        declared hold -- replay hashes and the manifest
+                 fingerprint. Config-contract checksum holds (no
+                 PlatformConfig field) | actual 64/64 identical
+                 (pre-S-30b vs post-S-30b); 0 moved at either
+                 commit | MATCH. tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         17 declared tokens (16 named paths +
+                 docs/prompts/audit_data_ingestion.md from FILES
+                 prose), 6 touched (verify_step S-30B uppercase
+                 miss; four checks by hand CLEAN). Touched:
+                 src/feelies/ingestion/data_integrity.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 src/feelies/bootstrap.py
+                 tests/conformance/test_session_halt_authority.py
+                 tests/conformance/registry.py
+                 Declared-but-unneeded: exception_taxonomy.py,
+                 forbidden_reads.py, sequence_authority.py,
+                 wiring_manifest.py, order_admission.py,
+                 order_policy.py, test_orchestrator.py,
+                 test_prompt_coverage_map.py,
+                 test_internal_links.py,
+                 test_backtest_app_baseline.py,
+                 audit_data_ingestion.md.
+                 No new module, so the 18th file was not opened.
+  NET DELTA:     declared src modules 0 or +1, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 573 -> 573 (+0; _HaltTradeability
+                 is underscore-prefixed)
+                 sloc 45812 -> 45963 (+151)
+                 n_edges 661 -> 663 (+2)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 DELETES: 12 halt-store writes outside engine 1
+                 (named at fail-before): massive_normalizer.py:254
+                 :255; orchestrator.py:533 :534 :535 :536 :537
+                 :847 :848 :849 :2869 :2870. Four tape writes
+                 remain, all in data_integrity.py.
+  DETERMINISM:   148 -> 148 after every src commit; no replay
+                 hash moved
+  VERIFY_STEP:   `S-30B` not in plan (known key is `S-30b`).
+                 Uppercase workaround fails for letter-suffixed
+                 steps. Four checks by hand: FILES 17 declared /
+                 6 touched / 0 extra CLEAN; PARITY moved 0 holds;
+                 TESTS 4877->4881 passed, failed 0->0; NET DELTA
+                 compare-by-eye MATCH on modules 0 and public
+                 symbols 0. Blast radius platform-wide -- human
+                 gate.
+  NOTES:         Two commits, scan first then the store, because
+                 G33 had to fail on this tree while the twelve
+                 writes and the unused Kind still existed, and
+                 because a taxonomy member with no constructor
+                 is the S-26 unused seam. 3941185 is the scan
+                 and the registry retarget (C3 stays G11; G33
+                 now names itself). That commit is tests-only;
+                 the four new assertions were red. c5f4e9b is
+                 the landing: _HaltTradeability in
+                 data_integrity.py, Orchestrator and
+                 MassiveNormalizer as readers, bootstrap
+                 injecting one instance. The twelve illegal
+                 halt-store writes (two codebook copies on the
+                 normalizer, ten init/boot/reset assignments
+                 and clears on Orchestrator) went to zero.
+                 Four tape mutations remain, all in
+                 _update_halt_state. One producer:
+                 _HaltTradeability. KernelFault.Kind.SESSION_HALT
+                 is raised at data_integrity.py:129 (peer
+                 codebook mismatch), :150 (store missing), and
+                 :165 (two distinct store objects at bind).
+                 That is the first constructor of a Kind
+                 S-30a left unused. No PlatformConfig field
+                 was added or deleted, so
+                 _BASELINE_CONFIG_HASH held. No replay hash
+                 moved at either commit (148 after c5f4e9b).
+                 Declared NET DELTA: src modules 0 or +1,
+                 public symbols 0, branch points 0. Measured:
+                 206 -> 206, 573 -> 573, sloc +151, n_edges
+                 +2. MATCH on modules and public symbols. No
+                 new module, so audit_data_ingestion.md was
+                 not opened. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      health-vs-store halt gate -- new gap, not in
+                 scope for S-30c–S-30g. DataHealth.HALTED still
+                 transitions in _apply_halt_status off the
+                 shared codebook. TestHaltedGate documents a
+                 path where a tick is blocked by health HALTED
+                 while _halted_symbols was not updated; that
+                 path is reachable when a normalizer is
+                 attached but the trade never went through
+                 on_message. One producer of halt-store state
+                 now exists; a second gate on health remains.
+                 S-30e is ingress shedding, S-30g is the
+                 seventeen fail-quiet handlers. Neither owns
+                 this split. Not a silent re-pin; halt replay
+                 hashes held. Not in FILES; not fixed.
+                 Three undeclared tests bind Orchestrator halt
+                 attributes and are not in FILES:
+                 tests/determinism/test_symbol_halted_replay.py
+                 tests/causality/test_anti_lookahead.py
+                 tests/kernel/test_orchestrator_bus_sized_intent.py
+                 (halt-blackout assignment). Property rebinds
+                 kept them green. Editing any one would have
+                 been the 18th.
+                 tests/ingestion/test_massive_normalizer.py
+                 TestHaltStatusDetection still passes
+                 halt_on_codes= into MassiveNormalizer; that
+                 constructs a test-local _HaltTradeability,
+                 not a production second store.
+                 test_ingress_conservation.py docstring still
+                 says "G11, G33". Registry no longer maps G33
+                 to C3. Not in FILES; not edited.
+                 verify_step.py uppercases the step id, so
+                 S-30B does not match plan key S-30b.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30a seventeen fail-quiet
+                 handlers / G36 open; four exempted baseline
+                 tests.
+  NEXT:          S-30c universe definition (platform-wide).
+                 Not started. Do not begin S-30c.
+                 Left uncommitted: baseline_pre-S-30b.json,
+                 baseline_post-S-30b.json, this ledger entry.
+
 
 
