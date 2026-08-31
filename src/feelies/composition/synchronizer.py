@@ -31,8 +31,11 @@ _logger = logging.getLogger(__name__)
 class _UniverseAuthority(Protocol):
     """Duck-typed engine-5 snapshot. Composition does not import alpha."""
 
-    symbols: tuple[str, ...]
-    members: frozenset[str]
+    @property
+    def symbols(self) -> tuple[str, ...]: ...
+
+    @property
+    def members(self) -> frozenset[str]: ...
 
 
 class UniverseSynchronizer:
