@@ -7495,4 +7495,261 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-30d.json,
                  baseline_post-S-30d.json, this ledger entry.
 
+---
+
+## S-30e  2026-09-01T16:41:05+08:00
+  STEP:          S-30e
+  BASE:          378fbb6dd699ad0e80ddaf5acf9e2c61526820ad
+  RESULT SHA:    d7f7ed02a3f6f1278ea074e0e01ff7a303e3f4e8
+                 (exec/S-30e; implementation only)
+  VERDICT:       passed
+  CONFORMANCE:   G35 (test_ingress_admit.py) | failed-before: yes
+                 (3 failed: silent drain Full at massive_ws.py:191;
+                 INGRESS_ADMIT never constructed; drain Full warns and
+                 breaks instead of raising) | passes-after: yes
+                 (5 passed)
+                 X1 has no test_x1_*.py in tests/conformance; G20/G23/G43
+                 still name it. G35 retargeted off that dangling id.
+                 S1: uncovered (G32,) -> (G32,)
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every src commit
+                 S14: 2 passed -> 2 passed
+                 conformance 107 passed / 6 xfailed -> 112 passed /
+                 6 xfailed (no XPASS). +5 are G35.
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-30e GREEN 4901 passed / 0 failed /
+                 18 skipped / 6 xfailed (Tuesday, the four
+                 exempted tests skipped)
+                 -> post-S-30e GREEN 4906 passed / 0 failed / 18
+                 skipped / 6 xfailed. not-paper_rth: 4905 passed,
+                 5 skipped, 14 deselected, 6 xfailed.
+                 +5 passed = the five G35 tests.
+  PARITY:        declared hold -- all 28 replay hashes, the
+                 fingerprint, and the config-contract checksum.
+                 No PlatformConfig field. | actual 64/64 identical
+                 (pre-S-30e vs post-S-30e); 0 moved at either
+                 commit | MATCH. tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH old = new =
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95
+  FILES:         7 declared tokens (3 named paths +
+                 platform_config.py, test_backtest_app_baseline.py,
+                 latency_budget.py, replay_feed.py from FILES
+                 prose "Do not"), 3 touched (verify_step S-30E
+                 uppercase miss; four checks by hand CLEAN).
+                 Touched:
+                 src/feelies/ingestion/massive_ws.py
+                 tests/conformance/test_ingress_admit.py
+                 tests/conformance/registry.py
+                 Declared-but-unneeded: platform_config.py,
+                 test_backtest_app_baseline.py,
+                 latency_budget.py, replay_feed.py.
+                 Fail-before remaining market-data queue.Full
+                 writers were the three handlers in massive_ws.py,
+                 already in FILES. No eighth file.
+                 Do not create a new module; none created.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46099 -> 46100 (+1)
+                 n_edges 666 -> 667 (+1)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 DELETES: the silent Full in _drain_stale_sentinels
+                 (massive_ws.py:191 warn-and-break, no count/notify).
+                 NOT the _consume drop. NOT ReplayFeed.
+                 Residue is recorded, not deleted.
+  DETERMINISM:   148 -> 148 after every src commit; no replay
+                 hash moved
+  VERIFY_STEP:   `S-30E` not in plan (known key is `S-30e`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 7 declared / 3 touched / 0 extra CLEAN;
+                 PARITY moved 0 holds; TESTS 4901->4906
+                 passed, failed 0->0; NET DELTA compare-by-eye
+                 MATCH on modules 0 and public symbols 0.
+                 Blast radius boundary -- human gate.
+  NOTES:         Two commits, scan first. e6ffd5d is tests
+                 only: G35 scan and the registry retarget
+                 (X1 stays on G20/G23/G43). The three new
+                 assertions were red on this tree while the
+                 silent drain Full and the unused Kind still
+                 existed. A Kind with no constructor is the
+                 S-26 unused seam; that is why S-30b through
+                 S-30d put the scan first, and why this step
+                 did too. d7f7ed0 is the landing: drain Full
+                 constructs KernelFault, so the scan and the
+                 constructor land in different commits.
+                 There is no IngressShedder on this tree.
+                 The bounded queue is MassiveLiveFeed._queue
+                 in massive_ws.py. The only production
+                 constructor of MassiveLiveFeed is
+                 paper_backend.py:43 inside
+                 build_paper_backend. bootstrap.py:951
+                 BACKTEST calls build_backtest_backend or
+                 build_passive_limit_backend, both of which
+                 construct ReplayFeed
+                 (backtest_backend.py:96 and :170) and
+                 return _BackendBundle(backend=) with
+                 live_feed=None. PAPER at bootstrap.py:997
+                 is the only mode that imports
+                 build_paper_backend. ReplayFeed.events()
+                 (replay_feed.py:68-108) walks
+                 EventLog.replay and yields NBBOQuote/Trade;
+                 it has no queue.Queue, no put_nowait, and
+                 no except queue.Full. start() /
+                 _drain_stale_sentinels / _consume exist only
+                 on MassiveLiveFeed. That is a code-path
+                 argument. A green APP baseline is consistent
+                 with the path never running; it is not the
+                 proof.
+                 A dropped market event on the kept
+                 _consume path (massive_ws.py:420-427)
+                 emits three things: _events_dropped += 1,
+                 logger.warning("queue full, dropping event
+                 for %s"), and
+                 normalizer.notify_feed_interrupted which
+                 transitions HEALTHY to
+                 DataHealth.GAP_DETECTED
+                 (trigger=feed_connection_lost). Who sees
+                 it: the operator log, the events_dropped
+                 property, and the shared-normalizer health
+                 SM / orchestrator health gate in PAPER.
+                 Nothing else in src/ reads events_dropped.
+                 The deleted silent drain path does not
+                 drop; it raises. Observer of the raise:
+                 live_feed.start() at
+                 scripts/run_paper.py:245, whose except
+                 Exception logs "PAPER session failed" and
+                 returns 1.
+                 KernelFault.Kind.INGRESS_ADMIT is raised at
+                 massive_ws.py:193 in
+                 _drain_stale_sentinels, kind= on :195. That
+                 is the first production constructor of the
+                 Kind S-30a left unused. _consume does not
+                 raise it; DELETES said keep that drop.
+                 No PlatformConfig field was added or
+                 deleted. platform_config.py is not in the
+                 implementation diff, so
+                 _BASELINE_CONFIG_HASH did not move:
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95
+                 before and after. Acceptance was not
+                 re-pinned because there was no new value.
+                 This half is ingest shedding on engine 1
+                 (G35). S-07 closed the other half: engine-11
+                 latency budget breach (G43 / X10) in
+                 monitoring/latency_budget.py, which this
+                 step did not edit. S-07's BACKTEST path
+                 skips the comparison so replay takes the
+                 no-breach branch. This step's shedding is
+                 the same shape: BACKTEST never builds
+                 MassiveLiveFeed, so Full cannot fire on a
+                 replayed tape. Two engines, two
+                 backpressure mechanisms, one shared reason
+                 the oracle holds.
+                 Declared NET DELTA: src modules 0, public
+                 symbols 0, branch points 0. Measured:
+                 206 -> 206, 575 -> 575, sloc +1,
+                 n_edges +1 (massive_ws ->
+                 exception_taxonomy). MATCH on the two
+                 declared figures. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      Concept residue -- S-30c/S-30d shape. This
+                 step achieved one producer of the STORE
+                 (MassiveLiveFeed._queue, drop in _consume,
+                 INGRESS_ADMIT on drain Full). It did not
+                 achieve one producer of the CONCEPT
+                 (queueing / shedding / backpressure). This
+                 is not the first section-F item to reach
+                 one producer of the concept. Sites that
+                 still shed, drop, or backpressure without
+                 going through _consume / INGRESS_ADMIT,
+                 and whether they can disagree on admitting
+                 a market event:
+                 - massive_ws.py:210
+                   _enqueue_sentinel_nowait except
+                   queue.Full. Skips the stop sentinel,
+                   warns, does not drop a market event
+                   (the comment says so). Same queue
+                   object as _consume. Cannot disagree on
+                   admit: it refuses to drop a quote or
+                   trade to make room.
+                 - broker/ib/connection.py:104-106
+                   _submit_queue / _cancel_queue /
+                   _fill_queue, unbounded Queue(). Order
+                   and fill path, not ingest. Cannot
+                   drop an NBBOQuote or Trade. YES they
+                   can back up while the WS queue is
+                   empty, and the reverse; that is
+                   independent backpressure, not a
+                   second admit decision.
+                 - core/gate_registry.py:743
+                   _NOTIFICATION deque(maxlen=4096).
+                   Silently evicts oldest VerdictRecord.
+                   Not market data. Cannot disagree on
+                   admit. YES independent eviction.
+                 - sensor window deques
+                   (liquidity_stress_score, spread_z_30d,
+                   vpin_50bucket). FIFO sample eviction.
+                   Cannot disagree on admit. YES
+                   independent of the WS queue.
+                 Also present, not in the plan's residue
+                 list, same "cannot disagree on admit / YES
+                 independent" shape:
+                 submitted_order_journal latency_window;
+                 monitoring/latency_budget.py engine
+                 deques (S-07; not edited);
+                 features/impl/rolling_stats.py;
+                 core/state_machine.py history deque.
+                 events_dropped is incremented on _consume
+                 drop and exposed as a property; nothing
+                 else in src/ reads it. Observability of
+                 the kept drop is the health transition,
+                 not the counter.
+                 Go named IngressShedder, constructed only
+                 in MassiveLiveFeed. That type is absent
+                 from this object database, src/, and the
+                 two commits. The queue is an attribute of
+                 MassiveLiveFeed; the constructor is
+                 paper_backend.py:43. S-24: the tree
+                 wins.
+                 VALIDATED BY named X1. No test module in
+                 tests/conformance opens with """X1. G35's
+                 prior registry entry pointed at that name.
+                 Retargeted to ("G35",). Not a silent re-pin.
+                 tests/ingestion/test_massive_normalizer.py
+                 TestMassiveLiveFeedBackpressure still pins
+                 _consume drop and stop-on-full sentinel
+                 skip; those tests are not in FILES and
+                 stayed green because those paths were not
+                 changed. _FullSentinelQueue in that file
+                 is unused.
+                 verify_step.py uppercases the step id, so
+                 S-30E does not match plan key S-30e.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30a seventeen fail-quiet
+                 handlers / G36 open; S-30b health-vs-store
+                 halt gate / S-30h; S-30c/S-30d concept
+                 residue; four exempted baseline tests.
+  NEXT:          S-30f symbol identity (boundary).
+                 Not started. Do not begin S-30f.
+                 Left uncommitted: baseline_pre-S-30e.json,
+                 baseline_post-S-30e.json, this ledger entry.
+
 
