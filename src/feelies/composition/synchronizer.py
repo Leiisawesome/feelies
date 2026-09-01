@@ -13,7 +13,7 @@ composition engine decides whether that share is sufficient.
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from typing import Iterable, Protocol, runtime_checkable
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
@@ -27,6 +27,17 @@ from feelies.core.identifiers import SequenceGenerator
 _logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
+class _UniverseAuthority(Protocol):
+    """Duck-typed engine-5 snapshot. Composition does not import alpha."""
+
+    @property
+    def symbols(self) -> tuple[str, ...]: ...
+
+    @property
+    def members(self) -> frozenset[str]: ...
+
+
 class UniverseSynchronizer:
     """Barrier-sync signals into cross-sectional contexts.
 
@@ -37,8 +48,8 @@ class UniverseSynchronizer:
 
     __slots__ = (
         "_bus",
-        "_universe_sorted",
-        "_universe_frozenset",
+        "_universe_authority",
+        "_universe_input",
         "_context_horizons",
         "_signal_horizons",
         "_signal_horizons_sorted",
@@ -55,7 +66,7 @@ class UniverseSynchronizer:
         self,
         *,
         bus: EventBus,
-        universe: Iterable[str],
+        universe: Iterable[str] | _UniverseAuthority,
         horizons: Iterable[int],
         ctx_sequence_generator: SequenceGenerator,
         signal_horizons: Iterable[int] | None = None,
@@ -63,8 +74,12 @@ class UniverseSynchronizer:
         signal_max_age_seconds: int | None = None,
     ) -> None:
         self._bus = bus
-        self._universe_sorted: tuple[str, ...] = tuple(sorted(set(universe)))
-        self._universe_frozenset: frozenset[str] = frozenset(self._universe_sorted)
+        if isinstance(universe, _UniverseAuthority):
+            self._universe_authority: _UniverseAuthority | None = universe
+            self._universe_input: tuple[str, ...] | None = None
+        else:
+            self._universe_authority = None
+            self._universe_input = tuple(universe)
         self._context_horizons: frozenset[int] = frozenset(horizons)
         self._signal_horizons: frozenset[int] = (
             frozenset(signal_horizons)
@@ -107,6 +122,20 @@ class UniverseSynchronizer:
         self._ctx_seq.reset()
 
     # ── Public API ───────────────────────────────────────────────────
+
+    @property
+    def _universe_sorted(self) -> tuple[str, ...]:
+        authority = self._universe_authority
+        if authority is not None:
+            return authority.symbols
+        return tuple(sorted(set(self._universe_input or ())))
+
+    @property
+    def _universe_frozenset(self) -> frozenset[str]:
+        authority = self._universe_authority
+        if authority is not None:
+            return authority.members
+        return frozenset(self._universe_sorted)
 
     @property
     def universe(self) -> tuple[str, ...]:

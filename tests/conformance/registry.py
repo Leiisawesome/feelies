@@ -65,9 +65,9 @@ GAP_REGISTRY: dict[str, GapEntry] = {
     "G28": GapEntry("P1", ("S-12",), ("S11", "X9")),
     "G29": GapEntry("P2", ("S-17",), ("R9",)),
     "G30": GapEntry("P1", ("S-16", "S-27"), ("S2", "R4", "C5")),
-    # G31 and G32 are named by no Phase 6 test (§G.0.4).  S-30 authors their
-    # gates and registers them here; until then S1 fails on exactly these two.
-    "G31": GapEntry("P1", ("S-30",), ()),
+    # G32 is named by no Phase 6 test (§G.0.4) until S-30f. G31 is the
+    # universe-authority scan; C2 stays accounting conservation.
+    "G31": GapEntry("P1", ("S-30c",), ("G31",)),
     "G32": GapEntry("P1", ("S-30",), ()),
     "G33": GapEntry("P1", ("S-30b",), ("G33",)),
     "G34": GapEntry("P1", ("S-21",), ("C2", "X11")),

@@ -38,7 +38,7 @@ from feelies.alpha.dependency_graph import (
     required_warm_feature_ids_for_signal_alpha,
     warn_unread_sensor_dependencies,
 )
-from feelies.alpha.registry import AlphaRegistry
+from feelies.alpha.registry import AlphaRegistry, _publish_universe, _require_universe
 from feelies.risk.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.bus.event_bus import EventBus
@@ -330,6 +330,19 @@ def build_platform(
 
     _load_alphas(config, registry, loader)
     config = maybe_prune_unused_sensors(config, registry)
+    peer: set[str] | None = None
+    portfolio_for_peer = [
+        m for m in registry.portfolio_alphas() if isinstance(m, LoadedPortfolioLayerModule)
+    ]
+    if portfolio_for_peer:
+        declared_peer: set[str] = set()
+        for module in portfolio_for_peer:
+            declared_peer.update(module.universe)
+        # Names outside PlatformConfig.symbols are not membership; they are a
+        # G31 disagreement (see ledger). Intersect so publish does not refuse
+        # a fixture that previously composed the superset.
+        peer = declared_peer & set(config.symbols)
+    registry.bind_universe(_publish_universe(config.symbols, peer=peer))
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
@@ -1583,21 +1596,22 @@ def _create_composition_layer(
         )
         return None
 
-    universe: set[str] = set()
+    snapshot = _require_universe(registry.universe_snapshot())
+    declared: set[str] = set()
     horizons: set[int] = set()
     for module in portfolio_modules:
-        universe.update(module.universe)
+        declared.update(module.universe)
         horizons.add(module.horizon_seconds)
 
-    if len(universe) > config.composition_max_universe_size:
+    if len(declared) > config.composition_max_universe_size:
         raise UniverseScaleError(
-            f"PORTFOLIO universe size {len(universe)} exceeds the v0.2 "
+            f"PORTFOLIO universe size {len(declared)} exceeds the v0.2 "
             f"cap composition_max_universe_size="
             f"{config.composition_max_universe_size} (§15.1).  Reduce the "
             f"alpha universe(s) or raise the cap explicitly."
         )
 
-    _enforce_factor_loadings_freshness(config, sorted(universe), clock=clock)
+    _enforce_factor_loadings_freshness(config, sorted(declared), clock=clock)
 
     intent_seq = SequenceGenerator(stream="intent", thread_safe=thread_safe_sequences)
     ctx_seq = SequenceGenerator(stream="ctx", thread_safe=thread_safe_sequences)
@@ -1611,7 +1625,7 @@ def _create_composition_layer(
     )
     synchronizer = UniverseSynchronizer(
         bus=bus,
-        universe=universe,
+        universe=snapshot,
         horizons=horizons,
         ctx_sequence_generator=ctx_seq,
         signal_horizons=signal_horizons,
@@ -1727,7 +1741,7 @@ def _create_composition_layer(
         "PORTFOLIO composition layer composed: %d alpha(s), "
         "universe_size=%d, horizons=%s, decay_weighting=%s",
         len(portfolio_modules),
-        len(universe),
+        len(snapshot.symbols),
         sorted(horizons),
         decay_enabled,
     )
