@@ -7041,5 +7041,170 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-30b.json,
                  baseline_post-S-30b.json, this ledger entry.
 
+---
+
+## S-30c  2026-08-31T13:35:00+08:00
+  STEP:          S-30c
+  BASE:          2e07434b880b02491eddf68b760fac430d971d74
+  RESULT SHA:    87d70f925a2a0bc287e6a481802c99599c5463ba
+                 (last implementation commit on exec/S-30c).
+                 Merged to arch/exec as da96f2d.
+  VERDICT:       passed
+  CONFORMANCE:   G31 (test_universe_authority.py) | failed-before: yes
+                 (5 failed: 2 illegal membership writes, first
+                 synchronizer.py:66; UNIVERSE never constructed;
+                 _require_universe / _publish_universe ImportError)
+                 | passes-after: yes (5 passed)
+                 C2 remains accounting conservation; G31 no longer
+                 unnamed.
+                 S1: uncovered (G31, G32) -> (G32,)
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 conformance 98 passed / 6 xfailed -> 103 passed /
+                 6 xfailed (no XPASS). +5 are G31.
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-30c GREEN 4891 passed / 0 failed /
+                 19 skipped / 6 xfailed (Monday, the four
+                 exempted tests skipped)
+                 -> post-S-30c GREEN 4896 passed / 0 failed / 19
+                 skipped / 6 xfailed. not-paper_rth: 4895 passed,
+                 6 skipped, 14 deselected, 6 xfailed.
+                 +5 passed = the five G31 tests.
+  PARITY:        declared hold -- replay hashes and the manifest
+                 fingerprint. Config-contract checksum holds (no
+                 PlatformConfig field) | actual 64/64 identical
+                 (pre-S-30c vs post-S-30c); 0 moved at any
+                 commit | MATCH. tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         15 declared tokens (12 named paths +
+                 docs/prompts/audit_alpha_lifecycle.md,
+                 tests/docs/test_prompt_coverage_map.py,
+                 tests/docs/test_internal_links.py from FILES
+                 prose), 6 touched (verify_step S-30C uppercase
+                 miss; four checks by hand CLEAN). Touched:
+                 src/feelies/alpha/registry.py
+                 src/feelies/bootstrap.py
+                 src/feelies/composition/synchronizer.py
+                 tests/conformance/test_universe_authority.py
+                 tests/conformance/registry.py
+                 tests/conformance/test_registry_closure.py
+                 Declared-but-unneeded: portfolio_layer_module.py,
+                 layer_validator.py, exception_taxonomy.py,
+                 forbidden_reads.py, platform_config.py,
+                 test_backtest_app_baseline.py,
+                 audit_alpha_lifecycle.md,
+                 test_prompt_coverage_map.py,
+                 test_internal_links.py.
+                 No new module, so the docs trio was not opened.
+  NET DELTA:     declared src modules 0, public symbols +1 if the
+                 snapshot is a new public type in an existing module
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 573 -> 574 (+1; UniverseSnapshot)
+                 sloc 45963 -> 46070 (+107)
+                 n_edges 663 -> 665 (+2)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 DELETES: the two illegal universe store writes
+                 (amended plan; named at fail-before):
+                 synchronizer.py:66 _universe_sorted and :67
+                 _universe_frozenset. NOT 199 of 200. Two tape
+                 writes remain, both in registry.py
+                 UniverseSnapshot.__init__. Concept residue is
+                 recorded, not deleted.
+  DETERMINISM:   148 -> 148 after every src commit; no replay
+                 hash moved
+  VERIFY_STEP:   `S-30C` not in plan (known key is `S-30c`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 15 declared / 6 touched / 0 extra CLEAN;
+                 PARITY moved 0 holds; TESTS 4891->4896
+                 passed, failed 0->0; NET DELTA compare-by-eye
+                 MATCH on modules 0 and public symbols +1.
+                 Blast radius platform-wide -- human gate.
+  NOTES:         Three commits, scan first. b0462ec is tests
+                 only: G31 scan, registry retarget (C2 stays
+                 accounting), _KNOWN_UNCOVERED shrinks by G31
+                 only. The five assertions were red on this
+                 tree while the two illegal writes and the
+                 unused Kind still existed -- a taxonomy member
+                 with no constructor is the S-26 unused seam.
+                 ee35e34 lands UniverseSnapshot on engine 5
+                 (registry.py). The two illegal store writes
+                 (synchronizer.py:66 _universe_sorted, :67
+                 _universe_frozenset) go to zero; the two
+                 remaining writes are in
+                 UniverseSnapshot.__init__. That is the sole
+                 store producer. Bootstrap publishes from
+                 PlatformConfig.symbols; the synchronizer
+                 reads (no alpha import). 87d70f9 types the
+                 duck Protocol as read-only properties for
+                 mypy. KernelFault.Kind.UNIVERSE is raised at
+                 registry.py:102 (missing), :107 (empty on
+                 require), :123 (empty on publish), :131
+                 (peer extras), :201 (second bind with a
+                 different membership). No PlatformConfig
+                 field was added or deleted. No replay hash
+                 moved at any commit (148 after 87d70f9;
+                 64/64, fingerprint unmoved). Declared NET
+                 DELTA: src modules 0, public symbols +1.
+                 Measured: 206 -> 206, 573 -> 574, sloc +107,
+                 n_edges +2 (registry -> exception_taxonomy,
+                 registry -> gate_registry). MATCH on the two
+                 declared figures. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Merge-gate: not-paper_rth 4895 passed / 0 failed /
+                 6 skipped / 14 deselected / 6 xfailed; determinism
+                 148; conformance 103 passed / 6 xfailed.
+  FINDINGS:      1. Stop-exit disagreement.
+                 _make_stop_exit_config keeps the phase-4
+                 PORTFOLIO universe {AAPL, MSFT, NVDA} and
+                 replaces PlatformConfig.symbols with {AAPL}.
+                 Composition unioned the PORTFOLIO list;
+                 sensors took config.symbols. Nothing detected
+                 the split. Raising on extras failed four
+                 undeclared determinism tests at boot (not in
+                 FILES). Bootstrap now intersects the declared
+                 peer with config.symbols before publish so
+                 those tests boot; _publish_universe still
+                 raises when called with extras (G31 test).
+                 The split is recorded, not closed. Completeness
+                 on that walk was already 0, so the locked
+                 stop-exit hash did not move.
+                 2. Concept residue.
+                 Sensors, scheduler and aggregator still take
+                 config.symbols at construction.
+                 LoadedPortfolioLayerModule._universe is still
+                 the per-alpha YAML list; bootstrap still
+                 unions it for the scale cap and factor-loadings
+                 check. One producer of the store is not one
+                 producer of the concept. No step owns the
+                 remainder.
+                 verify_step.py uppercases the step id, so
+                 S-30C does not match plan key S-30c.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30a seventeen fail-quiet
+                 handlers / G36 open; S-30b health-vs-store
+                 halt gate / S-30h; four exempted baseline
+                 tests.
+  NEXT:          S-30d horizon grid (boundary).
+                 Not started. Do not begin S-30d.
+
+
 
 
