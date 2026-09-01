@@ -3055,7 +3055,17 @@ PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A site
                  The config-contract checksum also holds unless a PlatformConfig
                  field is added or deleted; if one is, declare the re-pin and
                  keep tests/acceptance/test_backtest_app_baseline.py in FILES.
-DELETES:         199 of 200 universe definition points
+DELETES:         the two illegal universe store writes -- synchronizer.py:66
+                 _universe_sorted and :67 _universe_frozenset. NOT 199 of 200.
+                 Phase 5's 200/11 was a count of the WORD universe, not of
+                 writers; a non-comment recount gives 216/12, almost all
+                 mentions. Competing membership sources are three, of which this
+                 step consolidates the store and keeps PlatformConfig.symbols as
+                 the config input. Residue remains: sensors, scheduler and
+                 aggregator take config.symbols at construction, and
+                 LoadedPortfolioLayerModule._universe is still the per-alpha YAML
+                 list -- one producer of the STORE is not one producer of the
+                 CONCEPT.
 NET DELTA:       src modules 0, public symbols +1 if the snapshot
                  is a new public type in an existing module
 ROLLBACK:        revert this step only. Hardest of the six.
