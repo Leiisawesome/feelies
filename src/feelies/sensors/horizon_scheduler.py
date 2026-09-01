@@ -29,6 +29,7 @@ from typing import Callable, Iterable, Literal
 
 from feelies.core.events import Event, HorizonTick, MetricEvent, MetricType
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
+from feelies.kernel.exception_taxonomy import KernelFault
 from feelies.monitoring.telemetry import MetricCollector
 
 _logger = logging.getLogger(__name__)
@@ -44,6 +45,61 @@ class SessionOpenAlreadyBoundError(RuntimeError):
     ``session_open_ns`` was provided.  Re-binding after that would
     invalidate already-emitted ticks, so we fail loudly.
     """
+
+
+class HorizonGrid:
+    """Engine-2 ordered membership for the horizon grid (§F.8).
+
+    Bootstrap publishes one grid from ``PlatformConfig.horizons_seconds``.
+    Other sites read. ``KernelFault(HORIZON_GRID)`` on a missing or
+    conflicting grid. An empty grid is a valid no-op.
+    """
+
+    __slots__ = ("_horizons_sorted", "_horizons_frozenset")
+
+    def __init__(self, horizons: Iterable[int]) -> None:
+        members = frozenset(int(h) for h in horizons)
+        for h in members:
+            if h <= 0:
+                raise ValueError(f"HorizonGrid horizons must be positive ints, got {h}")
+        self._horizons_sorted: tuple[int, ...] = tuple(sorted(members))
+        self._horizons_frozenset: frozenset[int] = members
+
+    @property
+    def horizons(self) -> tuple[int, ...]:
+        return self._horizons_sorted
+
+    @property
+    def members(self) -> frozenset[int]:
+        return self._horizons_frozenset
+
+
+def _require_horizon_grid(grid: object) -> HorizonGrid:
+    """Return the engine-2 grid, or raise ``KernelFault(HORIZON_GRID)``."""
+    if not isinstance(grid, HorizonGrid):
+        raise KernelFault(
+            "horizon grid is missing",
+            kind=KernelFault.Kind.HORIZON_GRID,
+        )
+    return grid
+
+
+def _publish_horizon_grid(
+    horizons: Iterable[int],
+    *,
+    peer: Iterable[int] | None = None,
+) -> HorizonGrid:
+    """Build the grid from config input; refuse a conflicting peer."""
+    grid = HorizonGrid(horizons)
+    if peer is not None:
+        extra = tuple(sorted(set(int(h) for h in peer) - set(grid.horizons)))
+        if extra:
+            raise KernelFault(
+                "horizon grid conflict: declared membership is not a subset "
+                f"of the platform grid: {extra!r}",
+                kind=KernelFault.Kind.HORIZON_GRID,
+            )
+    return grid
 
 
 class HorizonScheduler:
@@ -67,7 +123,7 @@ class HorizonScheduler:
     """
 
     __slots__ = (
-        "_horizons_sorted",
+        "_grid",
         "_session_id",
         "_symbols_sorted",
         "_session_open_ns",
@@ -85,7 +141,7 @@ class HorizonScheduler:
     def __init__(
         self,
         *,
-        horizons: frozenset[int],
+        horizons: Iterable[int] | HorizonGrid,
         session_id: str,
         symbols: frozenset[str],
         session_open_ns: int | None = None,
@@ -93,22 +149,22 @@ class HorizonScheduler:
         metric_collector: MetricCollector | None = None,
         session_open_anchor_fn: Callable[[int], int] | None = None,
     ) -> None:
-        for h in horizons:
-            if h <= 0:
-                raise ValueError(f"HorizonScheduler.horizons must be positive ints, got {h}")
-        self._horizons_sorted: tuple[int, ...] = tuple(sorted(horizons))
+        if isinstance(horizons, HorizonGrid):
+            self._grid = horizons
+        else:
+            self._grid = HorizonGrid(horizons)
         self._session_id = session_id
         self._symbols_sorted: tuple[str, ...] = tuple(sorted(symbols))
 
         # Warn early when the symbol universe is empty but horizons are
         # configured; SYMBOL-scope ticks will never be emitted, which almost
         # certainly means the platform config is wrong.
-        if not symbols and horizons:
+        if not symbols and self._grid.horizons:
             _logger.warning(
                 "HorizonScheduler: symbols universe is empty but %d horizon(s) "
                 "are configured; SYMBOL-scope ticks will never be emitted "
                 "(likely misconfiguration)",
-                len(horizons),
+                len(self._grid.horizons),
             )
         self._session_open_ns: int | None = session_open_ns
         # ``_session_open_locked`` is True iff we have either accepted
@@ -156,7 +212,7 @@ class HorizonScheduler:
     @property
     def horizons(self) -> tuple[int, ...]:
         """Registered horizons in ascending order."""
-        return self._horizons_sorted
+        return self._grid.horizons
 
     def bind_session_open(self, ts_ns: int) -> None:
         """Explicitly bind the session anchor before any events arrive.
@@ -180,7 +236,7 @@ class HorizonScheduler:
         in the returned order, so consumers see the same ordering on
         every replay.
         """
-        if not self._horizons_sorted:
+        if not self._grid.horizons:
             return ()
 
         if not self._session_open_locked:
@@ -203,7 +259,7 @@ class HorizonScheduler:
         ts = event.timestamp_ns
         emitted: list[HorizonTick] = []
 
-        for horizon in self._horizons_sorted:
+        for horizon in self._grid.horizons:
             window_ns = horizon * _NS_PER_SECOND
             elapsed = ts - self._session_open_ns
             if elapsed < 0:
