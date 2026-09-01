@@ -7205,6 +7205,294 @@ WATCH:       the accepted baseline failure set is now three tests across two
   NEXT:          S-30d horizon grid (boundary).
                  Not started. Do not begin S-30d.
 
+---
 
+## S-30d  2026-09-01T12:25:00+08:00
+  STEP:          S-30d
+  BASE:          e4f4785aa8e99445b4847dd9f1695ebd15b0f643
+  RESULT SHA:    02236055e54891129dae1a622078688f65512e19
+                 (exec/S-30d; implementation only). Plan
+                 amendment cherry-picked to arch/exec as
+                 8d5d4252636e7d700375ed5dd5a56622fa5d2aa2.
+  VERDICT:       passed
+  CONFORMANCE:   test_horizon_grid.py (no Phase 5 gap ID; VALIDATED BY
+                 copy-paste named G31, which is universe) |
+                 failed-before: yes (4 failed: 3 illegal views, first
+                 bootstrap.py:1537 def _composition_signal_horizons;
+                 also synchronizer.py:89 _signal_horizons_sorted,
+                 horizon_scheduler.py:99 _horizons_sorted;
+                 HORIZON_GRID never constructed; _require_horizon_grid
+                 / _publish_horizon_grid ImportError) | passes-after:
+                 yes (4 passed)
+                 S1: uncovered (G32,) -> (G32,)  (registry not edited)
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every src commit
+                 S14: 2 passed -> 2 passed
+                 conformance 103 passed / 6 xfailed -> 107 passed /
+                 6 xfailed (no XPASS). +4 are the horizon-grid scan.
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-30d GREEN 4896 passed / 0 failed /
+                 19 skipped / 6 xfailed (Tuesday, the four
+                 exempted tests skipped)
+                 -> post-S-30d GREEN 4900 passed / 0 failed / 19
+                 skipped / 6 xfailed. not-paper_rth: 4899 passed,
+                 6 skipped, 14 deselected, 6 xfailed.
+                 +4 passed = the four horizon-grid tests.
+  PARITY:        declared hold -- replay hashes and the manifest
+                 fingerprint. Config-contract checksum holds (no
+                 PlatformConfig field) | actual 64/64 identical
+                 (pre-S-30d vs post-S-30d); 0 moved at any
+                 commit | MATCH. tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH old = new =
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95
+                 (no field add/delete; no re-pin commit).
+  FILES:         9 declared tokens (7 named paths +
+                 tests/conformance/registry.py,
+                 tests/conformance/test_registry_closure.py from
+                 FILES prose "Do not edit"), 4 touched
+                 (verify_step S-30D uppercase miss; four checks
+                 by hand CLEAN). Touched:
+                 src/feelies/sensors/horizon_scheduler.py
+                 src/feelies/composition/synchronizer.py
+                 src/feelies/bootstrap.py
+                 tests/conformance/test_horizon_grid.py
+                 Declared-but-unneeded: aggregator.py,
+                 platform_config.py,
+                 test_backtest_app_baseline.py,
+                 registry.py, test_registry_closure.py.
+                 Fail-before remaining store writers were the
+                 three named views, all already in FILES. Residue
+                 writers (layer_validator _registered_horizons,
+                 SNRDriftDiffusionSensor._horizons) were not
+                 added. No tenth file.
+                 No new module, so sensors/__init__.py was not
+                 opened.
+  NET DELTA:     declared after amendment: src modules 0,
+                 public symbols +1, branch points 0
+                 (plan parenthetical 208->208 / 573->574 /
+                 horizon_grid.py added / config_yaml.py
+                 deleted / "the PlatformConfig field" is not
+                 this tree — see FINDINGS)
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 574 -> 575 (+1; HorizonGrid)
+                 sloc 46070 -> 46099 (+29)
+                 n_edges 665 -> 666 (+1)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 DELETES: the three named views (named at
+                 fail-before): horizon_scheduler.py:99
+                 _horizons_sorted (moved into HorizonGrid.__init__),
+                 synchronizer.py:89 _signal_horizons_sorted,
+                 bootstrap.py:1537 _composition_signal_horizons.
+                 One tape write remains, HorizonGrid.__init__
+                 _horizons_sorted. Concept residue is recorded,
+                 not deleted.
+  DETERMINISM:   148 -> 148 after every src commit; 148 after
+                 the go-ahead re-check. No replay hash moved.
+                 Acceptance test_backtest_app_baseline.py:
+                 2 passed (config-contract hash + replay).
+  VERIFY_STEP:   `S-30D` not in plan (known key is `S-30d`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 9 declared / 4 touched / 0 extra CLEAN;
+                 PARITY moved 0 holds; TESTS 4896->4900
+                 passed, failed 0->0; NET DELTA compare-by-eye
+                 MATCH on modules 0 and public symbols +1
+                 after the amendment.
+  NOTES:         Commit order: scan first, then the store,
+                 then a wrap restore. 6cf3060 is tests only.
+                 The four assertions were red on this tree
+                 while the three private views and the unused
+                 Kind still existed -- a taxonomy member with
+                 no constructor is the S-26 unused seam, the
+                 same reason S-30b and S-30c put the scan
+                 first. 015da00 lands HorizonGrid on engine 2
+                 (horizon_scheduler.py) and deletes the three
+                 views in the same commit, per REFACTOR PATH.
+                 0223605 restores two incidental ruff wraps in
+                 bootstrap.py that 015da00 picked up. 8d4f6c2
+                 was a plan commit on exec/S-30d; moved to
+                 arch/exec as 8d5d425 and exec/S-30d reset to
+                 0223605.
+                 The three private views
+                 (HorizonScheduler._horizons_sorted,
+                 UniverseSynchronizer._signal_horizons_sorted,
+                 bootstrap._composition_signal_horizons) are
+                 gone. One producer of the store:
+                 HorizonGrid.__init__. Bootstrap publishes
+                 from PlatformConfig.horizons_seconds;
+                 HorizonScheduler reads.
+                 KernelFault.Kind.HORIZON_GRID is raised at
+                 horizon_scheduler.py:80 (missing) and :97
+                 (peer extras). Empty grid is a valid no-op
+                 (unlike UNIVERSE).
+                 _BASELINE_CONFIG_HASH old and new are the
+                 same:
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 It did not move: no PlatformConfig field was
+                 added or deleted (platform_config.py is not
+                 in the implementation diff). Go-ahead asked
+                 for a re-pin to "the new value"; this tree
+                 has no new value, so there is no re-pin
+                 commit. Acceptance 2 passed; compute_config_hash
+                 on configs/bt_app.yaml matches the pin.
+                 No replay hash moved (148 after every src
+                 commit and after the go-ahead re-check).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Declared NET DELTA after the amendment:
+                 modules 0, public symbols +1, branch points
+                 0. Measured: 206 -> 206, 574 -> 575
+                 (HorizonGrid), sloc +29, n_edges +1
+                 (horizon_scheduler -> exception_taxonomy).
+                 MATCH on modules 0 and public symbols +1.
+                 The amendment's parenthetical counts
+                 (208->208, 573->574, horizon_grid.py /
+                 config_yaml.py) are not this tree. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      Concept residue -- S-30c shape. This step
+                 achieved one producer of the STORE
+                 (HorizonGrid). It did not achieve one
+                 producer of the CONCEPT. Code that still
+                 chooses or assumes a horizon without reading
+                 the grid, and whether it can disagree:
+                 Production, not reading HorizonGrid:
+                 - PlatformConfig.horizons_seconds (config
+                   input). Boot-path publish is from this
+                   field, so it cannot disagree with the
+                   published grid on that path. It can
+                   disagree with YAML/G7 if the operator
+                   overrides the field.
+                 - bootstrap.py:791, 1263-1268, 1325, 1365,
+                   1372 -- session-open guard,
+                   _build_horizon_features, scheduler wiring
+                   predicate, log line, sensor_buffer_seconds
+                   = 2*max(...). Same input as publish;
+                   matches the grid by construction; does not
+                   read it.
+                 - Horizon feature factories
+                   (HorizonWindowedFeature, passthrough,
+                   rolling-stats) take h from that config
+                   loop. Same.
+                 - HorizonAggregator._features_by_horizon
+                   buckets those features. Same on the boot
+                   path; a different feature list would
+                   disagree.
+                 - SNRDriftDiffusionSensor default
+                   horizons_seconds=(30, 120) and
+                   self._horizons. YES it can disagree.
+                   Independent of the grid. Not on the
+                   default platform sensor list;
+                   tests/determinism/test_v03_sensor_replay.py
+                   passes (30, 120) in params.
+                 - LayerValidator._registered_horizons /
+                   DEFAULT_REGISTERED_HORIZONS =
+                   {30,120,300,900,1800}. YES. G7. Loader
+                   never injects config.horizons_seconds.
+                   PORTFOLIO skips G7. test_g7_accepts_custom_registry
+                   validates horizon_seconds 17 against
+                   {17, 120}.
+                 - SIGNAL/PORTFOLIO YAML horizon_seconds on
+                   LoadedSignalLayerModule /
+                   LoadedPortfolioLayerModule. YES. G7
+                   constrains SIGNAL against the hardcoded
+                   set, not the live grid. A config of {30}
+                   still loads horizon_seconds: 300.
+                 - bootstrap.py:1583-1586, 1603-1611 PORTFOLIO
+                   YAML union + upstream SIGNAL horizons into
+                   UniverseSynchronizer _context_horizons /
+                   _signal_horizons. YES. That is the
+                   disagreement the three views already had.
+                   The named views are gone; this computation
+                   remains.
+                 - HorizonSignalEngine.register /
+                   CompositionEngine.register
+                   (module.horizon_seconds). YES.
+                   Evaluation is YAML-horizon vs
+                   snapshot/context, not membership on the
+                   grid.
+                 - dependency_graph warm-feature helpers
+                   (module.horizon_seconds). YES, same YAML
+                   int.
+                 Manifests on this tree (all in {30,120,300},
+                 a subset of the default grid; they still do
+                 not read it):
+                 SIGNAL 30s: sig_inventory_revert_v1,
+                 sig_hawkes_burst_v1, _paper_smoke_v1;
+                 SIGNAL 120s: sig_moc_imbalance_v1,
+                 sig_benign_midcap_v1, sig_contra_fixture_v1;
+                 SIGNAL 300s: sig_kyle_drift_v1;
+                 PORTFOLIO 300s (G7 does not apply):
+                 pro_burst_revert_v1, pro_kyle_benign_v1;
+                 templates: template_signal 300,
+                 template_portfolio 300;
+                 fixtures: null_alpha, shape_adv_long,
+                 shape_adv_short -- all 30.
+                 Tests/scripts mint a local HorizonGrid via
+                 HorizonScheduler(horizons=frozenset(...)).
+                 YES they can disagree. This tree already
+                 does: test_horizon_scheduler.py default
+                 {30,120} and also {} / {0,30};
+                 test_horizon_scheduler_props.py Hypothesis
+                 samples 10 and 60, which are not on the
+                 default grid; test_boundary_ts.py {30};
+                 tests/fixtures/replay.py default
+                 {30,120,300}; test_signal_replay.py
+                 {30,120,300}; test_trade_path_regime_gate_cold_start.py
+                 {30,120}; test_sensor_metrics.py {30};
+                 test_gas_ofi_integrated.py,
+                 test_gas_sweep_kyle_drift_sign.py,
+                 test_ic_apparatus_certification.py a single
+                 research horizon; scripts/sensor_feature_ic.py
+                 and scripts/research/{sweep_kyle_drift_validation_extract,
+                 inventory_fade_census, halfhour_clock_drift_census,
+                 hour_checkpoint_drift_census, h8_contamination_read,
+                 sweep_kyle_drift_census}.py.
+                 UniverseSynchronizer(...) in
+                 test_synchronizer.py,
+                 test_cross_sectional_context_replay.py,
+                 test_orchestrator_bus_sized_intent.py takes
+                 horizons=/signal_horizons= directly -- never
+                 a HorizonGrid. HorizonAggregator tests pass
+                 features with their own horizon_seconds.
+                 VALIDATED BY said "the new G31 test". G31 is
+                 universe. This step has no Phase 5 gap ID;
+                 registry.py was not edited. The scan is
+                 test_horizon_grid.py.
+                 verify_step.py uppercases the step id, so
+                 S-30D does not match plan key S-30d.
+                 Frozen; four checks by hand.
+                 Plan amendment 8d5d425 (was 8d4f6c2) writes 208->208 /
+                 573->574 / horizon_grid.py added /
+                 config_yaml.py deleted / "the PlatformConfig
+                 field". This tree: 206->206, 574->575, no
+                 new module, no deleted module, no
+                 PlatformConfig field. S-24: the tree wins.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30a seventeen fail-quiet
+                 handlers / G36 open; S-30b health-vs-store
+                 halt gate / S-30h; S-30c concept residue
+                 (sensors/scheduler/aggregator still take
+                 config.symbols at construction); four
+                 exempted baseline tests.
+  NEXT:          S-30e ingress shedding (boundary).
+                 Not started. Do not begin S-30e.
+                 Left uncommitted: baseline_pre-S-30d.json,
+                 baseline_post-S-30d.json, this ledger entry.
 
 
