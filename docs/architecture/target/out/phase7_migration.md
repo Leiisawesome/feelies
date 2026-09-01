@@ -3121,7 +3121,11 @@ DELETES:         the three named views above. NOT every mention of
                  STORE is not one producer of the CONCEPT. Scan stored
                  horizon membership (tuple/frozenset of seconds), not
                  the token _horizons_sorted.
-NET DELTA:       src modules 0, public symbols +1, branch points 0
+NET DELTA:       src modules 0 (208 -> 208; horizon_grid.py added,
+                 config_yaml.py deleted). public symbols **+1** (573 -> 574,
+                 HorizonGrid; the PlatformConfig field is a dataclass attribute,
+                 not a top-level definition, so measure.py does not count it).
+                 branch points 0.
 ROLLBACK:        restore the three views.
 ```
 ```
