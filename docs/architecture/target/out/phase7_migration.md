@@ -3078,14 +3078,25 @@ PROBLEM:         Three private sorted-horizon views:
                  sensors/horizon_scheduler.py _horizons_sorted,
                  composition/synchronizer.py _signal_horizons_sorted,
                  bootstrap.py _composition_signal_horizons.
+                 They are not replicas of one set. The scheduler holds
+                 PlatformConfig.horizons_seconds. Composition context
+                 horizons are the PORTFOLIO YAML union; signal horizons
+                 are that union plus upstream SIGNAL horizon_seconds.
+                 G7 covers SIGNAL only and checks hardcoded
+                 DEFAULT_REGISTERED_HORIZONS, not live config.
+                 PORTFOLIO skips G7. Enumerate writers at fail-before.
 FILES:           src/feelies/sensors/horizon_scheduler.py
                  src/feelies/composition/synchronizer.py
                  src/feelies/features/aggregator.py
                  src/feelies/bootstrap.py
-                 tests/conformance/ (AST scan: no sorted horizon
-                 collection outside engine 2)
                  src/feelies/core/platform_config.py
+                 tests/conformance/test_horizon_grid.py
                  tests/acceptance/test_backtest_app_baseline.py
+                 plus every production file fail-before names among
+                 remaining stored horizon-membership writers -- named
+                 files only, no directory scope. Do not create a new
+                 module. Do not edit tests/conformance/registry.py or
+                 test_registry_closure.py (no Phase 5 gap ID).
 WHY THIS OWNER:  Engine 2. Structurally the UniverseSnapshot pattern.
 REFACTOR PATH:   Declare HorizonGrid on an existing engine-2 module.
                  Delete the three private views in the same commit.
@@ -3098,13 +3109,18 @@ BLAST RADIUS:    boundary (three holders)
 VALIDATED BY:    the new G31 test, S1, C2, S14
 PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A
                  site disagreement discovered here is a finding, not a
-                 silent re-pin. _BASELINE_CONFIG_HASH holds; no
-                 PlatformConfig field. Adding a field or folding
-                 universe_hash into the fingerprint is a declared re-pin.
-DELETES:         the three private sorted-horizon views --
-                 sensors/horizon_scheduler.py _horizons_sorted,
-                 composition/synchronizer.py _signal_horizons_sorted,
-                 bootstrap.py _composition_signal_horizons.
+                 silent re-pin. The config-contract checksum also holds
+                 unless a PlatformConfig field is added or deleted; if
+                 one is, declare the re-pin and keep
+                 tests/acceptance/test_backtest_app_baseline.py in FILES.
+DELETES:         the three named views above. NOT every mention of
+                 horizon. Residue remains: DEFAULT_REGISTERED_HORIZONS,
+                 per-alpha YAML horizon_seconds, SNRDriftDiffusionSensor
+                 ._horizons, aggregator _features_by_horizon,
+                 synchronizer _context_horizons -- one producer of the
+                 STORE is not one producer of the CONCEPT. Scan stored
+                 horizon membership (tuple/frozenset of seconds), not
+                 the token _horizons_sorted.
 NET DELTA:       src modules 0, public symbols +1, branch points 0
 ROLLBACK:        restore the three views.
 ```
