@@ -52,7 +52,6 @@ class UniverseSynchronizer:
         "_universe_input",
         "_context_horizons",
         "_signal_horizons",
-        "_signal_horizons_sorted",
         "_upstream_strategy_ids",
         "_ctx_seq",
         "_snapshot_cache",
@@ -85,9 +84,6 @@ class UniverseSynchronizer:
             frozenset(signal_horizons)
             if signal_horizons is not None
             else frozenset(self._context_horizons)
-        )
-        self._signal_horizons_sorted: tuple[int, ...] = tuple(
-            sorted(self._signal_horizons),
         )
         self._upstream_strategy_ids: tuple[str, ...] = tuple(
             sorted(set(upstream_strategy_ids or ())),
@@ -228,7 +224,7 @@ class UniverseSynchronizer:
         """Latest causal, non-stale ``Signal`` for *strategy_id* at the barrier."""
         max_age_ns = self._max_age_ns(portfolio_h)
         candidates: list[tuple[int, Signal]] = []
-        for kh in self._signal_horizons_sorted:
+        for kh in sorted(self._signal_horizons):
             s = self._signal_cache.get((kh, symbol, strategy_id))
             if s is not None:
                 candidates.append((kh, s))

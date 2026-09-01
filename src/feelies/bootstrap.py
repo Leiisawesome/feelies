@@ -60,7 +60,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.core.wiring_manifest import manifest_hash
 from feelies.core.session_clock import rth_open_ns
-from feelies.sensors.horizon_scheduler import HorizonScheduler
+from feelies.sensors.horizon_scheduler import HorizonScheduler, _publish_horizon_grid
 from feelies.sensors.registry import SensorRegistry
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_backend import (
@@ -1352,7 +1352,7 @@ def _create_sensor_layer(
             else None
         )
         horizon_scheduler = HorizonScheduler(
-            horizons=config.horizons_seconds,
+            horizons=_publish_horizon_grid(config.horizons_seconds),
             session_id=_derive_session_id(config),
             symbols=frozenset(config.symbols),
             session_open_ns=config.session_open_ns,
@@ -1534,24 +1534,6 @@ def _union_portfolio_upstream_strategy_ids(
     return tuple(sorted(ids))
 
 
-def _composition_signal_horizons(
-    registry: AlphaRegistry,
-    context_horizons: frozenset[int],
-    upstream_strategy_ids: tuple[str, ...],
-) -> frozenset[int]:
-    """Horizons for which the synchronizer caches Layer-2 ``Signal`` events."""
-    hs: set[int] = set(context_horizons)
-    for sid in upstream_strategy_ids:
-        try:
-            mod = registry.get(sid)
-        except KeyError:
-            continue
-        h = getattr(mod, "horizon_seconds", None)
-        if isinstance(h, int) and h > 0:
-            hs.add(h)
-    return frozenset(hs)
-
-
 def _create_composition_layer(
     *,
     config: PlatformConfig,
@@ -1618,11 +1600,15 @@ def _create_composition_layer(
     metric_seq = SequenceGenerator(stream="metric", thread_safe=thread_safe_sequences)
 
     upstream_ids = _union_portfolio_upstream_strategy_ids(portfolio_modules)
-    signal_horizons = _composition_signal_horizons(
-        registry,
-        frozenset(horizons),
-        upstream_ids,
-    )
+    signal_horizons = set(horizons)
+    for sid in upstream_ids:
+        try:
+            mod = registry.get(sid)
+        except KeyError:
+            continue
+        h = getattr(mod, "horizon_seconds", None)
+        if isinstance(h, int) and h > 0:
+            signal_horizons.add(h)
     synchronizer = UniverseSynchronizer(
         bus=bus,
         universe=snapshot,
