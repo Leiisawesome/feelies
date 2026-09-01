@@ -28,6 +28,7 @@ from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
+from feelies.kernel.exception_taxonomy import KernelFault
 
 logger = logging.getLogger(__name__)
 
@@ -188,11 +189,11 @@ class MassiveLiveFeed:
         for item in retained:
             try:
                 self._queue.put_nowait(item)
-            except queue.Full:
-                logger.warning(
+            except queue.Full as exc:
+                raise KernelFault(
                     "massive_ws: queue full while restoring buffered events after sentinel drain",
-                )
-                break
+                    kind=KernelFault.Kind.INGRESS_ADMIT,
+                ) from exc
 
     def _enqueue_sentinel_nowait(self) -> None:
         """Signal consumers without blocking the caller on a full queue.
