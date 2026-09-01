@@ -3101,9 +3101,10 @@ PARITY IMPACT:   hold -- replay hashes and the manifest fingerprint. A
                  silent re-pin. _BASELINE_CONFIG_HASH holds; no
                  PlatformConfig field. Adding a field or folding
                  universe_hash into the fingerprint is a declared re-pin.
-DELETES:         the bootstrap set-union and the synchronizer private
-                 membership view (count named at fail-before, not 199
-                 of 200)
+DELETES:         the three private sorted-horizon views --
+                 sensors/horizon_scheduler.py _horizons_sorted,
+                 composition/synchronizer.py _signal_horizons_sorted,
+                 bootstrap.py _composition_signal_horizons.
 NET DELTA:       src modules 0, public symbols +1, branch points 0
 ROLLBACK:        restore the three views.
 ```
