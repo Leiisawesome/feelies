@@ -466,7 +466,6 @@ def build_platform(
         router,
         (BacktestOrderRouter, PassiveLimitOrderRouter),
     ):
-
         def _on_backtest_quote(event: NBBOQuote) -> None:
             router.on_quote(event)
 
@@ -708,7 +707,9 @@ def build_platform(
         position_manager_urgency_exec=config.position_manager_urgency_exec,
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
     )
-    _attach_notification_observer(bus, _NotificationObserver(alert_manager))
+    _attach_notification_observer(
+        bus, _NotificationObserver(alert_manager)
+    )
 
     # Wire IB connectivity / unknown-status alerts onto the shared bus so
     # operators have programmatic visibility into IB link-state events and
