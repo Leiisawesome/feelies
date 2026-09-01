@@ -3131,26 +3131,55 @@ ROLLBACK:        restore the three views.
 ```
 STEP:            S-30e
 CLOSES:          G35 (ingress half; engine-11 budget-breach is S-07)
-PROBLEM:         No queue-depth or drop policy on ingest (4 sites).
-FILES:           the named ingestion admit/drop sites (enumerate at
-                 fail-before; do not directory-scope ingestion/)
-                 src/feelies/core/platform_config.py
+PROBLEM:         G35 says no queue-depth or drop policy on ingest
+                 (4 sites) and an unbounded live queue. Measured:
+                 one market-data queue, MassiveLiveFeed
+                 `_queue = queue.Queue(maxsize=_MAX_QUEUE_SIZE)`
+                 `_MAX_QUEUE_SIZE = 100_000`, drop on put_nowait
+                 Full in `_consume` (count `_events_dropped`, warn,
+                 `notify_feed_interrupted`). ReplayFeed has no
+                 queue. KernelFault.INGRESS_ADMIT exists and has
+                 no production constructor. `_drain_stale_sentinels`
+                 Full drops without counting or notifying.
+                 Enumerate Full/drop writers at fail-before; do
+                 not inherit 4.
+FILES:           src/feelies/ingestion/massive_ws.py
+                 tests/conformance/test_ingress_admit.py
+                 tests/conformance/registry.py
+                 plus every production file fail-before names
+                 among remaining market-data queue.Full / drop
+                 writers -- named files only, no directory scope.
+                 Do not write the token ingestion/
+                 Do not add a PlatformConfig field. Do not put
+                 platform_config.py or
                  tests/acceptance/test_backtest_app_baseline.py
+                 in FILES unless a field is added, which this
+                 step forbids. Do not edit
+                 monitoring/latency_budget.py (S-07/S-11).
+                 Do not edit replay_feed.py. Do not create a
+                 new module.
 WHY THIS OWNER:  Engine 1 owns ingress shedding.
 REFACTOR PATH:   Policy on the ingest path with a caller. A config
                  field with no reader is S-26 -- do not add it.
                  Do not edit monitoring/latency_budget.py (S-07/S-11).
 BLAST RADIUS:    boundary
 VALIDATED BY:    X1
-PARITY IMPACT:   hold -- all 28 replay hashes and fingerprint -- if
-                 no PlatformConfig field is added. Adding
-                 queue_depth / drop_policy moves _BASELINE_CONFIG_HASH
-                 by construction (S-29). Declare the re-pin or do
-                 not add the field. Current "F.6 holds, none of which
-                 changes a hashed field" is false if the field is
-                 added.
-DELETES:         ad-hoc drop paths this step replaces
-NET DELTA:       src modules 0, public symbols 0
+PARITY IMPACT:   hold -- all 28 replay hashes, the manifest
+                 fingerprint, and the config-contract checksum.
+                 No PlatformConfig field. Shedding is live-only
+                 on MassiveLiveFeed; a replayed tape cannot hit
+                 Full. A drop path that can run during ReplayFeed
+                 events() is a STOP, not a re-pin.
+DELETES:         the silent Full in _drain_stale_sentinels
+                 (restore-and-drop without count/notify). NOT
+                 the _consume drop -- that is the policy this
+                 step keeps. NOT ReplayFeed. Residue remains:
+                 IB submit/cancel/fill queues, gate_registry
+                 notification deque maxlen, sensor window
+                 deques -- one producer of the WS drop is not
+                 one producer of every queue.
+NET DELTA:       src modules 0, public symbols 0, branch points 0.
+                 INGRESS_ADMIT is an existing enum member.
 ROLLBACK:        revert this step only.
 ```
 ```
