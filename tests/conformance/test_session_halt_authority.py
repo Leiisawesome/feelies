@@ -39,6 +39,11 @@ _STORE_ATTRS = frozenset(
         "_halt_on_codes",
         "_halt_off_codes",
         "_halt_blackout_ns",
+        "halted_symbols",
+        "blackout_until_ns",
+        "on_codes",
+        "off_codes",
+        "blackout_ns",
     }
 )
 _MUTATORS = frozenset({"add", "discard", "clear", "pop", "update", "remove"})
@@ -196,9 +201,7 @@ def _health_halted_transition_sites() -> list[tuple[str, int]]:
 def test_g33_health_halted_transition_goes_through_the_store() -> None:
     """A DataHealth.HALTED trading write outside engine 1 fails G33."""
     sites = _health_halted_transition_sites()
-    assert sites, (
-        "G33 scan found no DataHealth.HALTED transitions — the guard would be vacuous"
-    )
+    assert sites, "G33 scan found no DataHealth.HALTED transitions — the guard would be vacuous"
     illegal = [f"{path}:{line}" for path, line in sites if path != _AUTHORITY]
     assert not illegal, (
         "health HALTED transition must go through the engine-1 halt store "
@@ -224,9 +227,7 @@ def test_g33_health_halted_xor_empty_store_raises_session_halt() -> None:
     except KernelFault as fault:
         assert fault.kind is KernelFault.Kind.SESSION_HALT
     else:
-        raise AssertionError(
-            "health HALTED xor empty store must raise KernelFault(SESSION_HALT)"
-        )
+        raise AssertionError("health HALTED xor empty store must raise KernelFault(SESSION_HALT)")
 
 
 def test_g33_store_membership_xor_healthy_feed_raises_session_halt() -> None:
