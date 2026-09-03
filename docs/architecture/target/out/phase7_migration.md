@@ -3287,16 +3287,22 @@ FILES:           src/feelies/ingestion/data_integrity.py
                  tests/conformance/test_session_halt_authority.py
                  tests/conformance/registry.py
                  tests/acceptance/test_backtest_app_baseline.py
+                 tests/determinism/test_symbol_halted_replay.py
                  named files only, no directory scope. Do not add a
                  PlatformConfig field. No new module.
 WHY THIS OWNER:  Engine 1. It already owns the halt store and the
                  DataHealth SM.
 REFACTOR PATH:   Merge the two writes into one engine-1 function that
                  updates _HaltTradeability and the trade-feed health SM
-                 together. Call it from on_message and from
-                 _process_trade_inner. Keep both reads; raise
-                 KernelFault(kind=SESSION_HALT) if health HALTED xor
-                 store membership at a trading decision. Rewrite
+                 together. Call it from the trade-parse path under
+                 on_message (_apply_halt_status at massive_normalizer.py
+                 :504 and :665) and from _process_trade_inner. Keep both
+                 reads. Raise KernelFault(kind=SESSION_HALT) if health
+                 HALTED xor store membership at a trading decision, but
+                 only when a trade-feed health SM is bound; _normalizer
+                 is None is store-only, not a disagreement (halt replay).
+                 Guard SymbolHalted emit on "not already in the store" so
+                 a double call does not double-emit. Rewrite
                  TestHaltedGate off the split. Extend the G33 scan so a
                  health transition that does not go through the store
                  fails. Do not leave SESSION_HALT unused on this path.
