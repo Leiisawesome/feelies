@@ -7793,4 +7793,144 @@ ALSO:        verify_step --list flags S-30f "declares hold but
              tests/acceptance/test_backtest_app_baseline.py in FILES
              is a STOP. Do not add the field.
 
+---
+
+## S-30g  2026-09-03T15:43:00+08:00
+  STEP:          S-30g
+  BASE:          94aa097f35e0204006212d6eac66d91079eec514
+  RESULT SHA:    19e40fe98481e0048752ff2e8d094a99e5db1b87
+                 (implementation). HEAD also carries
+                 db9c82d (plan amendment: CLOSES nothing,
+                 DELETES nothing, G36 stays OPEN).
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. G36 stays OPEN. The
+                 seventeen were adjudicated, not deleted.
+                 S6 | failed-before: xfail G36 (17 quiet;
+                 --runxfail named layer_validator.py:1190)
+                 | passes-after: still xfail G36 (quiet
+                 still 17). New allowlist S6 in
+                 test_fail_quiet.py | failed-before: yes
+                 (empty FAIL_QUIET_KEEP, 17 extras) |
+                 passes-after: yes. No XPASS.
+                 conformance 112 passed / 6 xfailed -> 113
+                 passed / 6 xfailed (+1 new S6)
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-30g GREEN 4905 passed / 0 failed /
+                 19 skipped / 6 xfailed (Thursday, the four
+                 exempted tests skipped)
+                 -> post-S-30g GREEN 4906 passed / 0 failed / 19
+                 skipped / 6 xfailed. not-paper_rth: 4905 passed,
+                 6 skipped, 14 deselected, 6 xfailed.
+                 +1 passed = the allowlist-aware S6.
+                 kernel 390 passed; docs 101 passed.
+  PARITY:        declared hold -- all 28 replay hashes, the
+                 manifest fingerprint, all 64 constants |
+                 actual 64/64 identical (pre-S-30g vs
+                 post-S-30g); 0 moved at either commit | MATCH.
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 vs baseline_post-S-30e.json 64/64 MATCH.
+  FILES:         10 declared, 1 touched, 0 extra CLEAN
+                 (verify_step S-30G uppercase miss; four checks
+                 by hand). Touched:
+                 tests/conformance/test_fail_quiet.py (new)
+                 Declared-but-unneeded (convert set empty):
+                 src/feelies/alpha/layer_validator.py
+                 src/feelies/bootstrap.py
+                 src/feelies/broker/ib/connection.py
+                 src/feelies/cli/env.py
+                 src/feelies/cli/promote.py
+                 src/feelies/composition/factor_neutralizer.py
+                 src/feelies/harness/backtest_runner.py
+                 src/feelies/ingestion/massive_ingestor.py
+                 src/feelies/ingestion/massive_ws.py
+                 Nothing outside FILES.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46100 -> 46100 (+0)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 fail-quiet handlers 17 -> 17
+                 DELETES: nothing. The residue is named,
+                 not removed. S6's xfail is not dropped.
+  DETERMINISM:   148 -> 148 after every commit; no replay
+                 hash moved
+  VERIFY_STEP:   `S-30G` not in plan (known key is `S-30g`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 10 declared / 1 touched / 0 extra CLEAN;
+                 PARITY moved 0 holds; TESTS 4905->4906
+                 passed, failed 0->0; NET DELTA compare-by-eye
+                 MATCH on modules 0 and public symbols 0.
+                 Blast radius boundary -- human gate.
+  NOTES:         Two agent commits, scan first. d16ef68
+                 lands test_fail_quiet.py with an empty
+                 allowlist so the new S6 is red while the
+                 seventeen are still unlisted (17 extras,
+                 first layer_validator.py:1190). After that
+                 commit: determinism 148; conformance 1
+                 failed / 112 passed / 6 xfailed. 19e40fe
+                 fills FAIL_QUIET_KEEP: all seventeen are
+                 keepers, each with a written reason, on an
+                 allowlist the new S6 reads. Convert set is
+                 empty. Quiet count unchanged at 17.
+                 Probe: inserted `except Exception: pass`
+                 at cli/env.py:35; the new S6 failed naming
+                 that unallowlisted extra; restore SHA256
+                 8CA8A500A90FEBF3E84CBDB14DE303E39447196FB26FB5264356E402612087D8
+                 BYTE_IDENTICAL; S6 passed again.
+                 No hash moved (148 after both commits;
+                 64/64, fingerprint unmoved). Declared NET
+                 DELTA src modules 0, public symbols 0,
+                 branch points 0. Measured: 206->206,
+                 575->575, sloc 0, n_edges 0. MATCH.
+                 Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 db9c82d is the plan amendment on this
+                 branch; CLOSES and DELETES now match what
+                 the tree did.
+  FINDINGS:      G36 stays OPEN. Closing it requires
+                 converting all seventeen -- which changes
+                 what callers see -- plus dropping the
+                 xfail in
+                 tests/conformance/test_exception_containment.py,
+                 an eleventh FILES entry this step did not
+                 have. Every source file holding a handler
+                 is already declared. Converting them is
+                 not worth doing: each was ruled a
+                 legitimate keeper (poll timeout, optional
+                 import, iterator end, documented numeric
+                 fallback, coerce-then-reject). Turning
+                 those into KernelFault would take a
+                 behaviour change this step was forbidden
+                 to make. The honest close is to retire
+                 G36's empty-quiet assertion in favour of
+                 the allowlist. That is the question the
+                 next step has to answer.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30b health-vs-store halt gate
+                 / S-30h; S-30c/S-30d/S-30e concept residue;
+                 four exempted baseline tests.
+  NEXT:          S-30h health-vs-store halt gate (boundary).
+                 Not started. Do not begin S-30h.
+                 Left uncommitted: baseline_pre-S-30g.json,
+                 baseline_post-S-30g.json, this ledger entry.
+
 
