@@ -21,9 +21,113 @@ class FailQuietKeep(NamedTuple):
     reason: str
 
 
-# Empty until the seventeen are classified. A passing run with this tuple
-# empty would mean the scanner went silent, not that G36 closed.
-FAIL_QUIET_KEEP: tuple[FailQuietKeep, ...] = ()
+# Converted set is empty: every conversion would propagate KernelFault where
+# the caller currently continues (behaviour change, not a type change).
+# Nested raise/catch to hide from the scanner is the S-28a shape.
+FAIL_QUIET_KEEP: tuple[FailQuietKeep, ...] = (
+    FailQuietKeep(
+        "src/feelies/alpha/layer_validator.py",
+        1190,
+        "(TypeError, ValueError)",
+        "G17 parse fallback: malformed half-life becomes 0; the check below raises LayerValidationError",
+    ),
+    FailQuietKeep(
+        "src/feelies/bootstrap.py",
+        1607,
+        "KeyError",
+        "unregistered upstream SIGNAL id skipped when unioning signal_horizons; raising would fail boot",
+    ),
+    FailQuietKeep(
+        "src/feelies/bootstrap.py",
+        1825,
+        "(TypeError, ValueError)",
+        "malformed trend_mechanism half-life becomes 0 so derived hard_exit_age is None; raising would change HazardPolicy construction",
+    ),
+    FailQuietKeep(
+        "src/feelies/broker/ib/connection.py",
+        337,
+        "queue.Empty",
+        "writer-thread poll timeout; fall through to drain cancels; raising would abort the IB writer loop",
+    ),
+    FailQuietKeep(
+        "src/feelies/broker/ib/connection.py",
+        413,
+        "(TypeError, ValueError)",
+        "ibapi Decimal filled/remaining coerced via str; raising would drop the fill",
+    ),
+    FailQuietKeep(
+        "src/feelies/cli/env.py",
+        22,
+        "ImportError",
+        "optional python-dotenv; absence is a supported operator path",
+    ),
+    FailQuietKeep(
+        "src/feelies/cli/promote.py",
+        172,
+        "StopIteration",
+        "iterator exhausted in _read_entries_safely; standard next() termination",
+    ),
+    FailQuietKeep(
+        "src/feelies/cli/promote.py",
+        174,
+        "ValueError",
+        "corrupt ledger line appended to errors and returned; the caller surfaces it",
+    ),
+    FailQuietKeep(
+        "src/feelies/composition/factor_neutralizer.py",
+        28,
+        "ImportError",
+        "optional numpy; _HAS_NUMPY gates the numeric path",
+    ),
+    FailQuietKeep(
+        "src/feelies/composition/factor_neutralizer.py",
+        139,
+        "np.linalg.LinAlgError",
+        "documented lstsq fallback on singular B.T @ B; raising would change neutralization",
+    ),
+    FailQuietKeep(
+        "src/feelies/harness/backtest_runner.py",
+        591,
+        "Exception",
+        "stdout/stderr reconfigure best-effort on consoles that reject encoding changes",
+    ),
+    FailQuietKeep(
+        "src/feelies/harness/backtest_runner.py",
+        796,
+        "Exception",
+        "optional psutil HIGH_PRIORITY_CLASS; missing psutil must not skip the replay",
+    ),
+    FailQuietKeep(
+        "src/feelies/harness/backtest_runner.py",
+        833,
+        "Exception",
+        "best-effort nice() restore in finally; raising would mask the original exception",
+    ),
+    FailQuietKeep(
+        "src/feelies/ingestion/massive_ingestor.py",
+        73,
+        "TypeError",
+        "Massive REST clone failed; reuse the caller-provided client (mocks and wrappers)",
+    ),
+    FailQuietKeep(
+        "src/feelies/ingestion/massive_ws.py",
+        185,
+        "queue.Empty",
+        "drain-to-empty of stale stop sentinels; empty is the loop terminal",
+    ),
+    FailQuietKeep(
+        "src/feelies/ingestion/massive_ws.py",
+        228,
+        "asyncio.CancelledError",
+        "shutdown cancellation of the background loop task; re-raising would surface as thread death",
+    ),
+    FailQuietKeep(
+        "src/feelies/ingestion/massive_ws.py",
+        344,
+        "asyncio.TimeoutError",
+        "subscribe ack wait ended; partial subscribe is documented warn-not-raise",
+    ),
+)
 
 
 def test_no_unallowlisted_fail_quiet_exception_handler() -> None:
