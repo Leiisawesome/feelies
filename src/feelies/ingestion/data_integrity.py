@@ -246,6 +246,8 @@ def _bound_trade_feed_health_sm(
         if ensure_fn is None:
             return None
         sm = ensure_fn(symbol, feed)
+    if not isinstance(sm, StateMachine):
+        return None
     return sm
 
 
