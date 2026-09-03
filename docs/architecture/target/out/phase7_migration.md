@@ -3184,10 +3184,13 @@ ROLLBACK:        revert this step only.
 ```
 ```
 STEP:            S-30f
-CLOSES:          G32
-PROBLEM:         Symbol identity unimplemented (3 sites). No CUSIP/
-                 FIGI, no corporate-action handling. No Phase 6 test.
-                 Deferrable per G.9 -- the platform is intraday.
+CLOSES:          nothing -- deferred, see LEDGER DEFERRAL G32 symbol identity
+PROBLEM:         Three sites, all assuming ticker stability within a
+                 session: bootstrap.py:1985 (BT-18 ex-date guard),
+                 harness/backtest_prep.py:18, storage/reference/paths.py:29.
+                 No CUSIP/FIGI. No consumer for a CUSIP/FIGI mapping.
+                 A module with no caller is the S-26 shape. G32 stays
+                 OPEN so the gap stays visible; this step is a no-op.
 FILES:           src/feelies/portfolio/symbol_identity.py
                  tests/conformance/test_symbol_identity.py (new G32 gate)
                  tests/conformance/registry.py
@@ -3197,20 +3200,19 @@ FILES:           src/feelies/portfolio/symbol_identity.py
                  docs/prompts/README.md
                  src/feelies/core/platform_config.py
 WHY THIS OWNER:  Engine 7. Net-new capability, not a move.
-REFACTOR PATH:   If deferred, this step is a no-op and G.9 stays.
-                 If built: one module, one caller on a path the
-                 platform actually runs, or it is an S-26 unused
-                 injection. Register G32; shrink _KNOWN_UNCOVERED
-                 to (). Split package: _FILE_OWNERS is mandatory.
+REFACTOR PATH:   No-op. Do not author symbol_identity.py. Do not
+                 shrink _KNOWN_UNCOVERED. G.9 stays. Un-defer when a
+                 caller on the trading path needs a durable identifier
+                 and that caller is in FILES.
 BLAST RADIUS:    boundary
-VALIDATED BY:    the new G32 test, S1
+VALIDATED BY:    G.9; S1 still pins uncovered == ("G32",)
 PARITY IMPACT:   hold on replay hashes (intraday, no corporate
                  action on APP/2026-03-26). _BASELINE_CONFIG_HASH
                  moves if a figi/cusip field is added to
                  PlatformConfig; declare or do not add it.
-DELETES:         nothing -- net-new
-NET DELTA:       src modules +1, public symbols +1
-ROLLBACK:        revert; nothing depended on it.
+DELETES:         nothing -- deferred
+NET DELTA:       src modules 0, public symbols 0
+ROLLBACK:        n/a -- no-op
 ```
 ```
 STEP:            S-30g

@@ -7752,4 +7752,45 @@ WATCH:       the accepted baseline failure set is now three tests across two
                  Left uncommitted: baseline_pre-S-30e.json,
                  baseline_post-S-30e.json, this ledger entry.
 
+---
+
+## DEFERRAL  S-30f / G32 symbol identity
+DATE:        2026-09-01
+CAUSE:       G32 is the plan's only net-new capability, not a
+             remediation. Phase 5 measured 3 probe hits across 3
+             packages and no CUSIP/FIGI. The platform is intraday.
+             G.9 already names the whole gap as the cut line: only a
+             multi-day series crossing a corporate action is silently
+             wrong, and that is a case the platform does not produce.
+             REFACTOR PATH: if deferred, this step is a no-op and
+             G.9 stays. Running it as specified (new module, no
+             bootstrap/PositionStore in FILES) is an S-26 unused
+             injection — a module nothing on the tick path calls.
+SCOPE:       S-30f. G32 stays OPEN. S1 keeps
+             _KNOWN_UNCOVERED = ("G32",). KernelFault.Kind.SYMBOL_IDENTITY
+             stays unused. No PlatformConfig field. No new module.
+ACTION NOW:  none. Do not cut exec/S-30f. Do not author
+             symbol_identity.py. Do not shrink _KNOWN_UNCOVERED.
+DEFERRED:    CUSIP/FIGI mapping and ticker-change handling until a
+             multi-day backtest or a live position held across a
+             corporate action is an actual product path.
+WATCH:       The three probe hits today are not identity mapping.
+             They are the BT-18 ex-date guard:
+               bootstrap.py:1985
+               harness/backtest_prep.py:18
+               storage/reference/paths.py:29
+             That guard already refuses a replay window that
+             crosses a known split/dividend for a universe ticker.
+             Phase 5's "no corporate-action handling anywhere" is
+             stale; CUSIP/FIGI remain absent. Identity is still
+             symbol: str on PlatformConfig, Event, and Position.
+             Un-defer when a caller on the trading path needs a
+             durable identifier, and put that caller in FILES.
+ALSO:        verify_step --list flags S-30f "declares hold but
+             mentions 1 constant(s)" because PARITY IMPACT names
+             _BASELINE_CONFIG_HASH conditionally. Adding a
+             figi/cusip field without
+             tests/acceptance/test_backtest_app_baseline.py in FILES
+             is a STOP. Do not add the field.
+
 
