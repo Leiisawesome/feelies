@@ -3216,7 +3216,11 @@ ROLLBACK:        n/a -- no-op
 ```
 ```
 STEP:            S-30g
-CLOSES:          G36
+CLOSES:          nothing. Adjudicates the seventeen fail-quiet handlers into a
+                 named allowlist with a written reason each, replacing S-30a's
+                 "out of scope, not adjudicated". G36 stays OPEN: the quiet list
+                 is still 17, nothing was converted, and
+                 test_no_fail_quiet_exception_handler remains xfail(strict).
 PROBLEM:         S-30a landed the KernelFault taxonomy and converted one handler;
                  seventeen fail-quiet handlers remain, each swallowing without
                  raising. They were left because they were outside S-30a's FILES,
@@ -3250,7 +3254,13 @@ VALIDATED BY:    S6 with the allowlist, failing before and passing after; the
 PARITY IMPACT:   hold -- all 28 replay hashes, the manifest fingerprint, all 64
                  constants. A converted handler that changes what a caller sees
                  is a behaviour change, not a type change: STOP and name it.
-DELETES:         the unconverted fail-quiet residue; S6's xfail
+DELETES:         nothing. The residue is not removed, it is named -- an
+                 allowlist S6 reads, one entry per handler, each with a reason.
+                 S6's xfail is NOT dropped: emptying the quiet list would require
+                 converting all seventeen, and conversion changes what callers
+                 see. Dropping the marker needs
+                 tests/conformance/test_exception_containment.py, which is not in
+                 FILES.
 NET DELTA:       src modules 0, public symbols 0, branch points 0
 ROLLBACK:        revert; the handlers return and S6 re-xfails.
 ```
