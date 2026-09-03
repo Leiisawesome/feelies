@@ -19,6 +19,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from feelies.core.clock import SimulatedClock
+from feelies.ingestion.data_integrity import (
+    DataHealth,
+    _HaltTradeability,
+    _data_health_blocks_trading,
+)
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.kernel.exception_taxonomy import KernelFault
 
 _SRC = Path(__file__).resolve().parents[2] / "src" / "feelies"
@@ -154,6 +161,95 @@ def test_g33_missing_authority_raises_session_halt() -> None:
         assert fault.kind is KernelFault.Kind.SESSION_HALT
     else:
         raise AssertionError("missing halt authority must raise KernelFault(SESSION_HALT)")
+
+
+def _is_datahealth_halted(node: ast.AST) -> bool:
+    text = ast.unparse(node)
+    return text == "DataHealth.HALTED" or text.endswith(".DataHealth.HALTED")
+
+
+def _health_halted_transition_sites() -> list[tuple[str, int]]:
+    """Production ``transition(DataHealth.HALTED)`` calls."""
+    sites: list[tuple[str, int]] = []
+    for path in sorted(_SRC.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        rel = _rel(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr != "transition":
+                continue
+            for arg in node.args:
+                if _is_datahealth_halted(arg):
+                    sites.append((rel, node.lineno))
+            for kw in node.keywords:
+                if kw.arg == "trigger":
+                    continue
+                if _is_datahealth_halted(kw.value):
+                    sites.append((rel, node.lineno))
+    return sites
+
+
+def test_g33_health_halted_transition_goes_through_the_store() -> None:
+    """A DataHealth.HALTED trading write outside engine 1 fails G33."""
+    sites = _health_halted_transition_sites()
+    assert sites, (
+        "G33 scan found no DataHealth.HALTED transitions — the guard would be vacuous"
+    )
+    illegal = [f"{path}:{line}" for path, line in sites if path != _AUTHORITY]
+    assert not illegal, (
+        "health HALTED transition must go through the engine-1 halt store "
+        f"({_AUTHORITY}). First: {illegal[0]}"
+    )
+
+
+def test_g33_health_halted_xor_empty_store_raises_session_halt() -> None:
+    """Bound trade-feed HALTED with an empty store is a trading-decision fault."""
+    clock = SimulatedClock(start_ns=10_000)
+    authority = _HaltTradeability()
+    normalizer = MassiveNormalizer(clock, halt_tradeability=authority)
+    sm = normalizer._ensure_health_machine("AAPL", MassiveNormalizer._FEED_TRADE)
+    sm.transition(DataHealth.HALTED, trigger="test_split")
+
+    class _Orch:
+        _halt_tradeability = authority
+        _normalizer = normalizer
+        _config = None
+
+    try:
+        _data_health_blocks_trading(_Orch(), "AAPL", "cid")
+    except KernelFault as fault:
+        assert fault.kind is KernelFault.Kind.SESSION_HALT
+    else:
+        raise AssertionError(
+            "health HALTED xor empty store must raise KernelFault(SESSION_HALT)"
+        )
+
+
+def test_g33_store_membership_xor_healthy_feed_raises_session_halt() -> None:
+    """Store membership with a bound HEALTHY trade-feed is a trading-decision fault."""
+    clock = SimulatedClock(start_ns=10_000)
+    authority = _HaltTradeability()
+    authority.halted_symbols.add("AAPL")
+    normalizer = MassiveNormalizer(clock, halt_tradeability=authority)
+    normalizer._ensure_health_machine("AAPL", MassiveNormalizer._FEED_TRADE)
+
+    class _Orch:
+        _halt_tradeability = authority
+        _normalizer = normalizer
+        _config = None
+
+    try:
+        _data_health_blocks_trading(_Orch(), "AAPL", "cid")
+    except KernelFault as fault:
+        assert fault.kind is KernelFault.Kind.SESSION_HALT
+    else:
+        raise AssertionError(
+            "store membership xor HEALTHY trade-feed must raise KernelFault(SESSION_HALT)"
+        )
 
 
 def test_g33_codebook_conflict_raises_session_halt() -> None:

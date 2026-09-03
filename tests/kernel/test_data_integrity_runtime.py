@@ -20,6 +20,7 @@ from feelies.core.events import (
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.ingestion.data_integrity import DataHealth
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -144,7 +145,7 @@ class _MutableHealthNormalizer:
 
 def _orch_with_normalizer(
     clock: SimulatedClock,
-    normalizer: _MutableHealthNormalizer,
+    normalizer: Any,
 ) -> Orchestrator:
     bt_router = BacktestOrderRouter(clock=clock)
     backend = ExecutionBackend(
@@ -208,33 +209,40 @@ class TestStrictNormalizerSymbolCoverage:
 
 
 class TestHaltedGate:
-    """M1: normalizer's ``DataHealth.HALTED`` blocks the tick gate.
+    """M1: parse-path halt blocks the tick gate and the halt store together.
 
-    The orchestrator also tracks ``_halted_symbols`` from condition codes;
-    these two paths must agree.  Testing the normalizer-side gate alone
-    here proves that if the orchestrator's edge tracker is bypassed (e.g.
-    by an event injected directly into the M1 path), the normalizer's
-    HALTED state still suppresses the tick.
+    Health HALTED without store membership is a split, not a documented
+    bypass. Drive the halt through the normalizer's trade-parse write and
+    require both gates to agree; a tick blocked by one and not the other
+    is an exposure decision.
     """
 
     def test_normalizer_halted_blocks_quote_without_macro_escalation(self) -> None:
         clock = SimulatedClock(start_ns=10_000)
-        norm = _MutableHealthNormalizer({"AAPL": DataHealth.HEALTHY})
+        norm = MassiveNormalizer(
+            clock,
+            halt_on_codes=frozenset({5}),
+            halt_off_codes=frozenset({6}),
+        )
+        norm.register_symbols(frozenset({"AAPL"}))
         orch = _orch_with_normalizer(clock, norm)
         orch.boot(_ConfigWithGapPolicy())
 
         orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
         orch._micro.reset(trigger="session_start:test")
+        orch._halt_on_codes = frozenset({5})
+        orch._halt_off_codes = frozenset({6})
 
-        # Simulate the LULD halt path arriving at the normalizer only.
-        norm.set_health("AAPL", DataHealth.HALTED)
+        norm._apply_halt_status("AAPL", (5,))
 
         orch._process_tick_inner(_make_quote(ts=20_000, seq=1))
 
         # Tick blocked, but macro stays in BACKTEST_MODE — LULD halts are
         # recoverable and must NOT escalate to DEGRADED (unlike CORRUPTED
-        # / GAP).
+        # / GAP). Both gates must agree: parse wrote the store too.
         assert orch.macro_state == MacroState.BACKTEST_MODE
+        assert "AAPL" in orch._halted_symbols
+        assert norm.health("AAPL") == DataHealth.HALTED
 
 
 class TestRejectedEventAlert:
