@@ -25,7 +25,6 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
     HorizonFeatureSnapshot,
     HorizonTick,
-    MetricEvent,
     SensorReading,
 )
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
@@ -368,8 +367,6 @@ class HorizonAggregator:
             self._last_snapshot_boundary[(tick.horizon_seconds, symbol)] = tick.boundary_index
             self._bus.publish(snapshot)
             snapshots.append(snapshot)
-            if self._metric_collector is not None:
-                self._emit_snapshot_metric(snapshot=snapshot)
         return tuple(snapshots)
 
     def _build_snapshot(
@@ -461,41 +458,6 @@ class HorizonAggregator:
         """Latest warm sensor timestamp that is causal for this boundary."""
         index = self._warm_timestamps.get((symbol, sensor_id))
         return None if index is None else index.latest_at_or_before(asof_ns)
-
-    # Monitoring.
-    def _emit_snapshot_metric(self, *, snapshot: HorizonFeatureSnapshot) -> None:
-        """Emit ``feelies.feature.snapshot.stale_fraction`` for one snapshot.
-
-        Gauge in ``[0, 1]`` reporting the fraction of features whose
-        ``stale`` flag is True for this snapshot, computed against the
-        *total* number of registered features (warm + cold), not just
-        the warm subset.  Cold features count as "not stale" in the
-        denominator — a snapshot with one warm-stale feature out of ten
-        registered reports 0.1. Passive-mode snapshots (no features) report
-        ``0.0`` by convention so the gauge remains continuous.
-        """
-        assert self._metric_collector is not None
-        assert self._metrics_seq is not None
-        n = len(snapshot.stale)
-        stale_count = sum(1 for v in snapshot.stale.values() if v)
-        fraction = stale_count / n if n > 0 else 0.0
-        seq = self._metrics_seq.next()
-        cid = make_correlation_id(
-            symbol=f"metric:feature:{snapshot.horizon_seconds}",
-            exchange_timestamp_ns=snapshot.timestamp_ns,
-            sequence=seq,
-        )
-        self._metric_collector.record(
-            MetricEvent(
-                timestamp_ns=snapshot.timestamp_ns,
-                correlation_id=cid,
-                sequence=seq,
-                source_layer="FEATURE",
-                layer="feature",
-                name="feelies.feature.snapshot.stale_fraction",
-                value=float(fraction),
-            )
-        )
 
     def is_passive(self) -> bool:
         """True iff no features were registered (passive-emitter mode)."""
