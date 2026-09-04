@@ -8663,4 +8663,157 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  Left uncommitted: baseline_pre-S-31a.json,
                  baseline_post-S-31a.json, this ledger entry.
 
+---
+
+## S-31b  2026-09-04T15:24:35+08:00
+  STEP:          S-31b
+  BASE:          0d2d430104a7dbec01fd119bff23ac5679ad76a2
+  RESULT SHA:    816aa6b83a20c6b16c3aaef88e28d552fc18ec75
+                 (exec/S-31b; two metric-name commits)
+  VERDICT:       passed
+  CONFORMANCE:   S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S11: still xfail (G10 G28). No XPASS.
+                 conformance 116 passed / 6 xfailed -> 116
+                 passed / 6 xfailed
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-31b GREEN 4909 passed / 0
+                 failed / 19 skipped / 6 xfailed
+                 -> post-S-31b GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed. -2 passed = the two
+                 tests that were the sole readers of the
+                 deleted names. failed 0 -> 0. not-paper_rth:
+                 4906 passed / 6 skipped / 14 deselected /
+                 6 xfailed. monitoring 42; kernel 390.
+  PARITY:        declared hold -- all replay hashes, COUNTs,
+                 fingerprint. No PlatformConfig field. Metric
+                 names are not in the S-17a fold | actual
+                 64/64 identical pre-S-31b vs post-S-31b
+                 and vs baseline_post-S-31a.json; 0 moved at
+                 either commit | MATCH. Fingerprint unmoved
+                 (determinism 148 including
+                 test_manifest_fingerprint_matches_locked_value).
+                 _BASELINE_CONFIG_HASH holds.
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         3 declared, 3 touched, 0 extra CLEAN
+                 (verify_step S-31B uppercase miss; four
+                 checks by hand). Touched:
+                 src/feelies/features/aggregator.py
+                 src/feelies/sensors/horizon_scheduler.py
+                 tests/monitoring/test_sensor_metrics.py
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46070 -> 46008 (-62)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 and public symbols 0.
+                 sloc -62 is the two emission methods.
+  DETERMINISM:   148 -> 148 after every src commit and after
+                 both; no replay hash moved; fingerprint test
+                 passed throughout.
+  VERIFY_STEP:   `S-31B` not in plan (known key is `S-31b`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 3 named / 3 touched / 0 extra CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, fingerprint
+                 unmoved; TESTS 4909->4907 passed, failed
+                 0->0; NET DELTA MATCH on modules 0 and public
+                 symbols 0. Blast radius local -- committed
+                 without waiting.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 0d2d430 on arch/exec at pre-flight.
+                 porcelain empty. `git diff --stat
+                 exec-tools-v1..HEAD -- tools/exec` empty.
+                 Oracle frozen at exec-tools-v1. Capture
+                 GREEN. Cut exec/S-31b.
+                 Commit order (PROBLEM order, one metric
+                 per commit): 47bbaf9 stale_fraction, then
+                 816aa6b tick.emitted. Did not drop
+                 kernel.feature_compute_ns's report slot.
+                 Names in the three FILES files (scan, not
+                 the plan's count of 2):
+                 feelies.feature.snapshot.stale_fraction --
+                 unread in src/feelies except the emit and
+                 its docstring (aggregator.py:495). Sole
+                 test reader
+                 test_aggregator_emits_stale_fraction_per_snapshot.
+                 Deleted the MetricEvent emission and that
+                 test. Sequence-perturbation test kept.
+                 feelies.horizon.tick.emitted -- unread in
+                 src/feelies except the emit and its
+                 docstring (horizon_scheduler.py:401).
+                 Sole test reader
+                 test_scheduler_emits_tick_emitted_metric_per_tick.
+                 Deleted the MetricEvent emission and that
+                 test. Sequence-perturbation test kept.
+                 feelies.sensor.reading.count -- emit at
+                 registry.py:401, not in FILES. Tests in
+                 FILES still assert it. Left.
+                 feelies.sensor.reading.latency -- already
+                 dead. Observed: zero
+                 name="feelies.sensor.reading.latency" in
+                 src/feelies. Tests assert len(latencies)==0
+                 and summary key absent. Not inherited
+                 from the plan body (the body does not name
+                 it). Left the negative asserts (S-23: did
+                 not add new ones).
+                 Commit subject of 0d2d430 says "five
+                 names in three files, one already dead".
+                 Body still says 2 of 9 and DELETES the
+                 two named emissions. Scan of FILES found
+                 four unique feelies.* names, one already
+                 dead. Did not invent a fifth. S-24:
+                 recorded what the tree shows.
+                 metric_collector constructor args and
+                 _metrics_seq wiring left on both classes:
+                 bootstrap.py and tests outside FILES pass
+                 metric_collector=. Changing the signature
+                 would be a fourth+ path.
+                 Did not add negative "name absent"
+                 asserts for the deleted names.
+  FINDINGS:      S-24 -- 0d2d430 subject says five names,
+                 one already dead; the S-31b body still
+                 names two emissions. FILES scan found
+                 four unique feelies.* names; reading.latency
+                 is the already-dead one. No fifth name in
+                 those three files.
+                 After the deletes, _metric_collector is
+                 assigned and never read on both classes
+                 (S-26 unused-injection shape). Left: callers
+                 of the constructor are outside FILES.
+                 docs/three_layer_architecture.md:1570-1572
+                 still documents reading.latency (already
+                 dead), tick.emitted, and stale_fraction.
+                 Not in FILES; went staler. Documented
+                 surface, not a production reader.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue; S-30g FINDING G36 stays OPEN;
+                 four exempted baseline tests.
+  NEXT:          S-31c coverage-gated dead methods (local
+                 per commit). Not started.
+                 Left uncommitted: baseline_pre-S-31b.json,
+                 baseline_post-S-31b.json, this ledger entry.
+
 
