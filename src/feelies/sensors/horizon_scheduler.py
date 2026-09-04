@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterable, Literal
 
-from feelies.core.events import Event, HorizonTick, MetricEvent
+from feelies.core.events import Event, HorizonTick
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.kernel.exception_taxonomy import KernelFault
 from feelies.monitoring.telemetry import MetricCollector
@@ -370,35 +370,4 @@ class HorizonScheduler:
             "HorizonTick.boundary_ts_ns and boundary_timestamp_ns must agree — "
             f"got {tick.boundary_ts_ns} vs {tick.boundary_timestamp_ns}"
         )
-        if self._metric_collector is not None:
-            self._emit_tick_metric(tick=tick)
         return tick
-
-    # Monitoring.
-
-    def _emit_tick_metric(self, *, tick: HorizonTick) -> None:
-        """Emit ``feelies.horizon.tick.emitted`` for one tick.
-
-        Counter, tags: ``horizon_seconds`` + ``scope``.  Recorded
-        directly into the metric collector (not the bus) so this
-        cannot perturb the HorizonTick sequence (Inv-A / C1).
-        """
-        assert self._metric_collector is not None
-        assert self._metrics_seq is not None
-        seq = self._metrics_seq.next()
-        cid = make_correlation_id(
-            symbol=f"metric:scheduler:{tick.horizon_seconds}",
-            exchange_timestamp_ns=tick.timestamp_ns,
-            sequence=seq,
-        )
-        self._metric_collector.record(
-            MetricEvent(
-                timestamp_ns=tick.timestamp_ns,
-                correlation_id=cid,
-                sequence=seq,
-                source_layer="SCHEDULER",
-                layer="scheduler",
-                name="feelies.horizon.tick.emitted",
-                value=1.0,
-            )
-        )

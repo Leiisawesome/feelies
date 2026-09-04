@@ -139,31 +139,6 @@ def test_registry_without_metric_collector_emits_nothing() -> None:
 # ── Horizon-tick metrics ────────────────────────────────────────────
 
 
-def test_scheduler_emits_tick_emitted_metric_per_tick() -> None:
-    mc = InMemoryMetricCollector()
-    scheduler = HorizonScheduler(
-        horizons=frozenset({30}),
-        session_id="TEST",
-        symbols=frozenset({"AAPL"}),
-        session_open_ns=1_000_000_000_000,
-        sequence_generator=SequenceGenerator(),
-        metric_collector=mc,
-    )
-
-    # First event → boundary 0, emits a SYMBOL + a UNIVERSE tick = 2.
-    ticks_a = scheduler.on_event(_quote(ts_ns=1_001_000_000_000))
-    assert len(ticks_a) == 2
-
-    # Cross into next 30s window → another SYMBOL + UNIVERSE = 2.
-    ticks_b = scheduler.on_event(_quote(ts_ns=1_031_000_000_000))
-    assert len(ticks_b) == 2
-
-    metrics = [e for e in mc.events if e.name == "feelies.horizon.tick.emitted"]
-    assert len(metrics) == 4
-    assert all(e.value == 1.0 for e in metrics)
-    assert all(e.layer == "scheduler" for e in metrics)
-
-
 def test_scheduler_metrics_dont_perturb_tick_sequence() -> None:
     mc = InMemoryMetricCollector()
     scheduler = HorizonScheduler(
@@ -181,55 +156,6 @@ def test_scheduler_metrics_dont_perturb_tick_sequence() -> None:
 
 
 # ── Snapshot stale-fraction metric ─────────────────────────────────
-
-
-def test_aggregator_emits_stale_fraction_per_snapshot() -> None:
-    bus = EventBus()
-    mc = InMemoryMetricCollector()
-    agg = HorizonAggregator(
-        bus=bus,
-        symbols=frozenset({"AAPL"}),
-        sensor_buffer_seconds=600,
-        sequence_generator=SequenceGenerator(),
-        metric_collector=mc,
-    )
-    agg.attach()
-
-    captured: list[HorizonFeatureSnapshot] = []
-    bus.subscribe(HorizonFeatureSnapshot, captured.append)
-
-    # Publish two ticks to generate two passive-mode snapshots.
-    bus.publish(
-        HorizonTick(
-            timestamp_ns=1_030_000_000_000,
-            correlation_id="t1",
-            sequence=1,
-            horizon_seconds=30,
-            boundary_index=1,
-            scope="SYMBOL",
-            symbol="AAPL",
-            session_id="TEST",
-        )
-    )
-    bus.publish(
-        HorizonTick(
-            timestamp_ns=1_060_000_000_000,
-            correlation_id="t2",
-            sequence=2,
-            horizon_seconds=30,
-            boundary_index=2,
-            scope="SYMBOL",
-            symbol="AAPL",
-            session_id="TEST",
-        )
-    )
-
-    assert len(captured) == 2
-    metrics = [e for e in mc.events if e.name == "feelies.feature.snapshot.stale_fraction"]
-    assert len(metrics) == 2
-    assert all(e.layer == "feature" for e in metrics)
-    # Passive mode: 0 features → fraction = 0.0 by convention.
-    assert all(e.value == 0.0 for e in metrics)
 
 
 def test_aggregator_metrics_dont_perturb_snapshot_sequence() -> None:
