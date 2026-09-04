@@ -436,14 +436,3 @@ class SensorRegistry:
                 value=1.0,
             )
         )
-
-    # Inspection helpers.
-
-    def collect_into(self, target: list[SensorReading] | None) -> None:
-        """Mirror every published ``SensorReading`` into ``target``.
-
-        Used by parity recorders and Level-4 baseline tests so they do
-        not have to also subscribe to the bus (avoiding double-delivery
-        ordering surprises).  Pass ``None`` to disable mirroring.
-        """
-        self._publish_target = target
