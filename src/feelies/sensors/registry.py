@@ -18,7 +18,6 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
     Event,
     MetricEvent,
-    MetricType,
     NBBOQuote,
     SensorProvenance,
     SensorReading,
@@ -327,9 +326,6 @@ class SensorRegistry:
         supported; the registry overrides platform fields — ``sequence``,
         ``correlation_id``, ``source_layer``, ``provenance`` — so
         producers cannot diverge from the determinism contract.
-
-        ``parent_correlation_id`` is set to the originating market-data
-        event's ``correlation_id`` to preserve the parent-child trace.
         """
         spec = binding.spec
         if isinstance(emission, SensorReading) and emission.correlation_id != "placeholder":
@@ -360,7 +356,6 @@ class SensorRegistry:
             confidence=emission.confidence,
             warm=emission.warm,
             provenance=provenance,
-            parent_correlation_id=event.correlation_id,  # Preserve event lineage.
         )
 
     # Monitoring.
@@ -396,7 +391,6 @@ class SensorRegistry:
             exchange_timestamp_ns=ts_ns,
             sequence=seq_count,
         )
-        tags = {"sensor_id": spec.sensor_id, "symbol": symbol}
         self._metric_collector.record(
             MetricEvent(
                 timestamp_ns=ts_ns,
@@ -406,8 +400,6 @@ class SensorRegistry:
                 layer="sensor",
                 name="feelies.sensor.reading.count",
                 value=1.0,
-                metric_type=MetricType.COUNTER,
-                tags=tags,
             )
         )
 
@@ -442,8 +434,6 @@ class SensorRegistry:
                 layer="sensor",
                 name="feelies.sensor.nonfinite.count",
                 value=1.0,
-                metric_type=MetricType.COUNTER,
-                tags={"sensor_id": spec.sensor_id, "symbol": symbol},
             )
         )
 

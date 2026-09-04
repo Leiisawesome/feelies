@@ -227,7 +227,6 @@ def test_active_mode_finalizes_feature_with_value() -> None:
     assert snap.values == {"sum_feat": 6.0}
     assert snap.warm == {"sum_feat": True}
     assert snap.stale == {"sum_feat": False}
-    assert snap.source_sensors == {"sum_feat": ("ofi_ewma",)}
 
 
 def test_boundary_asof_excludes_post_boundary_reading_from_window_snapshot() -> None:
@@ -512,9 +511,7 @@ def test_symbol_after_universe_dedup_symmetry() -> None:
 
 
 def test_feature_versions_in_snapshot_provenance() -> None:
-    """``snapshot.feature_versions`` records the
-    feature_version per feature_id so consumers can reconstruct exactly
-    which version produced each value."""
+    """A versioned feature still emits its value on the snapshot."""
 
     class _V1Feature:
         feature_id: str = "demo"
@@ -558,7 +555,6 @@ def test_feature_versions_in_snapshot_provenance() -> None:
     bus.publish(_tick(boundary=1, ts_ns=30_000_000_000))
 
     assert len(captured) == 1
-    assert captured[0].feature_versions == {"demo": "1.2.3"}
     assert captured[0].values == {"demo": 4.2}
 
 

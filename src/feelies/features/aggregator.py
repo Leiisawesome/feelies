@@ -26,7 +26,6 @@ from feelies.core.events import (
     HorizonFeatureSnapshot,
     HorizonTick,
     MetricEvent,
-    MetricType,
     SensorReading,
 )
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
@@ -382,8 +381,6 @@ class HorizonAggregator:
         values: dict[str, float] = {}
         warm: dict[str, bool] = {}
         stale: dict[str, bool] = {}
-        source_sensors: dict[str, tuple[str, ...]] = {}
-        feature_versions: dict[str, str] = {}
         asof_ns = tick.asof_timestamp_ns
 
         # Visit only this horizon's features in their global stable order.
@@ -432,9 +429,6 @@ class HorizonAggregator:
             if w_eff:
                 assert fv is not None
                 values[feature.feature_id] = fv
-            source_sensors[feature.feature_id] = tuple(feature.input_sensor_ids)
-            # Preserve the producing feature version in snapshot provenance.
-            feature_versions[feature.feature_id] = feature.feature_version
 
         seq = self._sequence_generator.next()
         cid = make_correlation_id(
@@ -454,9 +448,6 @@ class HorizonAggregator:
             values=values,
             warm=warm,
             stale=stale,
-            source_sensors=source_sensors,
-            feature_versions=feature_versions,
-            parent_correlation_id=tick.correlation_id,  # Preserve event lineage.
         )
 
     # Snapshot freshness helpers.
@@ -503,8 +494,6 @@ class HorizonAggregator:
                 layer="feature",
                 name="feelies.feature.snapshot.stale_fraction",
                 value=float(fraction),
-                metric_type=MetricType.GAUGE,
-                tags={"horizon_seconds": str(snapshot.horizon_seconds)},
             )
         )
 

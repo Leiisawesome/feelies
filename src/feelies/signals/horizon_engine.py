@@ -18,7 +18,6 @@ from feelies.core.events import (
     EXIT_ONLY_MECHANISMS,
     HorizonFeatureSnapshot,
     MetricEvent,
-    MetricType,
     RegimeState,
     SafetyReason,
     SafetyStateChange,
@@ -596,8 +595,6 @@ class HorizonSignalEngine:
                 layer="signal",
                 name=name,
                 value=1.0,
-                metric_type=MetricType.COUNTER,
-                tags=tags,
             )
         )
 

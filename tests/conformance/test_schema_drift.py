@@ -1,7 +1,7 @@
 """S8 — every event class resolves a schema version; field drift is detected.
 
-G07: 2 of 21 event classes carry a payload version field
-(``SensorReading.sensor_version``, ``HorizonFeatureSnapshot.feature_versions``).
+G07: 1 of 21 event classes carry a payload version field
+(``SensorReading.sensor_version``).
 Hot-path events are otherwise unversioned. The envelope field
 ``schema_version`` is the consumer-readability pin. The pinned-code-per-log
 rule is ``SCHEMA_VERSION`` in ``feelies.core.events``.
@@ -58,9 +58,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "values",
         "warm",
         "stale",
-        "source_sensors",
-        "feature_versions",
-        "parent_correlation_id",
     ),
     "HorizonTick": (
         "horizon_seconds",
@@ -76,10 +73,9 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "engine",
         "statistic",
         "window_events",
-        "observed_ns",
         "budget_ns",
     ),
-    "MetricEvent": ("layer", "name", "value", "metric_type", "tags"),
+    "MetricEvent": ("layer", "name", "value"),
     "NBBOQuote": (
         "symbol",
         "bid",
@@ -147,12 +143,11 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "dominant_state",
         "dominant_name",
         "horizon_seconds",
-        "stability",
         "posterior_entropy_nats",
         "calibrated",
         "discriminability",
     ),
-    "RiskVerdict": ("symbol", "action", "reason", "scaling_factor", "constraints"),
+    "RiskVerdict": ("symbol", "action", "reason", "scaling_factor"),
     "SafetyStateChange": (
         "symbol",
         "strategy_id",
@@ -173,7 +168,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "confidence",
         "warm",
         "provenance",
-        "parent_correlation_id",
     ),
     "Signal": (
         "symbol",
@@ -182,7 +176,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "strength",
         "edge_estimate_bps",
         "disclosed_cost_total_bps",
-        "reversal_cost_estimate_bps",
         "disclosed_margin_ratio",
         "metadata",
         "layer",

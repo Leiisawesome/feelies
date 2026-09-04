@@ -46,16 +46,15 @@ class Event:
     producers that do not set it.
 
     ``schema_version`` is the envelope compatibility pin (``SCHEMA_VERSION``).
-    Payload fields such as ``SensorReading.sensor_version`` and
-    ``HorizonFeatureSnapshot.feature_versions`` are not this pin.
+    Payload fields such as ``SensorReading.sensor_version`` are not this pin.
 
     Numeric-field units are declared in ``Field.metadata['unit']`` (see
     ``declared_unit``). They are not dataclass fields.
 
     Immutability is shallow: ``frozen=True`` blocks
     rebinding a field, but events whose fields hold mutable containers
-    (e.g. ``Signal.metadata``, ``RiskVerdict.constraints``,
-    ``MetricEvent.tags``, ``HorizonFeatureSnapshot.values/warm/stale``,
+    (e.g. ``Signal.metadata``,
+    ``HorizonFeatureSnapshot.values/warm/stale``,
     ``SizedPositionIntent.target_positions``) can still have those
     containers mutated in place, and those events are not hashable.
     Treat every event as read-only once published — do not mutate a
@@ -182,7 +181,6 @@ class RegimeState(Event):
     dominant_state: int = field(metadata={"unit": "1"})
     dominant_name: str
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
-    stability: float = field(default=1.0, metadata={"unit": "1"})
     posterior_entropy_nats: float = field(default=0.0, metadata={"unit": "nat"})
     calibrated: bool = True
     discriminability: float = field(default=float("inf"), metadata={"unit": UNIT_UNDETERMINED})
@@ -224,8 +222,6 @@ class Signal(Event):
     strength: float = field(metadata={"unit": "1"})
     edge_estimate_bps: float = field(metadata={"unit": "bps"})
     disclosed_cost_total_bps: float = field(default=0.0, metadata={"unit": "bps"})
-    # Combined exit and entry cost for a reversal; zero for other signals.
-    reversal_cost_estimate_bps: float = field(default=0.0, metadata={"unit": "bps"})
     disclosed_margin_ratio: float = field(default=0.0, metadata={"unit": "1"})
     metadata: Mapping[str, Any] = field(default_factory=dict)
     layer: Literal["SIGNAL", "PORTFOLIO"] = "SIGNAL"
@@ -257,12 +253,6 @@ class RiskVerdict(Event):
     action: RiskAction
     reason: str
     scaling_factor: float = field(default=1.0, metadata={"unit": "1"})
-    constraints: Mapping[str, float] = field(
-        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
-    )
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "constraints", MappingProxyType(dict(self.constraints)))
 
 
 # ── Order Events ────────────────────────────────────────────────────────
@@ -420,11 +410,6 @@ class MetricEvent(Event):
     layer: str
     name: str
     value: float = field(metadata={"unit": UNIT_UNDETERMINED})
-    metric_type: MetricType
-    tags: Mapping[str, str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tags", MappingProxyType(dict(self.tags)))
 
 
 # ── Alert Events ────────────────────────────────────────────────────
@@ -483,7 +468,7 @@ class KillSwitchActivation(Event):
 class LatencyBreach(Event):
     """A live p99 latency observation exceeded its declared engine budget.
 
-    Carries statistic, window, observed value, and budget so the record is
+    Carries statistic, window, and budget so the record is
     interpretable without the config that produced it. Replay consumes this
     record and never re-measures.
     """
@@ -491,7 +476,6 @@ class LatencyBreach(Event):
     engine: str
     statistic: str
     window_events: int = field(metadata={"unit": "1"})
-    observed_ns: int = field(metadata={"unit": "ns"})
     budget_ns: int = field(metadata={"unit": "ns"})
 
 
@@ -683,13 +667,9 @@ class SensorReading(Event):
     """Layer-1 sensor output emitted on every tick (§5.2).
 
     ``value`` is a scalar or a tuple of floats depending on the sensor
-    contract.  ``confidence`` defaults to 1.0 (sensor declares full
+    contract.      ``confidence`` defaults to 1.0 (sensor declares full
     confidence).  ``warm`` is False until the sensor's ``min_history``
     is satisfied.  Consumers must skip non-warm readings.
-
-    ``parent_correlation_id`` carries the ``correlation_id`` of the
-    originating market-data event (``NBBOQuote`` / ``Trade``) that
-    triggered this reading. ``SensorRegistry._stamp`` sets it.
     """
 
     symbol: str
@@ -699,7 +679,6 @@ class SensorReading(Event):
     confidence: float = field(default=1.0, metadata={"unit": "1"})
     warm: bool = True
     provenance: SensorProvenance = field(default_factory=SensorProvenance)
-    parent_correlation_id: str = ""
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -707,8 +686,7 @@ class HorizonFeatureSnapshot(Event):
     """Horizon-bucketed feature aggregate.
 
     ``values`` contains only warm features, while ``warm`` and ``stale`` cover
-    every registered feature. Version and source maps preserve replay
-    provenance; ``parent_correlation_id`` links the triggering horizon tick.
+    every registered feature.
     """
 
     symbol: str
@@ -721,20 +699,11 @@ class HorizonFeatureSnapshot(Event):
     values: Mapping[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
     warm: Mapping[str, bool] = field(default_factory=dict)
     stale: Mapping[str, bool] = field(default_factory=dict)
-    source_sensors: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    feature_versions: Mapping[str, str] = field(default_factory=dict)
-    parent_correlation_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
         object.__setattr__(self, "warm", MappingProxyType(dict(self.warm)))
         object.__setattr__(self, "stale", MappingProxyType(dict(self.stale)))
-        object.__setattr__(
-            self, "source_sensors", MappingProxyType(dict(self.source_sensors))
-        )
-        object.__setattr__(
-            self, "feature_versions", MappingProxyType(dict(self.feature_versions))
-        )
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

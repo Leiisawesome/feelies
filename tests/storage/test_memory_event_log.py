@@ -176,7 +176,7 @@ class TestCausalityEnforcement:
 
     def test_non_market_events_skip_causality_check(self) -> None:
         """Events without exchange_timestamp_ns (e.g. MetricEvent) are not checked."""
-        from feelies.core.events import MetricEvent, MetricType
+        from feelies.core.events import MetricEvent
 
         log = InMemoryEventLog()
         log.append(make_quote(seq=0, exchange_ts_ns=500))
@@ -188,7 +188,6 @@ class TestCausalityEnforcement:
                 layer="test",
                 name="foo",
                 value=1.0,
-                metric_type=MetricType.COUNTER,
             )
         )
         log.append(make_quote(seq=2, exchange_ts_ns=600))
