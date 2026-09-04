@@ -3452,47 +3452,51 @@ PROBLEM:         A5.4 closed FALSE. 106 public methods with zero in-src
                  at -12; the gate may reduce further, never increase.
                  Keep FeatureComputation.update_trade
                  (alphas/SCHEMA.md:78, features/definition.py:74).
-                 Three documented surfaces need an explicit call, not a
-                 mechanical delete: CostArithmetic.declared_round_trip_cost_bps
+                 Three documented surfaces are NOTES keep, not a
+                 mechanical delete and not a wire this step (not in
+                 FILES): CostArithmetic.declared_round_trip_cost_bps
                  (alpha/cost_arithmetic.py:78); AlphaBudgetRiskWrapper.
                  checkpoint_risk_state / restore_risk_state
-                 (now risk/risk_wrapper.py:324 and :333 — Phase 4's
-                 alpha/risk_wrapper.py:299 is stale post S-21).
+                 (risk/risk_wrapper.py:324 and :333).
 FILES:           src/feelies/alpha/registry.py:331
                  (AlphaRegistry.has_signal_alphas)
                  src/feelies/risk/basic_risk.py:171
                  (BasicRiskEngine.buying_power_phase)
                  src/feelies/portfolio/cross_sectional_tracker.py:114
                  (CrossSectionalTracker.all_snapshots)
-                 src/feelies/signals/horizon_engine.py:643
+                 src/feelies/signals/horizon_engine.py:640
                  (HorizonSignalEngine.forget — wire, do not delete)
                  src/feelies/services/regime_state_cache.py:68,113
                  (RegimeStateCache.for_engine; forget — wire, do not
                  delete)
-                 src/feelies/sensors/registry.py:452
+                 src/feelies/sensors/registry.py:442
                  (SensorRegistry.collect_into)
                  src/feelies/risk/stop_exit.py:166
                  (StopExitController.policy)
                  src/feelies/execution/trading_session.py:82
                  (TradingSessionBounds.is_within_rth)
                  Do not include orchestrator._emit_state_transition
-                 (S-31a).
+                 (S-31a). Do not add cost_arithmetic.py,
+                 risk_wrapper.py, or definition.py.
 WHY THIS OWNER:  each method's engine. Kernel only if the method still
                  lives in orchestrator.py after Wave D.
 REFACTOR PATH:   coverage gate first (fail-before: the named method is
-                 still present and unexecuted). One method per commit
-                 except the checkpoint/restore pair, which is one commit.
+                 still present and unexecuted). One method per commit.
+                 Wire the two forgets and for_engine; do not delete
+                 them. Documented surfaces: NOTES keep, no commit.
 BLAST RADIUS:    local per commit; escalate if a named method is a
                  published symbol other engines import
 VALIDATED BY:    coverage report, the oracle, mypy --strict
-PARITY IMPACT:   hold — all replay hashes, COUNTs, fingerprint,
-                 _BASELINE_CONFIG_HASH. An uncalled method is not a
+PARITY IMPACT:   hold — all replay hashes, COUNTs, fingerprint.
+                 No PlatformConfig field. An uncalled method is not a
                  hashed field. A HASH that moves means the method was
                  live — STOP, do not re-pin.
-DELETES:         up to 12 coverage-proven-dead public methods, never
-                 update_trade, never the three documented surfaces
-                 without an explicit keep-or-wire decision in NOTES
-NET DELTA:       src modules 0, public symbols at most -12, branch
+DELETES:         up to 6 coverage-proven-dead public methods from
+                 FILES (has_signal_alphas, buying_power_phase,
+                 all_snapshots, collect_into, policy, is_within_rth),
+                 never update_trade, never the three documented
+                 surfaces
+NET DELTA:       src modules 0, public symbols at most -6, branch
                  points 0
 ROLLBACK:        revert per commit
 ```
