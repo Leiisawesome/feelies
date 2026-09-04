@@ -20,6 +20,18 @@ from feelies.core.events import Alert, AlertSeverity, MetricEvent
 
 logger = logging.getLogger(__name__)
 
+# Interned ``layer.name`` keys built at construction (and on first unseen
+# pair). ``record`` must not format a string on the tick path.
+_PREALLOCATED_METRIC_KEYS: tuple[tuple[str, str], ...] = (
+    ("kernel", "tick_to_decision_latency_ns"),
+    ("kernel", "sensor_fanout_ns"),
+    ("kernel", "sm_transition_ns"),
+    ("kernel", "signal_evaluate_ns"),
+    ("kernel", "risk_check_ns"),
+    ("kernel", "tick_suppressed_kill_switch"),
+    ("kernel", "tick_aborted_micro_reset"),
+)
+
 
 # ── InMemoryMetricCollector ─────────────────────────────────────────
 
@@ -65,7 +77,7 @@ class InMemoryMetricCollector:
     computed incrementally for quick access during and after a run.
     """
 
-    __slots__ = ("_events", "_summaries", "_flushed", "_store_raw_events")
+    __slots__ = ("_events", "_summaries", "_flushed", "_store_raw_events", "_summary_keys")
 
     def __init__(self) -> None:
         self._events: list[MetricEvent] = []
@@ -75,6 +87,9 @@ class InMemoryMetricCollector:
         # reallocations in long backtest runs (~11M entries → 91 MB buffer).
         # Summaries are always updated regardless of this flag.
         self._store_raw_events: bool = True
+        self._summary_keys: dict[tuple[str, str], str] = {
+            pair: f"{pair[0]}.{pair[1]}" for pair in _PREALLOCATED_METRIC_KEYS
+        }
 
     def reset(self) -> None:
         """Clear recorded metrics for a subsequent run in this process."""
@@ -85,7 +100,11 @@ class InMemoryMetricCollector:
     def record(self, metric: MetricEvent) -> None:
         if self._store_raw_events:
             self._events.append(metric)
-        key = f"{metric.layer}.{metric.name}"
+        pair = (metric.layer, metric.name)
+        key = self._summary_keys.get(pair)
+        if key is None:
+            key = f"{metric.layer}.{metric.name}"
+            self._summary_keys[pair] = key
         self._summaries[key].record(metric.value)
 
     def flush(self) -> None:
