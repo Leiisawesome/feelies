@@ -170,7 +170,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "confidence",
         "warm",
         "provenance",
-        "parent_correlation_id",
     ),
     "Signal": (
         "symbol",

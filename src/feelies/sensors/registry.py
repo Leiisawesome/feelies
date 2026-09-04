@@ -327,9 +327,6 @@ class SensorRegistry:
         supported; the registry overrides platform fields — ``sequence``,
         ``correlation_id``, ``source_layer``, ``provenance`` — so
         producers cannot diverge from the determinism contract.
-
-        ``parent_correlation_id`` is set to the originating market-data
-        event's ``correlation_id`` to preserve the parent-child trace.
         """
         spec = binding.spec
         if isinstance(emission, SensorReading) and emission.correlation_id != "placeholder":
@@ -360,7 +357,6 @@ class SensorRegistry:
             confidence=emission.confidence,
             warm=emission.warm,
             provenance=provenance,
-            parent_correlation_id=event.correlation_id,  # Preserve event lineage.
         )
 
     # Monitoring.

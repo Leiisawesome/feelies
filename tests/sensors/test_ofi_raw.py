@@ -82,7 +82,6 @@ def test_sum_reducer_gives_integrated_flow() -> None:
                     value=r.value,
                     confidence=r.confidence,
                     warm=r.warm,
-                    parent_correlation_id=q.correlation_id,
                 ),
                 fstate,
                 {},

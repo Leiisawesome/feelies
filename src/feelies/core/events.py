@@ -682,13 +682,9 @@ class SensorReading(Event):
     """Layer-1 sensor output emitted on every tick (§5.2).
 
     ``value`` is a scalar or a tuple of floats depending on the sensor
-    contract.  ``confidence`` defaults to 1.0 (sensor declares full
+    contract.      ``confidence`` defaults to 1.0 (sensor declares full
     confidence).  ``warm`` is False until the sensor's ``min_history``
     is satisfied.  Consumers must skip non-warm readings.
-
-    ``parent_correlation_id`` carries the ``correlation_id`` of the
-    originating market-data event (``NBBOQuote`` / ``Trade``) that
-    triggered this reading. ``SensorRegistry._stamp`` sets it.
     """
 
     symbol: str
@@ -698,7 +694,6 @@ class SensorReading(Event):
     confidence: float = field(default=1.0, metadata={"unit": "1"})
     warm: bool = True
     provenance: SensorProvenance = field(default_factory=SensorProvenance)
-    parent_correlation_id: str = ""
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
