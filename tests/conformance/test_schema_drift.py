@@ -176,7 +176,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "strength",
         "edge_estimate_bps",
         "disclosed_cost_total_bps",
-        "reversal_cost_estimate_bps",
         "disclosed_margin_ratio",
         "metadata",
         "layer",

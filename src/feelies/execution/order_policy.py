@@ -574,11 +574,6 @@ def _execute_reverse(
             quote=quote,
             is_short_entry=is_short,
         )
-        # Expose combined cost to traces and alerts.
-        reverse_signal = replace(
-            intent.signal,
-            reversal_cost_estimate_bps=reversal_cost_bps,
-        )
 
         if not reversal_edge_passes:
             deficit_bps = reversal_required_bps - effective_edge_bps

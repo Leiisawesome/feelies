@@ -222,8 +222,6 @@ class Signal(Event):
     strength: float = field(metadata={"unit": "1"})
     edge_estimate_bps: float = field(metadata={"unit": "bps"})
     disclosed_cost_total_bps: float = field(default=0.0, metadata={"unit": "bps"})
-    # Combined exit and entry cost for a reversal; zero for other signals.
-    reversal_cost_estimate_bps: float = field(default=0.0, metadata={"unit": "bps"})
     disclosed_margin_ratio: float = field(default=0.0, metadata={"unit": "1"})
     metadata: Mapping[str, Any] = field(default_factory=dict)
     layer: Literal["SIGNAL", "PORTFOLIO"] = "SIGNAL"
