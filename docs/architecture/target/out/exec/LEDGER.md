@@ -7933,4 +7933,254 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  Left uncommitted: baseline_pre-S-30g.json,
                  baseline_post-S-30g.json, this ledger entry.
 
+---
+
+## S-30h  2026-09-04T09:15:00+08:00
+  STEP:          S-30h
+  BASE:          38f9a618c400406a68ab25dabea8688c85e99b0b
+  RESULT SHA:    02e64b600dd92409118e1c4bbe6f9c47c2140e71
+                 (exec/S-30h; implementation only)
+  VERDICT:       passed
+  CONFORMANCE:   G33 health-transition scan + XOR |
+                 failed-before: yes (4 failed: independent
+                 HALTED write at massive_normalizer.py:913;
+                 health HALTED xor empty store did not raise;
+                 store membership xor HEALTHY feed did not
+                 raise; TestHaltedGate store empty after
+                 parse) | passes-after: yes
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S12: 2 passed after every src commit
+                 S14: 2 passed -> 2 passed
+                 conformance 113 passed / 6 xfailed -> 116
+                 passed / 6 xfailed (no XPASS). +3 are G33.
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-30h RED 4906 passed / 1 failed /
+                 18 skipped / 6 xfailed (Thursday; failed 1
+                 is the exempted IB after-hours test)
+                 -> post-S-30h GREEN 4909 passed / 0 failed /
+                 19 skipped / 6 xfailed. not-paper_rth:
+                 4908 passed / 1 failed / 5 skipped / 14
+                 deselected / 6 xfailed -- failed 1 is the
+                 same IB exemption. +3 passed = the three
+                 new G33 tests. kernel 390; ingestion 148
+                 passed / 3 skipped; docs 101.
+  PARITY:        declared hold -- replay hashes,
+                 EXPECTED_SYMBOL_HALTED_HASH,
+                 EXPECTED_HALT_ORDER_HASH, and the manifest
+                 fingerprint. _BASELINE_CONFIG_HASH holds;
+                 no PlatformConfig field. | actual 64/64
+                 identical (pre-S-30h vs post-S-30h vs
+                 baseline_post-S-30g.json); 0 moved at any
+                 commit | MATCH. tools/exec fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 EXPECTED_SYMBOL_HALTED_HASH
+                 a7b5c52139086e62019a282a6e3ec9352c677917dda2eaf2d13c7000af06c564
+                 EXPECTED_HALT_ORDER_HASH
+                 f791d994712762590eda4281830a0b4ce1af8b20cd295e2defcbbcd34e4a11e7
+  FILES:         9 declared, 4 touched, 0 extra CLEAN
+                 (verify_step S-30H uppercase miss; four
+                 checks by hand). Touched:
+                 src/feelies/ingestion/data_integrity.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 tests/conformance/test_session_halt_authority.py
+                 tests/kernel/test_data_integrity_runtime.py
+                 Declared-but-unneeded:
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/bootstrap.py
+                 tests/conformance/registry.py
+                 tests/acceptance/test_backtest_app_baseline.py
+                 tests/determinism/test_symbol_halted_replay.py
+                 Nothing outside FILES.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46100 -> 46170 (+70)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 DELETES: 1 independent DataHealth.HALTED
+                 trading write (named at fail-before):
+                 massive_normalizer.py:913
+                 sm.transition(DataHealth.HALTED).
+  DETERMINISM:   148 -> 148 after every src commit; no replay
+                 hash moved
+  VERIFY_STEP:   `S-30H` not in plan (known key is `S-30h`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 9 declared / 4 touched / 0 extra CLEAN;
+                 PARITY moved 0 holds; TESTS 4906->4909
+                 passed, failed 1->0 (post skipped the IB
+                 exemption; comparable not-paper_rth failed 1
+                 IB only); NET DELTA compare-by-eye MATCH on
+                 modules 0 and public symbols 0. sloc +70 is
+                 the helpers. Blast radius boundary -- human
+                 gate.
+  NOTES:         Commit order: failing tests first, then the
+                 merge, then the mypy narrow. a7f67be is
+                 tests only -- G33's health-transition scan,
+                 the two XOR constructors, and TestHaltedGate
+                 rewritten to drive halt through the
+                 normalizer parse path and assert store
+                 membership. Those four were red on this
+                 tree while the independent HALTED write at
+                 massive_normalizer.py:913 still existed. A
+                 scan that lands after the write is gone
+                 cannot fail on this tree; that is why
+                 S-30b through S-30e put the scan first,
+                 and why this step did too. e2cbf63 is the
+                 landing: one engine-1 function writes the
+                 store and the trade-feed health SM
+                 together, called from _apply_halt_status
+                 (:504 / :665) and from _process_trade_inner.
+                 02e64b6 adds the isinstance narrow so the
+                 SM lookup does not return Any.
+                 The split was exposure, not a diagnostic.
+                 Health HALTED with an empty store (parse
+                 without _process_trade_inner; the old
+                 TestHaltedGate set_health path): a later
+                 quote is blocked by the health gate and
+                 would not have been blocked by the store.
+                 Fail-safe, reduced. Store halted with
+                 health HEALTHY (_process_trade_inner
+                 without on_message): a later TRADE is not
+                 store-checked and reached the router.
+                 Increased. A tick blocked by one gate and
+                 permitted by the other is an exposure
+                 decision.
+                 Resolution: MERGE. The block named three
+                 options and specified merge -- one
+                 engine-1 function, both call sites, both
+                 reads kept. Agreed; did not subordinate
+                 either gate, and did not declare agreement
+                 without joining the writes.
+                 The XOR is the can-fail invariant on top
+                 of that merge: when a trade-feed health SM
+                 is bound, health HALTED xor store
+                 membership raises at the trading decision.
+                 _normalizer is None is store-only (halt
+                 replay), not a disagreement. Tests:
+                 test_g33_health_halted_xor_empty_store_raises_session_halt
+                 and
+                 test_g33_store_membership_xor_healthy_feed_raises_session_halt.
+                 Probe: _halt_health_xor_store forced to
+                 return False; both tests failed naming the
+                 missing SESSION_HALT; restore SHA256
+                 AB0CA221FF176F7D91A3AA74350641EB4658AC9FD88A817C0D61F7312EE3D82A
+                 BYTE_IDENTICAL; both passed again.
+                 KernelFault.Kind.SESSION_HALT is raised at
+                 data_integrity.py:380-384 inside
+                 _data_health_blocks_trading (kind= on
+                 :383). Quote path contains it in
+                 _process_tick. Trade path does not wrap;
+                 after _sync the two sides should agree, so
+                 the XOR should not fire there.
+                 No hash moved. Determinism 148 after
+                 every src commit. 64/64 identical
+                 pre-S-30h vs post-S-30h vs
+                 baseline_post-S-30g.json, including
+                 EXPECTED_SYMBOL_HALTED_HASH and
+                 EXPECTED_HALT_ORDER_HASH. Fingerprint
+                 unmoved. _BASELINE_CONFIG_HASH unmoved;
+                 no PlatformConfig field.
+                 Declared NET DELTA: src modules 0, public
+                 symbols 0, branch points 0. Measured:
+                 206->206, 575->575, sloc 46100->46170
+                 (+70), n_edges 667->667. MATCH on modules
+                 and public symbols. sloc +70 is the
+                 helpers; _sync is not a new module.
+                 Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      Concept residue -- S-30c/S-30d/S-30e
+                 shape. This step achieved one producer of
+                 the STORE+health write (_sync_halt_store_and_health).
+                 It did not achieve one producer of the
+                 CONCEPT (this symbol is not tradeable
+                 because of a halt). Sites that still
+                 decide halt-related state without going
+                 through _sync, and whether they can
+                 disagree:
+                 Production:
+                 - massive_normalizer.py:908 _mark_corrupted
+                   transitions quote and trade SMs to
+                   CORRUPTED and does not touch the halt
+                   store. YES. If the symbol was halted,
+                   the trade-feed SM leaves HALTED while
+                   the store still holds it; XOR then
+                   raises SESSION_HALT at the next trading
+                   decision instead of taking the
+                   CORRUPTED degrade path.
+                 - orchestrator.py:1587 quote membership
+                   check and :3832 _in_halt_blackout. Both
+                   READ the authority via the property
+                   rebinds. Cannot disagree with the store.
+                 - orchestrator.py:1183 forensic carve-out
+                   reads health() == HALTED, not the
+                   store. On the tape path XOR has already
+                   run, so it cannot disagree when a
+                   trade-feed SM is bound. It can still
+                   see HALTED from a test double with no
+                   SM (XOR skipped).
+                 - health(symbol) still merges quote+trade.
+                   XOR reads the trade-feed SM, not the
+                   merge. Specified keep-both-reads; the
+                   merge cannot put quote-feed HALTED on
+                   the tape path because only the trade
+                   feed is driven to HALTED.
+                 Tests / doubles, not on the tick path:
+                 - _MutableHealthNormalizer.set_health.
+                   YES. No _health_machines, so XOR is
+                   skipped. test_halted_trade_does_not_publish_rejection_alert
+                   still injects HALTED without store
+                   membership and the health gate still
+                   blocks.
+                 - tests that call sm.transition(HALTED)
+                   directly (the XOR tests themselves).
+                   YES by construction -- that is the
+                   probe, not a production writer.
+                 TestHaltStatusDetection now goes through
+                 _apply_halt_status -> _sync, so it writes
+                 the store; it cannot disagree.
+                 forensic_open is emit-once state on the
+                 authority, not a second halt decision.
+                 Parse writes the store first, so the
+                 plan's "not already in the store" emit
+                 guard would skip SymbolHalted and resting
+                 cancel on PAPER. The episode flag keeps
+                 one emit/cancel on the orchestrator path.
+                 Halt replay hashes held.
+                 The named independent DataHealth.HALTED
+                 trading write is gone
+                 (massive_normalizer.py:913, count 1 at
+                 fail-before). The gate is closed for that
+                 split; the concept residue above is not.
+                 verify_step.py uppercases the step id, so
+                 S-30H does not match plan key S-30h.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30g FINDING G36 stays OPEN;
+                 S-30c/S-30d/S-30e concept residue; four
+                 exempted baseline tests.
+  NEXT:          S-31 unread compute / StateTransition
+                 (platform-wide). Not started. Do not begin
+                 S-31.
+                 Left uncommitted: baseline_pre-S-30h.json,
+                 baseline_post-S-30h.json, this ledger entry.
+
 
