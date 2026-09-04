@@ -3416,10 +3416,25 @@ PROBLEM:         A5.4 closed FALSE. 106 public methods with zero in-src
                  checkpoint_risk_state / restore_risk_state
                  (now risk/risk_wrapper.py:324 and :333 — Phase 4's
                  alpha/risk_wrapper.py:299 is stale post S-21).
-FILES:           named per method after the coverage run proves
-                 unexecuted. Do not cut the branch against an unnamed
-                 set. Do not include orchestrator._emit_state_transition
-                 (S-31d).
+FILES:           src/feelies/alpha/registry.py:331
+                 (AlphaRegistry.has_signal_alphas)
+                 src/feelies/risk/basic_risk.py:171
+                 (BasicRiskEngine.buying_power_phase)
+                 src/feelies/portfolio/cross_sectional_tracker.py:114
+                 (CrossSectionalTracker.all_snapshots)
+                 src/feelies/signals/horizon_engine.py:643
+                 (HorizonSignalEngine.forget — wire, do not delete)
+                 src/feelies/services/regime_state_cache.py:68,113
+                 (RegimeStateCache.for_engine; forget — wire, do not
+                 delete)
+                 src/feelies/sensors/registry.py:452
+                 (SensorRegistry.collect_into)
+                 src/feelies/risk/stop_exit.py:166
+                 (StopExitController.policy)
+                 src/feelies/execution/trading_session.py:82
+                 (TradingSessionBounds.is_within_rth)
+                 Do not include orchestrator._emit_state_transition
+                 (S-31a).
 WHY THIS OWNER:  each method's engine. Kernel only if the method still
                  lives in orchestrator.py after Wave D.
 REFACTOR PATH:   coverage gate first (fail-before: the named method is
