@@ -9036,4 +9036,234 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-31c.json,
                  coverage_pre-S-31c.json, this ledger entry.
 
+---
+
+## S-32  2026-09-04T21:40:00+08:00
+  STEP:          S-32
+  BASE:          b1decbd1d260b2ca036a32b82dbb9a7655d479ed
+  RESULT SHA:    2c088164e3243359a28aad93324760414bdb07fa
+                 (exec/S-32; two prohibition-class commits)
+  VERDICT:       passed
+                 (platform-wide gate given; branch head
+                 2c08816)
+  CONFORMANCE:   S5 xfail intact (G41 G42 G44 G45). No XPASS.
+                 S4 3 passed (allowlist still 7/1/2).
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 conformance 116 passed / 6 xfailed -> 116
+                 passed / 6 xfailed
+                 mypy src/feelies: Success, 206 source files.
+  TESTS:         capture pre-S-32 RED 4907 passed / 1
+                 failed / 18 skipped / 6 xfailed (IB
+                 EXEMPTION test_after_hours_reject_surfaces_as_rejected)
+                 -> post-S-32 RED 4917 passed / 2 failed /
+                 7 skipped / 6 xfailed. The two failures
+                 are EXEMPTIONS: the IB after-hours test
+                 and test_g12_cost_exceeds_disclosure_alert
+                 (paper_rth; US RTH was open at post-capture).
+                 +10 passed / -11 skipped is RTH tests
+                 running, not a behavioural move.
+                 not-paper_rth: 4906 passed / 1 failed
+                 (same IB test) / 5 skipped / 14 deselected
+                 / 6 xfailed.
+                 kernel 390; docs 101.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-32 vs post-S-32 and vs
+                 baseline_post-S-31c.json; 0 moved at
+                 either commit | MATCH.
+                 Fingerprint unmoved (determinism 148).
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 verify_step --list false-positive
+                 "declared break" from naming
+                 _BASELINE_CONFIG_HASH in PARITY IMPACT;
+                 gate reported moved 0, holds.
+  FILES:         11 path tokens declared in FILES prose
+                 (verify_step), 2 touched, 0 extra CLEAN.
+                 Tree unique editable paths are 7; the
+                 other four are do-not-include /
+                 generated (strategy_position_store.py,
+                 hotpath.json, perfmeasure.py,
+                 hotpath_executed.json). Followed the
+                 tree (S-24). Touched:
+                 src/feelies/monitoring/in_memory.py
+                 src/feelies/kernel/orchestrator.py
+                 Declared-but-unneeded (confirm against
+                 proven_sites: not tick-path / not proven):
+                 src/feelies/signals/regime_gate.py
+                 src/feelies/composition/synchronizer.py
+                 tests/conformance/test_hot_path_allow_list.py
+                 tests/acceptance/test_no_walltime_outside_clock.py
+                 tools/arch/hotpath.py
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 45984 -> 46005 (+21)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0.
+                 Cost is unproven — see FINDINGS. The
+                 -1.8 µs figure is not a saving.
+  DETERMINISM:   148 -> 148 after every src commit; no
+                 replay hash moved; fingerprint test
+                 passed throughout.
+  VERIFY_STEP:   Four checks: FILES 11 named / 2 touched
+                 / 0 extra CLEAN; PARITY 64/64 HASH+COUNT
+                 hold, fingerprint unmoved (oracle
+                 false-positive "declared break"); TESTS
+                 4907->4917 passed, failed 1->2 both
+                 EXEMPTION; NET DELTA MATCH on modules 0
+                 symbols 0, sloc +21. CLEAN, blast radius
+                 platform-wide -- gate given.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD b1decbd on arch/exec at pre-flight.
+                 porcelain empty. `git diff --stat
+                 exec-tools-v1..HEAD -- tools/exec` empty.
+                 Oracle frozen at exec-tools-v1. Cut
+                 exec/S-32. Branch head after the two
+                 commits is 2c08816.
+                 Commit order, cheapest first as the
+                 block listed the classes: da55662
+                 string_formatting (intern
+                 InMemoryMetricCollector layer.name keys
+                 so record() no longer formats
+                 unconditionally); 2c08816 dict/set
+                 (reuse _tick_timings via clear(); hoist
+                 the attribution frozenset and the
+                 getattr fallback dict to module level).
+                 Two classes landed. Three did not:
+                 dataclass.replace -- 0 proven sites,
+                 all guarded after early returns, no
+                 commit; dynamic_dispatch -- the FILES
+                 site is getattr(self, "_tick_timings")
+                 and X10 (not in FILES) requires that
+                 string as an AST Constant, no commit;
+                 G01 wall-clock -- no Inv-10 retarget,
+                 allowlist stays 7/1/2 (this tree, S-19a;
+                 operator 5/1/2 is wrong here; the third
+                 proven read is order_lifecycle.py, a
+                 twelfth file). A guard proof was still
+                 run: one extra perf_counter_ns after
+                 t_wall_start; S4 named
+                 kernel/orchestrator.py:1838 (line-ordered
+                 leftover). Restore SHA256
+                 A2E9FB3DA6CCF1E6E1573867E015002D501A7E65ACA15737C801011C494910C1
+                 byte-identical.
+                 Parity held across both commits and
+                 against baseline_post-S-31c.json: 64/64
+                 HASH/COUNT, fingerprint,
+                 _BASELINE_CONFIG_HASH. Determinism 148
+                 after each. The two exceptions were
+                 checks: no unsorted set iteration was
+                 sorted; the intern map was not a
+                 pre-seeded summaries dict. Neither
+                 moved a hash.
+                 What evades the scan: layer + "." +
+                 name (Add, not JoinedStr);
+                 self.__dict__["attr"] (not getattr);
+                 dict.clear() on a reused dict; a module
+                 Name instead of a Dict/Set literal
+                 inside the function; `from time import
+                 perf_counter_ns` then a bare call;
+                 dataclasses.replace after an early
+                 return (guarded, not proven);
+                 allowlisted wall-clock still counted
+                 proven because hotpath.py does not
+                 intersect Inv-10.
+                 S5's xfail is intact. Reason still
+                 names G41 G42 G44 G45. It was not
+                 dropped because G44 is still partial
+                 (S-31c) and this step did not drive
+                 proven per-event sites to zero -- eight
+                 remain outside FILES, so G45 stays
+                 open. No XPASS.
+                 NET DELTA declared 0/0/0. Measured
+                 modules 206->206 (+0), public_symbols
+                 575->575 (+0), sloc 45984->46005 (+21).
+                 MATCH on the declared zeros. sloc rose
+                 because intern and hoist add lines;
+                 DELETES named per-event operations, not
+                 modules. Cost column: unproven, see
+                 FINDINGS -- do not book -1.8 µs.
+  FINDINGS:      Per-quote figures were 135,539 ->
+                 135,772 -> 133,746 ns, but a same-tree
+                 control with no code change spanned
+                 132,837 to 135,755 ns -- peak-to-peak
+                 2,918, sigma about 1,220. Every step
+                 number sits inside the control
+                 envelope. The method is a single
+                 unrepeated timing of run_backtest over
+                 82,678 quotes with GC off and
+                 HIGH_PRIORITY_CLASS. The instrument
+                 cannot resolve a saving, a cost, or a
+                 no-op for changes of this size --
+                 interning three f-strings and reusing
+                 one dict and one frozenset per quote.
+                 So the step's cost claim is unproven in
+                 both directions, and the -1.8
+                 microseconds must not be recorded as a
+                 saving.
+                 What would resolve it: min-of-N on the
+                 same tree before and after (the tool
+                 already has --repeats and takes the
+                 min; this step used 1); a tighter
+                 bracket around the intern/clear/frozenset
+                 sites rather than the whole
+                 run_backtest window; or a counter of
+                 the prohibited operations (hotpath
+                 proven_per_event_sites already is that
+                 counter). min-of-N and a site bracket
+                 belong in the measurement tool
+                 (perfmeasure.py); the counter is
+                 already hotpath.py and is the evidence
+                 this step actually has. S-32's
+                 VALIDATED BY names "Phase 4 per-quote
+                 measurement per commit" as evidence;
+                 that evidence is not available at this
+                 resolution.
+                 G45 cannot close: eight proven sites
+                 sit outside FILES. Identified at
+                 before-state; not edited.
+                 X10 pins `"_tick_timings"` as an AST
+                 Constant, so the remaining FILES
+                 getattr cannot be deleted without a
+                 file not in FILES.
+                 Operator 5/1/2 Inv-10 budget is wrong
+                 for this tree.
+                 verify_step NET DELTA "deletions with
+                 no negative delta" is the frozen sloc
+                 complaint.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing
+                 __schema_version__ fail-open; ci.yml
+                 G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days
+                 stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26
+                 unused selection_policy injection;
+                 S-28a token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue; S-30g FINDING G36 stays OPEN;
+                 S-31c FINDING G44 stays partial; four
+                 exempted baseline tests.
+  NEXT:          S-33 engine-2 cost (G42, G41)
+                 (platform-wide). Not started. Do not
+                 begin S-33.
+                 Left uncommitted: baseline_pre-S-32.json,
+                 baseline_post-S-32.json, this ledger
+                 entry.
+
 
