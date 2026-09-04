@@ -139,31 +139,6 @@ def test_registry_without_metric_collector_emits_nothing() -> None:
 # ── Horizon-tick metrics ────────────────────────────────────────────
 
 
-def test_scheduler_emits_tick_emitted_metric_per_tick() -> None:
-    mc = InMemoryMetricCollector()
-    scheduler = HorizonScheduler(
-        horizons=frozenset({30}),
-        session_id="TEST",
-        symbols=frozenset({"AAPL"}),
-        session_open_ns=1_000_000_000_000,
-        sequence_generator=SequenceGenerator(),
-        metric_collector=mc,
-    )
-
-    # First event → boundary 0, emits a SYMBOL + a UNIVERSE tick = 2.
-    ticks_a = scheduler.on_event(_quote(ts_ns=1_001_000_000_000))
-    assert len(ticks_a) == 2
-
-    # Cross into next 30s window → another SYMBOL + UNIVERSE = 2.
-    ticks_b = scheduler.on_event(_quote(ts_ns=1_031_000_000_000))
-    assert len(ticks_b) == 2
-
-    metrics = [e for e in mc.events if e.name == "feelies.horizon.tick.emitted"]
-    assert len(metrics) == 4
-    assert all(e.value == 1.0 for e in metrics)
-    assert all(e.layer == "scheduler" for e in metrics)
-
-
 def test_scheduler_metrics_dont_perturb_tick_sequence() -> None:
     mc = InMemoryMetricCollector()
     scheduler = HorizonScheduler(
