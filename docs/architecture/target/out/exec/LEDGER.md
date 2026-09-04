@@ -8183,4 +8183,484 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  Left uncommitted: baseline_pre-S-30h.json,
                  baseline_post-S-30h.json, this ledger entry.
 
+---
+
+## S-31a  2026-09-04T10:00:49+08:00
+  STEP:          S-31a
+  BASE:          715fd1a9b575d977625e971f019e655778a02434
+  RESULT SHA:    not started -- blocked at plan identity, no
+                 branch cut, no capture, no edit under FILES
+  VERDICT:       blocked
+  CONFORMANCE:   not run
+  TESTS:         not run -> not run
+  PARITY:        not measured. Capture skipped so the tree
+                 stays clean.
+  FILES:         plan declares 4 paths plus BLOCKED until the
+                 20 unread fields are named. 0 touched.
+  NET DELTA:     not measured
+  DETERMINISM:   not run
+  VERIFY_STEP:   not run
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 715fd1a. HEAD on arch/exec. porcelain
+                 empty. `git diff --stat exec-tools-v1..HEAD
+                 -- tools/exec` empty. Oracle frozen at
+                 exec-tools-v1. Did not run baseline.py
+                 capture. Did not cut exec/S-31a.
+                 Operator prompt: S-31a is the
+                 StateTransition move, 6 FILES, declared
+                 replay-hash break, S11 disposition required.
+                 Tree (S-24 FINDING: NOTES are not
+                 authoritative):
+                 STEP S-31a CLOSES unread event fields;
+                 FILES 4 paths + **BLOCKED until the 20
+                 fields are named**; REFACTOR PATH "Do not
+                 delete StateTransition's fields here";
+                 PARITY IMPACT fingerprint only,
+                 EXPECTED_STATE_TRANSITION_HASH/COUNT hold.
+                 118dd8c message says "only the
+                 StateTransition move breaks parity" but its
+                 S-31a body is unread fields. 715fd1a retargets
+                 S-31c's "_emit_state_transition (S-31d)"
+                 to "(S-31a)" without rewriting S-31a.
+                 G.7 still names StateTransition deletion as
+                 "S-31 step 2" (replay HASH delete/re-pin).
+                 No S-31d block exists. Original S-31 FILES
+                 for the publish were 3 paths
+                 (orchestrator._emit_state_transition,
+                 events.py StateTransition,
+                 parity_manifest.py state_transition), not 6.
+                 S-12 kept the StateTransition publish for
+                 S-31 and left S11 xfail; not reached here.
+  FINDINGS:      Plan defect -- S-31a identity is not
+                 decided. Cannot execute unread-fields
+                 (BLOCKED, unnamed FILES) and cannot execute
+                 StateTransition (no 6-entry FILES, S-31a
+                 body forbids deleting those fields, G.7
+                 still says step 2). Amend the plan before
+                 any branch cut.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue (one producer of the store is not
+                 one producer of the concept); S-30g FINDING
+                 G36 stays OPEN; four exempted baseline
+                 tests.
+  NEXT:          Amend S-31a. Do not begin implementation.
+                 Left uncommitted: this ledger entry.
+
+---
+
+## S-31a  2026-09-04T10:17:11+08:00
+  STEP:          S-31a
+  BASE:          a59d31156e709ef42b1ff02129b0592003d70f55
+  RESULT SHA:    not started -- blocked at plan identity
+                 (commit message vs body), no branch cut, no
+                 capture, no edit under FILES
+  VERDICT:       blocked
+  CONFORMANCE:   not run
+  TESTS:         not run -> not run
+  PARITY:        not measured. Capture skipped.
+  FILES:         0 touched. Body names 6 paths for a channel
+                 move and forbids events.py.
+  NET DELTA:     not measured
+  DETERMINISM:   not run
+  VERIFY_STEP:   not run
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD a59d311 on arch/exec.
+                 `git diff --stat exec-tools-v1..HEAD --
+                 tools/exec` empty. Oracle frozen at
+                 exec-tools-v1. Porcelain: LEDGER.md only
+                 (prior blocked entry). Did not cut
+                 exec/S-31a.
+                 Operator query and a59d311 subject: (b) --
+                 publish stays, unread fields go,
+                 notification record = bus event outside the
+                 manifest; S11 follows from publish
+                 surviving; fingerprint moves per S-17a
+                 field delete.
+                 Tree body (S-24): PROBLEM/FILES/REFACTOR
+                 PATH/DELETES are the channel move -- stop
+                 publish, add record_transition, drop S11
+                 xfail, do not edit events.py, do not delete
+                 StateTransition fields. BLAST RADIUS field
+                 is gone. CLOSES still says unread event
+                 fields. That is the previous answer's
+                 recommended block pasted under a (b)
+                 subject.
+                 Cannot execute (b): events.py is forbidden
+                 and the 20 unread fields are unnamed.
+                 Cannot execute the body: operator chose (b)
+                 and this prompt says S11 follows from the
+                 publish surviving.
+  FINDINGS:      Plan defect -- a59d311 subject and body
+                 contradict. Amend so both describe the same
+                 step before any branch cut.
+                 S11: not reached. If (b) lands, leave the
+                 xfail -- publish still has zero production
+                 subscribers. If the body lands, drop it.
+                 Carried: same list as the prior S-31a
+                 blocked entry.
+  NEXT:          Amend S-31a. Do not begin implementation.
+                 Left uncommitted: this ledger entry.
+
+---
+
+## S-31a  2026-09-04T10:55:12+08:00
+  STEP:          S-31a
+  BASE:          27ea09a9b527dd0d3e5c061ea3716173b7a2e40b
+  RESULT SHA:    not started -- blocked at before-state
+                 (construction sites outside FILES), no
+                 branch cut, no edit under FILES
+  VERDICT:       blocked
+  CONFORMANCE:   S2: 1 passed / 1 xfailed (G40)
+                 S11: 1 xfailed (G10 G28), 1 passed
+                 S12: 2 passed
+                 S14: 2 passed
+                 S8 PINNED_PAYLOAD not mutated
+  TESTS:         capture pre-S-31a GREEN 4909 passed / 0
+                 failed / 19 skipped / 6 xfailed
+                 -> not run after (no implementation)
+  PARITY:        declared break EXPECTED_MANIFEST_FINGERPRINT
+                 only; all replay HASH/COUNT hold including
+                 EXPECTED_STATE_TRANSITION_HASH/COUNT;
+                 _BASELINE_CONFIG_HASH holds | actual pre
+                 capture 64/64 identical to
+                 baseline_post-S-30h.json, 0 moved | MATCH
+                 on the before-state. Fingerprint
+                 e5fe32165d5efbbd55987c120f1268d5cddc305475ad4ff1ab589ca5d180f7e2
+                 not moved (no field delete). tools/exec
+                 fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         21 named paths plus wiring_manifest.py /
+                 gate_registry.py (do-not-edit). 0 touched.
+                 Five construction sites outside FILES
+                 (STOP, listed in FINDINGS).
+  NET DELTA:     not measured (no implementation)
+  DETERMINISM:   148 -> not re-run
+  VERIFY_STEP:   not run
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 27ea09a on arch/exec. porcelain:
+                 LEDGER.md only (prior blocked S-31a
+                 entries). `git diff --stat
+                 exec-tools-v1..HEAD -- tools/exec` empty.
+                 Oracle frozen at exec-tools-v1. Capture
+                 GREEN. Did not cut exec/S-31a.
+                 27ea09a subject says "five unread fields";
+                 tree body DELETES names ten. Followed the
+                 body (S-24).
+                 Ten fields, src attribute reads, construction,
+                 asserts:
+                 HorizonFeatureSnapshot.source_sensors --
+                 no consumer read (only __post_init__ wrap);
+                 construct aggregator.py:457,
+                 test_new_events.py:284; assert
+                 test_aggregator.py:230,
+                 test_new_events.py:270, PINNED_PAYLOAD.
+                 HorizonFeatureSnapshot.feature_versions --
+                 no consumer read (only __post_init__ wrap);
+                 construct aggregator.py:458; assert
+                 test_aggregator.py:561, PINNED_PAYLOAD.
+                 HorizonFeatureSnapshot.parent_correlation_id
+                 -- no src read; construct
+                 aggregator.py:459; assert PINNED_PAYLOAD.
+                 SensorReading.parent_correlation_id -- no
+                 src read; construct registry.py:363 and
+                 tests/sensors/test_ofi_raw.py:85 (NOT in
+                 FILES); assert PINNED_PAYLOAD.
+                 MetricEvent.metric_type -- no src read
+                 (InMemoryMetricCollector uses layer/name/
+                 value); construct scheduler, registry,
+                 horizon_engine, orchestrator (5),
+                 horizon_metrics, aggregator; also four
+                 test constructors NOT in FILES (below);
+                 assert test_sensor_metrics.py,
+                 PINNED_PAYLOAD.
+                 MetricEvent.tags -- no consumer read (only
+                 __post_init__ wrap); construct SRC sites
+                 in FILES; assert
+                 test_horizon_engine_metrics.py,
+                 test_sensor_metrics.py, PINNED_PAYLOAD.
+                 LatencyBreach.observed_ns -- no src read;
+                 construct latency_budget.py:95; assert
+                 test_latency_budget.py:154,
+                 PINNED_PAYLOAD.
+                 RegimeState.stability -- no src read;
+                 no src kwargs (default); construct/assert
+                 test_new_events.py:79,115,118. regime_engine.py
+                 is declared but does not pass stability=.
+                 RiskVerdict.constraints -- no consumer
+                 read (only __post_init__ wrap); no
+                 RiskVerdict(constraints=) in src.
+                 position_manager.py:366/414 is
+                 SuppressedLeg.constraints, not
+                 RiskVerdict. basic_risk.py and
+                 risk_wrapper.py construct RiskVerdict
+                 without the kwarg.
+                 Signal.reversal_cost_estimate_bps -- no
+                 src read; construct order_policy.py:580
+                 dataclasses.replace; reverse_signal is
+                 passed to _append_signal_order_trace
+                 which does not read this field; assert
+                 PINNED_PAYLOAD.
+                 Replay hash helpers omit all ten fields.
+                 Serializer getattr is NBBOQuote/Trade
+                 only. None of the ten were live-read;
+                 none were left in place for that reason.
+  FINDINGS:      Plan defect -- FILES cannot land the
+                 deletes. Five construction sites pass a
+                 named-deleted kwarg and are not in FILES.
+                 Editing them is a 24th+ path. Leaving
+                 them is TypeError on a previously-passing
+                 test:
+                 1. tests/sensors/test_ofi_raw.py:85
+                    SensorReading(parent_correlation_id=)
+                 2. tests/monitoring/test_in_memory.py:22
+                    MetricEvent(metric_type=)
+                 3. tests/core/test_serialization.py:123
+                    MetricEvent(metric_type=)
+                 4. tests/storage/test_memory_event_log.py:191
+                    MetricEvent(metric_type=)
+                 5. tests/ingestion/test_replay_feed.py:90
+                    MetricEvent(metric_type=)
+                 Amend FILES to add those five, then the
+                 ten fields can be deleted. Do not add
+                 them here.
+                 position_manager.py is declared as a
+                 deleted-field construction site and is
+                 not one: its constraints= writes
+                 SuppressedLeg, not RiskVerdict.
+                 test_unit_declaration.py xfail reason
+                 names RiskVerdict.constraints; deleting
+                 the field would stale that string and
+                 shrink G46's remaining set by one. File
+                 not in FILES. Other UNIT_UNDETERMINED
+                 fields keep the xfail from XPASSing.
+                 27ea09a subject ("five unread fields")
+                 disagrees with the body (ten). Body used.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue; S-30g FINDING G36 stays OPEN;
+                 four exempted baseline tests.
+  NEXT:          Amend S-31a FILES to include the five
+                 construction sites. Do not begin
+                 implementation. Do not begin S-31b.
+                 Left uncommitted: baseline_pre-S-31a.json,
+                 this ledger entry.
+
+---
+
+## S-31a  2026-09-04T14:35:25+08:00
+  STEP:          S-31a
+  BASE:          27ea09a9b527dd0d3e5c061ea3716173b7a2e40b
+  RESULT SHA:    0cc02b1f89d823ec98f255978a5976e11e8f6c81
+                 (exec/S-31a; implementation + fingerprint
+                 re-pin)
+  VERDICT:       passed
+  CONFORMANCE:   S8 PINNED_PAYLOAD | failed-before: yes
+                 (per class, extra= the named unread
+                 fields) | passes-after: yes
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S11: still xfail (G10 G28). No XPASS.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 conformance 116 passed / 6 xfailed -> 116
+                 passed / 6 xfailed
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-31a GREEN 4909 passed / 0
+                 failed / 19 skipped / 6 xfailed
+                 -> post-S-31a GREEN 4909 passed / 0 failed /
+                 19 skipped / 6 xfailed. not-paper_rth:
+                 4908 passed / 6 skipped / 14 deselected /
+                 6 xfailed. kernel+docs+schema 493 passed.
+  PARITY:        declared break EXPECTED_MANIFEST_FINGERPRINT
+                 only; all replay HASH and COUNT hold
+                 including EXPECTED_STATE_TRANSITION_HASH /
+                 COUNT; _BASELINE_CONFIG_HASH holds | actual
+                 64/64 identical pre-S-31a vs post-S-31a;
+                 0 HASH/COUNT moved at any commit | MATCH.
+                 Fingerprint
+                 e5fe32165d5efbbd55987c120f1268d5cddc305475ad4ff1ab589ca5d180f7e2
+                 ->
+                 ff2ca64cbd9d56250aab7ef68b9012b0c9595289f9d65c47ff3813cb94654acc
+                 re-pinned in 0cc02b1.
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         21 named paths plus wiring_manifest.py /
+                 gate_registry.py (do-not-edit). 21 touched,
+                 5 extra (operator Go after the FILES stop).
+                 verify_step S-31A uppercase miss; four
+                 checks by hand. Touched:
+                 src/feelies/core/events.py
+                 src/feelies/features/aggregator.py
+                 src/feelies/sensors/registry.py
+                 src/feelies/sensors/horizon_scheduler.py
+                 src/feelies/signals/horizon_engine.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/monitoring/horizon_metrics.py
+                 src/feelies/monitoring/latency_budget.py
+                 src/feelies/execution/order_policy.py
+                 tests/conformance/test_schema_drift.py
+                 tests/conformance/test_latency_budget.py
+                 tests/core/test_new_events.py
+                 tests/features/test_aggregator.py
+                 tests/monitoring/test_sensor_metrics.py
+                 tests/signals/test_horizon_engine_metrics.py
+                 tests/determinism/test_parity_manifest.py
+                 Extra (Go; kwargs sites named at
+                 before-state):
+                 tests/sensors/test_ofi_raw.py
+                 tests/monitoring/test_in_memory.py
+                 tests/core/test_serialization.py
+                 tests/storage/test_memory_event_log.py
+                 tests/ingestion/test_replay_feed.py
+                 Declared-but-unneeded:
+                 tests/determinism/parity_manifest.py
+                 src/feelies/execution/position_manager.py
+                 src/feelies/risk/basic_risk.py
+                 src/feelies/risk/risk_wrapper.py
+                 src/feelies/services/regime_engine.py
+                 wiring_manifest.py (untouched)
+                 gate_registry.py (untouched)
+                 _emit_state_transition untouched.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46170 -> 46070 (-100)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 DELETES: the ten named unread payload
+                 fields, all of them.
+  DETERMINISM:   148 -> 148 after every src commit and after
+                 re-pin; no replay hash moved. Fingerprint
+                 test 1 failed until 0cc02b1, then 148
+                 passed / 0 failed.
+  VERIFY_STEP:   `S-31A` not in plan (known key is `S-31a`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 21 named / 21 touched / 5 extra
+                 (Go); PARITY 64/64 HASH+COUNT hold,
+                 fingerprint moved as declared; TESTS
+                 4909->4909 passed, failed 0->0;
+                 NET DELTA MATCH on modules 0 and public
+                 symbols 0. sloc -100 is the field deletes.
+                 Blast radius platform-wide -- operator Go
+                 on the re-pin.
+  NOTES:         Eight commits, one class per commit, then
+                 the re-pin. 40b41d2 HorizonFeatureSnapshot
+                 (source_sensors, feature_versions,
+                 parent_correlation_id) after S8 fail-before
+                 extra=(those three). 6d90a90
+                 SensorReading.parent_correlation_id.
+                 afbfe4f MetricEvent.metric_type and tags.
+                 922e382 LatencyBreach.observed_ns.
+                 f988bd2 RegimeState.stability. 9478100
+                 RiskVerdict.constraints. 794527c
+                 Signal.reversal_cost_estimate_bps.
+                 0cc02b1 re-pins EXPECTED_MANIFEST_FINGERPRINT.
+                 All ten named DELETES fields had zero consumer
+                 reads in src/feelies (__post_init__ wraps
+                 were self-freeze only). No
+                 RiskVerdict(constraints=) in src;
+                 position_manager.py constraints= is
+                 SuppressedLeg. InMemoryMetricCollector
+                 keys on layer/name/value, not metric_type
+                 or tags. Replay hash helpers omit all ten.
+                 Serializer getattr is NBBOQuote/Trade only.
+                 All ten were unread; all ten were deleted.
+                 Fingerprint e5fe32165d5efbbd ->
+                 ff2ca64cbd9d5625. No replay HASH or COUNT
+                 moved at any commit, including
+                 EXPECTED_STATE_TRANSITION_HASH/COUNT.
+                 _emit_state_transition, wiring_manifest.py
+                 and gate_registry.py were not edited. S11
+                 still xfails (G10 G28) -- zero production
+                 subscribers. Declared NET DELTA src
+                 modules 0, public symbols 0, branch
+                 points 0. Measured: 206->206, 575->575,
+                 sloc 46170->46070 (-100). MATCH on the
+                 declared figures. Clone is
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+  FINDINGS:      The plan named ten fields. Operator wrap-up
+                 said leave RiskVerdict.max_position_usd
+                 because it is read at basic_risk.py:1049,
+                 so nine deleted and one left. This tree
+                 has no max_position_usd: git log -S on
+                 events.py and basic_risk.py is empty;
+                 RiskVerdict's payload is symbol, action,
+                 reason, scaling_factor (constraints now
+                 gone); basic_risk.py is 877 lines, not
+                 1049. The Phase 5 unread-field census
+                 listed payload fields with no attribute
+                 read; it did not invent a field that never
+                 existed, and it did not predate a later
+                 read of max_position_usd. The plan's count
+                 of ten survived contact with the tree. The
+                 9-and-1 split is the wrap-up instruction,
+                 counted differently -- a field name from
+                 another draft, not a live read. Second
+                 declared-count misshape after S-30c's
+                 199-of-200 (plan said 199 illegal writes;
+                 tree had two). S-24: recorded what the
+                 tree shows.
+                 FILES omitted five kwargs sites. Operator
+                 Go after that stop; those five were
+                 stripped so MetricEvent.metric_type and
+                 SensorReading.parent_correlation_id could
+                 land. Plan was not amended.
+                 test_unit_declaration.py xfail reason
+                 still names RiskVerdict.constraints.
+                 Remaining UNIT_UNDETERMINED fields keep
+                 G46 from XPASSing. File not in FILES.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue; S-30g FINDING G36 stays OPEN;
+                 four exempted baseline tests.
+  NEXT:          S-31b unread metric names (local). Not
+                 started. Do not begin S-31b.
+                 Left uncommitted: baseline_pre-S-31a.json,
+                 baseline_post-S-31a.json, this ledger entry.
+
 
