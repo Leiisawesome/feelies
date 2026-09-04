@@ -3327,115 +3327,117 @@ ROLLBACK:        revert this step only.
 because every step in it is `platform-wide` and none is a P0.
 
 ```
-STEP:            S-31
-CLOSES:          G44, G10 (the residual)
-PROBLEM:         **~12.8 µs/quote (9.4%) provably unread** — 20 unread event
-                 fields of 179, 2 unread metric names of 9, 106 public methods
-                 with zero in-src call sites of 564 — led by **7.2 µs/quote
-                 publishing `StateTransition` to zero subscribers**. CORE §G.10
-                 justified net complexity. **The 106 is a measurement, not a
-                 deletion list.** A5.4 closed **FALSE** in X1 — see REFACTOR
-                 PATH (3) and NET DELTA.
-FILES:           src/feelies/kernel/orchestrator.py:4694-4707
-                 (`_emit_state_transition`)
-                 src/feelies/core/events.py:344 (`StateTransition`)
-                 tests/determinism/parity_manifest.py:183 (`state_transition`)
-                 the 20 unread fields, 2 unread metrics, and the verified-dead
-                 method set the coverage gate admits
-WHY THIS OWNER:  Engine 11 owns observability. `StateTransition`'s docstring
-                 promise — "Logged whenever any state machine transitions. No
-                 silent transitions" (`src/feelies/core/events.py:345`) — is
-                 worth keeping; publishing it on the **domain** bus to zero
-                 subscribers is not. It becomes a record on engine 11's
-                 notification channel.
-REFACTOR PATH:   **This step corrects Phase 5's own claim about itself and that
-                 is the first thing to state.** Phase 5 G44 says removing dead
-                 compute "changes nothing computed, so the parity hash must not
-                 move — each item is independently verifiable against the
-                 oracle." That is **false for its largest item.**
-                 `_emit_state_transition` publishes with
-                 `sequence=self._seq.next()` (`:4700`, read this session) at
-                 8.007 transitions per quote, so deleting the publish removes
-                 ~8 draws per quote from the shared kernel generator and shifts
-                 every later event on every tick.
-                 Path: (1) the 20 fields, 2 metrics and the verified-dead
-                 methods first, one category per commit, each verified against
-                 the oracle — those genuinely do not move a hash; (2)
-                 `StateTransition` **last and alone**, as the
-                 notification-channel move plus a declared re-pin; (3) **A5.4
-                 is closed and it is FALSE — the method deletion is rescoped
-                 and gated.** X1 cross-referenced `tests/`, `scripts/`,
-                 `tools/`, `alphas/`, `configs/` and string-literal dispatch:
-                 of the 106, **82 are called from `tests/` alone** and only
-                 13 are reached by nothing. Two independent static passes
-                 disagreed in both directions (13 vs 16) on same-name receiver
-                 collisions, which is why the residue is settled empirically
-                 rather than by a third search. **Gate:** run the full suite
-                 under `coverage` with branch data and delete only methods the
-                 run proves unexecuted; then replay the APP oracle. A method
-                 the gate cannot reach but that is *documented* as an
-                 extension point is **not** deletable — `FeatureComputation.
-                 update_trade` (`alphas/SCHEMA.md:78`) is the worked example,
-                 and coverage cannot see it because nothing implements the
-                 optional hook today.
-BLAST RADIUS:    platform-wide (step 2); local per commit for step 1
-VALIDATED BY:    S5, S11, C1, the oracle, the coverage gate above, and Phase
-                 4's per-quote measurement re-run to confirm the ~12.8 µs is
-                 actually recovered — a deletion that does not move the number
-                 deleted the wrong thing. Note the corrected expectation: the
-                 method deletion recovers ~0 µs because an uncalled method
-                 costs nothing per quote, so the recovered time is
-                 attributable to `StateTransition` and the unread fields.
-PARITY IMPACT:   break — step 2 only; step 1 holds all 26. Step 2 deletes
-                 EXPECTED_STATE_TRANSITION_HASH and
-                 EXPECTED_STATE_TRANSITION_COUNT from the manifest, and re-pins
-                 EXPECTED_LEVEL2_SIGNAL_HASH, EXPECTED_SIGNAL_FIRES_HASH,
-                 EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH,
-                 EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH,
-                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH,
-                 EXPECTED_POSITION_PNL_HASH, EXPECTED_RISK_VERDICT_HASH and
-                 _BASELINE_TRADE_PARITY_HASH. No COUNT constant is declared to
-                 move; one that does is an unpredicted event-count change and
-                 remains a stop.
-                 **Step 1: all 26 hold, per item, and that is the acceptance
-                 test.** Step 2: the `state_transition` baseline does not re-pin,
-                 it is **deleted from the manifest** (26 -> 25, or 27 -> 28 after
-                 S-17's additions), because with the publish gone the stream has
-                 zero events and there is nothing to hash. Every baseline whose
-                 events draw from `self._seq` after a transition re-pins:
-                 expect `level2_signal`, `signal_fires`,
-                 `level3_sized_intent_*`, `level4_portfolio_order`,
-                 `position_pnl`, `risk_verdict` and the trade parity hash to
-                 move. **The rejected alternative, stated:** draw the sequence
-                 and discard it, keeping every hash intact. Rejected because 8
-                 phantom draws per quote whose only purpose is to satisfy an
-                 oracle is precisely the dead work being removed, and §G.10
-                 would not permit it.
-                 After S-17a, step 1's 20 unread-field deletions also move
-                 EXPECTED_MANIFEST_FINGERPRINT. The "all baselines hold" line
-                 above predates S-17a and covers replay hashes only.
-DELETES:         `_emit_state_transition`; the `StateTransition` domain-bus
-                 publish; 20 unread event fields; 2 unread metric names; **up
-                 to 12 verified-dead public methods** (13 measured, less
-                 `FeatureComputation.update_trade`, which is a documented
-                 author hook); the `state_transition` manifest entry.
-                 **~12.8 µs/quote, 9.4% of measured tick cost.**
-NET DELTA:       src modules 0, public symbols **-12** (was **-106**; A5.4
-                 closed FALSE in X1 and the step is rescoped — the coverage
-                 gate may reduce this further, never increase it),
-                 branch points 0, manifest entries **-1**.
-                 Orchestrator lines -~15 plus the field removals.
-                 **Three of the 12 are documented contract surfaces, not
-                 plain dead code, and each needs an explicit call rather than
-                 a mechanical deletion:** `CostArithmetic.
-                 declared_round_trip_cost_bps` (the Inv-12 disclosure
-                 accessor) and the `AlphaBudgetRiskWrapper.
-                 checkpoint_risk_state` / `restore_risk_state` pair (which
-                 §J.2 already reasons about).
-ROLLBACK:        revert per commit. Step 2's revert must restore the
-                 `state_transition` baseline value and every re-pinned hash from
-                 git history in one commit — which is why step 2 is alone in its
-                 commit.
+STEP:            S-31a
+CLOSES:          nothing (G44 partial — unread event fields)
+PROBLEM:         20 of 179 event fields in src/feelies/core/events.py have no
+                 attribute read in src/feelies (Phase 4 §6.2). Construction
+                 cost only. A5.4 is not this step. Per S-17a, deleting a
+                 dataclass field moves EXPECTED_MANIFEST_FINGERPRINT and
+                 must not be claimed as a hold.
+FILES:           src/feelies/core/events.py
+                 tests/conformance/test_schema_drift.py (PINNED_PAYLOAD)
+                 tests/determinism/test_parity_manifest.py
+                 tests/determinism/parity_manifest.py
+                 **BLOCKED until the 20 fields are named in this FILES
+                 list.** hotpath.json:dead_compute is not in the tree.
+                 Phase 4 names only a subset, with stale lines: NBBOQuote
+                 participant_timestamp_ns, trf_timestamp_ns, received_ns
+                 (now events.py:111-113); MetricEvent.metric_type (now
+                 :423); four Trade fields whose old :104/:111/:112/:114
+                 cites no longer land. Re-scan and enumerate before
+                 cutting the branch. A field reached only via serializer
+                 or getattr is not deletable (A4.3).
+WHY THIS OWNER:  Kernel owns the event schema. Engine 11 does not.
+REFACTOR PATH:   One field (or one class's unread fields) per commit.
+                 Fail a scan that the named field is still unread, then
+                 delete it. Do not delete StateTransition's fields here.
+BLAST RADIUS:    platform-wide (fingerprint)
+VALIDATED BY:    S8 PINNED_PAYLOAD, test_manifest_fingerprint_matches_locked_value,
+                 the 28 replay hashes, the oracle
+PARITY IMPACT:   break — EXPECTED_MANIFEST_FINGERPRINT only, per S-17a.
+                 All replay HASH and COUNT constants hold, including
+                 EXPECTED_STATE_TRANSITION_HASH/COUNT. _BASELINE_CONFIG_HASH
+                 holds (no PlatformConfig field). A replay HASH that moves
+                 is a live read the scan missed — STOP, do not re-pin.
+DELETES:         the named unread fields only, after enumeration
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert per field/class commit; restore
+                 EXPECTED_MANIFEST_FINGERPRINT from the pre-commit capture
+```
+
+```
+STEP:            S-31b
+CLOSES:          nothing (G44 partial — unread metric names)
+PROBLEM:         2 of 9 recorded metric names have no reader in src/feelies,
+                 only in tests (Phase 4 §6.4): the census names
+                 feature.feelies.feature.snapshot.stale_fraction and
+                 scheduler.feelies.horizon.tick.emitted. Production emit
+                 sites today: features/aggregator.py:504
+                 name="feelies.feature.snapshot.stale_fraction";
+                 sensors/horizon_scheduler.py:401
+                 name="feelies.horizon.tick.emitted". Confirm those two
+                 strings against a fresh census before deleting; the
+                 layer-prefixed census names are not the emit strings.
+FILES:           src/feelies/features/aggregator.py
+                 src/feelies/sensors/horizon_scheduler.py
+                 the test files that are the sole readers of each name
+                 (enumerate before cutting)
+WHY THIS OWNER:  Engine 2 owns the emit sites. Engine 11 owns collection.
+REFACTOR PATH:   One metric name per commit. Do not drop
+                 kernel.feature_compute_ns's report slot here (the inverse
+                 case in §6.4 — a read of a name nothing records).
+BLAST RADIUS:    local per commit
+VALIDATED BY:    the oracle, MetricCollector tests that currently read
+                 these names
+PARITY IMPACT:   hold — all replay hashes, COUNTs, fingerprint,
+                 _BASELINE_CONFIG_HASH. Metric names are not in the S-17a
+                 fold. A HASH that moves is a production reader the census
+                 missed — STOP.
+DELETES:         the two named MetricEvent emissions, after census confirm
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert per commit
+```
+
+```
+STEP:            S-31c
+CLOSES:          nothing (G44 partial — coverage-gated dead methods)
+PROBLEM:         A5.4 closed FALSE. 106 public methods with zero in-src
+                 call sites is a measurement, not a deletion list. X1:
+                 82 called from tests/ alone; 13 reached by nothing;
+                 two static passes disagreed 13 vs 16. Gate: full suite
+                 under coverage with branch data; delete only methods
+                 the run proves unexecuted. Cap NET DELTA public symbols
+                 at -12; the gate may reduce further, never increase.
+                 Keep FeatureComputation.update_trade
+                 (alphas/SCHEMA.md:78, features/definition.py:74).
+                 Three documented surfaces need an explicit call, not a
+                 mechanical delete: CostArithmetic.declared_round_trip_cost_bps
+                 (alpha/cost_arithmetic.py:78); AlphaBudgetRiskWrapper.
+                 checkpoint_risk_state / restore_risk_state
+                 (now risk/risk_wrapper.py:324 and :333 — Phase 4's
+                 alpha/risk_wrapper.py:299 is stale post S-21).
+FILES:           named per method after the coverage run proves
+                 unexecuted. Do not cut the branch against an unnamed
+                 set. Do not include orchestrator._emit_state_transition
+                 (S-31d).
+WHY THIS OWNER:  each method's engine. Kernel only if the method still
+                 lives in orchestrator.py after Wave D.
+REFACTOR PATH:   coverage gate first (fail-before: the named method is
+                 still present and unexecuted). One method per commit
+                 except the checkpoint/restore pair, which is one commit.
+BLAST RADIUS:    local per commit; escalate if a named method is a
+                 published symbol other engines import
+VALIDATED BY:    coverage report, the oracle, mypy --strict
+PARITY IMPACT:   hold — all replay hashes, COUNTs, fingerprint,
+                 _BASELINE_CONFIG_HASH. An uncalled method is not a
+                 hashed field. A HASH that moves means the method was
+                 live — STOP, do not re-pin.
+DELETES:         up to 12 coverage-proven-dead public methods, never
+                 update_trade, never the three documented surfaces
+                 without an explicit keep-or-wire decision in NOTES
+NET DELTA:       src modules 0, public symbols at most -12, branch
+                 points 0
+ROLLBACK:        revert per commit
 ```
 
 ```
