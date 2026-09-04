@@ -3329,46 +3329,81 @@ because every step in it is `platform-wide` and none is a P0.
 ```
 STEP:            S-31a
 CLOSES:          nothing (G44 partial — unread event fields)
-PROBLEM:         _emit_state_transition publishes StateTransition on the
-                 domain bus with sequence=self._seq.next() (~8.007 draws
-                 per quote) to zero production subscribers. S-12
-                 reclassified it as a notification_record and kept the
-                 publish for this step. S-11's channel already exists
-                 (gate_registry._NOTIFICATION / record_verdict); this
-                 type cannot use record_verdict's gate-id API.
-FILES:           src/feelies/kernel/orchestrator.py
-                 (_emit_state_transition)
-                 src/feelies/core/gate_registry.py
-                 (sibling recorder; no seq, no bus)
-                 src/feelies/core/wiring_manifest.py
-                 (publish-kept comment)
-                 tests/conformance/test_emission_registry.py
-                 (drop S11 xfail)
+PROBLEM:         10 Event payload fields have no attribute read in
+                 src/feelies. Construction cost only. StateTransition
+                 stays a domain-bus notification record (S-12); publish
+                 and _seq.next() stay. S11 stays xfail — zero production
+                 subscribers. Per S-17a a field delete moves
+                 EXPECTED_MANIFEST_FINGERPRINT and must not be claimed
+                 as a hold.
+FILES:           src/feelies/core/events.py
+                 tests/conformance/test_schema_drift.py (PINNED_PAYLOAD)
                  tests/determinism/parity_manifest.py
-                 tests/acceptance/test_backtest_app_baseline.py
-                 (trade hash; operator re-pins)
-                 Do not edit events.py. Do not delete StateTransition
-                 fields. Do not retarget
-                 test_state_transition_replay.py unless NOTES record
-                 that G.7's "delete the entry" is being taken anyway.
+                 tests/determinism/test_parity_manifest.py
+                 construction sites of the deleted fields (named):
+                 src/feelies/features/aggregator.py
+                 src/feelies/sensors/registry.py
+                 src/feelies/sensors/horizon_scheduler.py
+                 src/feelies/signals/horizon_engine.py
+                 src/feelies/kernel/orchestrator.py
+                 (MetricEvent construction only; do not touch
+                 _emit_state_transition)
+                 src/feelies/monitoring/horizon_metrics.py
+                 src/feelies/monitoring/latency_budget.py
+                 src/feelies/execution/order_policy.py
+                 src/feelies/execution/position_manager.py
+                 src/feelies/risk/basic_risk.py
+                 src/feelies/risk/risk_wrapper.py
+                 src/feelies/services/regime_engine.py
+                 tests that assert a deleted field (named):
+                 tests/core/test_new_events.py
+                 tests/features/test_aggregator.py
+                 tests/conformance/test_latency_budget.py
+                 tests/monitoring/test_sensor_metrics.py
+                 tests/signals/test_horizon_engine_metrics.py
+                 Do not delete StateTransition fields. Do not drop S11
+                 xfail. Do not edit wiring_manifest.py or
+                 gate_registry.py.
 WHY THIS OWNER:  Kernel owns the event schema. Engine 11 does not.
-REFACTOR PATH:   Fail-before: S11 still names StateTransition; publish
-                 still draws self._seq. Then: _emit_state_transition
-                 records TransitionRecord on the notification channel
-                 and does not publish or draw. One commit. Operator
-                 re-pins the named HASH constants; agent stops.
+REFACTOR PATH:   One class's unread fields per commit. Fail a scan that
+                 the named field is still unread, then delete it and
+                 strip its construction kwargs. Operator re-pins
+                 EXPECTED_MANIFEST_FINGERPRINT; agent stops.
+BLAST RADIUS:    platform-wide (fingerprint)
 VALIDATED BY:    S8 PINNED_PAYLOAD, test_manifest_fingerprint_matches_locked_value,
                  the 28 replay hashes, the oracle
-PARITY IMPACT:   break — every orchestrator._seq replay HASH G.7 names,
-                 plus _BASELINE_TRADE_PARITY_HASH, plus
-                 EXPECTED_MANIFEST_FINGERPRINT (re-pins are in the
-                 fingerprint payload). EXPECTED_STATE_TRANSITION_HASH
-                 / COUNT hold on this tree. _BASELINE_CONFIG_HASH
-                 holds. A HASH outside the named set is a stop.
-DELETES:         the domain-bus publish and the _seq.next() draw in
-                 _emit_state_transition; the S11 xfail on this type
-NET DELTA:       src modules 0, public symbols +1 (record_transition),
-                 branch points 0
+PARITY IMPACT:   break — EXPECTED_MANIFEST_FINGERPRINT only, per S-17a.
+                 All replay HASH and COUNT constants hold, including
+                 EXPECTED_STATE_TRANSITION_HASH/COUNT.
+                 _BASELINE_CONFIG_HASH holds (no PlatformConfig field).
+                 A replay HASH that moves is a live read the scan
+                 missed — STOP, do not re-pin.
+DELETES:         HorizonFeatureSnapshot.source_sensors
+                 HorizonFeatureSnapshot.feature_versions
+                 HorizonFeatureSnapshot.parent_correlation_id
+                 SensorReading.parent_correlation_id
+                 MetricEvent.metric_type
+                 MetricEvent.tags
+                 LatencyBreach.observed_ns
+                 RegimeState.stability
+                 RiskVerdict.constraints
+                 Signal.reversal_cost_estimate_bps
+                 Not deleted (A4.3 serializer getattr in
+                 serialization.py): NBBOQuote.bid_exchange,
+                 ask_exchange, indicators, tape,
+                 participant_timestamp_ns, trf_timestamp_ns,
+                 received_ns; Trade.trade_id, decimal_size, tape,
+                 trf_id, trf_timestamp_ns, participant_timestamp_ns,
+                 received_ns.
+                 Not deleted (getattr): RegimeState.discriminability
+                 (signals/regime_gate.py).
+                 Not deleted (hash helper would move a HASH):
+                 SymbolHalted.halted (EXPECTED_SYMBOL_HALTED_HASH);
+                 CrossSectionalContext.snapshots_by_symbol
+                 (EXPECTED_XSECT_CONTEXT_HASH);
+                 SizedPositionIntent.decision_basis_hash
+                 (test_orchestrator_replay._hash_intents).
+NET DELTA:       src modules 0, public symbols 0, branch points 0
 ROLLBACK:        revert per field/class commit; restore
                  EXPECTED_MANIFEST_FINGERPRINT from the pre-commit capture
 ```
