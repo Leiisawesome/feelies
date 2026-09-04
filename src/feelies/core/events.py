@@ -53,7 +53,7 @@ class Event:
 
     Immutability is shallow: ``frozen=True`` blocks
     rebinding a field, but events whose fields hold mutable containers
-    (e.g. ``Signal.metadata``, ``RiskVerdict.constraints``,
+    (e.g. ``Signal.metadata``,
     ``HorizonFeatureSnapshot.values/warm/stale``,
     ``SizedPositionIntent.target_positions``) can still have those
     containers mutated in place, and those events are not hashable.
@@ -255,12 +255,6 @@ class RiskVerdict(Event):
     action: RiskAction
     reason: str
     scaling_factor: float = field(default=1.0, metadata={"unit": "1"})
-    constraints: Mapping[str, float] = field(
-        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
-    )
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "constraints", MappingProxyType(dict(self.constraints)))
 
 
 # ── Order Events ────────────────────────────────────────────────────────

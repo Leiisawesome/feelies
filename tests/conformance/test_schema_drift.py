@@ -147,7 +147,7 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "calibrated",
         "discriminability",
     ),
-    "RiskVerdict": ("symbol", "action", "reason", "scaling_factor", "constraints"),
+    "RiskVerdict": ("symbol", "action", "reason", "scaling_factor"),
     "SafetyStateChange": (
         "symbol",
         "strategy_id",
