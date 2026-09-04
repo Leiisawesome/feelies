@@ -79,12 +79,6 @@ class TradingSessionBounds:
         """First exchange-time instant when new entries are allowed."""
         return self.rth_open_ns + self.no_entry_first_seconds * _NS_PER_SECOND
 
-    def is_within_rth(self, ts_ns: int) -> bool:
-        """Continuous-session window (open inclusive, close exclusive)."""
-        if self.is_holiday or not self.covers_ns(ts_ns):
-            return False
-        return self.rth_open_ns <= ts_ns < self.rth_close_ns
-
 
 def resolve_trading_session_bounds(
     session_date: date,
