@@ -18,7 +18,6 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
     Event,
     MetricEvent,
-    MetricType,
     NBBOQuote,
     SensorProvenance,
     SensorReading,
@@ -392,7 +391,6 @@ class SensorRegistry:
             exchange_timestamp_ns=ts_ns,
             sequence=seq_count,
         )
-        tags = {"sensor_id": spec.sensor_id, "symbol": symbol}
         self._metric_collector.record(
             MetricEvent(
                 timestamp_ns=ts_ns,
@@ -402,8 +400,6 @@ class SensorRegistry:
                 layer="sensor",
                 name="feelies.sensor.reading.count",
                 value=1.0,
-                metric_type=MetricType.COUNTER,
-                tags=tags,
             )
         )
 
@@ -438,8 +434,6 @@ class SensorRegistry:
                 layer="sensor",
                 name="feelies.sensor.nonfinite.count",
                 value=1.0,
-                metric_type=MetricType.COUNTER,
-                tags={"sensor_id": spec.sensor_id, "symbol": symbol},
             )
         )
 

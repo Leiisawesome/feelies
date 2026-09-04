@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from feelies.core.events import Alert, AlertSeverity, MetricEvent, MetricType
+from feelies.core.events import Alert, AlertSeverity, MetricEvent
 from feelies.monitoring.in_memory import (
     InMemoryAlertManager,
     InMemoryKillSwitch,
@@ -19,7 +19,6 @@ def _metric(layer: str, name: str, value: float) -> MetricEvent:
         layer=layer,
         name=name,
         value=value,
-        metric_type=MetricType.GAUGE,
     )
 
 

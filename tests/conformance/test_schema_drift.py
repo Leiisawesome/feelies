@@ -76,7 +76,7 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "observed_ns",
         "budget_ns",
     ),
-    "MetricEvent": ("layer", "name", "value", "metric_type", "tags"),
+    "MetricEvent": ("layer", "name", "value"),
     "NBBOQuote": (
         "symbol",
         "bid",

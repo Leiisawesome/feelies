@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from feelies.core.events import Event, MetricEvent, MetricType, NBBOQuote, Trade
+from feelies.core.events import Event, MetricEvent, NBBOQuote, Trade
 from feelies.core.serialization import (
     EventSerializer,
     JsonLineEventSerializer,
@@ -120,7 +120,6 @@ class TestJsonLineEventSerializer:
             layer="kernel",
             name="x",
             value=1.0,
-            metric_type=MetricType.COUNTER,
         )
         with pytest.raises(ValueError, match="only persists"):
             s.serialize(m)

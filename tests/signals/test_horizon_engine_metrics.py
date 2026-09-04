@@ -54,9 +54,6 @@ def test_entry_suppressed_counter_increments_when_required_feature_cold() -> Non
     )
     assert captured == []  # no entry signal
     assert _count(collector, "feelies.signal.entry.suppressed") == 1
-    # Reason is tagged on the raw event.
-    suppressed = [e for e in collector.events if e.name == "feelies.signal.entry.suppressed"]
-    assert suppressed[0].tags == {"alpha_id": "alpha_x", "reason": "not_warm"}
 
 
 def test_gate_transition_not_double_counted_across_entry_blocked_boundary() -> None:
@@ -117,8 +114,6 @@ def test_gate_transition_on_and_emitted_counters_on_real_signal() -> None:
     assert len(captured) == 1 and captured[0].direction == SignalDirection.LONG
     assert _count(collector, "feelies.signal.gate.transition") == 1  # to=ON
     assert _count(collector, "feelies.signal.emitted") == 1
-    emitted = [e for e in collector.events if e.name == "feelies.signal.emitted"]
-    assert emitted[0].tags == {"alpha_id": "alpha_x", "direction": "LONG"}
 
 
 def test_duplicate_boundary_is_metered_but_still_dispatched() -> None:
@@ -149,8 +144,6 @@ def test_duplicate_boundary_is_metered_but_still_dispatched() -> None:
     )
     assert len(captured) == 2
     assert _count(collector, "feelies.signal.snapshot.duplicate_boundary") == 1
-    dup = [e for e in collector.events if e.name == "feelies.signal.snapshot.duplicate_boundary"]
-    assert dup[0].tags == {"alpha_id": "alpha_x", "symbol": "AAPL"}
 
 
 def test_increasing_boundary_index_never_flagged_as_duplicate() -> None:

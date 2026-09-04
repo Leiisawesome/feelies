@@ -75,7 +75,7 @@ class TestReplayFeed:
 
     def test_filters_for_market_events_only(self) -> None:
         """Non-market events (e.g. MetricEvent) are skipped."""
-        from feelies.core.events import MetricEvent, MetricType
+        from feelies.core.events import MetricEvent
 
         log = InMemoryEventLog()
         log.append(_make_quote(0))
@@ -87,7 +87,6 @@ class TestReplayFeed:
                 layer="test",
                 name="foo",
                 value=1.0,
-                metric_type=MetricType.COUNTER,
             )
         )
         log.append(_make_trade(2))

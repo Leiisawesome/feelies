@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterable, Literal
 
-from feelies.core.events import Event, HorizonTick, MetricEvent, MetricType
+from feelies.core.events import Event, HorizonTick, MetricEvent
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.kernel.exception_taxonomy import KernelFault
 from feelies.monitoring.telemetry import MetricCollector
@@ -400,10 +400,5 @@ class HorizonScheduler:
                 layer="scheduler",
                 name="feelies.horizon.tick.emitted",
                 value=1.0,
-                metric_type=MetricType.COUNTER,
-                tags={
-                    "horizon_seconds": str(tick.horizon_seconds),
-                    "scope": tick.scope,
-                },
             )
         )

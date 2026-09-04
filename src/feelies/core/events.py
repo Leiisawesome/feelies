@@ -54,7 +54,7 @@ class Event:
     Immutability is shallow: ``frozen=True`` blocks
     rebinding a field, but events whose fields hold mutable containers
     (e.g. ``Signal.metadata``, ``RiskVerdict.constraints``,
-    ``MetricEvent.tags``, ``HorizonFeatureSnapshot.values/warm/stale``,
+    ``HorizonFeatureSnapshot.values/warm/stale``,
     ``SizedPositionIntent.target_positions``) can still have those
     containers mutated in place, and those events are not hashable.
     Treat every event as read-only once published — do not mutate a
@@ -419,11 +419,6 @@ class MetricEvent(Event):
     layer: str
     name: str
     value: float = field(metadata={"unit": UNIT_UNDETERMINED})
-    metric_type: MetricType
-    tags: Mapping[str, str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tags", MappingProxyType(dict(self.tags)))
 
 
 # ── Alert Events ────────────────────────────────────────────────────

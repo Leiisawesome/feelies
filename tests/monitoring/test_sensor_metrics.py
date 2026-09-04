@@ -12,7 +12,6 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
     HorizonFeatureSnapshot,
     HorizonTick,
-    MetricType,
     NBBOQuote,
     SensorReading,
 )
@@ -81,11 +80,7 @@ def test_registry_emits_reading_count_and_latency_per_reading() -> None:
     latencies = [e for e in mc.events if e.name == "feelies.sensor.reading.latency"]
     assert len(counts) == 3
     assert len(latencies) == 0
-    assert all(e.metric_type is MetricType.COUNTER for e in counts)
     assert all(e.value == 1.0 for e in counts)
-    # Tags must include sensor_id and symbol for the count metric.
-    assert all(e.tags.get("sensor_id") == "micro_price" for e in counts)
-    assert all(e.tags.get("symbol") == "AAPL" for e in counts)
     assert all(e.layer == "sensor" for e in counts)
 
 
@@ -165,13 +160,8 @@ def test_scheduler_emits_tick_emitted_metric_per_tick() -> None:
 
     metrics = [e for e in mc.events if e.name == "feelies.horizon.tick.emitted"]
     assert len(metrics) == 4
-    assert all(e.metric_type is MetricType.COUNTER for e in metrics)
     assert all(e.value == 1.0 for e in metrics)
     assert all(e.layer == "scheduler" for e in metrics)
-    scopes = [e.tags["scope"] for e in metrics]
-    assert scopes.count("SYMBOL") == 2
-    assert scopes.count("UNIVERSE") == 2
-    assert all(e.tags["horizon_seconds"] == "30" for e in metrics)
 
 
 def test_scheduler_metrics_dont_perturb_tick_sequence() -> None:
@@ -237,11 +227,9 @@ def test_aggregator_emits_stale_fraction_per_snapshot() -> None:
     assert len(captured) == 2
     metrics = [e for e in mc.events if e.name == "feelies.feature.snapshot.stale_fraction"]
     assert len(metrics) == 2
-    assert all(e.metric_type is MetricType.GAUGE for e in metrics)
     assert all(e.layer == "feature" for e in metrics)
     # Passive mode: 0 features → fraction = 0.0 by convention.
     assert all(e.value == 0.0 for e in metrics)
-    assert all(e.tags["horizon_seconds"] == "30" for e in metrics)
 
 
 def test_aggregator_metrics_dont_perturb_snapshot_sequence() -> None:

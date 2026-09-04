@@ -26,7 +26,6 @@ from feelies.core.events import (
     HorizonFeatureSnapshot,
     HorizonTick,
     MetricEvent,
-    MetricType,
     SensorReading,
 )
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
@@ -495,8 +494,6 @@ class HorizonAggregator:
                 layer="feature",
                 name="feelies.feature.snapshot.stale_fraction",
                 value=float(fraction),
-                metric_type=MetricType.GAUGE,
-                tags={"horizon_seconds": str(snapshot.horizon_seconds)},
             )
         )
 

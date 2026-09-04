@@ -55,7 +55,6 @@ from feelies.core.events import (
     HorizonTick,
     LatencyBreach,
     MetricEvent,
-    MetricType,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
@@ -1485,7 +1484,6 @@ class Orchestrator:
                     layer="kernel",
                     name="tick_aborted_micro_reset",
                     value=1.0,
-                    metric_type=MetricType.COUNTER,
                 )
             )
         except Exception:
@@ -1570,7 +1568,6 @@ class Orchestrator:
                     layer="kernel",
                     name="tick_suppressed_kill_switch",
                     value=1.0,
-                    metric_type=MetricType.COUNTER,
                 )
             )
             return
@@ -2177,7 +2174,6 @@ class Orchestrator:
                 layer="kernel",
                 name="tick_to_decision_latency_ns",
                 value=float(latency_ns),
-                metric_type=MetricType.HISTOGRAM,
             )
         )
 
@@ -2203,7 +2199,6 @@ class Orchestrator:
                         layer="kernel",
                         name=name,
                         value=float(value),
-                        metric_type=MetricType.HISTOGRAM,
                     )
                 )
                 continue
@@ -2215,7 +2210,6 @@ class Orchestrator:
                     layer="kernel",
                     name=name,
                     value=float(value),
-                    metric_type=MetricType.HISTOGRAM,
                 )
             )
         self._micro.transition(

@@ -18,7 +18,6 @@ from feelies.core.events import (
     AlertSeverity,
     CrossSectionalContext,
     MetricEvent,
-    MetricType,
     OrderRequest,
     RegimeHazardSpike,
     SizedPositionIntent,
@@ -111,16 +110,12 @@ class HorizonMetricsCollector:
             ctx.correlation_id,
             "composition.completeness",
             float(ctx.completeness),
-            MetricType.GAUGE,
-            tags={"horizon_seconds": str(ctx.horizon_seconds)},
         )
         self._publish_metric(
             ctx.timestamp_ns,
             ctx.correlation_id,
             "composition.barriers_emitted",
             float(self._barriers_total),
-            MetricType.COUNTER,
-            tags={"horizon_seconds": str(ctx.horizon_seconds)},
         )
         if ctx.completeness < COMPLETENESS_WARN_THRESHOLD:
             self._publish_alert(
@@ -144,50 +139,36 @@ class HorizonMetricsCollector:
 
         gross, net = self._gross_net(intent.target_positions)
         residual_l2 = self._l2_norm(intent.factor_exposures)
-        tags = {
-            "strategy_id": intent.strategy_id,
-            "horizon_seconds": str(intent.horizon_seconds),
-        }
 
         self._publish_metric(
             intent.timestamp_ns,
             intent.correlation_id,
             "composition.intents_emitted",
             float(self._intents_total),
-            MetricType.COUNTER,
-            tags=tags,
         )
         self._publish_metric(
             intent.timestamp_ns,
             intent.correlation_id,
             "composition.gross_usd",
             gross,
-            MetricType.GAUGE,
-            tags=tags,
         )
         self._publish_metric(
             intent.timestamp_ns,
             intent.correlation_id,
             "composition.net_usd",
             net,
-            MetricType.GAUGE,
-            tags=tags,
         )
         self._publish_metric(
             intent.timestamp_ns,
             intent.correlation_id,
             "composition.expected_turnover_usd",
             float(intent.expected_turnover_usd),
-            MetricType.GAUGE,
-            tags=tags,
         )
         self._publish_metric(
             intent.timestamp_ns,
             intent.correlation_id,
             "composition.factor_residual_l2",
             residual_l2,
-            MetricType.GAUGE,
-            tags=tags,
         )
 
         for mech in sorted(intent.mechanism_breakdown, key=lambda m: m.name):
@@ -197,8 +178,6 @@ class HorizonMetricsCollector:
                 intent.correlation_id,
                 f"composition.mechanism_share.{mech.name}",
                 share,
-                MetricType.GAUGE,
-                tags=tags,
             )
 
         if is_degenerate:
@@ -207,8 +186,6 @@ class HorizonMetricsCollector:
                 intent.correlation_id,
                 "composition.degenerate_intents",
                 float(self._degenerate_total),
-                MetricType.COUNTER,
-                tags=tags,
             )
             rate = self._degenerate_total / max(1, self._intents_total)
             if rate > DEGENERATE_RATE_WARN_THRESHOLD:
@@ -263,11 +240,6 @@ class HorizonMetricsCollector:
             spike.correlation_id,
             "composition.hazard_spikes_observed",
             float(self._hazard_spikes_total),
-            MetricType.COUNTER,
-            tags={
-                "engine_name": spike.engine_name,
-                "departing_state": spike.departing_state,
-            },
         )
 
     def _on_order(self, order: OrderRequest) -> None:
@@ -281,8 +253,6 @@ class HorizonMetricsCollector:
             order.correlation_id,
             "composition.hazard_exits_emitted",
             float(self._hazard_exits_total),
-            MetricType.COUNTER,
-            tags={"reason": order.reason, "symbol": order.symbol},
         )
 
     # ── Internals ────────────────────────────────────────────────────
@@ -293,9 +263,6 @@ class HorizonMetricsCollector:
         correlation_id: str,
         name: str,
         value: float,
-        metric_type: MetricType,
-        *,
-        tags: Mapping[str, str] | None = None,
     ) -> None:
         evt = MetricEvent(
             timestamp_ns=timestamp_ns,
@@ -305,8 +272,6 @@ class HorizonMetricsCollector:
             layer="COMPOSITION",
             name=name,
             value=float(value),
-            metric_type=metric_type,
-            tags=dict(tags or {}),
         )
         self._bus.publish(evt)
 
