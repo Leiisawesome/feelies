@@ -111,10 +111,6 @@ class CrossSectionalTracker:
         """Return the most recent snapshot for ``strategy_id`` (or ``None``)."""
         return self._snapshots.get(strategy_id)
 
-    def all_snapshots(self) -> dict[str, CrossSectionalSnapshot]:
-        """Lex-sorted dict of every strategy's most recent snapshot."""
-        return dict(sorted(self._snapshots.items()))
-
     # ── Bus handlers ─────────────────────────────────────────────────
 
     def _on_context(self, ctx: CrossSectionalContext) -> None:

@@ -167,10 +167,6 @@ class BasicRiskEngine:
         """Switch between intraday and overnight Reg-T caps."""
         self._buying_power_phase = phase
 
-    @property
-    def buying_power_phase(self) -> BuyingPowerPhase:
-        return self._buying_power_phase
-
     def check_signal(
         self,
         signal: Signal,

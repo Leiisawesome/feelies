@@ -162,10 +162,6 @@ class StopExitController:
 
     # ── Public API ───────────────────────────────────────────────────
 
-    @property
-    def policy(self) -> StopExitPolicy:
-        return self._policy
-
     def attach(self) -> None:
         if self._attached:
             return
