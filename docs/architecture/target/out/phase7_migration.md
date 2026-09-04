@@ -3329,38 +3329,46 @@ because every step in it is `platform-wide` and none is a P0.
 ```
 STEP:            S-31a
 CLOSES:          nothing (G44 partial — unread event fields)
-PROBLEM:         20 of 179 event fields in src/feelies/core/events.py have no
-                 attribute read in src/feelies (Phase 4 §6.2). Construction
-                 cost only. A5.4 is not this step. Per S-17a, deleting a
-                 dataclass field moves EXPECTED_MANIFEST_FINGERPRINT and
-                 must not be claimed as a hold.
-FILES:           src/feelies/core/events.py
-                 tests/conformance/test_schema_drift.py (PINNED_PAYLOAD)
-                 tests/determinism/test_parity_manifest.py
+PROBLEM:         _emit_state_transition publishes StateTransition on the
+                 domain bus with sequence=self._seq.next() (~8.007 draws
+                 per quote) to zero production subscribers. S-12
+                 reclassified it as a notification_record and kept the
+                 publish for this step. S-11's channel already exists
+                 (gate_registry._NOTIFICATION / record_verdict); this
+                 type cannot use record_verdict's gate-id API.
+FILES:           src/feelies/kernel/orchestrator.py
+                 (_emit_state_transition)
+                 src/feelies/core/gate_registry.py
+                 (sibling recorder; no seq, no bus)
+                 src/feelies/core/wiring_manifest.py
+                 (publish-kept comment)
+                 tests/conformance/test_emission_registry.py
+                 (drop S11 xfail)
                  tests/determinism/parity_manifest.py
-                 **BLOCKED until the 20 fields are named in this FILES
-                 list.** hotpath.json:dead_compute is not in the tree.
-                 Phase 4 names only a subset, with stale lines: NBBOQuote
-                 participant_timestamp_ns, trf_timestamp_ns, received_ns
-                 (now events.py:111-113); MetricEvent.metric_type (now
-                 :423); four Trade fields whose old :104/:111/:112/:114
-                 cites no longer land. Re-scan and enumerate before
-                 cutting the branch. A field reached only via serializer
-                 or getattr is not deletable (A4.3).
+                 tests/acceptance/test_backtest_app_baseline.py
+                 (trade hash; operator re-pins)
+                 Do not edit events.py. Do not delete StateTransition
+                 fields. Do not retarget
+                 test_state_transition_replay.py unless NOTES record
+                 that G.7's "delete the entry" is being taken anyway.
 WHY THIS OWNER:  Kernel owns the event schema. Engine 11 does not.
-REFACTOR PATH:   One field (or one class's unread fields) per commit.
-                 Fail a scan that the named field is still unread, then
-                 delete it. Do not delete StateTransition's fields here.
-BLAST RADIUS:    platform-wide (fingerprint)
+REFACTOR PATH:   Fail-before: S11 still names StateTransition; publish
+                 still draws self._seq. Then: _emit_state_transition
+                 records TransitionRecord on the notification channel
+                 and does not publish or draw. One commit. Operator
+                 re-pins the named HASH constants; agent stops.
 VALIDATED BY:    S8 PINNED_PAYLOAD, test_manifest_fingerprint_matches_locked_value,
                  the 28 replay hashes, the oracle
-PARITY IMPACT:   break — EXPECTED_MANIFEST_FINGERPRINT only, per S-17a.
-                 All replay HASH and COUNT constants hold, including
-                 EXPECTED_STATE_TRANSITION_HASH/COUNT. _BASELINE_CONFIG_HASH
-                 holds (no PlatformConfig field). A replay HASH that moves
-                 is a live read the scan missed — STOP, do not re-pin.
-DELETES:         the named unread fields only, after enumeration
-NET DELTA:       src modules 0, public symbols 0, branch points 0
+PARITY IMPACT:   break — every orchestrator._seq replay HASH G.7 names,
+                 plus _BASELINE_TRADE_PARITY_HASH, plus
+                 EXPECTED_MANIFEST_FINGERPRINT (re-pins are in the
+                 fingerprint payload). EXPECTED_STATE_TRANSITION_HASH
+                 / COUNT hold on this tree. _BASELINE_CONFIG_HASH
+                 holds. A HASH outside the named set is a stop.
+DELETES:         the domain-bus publish and the _seq.next() draw in
+                 _emit_state_transition; the S11 xfail on this type
+NET DELTA:       src modules 0, public symbols +1 (record_transition),
+                 branch points 0
 ROLLBACK:        revert per field/class commit; restore
                  EXPECTED_MANIFEST_FINGERPRINT from the pre-commit capture
 ```
