@@ -181,7 +181,6 @@ class RegimeState(Event):
     dominant_state: int = field(metadata={"unit": "1"})
     dominant_name: str
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
-    stability: float = field(default=1.0, metadata={"unit": "1"})
     posterior_entropy_nats: float = field(default=0.0, metadata={"unit": "nat"})
     calibrated: bool = True
     discriminability: float = field(default=float("inf"), metadata={"unit": UNIT_UNDETERMINED})

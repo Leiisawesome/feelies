@@ -143,7 +143,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "dominant_state",
         "dominant_name",
         "horizon_seconds",
-        "stability",
         "posterior_entropy_nats",
         "calibrated",
         "discriminability",

@@ -63,7 +63,7 @@ def test_source_layer_explicit_set() -> None:
 
 
 def test_regime_state_legacy_defaults() -> None:
-    """Legacy regime emission gets horizon_seconds=0 and stability=1.0."""
+    """Legacy regime emission gets horizon_seconds=0."""
     rs = RegimeState(
         timestamp_ns=1,
         correlation_id="c",
@@ -76,7 +76,6 @@ def test_regime_state_legacy_defaults() -> None:
         dominant_name="compression",
     )
     assert rs.horizon_seconds == 0
-    assert rs.stability == 1.0
     assert rs.posterior_entropy_nats == 0.0
 
 
@@ -112,10 +111,8 @@ def test_regime_state_horizon_anchored() -> None:
         dominant_state=0,
         dominant_name="a",
         horizon_seconds=120,
-        stability=0.85,
     )
     assert rs.horizon_seconds == 120
-    assert rs.stability == 0.85
 
 
 # ── Signal additive fields (§5.5) ───────────────────────────────────────
