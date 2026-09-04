@@ -3504,46 +3504,73 @@ ROLLBACK:        revert per commit
 ```
 STEP:            S-32
 CLOSES:          G45, G01, G08 (residual)
-PROBLEM:         Hot-path prohibitions violated with PROVEN per-event
-                 occurrences: per-event dict construction 3, string formatting
-                 3, wall-clock read 3, dynamic dispatch 2, per-event set
-                 construction 2, plus `dataclass_replace` at 5 per-event sites.
-                 12 of 18 clock reads in tick-critical packages are absent from
-                 the allowlist and 5 of the 22 allowlist entries are not clock
-                 reads at all. 5 unsorted set iterations on the tick path, none
-                 order-sensitive today. CORE §G measured budget; Inv-1; Inv-10.
-FILES:           the sites in `hotpath.json`'s prohibition table
-                 `src/feelies/monitoring/in_memory.py:74` (f-string metric key)
-                 `src/feelies/composition/synchronizer.py:80,83`
-                 `src/feelies/kernel/orchestrator.py:2938`
-                 `src/feelies/portfolio/strategy_position_store.py:148`
-                 `src/feelies/signals/regime_gate.py:555`
+PROBLEM:         Hot-path prohibitions with PROVEN per-event
+                 occurrences (counts from a fresh
+                 `perfmeasure.py --mode profile` + `hotpath.py`, not
+                 from this prose): per-event dict construction,
+                 string formatting, wall-clock read, dynamic dispatch,
+                 per-event set construction, dataclass.replace.
+                 Unsorted tick-path set iterations (G08). Three
+                 wall-clock reads remain as G01 residual after S-03
+                 made the allowlist call-granular. Inv-10 allowlist
+                 on this tree is 7/1/2
+                 (_process_tick_inner / _finalize_tick /
+                 _drain_async_fills in order_lifecycle.py), not 5/1/2.
+FILES:           tools/arch/hotpath.py
+                 tests/conformance/test_hot_path_allow_list.py
+                 tests/acceptance/test_no_walltime_outside_clock.py
+                 src/feelies/monitoring/in_memory.py:88
+                 (f-string metric key; :74 is a comment)
+                 src/feelies/kernel/orchestrator.py
+                 (replace at :1775, :1838, :1969, :2034, :3760;
+                  :2938 is working-exit fallback, not a prohibition)
+                 src/feelies/signals/regime_gate.py
+                 (identifier set at bind time, :543-559 — confirm
+                  against a fresh proven_sites list before editing)
+                 src/feelies/composition/synchronizer.py
+                 (:80,:83 are constructor frozenset; confirm against
+                  proven_sites before treating as tick-path)
+                 Do not include strategy_position_store.py:148
+                 (S-21 sorted mapping; do not fix twice).
+                 Do not cite hotpath.json — gitignored generated
+                 evidence. Pre-step: uv run python
+                 tools/arch/perfmeasure.py --mode profile so S5 can
+                 see prohibitions; today it SystemExits on missing
+                 hotpath_executed.json.
 WHY THIS OWNER:  Phase 4 §1's allow list is a platform-wide contract, not an
                  engine's. Each violation is owned by the engine whose hot path
                  it sits on.
-REFACTOR PATH:   one prohibition class per commit, cheapest first: the f-string
-                 metric key (pre-allocate the dict at construction, per Phase 4
-                 §7), then dict/set construction, then `dataclass_replace`, then
-                 dynamic dispatch. The 3 wall-clock reads are the residual of
-                 G01 after S-03 made the allowlist call-granular.
-                 `src/feelies/portfolio/strategy_position_store.py:148` is already fixed by S-21's
-                 ordered mapping — do not fix it twice.
+REFACTOR PATH:   Generate the executed set first. Then one
+                 prohibition class per commit, cheapest first:
+                 f-string metric key (pre-allocate at construction),
+                 dict/set construction, dataclass.replace, dynamic
+                 dispatch, then the three G01 wall-clock reads with
+                 an Inv-10 multiplicity retarget. Do not drop S5's
+                 xfail until G44 is split out of that test.
 BLAST RADIUS:    platform-wide by reach; each commit is local
-VALIDATED BY:    S4, S5, R1 under a random seed, R8, the oracle, and a re-run of
-                 Phase 4's per-quote measurement per commit
-PARITY IMPACT:   All baselines must hold, per commit — these are cost changes,
-                 not behaviour changes. **Two exceptions to check rather than
-                 assume:** sorting a currently-unsorted iteration changes output
-                 if the container's order was load-bearing (Phase 5 rates 3 of
-                 the 5 sites order-insensitive by reading, which A5.2 records as
-                 unenforced), and pre-allocating a metric key dict changes the
-                 metric stream's construction order. Neither should move a hash;
-                 if either does, A5.2 was wrong and that is the finding.
-DELETES:         13 unconditional per-event prohibited operations; 5 stale clock
-                 allowlist entries; 5 unsorted tick-path set iterations
+VALIDATED BY:    S4 (clock allowlist exactly-N), S5 prohibition half
+                 only (not n_anywhere), R1 under a random seed, R8,
+                 the oracle, Phase 4 per-quote measurement per commit
+PARITY IMPACT:   All baselines must hold, per commit — these are cost
+                 changes, not behaviour changes. **Two exceptions to
+                 check rather than assume:** sorting a currently-
+                 unsorted iteration changes output if the container's
+                 order was load-bearing (Phase 5 rates 3 of the 5
+                 sites order-insensitive by reading, which A5.2
+                 records as unenforced), and pre-allocating a metric
+                 key dict changes the metric stream's construction
+                 order. Neither should move a hash; if either does,
+                 A5.2 was wrong and that is the finding.
+                 Hold: all 64 HASH/COUNT constants, fingerprint,
+                 _BASELINE_CONFIG_HASH.
+DELETES:         unconditional per-event prohibited operations named
+                 by the fresh proven_sites list; stale clock
+                 allowlist entries that the three G01 residuals
+                 retire; unsorted tick-path set iterations still
+                 present after S-21
 NET DELTA:       src modules 0, public symbols 0, branch points 0.
-                 Measured cost: the target is the residual of the 136.2 µs after
-                 S-31's 12.8 µs — this step should be measured, not projected.
+                 Measured cost: residual of the 136.2 µs after
+                 S-31's 12.8 µs — measure, do not project.
 ROLLBACK:        revert per commit.
 ```
 
