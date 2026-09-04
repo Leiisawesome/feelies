@@ -8816,4 +8816,224 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  Left uncommitted: baseline_pre-S-31b.json,
                  baseline_post-S-31b.json, this ledger entry.
 
+---
+
+## S-31c  2026-09-04T20:35:29+08:00
+  STEP:          S-31c
+  BASE:          0b033ad5a9f4d249174b9c7d88caaf04d572080e
+  RESULT SHA:    aa28a685273a51592c81c0dad18a87cca8eb6b80
+                 (exec/S-31c; six method-delete commits)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. G44 stays partial.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S11: still xfail (G10 G28). No XPASS.
+                 hot_path xfail still names G41 G42 G44 G45.
+                 conformance 116 passed / 6 xfailed -> 116
+                 passed / 6 xfailed
+                 mypy src/feelies: Success, 206 source files.
+                 No type: ignore added.
+  TESTS:         capture pre-S-31c RED 4907 passed / 1
+                 failed / 18 skipped / 6 xfailed (the one
+                 failure is EXEMPTION
+                 test_after_hours_reject_surfaces_as_rejected)
+                 -> post-S-31c RED 4907 passed / 1 failed /
+                 18 skipped / 6 xfailed. failed 1 -> 1 on
+                 the same exempted test. not-paper_rth:
+                 4906 passed / 1 failed (same IB test) /
+                 5 skipped / 14 deselected / 6 xfailed.
+                 kernel 390; docs 101.
+  PARITY:        declared hold -- all replay hashes, COUNTs,
+                 fingerprint. No PlatformConfig field. An
+                 uncalled method is not a hashed field |
+                 actual 64/64 identical pre-S-31c vs
+                 post-S-31c and vs baseline_post-S-31b.json;
+                 0 moved at any of the six commits | MATCH.
+                 Fingerprint unmoved (determinism 148
+                 including
+                 test_manifest_fingerprint_matches_locked_value).
+                 _BASELINE_CONFIG_HASH holds.
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         8 unique paths declared in FILES, 6
+                 touched, 0 extra CLEAN (verify_step S-31C
+                 uppercase miss; four checks by hand).
+                 Operator prompt said 11 entries; tree FILES
+                 is 8 unique src paths plus three do-not-add
+                 names (cost_arithmetic.py, risk_wrapper.py,
+                 definition.py). Followed the tree (S-24).
+                 Touched:
+                 src/feelies/alpha/registry.py
+                 src/feelies/risk/basic_risk.py
+                 src/feelies/portfolio/cross_sectional_tracker.py
+                 src/feelies/sensors/registry.py
+                 src/feelies/risk/stop_exit.py
+                 src/feelies/execution/trading_session.py
+                 Declared-but-unneeded (wire, do not
+                 delete):
+                 src/feelies/signals/horizon_engine.py
+                 src/feelies/services/regime_state_cache.py
+  NET DELTA:     declared src modules 0, public symbols at
+                 most -6, branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46008 -> 45984 (-24)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 measure.py public_symbols is module-level
+                 classes/functions only; the six deleted
+                 names are class methods. Deleted-method
+                 count 6, under the operator -12 cap and
+                 equal to the plan DELETES ceiling.
+                 MATCH on modules 0. public_symbols 0 on
+                 the measure.py counter; -6 class methods.
+  DETERMINISM:   148 -> 148 after every src commit and after
+                 all six; no replay hash moved; fingerprint
+                 test passed throughout.
+  VERIFY_STEP:   `S-31C` not in plan (known key is `S-31c`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 8 named unique / 6 touched / 0 extra
+                 CLEAN; PARITY 64/64 HASH+COUNT hold,
+                 fingerprint unmoved; TESTS 4907->4907
+                 passed, failed 1->1 (IB exemption);
+                 NET DELTA MATCH on modules 0, measure.py
+                 public_symbols 0, sloc -24. Blast radius
+                 local -- committed without waiting.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 0b033ad on arch/exec at pre-flight.
+                 porcelain empty. `git diff --stat
+                 exec-tools-v1..HEAD -- tools/exec` empty.
+                 Oracle frozen at exec-tools-v1. Capture
+                 RED on the IB after-hours exemption only.
+                 Cut exec/S-31c.
+                 Commit order (FILES/DELETES order, one
+                 method per commit): 81e0e70
+                 has_signal_alphas, d9be25a
+                 buying_power_phase, 523f350 all_snapshots,
+                 45e6eef collect_into, eca882d policy,
+                 aa28a68 is_within_rth. Did not commit the
+                 two forgets or for_engine.
+                 Coverage gate (full suite, branch data;
+                 1 failed / 4907 passed, IB exemption):
+                 named DELETES all unexecuted:
+                 AlphaRegistry.has_signal_alphas
+                 registry.py:331 covered 0/1
+                 BasicRiskEngine.buying_power_phase
+                 basic_risk.py:171 covered 0/1
+                 CrossSectionalTracker.all_snapshots
+                 cross_sectional_tracker.py:114 covered 0/1
+                 SensorRegistry.collect_into
+                 sensors/registry.py:442 covered 0/1
+                 StopExitController.policy
+                 stop_exit.py:166 covered 0/1
+                 TradingSessionBounds.is_within_rth
+                 trading_session.py:82 covered 0/3
+                 Named wire-do-not-delete, also unexecuted,
+                 left in place:
+                 HorizonSignalEngine.forget
+                 horizon_engine.py:640 covered 0/5
+                 RegimeStateCache.for_engine
+                 regime_state_cache.py:68 covered 0/1
+                 RegimeStateCache.forget
+                 regime_state_cache.py:113 covered 0/1
+                 Caller evidence for the six deletes: zero
+                 callers anywhere (src/ and tests/), not
+                 merely no src callers. set_buying_power_phase
+                 is live; the deleted name was the getter.
+                 should_suppress_entry already inlines the
+                 RTH window; is_within_rth had no caller.
+                 collect_into was the only writer of
+                 _publish_target besides init/reset; the
+                 field stays (not a method delete).
+                 Coverage also proved unexecuted in FILES,
+                 not deleted (gate vs DELETES list; cap):
+                 UniverseSnapshot.contains -- zero callers
+                 anywhere
+                 AlphaRegistry.manifest_fingerprint -- zero
+                 callers anywhere
+                 CrossSectionalTracker.reset -- R6 follow-up
+                 CrossSectionalTracker.snapshot --
+                 documented query API in the module
+                 docstring; zero callers
+                 SensorRegistry._emit_nonfinite_metric --
+                 HAS src caller at registry.py:292; branch
+                 never taken. Not dead.
+                 RthEntryFillGate.reset -- R6 follow-up;
+                 routers construct the gate and never call
+                 reset
+                 That is 15 unexecuted functions in FILES
+                 (14 public + 1 private with a src caller).
+                 Deleted only the six named DELETES. Did
+                 not exceed the -12 cap. Did not expand
+                 DELETES.
+                 Three documented surfaces (not in FILES;
+                 NOTES keep, no commit, documented
+                 exemption not an explicit call):
+                 CostArithmetic.declared_round_trip_cost_bps
+                 covered 0/3
+                 AlphaBudgetRiskWrapper.checkpoint_risk_state
+                 covered 0/1
+                 AlphaBudgetRiskWrapper.restore_risk_state
+                 covered 0/1
+                 FeatureComputation.update_trade kept
+                 (SCHEMA.md; not in FILES); covered 0/1.
+                 Wire disposition: kept forget/for_engine
+                 as the wiring surface. Adding a production
+                 caller would require bootstrap.py,
+                 kernel/orchestrator.py (no delist path
+                 exists), or risk/position_sizer.py
+                 (latest() sibling). Those are the twelfth
+                 file; identified at before-state; not
+                 edited. Internal reset-via-forget on
+                 HorizonSignalEngine would call
+                 gate.reset and change behaviour. Not done.
+                 G44 stays partial: the hot_path xfail still
+                 names it, and nine unexecuted methods
+                 remain in FILES after this step.
+  FINDINGS:      S-24 -- operator prompt said 11 FILES
+                 entries and a -12 public-symbol cap. Tree
+                 FILES is 8 unique paths; NET DELTA at most
+                 -6; DELETES names the six coverage-gated
+                 methods. Followed the tree. The -12 cap
+                 was treated as a deletion ceiling, not a
+                 target.
+                 Coverage found 15 unexecuted functions in
+                 FILES, 9 of them outside DELETES. Reported,
+                 not deleted.
+                 Wiring forget/for_engine to a live caller
+                 is a twelfth file (bootstrap.py /
+                 orchestrator.py / position_sizer.py). Not
+                 edited.
+                 test_unit_declaration.py xfail reason
+                 still names RiskVerdict.constraints
+                 (deleted S-31a). File not in FILES.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution
+                 + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml G40 continue-on-error;
+                 verify_step frozen bugs; 152 research cache
+                 days stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26 unused
+                 selection_policy injection; S-28a
+                 token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue; S-30g FINDING G36 stays OPEN;
+                 four exempted baseline tests.
+  NEXT:          S-32 hot-path prohibitions (platform-wide
+                 by reach; each commit is local). Not
+                 started. Do not begin S-32.
+                 Left uncommitted: baseline_pre-S-31c.json,
+                 baseline_post-S-31c.json,
+                 coverage_pre-S-31c.json, this ledger entry.
+
 
