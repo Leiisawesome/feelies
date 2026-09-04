@@ -267,7 +267,6 @@ def test_horizon_feature_snapshot_defaults() -> None:
     assert snap.values == {}
     assert snap.warm == {}
     assert snap.stale == {}
-    assert snap.source_sensors == {}
 
 
 def test_horizon_feature_snapshot_populated() -> None:
@@ -281,7 +280,6 @@ def test_horizon_feature_snapshot_populated() -> None:
         values={"ofi_ewma": 0.42, "spread_z": -1.2},
         warm={"ofi_ewma": True, "spread_z": True},
         stale={"ofi_ewma": False, "spread_z": False},
-        source_sensors={"ofi_ewma": ("ofi_ewma_sensor",)},
     )
     assert snap.values["ofi_ewma"] == 0.42
     assert snap.warm["spread_z"] is True

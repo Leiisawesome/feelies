@@ -46,8 +46,7 @@ class Event:
     producers that do not set it.
 
     ``schema_version`` is the envelope compatibility pin (``SCHEMA_VERSION``).
-    Payload fields such as ``SensorReading.sensor_version`` and
-    ``HorizonFeatureSnapshot.feature_versions`` are not this pin.
+    Payload fields such as ``SensorReading.sensor_version`` are not this pin.
 
     Numeric-field units are declared in ``Field.metadata['unit']`` (see
     ``declared_unit``). They are not dataclass fields.
@@ -707,8 +706,7 @@ class HorizonFeatureSnapshot(Event):
     """Horizon-bucketed feature aggregate.
 
     ``values`` contains only warm features, while ``warm`` and ``stale`` cover
-    every registered feature. Version and source maps preserve replay
-    provenance; ``parent_correlation_id`` links the triggering horizon tick.
+    every registered feature.
     """
 
     symbol: str
@@ -721,20 +719,11 @@ class HorizonFeatureSnapshot(Event):
     values: Mapping[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
     warm: Mapping[str, bool] = field(default_factory=dict)
     stale: Mapping[str, bool] = field(default_factory=dict)
-    source_sensors: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    feature_versions: Mapping[str, str] = field(default_factory=dict)
-    parent_correlation_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
         object.__setattr__(self, "warm", MappingProxyType(dict(self.warm)))
         object.__setattr__(self, "stale", MappingProxyType(dict(self.stale)))
-        object.__setattr__(
-            self, "source_sensors", MappingProxyType(dict(self.source_sensors))
-        )
-        object.__setattr__(
-            self, "feature_versions", MappingProxyType(dict(self.feature_versions))
-        )
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

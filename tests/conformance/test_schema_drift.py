@@ -1,7 +1,7 @@
 """S8 — every event class resolves a schema version; field drift is detected.
 
-G07: 2 of 21 event classes carry a payload version field
-(``SensorReading.sensor_version``, ``HorizonFeatureSnapshot.feature_versions``).
+G07: 1 of 21 event classes carry a payload version field
+(``SensorReading.sensor_version``).
 Hot-path events are otherwise unversioned. The envelope field
 ``schema_version`` is the consumer-readability pin. The pinned-code-per-log
 rule is ``SCHEMA_VERSION`` in ``feelies.core.events``.
@@ -58,9 +58,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "values",
         "warm",
         "stale",
-        "source_sensors",
-        "feature_versions",
-        "parent_correlation_id",
     ),
     "HorizonTick": (
         "horizon_seconds",
