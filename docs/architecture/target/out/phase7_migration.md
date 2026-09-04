@@ -3415,7 +3415,7 @@ PROBLEM:         2 of 9 recorded metric names have no reader in src/feelies,
                  only in tests (Phase 4 §6.4): the census names
                  feature.feelies.feature.snapshot.stale_fraction and
                  scheduler.feelies.horizon.tick.emitted. Production emit
-                 sites today: features/aggregator.py:504
+                 sites today: features/aggregator.py:495
                  name="feelies.feature.snapshot.stale_fraction";
                  sensors/horizon_scheduler.py:401
                  name="feelies.horizon.tick.emitted". Confirm those two
@@ -3423,8 +3423,7 @@ PROBLEM:         2 of 9 recorded metric names have no reader in src/feelies,
                  layer-prefixed census names are not the emit strings.
 FILES:           src/feelies/features/aggregator.py
                  src/feelies/sensors/horizon_scheduler.py
-                 the test files that are the sole readers of each name
-                 (enumerate before cutting)
+                 tests/monitoring/test_sensor_metrics.py
 WHY THIS OWNER:  Engine 2 owns the emit sites. Engine 11 owns collection.
 REFACTOR PATH:   One metric name per commit. Do not drop
                  kernel.feature_compute_ns's report slot here (the inverse
@@ -3432,10 +3431,10 @@ REFACTOR PATH:   One metric name per commit. Do not drop
 BLAST RADIUS:    local per commit
 VALIDATED BY:    the oracle, MetricCollector tests that currently read
                  these names
-PARITY IMPACT:   hold — all replay hashes, COUNTs, fingerprint,
-                 _BASELINE_CONFIG_HASH. Metric names are not in the S-17a
-                 fold. A HASH that moves is a production reader the census
-                 missed — STOP.
+PARITY IMPACT:   hold — all replay hashes, COUNTs, fingerprint.
+                 No PlatformConfig field. Metric names are not in the
+                 S-17a fold. A HASH that moves is a production reader
+                 the census missed — STOP.
 DELETES:         the two named MetricEvent emissions, after census confirm
 NET DELTA:       src modules 0, public symbols 0, branch points 0
 ROLLBACK:        revert per commit
