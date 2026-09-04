@@ -73,7 +73,6 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "engine",
         "statistic",
         "window_events",
-        "observed_ns",
         "budget_ns",
     ),
     "MetricEvent": ("layer", "name", "value"),

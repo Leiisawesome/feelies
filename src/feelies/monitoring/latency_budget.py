@@ -92,7 +92,6 @@ class _LatencyBudgetMonitor:
                         engine=engine,
                         statistic=budget.statistic,
                         window_events=budget.window_events,
-                        observed_ns=observed,
                         budget_ns=budget.budget_ns,
                     )
                 )

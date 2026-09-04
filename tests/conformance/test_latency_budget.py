@@ -151,7 +151,6 @@ def test_x10_p99_over_window_breaches_when_mean_is_under() -> None:
     assert breach.sequence == 0
     assert breach.statistic == "p99"
     assert breach.window_events == window
-    assert breach.observed_ns == observed
     assert breach.budget_ns == budget_ns
 
 

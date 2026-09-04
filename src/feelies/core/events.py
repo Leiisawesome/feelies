@@ -477,7 +477,7 @@ class KillSwitchActivation(Event):
 class LatencyBreach(Event):
     """A live p99 latency observation exceeded its declared engine budget.
 
-    Carries statistic, window, observed value, and budget so the record is
+    Carries statistic, window, and budget so the record is
     interpretable without the config that produced it. Replay consumes this
     record and never re-measures.
     """
@@ -485,7 +485,6 @@ class LatencyBreach(Event):
     engine: str
     statistic: str
     window_events: int = field(metadata={"unit": "1"})
-    observed_ns: int = field(metadata={"unit": "ns"})
     budget_ns: int = field(metadata={"unit": "ns"})
 
 
