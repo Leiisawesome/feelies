@@ -203,6 +203,13 @@ if TYPE_CHECKING:
 _PLATFORM_BOOT_CORRELATION_ID = "platform_boot"
 _ORCHESTRATOR_SHUTDOWN_CORRELATION_ID = "orchestrator_shutdown"
 
+# Tick-path timing keys recorded without a bus sequence (Inv-5 metric IDs).
+_ATTRIBUTION_TIMING_KEYS: frozenset[str] = frozenset(
+    {"sensor_fanout_ns", "sm_transition_ns"}
+)
+# getattr fallback only; never mutated. Construction, not per-event.
+_EMPTY_TICK_TIMINGS: dict[str, int] = {}
+
 
 def _resolve_boot_config(config: Configuration) -> PlatformConfig:
     """Overlay partial test configs onto the orchestrator's legacy defaults."""
@@ -524,6 +531,8 @@ class Orchestrator:
         self._lot_ledger = LotLedger()
         # Acks buffered by targeted pollers so unrelated order families are not lost.
         self._deferred_router_acks: list[OrderAck] = []
+        # Reused per tick; cleared in ``_process_tick_inner``, never reallocated.
+        self._tick_timings: dict[str, int] = {}
 
         # When True, market events arriving from the data source are
         # already present in the event log (replay mode).  Prevents
@@ -1516,7 +1525,7 @@ class Orchestrator:
         """
         cid = quote.correlation_id
         t_wall_start = time.perf_counter_ns()
-        self._tick_timings: dict[str, int] = {}
+        self._tick_timings.clear()
         self._micro.bind_timing_sink(self._tick_timings)
 
         # Carry inter-quote signals to the next quote only while their horizon is
@@ -2178,8 +2187,7 @@ class Orchestrator:
         )
 
         # Record always-on timers directly so they cannot shift kernel event IDs.
-        _attribution_timing_keys = frozenset({"sensor_fanout_ns", "sm_transition_ns"})
-        timings = getattr(self, "_tick_timings", {})
+        timings = getattr(self, "_tick_timings", _EMPTY_TICK_TIMINGS)
         if self._observe_latency_budgets:
             samples: dict[str, int] = {str(k): int(v) for k, v in timings.items()}
             samples["tick_to_decision_latency_ns"] = latency_ns
@@ -2190,7 +2198,7 @@ class Orchestrator:
             ):
                 self._bus.publish(breach)
         for name, value in timings.items():
-            if name in _attribution_timing_keys:
+            if name in _ATTRIBUTION_TIMING_KEYS:
                 self._metrics.record(
                     MetricEvent(
                         timestamp_ns=now_ns,
@@ -2858,6 +2866,7 @@ class Orchestrator:
         self._working_exit_fallback.clear()
         self._order_filled_qty.clear()
         self._deferred_router_acks.clear()
+        self._tick_timings.clear()
         self._events_prelogged = False
         self._pipeline_abort_requested = False
         _reset_halt_state(self)
