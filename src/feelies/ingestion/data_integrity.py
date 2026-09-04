@@ -114,6 +114,7 @@ class _HaltTradeability:
         self.on_codes: frozenset[int] = frozenset()
         self.off_codes: frozenset[int] = frozenset()
         self.blackout_ns: int = 0
+        self.forensic_open: set[str] = set()
 
     def configure(
         self,
@@ -137,6 +138,7 @@ class _HaltTradeability:
     def reset(self) -> None:
         self.halted_symbols.clear()
         self.blackout_until_ns.clear()
+        self.forensic_open.clear()
 
     def in_blackout(self, symbol: str, now_ns: int) -> bool:
         deadline = self.blackout_until_ns.get(symbol)
@@ -163,8 +165,7 @@ def _bind_halt_tradeability(
     if halt_tradeability is not None:
         if inherited is not None and inherited is not halt_tradeability:
             raise KernelFault(
-                "halt tradeability authority conflict: orchestrator and "
-                "normalizer disagree",
+                "halt tradeability authority conflict: orchestrator and normalizer disagree",
                 kind=KernelFault.Kind.SESSION_HALT,
             )
         return halt_tradeability
@@ -221,6 +222,86 @@ def create_data_integrity_machine(
     )
 
 
+def _bound_trade_feed_health_sm(
+    self: Any,
+    symbol: str,
+    *,
+    ensure: bool,
+) -> StateMachine[DataHealth] | None:
+    """Return the trade-feed health SM if a normalizer that owns one is bound."""
+    normalizer: Any = self
+    machines = getattr(normalizer, "_health_machines", None)
+    feed = getattr(normalizer, "_FEED_TRADE", None)
+    if machines is None or feed is None:
+        normalizer = getattr(self, "_normalizer", None)
+        if normalizer is None:
+            return None
+        machines = getattr(normalizer, "_health_machines", None)
+        feed = getattr(normalizer, "_FEED_TRADE", None)
+        if machines is None or feed is None:
+            return None
+    sm = machines.get((symbol, feed))
+    if sm is None and ensure:
+        ensure_fn = getattr(normalizer, "_ensure_health_machine", None)
+        if ensure_fn is None:
+            return None
+        sm = ensure_fn(symbol, feed)
+    if not isinstance(sm, StateMachine):
+        return None
+    return sm
+
+
+def _halt_health_xor_store(self: Any, symbol: str) -> bool:
+    """True when a bound trade-feed SM is HALTED xor the symbol is in the store."""
+    sm = _bound_trade_feed_health_sm(self, symbol, ensure=False)
+    if sm is None:
+        return False
+    halted_health = sm.state == DataHealth.HALTED
+    in_store = symbol in _require_halt_authority(self).halted_symbols
+    return halted_health != in_store
+
+
+def _sync_halt_store_and_health(
+    self: Any,
+    symbol: str,
+    conditions: Iterable[int],
+    *,
+    timestamp_ns: int | None = None,
+) -> HaltSignal | None:
+    """Update ``_HaltTradeability`` and the trade-feed health SM together."""
+    authority = _require_halt_authority(self)
+    if not authority.on_codes and not authority.off_codes:
+        return None
+    status = classify_halt_status(
+        conditions,
+        authority.on_codes,
+        authority.off_codes,
+    )
+    if status is None:
+        return None
+    sm = _bound_trade_feed_health_sm(self, symbol, ensure=True)
+    if status is HaltSignal.HALT_ON:
+        if symbol not in authority.halted_symbols:
+            authority.halted_symbols.add(symbol)
+            authority.blackout_until_ns.pop(symbol, None)
+        if (
+            sm is not None
+            and sm.state != DataHealth.HALTED
+            and sm.can_transition(DataHealth.HALTED)
+        ):
+            sm.transition(DataHealth.HALTED, trigger="luld_halt_on")
+    else:
+        was_in = symbol in authority.halted_symbols
+        health_was_halted = sm is not None and sm.state == DataHealth.HALTED
+        if was_in:
+            authority.halted_symbols.discard(symbol)
+        if (was_in or health_was_halted) and timestamp_ns is not None:
+            authority.blackout_until_ns[symbol] = timestamp_ns + authority.blackout_ns
+        if sm is not None and health_was_halted and sm.can_transition(DataHealth.HEALTHY):
+            sm.transition(DataHealth.HEALTHY, trigger="luld_halt_off")
+    return status
+
+
 def _update_halt_state(self: Any, trade: Trade) -> None:
     """Register halt and resume edges from the trade tape.
 
@@ -228,22 +309,23 @@ def _update_halt_state(self: Any, trade: Trade) -> None:
     any resting orders (Inv-11), and emit ``SymbolHalted``.  On resume:
     clear the halt, open the entry blackout window, and emit the resume
     ``SymbolHalted``.  Inert when no halt codes are configured.
+    Parse and ``_process_trade_inner`` both call ``_sync_halt_store_and_health``;
+    emit/cancel run once per halt episode on the orchestrator path.
     """
-    _require_halt_authority(self)
-    if not self._halt_on_codes and not self._halt_off_codes:
+    authority = _require_halt_authority(self)
+    if not authority.on_codes and not authority.off_codes:
         return
-    status = classify_halt_status(
+    status = _sync_halt_store_and_health(
+        self,
+        trade.symbol,
         trade.conditions,
-        self._halt_on_codes,
-        self._halt_off_codes,
+        timestamp_ns=trade.timestamp_ns,
     )
     if status is None:
         return
     symbol = trade.symbol
     if status is HaltSignal.HALT_ON:
-        if symbol not in self._halted_symbols:
-            self._halted_symbols.add(symbol)
-            self._halt_blackout_until_ns.pop(symbol, None)
+        if symbol not in authority.forensic_open:
             self._cancel_resting_for_symbol(symbol, trade.correlation_id)
             _emit_symbol_halted(
                 self,
@@ -254,10 +336,9 @@ def _update_halt_state(self: Any, trade: Trade) -> None:
                 correlation_id=trade.correlation_id,
                 blackout_until_ns=0,
             )
-    elif symbol in self._halted_symbols:
-        self._halted_symbols.discard(symbol)
-        deadline = trade.timestamp_ns + self._halt_blackout_ns
-        self._halt_blackout_until_ns[symbol] = deadline
+            authority.forensic_open.add(symbol)
+    elif symbol in authority.forensic_open:
+        deadline = authority.blackout_until_ns.get(symbol, 0)
         _emit_symbol_halted(
             self,
             symbol,
@@ -267,6 +348,7 @@ def _update_halt_state(self: Any, trade: Trade) -> None:
             correlation_id=trade.correlation_id,
             blackout_until_ns=deadline,
         )
+        authority.forensic_open.discard(symbol)
 
 
 def _update_ssr_state(self: Any, trade: Trade) -> None:
@@ -295,6 +377,11 @@ def _data_health_blocks_trading(self: Any, symbol: str, correlation_id: str) -> 
     Corruption degrades the platform; configured gaps do likewise."""
     if self._normalizer is None:
         return None
+    if _halt_health_xor_store(self, symbol):
+        raise KernelFault(
+            "trade-feed health HALTED xor halt-store membership",
+            kind=KernelFault.Kind.SESSION_HALT,
+        )
     health: DataHealth = self._normalizer.health(symbol)
     cfg_syms = (
         {s.upper() for s in self._config.symbols} if self._config is not None else frozenset()

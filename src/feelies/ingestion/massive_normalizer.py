@@ -27,9 +27,8 @@ from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.ingestion.data_integrity import (
     DataHealth,
-    HaltSignal,
     _HaltTradeability,
-    classify_halt_status,
+    _sync_halt_store_and_health,
     create_data_integrity_machine,
 )
 from feelies.ingestion.ingest_health import merge_worst_health
@@ -501,7 +500,7 @@ class MassiveNormalizer:
             prev_seq = prev[0] if prev is not None else 0
             self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns, fp)
             self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
-            self._apply_halt_status(symbol, conditions)
+            self._apply_halt_status(symbol, conditions, exchange_ts_ns)
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
 
@@ -662,7 +661,7 @@ class MassiveNormalizer:
             self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts, fp)
             if self._enable_rest_sequence_gap_detection:
                 self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
-            self._apply_halt_status(symbol, conditions)
+            self._apply_halt_status(symbol, conditions, sip_ts)
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, sip_ts, internal_seq)
 
@@ -890,31 +889,21 @@ class MassiveNormalizer:
         self,
         symbol: str,
         conditions: tuple[int, ...],
+        timestamp_ns: int | None = None,
     ) -> None:
-        """Transition trade-feed health on halt and resume markers.
+        """Transition halt store and trade-feed health together.
 
         Halts arrive on the trade tape, so only the trade-feed machine is
         driven; ``health(symbol)`` reports HALTED via ``merge_worst_health``
         regardless of the quote feed's state, and a resume cleanly returns
         the symbol to its quote-feed health.  Inert when no codes configured.
         """
-        status = classify_halt_status(
+        _sync_halt_store_and_health(
+            self,
+            symbol,
             conditions,
-            self._halt_tradeability.on_codes,
-            self._halt_tradeability.off_codes,
+            timestamp_ns=timestamp_ns,
         )
-        if status is None:
-            return
-        sm = self._ensure_health_machine(symbol, self._FEED_TRADE)
-        if status is HaltSignal.HALT_ON:
-            if sm.state != DataHealth.HALTED and sm.can_transition(
-                DataHealth.HALTED,
-            ):
-                sm.transition(DataHealth.HALTED, trigger="luld_halt_on")
-        elif sm.state == DataHealth.HALTED and sm.can_transition(
-            DataHealth.HEALTHY,
-        ):
-            sm.transition(DataHealth.HEALTHY, trigger="luld_halt_off")
 
     def _mark_corrupted(self, symbol: str, trigger: str = "parse_error") -> None:
         if not symbol or symbol == "UNKNOWN":
