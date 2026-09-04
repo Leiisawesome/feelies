@@ -328,10 +328,6 @@ class AlphaRegistry:
         """Return SIGNAL alphas in deterministic registration order."""
         return [alpha for alpha in self._alphas.values() if alpha.manifest.layer == "SIGNAL"]
 
-    def has_signal_alphas(self) -> bool:
-        """Return whether any SIGNAL alpha is registered."""
-        return any(alpha.manifest.layer == "SIGNAL" for alpha in self._alphas.values())
-
     def portfolio_alphas(self) -> list[AlphaModule]:
         """Return PORTFOLIO alphas in deterministic registration order.
 
