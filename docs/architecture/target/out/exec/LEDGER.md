@@ -10265,4 +10265,237 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-34g.json, this ledger
                  entry.
 
+---
+
+## S-34b  2026-09-05T18:31:00+08:00
+  STEP:          S-34b
+  BASE:          4a7991a362ebb4bb4b4be48d91eb77c3ae2145f3
+  RESULT SHA:    c20d4b890533d259a7a5ad4b4b9c91491328817c (exec/S-34b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. G40 stays
+                 OPEN. S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 tests/docs 101
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 kernel 390; risk 336; execution 865
+                 mypy src/feelies: Success, 211 source files
+                 (210 + 1)
+  TESTS:         capture pre-S-34b GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34b GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-34b vs post-S-34b and vs
+                 baseline_post-S-34g.json; 0 moved at any of the
+                 nine commits | MATCH.
+  FILES:         7 implementation paths declared, 6 touched
+                 (verify_step not runnable -- S-34B
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: orchestrator.py,
+                 forced_exit_clamp.py (new),
+                 data_integrity.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 docs/prompts/audit_risk_engine.md.
+                 Declared-but-unneeded:
+                 tests/docs/test_internal_links.py.
+                 Named-not-edited:
+                 kernel/forced_exit_reasons.py,
+                 kernel/order_states.py. dest imports those
+                 plus HAZARD_EXIT_SOURCE_LAYER from
+                 risk.hazard_exit; dest does not import
+                 orchestrator. verify_step file_list would
+                 also count FILES-prose tokens and dir_list
+                 infers src/feelies/risk/ against FILES
+                 "Do not declare" -- frozen; this tree added
+                 only the named dest file under that package.
+  NET DELTA:     declared src modules +1, public symbols 0,
+                 branch points 0.
+                 actual modules 210 -> 211 (+1 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46048 -> 46070 (+22)
+                 n_edges 679 -> 687
+                 n_modules 172 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+                 orchestrator lines 3531 -> 3322 (-209)
+                 orchestrator methods 80 -> 73 (-7)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-34B --base 4a7991a` exits 2: S-34B not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 7 declared implementation / 6 touched
+                 CLEAN (one declared-but-unneeded; two
+                 named-not-edited kernel homes); PARITY 64/64
+                 HASH+COUNT hold, 0 moved (declared hold
+                 parsed as _BASELINE_CONFIG_HASH -- frozen);
+                 TESTS 4908->4908 passed, failed 0->0 (from
+                 captures; verify_step does not print a TESTS
+                 section); NET DELTA MATCH on modules +1
+                 symbols 0; oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is method names -- frozen. CLEAN,
+                 blast radius boundary -- human gate
+                 required. Go recorded here.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 4a7991a on arch/exec. Cut
+                 exec/S-34b. RESULT HEAD c20d4b8, confirmed
+                 on Go.
+                 Nine commits, one body each, drawing body
+                 last: (1) 0522502 _closable_quantity plus
+                 the new module and _FILE_OWNERS trio,
+                 3531/80 -> dest created; (2) 8ea2cec
+                 _is_forced_market_exit; (3) 2f261d6
+                 _forced_exit_reduces; (4) e9c3684
+                 _has_pending_forced_exit_for_symbol;
+                 (5) ad0d9a7 _forced_exit_closable_quantity;
+                 (6) cba32b9
+                 _emit_forced_exit_resized_alert;
+                 (7) 5fbba58
+                 _emit_forced_exit_stood_down_alert;
+                 (8) 6ab8228
+                 _emit_forced_exit_supersedes_pending_alert;
+                 (9) c20d4b8
+                 _force_flatten_symbol_on_degrade, the
+                 drawing body (self._seq.next() OrderRequest
+                 publish; retarget data_integrity.py:404
+                 and :425). Orchestrator delta this tree:
+                 3531 -> 3322 lines (-209); 80 -> 73
+                 methods (-7). The seven class methods left;
+                 the two module-level names left with them.
+                 Destination is
+                 src/feelies/risk/forced_exit_clamp.py
+                 (new, named file). Owner audit_risk_engine,
+                 assigned in commit 1 next to
+                 risk_wrapper.py, because Engine 8 owns the
+                 veto and it is monotone.
+                 n_cycles 1 -> 1. The one SCC is the
+                 pre-existing feelies.cli ->
+                 feelies.cli.main package-to-submodule
+                 edge. Nothing else. Dest does not import
+                 kernel.orchestrator.
+                 No hash moved at any of the nine commits.
+                 Determinism 148 and S12 2 after every
+                 commit; 64/64 HASH/COUNT identical
+                 pre-S-34b vs post-S-34b and vs
+                 baseline_post-S-34g.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 SequenceGenerator constructions stayed on
+                 Orchestrator: HEAD stream=orchestrator and
+                 stream=hazard. forced_exit_clamp does not
+                 construct a generator. The flatten draw
+                 remains self._seq.next() inside the moved
+                 body.
+                 S-34g names each body used, and where each
+                 now lives -- none from the orchestrator
+                 module: _closable_quantity closes over
+                 none of the eleven; _is_forced_market_exit
+                 takes HAZARD_EXIT_SOURCE_LAYER from
+                 risk.hazard_exit (same engine) and
+                 _RISK_FORCED_EXIT_REASONS from
+                 kernel/forced_exit_reasons.py;
+                 _forced_exit_reduces calls sibling
+                 _forced_exit_closable_quantity after
+                 commit 5; _has_pending_forced_exit_for_symbol
+                 takes _TERMINAL_ORDER_STATES from
+                 kernel/order_states.py and sibling
+                 _is_forced_market_exit;
+                 _forced_exit_closable_quantity takes
+                 _SLICE_SCOPED_FORCED_EXIT_REASONS from
+                 kernel/forced_exit_reasons.py and sibling
+                 _closable_quantity; the three alerts use
+                 dest logging.getLogger(__name__) and
+                 self._publish_alert on the Orchestrator
+                 instance; _force_flatten_symbol_on_degrade
+                 uses dest logger, derive_order_id from
+                 core.identifiers, and _transition_order
+                 from execution.order_lifecycle -- not
+                 orchestrator. The seven names this group
+                 was said to need
+                 (_RISK_FORCED_EXIT_REASONS,
+                 _SLICE_SCOPED_FORCED_EXIT_REASONS,
+                 _TERMINAL_ORDER_STATES,
+                 HAZARD_EXIT_SOURCE_LAYER,
+                 _closable_quantity, _is_forced_market_exit,
+                 logger) all resolved to those homes.
+                 WAVE-D: no shim; the only outside
+                 attribute-call sites were
+                 data_integrity.py:404 and :425, both in
+                 FILES, retargeted in commit 9. Tests bound
+                 these names only in docstrings.
+                 no-any-return none; original -> bool /
+                 -> int / -> None kept on self: Any.
+                 Declared NET DELTA: src modules +1, public
+                 symbols 0, branch points 0. Measured:
+                 modules 210 -> 211 (+1 MATCH),
+                 public_symbols 575 -> 575 (+0 MATCH),
+                 sloc 46048 -> 46070 (+22, undeclared),
+                 n_edges 679 -> 687, n_modules 172 -> 173,
+                 cycles 1 -> 1 MATCH, alphaleak 0 -> 0.
+  FINDINGS:      S-34g covered every closed-over *module
+                 name* this group needed. Dest does not
+                 import orchestrator. No body was left in
+                 place. One name the eleven did not list
+                 still had to be rebound: _transition_order,
+                 which flatten used from orchestrator's
+                 import of execution.order_lifecycle. Dest
+                 takes it from that owner, not from
+                 orchestrator -- not an S-34g miss, and not
+                 a new engine pair (risk.engine already
+                 imports order_lifecycle). Instance
+                 attributes on self: Any (_publish_alert,
+                 _positions, _seq, _active_orders,
+                 _track_order, _submit_to_router,
+                 _settle_router_acks) stayed Wave D; they
+                 are not orchestrator-module names.
+                 _forced_exit_reduces was copied with
+                 self._forced_exit_closable_quantity and
+                 retargeted to the sibling function in
+                 commit 5 when that callee left
+                 Orchestrator -- same sibling pattern the
+                 plan named for _closable_quantity /
+                 _is_forced_market_exit, applied one
+                 callee later.
+                 test_prompt_coverage_map stayed green
+                 before the _FILE_OWNERS entry because
+                 risk/ already defaults to
+                 audit_risk_engine. The trio still landed
+                 in commit 1 (S-21).
+                 src/feelies/risk/stop_exit.py:22 still
+                 says _is_forced_market_exit lives in the
+                 kernel. Comment, not an attribute-call
+                 site, not in FILES.
+                 verify_step.py uppercases S-34b to S-34B.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; four exempted baseline tests.
+  NEXT:          S-34c working-exit escalate and MARKET
+                 fallback (boundary). Not started. Do not
+                 begin S-34c from this tree. Left
+                 uncommitted: baseline_pre-S-34b.json,
+                 baseline_post-S-34b.json, this ledger
+                 entry.
+
 
