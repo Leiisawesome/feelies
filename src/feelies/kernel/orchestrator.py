@@ -178,7 +178,7 @@ from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAY
 from feelies.risk.forced_exit_clamp import (
     _closable_quantity,
     _forced_exit_reduces,
-    _is_forced_market_exit,
+    _has_pending_forced_exit_for_symbol,
 )
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
@@ -2527,26 +2527,6 @@ class Orchestrator:
             closable = max(closable, _closable_quantity(slice_qty, order.side))
         return min(order.quantity, closable)
 
-    def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
-        """True if a forced MARKET exit is already in flight for *symbol*.
-
-        Distinguishes an aggressive exit already crossing the book from a
-        merely-resting passive cover.  The resting-order guard cancels stale
-        passive orders to let a forced MARKET exit through (Inv-11) but must
-        not stack a second aggressive leg on top of one already pending —
-        that would overshoot the position.
-
-        Covers both mandated-exit authors — the kernel's synthetic stop /
-        session-flat and the RISK-layer controllers routed through
-        :meth:`_on_bus_derisk_requirement` — so neither can stack on the other.
-        """
-        return any(
-            order.symbol == symbol
-            and sm.state not in _TERMINAL_ORDER_STATES
-            and _is_forced_market_exit(order)
-            for sm, _, order in self._active_orders.values()
-        )
-
     def _cancel_resting_for_symbol(self, symbol: str, cid: str) -> None:
         """Cancel all non-terminal resting orders for a symbol.
 
@@ -3160,7 +3140,7 @@ class Orchestrator:
         # a resting order without replacing it: cancelling a resting *cover* and
         # then bailing would leave the book more exposed, not less (Inv-11).
         if self._has_pending_order_for_symbol(order.symbol):
-            if self._has_pending_forced_exit_for_symbol(order.symbol):
+            if _has_pending_forced_exit_for_symbol(self, order.symbol):
                 # A mandated exit is already crossing; a second aggressive leg
                 # would overshoot the position it is closing.
                 logger.info(

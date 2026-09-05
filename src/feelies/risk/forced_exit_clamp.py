@@ -6,6 +6,7 @@ from typing import Any
 
 from feelies.core.events import OrderRequest, Side
 from feelies.kernel.forced_exit_reasons import _RISK_FORCED_EXIT_REASONS
+from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.risk.hazard_exit import HAZARD_EXIT_SOURCE_LAYER
 
 
@@ -42,3 +43,24 @@ def _forced_exit_reduces(self: Any, order: OrderRequest) -> bool:
     reaching the router.
     """
     return self._forced_exit_closable_quantity(order) > 0
+
+
+def _has_pending_forced_exit_for_symbol(self: Any, symbol: str) -> bool:
+    """True if a forced MARKET exit is already in flight for *symbol*.
+
+    Distinguishes an aggressive exit already crossing the book from a
+    merely-resting passive cover.  The resting-order guard cancels stale
+    passive orders to let a forced MARKET exit through (Inv-11) but must
+    not stack a second aggressive leg on top of one already pending —
+    that would overshoot the position.
+
+    Covers both mandated-exit authors — the kernel's synthetic stop /
+    session-flat and the RISK-layer controllers routed through
+    :meth:`_on_bus_derisk_requirement` — so neither can stack on the other.
+    """
+    return any(
+        order.symbol == symbol
+        and sm.state not in _TERMINAL_ORDER_STATES
+        and _is_forced_market_exit(order)
+        for sm, _, order in self._active_orders.values()
+    )
