@@ -16,14 +16,14 @@ from feelies.core.events import (
     PositionUpdate,
     Side,
 )
-from feelies.kernel.forced_exit_reasons import (
-    _RISK_FORCED_EXIT_REASONS,
-    _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
-)
-from feelies.kernel.orchestrator import (
+from feelies.kernel.fill_bindings import (
     TradeRecord,
     _regime_label_for,
     observe_kill_switch,
+)
+from feelies.kernel.forced_exit_reasons import (
+    _RISK_FORCED_EXIT_REASONS,
+    _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
 )
 from feelies.portfolio.fill_attribution import largest_remainder_split, split_fees
 
