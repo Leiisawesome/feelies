@@ -38,6 +38,8 @@ Usage (Windows PowerShell, from repo root):
 
     uv run python tools/arch/perfmeasure.py --mode both
     uv run python tools/arch/perfmeasure.py --mode scale
+    uv run python tools/arch/perfmeasure.py --mode sensorscale
+    uv run python tools/arch/perfmeasure.py --mode leaveoneout
     uv run python tools/arch/perfmeasure.py --mode profile
 """
 
@@ -686,13 +688,18 @@ SENSOR_INFO: dict[str, Any] = {}
 
 
 @contextlib.contextmanager
-def _sensor_registration_recorder(*, prune: bool) -> Iterator[None]:
+def _sensor_registration_recorder(
+    *, prune: bool, drop_id: str | None = None
+) -> Iterator[None]:
     """Record the sensor specs the platform ends up registering.
 
     Wraps the single pruning call so the count is observed rather than inferred,
     and costs nothing during the replay: ``maybe_prune_unused_sensors`` runs once
     at bootstrap.  ``prune=False`` also neutralises it, which is how the
     full-cardinality leg is produced -- see :func:`mode_sensorscale`.
+    ``drop_id`` filters that list after prune-or-not, preserving relative order
+    of the remaining specs.  It does not wrap ``sensors/impl/*.update`` or
+    ``HorizonScheduler.on_event``.
     """
     import feelies.bootstrap as bootstrap
 
@@ -700,9 +707,14 @@ def _sensor_registration_recorder(*, prune: bool) -> Iterator[None]:
 
     def recording(config: Any, registry: Any) -> Any:
         result = config if not prune else original(config, registry)
+        if drop_id is not None:
+            specs = result.sensor_specs
+            kept = [s for s in specs if s.sensor_id != drop_id]
+            result = dc_replace(result, sensor_specs=type(specs)(kept))
         SENSOR_INFO["declared"] = len(config.sensor_specs)
         SENSOR_INFO["registered"] = len(result.sensor_specs)
         SENSOR_INFO["ids"] = sorted(s.sensor_id for s in result.sensor_specs)
+        SENSOR_INFO["dropped"] = drop_id
         # ``subscribes_to`` holds event *classes*, not names.
         SENSOR_INFO["on_quote"] = sorted(
             s.sensor_id
@@ -718,6 +730,52 @@ def _sensor_registration_recorder(*, prune: bool) -> Iterator[None]:
         bootstrap.maybe_prune_unused_sensors = original  # type: ignore[assignment]
 
 
+def _best_unprobed_sensor_leg(
+    symbols: list[str],
+    date: str,
+    config_path: str,
+    repeats: int,
+    *,
+    label: str,
+    prune: bool,
+    drop_id: str | None = None,
+) -> dict[str, Any]:
+    """Min-of-N unprobed whole-run timer at one registration list."""
+    best: dict[str, Any] | None = None
+    with _sensor_registration_recorder(prune=prune, drop_id=drop_id):
+        for _ in range(repeats):
+            SENSOR_INFO.clear()
+            _reset()
+            r = _run_replay(symbols, date, config_path)
+            row: dict[str, Any] = {
+                "leg": label,
+                "n_quotes": r.n_quotes,
+                "n_events": r.n_events,
+                "replay_ns": r.replay_ns,
+                "ns_per_quote": round(r.replay_ns / r.n_quotes, 1) if r.n_quotes else 0.0,
+                "parity_hash": r.parity_hash,
+                "fills": r.fills,
+                "sensors_declared": SENSOR_INFO.get("declared", -1),
+                "sensors_registered": SENSOR_INFO.get("registered", -1),
+                "sensors_on_quote": len(SENSOR_INFO.get("on_quote", [])),
+                "sensor_ids": SENSOR_INFO.get("ids", []),
+                "on_quote_ids": SENSOR_INFO.get("on_quote", []),
+            }
+            if drop_id is not None:
+                row["drop_id"] = drop_id
+            if best is None or row["ns_per_quote"] < best["ns_per_quote"]:
+                best = row
+            print(
+                f"  {label:12s}: S={row['sensors_registered']:2d} "
+                f"({row['sensors_on_quote']} on quote)  "
+                f"{row['ns_per_quote']:>10,.0f} ns/quote  "
+                f"fills={r.fills}  parity={r.parity_hash[:12]}",
+                flush=True,
+            )
+    assert best is not None
+    return best
+
+
 def mode_sensorscale(
     symbols: list[str], date: str, config_path: str, repeats: int
 ) -> dict[str, Any]:
@@ -731,6 +789,9 @@ def mode_sensorscale(
     accumulate, so full S is the direction the platform moves in, not a
     hypothetical.
 
+    This is cardinality, not per-sensor exclusive time.  Two legs cannot name a
+    dominant sensor.  :func:`mode_leaveoneout` is that table.
+
     ``maybe_prune_unused_sensors`` is a pure config->config function called once
     (``bootstrap.py:245``), so neutralising it is the whole intervention: no
     source edit and no new config.  The alpha still declares and reads the same
@@ -742,38 +803,12 @@ def mode_sensorscale(
     overhead would swamp it.
     """
     _install_arming_probe()
-    points: list[dict[str, Any]] = []
-    for label, prune in (("pruned", True), ("all_declared", False)):
-        best: dict[str, Any] | None = None
-        with _sensor_registration_recorder(prune=prune):
-            for _ in range(repeats):
-                SENSOR_INFO.clear()
-                _reset()
-                r = _run_replay(symbols, date, config_path)
-                row = {
-                    "leg": label,
-                    "n_quotes": r.n_quotes,
-                    "n_events": r.n_events,
-                    "replay_ns": r.replay_ns,
-                    "ns_per_quote": round(r.replay_ns / r.n_quotes, 1) if r.n_quotes else 0.0,
-                    "parity_hash": r.parity_hash,
-                    "fills": r.fills,
-                    "sensors_declared": SENSOR_INFO.get("declared", -1),
-                    "sensors_registered": SENSOR_INFO.get("registered", -1),
-                    "sensors_on_quote": len(SENSOR_INFO.get("on_quote", [])),
-                    "sensor_ids": SENSOR_INFO.get("ids", []),
-                }
-                if best is None or row["ns_per_quote"] < best["ns_per_quote"]:
-                    best = row
-                print(
-                    f"  {label:12s}: S={row['sensors_registered']:2d} "
-                    f"({row['sensors_on_quote']} on quote)  "
-                    f"{row['ns_per_quote']:>10,.0f} ns/quote  "
-                    f"fills={r.fills}  parity={r.parity_hash[:12]}",
-                    flush=True,
-                )
-        assert best is not None
-        points.append(best)
+    points = [
+        _best_unprobed_sensor_leg(
+            symbols, date, config_path, repeats, label=label, prune=prune
+        )
+        for label, prune in (("pruned", True), ("all_declared", False))
+    ]
 
     a, b = points
     d_all = b["sensors_registered"] - a["sensors_registered"]
@@ -791,6 +826,85 @@ def mode_sensorscale(
             ),
             "parity_preserved": a["parity_hash"] == b["parity_hash"],
             "fills_preserved": a["fills"] == b["fills"],
+        },
+    }
+
+
+# S-32 same-tree control peak-to-peak on this unprobed timer, ns/quote.
+_S32_ENVELOPE_NS = 2918
+
+
+def mode_leaveoneout(
+    symbols: list[str], date: str, config_path: str, repeats: int
+) -> dict[str, Any]:
+    """Leave-one-out at full registration on the unprobed whole-run timer.
+
+    sensorscale is pruned-vs-all cardinality.  This mode registers every
+    declared sensor, then drops one extra ``sensor_id`` per leg -- extras are
+    ids present at full registration and absent after prune, so the alpha's
+    four dependencies stay registered and output can stay bit-identical.
+    Exclusive time for an id is (full min ns/quote) - (drop-that-id min
+    ns/quote).  One row per extra id.  Relative order of remaining specs is
+    preserved.  ``--mode both`` is not used: probe overhead, and wrapping
+    ``impl/*.update`` / ``HorizonScheduler.on_event`` would be a twelfth file.
+
+    The table is a later step's evidence, not a saving.  Per-quote deltas on
+    this timer sit inside the S-32 envelope and are uninformative as cost.
+    """
+    _install_arming_probe()
+    pruned = _best_unprobed_sensor_leg(
+        symbols, date, config_path, repeats, label="pruned", prune=True
+    )
+    full = _best_unprobed_sensor_leg(
+        symbols, date, config_path, repeats, label="all_declared", prune=False
+    )
+    pruned_ids = set(pruned["sensor_ids"])
+    extras = [i for i in full["sensor_ids"] if i not in pruned_ids]
+    quote_extras = [i for i in extras if i in set(full["on_quote_ids"])]
+    rows: list[dict[str, Any]] = []
+    for sensor_id in extras:
+        row = _best_unprobed_sensor_leg(
+            symbols,
+            date,
+            config_path,
+            repeats,
+            label=f"drop {sensor_id}",
+            prune=False,
+            drop_id=sensor_id,
+        )
+        exclusive = round(full["ns_per_quote"] - row["ns_per_quote"], 1)
+        row["exclusive_ns_per_quote"] = exclusive
+        rows.append(row)
+        print(
+            f"  exclusive   : {sensor_id:20s}  {exclusive:>+10,.0f} ns/quote",
+            flush=True,
+        )
+
+    blob = round(full["ns_per_quote"] - pruned["ns_per_quote"], 1)
+    quote_extra_set = set(quote_extras)
+    quote_sum = round(
+        sum(row["exclusive_ns_per_quote"] for row in rows if row["drop_id"] in quote_extra_set),
+        1,
+    )
+    hashes = [full["parity_hash"], *[row["parity_hash"] for row in rows]]
+    fills = [full["fills"], *[row["fills"] for row in rows]]
+    sum_minus_blob = round(quote_sum - blob, 1)
+    return {
+        "points": [pruned, full],
+        "leave_one_out": rows,
+        "delta": {
+            "extra_sensors_registered": full["sensors_registered"] - pruned["sensors_registered"],
+            "extra_sensors_on_quote": full["sensors_on_quote"] - pruned["sensors_on_quote"],
+            "blob_ns_per_quote": blob,
+            "quote_extra_ids": quote_extras,
+            "quote_extra_exclusive_sum": quote_sum,
+            "sum_minus_blob": sum_minus_blob,
+            "within_s32_envelope": abs(sum_minus_blob) <= _S32_ENVELOPE_NS,
+            "s32_envelope_ns": _S32_ENVELOPE_NS,
+            "cost_uninformative": True,
+            "parity_identical_across_drop_legs": len(set(hashes)) == 1,
+            "fills_preserved": len(set(fills)) == 1,
+            "parity_hash": full["parity_hash"],
         },
     }
 
@@ -963,6 +1077,7 @@ def main(argv: list[str] | None = None) -> int:
             "both",
             "scale",
             "sensorscale",
+            "leaveoneout",
             "profile",
             "census",
             "report",
@@ -1047,6 +1162,18 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
         out = args.out or "perf_sensorscale.json"
+    elif args.mode == "leaveoneout":
+        payload["leaveoneout"] = mode_leaveoneout(symbols, date, args.config, args.repeats)
+        d = payload["leaveoneout"]["delta"]
+        print(
+            f"  leave-one-out: {len(payload['leaveoneout']['leave_one_out'])} extra ids; "
+            f"quote-extra exclusive sum {d['quote_extra_exclusive_sum']:+,.0f} vs "
+            f"blob {d['blob_ns_per_quote']:+,.0f} (delta {d['sum_minus_blob']:+,.0f}); "
+            f"parity identical={d['parity_identical_across_drop_legs']}; "
+            f"cost uninformative",
+            flush=True,
+        )
+        out = args.out or "perf_leaveoneout.json"
     elif args.mode == "scale":
         # One process per cardinality would be cleaner, but probes are installed
         # once and the arming flag brackets each replay, so a single process is
