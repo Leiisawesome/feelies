@@ -146,7 +146,6 @@ from feelies.ingestion.data_integrity import (
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
-from feelies.kernel.forced_exit_reasons import _SLICE_SCOPED_FORCED_EXIT_REASONS
 from feelies.kernel.macro import (
     TRADING_MODES,
     MacroState,
@@ -176,7 +175,7 @@ from feelies.risk.engine import (
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
 from feelies.risk.forced_exit_clamp import (
-    _closable_quantity,
+    _forced_exit_closable_quantity,
     _forced_exit_reduces,
     _has_pending_forced_exit_for_symbol,
 )
@@ -2502,31 +2501,6 @@ class Orchestrator:
             for sm, side, order in self._active_orders.values()
         )
 
-    def _forced_exit_closable_quantity(self, order: OrderRequest) -> int:
-        """Shares *order* can close right now without crossing into new exposure.
-
-        Magnitude shrinkage is **not** the test.  ``abs(current + signed) <
-        abs(current)`` is true for any reduction, including one that crosses zero:
-        a mandated ``SELL 100`` into a book a resting cover has already taken to
-        long 70 shrinks the magnitude while flipping to short 30.  That is a
-        fail-safe control opening exposure, which is exactly what Inv-11 forbids,
-        so the clamp is on the closable side only.
-
-        Slice-scoped authors (composer, deferral cap) may legitimately exceed
-        symbol-net: another strategy holding the opposite side can leave the net
-        flat while the mandated slice is still open, and flattening that slice
-        moves the net through zero on purpose (design §3.3).  So they take the
-        larger of the two bases rather than being clamped to net.
-        """
-        net = self._positions.get(order.symbol).quantity
-        closable = _closable_quantity(net, order.side)
-        if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS and (
-            self._strategy_positions is not None
-        ):
-            slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
-            closable = max(closable, _closable_quantity(slice_qty, order.side))
-        return min(order.quantity, closable)
-
     def _cancel_resting_for_symbol(self, symbol: str, cid: str) -> None:
         """Cancel all non-terminal resting orders for a symbol.
 
@@ -3156,7 +3130,7 @@ class Orchestrator:
             self._cancel_resting_for_symbol(order.symbol, order.correlation_id)
 
         # Re-clamp after cancellations because queued fills may have moved the book.
-        closable = self._forced_exit_closable_quantity(order)
+        closable = _forced_exit_closable_quantity(self, order)
         if closable <= 0:
             self._emit_forced_exit_stood_down_alert(order)
             return

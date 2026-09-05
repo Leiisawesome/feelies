@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from feelies.core.events import OrderRequest, Side
-from feelies.kernel.forced_exit_reasons import _RISK_FORCED_EXIT_REASONS
+from feelies.kernel.forced_exit_reasons import (
+    _RISK_FORCED_EXIT_REASONS,
+    _SLICE_SCOPED_FORCED_EXIT_REASONS,
+)
 from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.risk.hazard_exit import HAZARD_EXIT_SOURCE_LAYER
 
@@ -42,7 +45,7 @@ def _forced_exit_reduces(self: Any, order: OrderRequest) -> bool:
     the book can move between the controller sizing the exit and the exit
     reaching the router.
     """
-    return self._forced_exit_closable_quantity(order) > 0
+    return _forced_exit_closable_quantity(self, order) > 0
 
 
 def _has_pending_forced_exit_for_symbol(self: Any, symbol: str) -> bool:
@@ -64,3 +67,29 @@ def _has_pending_forced_exit_for_symbol(self: Any, symbol: str) -> bool:
         and _is_forced_market_exit(order)
         for sm, _, order in self._active_orders.values()
     )
+
+
+def _forced_exit_closable_quantity(self: Any, order: OrderRequest) -> int:
+    """Shares *order* can close right now without crossing into new exposure.
+
+    Magnitude shrinkage is **not** the test.  ``abs(current + signed) <
+    abs(current)`` is true for any reduction, including one that crosses zero:
+    a mandated ``SELL 100`` into a book a resting cover has already taken to
+    long 70 shrinks the magnitude while flipping to short 30.  That is a
+    fail-safe control opening exposure, which is exactly what Inv-11 forbids,
+    so the clamp is on the closable side only.
+
+    Slice-scoped authors (composer, deferral cap) may legitimately exceed
+    symbol-net: another strategy holding the opposite side can leave the net
+    flat while the mandated slice is still open, and flattening that slice
+    moves the net through zero on purpose (design §3.3).  So they take the
+    larger of the two bases rather than being clamped to net.
+    """
+    net = self._positions.get(order.symbol).quantity
+    closable = _closable_quantity(net, order.side)
+    if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS and (
+        self._strategy_positions is not None
+    ):
+        slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
+        closable = max(closable, _closable_quantity(slice_qty, order.side))
+    return min(order.quantity, closable)
