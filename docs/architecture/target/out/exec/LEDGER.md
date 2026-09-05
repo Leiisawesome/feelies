@@ -10688,4 +10688,350 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-34c.json, this ledger
                  entry.
 
+---
+
+## S-34d  2026-09-05T20:06:36+08:00
+  STEP:          S-34d
+  BASE:          95bff3da460c58750378acb19366a9bb804a99ac
+  RESULT SHA:    none (no branch cut, no edit made)
+  VERDICT:       blocked
+  CONFORMANCE:   not started. CLOSES nothing. G40 stays OPEN.
+                 Pre-flight only:
+                 S2: 1 passed / 1 xfailed (G40)
+                 S12: 2 passed
+                 S14: 2 passed
+                 test_five_import_tiers passed
+  TESTS:         capture pre-S-34d GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that set.
+                 After-state not run.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre-S-34d vs
+                 baseline_post-S-34c.json; 0 moved | MATCH.
+                 No implementation, so no post capture.
+  FILES:         3 declared, 0 touched. CLEAN. No exec/S-34d
+                 branch.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual unmeasured after; pre-flight
+                 modules 211, public_symbols 575, sloc 46074,
+                 n_edges 688, n_modules 173, cycles 1,
+                 alphaleak 0, orchestrator 3249 lines / 71
+                 methods (instance+staticmethod).
+  DETERMINISM:   pre-flight 148 passed; not re-run after.
+  VERIFY_STEP:   not run (no commits).
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 95bff3d on arch/exec, clean
+                 tree, tools/exec diff empty vs
+                 exec-tools-v1. Did not cut exec/S-34d.
+                 Live spans: _emit_ssr_suppression_alert
+                 orchestrator.py:3166-3179 (plan
+                 :3939-3952), call at :1819 (plan :1922);
+                 _portfolio_leg_edge_block :2394-2456 (plan
+                 :2497-2559); order_policy.py:348 MATCH.
+                 Neither body draws self._seq. SequenceGenerator
+                 constructions stay at orchestrator.py:354
+                 stream=orchestrator and :362 stream=hazard.
+                 Outside attribute-call sites: only
+                 order_policy.py:348
+                 self._portfolio_leg_edge_block. Tests bind
+                 neither name. Both sites are in FILES.
+                 S-34a/b/c defs absent from orchestrator.py.
+                 Destinations do not import orchestrator.
+                 Body 1 (_emit_ssr_suppression_alert) has no
+                 hole: AlertSeverity / OrderIntent from
+                 core.events and execution.intent; logger via
+                 __name__; self._publish_alert stays Wave D.
+                 Body 2 is the stop.
+  FINDINGS:      PLAN DEFECT -- _portfolio_leg_edge_block
+                 closes over _edge_clears_round_trip_cost,
+                 already a module-level function in
+                 order_policy.py (S-24). order_policy.py
+                 already imports order_admission. Landing
+                 the body on order_admission (named dest)
+                 and rebinding that name to its owner
+                 (S-34b pattern) adds
+                 order_admission -> order_policy, an SCC
+                 with the existing reverse edge. n_cycles
+                 would go 1 -> 2 (cli plus this). That is
+                 also engine 9 -> engine 10, a new G40
+                 direction; S-35 FILES names
+                 order_policy.py and not
+                 order_admission.py. Nested import still
+                 counts (measure.py AST-walks ImportFrom).
+                 Importing it from orchestrator is the
+                 S-34a/g SCC shape and is forbidden.
+                 The plan names logger via __name__ and
+                 BLOCK_* already this dest. It does not
+                 name _edge_clears_round_trip_cost. Two
+                 n_cycles=1 amendments, neither in the
+                 plan: (1) land body 2 on order_policy.py
+                 (already in FILES as the bind site;
+                 callee and caller already live there);
+                 (2) also move _edge_clears_round_trip_cost
+                 into order_admission so the existing
+                 import direction serves it -- extra body,
+                 not an Orchestrator method, not in
+                 DELETES. Stop-the-line: a decision the
+                 plan does not contain. Amend the plan;
+                 do not pick one here.
+                 verify_step.py would uppercase S-34d to
+                 S-34D. Frozen; unused this attempt.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; S-34c FINDING line cites go stale;
+                 four exempted baseline tests.
+  NEXT:          S-34d remains. Plan amendment required
+                 before a retry. Do not begin S-34e. Left
+                 uncommitted: baseline_pre-S-34d.json, this
+                 ledger entry.
+
+---
+
+## S-34d  2026-09-05T20:25:50+08:00
+  STEP:          S-34d
+  BASE:          95bff3da460c58750378acb19366a9bb804a99ac
+  RESULT SHA:    9610517d5a107e51affaef3525a8455bfcf7a579 (exec/S-34d; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. G40 stays
+                 OPEN. S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 test_five_import_tiers passed
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 kernel 390; docs 101
+                 mypy src/feelies: Success, 211 source files
+  TESTS:         capture pre-S-34d GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34d GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-34d vs post-S-34d and vs
+                 baseline_post-S-34c.json; 0 moved at either
+                 commit | MATCH.
+  FILES:         3 implementation paths declared, 3 touched
+                 (verify_step not runnable -- S-34D
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: orchestrator.py,
+                 order_admission.py (dest for body 1),
+                 order_policy.py (dest for body 2; also the
+                 bind site). verify_step file_list would
+                 also count FILES-prose tokens and dir_list
+                 infers src/feelies/execution/ against FILES
+                 "Do not declare" -- frozen; this tree
+                 edited only the two named dest files under
+                 that package.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 211 -> 211 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46074 -> 46079 (+5)
+                 n_edges 688 -> 689
+                 n_modules 173 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+                 orchestrator lines 3249 -> 3168 (-81)
+                 orchestrator methods 71 -> 69 (-2)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-34D --base 95bff3da` exits 1: S-34D not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 3 declared implementation / 3 touched
+                 CLEAN; PARITY 64/64 HASH+COUNT hold, 0 moved
+                 (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules 0 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is method names -- frozen. CLEAN,
+                 blast radius boundary -- Go recorded here.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 95bff3d on arch/exec. Cut
+                 exec/S-34d. RESULT HEAD 9610517, confirmed
+                 on Go.
+                 Two commits, one body each, the outside
+                 attribute-call last (neither body draws
+                 self._seq; the plan's "drawing bodies last"
+                 is that order): (1) a32c634
+                 _emit_ssr_suppression_alert (no sequence
+                 draw; retarget orchestrator.py:1819 from
+                 self._emit_ssr_suppression_alert to
+                 _emit_ssr_suppression_alert(self, ...)
+                 imported from order_admission), 3249/71 ->
+                 3235/70; (2) 9610517
+                 _portfolio_leg_edge_block (no sequence
+                 draw; retarget order_policy.py:348 from
+                 self._portfolio_leg_edge_block to the
+                 sibling _portfolio_leg_edge_block(self,
+                 ...); call now at :419 after the insert).
+                 Orchestrator delta this tree: 3249 -> 3168
+                 lines (-81); 71 -> 69 methods (-2). Both
+                 class methods left.
+                 Destinations: body 1
+                 src/feelies/execution/order_admission.py
+                 (exists; Engine 9 admission tokens). Body 2
+                 src/feelies/execution/order_policy.py
+                 (exists; Engine 9 cost gate, S-24 home of
+                 _edge_clears_round_trip_cost). Split from
+                 the block's single dest -- FINDING.
+                 n_cycles 1 -> 1. The one SCC is the
+                 pre-existing feelies.cli ->
+                 feelies.cli.main package-to-submodule
+                 edge. Nothing else. Neither dest imports
+                 kernel.orchestrator.
+                 No hash moved at either commit.
+                 Determinism 148 and S12 2 after every
+                 commit; 64/64 HASH/COUNT identical
+                 pre-S-34d vs post-S-34d and vs
+                 baseline_post-S-34c.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 SequenceGenerator constructions stayed on
+                 Orchestrator: HEAD :352
+                 stream=orchestrator and :360 stream=hazard.
+                 Neither dest constructs a generator.
+                 WAVE-D: no shim. Grep of src/ and tests/
+                 for self._emit_ssr_suppression_alert and
+                 self._portfolio_leg_edge_block is empty
+                 after commit 2. Orchestrator call at
+                 :1819 retargeted in commit 1. The only
+                 outside attribute-call
+                 (order_policy.py:348, plan pin MATCH;
+                 drifted to :419 after the body landed
+                 above the caller) retargeted in commit 2.
+                 Tests bound neither name.
+                 S-34g names: none on either body. Body 1
+                 takes AlertSeverity from core.events
+                 (OrderIntent already this dest) and
+                 self._publish_alert on the Orchestrator
+                 instance. Body 2 takes record_verdict from
+                 core.gate_registry, BLOCK_EDGE_* already
+                 defined on order_admission (imported the
+                 same direction order_policy already had),
+                 sibling _edge_clears_round_trip_cost, dest
+                 logging.getLogger(__name__). Instance
+                 attributes on self: Any (_publish_alert,
+                 _clock, _signal_min_edge_cost_ratio,
+                 _cost_model) stayed Wave D; they are not
+                 orchestrator-module names. Not an S-34g
+                 miss.
+                 no-any-return none; original -> None and
+                 -> str | None kept on self: Any (S-20).
+                 Live spans at pre-flight:
+                 _emit_ssr_suppression_alert
+                 orchestrator.py:3166-3179 (plan
+                 :3939-3952), call at :1819 (plan :1922);
+                 _portfolio_leg_edge_block :2394-2456 (plan
+                 :2497-2559). Stale pins after S-34a/b/c.
+                 Same two bodies. order_policy.py:348 MATCH.
+                 Declared NET DELTA: src modules 0, public
+                 symbols 0, branch points 0. Measured:
+                 modules 211 -> 211 (+0 MATCH),
+                 public_symbols 575 -> 575 (+0 MATCH),
+                 sloc 46074 -> 46079 (+5, undeclared),
+                 n_edges 688 -> 689 (order_policy now
+                 imports core.gate_registry), n_modules
+                 173 -> 173, cycles 1 -> 1 MATCH,
+                 alphaleak 0 -> 0.
+  FINDINGS:      The block named order_admission.py as the
+                 destination for both bodies. Body 2 closes
+                 over _edge_clears_round_trip_cost, already
+                 a module-level function in order_policy.py
+                 (S-24). order_policy already imports
+                 order_admission. Landing body 2 on
+                 order_admission and rebinding that name to
+                 its owner would add order_admission ->
+                 order_policy, an SCC, n_cycles 1 -> 2, and
+                 a new engine-9 -> engine-10 G40 direction
+                 (S-35 FILES names order_policy.py, not
+                 order_admission.py). Nested import still
+                 counts. Importing it from orchestrator is
+                 the S-34a/g SCC shape and is forbidden.
+                 The plan names logger via __name__ and
+                 BLOCK_* already this dest; it does not
+                 name _edge_clears_round_trip_cost. First
+                 pass blocked and recorded that hole. Go
+                 executed the n_cycles=1 split that stays
+                 inside FILES: body 1 on order_admission,
+                 body 2 on order_policy next to the callee
+                 and the caller. The other n_cycles=1
+                 amendment (also moving
+                 _edge_clears_round_trip_cost into
+                 order_admission) was not taken -- extra
+                 body, not an Orchestrator method, not in
+                 DELETES.
+                 order_admission.py's module docstring
+                 claims "Everything here is pure -- no
+                 clock, no bus, no position store, no cost
+                 model" (lines 28-32). Body 1
+                 _emit_ssr_suppression_alert now lives in
+                 that file and publishes via
+                 self._publish_alert (clock and bus on the
+                 Orchestrator instance). The docstring is
+                 wrong; the placement is right. The SSR
+                 forensic marker belongs next to BLOCK_SSR
+                 and admission_block_reason -- that is why
+                 Engine 9 owns it. Purity was only ever
+                 true of the boolean policy function, not
+                 of a Wave-D self: Any alert. The B4
+                 sentence ("The Inv-12 B4 edge/cost gate is
+                 not here") remains true of this file
+                 because body 2 landed on order_policy next
+                 to _edge_clears_round_trip_cost. Comment,
+                 not an attribute-call site. Does not need
+                 a numbered step: a one-sentence docstring
+                 repair that belonged in commit 1 (S-21:
+                 repair in the creating commit) and can
+                 ride the next edit of order_admission.py.
+                 None of S-34e, S-34f, or S-35 names that
+                 file. Left as-is.
+                 verify_step.py uppercases S-34d to S-34D.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; S-34c FINDING line cites go stale;
+                 four exempted baseline tests.
+  NEXT:          S-34e filter PORTFOLIO orders for pending
+                 conflicts (boundary). Not started. Do not
+                 begin S-34e from this tree. Left
+                 uncommitted: baseline_pre-S-34d.json,
+                 baseline_post-S-34d.json, this ledger
+                 entry.
+
 
