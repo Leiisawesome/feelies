@@ -3767,8 +3767,9 @@ PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
                  _BASELINE_CONFIG_HASH.
 DELETES:         nothing.
 NET DELTA:       0 modules, 0 public symbols, 0 branch points.
-ROLLBACK:        this step is a classification and a residual cleanup; revert per
-                 commit. It has no single revert because it has no single change.
+ROLLBACK:        nothing to revert -- this step records a classification and
+                 changes no behaviour. If it lands a document or a test, revert
+                 that commit.
 ```
 
 ---
