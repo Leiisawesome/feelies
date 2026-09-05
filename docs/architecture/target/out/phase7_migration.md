@@ -3742,42 +3742,31 @@ ROLLBACK:        revert per commit.
 ```
 STEP:            S-34
 CLOSES:          G40
-PROBLEM:         `Orchestrator` is **5,480 lines, 123 methods (22 public), 104
-                 `__init__` attributes**, and hosts responsibilities of engines
-                 1, 2, 3, 4, 6, 7, 8, 9, 10 and 12. CORE §J.1 god orchestrator;
-                 Inv-8. Phase 5 lists it separately from G11-G30 because
-                 "shrink the orchestrator" is distinct work from any single
-                 extraction.
+PROBLEM:         After wave D the Orchestrator is 4,079 lines, 83 methods,
+                 17 properties, 5 setters, 22 public names, 105 __init__
+                 self-attrs. Engine-owned bodies remain. The extraction
+                 DELETES claimed is already done. This step classifies
+                 the residual. It does not move it.
 FILES:           src/feelies/kernel/orchestrator.py
+                 Do not add a module. Do not include docs/prompts or the
+                 coverage-map tests unless a module is added.
 WHY THIS OWNER:  Phase 3 §B fixes what remains in Tier 1: **dispatch,
                  sequencing, the clock, the state-machine framework, the
                  exception taxonomy and the schema gate.** Everything else has
                  been claimed by an engine sheet, so this step has no
                  destinations left to decide — it is the residual after S-19
                  through S-30.
-REFACTOR PATH:   (1) confirm the count: after S-19 (-5), S-20 (-7), S-21 (-3),
-                 S-22 (-4), S-24 (-9), S-25 (-6), S-26 (-1), the projection is
-                 **123 -> 88 methods**, ~35 moved. (2) The 104 `__init__`
-                 attributes are the real measure and no step above reduces them
-                 directly — they fall out of S-12's constructor injection and
-                 S-15's reset declarations. Re-measure them here rather than
-                 assuming. (3) Whatever remains outside the six Tier-1
-                 responsibilities is either an undiscovered engine
-                 responsibility or genuine mechanism; **classify it, do not move
-                 it**, and open a step per finding.
+REFACTOR PATH:   (1) record the live counts. (2) classify each remaining
+                 method as kernel dispatch, engine work, or plumbing.
+                 (3) do not move. Open a later step per engine-owned
+                 body that names a destination in FILES.
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2, S12, S14, S17, all baselines, the oracle, and
                  `gapscan.json:orchestrator` re-run to confirm the counts
-PARITY IMPACT:   All baselines hold — by this point every behavioural change has
-                 already shipped and re-pinned in an earlier step. **If a
-                 baseline moves here, an earlier step was incomplete**, and this
-                 step's value is largely that it is the detector for exactly
-                 that.
-DELETES:         ~35 methods from the orchestrator; the god-orchestrator
-                 anti-pattern
-NET DELTA:       src modules 0, public symbols **-14** (22 public methods -> the
-                 8 the six Tier-1 responsibilities need; `INFERRED`),
-                 branch points 0. Orchestrator lines **-1,700 projected**.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH.
+DELETES:         nothing.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points.
 ROLLBACK:        this step is a classification and a residual cleanup; revert per
                  commit. It has no single revert because it has no single change.
 ```
