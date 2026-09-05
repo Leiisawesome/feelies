@@ -1522,7 +1522,7 @@ class Orchestrator:
         so the exception handler has a clean boundary.
         """
         cid = quote.correlation_id
-        t_wall_start = time.perf_counter_ns()
+        t_wall_start = self._clock.now_ns()
         self._tick_timings.clear()
         self._micro.bind_timing_sink(self._tick_timings)
 
@@ -2163,7 +2163,7 @@ class Orchestrator:
             trigger=trigger,
             correlation_id=correlation_id,
         )
-        latency_ns = time.perf_counter_ns() - t_wall_start_ns
+        latency_ns = self._clock.now_ns() - t_wall_start_ns
         now_ns = self._clock.now_ns()
 
         if self._paper_session_recorder is not None:
