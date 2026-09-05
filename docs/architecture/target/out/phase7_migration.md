@@ -3782,6 +3782,376 @@ ROLLBACK:        nothing to revert -- this step records a classification and
                  that commit.
 ```
 ```
+STEP:            S-34a
+CLOSES:          nothing. Moves the fill-accounting cluster. G40 stays OPEN:
+                 S2 is still xfail(strict), lint-imports is still 0 kept /
+                 2 broken, and this extraction does not cut the
+                 engine-to-engine imports S2 pins. S-34a through S-34o do
+                 not close it as a set or as a subset.
+PROBLEM:         Engine-7 fill accounting is still in the kernel, which
+                 S-21 left there (114 -> 114) for a later extraction:
+                 `_order_owns_one_slice:253-259` (7; already module-level),
+                 `_TradeJournalLeg:278-285` (8), `_trade_journal_legs:288-335`
+                 (48; already module-level), `_record_fill_attribution:3022-3049`
+                 (28), `_distribute_fill_to_strategies:3395-3491` (97),
+                 `_reconcile_fills:3068-3393` (326; `self._seq.next()` at
+                 :3111 and :3293, publishes PositionUpdate). Destination
+                 `portfolio/fill_reconciliation.py` does not exist
+                 (`fill_attribution.py` is ledger-only). Tests bind
+                 `orch._reconcile_fills` and `orch._distribute_fill_to_strategies`
+                 as attributes. WAVE-D forbids a shim. portfolio/ is a split
+                 package: a new module without `_FILE_OWNERS` fails
+                 test_prompt_coverage_map (S-21 finding).
+WHY THIS OWNER:  Engine 7 is the sole book of record. Fill-to-slice
+                 attribution, journal legs, and PositionUpdate publish are
+                 that book, not kernel dispatch.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/portfolio/fill_reconciliation.py
+                   (destination, new; named file, not the package)
+                 tests/kernel/test_orchestrator.py
+                   (orch._reconcile_fills :831, :969, :1015, :1598,
+                   :1650, :2316; orch._distribute_fill_to_strategies
+                   :1690, :1721)
+                 tests/kernel/test_fill_attribution_seam.py
+                   (orch._reconcile_fills :135, :234, :304, :322)
+                 tests/integration/test_paper_rth_safety.py
+                   (orchestrator._reconcile_fills :173)
+                 docs/prompts/README.md
+                 docs/prompts/audit_forensics.md
+                 tests/docs/test_prompt_coverage_map.py (_FILE_OWNERS)
+                 tests/docs/test_internal_links.py
+                 Do not declare src/feelies/portfolio/ as a directory
+                 scope.
+REFACTOR PATH:   one body per commit, module-level function `self: Any`,
+                 no shim; generators stay. Order: (1) `_order_owns_one_slice`
+                 — this commit creates the module and the `_FILE_OWNERS`
+                 repair (`portfolio/fill_reconciliation.py` ->
+                 `audit_forensics`, beside `fill_attribution.py`); (2)
+                 `_TradeJournalLeg`; (3) `_trade_journal_legs`; (4)
+                 `_record_fill_attribution`; (5)
+                 `_distribute_fill_to_strategies` (retarget its two test
+                 binds); (6) `_reconcile_fills` last (the drawing body;
+                 retarget its test binds). Keep both PositionUpdate draws
+                 on the orchestrator generator; do not add, drop, or
+                 reorder them (S-13). Do not construct a second
+                 SequenceGenerator.
+BLAST RADIUS:    boundary
+VALIDATED BY:    S2, S12, S14, S17, C2, C5, `position_pnl`,
+                 `forced_exit_attribution`, `halt_position_update`,
+                 test_fill_attribution_seam, the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Pure move. No Event field
+                 add/delete (S-17a fingerprint). The two PositionUpdate
+                 draws stay on the orchestrator stream, same order; a
+                 dropped, added, or re-homed draw is a STOP, not a fold.
+                 One body per commit names which body moved a hash if one
+                 did. A hash move on (1)–(5) is not a draw bug. A hash
+                 move on (6) is `_reconcile_fills`.
+DELETES:         `_record_fill_attribution`, `_distribute_fill_to_strategies`,
+                 `_reconcile_fills` from Orchestrator (3 methods);
+                 `_order_owns_one_slice`, `_TradeJournalLeg`,
+                 `_trade_journal_legs` from orchestrator.py (module-level)
+NET DELTA:       src modules +1, public symbols 0, branch points 0
+ROLLBACK:        revert per commit. Commit (1) removes the new module and
+                 the `_FILE_OWNERS` entry together. Independently
+                 revertible from b–f dest files; shares
+                 test_orchestrator.py with f and c.
+```
+
+```
+STEP:            S-34b
+CLOSES:          nothing. Moves the forced-exit clamp cluster. G40 stays OPEN:
+                 S2 is still xfail(strict), lint-imports is still 0 kept /
+                 2 broken, and this extraction does not cut the
+                 engine-to-engine imports S2 pins. S-34a through S-34o do
+                 not close it as a set or as a subset.
+PROBLEM:         Forced-exit clamp still sits on Orchestrator:
+                 `_closable_quantity:262-266` (5; already module-level),
+                 `_is_forced_market_exit:269-274` (6; already module-level),
+                 `_forced_exit_reduces:2610-2627` (18),
+                 `_forced_exit_closable_quantity:2629-2652` (24),
+                 `_has_pending_forced_exit_for_symbol:2654-2672` (19),
+                 `_emit_forced_exit_resized_alert:3862-3885` (24),
+                 `_emit_forced_exit_stood_down_alert:3887-3910` (24),
+                 `_emit_forced_exit_supersedes_pending_alert:3912-3937`
+                 (26), `_force_flatten_symbol_on_degrade:3997-4051` (55;
+                 `self._seq.next()` at :4010, publishes OrderRequest).
+                 Destination `risk/forced_exit_clamp.py` does not exist.
+                 `data_integrity.py:404` and `:425` call
+                 `self._force_flatten_symbol_on_degrade` (Wave D extract).
+                 WAVE-D forbids a shim. A new module requires the S-21
+                 `_FILE_OWNERS` trio even though risk/ has a package
+                 default owner.
+WHY THIS OWNER:  Engine 8 owns the veto and it is monotone: a forced exit
+                 may shrink, never grow. Clamp, stand-down, and
+                 degrade-flatten are that veto, not kernel dispatch.
+                 `stop_exit.py` is a different controller; do not fold
+                 this into it.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/risk/forced_exit_clamp.py
+                   (destination, new; named file, not the package)
+                 src/feelies/ingestion/data_integrity.py
+                   (:404, :425 bind self._force_flatten_symbol_on_degrade)
+                 docs/prompts/README.md
+                 docs/prompts/audit_risk_engine.md
+                 tests/docs/test_prompt_coverage_map.py (_FILE_OWNERS)
+                 tests/docs/test_internal_links.py
+                 Do not declare src/feelies/risk/ as a directory scope.
+REFACTOR PATH:   one body per commit, module-level function `self: Any`,
+                 no shim; generators stay. Order: (1) `_closable_quantity`
+                 — this commit creates the module and the `_FILE_OWNERS`
+                 repair (`risk/forced_exit_clamp.py` ->
+                 `audit_risk_engine`); (2) `_is_forced_market_exit`;
+                 (3) `_forced_exit_reduces`; (4)
+                 `_has_pending_forced_exit_for_symbol`; (5)
+                 `_forced_exit_closable_quantity`; (6)
+                 `_emit_forced_exit_resized_alert`; (7)
+                 `_emit_forced_exit_stood_down_alert`; (8)
+                 `_emit_forced_exit_supersedes_pending_alert`; (9)
+                 `_force_flatten_symbol_on_degrade` last (the drawing
+                 body; retarget data_integrity.py:404 and :425). Alerts
+                 still publish via `self._publish_alert`. Keep the :4010
+                 draw on the orchestrator generator; do not add, drop, or
+                 reorder it (S-13). Do not construct a second
+                 SequenceGenerator. Land after S-34a so two new-module
+                 `_FILE_OWNERS` repairs are not concurrent with the fill
+                 draws.
+BLAST RADIUS:    boundary
+VALIDATED BY:    S2, S12, S14, S17, X11, `forced_exit_attribution`,
+                 `level4_hazard_exit_order`, `decoupled_risk_flatten_order`,
+                 the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Pure move. No Event field
+                 add/delete. The flatten draw stays on the orchestrator
+                 stream, same order; a dropped, added, or re-homed draw is
+                 a STOP, not a fold. One body per commit names which body
+                 moved a hash if one did. A hash move on (1)–(8) is not a
+                 draw bug. A hash move on (9) is
+                 `_force_flatten_symbol_on_degrade`.
+DELETES:         `_forced_exit_reduces`, `_forced_exit_closable_quantity`,
+                 `_has_pending_forced_exit_for_symbol`, the three forced-exit
+                 alerts, `_force_flatten_symbol_on_degrade` from
+                 Orchestrator (7 methods); `_closable_quantity`,
+                 `_is_forced_market_exit` from orchestrator.py
+                 (module-level)
+NET DELTA:       src modules +1, public symbols 0, branch points 0
+ROLLBACK:        revert per commit. Commit (1) removes the new module and
+                 the `_FILE_OWNERS` entry together. Independently
+                 revertible from a/c–f dest files until o also edits
+                 data_integrity.py.
+```
+
+```
+STEP:            S-34c
+CLOSES:          nothing. Moves `_escalate_unfilled_working_exits` and
+                 `_submit_working_exit_fallback`. G40 stays OPEN: S2 is still
+                 xfail(strict), lint-imports is still 0 kept / 2 broken, and
+                 this extraction does not cut the engine-to-engine imports
+                 S2 pins. S-34a through S-34o do not close it as a set or as a
+                 subset.
+PROBLEM:         Two engine-10 working-exit bodies remain on Orchestrator:
+                 `_escalate_unfilled_working_exits:2920-2950` (31 lines; no
+                 sequence draw) and `_submit_working_exit_fallback:2952-2991`
+                 (40 lines; `self._seq.next()` at :2965, publishes
+                 OrderRequest). S-25 named escalate as a STOP sibling not
+                 extracted. order_lifecycle.py:269 already calls
+                 `self._escalate_unfilled_working_exits` (Wave D extract).
+                 Four tests bind `orch._escalate_unfilled_working_exits`
+                 (`test_orchestrator.py:2949, :2962, :2971, :2980`). WAVE-D
+                 forbids a shim. Fallback has no outside attribute-call
+                 except through escalate.
+WHY THIS OWNER:  Engine 10 owns order state and the fact that an unfilled
+                 working exit becomes a MARKET residual. Two modules
+                 advancing one guarantee is how a fallback is dropped.
+                 Destination `order_lifecycle.py` exists (S-25).
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_lifecycle.py
+                   (destination, exists; :269 binds
+                   self._escalate_unfilled_working_exits)
+                 tests/kernel/test_orchestrator.py
+                   (:2949, :2962, :2971, :2980 bind
+                   orch._escalate_unfilled_working_exits)
+                 Do not add a module. Do not include docs/prompts or the
+                 coverage-map tests. Do not declare src/feelies/execution/
+                 as a directory scope.
+REFACTOR PATH:   one body per commit, module-level function `self: Any`,
+                 no shim; generators stay. Order: (1)
+                 `_escalate_unfilled_working_exits` (retarget
+                 order_lifecycle.py:269 and the four tests; it may still
+                 call `self._submit_working_exit_fallback` on Orchestrator);
+                 (2) `_submit_working_exit_fallback` last (the drawing
+                 body). Keep the :2965 draw on the orchestrator generator;
+                 do not add, drop, or reorder it (S-13). Do not construct
+                 a second SequenceGenerator. Land after S-34e.
+BLAST RADIUS:    boundary
+VALIDATED BY:    S2, S12, S14, S17, H1, H4, `market_fill_acks`, `halt_ack`,
+                 the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Pure move. No Event field
+                 add/delete. The fallback draw stays on the orchestrator
+                 stream, same order; a dropped, added, or re-homed draw is
+                 a STOP, not a fold. If a hash moves on commit (1), it is
+                 escalate, not fallback. If it moves on commit (2), it is
+                 fallback (draw or OrderRequest).
+DELETES:         `_escalate_unfilled_working_exits` and
+                 `_submit_working_exit_fallback` from Orchestrator (2 methods)
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert per commit. Not independently revertible from
+                 S-34e once e has edited order_lifecycle.py. Commit (2) is
+                 independently revertible from commit (1) until a later
+                 letter (o's ack-drop) edits the same dest.
+```
+
+```
+STEP:            S-34d
+CLOSES:          nothing. Moves `_emit_ssr_suppression_alert` and
+                 `_portfolio_leg_edge_block`. G40 stays OPEN: S2 is still
+                 xfail(strict), lint-imports is still 0 kept / 2 broken, and
+                 this extraction does not cut the engine-to-engine imports
+                 S2 pins. S-34a through S-34o do not close it as a set or as a
+                 subset.
+PROBLEM:         Two engine-9 admission bodies remain on Orchestrator:
+                 `_portfolio_leg_edge_block:2497-2559` (63 lines; Inv-12 B4
+                 on a PORTFOLIO leg) and `_emit_ssr_suppression_alert:3939-3952`
+                 (14 lines; forensic marker for BLOCK_SSR). S-24 named the
+                 edge-block as a sibling the nine were not closed without.
+                 Neither body calls `self._seq.next()`. The edge-block is
+                 invoked as `self._portfolio_leg_edge_block` from
+                 order_policy.py:348 (a Wave D extract). WAVE-D forbids a
+                 shim; that call AttributeError after the move unless
+                 order_policy.py is in FILES. The SSR alert is called only
+                 from orchestrator.py:1922.
+WHY THIS OWNER:  Engine 9 owns the gate between "engine 8 permits X" and
+                 "engine 10 has an order". `order_admission.py` already owns
+                 `admission_block_reason` and `BLOCK_SSR`. A PORTFOLIO-leg
+                 cost bar and the SSR forensic marker are that gate, not
+                 kernel dispatch.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_admission.py (destination, exists)
+                 src/feelies/execution/order_policy.py
+                   (:348 binds self._portfolio_leg_edge_block)
+                 Do not add a module. Do not include docs/prompts or the
+                 coverage-map tests. Do not declare src/feelies/execution/
+                 as a directory scope.
+REFACTOR PATH:   one body per commit, module-level function `self: Any`,
+                 no shim; generators stay. Order: (1) `_emit_ssr_suppression_alert`
+                 (orchestrator call only; still publishes via
+                 `self._publish_alert`, kernel draw stays); (2)
+                 `_portfolio_leg_edge_block` last (the outside attribute-call).
+                 Neither draws `self._seq`. Retarget order_policy.py:348 in
+                 commit (2). Do not inline `_publish_alert` onto a new
+                 generator.
+BLAST RADIUS:    boundary
+VALIDATED BY:    S2, S12, S14, S17, C4, X1, `level4_portfolio_order`,
+                 the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Pure move. No Event field
+                 add/delete. No `self._seq.next()` in either body. A moved
+                 hash means admit/refuse or alert publish order changed, or
+                 `_publish_alert` was re-homed onto a new generator. STOP,
+                 not a fold.
+DELETES:         `_emit_ssr_suppression_alert` and
+                 `_portfolio_leg_edge_block` from Orchestrator (2 methods)
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert per commit. Independently revertible until a later
+                 S-34* also edits order_policy.py (h, j, k).
+```
+
+```
+STEP:            S-34e
+CLOSES:          nothing. Moves `_filter_portfolio_orders_for_pending_conflicts`.
+                 G40 stays OPEN: S2 is still xfail(strict), lint-imports is
+                 still 0 kept / 2 broken, and this extraction does not cut
+                 the engine-to-engine imports S2 pins. S-34a through S-34o
+                 do not close it as a set or as a subset.
+PROBLEM:         `_filter_portfolio_orders_for_pending_conflicts:2561-2593`
+                 (33 lines) still sits on Orchestrator. It drops PORTFOLIO
+                 legs that conflict with a live working order and may
+                 `_publish_alert`; it does not call `self._seq.next()`.
+                 tests/conformance/test_pathological_refusal.py:286 binds
+                 `orch._filter_portfolio_orders_for_pending_conflicts`.
+                 WAVE-D forbids a shim. Destination is the same module S-34c
+                 will use; this body has no draw, so it goes first on that
+                 file.
+WHY THIS OWNER:  Engine 10 owns the order state machine and what is live in
+                 it. A PORTFOLIO leg refused because a working order is
+                 already on the book is that machine, not kernel dispatch.
+                 S-25 extracted the SM into `order_lifecycle.py` and left
+                 this filter behind.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_lifecycle.py (destination, exists)
+                 tests/conformance/test_pathological_refusal.py
+                   (:286 binds orch._filter_portfolio_orders_for_pending_conflicts)
+                 Do not add a module. Do not include docs/prompts or the
+                 coverage-map tests. Do not declare src/feelies/execution/
+                 as a directory scope.
+REFACTOR PATH:   one body, one commit. Copy onto a module-level function
+                 `self: Any`, no shim; generators stay. Call sites at
+                 orchestrator.py:1361 and :1432 retarget. Retarget
+                 test_pathological_refusal.py:286 in the same commit.
+                 Keep `_publish_alert` on the kernel; do not add a
+                 generator. Land before S-34c (drawing body last on this
+                 dest).
+BLAST RADIUS:    boundary
+VALIDATED BY:    S2, S12, S14, S17, H1, the pathological-refusal bind,
+                 `level4_portfolio_order`, the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Pure move. No Event field
+                 add/delete. No `self._seq.next()` in this body. A moved
+                 hash means a leg was kept or dropped that was not, or
+                 `_publish_alert` was re-homed onto a new generator. STOP,
+                 not a fold.
+DELETES:         `_filter_portfolio_orders_for_pending_conflicts` from
+                 Orchestrator (1 method)
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Not independently revertible from
+                 S-34c (or o's ack-drop) once those have also edited
+                 order_lifecycle.py.
+```
+
+```
+STEP:            S-34f
+CLOSES:          nothing. Moves `_record_size_shadow`. G40 stays OPEN: S2 is
+                 still xfail(strict), lint-imports is still 0 kept / 2 broken,
+                 and this extraction does not cut the engine-to-engine imports
+                 S2 pins. S-34a through S-34o do not close it as a set or as a
+                 subset.
+PROBLEM:         `_record_size_shadow:2295-2350` (56 lines) still sits on
+                 Orchestrator. It is the edge/vol/inventory-tilt measurement
+                 for the edge-weighted sizer: no order, bus, journal, or
+                 sequence draw. Five tests bind it as an Orchestrator
+                 attribute. WAVE-D forbids a shim; those tests AttributeError
+                 after the move unless they are in FILES.
+WHY THIS OWNER:  Engine 8 owns the sizer. The shadow is that sizer's
+                 measurement stream. The destination module already exists
+                 (S-22).
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/risk/edge_weighted_sizer.py (destination, exists)
+                 tests/kernel/test_orchestrator.py
+                   (:3200, :3212, :3219, :3225, :3231 bind
+                   orch._record_size_shadow)
+                 Do not add a module. Do not include docs/prompts or the
+                 coverage-map tests. Do not declare src/feelies/risk/ as a
+                 directory scope.
+REFACTOR PATH:   one body, one commit. Copy onto a module-level function
+                 `self: Any`, no shim; generators stay. Call at
+                 orchestrator.py:1759 retargets. Retarget the five test
+                 binds in the same commit. No drawing body in this step.
+BLAST RADIUS:    boundary
+VALIDATED BY:    S2, S12, S14, S17, the size-shadow tests in
+                 test_orchestrator.py, the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Pure move. No Event field
+                 add/delete. No sequence draw. The body is measurement-only;
+                 a moved hash means the copy was not pure (a side effect
+                 reached a hashed payload), not a draw bug. STOP, not a fold.
+DELETES:         `_record_size_shadow` from Orchestrator (1 method)
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible until a later
+                 S-34* also edits test_orchestrator.py (a, c).
+```
+
+```
 STEP:            S-35
 CLOSES:          G40
 PROBLEM:         S2 test_twelve_engine_independence is still
