@@ -146,10 +146,6 @@ from feelies.ingestion.data_integrity import (
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
-from feelies.kernel.forced_exit_reasons import (
-    _RISK_FORCED_EXIT_REASONS,
-    _SLICE_SCOPED_FORCED_EXIT_REASONS,
-)
 from feelies.kernel.macro import (
     TRADING_MODES,
     MacroState,
@@ -178,6 +174,14 @@ from feelies.risk.engine import (
 )
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
+from feelies.risk.forced_exit_clamp import (
+    _emit_forced_exit_resized_alert,
+    _emit_forced_exit_stood_down_alert,
+    _emit_forced_exit_supersedes_pending_alert,
+    _forced_exit_closable_quantity,
+    _forced_exit_reduces,
+    _has_pending_forced_exit_for_symbol,
+)
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -226,21 +230,6 @@ from feelies.portfolio.fill_reconciliation import (  # noqa: E402
     _record_fill_attribution,
     _reconcile_fills,
 )
-
-
-def _closable_quantity(position_qty: int, side: Side) -> int:
-    """Return shares that side can close without crossing through zero."""
-    if side is Side.SELL:
-        return max(position_qty, 0)
-    return max(-position_qty, 0)
-
-
-def _is_forced_market_exit(order: OrderRequest) -> bool:
-    """Identify controller-authored aggressive exits routed through the risk bridge."""
-    return (
-        order.source_layer == HAZARD_EXIT_SOURCE_LAYER
-        and order.reason in _RISK_FORCED_EXIT_REASONS
-    )
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -2515,70 +2504,6 @@ class Orchestrator:
             for sm, side, order in self._active_orders.values()
         )
 
-    def _forced_exit_reduces(self, order: OrderRequest) -> bool:
-        """Whether *order* shrinks the live book it claims to close.
-
-        A composer or deferral-cap exit is slice-scoped: another strategy holding
-        the opposite side can leave symbol-net flat while the mandated slice is
-        still open.  Treat the order as reducing when it shrinks *either* the
-        symbol-net book or its own strategy slice, so a slice flatten is never
-        stranded at the non-reducing REJECT branch.  Symbol-net is checked first,
-        so a true symbol-net hazard exit (which always reduces net) never needs the
-        slice fallback — this keeps the shared ``HARD_EXIT_AGE`` token correct for
-        both authors without attributing it.
-
-        Re-evaluated after any resting-order cancel, because the cancel reconciles
-        whatever acks were already queued for those orders — including fills — so
-        the book can move between the controller sizing the exit and the exit
-        reaching the router.
-        """
-        return self._forced_exit_closable_quantity(order) > 0
-
-    def _forced_exit_closable_quantity(self, order: OrderRequest) -> int:
-        """Shares *order* can close right now without crossing into new exposure.
-
-        Magnitude shrinkage is **not** the test.  ``abs(current + signed) <
-        abs(current)`` is true for any reduction, including one that crosses zero:
-        a mandated ``SELL 100`` into a book a resting cover has already taken to
-        long 70 shrinks the magnitude while flipping to short 30.  That is a
-        fail-safe control opening exposure, which is exactly what Inv-11 forbids,
-        so the clamp is on the closable side only.
-
-        Slice-scoped authors (composer, deferral cap) may legitimately exceed
-        symbol-net: another strategy holding the opposite side can leave the net
-        flat while the mandated slice is still open, and flattening that slice
-        moves the net through zero on purpose (design §3.3).  So they take the
-        larger of the two bases rather than being clamped to net.
-        """
-        net = self._positions.get(order.symbol).quantity
-        closable = _closable_quantity(net, order.side)
-        if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS and (
-            self._strategy_positions is not None
-        ):
-            slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
-            closable = max(closable, _closable_quantity(slice_qty, order.side))
-        return min(order.quantity, closable)
-
-    def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
-        """True if a forced MARKET exit is already in flight for *symbol*.
-
-        Distinguishes an aggressive exit already crossing the book from a
-        merely-resting passive cover.  The resting-order guard cancels stale
-        passive orders to let a forced MARKET exit through (Inv-11) but must
-        not stack a second aggressive leg on top of one already pending —
-        that would overshoot the position.
-
-        Covers both mandated-exit authors — the kernel's synthetic stop /
-        session-flat and the RISK-layer controllers routed through
-        :meth:`_on_bus_derisk_requirement` — so neither can stack on the other.
-        """
-        return any(
-            order.symbol == symbol
-            and sm.state not in _TERMINAL_ORDER_STATES
-            and _is_forced_market_exit(order)
-            for sm, _, order in self._active_orders.values()
-        )
-
     def _cancel_resting_for_symbol(self, symbol: str, cid: str) -> None:
         """Cancel all non-terminal resting orders for a symbol.
 
@@ -3163,7 +3088,7 @@ class Orchestrator:
         hv = self._risk_engine.check_order(order, self._positions)
         # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(order.symbol).quantity
-        order_reduces = self._forced_exit_reduces(order)
+        order_reduces = _forced_exit_reduces(self, order)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
@@ -3192,7 +3117,7 @@ class Orchestrator:
         # a resting order without replacing it: cancelling a resting *cover* and
         # then bailing would leave the book more exposed, not less (Inv-11).
         if self._has_pending_order_for_symbol(order.symbol):
-            if self._has_pending_forced_exit_for_symbol(order.symbol):
+            if _has_pending_forced_exit_for_symbol(self, order.symbol):
                 # A mandated exit is already crossing; a second aggressive leg
                 # would overshoot the position it is closing.
                 logger.info(
@@ -3204,16 +3129,16 @@ class Orchestrator:
                     order.strategy_id,
                 )
                 return
-            self._emit_forced_exit_supersedes_pending_alert(order, order.correlation_id)
+            _emit_forced_exit_supersedes_pending_alert(self, order, order.correlation_id)
             self._cancel_resting_for_symbol(order.symbol, order.correlation_id)
 
         # Re-clamp after cancellations because queued fills may have moved the book.
-        closable = self._forced_exit_closable_quantity(order)
+        closable = _forced_exit_closable_quantity(self, order)
         if closable <= 0:
-            self._emit_forced_exit_stood_down_alert(order)
+            _emit_forced_exit_stood_down_alert(self, order)
             return
         if closable < order.quantity:
-            self._emit_forced_exit_resized_alert(order, closable)
+            _emit_forced_exit_resized_alert(self, order, closable)
             # Preserve announced size on the trade without republishing bus data.
             self._forced_exit_announced_quantity[order.order_id] = order.quantity
             order = replace(order, quantity=closable)
@@ -3311,83 +3236,6 @@ class Orchestrator:
             context={"symbol": intent.symbol, "intent": intent.intent.name},
         )
 
-    def _emit_forced_exit_resized_alert(self, order: OrderRequest, closable: int) -> None:
-        """Publish a marker when a mandated exit is clamped to the settled book.
-
-        The resting-order cancel settled a *partial* fill, so the exit's original
-        quantity would now cross zero into opposite exposure.  It is resized to
-        the residual rather than stood down, but an operator needs to see that the
-        submitted size differs from what the controller authored (Inv-13).
-        """
-        self._publish_alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=order.correlation_id,
-            severity=AlertSeverity.WARNING,
-            alert_name="forced_exit_resized_after_cancel",
-            message=f"Forced exit {order.reason!r} on {order.symbol!r} resized {order.quantity} -> {closable}: cancelling resting orders settled a partial fill, and the original quantity would have crossed zero into opposite exposure (strategy_id={order.strategy_id!r}).",
-            context={
-                "symbol": order.symbol,
-                "strategy_id": order.strategy_id,
-                "order_id": order.order_id,
-                "reason": order.reason,
-                "original_quantity": order.quantity,
-                "submitted_quantity": closable,
-                "position_quantity": self._positions.get(order.symbol).quantity,
-            },
-        )
-
-    def _emit_forced_exit_stood_down_alert(self, order: OrderRequest) -> None:
-        """Publish a marker when a mandated exit stands down post-cancel.
-
-        The resting-order cancel settled a fill that already closed the book, so
-        submitting the exit's now-stale quantity would open the opposite side.
-        Standing down is the fail-safe branch (Inv-11), but it is *not* routine —
-        an operator needs to see that a mandated exit did not reach the router,
-        and forensics needs it to explain the missing order (Inv-13).
-        """
-        self._publish_alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=order.correlation_id,
-            severity=AlertSeverity.WARNING,
-            alert_name="forced_exit_stood_down_after_cancel",
-            message=f"Forced exit {order.reason!r} on {order.symbol!r} stood down: cancelling resting orders settled a fill that already closed the book, so the exit's quantity ({order.quantity}) no longer reduces exposure (strategy_id={order.strategy_id!r}).",
-            context={
-                "symbol": order.symbol,
-                "strategy_id": order.strategy_id,
-                "order_id": order.order_id,
-                "reason": order.reason,
-                "order_quantity": order.quantity,
-                "position_quantity": self._positions.get(order.symbol).quantity,
-            },
-        )
-
-    def _emit_forced_exit_supersedes_pending_alert(
-        self,
-        order: OrderRequest,
-        correlation_id: str,
-    ) -> None:
-        """Publish a forensic marker when a forced MARKET exit supersedes a
-        stale resting order.
-
-        Operator visibility (Inv-11): a hard-stop / session-flat MARKET exit
-        cancelled a pending passive order for the symbol so the aggressive
-        close could cross immediately.  Distinct from a duplicate-exit
-        suppression so post-trade forensics can attribute the cancel-and-cross
-        to the safety control rather than to alpha behaviour.
-        """
-        self._publish_alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            severity=AlertSeverity.WARNING,
-            alert_name="forced_exit_supersedes_pending_order",
-            message=f"Forced MARKET exit {order.strategy_id!r} on {order.symbol!r}: cancelling resting order(s) so the aggressive close can cross immediately (Inv-11).",
-            context={
-                "symbol": order.symbol,
-                "strategy_id": order.strategy_id,
-                "order_id": order.order_id,
-            },
-        )
-
     def _emit_ssr_suppression_alert(
         self,
         intent: OrderIntent,
@@ -3444,63 +3292,6 @@ class Orchestrator:
             message=f"{context['event_type']} for {event.symbol!r} rejected by data-health gate ({data_health_reason})",
             context=context,
         )
-
-
-    def _force_flatten_symbol_on_degrade(
-        self,
-        symbol: str,
-        correlation_id: str,
-        *,
-        reason: str,
-    ) -> None:
-        """Submit a market exit for one symbol during data-health degradation."""
-        pos = self._positions.get(symbol)
-        if pos.quantity == 0:
-            return
-        side = Side.SELL if pos.quantity > 0 else Side.BUY
-        qty = abs(pos.quantity)
-        seq = self._seq.next()
-        order_id = derive_order_id(f"degrade_flatten:{reason}:{symbol}:{seq}")
-        order = OrderRequest(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=seq,
-            order_id=order_id,
-            symbol=symbol,
-            side=side,
-            order_type=OrderType.MARKET,
-            quantity=qty,
-            strategy_id="degrade_flatten",
-            reason=reason,
-        )
-        try:
-            self._track_order(order_id, side, order)
-            _transition_order(self,
-                order_id,
-                OrderState.SUBMITTED,
-                f"degrade_flatten:{reason}",
-                correlation_id=correlation_id,
-            )
-            self._submit_to_router(order, triggering_quote=self._in_flight_quote)
-            self._bus.publish(order)
-            self._settle_router_acks(correlation_id, expected_order_ids={order_id})
-        except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
-            logger.exception(
-                "Force-flatten on %s failed for symbol=%s (qty=%d, side=%s); "
-                "position remains open and will require manual intervention.",
-                reason,
-                symbol,
-                qty,
-                side.name,
-            )
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=correlation_id,
-                severity=AlertSeverity.CRITICAL,
-                alert_name="degrade_flatten_failed",
-                message=f"Force-flatten on {reason} failed for symbol={symbol!r} (qty={qty}, side={side.name}). Position remains open.",
-                context={"symbol": symbol, "reason": reason, "exception": repr(exc)},
-            )
 
 
     # ── Feature snapshot management ─────────────────────────────────

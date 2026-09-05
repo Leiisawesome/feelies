@@ -18,6 +18,7 @@ from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine
 from feelies.kernel.exception_taxonomy import KernelFault
 from feelies.kernel.macro import MacroState
+from feelies.risk.forced_exit_clamp import _force_flatten_symbol_on_degrade
 
 logger = logging.getLogger(__name__)
 
@@ -401,7 +402,8 @@ def _data_health_blocks_trading(self: Any, symbol: str, correlation_id: str) -> 
         # Force-flatten the affected symbol before transitioning macro.
         # CORRUPTED is terminal — leaving an open position to mark at
         # the last-known quote would carry stale risk through DEGRADED.
-        self._force_flatten_symbol_on_degrade(
+        _force_flatten_symbol_on_degrade(
+            self,
             symbol,
             correlation_id,
             reason="DATA_CORRUPTED",
@@ -422,7 +424,8 @@ def _data_health_blocks_trading(self: Any, symbol: str, correlation_id: str) -> 
         # transition is sticky (requires explicit operator command).
         # Unwind the affected symbol at the last-known mark so the
         # book doesn't carry stale exposure through the gap window.
-        self._force_flatten_symbol_on_degrade(
+        _force_flatten_symbol_on_degrade(
+            self,
             symbol,
             correlation_id,
             reason="DATA_GAP_DETECTED",
