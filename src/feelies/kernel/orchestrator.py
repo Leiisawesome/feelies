@@ -2750,38 +2750,6 @@ class Orchestrator:
     ) -> None:
         self._backend.order_router.submit(order, triggering_quote=triggering_quote)
 
-    def _escalate_unfilled_working_exits(
-        self,
-        acks: list[OrderAck],
-        correlation_id: str,
-    ) -> None:
-        """Send unfilled residuals from terminated passive reductions to market."""
-        if not self._working_exit_fallback:
-            return
-        for ack in acks:
-            if ack.order_id not in self._working_exit_fallback:
-                continue
-            if ack.status not in (
-                OrderAckStatus.FILLED,
-                OrderAckStatus.CANCELLED,
-                OrderAckStatus.EXPIRED,
-            ):
-                continue
-            symbol, side, original_qty = self._working_exit_fallback.pop(ack.order_id)
-            filled = self._order_filled_qty.pop(ack.order_id, 0)
-            if ack.status is OrderAckStatus.FILLED:
-                continue  # fully worked passively — no fallback needed
-            residual = original_qty - filled
-            if residual < 1:
-                continue
-            self._submit_working_exit_fallback(
-                symbol,
-                side,
-                residual,
-                ack.order_id,
-                correlation_id,
-            )
-
     def _submit_working_exit_fallback(
         self,
         symbol: str,
