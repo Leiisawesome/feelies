@@ -76,6 +76,7 @@ from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.engine import _compute_target_quantity, _emergency_flatten_all
+from feelies.risk.edge_weighted_sizer import _record_size_shadow
 from feelies.risk.escalation import RiskLevel
 from feelies.services.regime_engine import _calibrate_regime_engine
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -3214,7 +3215,7 @@ class TestSizeShadow:
         sink: list = []
         orch = self._orch_with_shadow(sink, enabled=True)
         q = _make_quote()  # mid 150 → base 150000*10%/150 = 100
-        orch._record_size_shadow(self._signal(q, edge_bps=40.0), q)
+        _record_size_shadow(orch, self._signal(q, edge_bps=40.0), q)
         assert len(sink) == 1
         d = sink[0]
         assert d.base_target_qty == 100
@@ -3226,26 +3227,26 @@ class TestSizeShadow:
         sink: list = []
         orch = self._orch_with_shadow(sink, enabled=True)
         q = _make_quote()
-        orch._record_size_shadow(self._signal(q, edge_bps=20.0), q)
+        _record_size_shadow(orch, self._signal(q, edge_bps=20.0), q)
         assert sink == []  # factor 1.0 → tilted == base
 
     def test_disabled_factors_noop(self) -> None:
         sink: list = []
         orch = self._orch_with_shadow(sink, enabled=False)
         q = _make_quote()
-        orch._record_size_shadow(self._signal(q, edge_bps=40.0), q)
+        _record_size_shadow(orch, self._signal(q, edge_bps=40.0), q)
         assert sink == []  # any_enabled False → no-op
 
     def test_no_sink_noop(self) -> None:
         orch = self._orch_with_shadow(None, enabled=True)
         q = _make_quote()
-        orch._record_size_shadow(self._signal(q, edge_bps=40.0), q)  # no raise
+        _record_size_shadow(orch, self._signal(q, edge_bps=40.0), q)  # no raise
 
     def test_synthetic_signal_skipped(self) -> None:
         sink: list = []
         orch = self._orch_with_shadow(sink, enabled=True)
         q = _make_quote()
-        orch._record_size_shadow(self._signal(q, edge_bps=40.0, strategy_id="__stop_exit__"), q)
+        _record_size_shadow(orch, self._signal(q, edge_bps=40.0, strategy_id="__stop_exit__"), q)
         assert sink == []
 
 

@@ -183,7 +183,7 @@ from feelies.risk.forced_exit_clamp import (
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
-    apply_tilt,
+    _record_size_shadow,
 )
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.sensors.horizon_scheduler import HorizonScheduler
@@ -1651,7 +1651,7 @@ class Orchestrator:
 
         # ── Position sizing: compute target quantity from risk budget ──
         target_qty = _compute_target_quantity(self, signal, quote)
-        self._record_size_shadow(signal, quote)
+        _record_size_shadow(self, signal, quote)
 
         # ── Decision: Signal × Position → OrderIntent ──────────────────
         # Use the planner when driving; otherwise translate the signal directly.
@@ -2185,63 +2185,6 @@ class Orchestrator:
             enabled=self._session_flatten_enabled,
             seconds_before_close=self._session_flatten_seconds_before_close,
             at_ns=at_ns,
-        )
-
-    def _record_size_shadow(self, signal: Signal, quote: NBBOQuote) -> None:
-        """Compare the edge/vol/inventory-tilted target with the base.
-
-        For each real sized signal, compute the tilted target and append a
-        :class:`SizeDivergence` when it differs from the live single-factor
-        base target. It runs before the risk engine and has no order, bus,
-        journal, or parity effects. It is a no-op unless a sink is wired and at
-        least one tilt factor is enabled.
-        """
-        sizer = self._size_shadow_sizer
-        sink = self._size_shadow_sink
-        if (
-            sizer is None
-            or sink is None
-            or not sizer.config.any_enabled
-            or self._alpha_registry is None
-            or signal.strategy_id.startswith("__")
-        ):
-            return
-        try:
-            alpha = self._alpha_registry.get(signal.strategy_id)
-        except KeyError:
-            return
-        risk_budget = alpha.manifest.risk_budget
-        mid_price = (quote.bid + quote.ask) / Decimal(2)
-        if mid_price <= 0:
-            return
-
-        base_target = sizer.base.compute_target_quantity(
-            signal=signal,
-            risk_budget=risk_budget,
-            symbol_price=mid_price,
-            account_equity=self._account_equity,
-        )
-        if base_target <= 0:
-            return
-        bd = sizer.tilt_breakdown(signal, risk_budget)
-        tilted = apply_tilt(base_target, bd.combined, risk_budget.max_position_per_symbol)
-        if tilted == base_target:
-            return
-        sink.append(
-            SizeDivergence(
-                symbol=signal.symbol,
-                signal_sequence=signal.sequence,
-                strategy_id=signal.strategy_id,
-                edge_bps=float(signal.edge_estimate_bps),
-                base_target_qty=base_target,
-                tilted_target_qty=tilted,
-                edge_factor=bd.edge,
-                vol_factor=bd.vol,
-                inventory_factor=bd.inventory,
-                combined_tilt=bd.combined,
-                inventory_qty=bd.inventory_qty,
-                timestamp_ns=int(quote.exchange_timestamp_ns),
-            )
         )
 
     def _record_portfolio_net_shadow(self, intent: SizedPositionIntent) -> None:

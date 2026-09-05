@@ -10,9 +10,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from feelies.alpha.module import AlphaRiskBudget
-from feelies.core.events import Signal, SignalDirection
+from feelies.core.events import NBBOQuote, Signal, SignalDirection
 from feelies.risk.position_sizer import PositionSizer
 
 
@@ -256,3 +257,61 @@ def apply_tilt(base_target: int, tilt: float, max_position: int) -> int:
     """Floor ``base × tilt`` deterministically, re-cap, and floor at 0."""
     tilted = int(Decimal(base_target) * Decimal(str(tilt)))  # floor
     return max(0, min(tilted, max_position))
+
+
+def _record_size_shadow(self: Any, signal: Signal, quote: NBBOQuote) -> None:
+    """Compare the edge/vol/inventory-tilted target with the base.
+
+    For each real sized signal, compute the tilted target and append a
+    :class:`SizeDivergence` when it differs from the live single-factor
+    base target. It runs before the risk engine and has no order, bus,
+    journal, or parity effects. It is a no-op unless a sink is wired and at
+    least one tilt factor is enabled.
+    """
+    sizer = self._size_shadow_sizer
+    sink = self._size_shadow_sink
+    if (
+        sizer is None
+        or sink is None
+        or not sizer.config.any_enabled
+        or self._alpha_registry is None
+        or signal.strategy_id.startswith("__")
+    ):
+        return
+    try:
+        alpha = self._alpha_registry.get(signal.strategy_id)
+    except KeyError:
+        return
+    risk_budget = alpha.manifest.risk_budget
+    mid_price = (quote.bid + quote.ask) / Decimal(2)
+    if mid_price <= 0:
+        return
+
+    base_target = sizer.base.compute_target_quantity(
+        signal=signal,
+        risk_budget=risk_budget,
+        symbol_price=mid_price,
+        account_equity=self._account_equity,
+    )
+    if base_target <= 0:
+        return
+    bd = sizer.tilt_breakdown(signal, risk_budget)
+    tilted = apply_tilt(base_target, bd.combined, risk_budget.max_position_per_symbol)
+    if tilted == base_target:
+        return
+    sink.append(
+        SizeDivergence(
+            symbol=signal.symbol,
+            signal_sequence=signal.sequence,
+            strategy_id=signal.strategy_id,
+            edge_bps=float(signal.edge_estimate_bps),
+            base_target_qty=base_target,
+            tilted_target_qty=tilted,
+            edge_factor=bd.edge,
+            vol_factor=bd.vol,
+            inventory_factor=bd.inventory,
+            combined_tilt=bd.combined,
+            inventory_qty=bd.inventory_qty,
+            timestamp_ns=int(quote.exchange_timestamp_ns),
+        )
+    )
