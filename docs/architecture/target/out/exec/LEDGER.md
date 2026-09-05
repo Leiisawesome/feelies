@@ -9266,4 +9266,206 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-32.json, this ledger
                  entry.
 
+---
+
+## S-32a  2026-09-05T11:00:13+08:00
+  STEP:          S-32a
+  BASE:          b7cffbb964dbf18394a3d3191f821db9c911db28
+  RESULT SHA:    0920074efdd8ad2730c418bfd39602b6997a8aa7
+                 (exec/S-32a; two prohibition-class commits)
+  VERDICT:       passed
+                 (platform-wide gate given; branch head
+                 0920074)
+  CONFORMANCE:   S5 xfail intact (G41 G42 G44 G45). No XPASS.
+                 S4 3 passed (allowlist 7/1/2 -> 6 in
+                 _process_tick_inner only).
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 conformance 116 passed / 6 xfailed -> 116
+                 passed / 6 xfailed
+                 mypy src/feelies: Success, 206 source files.
+  TESTS:         capture pre-S-32a GREEN 4907 passed / 0
+                 failed / 19 skipped / 6 xfailed
+                 -> post-S-32a GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed. The IB after-hours
+                 EXEMPTION skipped rather than failed
+                 (Saturday; gateway not producing that
+                 failure). No failure outside the four
+                 exempted tests.
+                 not-paper_rth: 4906 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 kernel 390; docs 101.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-32a vs post-S-32a and vs
+                 baseline_post-S-32.json; 0 moved at
+                 either commit | MATCH.
+                 Fingerprint unmoved (determinism 148).
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 verify_step S-32A uppercases to a key not
+                 in plan (known S-32a); four checks by hand.
+                 PARITY IMPACT names _BASELINE_CONFIG_HASH
+                 on a Hold declaration (frozen --list
+                 false-positive); nothing moved.
+  FILES:         9 path tokens declared in FILES prose
+                 (verify_step PATHY), 4 touched, 0 extra
+                 CLEAN. Tree unique editable paths are 4;
+                 the other five are do-not-include /
+                 generated (strategy_position_store.py,
+                 test_hot_path_allow_list.py, hotpath.json,
+                 perfmeasure.py, hotpath.py). Followed the
+                 tree (S-24). Touched:
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_lifecycle.py
+                 tests/conformance/test_latency_budget.py
+                 tests/acceptance/test_no_walltime_outside_clock.py
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46005 -> 46003 (-2)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0.
+                 Cost column: not booked. Uninformative —
+                 see FINDINGS / S-32 FINDING.
+  DETERMINISM:   148 -> 148 after every src commit; no
+                 replay hash moved; fingerprint test
+                 passed throughout. Profile replay
+                 parity_hash stayed
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 (the APP trade parity hash).
+  VERIFY_STEP:   `S-32A` not in plan (known key is `S-32a`).
+                 Uppercase workaround fails for
+                 letter-suffixed steps. Four checks by hand:
+                 FILES 9 named / 4 touched / 0 extra CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, fingerprint
+                 unmoved; TESTS 4907->4907 passed, failed
+                 0->0; NET DELTA MATCH on modules 0
+                 symbols 0, sloc -2. Blast radius
+                 platform-wide -- gate given.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD b7cffbb on arch/exec at pre-flight.
+                 Cut exec/S-32a. Confirmed branch head
+                 0920074efdd8ad2730c418bfd39602b6997a8aa7.
+                 Commit order followed the block: first
+                 dataclass.replace, then
+                 dynamic_dispatch, then G01. replace
+                 produced an empty proven-site set after
+                 regen, so it got no commit -- closed,
+                 not deferred. 89797e0 is the getattr.
+                 0920074 is the three wall-clock reads
+                 and the S4 retarget.
+                 The three classes, after regen on this
+                 tree (S-32's own two commits already
+                 in HEAD, so its pre-commit sets are
+                 stale): dataclass.replace came back
+                 empty. Four guarded per-event hits
+                 remain in _process_tick_inner; PROBLEM
+                 said five. Followed the tree. One more
+                 guarded hit sits in
+                 passive_limit_router.py, not FILES, not
+                 proven. dynamic_dispatch had one FILES
+                 site -- getattr(self, "_tick_timings")
+                 in _finalize_tick -- and two
+                 twelfth-file sites left alone. After
+                 89797e0 the FILES site is gone; the
+                 two outside FILES remain, so the class
+                 is not empty. wall_clock_read had three
+                 proven FILES sites (t_wall_start,
+                 _finalize_tick latency_ns, drain t0)
+                 plus a guarded paper-pair sibling that
+                 went with t0. After 0920074 the proven
+                 set is empty. Six guarded engine
+                 timings stay allowlisted.
+                 Inv-10 moved with the wall-clock
+                 commit: 7/1/2 -> 6 in
+                 _process_tick_inner only. An extra
+                 perf_counter_ns after the risk_check
+                 pair made S4 name
+                 kernel/orchestrator.py:1836. Restore
+                 SHA256
+                 1C1C80109F7AB4236C2AF9C85405C1B7069E1DAFA9835DB7C8E60C34213E4D52
+                 was byte-identical.
+                 What evades each scan: getattr is
+                 blind to self.__dict__["attr"], to
+                 hasattr, and to getattr on a different
+                 name; a dummy Constant would also
+                 fool X10 and was forbidden. wall-clock
+                 is blind to `from time import
+                 perf_counter_ns` then a bare call, and
+                 to datetime.now; the six remaining
+                 allowlisted engine timings are guarded
+                 so they are not proven. replace is
+                 blind to a call after an early return,
+                 which is why the four inner hits never
+                 counted as proven.
+                 S5's xfail is intact. Reason is still
+                 GAP G41 G42 G44 G45. No XPASS. It stays
+                 because G44 is still partial and G45
+                 is still open -- seven proven sites
+                 sit outside FILES (string 2, dict 2,
+                 set 1, dynamic 2).
+                 NET DELTA declared 0 modules, 0 public
+                 symbols, 0 branch points. Measured
+                 206->206, 575->575, sloc 46005->46003
+                 (-2). MATCH on the declared zeros.
+                 Did not measure per-quote. Cost column
+                 uninformative, per S-32; not a saving
+                 and not a cost.
+                 The five S-32 prohibition classes are
+                 not all closed. string_formatting and
+                 dict/set had their FILES sites closed
+                 at S-32; replace was already an empty
+                 proven set; this step closed the FILES
+                 getattr and the three proven
+                 wall-clock reads. Twelfth-file proven
+                 sites remain on string, dict, set, and
+                 dynamic_dispatch, so G45 stays OPEN.
+  FINDINGS:      Cost is not available as evidence. Did
+                 not book a per-quote delta. S-32's
+                 same-tree control spanned 132,837 to
+                 135,755 ns; these two commits are the
+                 same size. The instrument cannot resolve
+                 them.
+                 S-32a PROBLEM said five per-event replace
+                 hits in _process_tick_inner; regenerated
+                 set has four in that function. Followed
+                 the tree (S-24).
+                 G45 stays OPEN. S5 xfail stays.
+                 verify_step S-32A not in plan (frozen
+                 uppercase). Four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing
+                 __schema_version__ fail-open; ci.yml
+                 G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days
+                 stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26
+                 unused selection_policy injection;
+                 S-28a token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue; S-30g FINDING G36 stays OPEN;
+                 S-31c FINDING G44 stays partial; S-32
+                 FINDING cost instrument; four exempted
+                 baseline tests.
+  NEXT:          S-33 engine-2 cost (G42, G41)
+                 (platform-wide). Not started. Do not
+                 begin S-33.
+                 Left uncommitted: baseline_pre-S-32a.json,
+                 baseline_post-S-32a.json, this ledger
+                 entry.
+
 
