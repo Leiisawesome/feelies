@@ -207,8 +207,6 @@ _ORCHESTRATOR_SHUTDOWN_CORRELATION_ID = "orchestrator_shutdown"
 _ATTRIBUTION_TIMING_KEYS: frozenset[str] = frozenset(
     {"sensor_fanout_ns", "sm_transition_ns"}
 )
-# getattr fallback only; never mutated. Construction, not per-event.
-_EMPTY_TICK_TIMINGS: dict[str, int] = {}
 
 
 def _resolve_boot_config(config: Configuration) -> PlatformConfig:
@@ -1524,7 +1522,7 @@ class Orchestrator:
         so the exception handler has a clean boundary.
         """
         cid = quote.correlation_id
-        t_wall_start = time.perf_counter_ns()
+        t_wall_start = self._clock.now_ns()
         self._tick_timings.clear()
         self._micro.bind_timing_sink(self._tick_timings)
 
@@ -2165,7 +2163,7 @@ class Orchestrator:
             trigger=trigger,
             correlation_id=correlation_id,
         )
-        latency_ns = time.perf_counter_ns() - t_wall_start_ns
+        latency_ns = self._clock.now_ns() - t_wall_start_ns
         now_ns = self._clock.now_ns()
 
         if self._paper_session_recorder is not None:
@@ -2187,7 +2185,7 @@ class Orchestrator:
         )
 
         # Record always-on timers directly so they cannot shift kernel event IDs.
-        timings = getattr(self, "_tick_timings", _EMPTY_TICK_TIMINGS)
+        timings = self._tick_timings
         if self._observe_latency_budgets:
             samples: dict[str, int] = {str(k): int(v) for k, v in timings.items()}
             samples["tick_to_decision_latency_ns"] = latency_ns
