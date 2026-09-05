@@ -3699,7 +3699,7 @@ PROBLEM:         Engine 2 is the dominant tick cost. Phase 4's
                  `--mode sensorscale` today is pruned-vs-all
                  cardinality, not per-sensor probes.
 FILES:           src/feelies/sensors/registry.py
-                 src/feelies/features/
+                 src/feelies/features/aggregator.py
                  (1) is a run of tools/arch/perfmeasure.py --mode
                  sensorscale and --mode both; do not edit the tool
                  unless this block is amended to name it.
