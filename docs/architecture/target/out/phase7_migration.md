@@ -3741,7 +3741,17 @@ ROLLBACK:        revert per commit.
 
 ```
 STEP:            S-34
-CLOSES:          G40
+CLOSES:          nothing. Classifies the residual against Phase 3 sec. B and
+                 names a destination for each engine-owned body. G40 stays OPEN:
+                 S2 is still xfail(strict), lint-imports is still 0 kept /
+                 2 broken, and a classification cannot make a contract KEPT.
+                 What closes G40 is a separate step that cuts or re-homes the
+                 engine-to-engine imports S2 pins -- execution to broker, risk to
+                 execution, alpha to signals, sensors to monitoring, and the
+                 platform_config to sensors.spec transitives. Those edges are not
+                 in the fifteen bodies, so S-34a through S-34o do not close it
+                 either, as a set or as a subset. ci.yml's continue-on-error
+                 cannot flip until both contracts are KEPT.
 PROBLEM:         After wave D the Orchestrator is 4,079 lines, 83 methods,
                  17 properties, 5 setters, 22 public names, 105 __init__
                  self-attrs. Engine-owned bodies remain. The extraction
