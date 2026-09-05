@@ -9671,4 +9671,190 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-33.json, this ledger
                  entry.
 
+---
+
+## S-34  2026-09-05T13:28:50+08:00
+  STEP:          S-34
+  BASE:          0ebf12e7d0d8db127c8e24e121415cb6bd2a32a6
+  RESULT SHA:    (no implementation commit; classification only)
+                 Branch head after Go is d299c02 (human plan
+                 amend: CLOSES nothing). exec/S-34 carries
+                 that commit; orchestrator.py unmoved.
+  VERDICT:       passed
+                 (Go; classification only; ledger uncommitted)
+  CONFORMANCE:   CLOSES nothing. G40 stays OPEN. S2 remains
+                 xfail(strict, GAP G40) as its guard. No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 116 passed / 6 xfailed -> 116
+                 passed / 6 xfailed
+                 mypy src/feelies: Success, 206 source files.
+                 kernel 390 -> 390.
+  TESTS:         capture pre-S-34 GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34 GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that
+                 set.
+                 not-paper_rth: 4906 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-34 vs post-S-34 and vs
+                 baseline_post-S-33.json; 0 moved | MATCH.
+                 Fingerprint unmoved (determinism 148).
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 verify_step names _BASELINE_CONFIG_HASH on
+                 a Hold declaration (frozen --list
+                 false-positive); nothing moved.
+  FILES:         1 path token declared (orchestrator.py),
+                 0 touched, 0 extra CLEAN. src/ untouched.
+                 Classification only; DELETES nothing.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46003 -> 46003 (+0)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on the declared zeros.
+                 G.6 table row S-34 still projects Δsym −14;
+                 the locked STEP NET DELTA is zeros. Table
+                 is stale against the re-scope.
+  DETERMINISM:   148 -> 148; no replay hash moved;
+                 fingerprint test passed throughout.
+  VERIFY_STEP:   Four checks: FILES 1 declared / 0 touched /
+                 0 extra CLEAN; PARITY 64/64 HASH+COUNT
+                 hold, fingerprint unmoved (declared hold
+                 parsed as _BASELINE_CONFIG_HASH -- frozen);
+                 TESTS 4907->4907 passed, failed 0->0
+                 (from captures; verify_step does not print
+                 a TESTS section); NET DELTA MATCH on
+                 modules 0 symbols 0 sloc 0 (oracle still
+                 says "deletions with no negative delta"
+                 because DELETES is "nothing." -- frozen).
+                 CLEAN, blast radius platform-wide --
+                 human gate required. Go recorded here.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD 0ebf12e on arch/exec. Cut
+                 exec/S-34. Did not move. Did not add a
+                 module. Did not edit orchestrator.py.
+                 Nothing outside orchestrator.py was
+                 touched in src/; the only dirty paths are
+                 this ledger and the two capture artifacts.
+                 Live counts MATCH the block: 4,079 lines,
+                 83 methods, 17 properties, 5 setters, 22
+                 public names, 105 __init__ self-attrs.
+                 gapscan orchestrator_shape: 4079 lines,
+                 105 FunctionDefs (83+17+5), 22 public.
+                 Classification of 83 methods against
+                 Phase 3 sec. B: 39 kernel dispatch
+                 (sequencing, clock, SM, KernelFault), 31
+                 engine work, 13 plumbing. The 17
+                 properties and 5 setters are plumbing
+                 (halt five are E1 test rebinds already
+                 delegated). Module-level: 2 plumbing
+                 (_resolve_boot_config, _int_to_direction),
+                 4 engine funcs plus _TradeJournalLeg.
+                 Fifteen engine-owned bodies, destination
+                 and exists:
+                 (a) fill reconcile / distribute /
+                 attribution / journal legs /
+                 _order_owns_one_slice / _TradeJournalLeg
+                 -> portfolio/fill_reconciliation.py no
+                 (fill_attribution.py yes, ledger only);
+                 (b) forced-exit clamp and three resize /
+                 stand-down / supersede alerts ->
+                 risk/forced_exit_clamp.py no;
+                 (c) working-exit MARKET fallback ->
+                 execution/order_lifecycle.py yes;
+                 (d) PORTFOLIO B4 + SSR alert ->
+                 execution/order_admission.py yes;
+                 (e) pending-conflict filter ->
+                 execution/order_lifecycle.py yes;
+                 (f) size shadow ->
+                 risk/edge_weighted_sizer.py yes;
+                 (g) net shadow pair ->
+                 execution/portfolio_netter.py yes;
+                 (h) _compose_scaled_quantity ->
+                 risk/engine.py yes;
+                 (i) _order_request_from_derisk ->
+                 risk/hazard_exit.py yes;
+                 (j) SIGNAL B4 suppression alert ->
+                 execution/order_policy.py yes;
+                 (k) borrow tier + locate alert ->
+                 execution/regulatory/borrow_availability.py
+                 yes;
+                 (l) regime session residual ->
+                 services/regime_engine.py yes;
+                 (m) standalone ownership filter ->
+                 composition/selection_policy.py yes;
+                 (n) _is_consumed_by_portfolio ->
+                 alpha/registry.py yes;
+                 (o) rejected-event alert ->
+                 ingestion/data_integrity.py yes; ack-drop
+                 alert -> execution/order_lifecycle.py yes.
+                 Those fifteen were named, not executed.
+                 G40 disposition: OPEN. S2's G40 guard is
+                 test_twelve_engine_independence; it still
+                 xfails. lint-imports is 0 kept / 2 broken.
+                 The fifteen follow-ups do not close it,
+                 as a set or a subset: they move residual
+                 bodies out of the kernel, and after each
+                 move orchestrator still imports the
+                 destination engine (five-tiers
+                 kernel→engine, which S2 pins as a
+                 residual and does not treat as the G40
+                 xfail). The G40 xfail is engine-to-engine
+                 independence -- execution to broker, risk
+                 to execution (and the reverse), alpha to
+                 signals, sensors to monitoring, and the
+                 platform_config to sensors.spec
+                 transitives, plus the rest of the
+                 independence BROKEN pairs S2 actually
+                 prints. Those edges are not in the
+                 fifteen bodies. ci.yml continue-on-error:
+                 true is still waiting on both contracts
+                 KEPT. Independence KEPT is S-35. Five
+                 import tiers stays BROKEN on kernel
+                 dispatch imports (and harness→cli/
+                 bootstrap, core→sensors.spec) until a
+                 layers rewrite or those residuals go.
+                 Flipping the flag before both are KEPT
+                 is a stop.
+  FINDINGS:      Plan G.6 S-34 Δsym −14 contradicts locked
+                 NET DELTA zeros. gapscan CITATIONS: 27/28
+                 orchestrator symbols DRIFTED (wave D moved
+                 them); gapscan.py is frozen, not this
+                 FILES. Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing
+                 __schema_version__ fail-open; ci.yml
+                 continue-on-error until both contracts
+                 KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21,
+                 S-23, S-24, S-26, S-28a, S-29 findings as
+                 recorded; S-30c through S-30h concept
+                 residue; S-30g G36 OPEN; S-31c G44
+                 partial; S-32 and S-33 instruments cannot
+                 resolve effects of this size; four
+                 exempted baseline tests.
+  NEXT:          S-35 engine-to-engine independence (G40)
+                 (platform-wide). Not started. Do not
+                 begin S-35 or S-34a–o from this tree.
+                 Left uncommitted: baseline_pre-S-34.json,
+                 baseline_post-S-34.json, this ledger
+                 entry.
+
 
