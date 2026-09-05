@@ -3857,6 +3857,175 @@ ROLLBACK:        revert per commit. Commit (1) removes the new module and
                  revertible from b–f dest files; shares
                  test_orchestrator.py with f and c.
 ```
+```
+STEP:            S-34g
+CLOSES:          the S-34a cycle FINDING (n_cycles 2 -> 1) and prevents the
+                 five further orchestrator <-> dest cycles S-34b–f would
+                 open if those dests imported orchestrator for closed-over
+                 names. G40 stays OPEN: S2 is still xfail(strict),
+                 lint-imports is still 0 kept / 2 broken, and this cut is
+                 not an engine-to-engine edge. S-34a through S-34o do not
+                 close G40 as a set or as a subset. The pre-existing cli
+                 package-to-submodule cycle is a different SCC and is not
+                 this step.
+PROBLEM:         This runs ahead of S-34b to prevent five further cycles
+                 rather than to cut one. After S-34a there is already
+                 kernel.orchestrator <-> portfolio.fill_reconciliation
+                 (n_cycles 1 -> 2) from five names. S-34b–f are five
+                 further dests orchestrator already imports or will
+                 import (forced_exit_clamp, order_lifecycle,
+                 order_admission, order_lifecycle again, edge_weighted_sizer).
+                 If those dests follow S-34a and import closed-over names
+                 from orchestrator, each is a new SCC. The eleven names
+                 and the home that is right, not convenient:
+
+                 Defined on orchestrator today (move this step):
+                 _RISK_FORCED_EXIT_REASONS,
+                 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
+                 _SLICE_SCOPED_FORCED_EXIT_REASONS
+                   -> src/feelies/kernel/forced_exit_reasons.py (new).
+                   Three unions of the same risk reason sets. Fill
+                   (portfolio) and clamp (risk) both need _RISK; fill
+                   needs _SELF; clamp needs _SLICE. Portfolio cannot
+                   import risk; risk cannot import portfolio. Kernel is
+                   the only legal shared layer. One module for the
+                   family, not three reconstitutions and not a fill dump.
+                 _TERMINAL_ORDER_STATES
+                   -> src/feelies/kernel/order_states.py (new).
+                   Shared by leftover orchestrator methods and S-34b
+                   `_has_pending_forced_exit_for_symbol`. The enum lives
+                   in execution.order_state; putting the frozenset there
+                   is ontologically nicer but would make
+                   risk.forced_exit_clamp import execution (new G40 edge
+                   on a new module). Kernel is the shared consumer.
+                 TradeRecord, _regime_label_for, observe_kill_switch
+                   -> definitions stay where they are
+                   (storage/trade_journal.py, services/regime_engine.py,
+                   monitoring/kill_switch.py). Engine 7 import path
+                   src/feelies/kernel/fill_bindings.py (new; re-export
+                   only). Portfolio cannot import those sibling engines.
+                   A second TradeRecord, or moving the kill-switch
+                   probe into kernel, would be convenient and wrong.
+                   Orchestrator leftover keeps importing
+                   observe_kill_switch from monitoring directly.
+
+                 Named here, not moved this step:
+                 _closable_quantity, _is_forced_market_exit
+                   -> src/feelies/risk/forced_exit_clamp.py (S-34b dest,
+                   Engine 8 clamp). Do not create that module here; do
+                   not park the functions on a kernel dump.
+                 logger
+                   -> each dest `logging.getLogger(__name__)`. Not a
+                   shared object.
+                 HAZARD_EXIT_SOURCE_LAYER
+                   -> src/feelies/risk/hazard_exit.py (already; Engine 8
+                   authored it). S-34b imports it there, same engine.
+                   A kernel re-export would be a junk hop.
+
+                 One shared fill_bindings.py for all eleven would be
+                 convenient and would mix journal rows, kill-switch
+                 probes, order-state, and clamp arithmetic. Several
+                 homes, split by owner.
+WHY THIS OWNER:  The three new kernel modules take the package default
+                 `audit_kernel`. They exist so an engine can close over
+                 kernel-hosted names without importing Orchestrator and
+                 without importing a sibling engine.
+                 `fill_reconciliation.py` stays `audit_forensics`.
+                 `forced_exit_clamp.py` stays S-34b / `audit_risk_engine`.
+FILES:           src/feelies/kernel/orchestrator.py
+                   (current definer / importer; stop being the home;
+                   keep both SequenceGenerator constructions; keep
+                   observe_kill_switch from monitoring for leftover
+                   call sites)
+                 src/feelies/portfolio/fill_reconciliation.py
+                   (current importer of the S-34a five; drop the
+                   orchestrator import)
+                 src/feelies/kernel/forced_exit_reasons.py
+                   (destination, new; the three reason unions)
+                 src/feelies/kernel/order_states.py
+                   (destination, new; _TERMINAL_ORDER_STATES)
+                 src/feelies/kernel/fill_bindings.py
+                   (destination, new; re-exports TradeRecord,
+                   _regime_label_for, observe_kill_switch)
+                 tests/kernel/test_stage0_decouple_wiring.py
+                   (current importer: _orchestrator_mod._RISK_FORCED_EXIT_REASONS)
+                 tests/kernel/test_orchestrator_exit_composer_routing.py
+                   (current importer: _orchestrator_mod._RISK_FORCED_EXIT_REASONS)
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                   (current importer: _orchestrator_mod._TERMINAL_ORDER_STATES)
+                 tests/conformance/test_import_contracts.py
+                   (detecting test: fill_reconciliation does not import
+                   kernel.orchestrator; prove it FAILS on post-S-34a
+                   arch/exec, then drop the failure)
+
+                 Destinations named, not edited this step:
+                 src/feelies/storage/trade_journal.py (TradeRecord)
+                 src/feelies/services/regime_engine.py (_regime_label_for)
+                 src/feelies/monitoring/kill_switch.py (observe_kill_switch)
+                 src/feelies/risk/hazard_exit.py (HAZARD_EXIT_SOURCE_LAYER)
+                 src/feelies/risk/forced_exit_clamp.py
+                   (_closable_quantity, _is_forced_market_exit; S-34b
+                   creates it)
+
+                 Do not add a _FILE_OWNERS trio: kernel is not a split
+                 package. Do not include docs/prompts or the
+                 coverage-map tests. Do not declare
+                 src/feelies/kernel/ as a directory scope. Do not create
+                 forced_exit_clamp.py.
+REFACTOR PATH:   S-04-shaped: re-home names so dests do not import the
+                 kernel module that imports them. (1) Write the
+                 detecting test; prove it FAILS on post-S-34a arch/exec.
+                 (2) Add forced_exit_reasons.py; orchestrator and
+                 fill_reconciliation import the unions from there.
+                 (3) Add order_states.py; orchestrator imports
+                 _TERMINAL_ORDER_STATES from there; retarget
+                 test_orchestrator_hazard_exit_routing.py.
+                 (4) Add fill_bindings.py; fill_reconciliation imports
+                 TradeRecord, _regime_label_for, observe_kill_switch
+                 from there and drops the orchestrator import.
+                 (5) Retarget the two _RISK tests to
+                 forced_exit_reasons; drop the unused TradeRecord and
+                 _regime_label_for re-exports on orchestrator.
+                 (6) Prove the detecting test passes; importgraph SCC
+                 gone; measure.py n_cycles 2 -> 1. Do not construct a
+                 SequenceGenerator. Do not move _closable_quantity or
+                 _is_forced_market_exit. Do not begin S-34b.
+BLAST RADIUS:    boundary -- kernel/engine import home only; no body
+                 move, no draw change
+VALIDATED BY:    the new "fill_reconciliation does not import
+                 orchestrator" test (fails before, passes after),
+                 importgraph (orchestrator <-> fill_reconciliation SCC
+                 gone), measure.py n_cycles 2 -> 1, S2 still 1 passed /
+                 1 xfailed (G40), test_five_import_tiers still equals
+                 _TIER_RESIDUALS, the three retargeted kernel tests,
+                 S12, the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Pure re-home of names nothing
+                 calls differently: same frozenset members, same
+                 TradeRecord class (re-export, not a second dataclass),
+                 same observe_kill_switch / _regime_label_for callables,
+                 no new SequenceGenerator, no body move, no draw. A
+                 moved hash would mean a name's value or identity
+                 changed under a caller that already existed (union
+                 membership, a different TradeRecord, kill-switch
+                 semantics, or logger output reaching a hashed
+                 payload) — the re-home was not pure. STOP, not a fold.
+DELETES:         the fill_reconciliation -> orchestrator import; the
+                 three reason-union definitions and
+                 _TERMINAL_ORDER_STATES on orchestrator; the TradeRecord
+                 and _regime_label_for re-exports on orchestrator
+NET DELTA:       src modules +3, public symbols 0, branch points 0.
+                 Expected cycles 2 -> 1 (cli package-to-submodule
+                 cycle remains). TradeRecord moving off orchestrator
+                 onto fill_bindings is a move, not a new public.
+                 observe_kill_switch remains bound on orchestrator
+                 (monitoring import) and is also re-exported on
+                 fill_bindings; compare-by-eye if measure.py shows +1.
+ROLLBACK:        revert the commit. Independently revertible from
+                 S-34c–f dest files; shares orchestrator.py with a/b
+                 and fill_reconciliation.py with a. Land after S-34a,
+                 before S-34b.
+```
 
 ```
 STEP:            S-34b
@@ -3897,6 +4066,7 @@ FILES:           src/feelies/kernel/orchestrator.py
                  tests/docs/test_prompt_coverage_map.py (_FILE_OWNERS)
                  tests/docs/test_internal_links.py
                  Do not declare src/feelies/risk/ as a directory scope.
+                 Also src/feelies/kernel/forced_exit_reasons.py (_RISK_FORCED_EXIT_REASONS, _SLICE_SCOPED_FORCED_EXIT_REASONS) and src/feelies/kernel/order_states.py (_TERMINAL_ORDER_STATES); dest imports those plus HAZARD_EXIT_SOURCE_LAYER from feelies.risk.hazard_exit; do not import orchestrator; logger via __name__.
 REFACTOR PATH:   one body per commit, module-level function `self: Any`,
                  no shim; generators stay. Order: (1) `_closable_quantity`
                  — this commit creates the module and the `_FILE_OWNERS`
@@ -3916,6 +4086,7 @@ REFACTOR PATH:   one body per commit, module-level function `self: Any`,
                  SequenceGenerator. Land after S-34a so two new-module
                  `_FILE_OWNERS` repairs are not concurrent with the fill
                  draws.
+                 Land after S-34g; _is_forced_market_exit / _forced_exit_closable_quantity / _has_pending_forced_exit_for_symbol close over the S-34g kernel homes and, once commit (1)–(2) have landed, sibling _closable_quantity / _is_forced_market_exit in this dest — never orchestrator.
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, S17, X11, `forced_exit_attribution`,
                  `level4_hazard_exit_order`, `decoupled_risk_flatten_order`,
@@ -3974,6 +4145,7 @@ FILES:           src/feelies/kernel/orchestrator.py
                  Do not add a module. Do not include docs/prompts or the
                  coverage-map tests. Do not declare src/feelies/execution/
                  as a directory scope.
+                 Do not import orchestrator; _submit_tracked_order is already this dest.
 REFACTOR PATH:   one body per commit, module-level function `self: Any`,
                  no shim; generators stay. Order: (1)
                  `_escalate_unfilled_working_exits` (retarget
@@ -3983,6 +4155,7 @@ REFACTOR PATH:   one body per commit, module-level function `self: Any`,
                  body). Keep the :2965 draw on the orchestrator generator;
                  do not add, drop, or reorder it (S-13). Do not construct
                  a second SequenceGenerator. Land after S-34e.
+                 No S-34g name; do not add an orchestrator import for closed-overs.
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, S17, H1, H4, `market_fill_acks`, `halt_ack`,
                  the oracle
@@ -4033,6 +4206,7 @@ FILES:           src/feelies/kernel/orchestrator.py
                  Do not add a module. Do not include docs/prompts or the
                  coverage-map tests. Do not declare src/feelies/execution/
                  as a directory scope.
+                 Do not import orchestrator; _portfolio_leg_edge_block binds logger via __name__; BLOCK_* already this dest.
 REFACTOR PATH:   one body per commit, module-level function `self: Any`,
                  no shim; generators stay. Order: (1) `_emit_ssr_suppression_alert`
                  (orchestrator call only; still publishes via
@@ -4041,6 +4215,7 @@ REFACTOR PATH:   one body per commit, module-level function `self: Any`,
                  Neither draws `self._seq`. Retarget order_policy.py:348 in
                  commit (2). Do not inline `_publish_alert` onto a new
                  generator.
+                 No S-34g name; do not import orchestrator for logger.
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, S17, C4, X1, `level4_portfolio_order`,
                  the oracle
@@ -4085,6 +4260,7 @@ FILES:           src/feelies/kernel/orchestrator.py
                  Do not add a module. Do not include docs/prompts or the
                  coverage-map tests. Do not declare src/feelies/execution/
                  as a directory scope.
+                 Do not import orchestrator.
 REFACTOR PATH:   one body, one commit. Copy onto a module-level function
                  `self: Any`, no shim; generators stay. Call sites at
                  orchestrator.py:1361 and :1432 retarget. Retarget
@@ -4092,6 +4268,7 @@ REFACTOR PATH:   one body, one commit. Copy onto a module-level function
                  Keep `_publish_alert` on the kernel; do not add a
                  generator. Land before S-34c (drawing body last on this
                  dest).
+                 No S-34g name; self._has_pending_order_for_symbol / self._publish_alert stay on Orchestrator via self: Any.
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, S17, H1, the pathological-refusal bind,
                  `level4_portfolio_order`, the oracle
@@ -4133,10 +4310,12 @@ FILES:           src/feelies/kernel/orchestrator.py
                  Do not add a module. Do not include docs/prompts or the
                  coverage-map tests. Do not declare src/feelies/risk/ as a
                  directory scope.
+                 Do not import orchestrator; apply_tilt / SizeDivergence already this dest.
 REFACTOR PATH:   one body, one commit. Copy onto a module-level function
                  `self: Any`, no shim; generators stay. Call at
                  orchestrator.py:1759 retargets. Retarget the five test
                  binds in the same commit. No drawing body in this step.
+                 No S-34g name; do not add an orchestrator import for closed-overs.
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, S17, the size-shadow tests in
                  test_orchestrator.py, the oracle
@@ -4149,102 +4328,6 @@ DELETES:         `_record_size_shadow` from Orchestrator (1 method)
 NET DELTA:       src modules 0, public symbols 0, branch points 0
 ROLLBACK:        revert the commit. Independently revertible until a later
                  S-34* also edits test_orchestrator.py (a, c).
-```
-
-```
-STEP:            S-34g
-CLOSES:          the S-34a cycle FINDING (n_cycles 2 -> 1). G40 stays OPEN:
-                 S2 is still xfail(strict), lint-imports is still 0 kept /
-                 2 broken, and this cut is not an engine-to-engine edge.
-                 S-34a through S-34o do not close G40 as a set or as a
-                 subset. The pre-existing cli package-to-submodule cycle
-                 is a different SCC and is not this step.
-PROBLEM:         After S-34a, importgraph reports a runtime SCC
-                 kernel.orchestrator <-> portfolio.fill_reconciliation
-                 (n_cycles 1 -> 2). The moved bodies close over five
-                 module-level names on orchestrator: the two reason
-                 frozensets (_RISK_FORCED_EXIT_REASONS,
-                 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS), TradeRecord,
-                 _regime_label_for, and observe_kill_switch.
-                 fill_reconciliation imports them from orchestrator;
-                 orchestrator imports fill_reconciliation after those
-                 constants (E402) so the cycle loads. Importing the five
-                 from risk, storage, services, or monitoring would be
-                 portfolio to a sibling engine and would move
-                 test_five_import_tiers off _TIER_RESIDUALS. S2 is
-                 unaffected: portfolio -> kernel is the legal five-tier
-                 direction, and kernel is not one of the twelve engines.
-                 This is a different shape from feelies.cli ->
-                 feelies.cli.main. S-34b's `_is_forced_market_exit`
-                 closes over `_RISK_FORCED_EXIT_REASONS`; importing that
-                 from orchestrator would open orchestrator <->
-                 risk.forced_exit_clamp. Land this cut first.
-WHY THIS OWNER:  Package default `audit_kernel`. The five names have to
-                 live in kernel so Engine 7 can import them without
-                 importing Orchestrator and without importing a sibling
-                 engine. `fill_reconciliation.py` stays
-                 `audit_forensics` (Engine 7 book of record). This
-                 module is the kernel-hosted home, not the book.
-FILES:           src/feelies/kernel/orchestrator.py
-                   (stop being the import home for the five names;
-                   keep both SequenceGenerator constructions)
-                 src/feelies/portfolio/fill_reconciliation.py
-                   (drop the orchestrator import)
-                 src/feelies/kernel/fill_bindings.py
-                   (destination, new; named file. Holds
-                   _RISK_FORCED_EXIT_REASONS and
-                   _SELF_ATTRIBUTED_FORCED_EXIT_REASONS; re-exports
-                   TradeRecord, _regime_label_for,
-                   observe_kill_switch. kernel -> storage/services/
-                   monitoring/risk are existing residuals, not new
-                   sibling edges.)
-                 Do not add a _FILE_OWNERS trio: kernel is not a split
-                 package. Do not include docs/prompts or the
-                 coverage-map tests. Do not declare
-                 src/feelies/kernel/ as a directory scope. Do not add
-                 test_stage0_decouple_wiring or
-                 test_orchestrator_exit_composer_routing unless the
-                 two frozensets leave orchestrator's module namespace.
-REFACTOR PATH:   S-04-shaped: re-home the shared names so the engine
-                 module does not import the kernel module that imports
-                 it. (1) Write a narrow test that
-                 feelies.portfolio.fill_reconciliation does not import
-                 feelies.kernel.orchestrator; prove it FAILS on
-                 213636c. (2) Add fill_bindings.py with the five
-                 names. (3) fill_reconciliation imports them from
-                 fill_bindings and drops the orchestrator import.
-                 (4) orchestrator imports the two frozensets into its
-                 module namespace so remaining local uses
-                 (_is_forced_market_exit) and the two tests that read
-                 _orchestrator_mod._RISK_FORCED_EXIT_REASONS keep
-                 working; drop the TradeRecord and _regime_label_for
-                 re-exports if nothing in orchestrator still needs
-                 them. (5) Prove the new test passes; importgraph SCC
-                 gone; measure.py n_cycles 2 -> 1. Do not construct a
-                 SequenceGenerator. Do not begin S-34b in this step.
-BLAST RADIUS:    boundary -- kernel/engine import home only; no body
-                 move, no draw change
-VALIDATED BY:    the new "fill_reconciliation does not import
-                 orchestrator" test (fails before, passes after),
-                 importgraph (orchestrator <-> fill_reconciliation SCC
-                 gone), measure.py n_cycles 2 -> 1, S2 still 1 passed /
-                 1 xfailed (G40), test_five_import_tiers still equals
-                 _TIER_RESIDUALS, S12, the oracle
-PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
-                 _BASELINE_CONFIG_HASH. No Event field add/delete. No
-                 sequence draw. SequenceGenerator constructions stay
-                 on Orchestrator at the S-34a sites. A moved hash
-                 means the re-home changed behaviour. STOP, not a fold.
-DELETES:         the fill_reconciliation -> orchestrator import; the
-                 TradeRecord and _regime_label_for re-exports on
-                 orchestrator if they become unused
-NET DELTA:       src modules +1, public symbols 0, branch points 0.
-                 Expected cycles 2 -> 1 (cli package-to-submodule
-                 cycle remains).
-ROLLBACK:        revert the commit. Independently revertible from
-                 S-34c–f dest files; shares orchestrator.py with a/b
-                 and fill_reconciliation.py with a. Land after S-34a,
-                 before S-34b.
 ```
 
 ```
