@@ -4152,6 +4152,102 @@ ROLLBACK:        revert the commit. Independently revertible until a later
 ```
 
 ```
+STEP:            S-34g
+CLOSES:          the S-34a cycle FINDING (n_cycles 2 -> 1). G40 stays OPEN:
+                 S2 is still xfail(strict), lint-imports is still 0 kept /
+                 2 broken, and this cut is not an engine-to-engine edge.
+                 S-34a through S-34o do not close G40 as a set or as a
+                 subset. The pre-existing cli package-to-submodule cycle
+                 is a different SCC and is not this step.
+PROBLEM:         After S-34a, importgraph reports a runtime SCC
+                 kernel.orchestrator <-> portfolio.fill_reconciliation
+                 (n_cycles 1 -> 2). The moved bodies close over five
+                 module-level names on orchestrator: the two reason
+                 frozensets (_RISK_FORCED_EXIT_REASONS,
+                 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS), TradeRecord,
+                 _regime_label_for, and observe_kill_switch.
+                 fill_reconciliation imports them from orchestrator;
+                 orchestrator imports fill_reconciliation after those
+                 constants (E402) so the cycle loads. Importing the five
+                 from risk, storage, services, or monitoring would be
+                 portfolio to a sibling engine and would move
+                 test_five_import_tiers off _TIER_RESIDUALS. S2 is
+                 unaffected: portfolio -> kernel is the legal five-tier
+                 direction, and kernel is not one of the twelve engines.
+                 This is a different shape from feelies.cli ->
+                 feelies.cli.main. S-34b's `_is_forced_market_exit`
+                 closes over `_RISK_FORCED_EXIT_REASONS`; importing that
+                 from orchestrator would open orchestrator <->
+                 risk.forced_exit_clamp. Land this cut first.
+WHY THIS OWNER:  Package default `audit_kernel`. The five names have to
+                 live in kernel so Engine 7 can import them without
+                 importing Orchestrator and without importing a sibling
+                 engine. `fill_reconciliation.py` stays
+                 `audit_forensics` (Engine 7 book of record). This
+                 module is the kernel-hosted home, not the book.
+FILES:           src/feelies/kernel/orchestrator.py
+                   (stop being the import home for the five names;
+                   keep both SequenceGenerator constructions)
+                 src/feelies/portfolio/fill_reconciliation.py
+                   (drop the orchestrator import)
+                 src/feelies/kernel/fill_bindings.py
+                   (destination, new; named file. Holds
+                   _RISK_FORCED_EXIT_REASONS and
+                   _SELF_ATTRIBUTED_FORCED_EXIT_REASONS; re-exports
+                   TradeRecord, _regime_label_for,
+                   observe_kill_switch. kernel -> storage/services/
+                   monitoring/risk are existing residuals, not new
+                   sibling edges.)
+                 Do not add a _FILE_OWNERS trio: kernel is not a split
+                 package. Do not include docs/prompts or the
+                 coverage-map tests. Do not declare
+                 src/feelies/kernel/ as a directory scope. Do not add
+                 test_stage0_decouple_wiring or
+                 test_orchestrator_exit_composer_routing unless the
+                 two frozensets leave orchestrator's module namespace.
+REFACTOR PATH:   S-04-shaped: re-home the shared names so the engine
+                 module does not import the kernel module that imports
+                 it. (1) Write a narrow test that
+                 feelies.portfolio.fill_reconciliation does not import
+                 feelies.kernel.orchestrator; prove it FAILS on
+                 213636c. (2) Add fill_bindings.py with the five
+                 names. (3) fill_reconciliation imports them from
+                 fill_bindings and drops the orchestrator import.
+                 (4) orchestrator imports the two frozensets into its
+                 module namespace so remaining local uses
+                 (_is_forced_market_exit) and the two tests that read
+                 _orchestrator_mod._RISK_FORCED_EXIT_REASONS keep
+                 working; drop the TradeRecord and _regime_label_for
+                 re-exports if nothing in orchestrator still needs
+                 them. (5) Prove the new test passes; importgraph SCC
+                 gone; measure.py n_cycles 2 -> 1. Do not construct a
+                 SequenceGenerator. Do not begin S-34b in this step.
+BLAST RADIUS:    boundary -- kernel/engine import home only; no body
+                 move, no draw change
+VALIDATED BY:    the new "fill_reconciliation does not import
+                 orchestrator" test (fails before, passes after),
+                 importgraph (orchestrator <-> fill_reconciliation SCC
+                 gone), measure.py n_cycles 2 -> 1, S2 still 1 passed /
+                 1 xfailed (G40), test_five_import_tiers still equals
+                 _TIER_RESIDUALS, S12, the oracle
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. No Event field add/delete. No
+                 sequence draw. SequenceGenerator constructions stay
+                 on Orchestrator at the S-34a sites. A moved hash
+                 means the re-home changed behaviour. STOP, not a fold.
+DELETES:         the fill_reconciliation -> orchestrator import; the
+                 TradeRecord and _regime_label_for re-exports on
+                 orchestrator if they become unused
+NET DELTA:       src modules +1, public symbols 0, branch points 0.
+                 Expected cycles 2 -> 1 (cli package-to-submodule
+                 cycle remains).
+ROLLBACK:        revert the commit. Independently revertible from
+                 S-34c–f dest files; shares orchestrator.py with a/b
+                 and fill_reconciliation.py with a. Land after S-34a,
+                 before S-34b.
+```
+
+```
 STEP:            S-35
 CLOSES:          G40
 PROBLEM:         S2 test_twelve_engine_independence is still
