@@ -4184,29 +4184,45 @@ CLOSES:          nothing. Moves `_emit_ssr_suppression_alert` and
                  S2 pins. S-34a through S-34o do not close it as a set or as a
                  subset.
 PROBLEM:         Two engine-9 admission bodies remain on Orchestrator:
-                 `_portfolio_leg_edge_block:2497-2559` (63 lines; Inv-12 B4
-                 on a PORTFOLIO leg) and `_emit_ssr_suppression_alert:3939-3952`
-                 (14 lines; forensic marker for BLOCK_SSR). S-24 named the
-                 edge-block as a sibling the nine were not closed without.
-                 Neither body calls `self._seq.next()`. The edge-block is
-                 invoked as `self._portfolio_leg_edge_block` from
-                 order_policy.py:348 (a Wave D extract). WAVE-D forbids a
-                 shim; that call AttributeError after the move unless
-                 order_policy.py is in FILES. The SSR alert is called only
-                 from orchestrator.py:1922.
+                 `_emit_ssr_suppression_alert:3166-3179` (14 lines; forensic
+                 marker for BLOCK_SSR; call at orchestrator.py:1819) and
+                 `_portfolio_leg_edge_block:2394-2456` (63 lines; Inv-12 B4
+                 on a PORTFOLIO leg). S-24 named the edge-block as a sibling
+                 the nine were not closed without. Neither body calls
+                 `self._seq.next()`. The edge-block is invoked as
+                 `self._portfolio_leg_edge_block` from order_policy.py:348
+                 (a Wave D extract). WAVE-D forbids a shim; that call
+                 AttributeError after the move unless order_policy.py is in
+                 FILES. The SSR alert is called only from orchestrator.py:1819.
+                 Two destinations, not one: `_emit_ssr_suppression_alert`
+                 lands on order_admission.py next to BLOCK_SSR.
+                 `_portfolio_leg_edge_block` lands on order_policy.py next to
+                 `_edge_clears_round_trip_cost`, the sibling it closes over
+                 (S-24). Landing the edge-block on order_admission and
+                 importing that sibling would add order_admission →
+                 order_policy on top of the existing reverse edge: an SCC
+                 (n_cycles 1 → 2) and a new engine-9 → engine-10 G40
+                 direction. S-35 FILES names order_policy.py, not
+                 order_admission.py. Both dest files are already in FILES;
+                 the split is legal. Do not import orchestrator for either
+                 closed-over.
 WHY THIS OWNER:  Engine 9 owns the gate between "engine 8 permits X" and
                  "engine 10 has an order". `order_admission.py` already owns
                  `admission_block_reason` and `BLOCK_SSR`. A PORTFOLIO-leg
                  cost bar and the SSR forensic marker are that gate, not
                  kernel dispatch.
 FILES:           src/feelies/kernel/orchestrator.py
-                 src/feelies/execution/order_admission.py (destination, exists)
+                 src/feelies/execution/order_admission.py
+                   (destination for `_emit_ssr_suppression_alert`, exists)
                  src/feelies/execution/order_policy.py
-                   (:348 binds self._portfolio_leg_edge_block)
+                   (destination for `_portfolio_leg_edge_block`, exists;
+                   :348 binds self._portfolio_leg_edge_block;
+                   `_edge_clears_round_trip_cost` already this dest)
                  Do not add a module. Do not include docs/prompts or the
                  coverage-map tests. Do not declare src/feelies/execution/
                  as a directory scope.
-                 Do not import orchestrator; _portfolio_leg_edge_block binds logger via __name__; BLOCK_* already this dest.
+                 Do not import orchestrator; each dest binds logger via
+                 __name__; BLOCK_* already order_admission.
 REFACTOR PATH:   one body per commit, module-level function `self: Any`,
                  no shim; generators stay. Order: (1) `_emit_ssr_suppression_alert`
                  (orchestrator call only; still publishes via
@@ -4225,8 +4241,9 @@ PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
                  hash means admit/refuse or alert publish order changed, or
                  `_publish_alert` was re-homed onto a new generator. STOP,
                  not a fold.
-DELETES:         `_emit_ssr_suppression_alert` and
-                 `_portfolio_leg_edge_block` from Orchestrator (2 methods)
+DELETES:         `_emit_ssr_suppression_alert` from Orchestrator to
+                 order_admission.py; `_portfolio_leg_edge_block` from
+                 Orchestrator to order_policy.py (2 methods)
 NET DELTA:       src modules 0, public symbols 0, branch points 0
 ROLLBACK:        revert per commit. Independently revertible until a later
                  S-34* also edits order_policy.py (h, j, k).
