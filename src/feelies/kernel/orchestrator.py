@@ -175,7 +175,11 @@ from feelies.risk.engine import (
 )
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
-from feelies.risk.forced_exit_clamp import _closable_quantity, _is_forced_market_exit
+from feelies.risk.forced_exit_clamp import (
+    _closable_quantity,
+    _forced_exit_reduces,
+    _is_forced_market_exit,
+)
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -2498,25 +2502,6 @@ class Orchestrator:
             for sm, side, order in self._active_orders.values()
         )
 
-    def _forced_exit_reduces(self, order: OrderRequest) -> bool:
-        """Whether *order* shrinks the live book it claims to close.
-
-        A composer or deferral-cap exit is slice-scoped: another strategy holding
-        the opposite side can leave symbol-net flat while the mandated slice is
-        still open.  Treat the order as reducing when it shrinks *either* the
-        symbol-net book or its own strategy slice, so a slice flatten is never
-        stranded at the non-reducing REJECT branch.  Symbol-net is checked first,
-        so a true symbol-net hazard exit (which always reduces net) never needs the
-        slice fallback — this keeps the shared ``HARD_EXIT_AGE`` token correct for
-        both authors without attributing it.
-
-        Re-evaluated after any resting-order cancel, because the cancel reconciles
-        whatever acks were already queued for those orders — including fills — so
-        the book can move between the controller sizing the exit and the exit
-        reaching the router.
-        """
-        return self._forced_exit_closable_quantity(order) > 0
-
     def _forced_exit_closable_quantity(self, order: OrderRequest) -> int:
         """Shares *order* can close right now without crossing into new exposure.
 
@@ -3146,7 +3131,7 @@ class Orchestrator:
         hv = self._risk_engine.check_order(order, self._positions)
         # Trust the exit fail-safe only when the order reduces live exposure.
         current_qty = self._positions.get(order.symbol).quantity
-        order_reduces = self._forced_exit_reduces(order)
+        order_reduces = _forced_exit_reduces(self, order)
         # Do not broadcast FORCE_FLATTEN while this handler submits a local exit.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
