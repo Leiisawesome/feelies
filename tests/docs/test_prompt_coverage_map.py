@@ -62,6 +62,7 @@ _FILE_OWNERS: dict[str, str] = {
     # ── portfolio/ ──────────────────────────────────────────────────
     "portfolio/cross_sectional_tracker.py": "audit_composition",
     "portfolio/fill_attribution.py": "audit_forensics",
+    "portfolio/fill_reconciliation.py": "audit_forensics",
     "portfolio/position_store.py": "audit_position_management",
     "portfolio/memory_position_store.py": "audit_position_management",
     "portfolio/strategy_position_store.py": "audit_position_management",

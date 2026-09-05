@@ -62,6 +62,10 @@ from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.portfolio.fill_reconciliation import (
+    _distribute_fill_to_strategies,
+    _reconcile_fills,
+)
 from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
@@ -828,7 +832,8 @@ class TestOrchestratorFullPipeline:
         )
         orch._track_order(order.order_id, Side.BUY, order)
 
-        orch._reconcile_fills(
+        _reconcile_fills(
+            orch,
             [
                 OrderAck(
                     timestamp_ns=2000,
@@ -966,7 +971,8 @@ class TestOrchestratorFillReconcileGuards:
             correlation_id=order.correlation_id,
         )
 
-        orch._reconcile_fills(
+        _reconcile_fills(
+            orch,
             [
                 OrderAck(
                     timestamp_ns=1100,
@@ -1012,7 +1018,8 @@ class TestOrchestratorFillReconcileGuards:
             correlation_id=order.correlation_id,
         )
 
-        orch._reconcile_fills(
+        _reconcile_fills(
+            orch,
             [
                 OrderAck(
                     timestamp_ns=1200,
@@ -1595,7 +1602,8 @@ class TestCancelFeeAccounting:
 
         orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
 
-        orch._reconcile_fills(
+        _reconcile_fills(
+            orch,
             [
                 OrderAck(
                     timestamp_ns=2000,
@@ -1647,7 +1655,8 @@ class TestCancelFeeAccounting:
         )
         orch._track_order(order.order_id, Side.BUY, order)
 
-        orch._reconcile_fills(
+        _reconcile_fills(
+            orch,
             [
                 OrderAck(
                     timestamp_ns=2000,
@@ -1687,7 +1696,8 @@ class TestStrategyFillDistribution:
             strategy_positions=strategy_positions,
         )
 
-        orch._distribute_fill_to_strategies(
+        _distribute_fill_to_strategies(
+            orch,
             symbol="AAPL",
             signed_qty=3,
             fill_price=Decimal("150.00"),
@@ -1718,7 +1728,8 @@ class TestStrategyFillDistribution:
         strategy_positions.update("a_alpha", "AAPL", 100, Decimal("150.00"))
 
         orch = _build_orchestrator(clock, strategy_positions=strategy_positions)
-        orch._distribute_fill_to_strategies(
+        _distribute_fill_to_strategies(
+            orch,
             symbol="AAPL",
             signed_qty=1,  # odd → exactly one strategy receives the extra share
             fill_price=Decimal("150.00"),
@@ -2313,7 +2324,8 @@ class TestRealizedCostEscalation:
 
     def _fill(self, orch: Orchestrator, order: OrderRequest, *, ts: int, cost_bps: str) -> None:
         orch._track_order(order.order_id, order.side, order)
-        orch._reconcile_fills(
+        _reconcile_fills(
+            orch,
             [self._ack(order, ts=ts, cost_bps=cost_bps)],
             correlation_id=order.correlation_id,
         )
