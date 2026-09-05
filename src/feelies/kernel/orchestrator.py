@@ -156,6 +156,7 @@ from feelies.kernel.macro import (
     create_macro_state_machine,
 )
 from feelies.kernel.micro import MicroState, create_micro_state_machine
+from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.alerting import AlertManager
 from feelies.monitoring.kill_switch import KillSwitch, observe_kill_switch as observe_kill_switch
@@ -221,15 +222,6 @@ def _resolve_boot_config(config: Configuration) -> PlatformConfig:
     }
     return replace(baseline, **overrides)
 
-
-_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
-    {
-        OrderState.FILLED,
-        OrderState.CANCELLED,
-        OrderState.REJECTED,
-        OrderState.EXPIRED,
-    }
-)
 
 from feelies.portfolio.fill_reconciliation import (  # noqa: E402
     _record_fill_attribution,
