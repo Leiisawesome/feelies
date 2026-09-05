@@ -11037,4 +11037,170 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-34d.json, this ledger
                  entry.
 
+---
+
+## S-34e  2026-09-05T21:09:06+08:00
+  STEP:          S-34e
+  BASE:          2a047f8c399dc50220a172a47016ce48a41fc14d
+  RESULT SHA:    dbd0e2dafa9a86ae93f99c77c8a263c18e239eb7 (exec/S-34e; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. G40 stays
+                 OPEN. S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 test_five_import_tiers passed
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 kernel 390; execution 865; docs 101
+                 mypy src/feelies: Success, 211 source files
+  TESTS:         capture pre-S-34e GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34e GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-34e vs post-S-34e and vs
+                 baseline_post-S-34d.json; 0 moved | MATCH.
+  FILES:         3 implementation paths declared, 3 touched
+                 (verify_step not runnable -- S-34E
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: orchestrator.py,
+                 order_lifecycle.py (destination, exists),
+                 tests/conformance/test_pathological_refusal.py.
+                 verify_step file_list would also count
+                 FILES-prose tokens and dir_list infers
+                 src/feelies/execution/ against FILES
+                 "Do not declare" -- frozen; this tree
+                 edited only the named dest file under that
+                 package.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 211 -> 211 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46079 -> 46081 (+2)
+                 n_edges 689 -> 689
+                 n_modules 173 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+                 orchestrator lines 3168 -> 3134 (-34)
+                 orchestrator methods 69 -> 68 (-1)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-34E --base 2a047f8c` exits 1: S-34E not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 3 declared implementation / 3 touched
+                 CLEAN; PARITY 64/64 HASH+COUNT hold, 0 moved
+                 (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules 0 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is method names -- frozen. CLEAN,
+                 blast radius boundary -- Go recorded here.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 2a047f8 on arch/exec. Cut
+                 exec/S-34e. Branch head after Go is
+                 dbd0e2d, confirmed.
+                 Single commit dbd0e2d: the filter body copied
+                 onto order_lifecycle as a module-level
+                 function(self: Any), no shim, no sequence
+                 draw. Destination already held S-34c's
+                 MARKET fallback; that is file layout only.
+                 Orchestrator 3168 -> 3134 lines (-34);
+                 69 -> 68 methods (-1). The class method
+                 left; SequenceGenerator constructions
+                 stayed at :352 stream=orchestrator and
+                 :360 stream=hazard. Dest does not construct
+                 a generator.
+                 n_cycles 1 -> 1. The only SCC is
+                 feelies.cli -> feelies.cli.main. Dest does
+                 not import kernel.orchestrator.
+                 No hash moved. 64/64 HASH/COUNT identical
+                 pre vs post and vs baseline_post-S-34d.json.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Determinism 148 after the commit.
+                 Two orchestrator call sites and the test
+                 bind retargeted in that same commit, no
+                 shim. After the move they are
+                 orchestrator.py:1256 and :1327
+                 (_filter_portfolio_orders_for_pending_conflicts(self,
+                 ...)) and
+                 test_pathological_refusal.py:289
+                 (_filter_portfolio_orders_for_pending_conflicts(orch,
+                 ...)). Grep of src/ and tests/ for the
+                 attribute form is empty. The method is gone
+                 from Orchestrator.
+                 Closed-overs that stayed on the instance:
+                 self._has_pending_order_for_symbol (still
+                 defined at :2385), self._publish_alert,
+                 self._clock. record_verdict came off
+                 orchestrator's import and now comes from
+                 core.gate_registry on the dest;
+                 AlertSeverity was already this dest;
+                 SizedPositionIntent joined dest's existing
+                 core.events import. Not an S-34g miss.
+                 no-any-return none. Original
+                 -> list[OrderRequest] kept on self: Any
+                 (S-20).
+                 Block line cites vs this tree at
+                 pre-flight: body :2561-2593 was
+                 :2392-2424 (33 lines MATCH); calls :1361
+                 and :1432 were :1256 and :1327; test :286
+                 MATCH (became :289 after the import split
+                 in the same commit). Stale after S-34a
+                 through S-34d. Same body.
+                 Declared NET DELTA src modules 0, public
+                 symbols 0, branch points 0. Measured:
+                 modules 211 -> 211 MATCH, public_symbols
+                 575 -> 575 MATCH, sloc 46079 -> 46081
+                 (+2, undeclared), n_edges 689 -> 689
+                 (orchestrator dropped gate_registry; dest
+                 gained it), n_modules 173 -> 173, cycles
+                 1 -> 1 MATCH, alphaleak 0 -> 0.
+  FINDINGS:      The plan named _has_pending_order_for_symbol
+                 and _publish_alert as staying on the
+                 instance. It did not name record_verdict,
+                 which the body closes over from
+                 orchestrator's module import. Dest takes
+                 it from core.gate_registry, the same owner
+                 S-34d used. That is not an S-34g miss
+                 (none of the eleven), not an SCC, and not
+                 a dest split -- core is not a sibling
+                 engine. Harmless; recorded because the
+                 block's closed-over list was incomplete.
+                 verify_step.py uppercases S-34e to S-34E.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; S-34c FINDING line cites go stale;
+                 S-34d FINDING a body that closes over a
+                 sibling must land on the sibling's module;
+                 four exempted baseline tests.
+  NEXT:          S-34f record size shadow (boundary). Not
+                 started. Do not begin S-34f from this tree.
+                 Left uncommitted: baseline_pre-S-34e.json,
+                 baseline_post-S-34e.json, this ledger
+                 entry.
 
