@@ -247,7 +247,10 @@ def _drive_duplicate_id() -> None:
         Side,
         SizedPositionIntent,
     )
-    from feelies.execution.order_lifecycle import _transition_order
+    from feelies.execution.order_lifecycle import (
+        _filter_portfolio_orders_for_pending_conflicts,
+        _transition_order,
+    )
     from feelies.execution.order_state import OrderState
     from tests.kernel.test_orchestrator import _build_orchestrator
 
@@ -283,7 +286,8 @@ def _drive_duplicate_id() -> None:
         sequence=3,
         strategy_id="alpha_x",
     )
-    kept = orch._filter_portfolio_orders_for_pending_conflicts(
+    kept = _filter_portfolio_orders_for_pending_conflicts(
+        orch,
         [later],
         intent=intent,
         correlation_id="x6-dup",
