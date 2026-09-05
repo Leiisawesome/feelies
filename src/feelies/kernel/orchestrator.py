@@ -12,7 +12,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Sequence
-from dataclasses import dataclass, fields, replace
+from dataclasses import fields, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
@@ -249,7 +249,10 @@ _SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
     EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_SLICE_SCOPED_REASONS
 )
 
-from feelies.portfolio.fill_reconciliation import _order_owns_one_slice  # noqa: E402
+from feelies.portfolio.fill_reconciliation import (  # noqa: E402
+    _TradeJournalLeg,
+    _order_owns_one_slice,
+)
 
 
 def _closable_quantity(position_qty: int, side: Side) -> int:
@@ -265,17 +268,6 @@ def _is_forced_market_exit(order: OrderRequest) -> bool:
         order.source_layer == HAZARD_EXIT_SOURCE_LAYER
         and order.reason in _RISK_FORCED_EXIT_REASONS
     )
-
-
-@dataclass(frozen=True, kw_only=True)
-class _TradeJournalLeg:
-    """One trade-journal row's share of a single fill."""
-
-    strategy_id: str
-    filled_quantity: int
-    fees: Decimal
-    realized_pnl: Decimal
-    metadata: dict[str, str]
 
 
 def _trade_journal_legs(
