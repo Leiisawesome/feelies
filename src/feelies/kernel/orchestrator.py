@@ -35,7 +35,6 @@ from feelies.composition.selection_policy import (
     is_redundant_gate_close_flat,
     standalone_signal_actionable_for_strategy,
 )
-from feelies.core.gate_registry import record_verdict
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
@@ -95,6 +94,7 @@ from feelies.execution.order_admission import (
 from feelies.execution.order_lifecycle import (
     _apply_ack_to_order,
     _drain_async_fills,
+    _filter_portfolio_orders_for_pending_conflicts,
     _poll_order_router_acks,
     _submit_tracked_order,
     _transition_order,
@@ -1253,7 +1253,7 @@ class Orchestrator:
                 correlation_id=correlation_id,
                 quote=quote,
             )
-            orders = self._filter_portfolio_orders_for_pending_conflicts(
+            orders = _filter_portfolio_orders_for_pending_conflicts(self,
                 orders,
                 intent=intent,
                 correlation_id=correlation_id,
@@ -1324,7 +1324,7 @@ class Orchestrator:
             correlation_id=correlation_id,
             quote=quote,
         )
-        orders = self._filter_portfolio_orders_for_pending_conflicts(
+        orders = _filter_portfolio_orders_for_pending_conflicts(self,
             orders,
             intent=intent,
             correlation_id=correlation_id,
@@ -2388,40 +2388,6 @@ class Orchestrator:
             order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
             for sm, _, order in self._active_orders.values()
         )
-
-    def _filter_portfolio_orders_for_pending_conflicts(
-        self,
-        orders: list[OrderRequest],
-        *,
-        intent: SizedPositionIntent,
-        correlation_id: str,
-    ) -> list[OrderRequest]:
-        """Drop PORTFOLIO legs that would duplicate an in-flight order.
-
-        Paper/live IB acks land asynchronously; backtest fills are
-        synchronous so this filter is usually a no-op there.  PORTFOLIO
-        has no native supersede-pending semantics — a later boundary's
-        leg is dropped rather than cancel-replaced.  Hazard-exit orders
-        bypass this path via :meth:`_on_bus_derisk_requirement` (Inv-11).
-        """
-        filtered: list[OrderRequest] = []
-        for order in orders:
-            if self._has_pending_order_for_symbol(order.symbol) and not record_verdict("RT.DUPLICATE_INTENT", "FAIL", order.order_id):
-                self._publish_alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=correlation_id,
-                    severity=AlertSeverity.WARNING,
-                    alert_name="portfolio_leg_skipped_pending_order",
-                    message=f"PORTFOLIO leg skipped: pending order on {order.symbol!r} (order_id={order.order_id!r}, strategy={intent.strategy_id!r})",
-                    context={
-                        "order_id": order.order_id,
-                        "symbol": order.symbol,
-                        "strategy_id": intent.strategy_id,
-                    },
-                )
-                continue
-            filtered.append(order)
-        return filtered
 
     def _has_pending_exit_for_symbol(self, symbol: str) -> bool:
         """True if a non-terminal order would close the current position.
