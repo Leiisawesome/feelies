@@ -3294,63 +3294,6 @@ class Orchestrator:
         )
 
 
-    def _force_flatten_symbol_on_degrade(
-        self,
-        symbol: str,
-        correlation_id: str,
-        *,
-        reason: str,
-    ) -> None:
-        """Submit a market exit for one symbol during data-health degradation."""
-        pos = self._positions.get(symbol)
-        if pos.quantity == 0:
-            return
-        side = Side.SELL if pos.quantity > 0 else Side.BUY
-        qty = abs(pos.quantity)
-        seq = self._seq.next()
-        order_id = derive_order_id(f"degrade_flatten:{reason}:{symbol}:{seq}")
-        order = OrderRequest(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=seq,
-            order_id=order_id,
-            symbol=symbol,
-            side=side,
-            order_type=OrderType.MARKET,
-            quantity=qty,
-            strategy_id="degrade_flatten",
-            reason=reason,
-        )
-        try:
-            self._track_order(order_id, side, order)
-            _transition_order(self,
-                order_id,
-                OrderState.SUBMITTED,
-                f"degrade_flatten:{reason}",
-                correlation_id=correlation_id,
-            )
-            self._submit_to_router(order, triggering_quote=self._in_flight_quote)
-            self._bus.publish(order)
-            self._settle_router_acks(correlation_id, expected_order_ids={order_id})
-        except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
-            logger.exception(
-                "Force-flatten on %s failed for symbol=%s (qty=%d, side=%s); "
-                "position remains open and will require manual intervention.",
-                reason,
-                symbol,
-                qty,
-                side.name,
-            )
-            self._publish_alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=correlation_id,
-                severity=AlertSeverity.CRITICAL,
-                alert_name="degrade_flatten_failed",
-                message=f"Force-flatten on {reason} failed for symbol={symbol!r} (qty={qty}, side={side.name}). Position remains open.",
-                context={"symbol": symbol, "reason": reason, "exception": repr(exc)},
-            )
-
-
     # ── Feature snapshot management ─────────────────────────────────
 
     _REGIME_SNAPSHOT_KEY = "__regime__"
