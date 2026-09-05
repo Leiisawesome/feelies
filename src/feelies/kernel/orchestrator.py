@@ -2750,47 +2750,6 @@ class Orchestrator:
     ) -> None:
         self._backend.order_router.submit(order, triggering_quote=triggering_quote)
 
-    def _submit_working_exit_fallback(
-        self,
-        symbol: str,
-        side: Side,
-        quantity: int,
-        parent_order_id: str,
-        correlation_id: str,
-    ) -> None:
-        """Submit the guaranteed MARKET residual for a non-filled working exit."""
-        order_id = derive_order_id(f"{parent_order_id}:working_fallback")
-        order = OrderRequest(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            order_id=order_id,
-            symbol=symbol,
-            side=side,
-            order_type=OrderType.MARKET,
-            quantity=quantity,
-            strategy_id="__working_exit_fallback__",
-            reason="WORKING_EXIT_FALLBACK",
-        )
-        self._track_order(order.order_id, order.side, order, trading_intent="EXIT")
-        if _submit_tracked_order(self, order) is not None:
-            return
-        self._bus.publish(order)
-        self._publish_alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            severity=AlertSeverity.INFO,
-            alert_name="working_exit_market_fallback",
-            message=f"Working reduction did not fill passively; escalating {quantity} {side.name} {symbol} to MARKET (parent_order_id={parent_order_id}).",
-            context={
-                "symbol": symbol,
-                "side": side.name,
-                "quantity": quantity,
-                "parent_order_id": parent_order_id,
-                "fallback_order_id": order_id,
-            },
-        )
-
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.
 
