@@ -177,6 +177,7 @@ from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAY
 from feelies.risk.forced_exit_clamp import (
     _emit_forced_exit_resized_alert,
     _emit_forced_exit_stood_down_alert,
+    _emit_forced_exit_supersedes_pending_alert,
     _forced_exit_closable_quantity,
     _forced_exit_reduces,
     _has_pending_forced_exit_for_symbol,
@@ -3128,7 +3129,7 @@ class Orchestrator:
                     order.strategy_id,
                 )
                 return
-            self._emit_forced_exit_supersedes_pending_alert(order, order.correlation_id)
+            _emit_forced_exit_supersedes_pending_alert(self, order, order.correlation_id)
             self._cancel_resting_for_symbol(order.symbol, order.correlation_id)
 
         # Re-clamp after cancellations because queued fills may have moved the book.
@@ -3233,33 +3234,6 @@ class Orchestrator:
             alert_name="locate_unavailable",
             message=f"No borrow locate for {intent.symbol!r}: refused short entry ({intent.intent.name}); retries next boundary.",
             context={"symbol": intent.symbol, "intent": intent.intent.name},
-        )
-
-    def _emit_forced_exit_supersedes_pending_alert(
-        self,
-        order: OrderRequest,
-        correlation_id: str,
-    ) -> None:
-        """Publish a forensic marker when a forced MARKET exit supersedes a
-        stale resting order.
-
-        Operator visibility (Inv-11): a hard-stop / session-flat MARKET exit
-        cancelled a pending passive order for the symbol so the aggressive
-        close could cross immediately.  Distinct from a duplicate-exit
-        suppression so post-trade forensics can attribute the cancel-and-cross
-        to the safety control rather than to alpha behaviour.
-        """
-        self._publish_alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            severity=AlertSeverity.WARNING,
-            alert_name="forced_exit_supersedes_pending_order",
-            message=f"Forced MARKET exit {order.strategy_id!r} on {order.symbol!r}: cancelling resting order(s) so the aggressive close can cross immediately (Inv-11).",
-            context={
-                "symbol": order.symbol,
-                "strategy_id": order.strategy_id,
-                "order_id": order.order_id,
-            },
         )
 
     def _emit_ssr_suppression_alert(

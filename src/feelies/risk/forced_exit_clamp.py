@@ -145,3 +145,31 @@ def _emit_forced_exit_stood_down_alert(self: Any, order: OrderRequest) -> None:
             "position_quantity": self._positions.get(order.symbol).quantity,
         },
     )
+
+
+def _emit_forced_exit_supersedes_pending_alert(
+    self: Any,
+    order: OrderRequest,
+    correlation_id: str,
+) -> None:
+    """Publish a forensic marker when a forced MARKET exit supersedes a
+    stale resting order.
+
+    Operator visibility (Inv-11): a hard-stop / session-flat MARKET exit
+    cancelled a pending passive order for the symbol so the aggressive
+    close could cross immediately.  Distinct from a duplicate-exit
+    suppression so post-trade forensics can attribute the cancel-and-cross
+    to the safety control rather than to alpha behaviour.
+    """
+    self._publish_alert(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=correlation_id,
+        severity=AlertSeverity.WARNING,
+        alert_name="forced_exit_supersedes_pending_order",
+        message=f"Forced MARKET exit {order.strategy_id!r} on {order.symbol!r}: cancelling resting order(s) so the aggressive close can cross immediately (Inv-11).",
+        context={
+            "symbol": order.symbol,
+            "strategy_id": order.strategy_id,
+            "order_id": order.order_id,
+        },
+    )
