@@ -16,10 +16,12 @@ from feelies.core.events import (
     PositionUpdate,
     Side,
 )
-from feelies.kernel.orchestrator import (
-    TradeRecord,
+from feelies.kernel.forced_exit_reasons import (
     _RISK_FORCED_EXIT_REASONS,
     _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
+)
+from feelies.kernel.orchestrator import (
+    TradeRecord,
     _regime_label_for,
     observe_kill_switch,
 )

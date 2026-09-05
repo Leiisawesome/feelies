@@ -146,6 +146,10 @@ from feelies.ingestion.data_integrity import (
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
+from feelies.kernel.forced_exit_reasons import (
+    _RISK_FORCED_EXIT_REASONS,
+    _SLICE_SCOPED_FORCED_EXIT_REASONS,
+)
 from feelies.kernel.macro import (
     TRADING_MODES,
     MacroState,
@@ -172,13 +176,7 @@ from feelies.risk.engine import (
     _maybe_flip_buying_power_at_rth_close,
 )
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
-from feelies.risk.deferral_cap import (
-    DEFERRAL_EXIT_REASONS,
-    DEFERRAL_SLICE_SCOPED_REASONS,
-)
-from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
-from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
-from feelies.risk.stop_exit import STOP_EXIT_REASONS
+from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -231,21 +229,6 @@ _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
         OrderState.REJECTED,
         OrderState.EXPIRED,
     }
-)
-
-# Risk-authored exits use one non-vetoable reason registry.
-_RISK_FORCED_EXIT_REASONS: frozenset[str] = (
-    HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS | STOP_EXIT_REASONS
-)
-
-# Slice-scoped authors may reduce either symbol-net or strategy-slice exposure.
-_SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = (
-    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
-)
-
-# Only unambiguous slice-scoped reasons self-attribute fills.
-_SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
-    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_SLICE_SCOPED_REASONS
 )
 
 from feelies.portfolio.fill_reconciliation import (  # noqa: E402
