@@ -146,10 +146,7 @@ from feelies.ingestion.data_integrity import (
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
-from feelies.kernel.forced_exit_reasons import (
-    _RISK_FORCED_EXIT_REASONS,
-    _SLICE_SCOPED_FORCED_EXIT_REASONS,
-)
+from feelies.kernel.forced_exit_reasons import _SLICE_SCOPED_FORCED_EXIT_REASONS
 from feelies.kernel.macro import (
     TRADING_MODES,
     MacroState,
@@ -178,7 +175,7 @@ from feelies.risk.engine import (
 )
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
-from feelies.risk.forced_exit_clamp import _closable_quantity
+from feelies.risk.forced_exit_clamp import _closable_quantity, _is_forced_market_exit
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -227,14 +224,6 @@ from feelies.portfolio.fill_reconciliation import (  # noqa: E402
     _record_fill_attribution,
     _reconcile_fills,
 )
-
-
-def _is_forced_market_exit(order: OrderRequest) -> bool:
-    """Identify controller-authored aggressive exits routed through the risk bridge."""
-    return (
-        order.source_layer == HAZARD_EXIT_SOURCE_LAYER
-        and order.reason in _RISK_FORCED_EXIT_REASONS
-    )
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
