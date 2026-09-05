@@ -10045,4 +10045,224 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-34a.json, this ledger
                  entry.
 
+---
+
+## S-34g  2026-09-05T16:31:59+08:00
+  STEP:          S-34g
+  BASE:          53096252d9332278303ee73e61cee7a74c455836
+  RESULT SHA:    6e8e7b0063903949c34fa60351ba495bfdaf45f2 (exec/S-34g; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   detecting test
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 failed on post-S-34a arch/exec (import at
+                 fill_reconciliation.py:19), then passed after
+                 commit 4. CLOSES the S-34a cycle FINDING.
+                 G40 stays OPEN. S2 remains xfail(strict, GAP
+                 G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed; detecting test 0 -> 1 passed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS
+                 conformance 116 passed / 6 xfailed -> 117
+                 passed / 6 xfailed (no XPASS)
+                 kernel 390 -> 390
+                 portfolio 52
+                 tests/docs 101 -> 101
+                 mypy src/feelies: Success, 210 source files
+                 (207 + 3)
+  TESTS:         capture pre-S-34g GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34g GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. +1 is the detecting
+                 test. The four EXEMPTIONS skipped (Saturday).
+                 No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-S-34g vs
+                 post-S-34g and vs baseline_post-S-34a.json;
+                 0 moved at any of the five commits | MATCH.
+  FILES:         9 implementation paths declared, 9 touched
+                 (verify_step not runnable -- S-34G
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: orchestrator.py,
+                 fill_reconciliation.py,
+                 forced_exit_reasons.py (new),
+                 order_states.py (new), fill_bindings.py
+                 (new), test_import_contracts.py,
+                 test_stage0_decouple_wiring.py,
+                 test_orchestrator_exit_composer_routing.py,
+                 test_orchestrator_hazard_exit_routing.py.
+                 Named-not-edited, not touched:
+                 trade_journal.py, regime_engine.py,
+                 kill_switch.py, hazard_exit.py,
+                 forced_exit_clamp.py. verify_step file_list
+                 would count 15 tokens (those five plus a
+                 bare forced_exit_clamp.py) and dir_list
+                 infers src/feelies/kernel/ against FILES
+                 "Do not declare" -- frozen; this tree added
+                 only the three named kernel files.
+  NET DELTA:     declared src modules +3, public symbols 0,
+                 branch points 0.
+                 actual modules 207 -> 210 (+3 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH;
+                 fill_bindings re-exports are not counted
+                 public; observe_kill_switch +0 not +1)
+                 sloc 46031 -> 46048 (+17)
+                 n_edges 671 -> 679
+                 n_modules 169 -> 172
+                 cycles 2 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-34G --base 53096252` exits 2: S-34G not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 9 declared implementation / 9
+                 touched CLEAN (oracle would also list 6
+                 named-not-edited tokens); PARITY 64/64
+                 HASH+COUNT hold, 0 moved (declared hold
+                 parsed as _BASELINE_CONFIG_HASH -- frozen);
+                 TESTS 4907->4908 passed, failed 0->0 (from
+                 captures; verify_step does not print a TESTS
+                 section); NET DELTA MATCH on modules +3
+                 symbols 0; cycles 2 -> 1 MATCH; oracle would
+                 still say "deletions with no negative delta"
+                 because DELETES is an import, not a count --
+                 frozen. CLEAN, blast radius boundary -- human
+                 gate required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 5309625 on arch/exec. Cut
+                 exec/S-34g. RESULT HEAD 6e8e7b0, confirmed
+                 on Go. Five commits in this order because
+                 the detecting test had to fail first, the
+                 two kernel homes had to exist before any
+                 dest could import them, and the cycle only
+                 dies when fill_reconciliation stops importing
+                 orchestrator: (1) 513c9f9 detecting test,
+                 failed at fill_reconciliation.py:19;
+                 n_cycles 2. (2) 85b9ec4
+                 forced_exit_reasons.py; orchestrator and
+                 fill_reconciliation take the three unions
+                 from there; still n_cycles 2. (3) 7455c2b
+                 order_states.py; orchestrator takes
+                 _TERMINAL_ORDER_STATES; retarget
+                 test_orchestrator_hazard_exit_routing.py;
+                 still n_cycles 2. (4) c6b4bb5
+                 fill_bindings.py; fill_reconciliation takes
+                 TradeRecord, _regime_label_for,
+                 observe_kill_switch from there and drops
+                 the orchestrator import; detecting test
+                 passes; n_cycles 2 -> 1. (5) 6e8e7b0
+                 retarget the two _RISK tests; drop unused
+                 TradeRecord and _regime_label_for
+                 re-exports on orchestrator;
+                 observe_kill_switch stays bound on
+                 orchestrator from monitoring.
+                 n_cycles 2 -> 1. The cut SCC is
+                 kernel.orchestrator <->
+                 portfolio.fill_reconciliation. The one
+                 that remains is the pre-existing
+                 feelies.cli -> feelies.cli.main
+                 package-to-submodule edge. Nothing else.
+                 importgraph grimp cycles 0 (that cli edge
+                 is AST-only).
+                 Eleven names and homes:
+                 _RISK_FORCED_EXIT_REASONS,
+                 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
+                 _SLICE_SCOPED_FORCED_EXIT_REASONS ->
+                 kernel/forced_exit_reasons.py (new);
+                 _TERMINAL_ORDER_STATES ->
+                 kernel/order_states.py (new);
+                 TradeRecord, _regime_label_for,
+                 observe_kill_switch ->
+                 kernel/fill_bindings.py re-exports of
+                 storage.trade_journal,
+                 services.regime_engine,
+                 monitoring.kill_switch (definitions
+                 unmoved; orchestrator leftover still imports
+                 observe_kill_switch from monitoring);
+                 _closable_quantity and
+                 _is_forced_market_exit stay on orchestrator
+                 until S-34b; logger is already
+                 getLogger(__name__) per dest;
+                 HAZARD_EXIT_SOURCE_LAYER stays on
+                 risk.hazard_exit. New modules take package
+                 default audit_kernel; no _FILE_OWNERS
+                 trio (kernel is not a split package). No
+                 docs/prompts. No SequenceGenerator
+                 constructed. Did not begin S-34b.
+                 No definition changed: TradeRecord,
+                 _regime_label_for, observe_kill_switch are
+                 the same objects; the three unions equal
+                 the same source-set expressions; terminal
+                 frozenset members unchanged.
+                 No hash moved at any of the five commits.
+                 64/64 HASH/COUNT identical pre vs post and vs
+                 baseline_post-S-34a.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Declared NET DELTA: src modules +3, public
+                 symbols 0, branch points 0. Measured:
+                 modules 207 -> 210 (+3 MATCH),
+                 public_symbols 575 -> 575 (+0 MATCH;
+                 fill_bindings re-exports not counted
+                 public; observe_kill_switch +0 not +1),
+                 sloc 46031 -> 46048 (+17), n_edges 671 ->
+                 679, n_modules 169 -> 172, cycles 2 -> 1
+                 MATCH, alphaleak 0 -> 0.
+                 This step's stated purpose covered two
+                 distinct jobs: cut the S-34a SCC, and
+                 prevent S-34b-f dests from importing
+                 orchestrator for closed-overs. Seven of
+                 the eleven serve the prevent-future-cycles
+                 half, and all seven belong to S-34b:
+                 _RISK_FORCED_EXIT_REASONS,
+                 _SLICE_SCOPED_FORCED_EXIT_REASONS,
+                 _TERMINAL_ORDER_STATES,
+                 HAZARD_EXIT_SOURCE_LAYER,
+                 _closable_quantity, _is_forced_market_exit,
+                 logger. S-34c through S-34f close over
+                 none of the eleven. Four names --
+                 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
+                 TradeRecord, _regime_label_for, and
+                 observe_kill_switch -- moved because
+                 cutting the S-34a SCC required it, not to
+                 prevent a future cycle. They are fill-only;
+                 fill_reconciliation already imported them
+                 from orchestrator. Harmless: same
+                 identities, no new engine-to-engine edge.
+                 _RISK_FORCED_EXIT_REASONS is the only name
+                 serving both halves.
+  FINDINGS:      verify_step.py uppercases S-34g to S-34G.
+                 Frozen; four checks by hand. file_list
+                 counts named-not-edited destinations and a
+                 bare forced_exit_clamp.py; dir_list infers
+                 src/feelies/kernel/. Frozen.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; S-34a FINDING n_cycles 1 -> 2, cut this
+                 step; four exempted baseline tests.
+  NEXT:          S-34b forced-exit clamp cluster (boundary).
+                 Not started. Do not begin S-34b from this
+                 tree. Left uncommitted:
+                 baseline_pre-S-34g.json,
+                 baseline_post-S-34g.json, this ledger
+                 entry.
+
 
