@@ -178,6 +178,7 @@ from feelies.risk.engine import (
 )
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
+from feelies.risk.forced_exit_clamp import _closable_quantity
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -226,13 +227,6 @@ from feelies.portfolio.fill_reconciliation import (  # noqa: E402
     _record_fill_attribution,
     _reconcile_fills,
 )
-
-
-def _closable_quantity(position_qty: int, side: Side) -> int:
-    """Return shares that side can close without crossing through zero."""
-    if side is Side.SELL:
-        return max(position_qty, 0)
-    return max(-position_qty, 0)
 
 
 def _is_forced_market_exit(order: OrderRequest) -> bool:
