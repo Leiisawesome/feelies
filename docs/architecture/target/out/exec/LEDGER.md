@@ -11010,6 +11010,9 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  ride the next edit of order_admission.py.
                  None of S-34e, S-34f, or S-35 names that
                  file. Left as-is.
+                 UNOWNED: no remaining step names order_admission.py, so the inaccurate
+                 purity claim in its docstring has no scheduled repair. A later reader will
+                 see a module documented as pure that publishes an alert.
                  verify_step.py uppercases S-34d to S-34D.
                  Frozen; four checks by hand.
                  Carried, not fixed: G6 vs empty
