@@ -9468,4 +9468,207 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-32a.json, this ledger
                  entry.
 
+---
+
+## S-33  2026-09-05T12:44:00+08:00
+  STEP:          S-33
+  BASE:          e7fe42a3502973df6aaa4a6eafd61e8cb88f52a3
+  RESULT SHA:    919bcd1b6b731fb9cf5d2f0e63cf11226ce89be4
+                 (exec/S-33; implementation only)
+  VERDICT:       passed
+                 (Go; branch head 919bcd1)
+  CONFORMANCE:   CLOSES nothing. G41 and G42 stay OPEN.
+                 S5 xfail intact (G41 G42 G44 G45). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed /
+                 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 conformance 116 passed / 6 xfailed -> 116
+                 passed / 6 xfailed
+                 mypy src/feelies: Success, 206 source files.
+  TESTS:         capture pre-S-33 GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-33 GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that
+                 set.
+                 not-paper_rth: 4906 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 sensors 285 passed / 1 skipped; features 83;
+                 kernel 390.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-33 vs post-S-33 and vs
+                 baseline_post-S-32a.json; 0 moved at the
+                 one commit | MATCH.
+                 Fingerprint unmoved (determinism 148).
+                 tools/exec fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Leave-one-out override hash
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 identical on pruned, all_declared, and all
+                 eleven drop legs (the APP trade parity
+                 hash). Fills 20 on every leg.
+                 verify_step names _BASELINE_CONFIG_HASH on
+                 a Hold declaration (frozen --list
+                 false-positive); nothing moved.
+  FILES:         5 path tokens declared in FILES prose
+                 (verify_step PATHY), 1 touched, 0 extra
+                 CLEAN. Tree unique editable path is 1;
+                 the other four are do-not-include
+                 (registry.py, aggregator.py,
+                 strategy_position_store.py,
+                 horizon_scheduler.py). Followed the tree
+                 (S-24). Touched:
+                 tools/arch/perfmeasure.py
+                 Did not name or wrap
+                 sensors/horizon_scheduler.py or
+                 sensors/impl/*.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0. Cost column: do not book.
+                 actual modules 206 -> 206 (+0)
+                 public_symbols 575 -> 575 (+0)
+                 sloc 46003 -> 46003 (+0)
+                 n_edges 667 -> 667 (+0)
+                 n_modules 168 -> 168
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on the declared zeros.
+                 Cost column: not booked. Uninformative --
+                 see FINDINGS.
+  DETERMINISM:   148 -> 148 after the commit and after
+                 recapture; no replay hash moved;
+                 fingerprint test passed throughout.
+  VERIFY_STEP:   Four checks: FILES 5 declared / 1 touched
+                 / 0 extra CLEAN (four do-not-include);
+                 PARITY 64/64 HASH+COUNT hold, fingerprint
+                 unmoved; TESTS 4907->4907 passed, failed
+                 0->0; NET DELTA MATCH on modules 0
+                 symbols 0 sloc 0 (oracle still says
+                 "deletions with no negative delta" because
+                 DELETES is a claim, not a module --
+                 frozen). CLEAN, blast radius
+                 platform-wide -- human gate required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD e7fe42a on arch/exec at pre-flight.
+                 Cut exec/S-33. Go confirmed branch head
+                 919bcd1b6b731fb9cf5d2f0e63cf11226ce89be4.
+                 One commit: 919bcd1. The recorder
+                 drop_id and --mode leaveoneout landed
+                 together; splitting them would leave an
+                 unused injection. Did not attack a term.
+                 Did not add a module. Did not wrap
+                 impl/*.update or HorizonScheduler.on_event.
+                 Structural claim: two-leg cardinality
+                 (pruned vs all_declared) can only say
+                 what nine extra quote sensors cost
+                 together. Leave-one-out at full
+                 registration makes each extra sensor_id
+                 a named row on the same unprobed
+                 min-of-N timer, by dropping that id from
+                 the registered spec list and keeping the
+                 relative order of the rest. That is what
+                 sensorscale could not measure: a
+                 per-id exclusive, not a blob average.
+                 Fan-out order is preserved. Evidence:
+                 all thirteen registration legs -- pruned,
+                 all_declared, and the eleven extra-id
+                 drops -- hashed
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 with fills=20. That is the APP trade
+                 parity hash. A moved hash on an unused-id
+                 drop would mean registration order leaked
+                 into output. It did not move.
+                 The measurement is uninformative and was
+                 not booked as cost. Run:
+                 --config configs/bt_sig_benign_midcap.yaml
+                 --repeats 3. Pruned S=4 min 199,515
+                 ns/quote; all_declared S=15 / 13 on quote
+                 min 351,730.5 (three samples 409,021 /
+                 353,083 / 351,730, ptp 57,291). Eleven
+                 extra ids, nine on quote. Exclusive
+                 column not booked.
+                 G41 and G42 stay OPEN because no term
+                 was attacked. S5 xfail still names them.
+                 REFACTOR PATH stopped before S-33b.
+                 Declared NET DELTA 0 modules, 0 public
+                 symbols, 0 branch points. Measured
+                 206->206, 575->575, sloc 46003->46003,
+                 n_edges 667, cycles 1, alphaleak 0.
+                 MATCH. src/ untouched; +160/-33 is
+                 tools/arch/perfmeasure.py, outside
+                 measure.py's src census.
+  FINDINGS:      The leave-one-out run produced two
+                 negative exclusive times
+                 (quote_replenish_asymmetry -122.0,
+                 scheduled_flow_window -1,346.9 ns/quote)
+                 and a quote-extra-versus-blob delta of
+                 -62,221.5 ns against an S-32 noise
+                 envelope of 2,918. Negative exclusive
+                 means the cheapest of three drop-one
+                 runs was slower than the cheapest of
+                 three full-S runs -- removing work
+                 cannot add real compute, so the sign is
+                 noise.
+                 All three explanations are in play, but
+                 they are not equal. min-of-3 is too few:
+                 all_declared's own three samples already
+                 span 57,291 ns, twenty times the S-32
+                 envelope, so the min is a lucky draw
+                 from a wide distribution. The legs are
+                 not independent: one process, sequential,
+                 twenty-two minutes; the two negatives
+                 are late in extra-id order, after the
+                 host had been running. The effect is
+                 below resolution: both negatives sit
+                 inside 2,918 ns, the sum-vs-blob miss
+                 is the same size as this run's
+                 all_declared ptp, and even the large
+                 positive exclusives (hawkes +47,116,
+                 kyle +46,495) sit inside that ptp.
+                 The binding constraint is resolution.
+                 More repeats would tighten the min; they
+                 would not turn a whole-run timer whose
+                 same-config ptp is tens of microseconds
+                 into a per-id exclusive-time meter.
+                 --mode leaveoneout is usable for what it
+                 structurally guarantees -- one named id
+                 per row, remaining-spec order preserved,
+                 hash identity across legs. It is not
+                 usable cost evidence for S-33b or any
+                 later step at this resolution. The tool
+                 cannot yet name a dominant sensor. S-33
+                 added an instrument rather than a
+                 finding.
+                 verify_step FILES counted 5 PATHY tokens
+                 from prose; only perfmeasure.py is
+                 editable. Frozen weak guard.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id
+                 (S-04c); serialization.py missing
+                 __schema_version__ fail-open; ci.yml
+                 G40 continue-on-error; verify_step
+                 frozen bugs; 152 research cache days
+                 stale (APP/2026-03-26 current); R6
+                 14/31 resets; S-20 no-any-return; S-21
+                 package-move bindings; S-23 negative
+                 assertions; S-24 operator NOTES; S-26
+                 unused selection_policy injection;
+                 S-28a token-vs-spelling; S-29
+                 _BASELINE_CONFIG_HASH on any field
+                 add/delete; S-30c through S-30h concept
+                 residue; S-30g FINDING G36 stays OPEN;
+                 S-31c FINDING G44 stays partial; S-32
+                 FINDING cost instrument; four exempted
+                 baseline tests.
+  NEXT:          S-34 residual classification of the
+                 orchestrator (G40) (platform-wide). Not
+                 started. Do not begin S-34.
+                 Left uncommitted: baseline_pre-S-33.json,
+                 baseline_post-S-33.json, this ledger
+                 entry.
+
 
