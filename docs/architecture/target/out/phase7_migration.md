@@ -4246,8 +4246,7 @@ PROBLEM:         `_filter_portfolio_orders_for_pending_conflicts:2561-2593`
                  tests/conformance/test_pathological_refusal.py:286 binds
                  `orch._filter_portfolio_orders_for_pending_conflicts`.
                  WAVE-D forbids a shim. Destination is the same module S-34c
-                 will use; this body has no draw, so it goes first on that
-                 file.
+                 will use.
 WHY THIS OWNER:  Engine 10 owns the order state machine and what is live in
                  it. A PORTFOLIO leg refused because a working order is
                  already on the book is that machine, not kernel dispatch.
@@ -4266,9 +4265,7 @@ REFACTOR PATH:   one body, one commit. Copy onto a module-level function
                  orchestrator.py:1361 and :1432 retarget. Retarget
                  test_pathological_refusal.py:286 in the same commit.
                  Keep `_publish_alert` on the kernel; do not add a
-                 generator. Land before S-34c (drawing body last on this
-                 dest).
-                 No S-34g name; self._has_pending_order_for_symbol / self._publish_alert stay on Orchestrator via self: Any.
+                 generator. No S-34g name; self._has_pending_order_for_symbol / self._publish_alert stay on Orchestrator via self: Any.
 BLAST RADIUS:    boundary
 VALIDATED BY:    S2, S12, S14, S17, H1, the pathological-refusal bind,
                  `level4_portfolio_order`, the oracle
@@ -4281,9 +4278,8 @@ PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
 DELETES:         `_filter_portfolio_orders_for_pending_conflicts` from
                  Orchestrator (1 method)
 NET DELTA:       src modules 0, public symbols 0, branch points 0
-ROLLBACK:        revert the commit. Not independently revertible from
-                 S-34c (or o's ack-drop) once those have also edited
-                 order_lifecycle.py.
+ROLLBACK:        revert. Not independently revertible from S-34c, which already
+                 edited order_lifecycle.py.
 ```
 
 ```

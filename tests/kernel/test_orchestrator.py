@@ -49,6 +49,7 @@ from feelies.execution.order_admission import (
 from feelies.execution.order_lifecycle import (
     _apply_ack_to_order,
     _drain_async_fills,
+    _escalate_unfilled_working_exits,
     _transition_order,
     cancel_order,
 )
@@ -2958,7 +2959,8 @@ class TestWorkingExitFallback:
     def test_cancelled_escalates_full_residual_to_market(self) -> None:
         orch, _bus, orders = self._orch()
         orch._working_exit_fallback["oid1"] = ("AAPL", Side.SELL, 50)
-        orch._escalate_unfilled_working_exits(
+        _escalate_unfilled_working_exits(
+            orch,
             [self._ack("oid1", OrderAckStatus.CANCELLED)],
             "c",
         )
@@ -2971,7 +2973,8 @@ class TestWorkingExitFallback:
         orch, _bus, orders = self._orch()
         orch._working_exit_fallback["oid2"] = ("AAPL", Side.SELL, 50)
         orch._order_filled_qty["oid2"] = 20
-        orch._escalate_unfilled_working_exits(
+        _escalate_unfilled_working_exits(
+            orch,
             [self._ack("oid2", OrderAckStatus.EXPIRED, filled=20)],
             "c",
         )
@@ -2980,7 +2983,8 @@ class TestWorkingExitFallback:
     def test_full_fill_no_fallback(self) -> None:
         orch, _bus, orders = self._orch()
         orch._working_exit_fallback["oid3"] = ("AAPL", Side.SELL, 50)
-        orch._escalate_unfilled_working_exits(
+        _escalate_unfilled_working_exits(
+            orch,
             [self._ack("oid3", OrderAckStatus.FILLED, filled=50)],
             "c",
         )
@@ -2989,7 +2993,8 @@ class TestWorkingExitFallback:
 
     def test_noop_when_nothing_tagged(self) -> None:
         orch, _bus, orders = self._orch()
-        orch._escalate_unfilled_working_exits(
+        _escalate_unfilled_working_exits(
+            orch,
             [self._ack("unknown", OrderAckStatus.CANCELLED)],
             "c",
         )
