@@ -187,12 +187,11 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_feature_snapshots, _restore_feature_snapshots, _update_regime  # noqa: E501
-from feelies.services.regime_engine import _regime_label_for as _regime_label_for  # noqa: F401
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotStore
-from feelies.storage.trade_journal import TradeJournal, TradeRecord as TradeRecord  # noqa: F401
+from feelies.storage.trade_journal import TradeJournal
 
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel

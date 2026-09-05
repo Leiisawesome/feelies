@@ -42,9 +42,9 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.backend import ExecutionBackend
+from feelies.kernel.forced_exit_reasons import _RISK_FORCED_EXIT_REASONS
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
-from feelies.kernel import orchestrator as _orchestrator_mod
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
@@ -299,7 +299,7 @@ class TestComposerSignatureRouted:
     def test_bridge_imports_the_composer_constants(self) -> None:
         # The kernel's combined forced-exit set must contain the composer's
         # writer set, so a new composer reason automatically extends routing.
-        assert EXIT_COMPOSER_EXIT_REASONS <= _orchestrator_mod._RISK_FORCED_EXIT_REASONS
+        assert EXIT_COMPOSER_EXIT_REASONS <= _RISK_FORCED_EXIT_REASONS
 
     def test_every_composer_reason_is_routed_by_the_bridge(self) -> None:
         for reason in sorted(EXIT_COMPOSER_EXIT_REASONS):

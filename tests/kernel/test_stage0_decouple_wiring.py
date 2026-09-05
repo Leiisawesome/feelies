@@ -49,7 +49,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
-from feelies.kernel import orchestrator as _orchestrator_mod
+from feelies.kernel.forced_exit_reasons import _RISK_FORCED_EXIT_REASONS
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.deferral_cap import (
@@ -276,7 +276,7 @@ def test_bridge_routes_every_reason_from_every_risk_layer_exit_author() -> None:
         (EXIT_COMPOSER_EXIT_REASONS, "exit composer"),
         (DEFERRAL_EXIT_REASONS, "deferral cap"),
     ):
-        missing = sorted(writer_set - _orchestrator_mod._RISK_FORCED_EXIT_REASONS)
+        missing = sorted(writer_set - _RISK_FORCED_EXIT_REASONS)
         assert not missing, f"{name} reasons not routed by the kernel bridge: {missing}"
 
 
