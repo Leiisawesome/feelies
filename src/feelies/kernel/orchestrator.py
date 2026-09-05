@@ -251,6 +251,7 @@ _SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
 
 from feelies.portfolio.fill_reconciliation import (  # noqa: E402
     _order_owns_one_slice,
+    _record_fill_attribution,
     _trade_journal_legs,
 )
 
@@ -2952,36 +2953,7 @@ class Orchestrator:
         self._active_orders[order_id] = (sm, side, order)
         if trading_intent:
             self._order_trading_intent[order_id] = trading_intent
-        self._record_fill_attribution(order_id, side, order)
-
-    def _record_fill_attribution(
-        self,
-        order_id: str,
-        side: Side,
-        order: OrderRequest,
-    ) -> None:
-        """Record deterministic strategy allocations for an order.
-
-        Single-slice orders self-attribute; symbol-net exits allocate across live slices."""
-        if self._fill_ledger is None or not _order_owns_one_slice(order):
-            return
-        from feelies.portfolio.fill_attribution import AlphaContribution, AttributionRecord
-
-        self._fill_ledger.record(
-            AttributionRecord(
-                order_id=order_id,
-                symbol=order.symbol,
-                net_side=side,
-                net_quantity=order.quantity,
-                contributions=(
-                    AlphaContribution(
-                        strategy_id=order.strategy_id,
-                        signed_quantity=order.quantity,
-                        proportion=1.0,
-                    ),
-                ),
-            )
-        )
+        _record_fill_attribution(self, order_id, side, order)
 
     def _emit_ack_drop_alert(self, ack: OrderAck, sm: StateMachine[OrderState]) -> None:
         """Emit an alert when a valid broker ack cannot be applied to the order SM."""

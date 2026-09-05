@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
-from feelies.core.events import OrderRequest
+from feelies.core.events import OrderRequest, Side
 from feelies.kernel.orchestrator import (
     _RISK_FORCED_EXIT_REASONS,
     _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
@@ -81,3 +82,33 @@ def _trade_journal_legs(
         )
         for strategy_id, qty, leg_fees, leg_realized in attributed_legs
     ]
+
+
+def _record_fill_attribution(
+    self: Any,
+    order_id: str,
+    side: Side,
+    order: OrderRequest,
+) -> None:
+    """Record deterministic strategy allocations for an order.
+
+    Single-slice orders self-attribute; symbol-net exits allocate across live slices."""
+    if self._fill_ledger is None or not _order_owns_one_slice(order):
+        return
+    from feelies.portfolio.fill_attribution import AlphaContribution, AttributionRecord
+
+    self._fill_ledger.record(
+        AttributionRecord(
+            order_id=order_id,
+            symbol=order.symbol,
+            net_side=side,
+            net_quantity=order.quantity,
+            contributions=(
+                AlphaContribution(
+                    strategy_id=order.strategy_id,
+                    signed_quantity=order.quantity,
+                    proportion=1.0,
+                ),
+            ),
+        )
+    )
