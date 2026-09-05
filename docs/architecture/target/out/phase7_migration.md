@@ -3696,41 +3696,46 @@ CLOSES:          G42, G41
 PROBLEM:         Engine 2 is the dominant tick cost. Phase 4's
                  +22.6 µs/quote-per-sensor is an average over 9 added
                  sensors (A4.5), not a per-sensor exclusive time.
-                 `--mode sensorscale` today is pruned-vs-all
-                 cardinality, not per-sensor probes.
-FILES:           src/feelies/sensors/registry.py
-                 src/feelies/features/aggregator.py
-                 (1) is a run of tools/arch/perfmeasure.py --mode
-                 sensorscale and --mode both; do not edit the tool
-                 unless this block is amended to name it.
-                 If (1) names sensors/horizon_scheduler.py or
-                 sensors/impl/*, STOP and amend FILES. Do not
-                 stretch. strategy_position_store.py is not in
-                 scope. Do not add a module.
+                 `--mode sensorscale` is pruned-vs-all cardinality.
+                 On this tree, --repeats 3: pruned S=4 min 140,908
+                 ns/quote (ptp 1,918, σ 969); all_declared S=15 min
+                 356,928 (ptp 5,818, σ 2,920); booked +216,020 ns
+                 for +9 quote sensors = 24,002 ns/sensor average.
+                 The nine-sensor blob is resolvable. The dominant
+                 sensor is not. `--mode both` wraps
+                 sensors/impl/*.update and HorizonScheduler.on_event;
+                 that is a different instrument and those files are
+                 not in FILES.
+FILES:           tools/arch/perfmeasure.py
+                 Do not include registry.py or aggregator.py until
+                 (1) names a term in them. Do not include
+                 strategy_position_store.py. Do not add a module.
+                 If (1) is leave-one-out on the unprobed timer it
+                 will not need horizon_scheduler.py or impl/*.
+                 If (1) instead wraps those, STOP and put them in
+                 FILES before wrapping.
 WHY THIS OWNER:  Engine 2 owns sensor fan-out and horizon aggregation.
-REFACTOR PATH:   **Measure before optimising, and the measurement does not
-                 exist yet.** Phase 4 A4.5 records that the 22.6 µs/quote figure
-                 is an average over 9 added sensors, not per sensor, and names
-                 the missing evidence: per-sensor probes at full registration,
-                 for which `--mode sensorscale` already installs the arming
-                 hook. (1) per-sensor probes; (2) attack the dominant term the
-                 probes name; (3) re-measure after each change; (4) X10's budget
-                 from S-07 now has a number engine 2 can be held to.
+REFACTOR PATH:   The measurement does not exist yet, and sensorscale
+                 does not become it by running it again. (1) add
+                 leave-one-out at full registration on the unprobed
+                 whole-run timer, min-of-N, one sensor id per row;
+                 do not use --mode both to identify the term (probe
+                 overhead and twelfth-file wraps). (2) stop. Do not
+                 attack a term in this step. Re-plan S-33b when (1)
+                 names a FILES path. X10's engine-2 number waits
+                 for that step.
 BLAST RADIUS:    platform-wide — engine 2 is on every quote
-VALIDATED BY:    S5, X10, the 5 engine-2 baselines, the oracle, and A5.6's
-                 replay with two SIGNAL alphas registered
+VALIDATED BY:    the leave-one-out table sums to the nine-sensor
+                 blob within the S-32 envelope; parity hash identical
+                 across leave-one-out legs; S5 xfail stays
 PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
-                 _BASELINE_CONFIG_HASH. Engine 2's five:
-                 EXPECTED_LEVEL4_READING_{HASH,COUNT},
-                 EXPECTED_V03_READING_{HASH,COUNT},
-                 EXPECTED_LEVEL2_TICK_{HASH,COUNT},
-                 EXPECTED_LEVEL3_SNAPSHOT_{HASH,COUNT},
-                 EXPECTED_MULTI_SYMBOL_READING_{HASH,COUNT}.
-DELETES:         none until (1). Then only the named term in FILES.
-NET DELTA:       0 modules, 0 public symbols, 0 branch points until
-                 (1) says otherwise — then re-plan, do not stretch.
-                 Cost is the intended delta; book it only from
-                 min-of-N, never from a single run.
+                 _BASELINE_CONFIG_HASH. A measurement override that
+                 moves a hash is a finding, not a re-pin.
+DELETES:         nothing in src. sensorscale's claim that it already
+                 is per-sensor probes.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points.
+                 Cost column: do not book. The table is evidence
+                 for a later step, not a saving.
 ROLLBACK:        revert per commit.
 ```
 
