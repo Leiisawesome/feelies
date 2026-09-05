@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from feelies.core.events import OrderRequest, Side
+from feelies.core.events import AlertSeverity, OrderRequest, Side
 from feelies.kernel.forced_exit_reasons import (
     _RISK_FORCED_EXIT_REASONS,
     _SLICE_SCOPED_FORCED_EXIT_REASONS,
@@ -93,3 +93,29 @@ def _forced_exit_closable_quantity(self: Any, order: OrderRequest) -> int:
         slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
         closable = max(closable, _closable_quantity(slice_qty, order.side))
     return min(order.quantity, closable)
+
+
+def _emit_forced_exit_resized_alert(self: Any, order: OrderRequest, closable: int) -> None:
+    """Publish a marker when a mandated exit is clamped to the settled book.
+
+    The resting-order cancel settled a *partial* fill, so the exit's original
+    quantity would now cross zero into opposite exposure.  It is resized to
+    the residual rather than stood down, but an operator needs to see that the
+    submitted size differs from what the controller authored (Inv-13).
+    """
+    self._publish_alert(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=order.correlation_id,
+        severity=AlertSeverity.WARNING,
+        alert_name="forced_exit_resized_after_cancel",
+        message=f"Forced exit {order.reason!r} on {order.symbol!r} resized {order.quantity} -> {closable}: cancelling resting orders settled a partial fill, and the original quantity would have crossed zero into opposite exposure (strategy_id={order.strategy_id!r}).",
+        context={
+            "symbol": order.symbol,
+            "strategy_id": order.strategy_id,
+            "order_id": order.order_id,
+            "reason": order.reason,
+            "original_quantity": order.quantity,
+            "submitted_quantity": closable,
+            "position_quantity": self._positions.get(order.symbol).quantity,
+        },
+    )
