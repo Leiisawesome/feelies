@@ -176,6 +176,7 @@ from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
 from feelies.risk.forced_exit_clamp import (
     _emit_forced_exit_resized_alert,
+    _emit_forced_exit_stood_down_alert,
     _forced_exit_closable_quantity,
     _forced_exit_reduces,
     _has_pending_forced_exit_for_symbol,
@@ -3133,7 +3134,7 @@ class Orchestrator:
         # Re-clamp after cancellations because queued fills may have moved the book.
         closable = _forced_exit_closable_quantity(self, order)
         if closable <= 0:
-            self._emit_forced_exit_stood_down_alert(order)
+            _emit_forced_exit_stood_down_alert(self, order)
             return
         if closable < order.quantity:
             _emit_forced_exit_resized_alert(self, order, closable)
@@ -3232,31 +3233,6 @@ class Orchestrator:
             alert_name="locate_unavailable",
             message=f"No borrow locate for {intent.symbol!r}: refused short entry ({intent.intent.name}); retries next boundary.",
             context={"symbol": intent.symbol, "intent": intent.intent.name},
-        )
-
-    def _emit_forced_exit_stood_down_alert(self, order: OrderRequest) -> None:
-        """Publish a marker when a mandated exit stands down post-cancel.
-
-        The resting-order cancel settled a fill that already closed the book, so
-        submitting the exit's now-stale quantity would open the opposite side.
-        Standing down is the fail-safe branch (Inv-11), but it is *not* routine —
-        an operator needs to see that a mandated exit did not reach the router,
-        and forensics needs it to explain the missing order (Inv-13).
-        """
-        self._publish_alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=order.correlation_id,
-            severity=AlertSeverity.WARNING,
-            alert_name="forced_exit_stood_down_after_cancel",
-            message=f"Forced exit {order.reason!r} on {order.symbol!r} stood down: cancelling resting orders settled a fill that already closed the book, so the exit's quantity ({order.quantity}) no longer reduces exposure (strategy_id={order.strategy_id!r}).",
-            context={
-                "symbol": order.symbol,
-                "strategy_id": order.strategy_id,
-                "order_id": order.order_id,
-                "reason": order.reason,
-                "order_quantity": order.quantity,
-                "position_quantity": self._positions.get(order.symbol).quantity,
-            },
         )
 
     def _emit_forced_exit_supersedes_pending_alert(

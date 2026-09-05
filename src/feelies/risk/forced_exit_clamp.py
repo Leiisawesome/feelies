@@ -119,3 +119,29 @@ def _emit_forced_exit_resized_alert(self: Any, order: OrderRequest, closable: in
             "position_quantity": self._positions.get(order.symbol).quantity,
         },
     )
+
+
+def _emit_forced_exit_stood_down_alert(self: Any, order: OrderRequest) -> None:
+    """Publish a marker when a mandated exit stands down post-cancel.
+
+    The resting-order cancel settled a fill that already closed the book, so
+    submitting the exit's now-stale quantity would open the opposite side.
+    Standing down is the fail-safe branch (Inv-11), but it is *not* routine —
+    an operator needs to see that a mandated exit did not reach the router,
+    and forensics needs it to explain the missing order (Inv-13).
+    """
+    self._publish_alert(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=order.correlation_id,
+        severity=AlertSeverity.WARNING,
+        alert_name="forced_exit_stood_down_after_cancel",
+        message=f"Forced exit {order.reason!r} on {order.symbol!r} stood down: cancelling resting orders settled a fill that already closed the book, so the exit's quantity ({order.quantity}) no longer reduces exposure (strategy_id={order.strategy_id!r}).",
+        context={
+            "symbol": order.symbol,
+            "strategy_id": order.strategy_id,
+            "order_id": order.order_id,
+            "reason": order.reason,
+            "order_quantity": order.quantity,
+            "position_quantity": self._positions.get(order.symbol).quantity,
+        },
+    )
