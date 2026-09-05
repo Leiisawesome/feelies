@@ -7,6 +7,7 @@ exit 0 with contracts broken; this test parses
 
 from __future__ import annotations
 
+import ast
 import re
 import shutil
 import subprocess
@@ -14,6 +15,14 @@ import sys
 from pathlib import Path
 
 import pytest
+
+_FILL_RECONCILIATION = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "feelies"
+    / "portfolio"
+    / "fill_reconciliation.py"
+)
 
 _SUMMARY = re.compile(r"Contracts:\s*(\d+)\s*kept,\s*(\d+)\s*broken")
 _STATUS = re.compile(r"^(Five import tiers|Twelve engine module sets)\s+(KEPT|BROKEN)\s*$", re.M)
@@ -104,3 +113,31 @@ def test_twelve_engine_independence() -> None:
     out, _kept, _broken, statuses = run_import_linter()
     assert "Twelve engine module sets" in statuses, out
     assert statuses["Twelve engine module sets"] == "KEPT", out
+
+
+def test_fill_reconciliation_does_not_import_orchestrator() -> None:
+    """Engine 7 must not import the kernel module that imports it."""
+    tree = ast.parse(
+        _FILL_RECONCILIATION.read_text(encoding="utf-8"),
+        filename=str(_FILL_RECONCILIATION),
+    )
+    hits: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            mod = node.module
+            if mod == "feelies.kernel.orchestrator" or mod.startswith(
+                "feelies.kernel.orchestrator."
+            ):
+                hits.append(f"{_FILL_RECONCILIATION.as_posix()}:{node.lineno} import {mod}")
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.name
+                if name == "feelies.kernel.orchestrator" or name.startswith(
+                    "feelies.kernel.orchestrator."
+                ):
+                    hits.append(
+                        f"{_FILL_RECONCILIATION.as_posix()}:{node.lineno} import {name}"
+                    )
+    assert not hits, (
+        "fill_reconciliation imports kernel.orchestrator:\n" + "\n".join(hits)
+    )
