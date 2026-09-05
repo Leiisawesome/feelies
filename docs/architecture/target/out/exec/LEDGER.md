@@ -10498,4 +10498,194 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-34b.json, this ledger
                  entry.
 
+---
+
+## S-34c  2026-09-05T19:38:08+08:00
+  STEP:          S-34c
+  BASE:          ad4051005400821de4e0e7ae0d5334286576fa95
+  RESULT SHA:    5058ac547c960c9ce6eed60874e057ffae1af12e (exec/S-34c; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. G40 stays
+                 OPEN. S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 tests/docs 101
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 kernel 390; execution 865
+                 mypy src/feelies: Success, 211 source files
+  TESTS:         capture pre-S-34c GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34c GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-34c vs post-S-34c and vs
+                 baseline_post-S-34b.json; 0 moved at either
+                 commit | MATCH.
+  FILES:         3 implementation paths declared, 3 touched
+                 (verify_step not runnable -- S-34C
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: orchestrator.py,
+                 order_lifecycle.py (destination, exists),
+                 tests/kernel/test_orchestrator.py.
+                 verify_step file_list would also count
+                 FILES-prose tokens and dir_list infers
+                 src/feelies/execution/ against FILES
+                 "Do not declare" -- frozen; this tree
+                 edited only the named dest file under that
+                 package.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 211 -> 211 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46070 -> 46074 (+4)
+                 n_edges 687 -> 688
+                 n_modules 173 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+                 orchestrator lines 3322 -> 3249 (-73)
+                 orchestrator methods 73 -> 71 (-2)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-34C --base ad405100` exits 2: S-34C not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 3 declared implementation / 3 touched
+                 CLEAN; PARITY 64/64 HASH+COUNT hold, 0 moved
+                 (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules 0 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is method names -- frozen. CLEAN,
+                 blast radius boundary -- human gate
+                 required. Go recorded here.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD ad40510 on arch/exec. Cut
+                 exec/S-34c. RESULT HEAD 5058ac5, confirmed
+                 on Go.
+                 Two commits, one body each, drawing body
+                 second: (1) 1616f97
+                 _escalate_unfilled_working_exits (no
+                 sequence draw; retarget
+                 order_lifecycle.py:269 and the four tests;
+                 still called self._submit_working_exit_fallback
+                 on Orchestrator), 3322/73 -> 3290/72; (2)
+                 5058ac5 _submit_working_exit_fallback, the
+                 drawing body (self._seq.next()
+                 OrderRequest publish; escalate retargeted
+                 to the sibling function). Orchestrator
+                 delta this tree: 3322 -> 3249 lines (-73);
+                 73 -> 71 methods (-2). Both class methods
+                 left.
+                 Destination is
+                 src/feelies/execution/order_lifecycle.py
+                 (exists since S-25). Engine 10 owns order
+                 state and the fact that an unfilled working
+                 exit becomes a MARKET residual.
+                 n_cycles 1 -> 1. The one SCC is the
+                 pre-existing feelies.cli ->
+                 feelies.cli.main package-to-submodule
+                 edge. Nothing else. Dest does not import
+                 kernel.orchestrator.
+                 No hash moved at either commit.
+                 Determinism 148 and S12 2 after every
+                 commit; 64/64 HASH+COUNT identical
+                 pre-S-34c vs post-S-34c and vs
+                 baseline_post-S-34b.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 SequenceGenerator constructions stayed on
+                 Orchestrator: HEAD stream=orchestrator and
+                 stream=hazard. order_lifecycle does not
+                 construct a generator. The fallback draw
+                 remains self._seq.next() inside the moved
+                 body.
+                 WAVE-D: no shim. The four test bindings
+                 (test_orchestrator.py:2961, :2974, :2983,
+                 :2992 -- plan pins :2949, :2962, :2971,
+                 :2980; same four tests, lines drifted)
+                 were retargeted in commit 1 from
+                 orch._escalate_unfilled_working_exits to
+                 _escalate_unfilled_working_exits(orch, ...)
+                 imported from order_lifecycle. Drain at
+                 dest :269 retargeted in the same commit
+                 from self._escalate_unfilled_working_exits
+                 to the sibling. After commit 2 neither
+                 name remains on Orchestrator; grep of the
+                 class is empty. Fallback had no outside
+                 attribute-call except through escalate.
+                 Closed-overs resolved without an
+                 orchestrator import: derive_order_id from
+                 core.identifiers; OrderType and Side from
+                 core.events; _submit_tracked_order already
+                 this dest (S-25; the copied body already
+                 called it as a module-level name).
+                 Instance attributes on self: Any
+                 (_working_exit_fallback, _order_filled_qty,
+                 _seq, _clock, _track_order, _bus,
+                 _publish_alert) stayed Wave D; they are
+                 not orchestrator-module names. Not an
+                 S-34g miss.
+                 no-any-return none; original -> None kept
+                 on self: Any (S-20).
+                 Declared NET DELTA: src modules 0, public
+                 symbols 0, branch points 0. Measured:
+                 modules 211 -> 211 (+0 MATCH),
+                 public_symbols 575 -> 575 (+0 MATCH),
+                 sloc 46070 -> 46074 (+4, undeclared),
+                 n_edges 687 -> 688 (dest now imports
+                 core.identifiers), n_modules 173 -> 173,
+                 cycles 1 -> 1 MATCH, alphaleak 0 -> 0.
+  FINDINGS:      Plan REFACTOR PATH said "Land after
+                 S-34e." S-34e still says its no-draw
+                 filter "goes first on that file." This
+                 tree executed S-34c first: S-34b NEXT and
+                 the operator named it as the third
+                 extraction group. Dest now holds the
+                 drawing fallback; S-34e's filter will not
+                 go first on the file. WAVE-D
+                 drawing-body-last held inside this step
+                 (escalate, then fallback). Recorded; not
+                 fixed. S-34e's block is now stale against
+                 this dest.
+                 Live spans at pre-flight:
+                 _escalate_unfilled_working_exits
+                 orchestrator.py:2753-2784 (plan
+                 :2920-2950); _submit_working_exit_fallback
+                 :2785-2824, draw at :2766 (plan
+                 :2952-2991, draw :2965). Stale pins after
+                 S-34a/b. Same two bodies.
+                 verify_step.py uppercases S-34c to S-34C.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; four exempted baseline tests.
+  NEXT:          S-34d emit SSR suppression alert and
+                 PORTFOLIO-leg edge-block (boundary). Not
+                 started. Do not begin S-34d from this
+                 tree. Left uncommitted:
+                 baseline_pre-S-34c.json,
+                 baseline_post-S-34c.json, this ledger
+                 entry.
+
 
