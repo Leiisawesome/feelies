@@ -48,6 +48,7 @@ from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.kernel import orchestrator as _orchestrator_mod
@@ -116,7 +117,7 @@ class _RecordingRouter:
         return acks
 
 
-_TERMINAL_STATES = _orchestrator_mod._TERMINAL_ORDER_STATES
+_TERMINAL_STATES = _TERMINAL_ORDER_STATES
 
 
 class _CancellingRouter(_RecordingRouter):

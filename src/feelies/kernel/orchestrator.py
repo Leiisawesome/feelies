@@ -146,12 +146,17 @@ from feelies.ingestion.data_integrity import (
 )
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
+from feelies.kernel.forced_exit_reasons import (
+    _RISK_FORCED_EXIT_REASONS,
+    _SLICE_SCOPED_FORCED_EXIT_REASONS,
+)
 from feelies.kernel.macro import (
     TRADING_MODES,
     MacroState,
     create_macro_state_machine,
 )
 from feelies.kernel.micro import MicroState, create_micro_state_machine
+from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.alerting import AlertManager
 from feelies.monitoring.kill_switch import KillSwitch, observe_kill_switch as observe_kill_switch
@@ -172,13 +177,7 @@ from feelies.risk.engine import (
     _maybe_flip_buying_power_at_rth_close,
 )
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
-from feelies.risk.deferral_cap import (
-    DEFERRAL_EXIT_REASONS,
-    DEFERRAL_SLICE_SCOPED_REASONS,
-)
-from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
-from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
-from feelies.risk.stop_exit import STOP_EXIT_REASONS
+from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -188,12 +187,11 @@ from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_feature_snapshots, _restore_feature_snapshots, _update_regime  # noqa: E501
-from feelies.services.regime_engine import _regime_label_for as _regime_label_for  # noqa: F401
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotStore
-from feelies.storage.trade_journal import TradeJournal, TradeRecord as TradeRecord  # noqa: F401
+from feelies.storage.trade_journal import TradeJournal
 
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
@@ -223,30 +221,6 @@ def _resolve_boot_config(config: Configuration) -> PlatformConfig:
     }
     return replace(baseline, **overrides)
 
-
-_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
-    {
-        OrderState.FILLED,
-        OrderState.CANCELLED,
-        OrderState.REJECTED,
-        OrderState.EXPIRED,
-    }
-)
-
-# Risk-authored exits use one non-vetoable reason registry.
-_RISK_FORCED_EXIT_REASONS: frozenset[str] = (
-    HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS | STOP_EXIT_REASONS
-)
-
-# Slice-scoped authors may reduce either symbol-net or strategy-slice exposure.
-_SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = (
-    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
-)
-
-# Only unambiguous slice-scoped reasons self-attribute fills.
-_SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
-    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_SLICE_SCOPED_REASONS
-)
 
 from feelies.portfolio.fill_reconciliation import (  # noqa: E402
     _record_fill_attribution,
