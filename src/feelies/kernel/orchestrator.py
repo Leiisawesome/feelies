@@ -249,14 +249,7 @@ _SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
     EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_SLICE_SCOPED_REASONS
 )
 
-
-def _order_owns_one_slice(order: OrderRequest) -> bool:
-    """Return whether every fill belongs to the order strategy slice."""
-    if not order.strategy_id:
-        return False
-    if order.reason in _SELF_ATTRIBUTED_FORCED_EXIT_REASONS:
-        return True
-    return order.reason not in _RISK_FORCED_EXIT_REASONS
+from feelies.portfolio.fill_reconciliation import _order_owns_one_slice  # noqa: E402
 
 
 def _closable_quantity(position_qty: int, side: Side) -> int:
