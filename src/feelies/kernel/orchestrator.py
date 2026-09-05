@@ -84,8 +84,6 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_admission import (
-    BLOCK_EDGE_BELOW_COST,
-    BLOCK_EDGE_UNPRICEABLE,
     BLOCK_LOCATE_UNAVAILABLE,
     BLOCK_SSR,
     ExposureDelta,
@@ -102,7 +100,6 @@ from feelies.execution.order_lifecycle import (
     _transition_order,
 )
 from feelies.execution.order_policy import (
-    _edge_clears_round_trip_cost,
     _execute_reverse,
     _filter_portfolio_orders_for_admission,
     _plan_for_signal,
@@ -2391,70 +2388,6 @@ class Orchestrator:
             order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
             for sm, _, order in self._active_orders.values()
         )
-
-    def _portfolio_leg_edge_block(
-        self,
-        order: OrderRequest,
-        *,
-        intent: SizedPositionIntent,
-        delta: ExposureDelta,
-        quote: NBBOQuote | None,
-    ) -> str | None:
-        """Inv-12 B4 for a PORTFOLIO leg, or ``None`` to admit.
-
-        Reducing legs are never gated: a cost bar may suppress an entry, never
-        an unwind (Inv-11), which is the same carve-out the SIGNAL path makes
-        for exits.
-
-        Without a quote the gate cannot be priced at all -- the round-trip cost
-        model needs a live spread. An opening leg is then refused rather than
-        waved through: this is the out-of-tick submit path, and "cannot verify
-        the economics" resolves to less exposure, not more.  The flush carries
-        one quote (the tick that triggered it), but a PORTFOLIO intent is
-        cross-sectional and routinely spans symbols, so a quote for a different
-        symbol is treated as no quote: pricing a leg off another name's spread,
-        mid and L1 sizes would make the capital decision non-symbol-local.
-
-        The leg's edge is ``TargetPosition.expected_edge_bps``, carried from the
-        ranker because the composition weights are z-scores and no longer in bps.
-        A leg with no disclosed edge cannot clear a positive cost bar, so 0.0
-        fails closed on its own.
-        """
-        if not delta.opens_or_increases_exposure:
-            return None
-        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
-            # Gate disarmed by configuration: there is nothing to price, so a
-            # missing quote is not a refusal. Checking the quote first would
-            # suppress every opening leg on deployments that never enabled B4.
-            return None
-        if quote is None or quote.symbol != order.symbol:
-            return record_verdict("RT.COST_GATE", "FAIL", BLOCK_EDGE_UNPRICEABLE) or BLOCK_EDGE_UNPRICEABLE
-        target = intent.target_positions.get(order.symbol)
-        edge_bps = target.expected_edge_bps if target is not None else 0.0
-        passes, effective_bps, factor = _edge_clears_round_trip_cost(self,
-            strategy_id=intent.strategy_id,
-            edge_estimate_bps=edge_bps,
-            symbol=order.symbol,
-            entry_side=order.side,
-            quantity=order.quantity,
-            quote=quote,
-            is_taker_entry=order.order_type is OrderType.MARKET,
-            is_short_entry=delta.opens_or_increases_short,
-        )
-        if passes:
-            return record_verdict("RT.COST_GATE", "PASS") or None
-        logger.debug(
-            "PORTFOLIO leg %s %s %d refused by B4: disclosed %.2f bps x "
-            "realization %.3f = %.2f effective (strategy=%s)",
-            order.symbol,
-            order.side.name,
-            order.quantity,
-            edge_bps,
-            factor,
-            effective_bps,
-            intent.strategy_id,
-        )
-        return record_verdict("RT.COST_GATE", "FAIL", BLOCK_EDGE_BELOW_COST) or BLOCK_EDGE_BELOW_COST
 
     def _filter_portfolio_orders_for_pending_conflicts(
         self,
