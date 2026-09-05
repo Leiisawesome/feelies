@@ -58,8 +58,9 @@ separate, argued change.  Recorded in ``configs/bt_multialpha.yaml``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
-from feelies.core.events import Side
+from feelies.core.events import AlertSeverity, Side
 from feelies.core.gate_registry import record_verdict
 from feelies.execution.intent import OrderIntent, TradingIntent
 
@@ -224,6 +225,22 @@ def admission_block_reason(
     if quantity is not None:
         record_verdict("RT.MIN_SIZE", "PASS")
     return None
+
+
+def _emit_ssr_suppression_alert(
+    self: Any,
+    intent: OrderIntent,
+    correlation_id: str,
+) -> None:
+    """Publish the forensic marker for a refused SSR short entry."""
+    self._publish_alert(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=correlation_id,
+        severity=AlertSeverity.WARNING,
+        alert_name="ssr_short_suppressed",
+        message=f"SSR active for {intent.symbol!r}: refused short entry ({intent.intent.name}); retries next boundary (Reg-SHO 201).",
+        context={"symbol": intent.symbol, "intent": intent.intent.name},
+    )
 
 
 __all__ = [

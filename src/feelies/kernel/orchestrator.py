@@ -89,6 +89,7 @@ from feelies.execution.order_admission import (
     BLOCK_LOCATE_UNAVAILABLE,
     BLOCK_SSR,
     ExposureDelta,
+    _emit_ssr_suppression_alert,
     admission_block_reason,
     exposure_delta_from_intent,
     side_for_intent,
@@ -1816,7 +1817,7 @@ class Orchestrator:
         if block is not None:
             # Alerts are per-gate forensic markers, not part of the decision.
             if block == BLOCK_SSR:
-                self._emit_ssr_suppression_alert(intent, cid)
+                _emit_ssr_suppression_alert(self, intent, cid)
             elif block == BLOCK_LOCATE_UNAVAILABLE:
                 self._emit_locate_unavailable_alert(intent, cid)
             self._finish_no_order(
@@ -3160,21 +3161,6 @@ class Orchestrator:
             severity=AlertSeverity.WARNING,
             alert_name="locate_unavailable",
             message=f"No borrow locate for {intent.symbol!r}: refused short entry ({intent.intent.name}); retries next boundary.",
-            context={"symbol": intent.symbol, "intent": intent.intent.name},
-        )
-
-    def _emit_ssr_suppression_alert(
-        self,
-        intent: OrderIntent,
-        correlation_id: str,
-    ) -> None:
-        """Publish the forensic marker for a refused SSR short entry."""
-        self._publish_alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            severity=AlertSeverity.WARNING,
-            alert_name="ssr_short_suppressed",
-            message=f"SSR active for {intent.symbol!r}: refused short entry ({intent.intent.name}); retries next boundary (Reg-SHO 201).",
             context={"symbol": intent.symbol, "intent": intent.intent.name},
         )
 
