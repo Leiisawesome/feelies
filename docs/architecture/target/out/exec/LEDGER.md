@@ -9857,4 +9857,192 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-34.json, this ledger
                  entry.
 
+---
+
+## S-34a  2026-09-05T15:02:40+08:00
+  STEP:          S-34a
+  BASE:          d24ac9d7c325cd1ab02b5ab1d7aeaf962589445a
+  RESULT SHA:    213636c7e3eb89672c0cbd40c9c046b4a3e09f73 (exec/S-34a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. G40 stays
+                 OPEN. S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after every commit
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 tests/docs 101 passed in commit 1 and again in
+                 section 4.
+                 conformance 116 passed / 6 xfailed (no XPASS).
+                 kernel 390; docs 101.
+                 mypy src/feelies: Success, 207 source files.
+  TESTS:         capture pre-S-34a GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34a GREEN 4907 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that set.
+                 not-paper_rth: 4906 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-34a vs post-S-34a and vs
+                 baseline_post-S-34.json; 0 moved at any of the
+                 six commits | MATCH.
+  FILES:         9 declared, 8 touched (verify_step not runnable
+                 -- S-34A uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: orchestrator.py,
+                 fill_reconciliation.py (new),
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 docs/prompts/audit_forensics.md,
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_fill_attribution_seam.py,
+                 tests/integration/test_paper_rth_safety.py.
+                 Declared-but-unneeded: tests/docs/test_internal_links.py.
+                 verify_step dir_list still infers
+                 src/feelies/portfolio/ despite FILES forbidding
+                 that declaration -- frozen weak guard; this tree
+                 only added fill_reconciliation.py under that
+                 package.
+  NET DELTA:     declared src modules +1, public symbols 0, branch
+                 points 0.
+                 actual modules 206 -> 207 (+1, the new file;
+                 no new package)
+                 public_symbols 575 -> 575 (+0; every extracted
+                 name is _-prefixed)
+                 sloc 46003 -> 46031 (+28)
+                 n_edges 667 -> 671
+                 n_modules 168 -> 169
+                 cycles 1 -> 2
+                 alphaleak 0 -> 0
+                 orchestrator lines 4079 -> 3557 (-522)
+                 orchestrator methods 83 -> 80 (-3)
+  DETERMINISM:   148 -> 148 passed after every commit; no hash moved
+  VERIFY_STEP:   `S-34A --base d24ac9d7` exits 2: S-34A not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 9 declared / 8 touched CLEAN (one
+                 declared-but-unneeded); PARITY 64/64 HASH+COUNT
+                 hold, 0 moved (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4907->4907 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA compare-by-eye (modules +1 MATCH,
+                 symbols 0 MATCH; oracle still says "deletions
+                 with no negative delta" because it does not
+                 treat method-count as the deletion signal --
+                 frozen; DELETES 83 -> 80 methods matched).
+                 CLEAN, blast radius boundary -- human gate
+                 required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD d24ac9d on arch/exec. Cut
+                 exec/S-34a. RESULT HEAD 213636c.
+                 Six commits, one body each, sequence-drawing
+                 body last: (1) c34a296 _order_owns_one_slice
+                 plus the new module and _FILE_OWNERS,
+                 4079/83 -> 4072/83; (2) bd5a9c1
+                 _TradeJournalLeg, 4064/83; (3) 012b295
+                 _trade_journal_legs, 4014/83; (4) e8447d2
+                 _record_fill_attribution, 3986/82; (5)
+                 c977c7b _distribute_fill_to_strategies,
+                 3889/81; (6) 213636c _reconcile_fills, the
+                 drawing body (two self._seq.next()
+                 PositionUpdate publishes), 3557/80.
+                 Orchestrator delta this tree: 4079 -> 3557
+                 lines (-522); 83 -> 80 methods (-3). The
+                 three class methods left; the three
+                 module-level names left with them.
+                 Destination is
+                 src/feelies/portfolio/fill_reconciliation.py
+                 (new, named file). Owner audit_forensics,
+                 assigned in commit 1 next to
+                 fill_attribution.py, because Engine 7 is
+                 the sole book of record and slice
+                 ownership, journal legs, attribution,
+                 distribution, and the PositionUpdate
+                 publish are that book, not kernel
+                 dispatch.
+                 No hash moved at any of the six commits.
+                 Determinism 148 and S12 2 after every
+                 commit; 64/64 HASH+COUNT identical
+                 pre-S-34a vs post-S-34a and vs
+                 baseline_post-S-34.json.
+                 SequenceGenerator constructions stayed on
+                 Orchestrator: HEAD :391 stream=orchestrator
+                 and :399 stream=hazard. fill_reconciliation
+                 does not construct a generator. The two
+                 draws remain self._seq.next() inside the
+                 moved _reconcile_fills body.
+                 Declared NET DELTA: src modules +1, public
+                 symbols 0, branch points 0. Measured:
+                 modules 206 -> 207 (+1 MATCH),
+                 public_symbols 575 -> 575 (+0 MATCH),
+                 sloc 46003 -> 46031 (+28, undeclared),
+                 n_edges 667 -> 671, n_modules 168 -> 169,
+                 cycles 1 -> 2 (FINDING), alphaleak 0 -> 0.
+                 WAVE-D: no shim; attribute-call sites were
+                 all in FILES and retargeted. no-any-return
+                 none. PositionUpdate dropped from
+                 orchestrator's events import (only the
+                 moved body used it). Pre-existing unused
+                 SymbolHalted / _emergency_flatten_all left
+                 (S-24).
+  FINDINGS:      n_cycles 1 -> 2. A runtime SCC between
+                 kernel.orchestrator and
+                 portfolio.fill_reconciliation, caused by
+                 five module-level names the moved bodies
+                 close over -- the two reason frozensets
+                 (_RISK_FORCED_EXIT_REASONS,
+                 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS),
+                 TradeRecord, _regime_label_for, and
+                 observe_kill_switch. fill_reconciliation
+                 imports them from orchestrator;
+                 orchestrator imports fill_reconciliation
+                 after those constants (E402) so the cycle
+                 loads. The alternative was worse: importing
+                 them from risk, storage, services, or
+                 monitoring would be portfolio to a sibling
+                 engine and would move
+                 test_five_import_tiers off _TIER_RESIDUALS.
+                 S2 is unaffected because portfolio to
+                 kernel is the legal five-tier direction and
+                 kernel is not one of the twelve engines;
+                 S2 remains xfail(strict) for G40 on the
+                 same engine-to-engine pairs. This is a
+                 different shape from the pre-existing cli
+                 package-to-submodule cycle
+                 (feelies.cli -> feelies.cli.main): that one
+                 is a package self-edge; this one is a
+                 kernel-module / engine-module SCC. What
+                 would cut it: re-home those five names so
+                 fill_reconciliation does not import the
+                 kernel orchestrator module -- an
+                 S-04-shaped step that names the destination
+                 in FILES (draft S-34g, not started).
+                 verify_step.py uppercases S-34a to S-34A.
+                 Frozen; four checks by hand. dir_list
+                 infers src/feelies/portfolio/ against FILES
+                 "Do not declare". Frozen; this tree added
+                 only the named file.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; four exempted baseline tests.
+  NEXT:          Do not begin S-34b. Cycle cut is S-34g
+                 (plan block to paste; not locked, not
+                 started). Left uncommitted:
+                 baseline_pre-S-34a.json,
+                 baseline_post-S-34a.json, this ledger
+                 entry.
+
 
