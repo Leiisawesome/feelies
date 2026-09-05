@@ -62,6 +62,7 @@ from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.portfolio.fill_reconciliation import _distribute_fill_to_strategies
 from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
@@ -1687,7 +1688,8 @@ class TestStrategyFillDistribution:
             strategy_positions=strategy_positions,
         )
 
-        orch._distribute_fill_to_strategies(
+        _distribute_fill_to_strategies(
+            orch,
             symbol="AAPL",
             signed_qty=3,
             fill_price=Decimal("150.00"),
@@ -1718,7 +1720,8 @@ class TestStrategyFillDistribution:
         strategy_positions.update("a_alpha", "AAPL", 100, Decimal("150.00"))
 
         orch = _build_orchestrator(clock, strategy_positions=strategy_positions)
-        orch._distribute_fill_to_strategies(
+        _distribute_fill_to_strategies(
+            orch,
             symbol="AAPL",
             signed_qty=1,  # odd → exactly one strategy receives the extra share
             fill_price=Decimal("150.00"),

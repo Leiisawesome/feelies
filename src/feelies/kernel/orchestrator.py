@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from feelies.risk.hazard_exit import HazardExitController
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
-from feelies.portfolio.fill_attribution import largest_remainder_split, split_fees
 from feelies.composition.protocol import SelectionPolicy
 from feelies.composition.selection_policy import (
     StandaloneArbitrationCollision,
@@ -250,6 +249,7 @@ _SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
 )
 
 from feelies.portfolio.fill_reconciliation import (  # noqa: E402
+    _distribute_fill_to_strategies,
     _order_owns_one_slice,
     _record_fill_attribution,
     _trade_journal_legs,
@@ -3186,7 +3186,8 @@ class Orchestrator:
                 else:
                     # Without attribution, split proportionally to keep stores in
                     # sync. Aggregate PnL stays exact; per-alpha PnL is estimated.
-                    attributed_legs = self._distribute_fill_to_strategies(
+                    attributed_legs = _distribute_fill_to_strategies(
+                        self,
                         ack.symbol,
                         signed_qty,
                         ack.fill_price,
@@ -3298,104 +3299,6 @@ class Orchestrator:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
-
-    def _distribute_fill_to_strategies(
-        self,
-        symbol: str,
-        signed_qty: int,
-        fill_price: Decimal,
-        fees: Decimal,
-        timestamp_ns: int,
-    ) -> list[tuple[str, int, Decimal, Decimal]]:
-        """Distribute a fill proportionally across per-alpha strategy positions.
-
-        Used when no fill-attribution record exists (emergency flatten,
-        stop exit, or attribution failure).  Distributes ``signed_qty``
-        proportionally to each strategy's current quantity for this
-        symbol, keeping global and strategy position stores in sync.
-
-        Uses largest-remainder rounding so the sum of per-alpha deltas
-        equals ``signed_qty`` exactly.
-
-        Returns the ``(strategy_id, signed_quantity, fees, realized_delta)`` legs it
-        applied — ``realized_delta`` measured around each slice's own update, so the
-        caller can journal a symbol-net forced exit against the slices it actually
-        closed instead of the synthetic order's ``strategy_id`` (Inv-13).  Empty when
-        no slice book is wired or no strategy holds the symbol.
-        """
-        if self._strategy_positions is None:
-            return []
-
-        # Inv-5: iterate strategies in a deterministic (sorted) order.
-        # ``strategy_ids()`` returns a ``frozenset``; materialising it directly
-        # would make the largest-remainder tie-break and per-alpha fee split
-        # depend on hash-iteration order (process/seed dependent).
-        strategy_ids = sorted(self._strategy_positions.strategy_ids())
-        if not strategy_ids:
-            return []
-
-        # Reducing fills allocate only across slices on the closable side.
-        strategy_qtys: list[tuple[str, int]] = []
-        for sid in strategy_ids:
-            q = self._strategy_positions.get(sid, symbol).quantity
-            if q * signed_qty < 0:
-                strategy_qtys.append((sid, q))
-        if not strategy_qtys:
-            # Increasing fills fall back across holders; warn only on store drift.
-            strategy_qtys = [
-                (sid, q)
-                for sid in strategy_ids
-                if (q := self._strategy_positions.get(sid, symbol).quantity) != 0
-            ]
-            if strategy_qtys:
-                slice_book_net = sum(q for _sid, q in strategy_qtys)
-                symbol_net = self._positions.get(symbol).quantity
-                if slice_book_net + signed_qty != symbol_net:
-                    logger.warning(
-                        "Fill attribution for %s: the slice book and the symbol-net "
-                        "store have diverged (slices sum to %d, symbol-net %d after a "
-                        "%d-share fill); falling back to a split across all %d holders.",
-                        symbol,
-                        slice_book_net,
-                        symbol_net,
-                        signed_qty,
-                        len(strategy_qtys),
-                    )
-        if not strategy_qtys:
-            return []
-
-        # Same rounding and fee convention the ledger uses, so a fill rounds
-        # identically whichever path attributes it.
-        abs_fill = abs(signed_qty)
-        alloc_qtys = largest_remainder_split(abs_fill, [abs(q) for _sid, q in strategy_qtys])
-        alloc_fees = split_fees(fees, alloc_qtys)
-
-        applied: list[tuple[str, int, Decimal, Decimal]] = []
-        alloc_sign = 1 if signed_qty > 0 else -1
-        for (sid, _q), alloc_qty, alloc_fee in zip(
-            strategy_qtys, alloc_qtys, alloc_fees, strict=True
-        ):
-            if alloc_qty == 0:
-                continue
-            prev_slice = self._strategy_positions.get(sid, symbol).realized_pnl
-            slice_position = self._strategy_positions.update(
-                sid,
-                symbol,
-                alloc_sign * alloc_qty,
-                fill_price,
-                fees=alloc_fee,
-                timestamp_ns=timestamp_ns,
-            )
-            applied.append(
-                (
-                    sid,
-                    alloc_sign * alloc_qty,
-                    alloc_fee,
-                    slice_position.realized_pnl - prev_slice,
-                )
-            )
-
-        return applied
 
     def _prune_terminal_orders(self) -> None:
         """Remove terminally-resolved orders from _active_orders.
