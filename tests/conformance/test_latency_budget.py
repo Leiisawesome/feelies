@@ -58,9 +58,8 @@ def test_x10_tick_timings_are_compared_to_a_budget() -> None:
     fn = _finalize_tick()
     names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
     attrs = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
-    constants = {n.value for n in ast.walk(fn) if isinstance(n, ast.Constant)}
 
-    assert "_tick_timings" in constants, (
+    assert "_tick_timings" in attrs, (
         "_finalize_tick does not read _tick_timings — not the site PROBLEM named"
     )
     assert "MetricEvent" in names, (
