@@ -36,7 +36,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from feelies.portfolio.fill_attribution import FillAttributionLedger
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     OrderAck,
@@ -45,6 +44,9 @@ from feelies.core.events import (
     OrderType,
     Side,
 )
+from feelies.kernel.orchestrator import Orchestrator
+from feelies.portfolio.fill_attribution import FillAttributionLedger
+from feelies.portfolio.fill_reconciliation import _reconcile_fills
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASON_SPIKE
@@ -106,7 +108,7 @@ def _orchestrator(
     *,
     ledger: FillAttributionLedger | None = None,
     with_ledger: bool = True,
-) -> object:
+) -> Orchestrator:
     """Orchestrator wired the way ``build_platform`` wires it.
 
     ``bootstrap`` always constructs a :class:`FillAttributionLedger`, so the default
@@ -132,7 +134,7 @@ def _run_fill(
     slices = StrategyPositionStore()
     orch = _orchestrator(positions, slices, with_ledger=with_ledger)
     orch._track_order(order.order_id, order.side, order)  # type: ignore[attr-defined]
-    orch._reconcile_fills([ack], correlation_id="tick-cid")  # type: ignore[attr-defined]
+    _reconcile_fills(orch, [ack], correlation_id="tick-cid")
     return positions, slices
 
 
@@ -231,7 +233,7 @@ def test_symbol_net_hazard_exit_is_not_self_attributed_to_one_slice() -> None:
         reason=HAZARD_EXIT_REASON_SPIKE,
     )
     orch._track_order(hazard.order_id, hazard.side, hazard)  # type: ignore[attr-defined]
-    orch._reconcile_fills([_fill(hazard, quantity=20)], correlation_id="tick-cid")  # type: ignore[attr-defined]
+    _reconcile_fills(orch, [_fill(hazard, quantity=20)], correlation_id="tick-cid")
 
     # Proportional split: both slices unwind, neither is driven through zero.
     assert slices.get(_SID, _SYMBOL).quantity == 0
@@ -301,7 +303,8 @@ def test_partial_fills_through_the_ledger_sum_to_the_total() -> None:
     order = _entry_order(order_id="entry-partials", quantity=10)
     orch._track_order(order.order_id, order.side, order)  # type: ignore[attr-defined]
 
-    orch._reconcile_fills(  # type: ignore[attr-defined]
+    _reconcile_fills(
+        orch,
         [
             OrderAck(
                 timestamp_ns=2000,
@@ -319,7 +322,8 @@ def test_partial_fills_through_the_ledger_sum_to_the_total() -> None:
     )
     assert slices.get(_SID, _SYMBOL).quantity == 4
 
-    orch._reconcile_fills(  # type: ignore[attr-defined]
+    _reconcile_fills(
+        orch,
         [_fill(order, quantity=6, timestamp_ns=3000, fees=Decimal("0.06"))],
         correlation_id="tick-2",
     )

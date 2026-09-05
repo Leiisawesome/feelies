@@ -30,6 +30,7 @@ from tests.kernel.test_orchestrator import (
     _make_signal,
     _publish_signal_on_quote,
 )
+from feelies.portfolio.fill_reconciliation import _reconcile_fills  # noqa: E402, I001
 from tests.paper.conftest import require_ib_gateway, require_massive_api_key, require_rth_window
 
 pytestmark = [
@@ -170,7 +171,7 @@ def test_g12_cost_exceeds_disclosure_alert(paper_session) -> None:
         cost_bps=Decimal("50.0"),
         request_sequence=req.sequence,
     )
-    orchestrator._reconcile_fills([ack], req.correlation_id)
+    _reconcile_fills(orchestrator, [ack], req.correlation_id)
 
     orchestrator.halt()
     thread.join(timeout=30.0)
