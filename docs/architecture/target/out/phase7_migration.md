@@ -3573,19 +3573,140 @@ NET DELTA:       src modules 0, public symbols 0, branch points 0.
                  S-31's 12.8 µs — measure, do not project.
 ROLLBACK:        revert per commit.
 ```
-
+```
+STEP:            S-32a
+CLOSES:          G01 residual (the three proven wall-clock
+                 reads, and only if S4's exactly-N
+                 retargets in the same commit). G45
+                 residual for the FILES getattr only.
+                 G45 stays OPEN: twelfth-file proven
+                 sites remain, and S5's xfail still
+                 names G41 G42 G44 G45. dataclass.replace
+                 is already closed (empty proven-site
+                 set) and is not a close of this step.
+PROBLEM:         S-32 named five prohibition classes and
+                 landed two (string_formatting, dict/set).
+                 The three it did not land:
+                 (1) dataclass.replace — proven-site set
+                 empty (five per-event hits in
+                 Orchestrator._process_tick_inner, all
+                 guarded after early returns; the
+                 working-exit fallback is not a
+                 prohibition). Empty set = closed, not
+                 deferred. This step does not reopen it.
+                 (2) dynamic_dispatch — still live. FILES
+                 proven site is
+                 getattr(self, "_tick_timings", …) in
+                 Orchestrator._finalize_tick. Skipped
+                 because X10 (not in S-32 FILES)
+                 requires "_tick_timings" as an AST
+                 Constant in that function; a direct
+                 attribute read would fail a previously
+                 passing test.
+                 (3) G01 wall-clock / Inv-10 — still live.
+                 Proven-site set of three:
+                 Orchestrator._process_tick_inner
+                 t_wall_start, Orchestrator._finalize_tick
+                 latency_ns, and
+                 _drain_async_fills t0 in
+                 execution/order_lifecycle.py (S-32
+                 twelfth file). Skipped because the
+                 operator 5/1/2 target is wrong on this
+                 tree (S-19a / S4 is 7/1/2), the third
+                 read was not in FILES, and removing a
+                 timing pair drops HOT_PATH_TIMING_KEYS
+                 strings X10 requires in orchestrator
+                 source.
+WHY THIS OWNER:  Phase 4 §1's allow list is a platform-wide
+                 contract. The two live leftovers sit on
+                 the kernel tick path and the drain path
+                 that S-32 could not name.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_lifecycle.py
+                 tests/conformance/test_latency_budget.py
+                 tests/acceptance/test_no_walltime_outside_clock.py
+                 Confirm each cite against a fresh
+                 proven_sites list before editing. If that
+                 list names a file not listed here, STOP
+                 and amend FILES. Do not stretch.
+                 Do not include strategy_position_store.py.
+                 Do not include
+                 tests/conformance/test_hot_path_allow_list.py
+                 (S5 xfail stays; G44 still partial, G45
+                 still open). Do not cite hotpath.json.
+                 Pre-step: generate the executed set
+                 (perfmeasure.py --mode profile, then
+                 hotpath.py); do not edit those tools.
+REFACTOR PATH:   Generate the executed set first. One
+                 prohibition class per commit.
+                 dataclass.replace: no commit.
+                 dynamic_dispatch: replace the FILES
+                 getattr with a direct read; amend X10
+                 in the same commit so the named read is
+                 an Attribute, not a required Constant.
+                 No dummy Constant, no self.__dict__.
+                 G01: retire the three proven reads;
+                 retarget S4 to the remaining multiplicity
+                 (not 5/1/2). The second
+                 _drain_async_fills call is behind the
+                 paper recorder and was not proven;
+                 if t0 goes, both drain calls go together.
+                 If a removed read deletes a
+                 HOT_PATH_TIMING_KEYS string, amend X10
+                 in the same commit. Do not drop S5's
+                 xfail. Do not add a module.
+BLAST RADIUS:    platform-wide by reach; each commit is
+                 local
+VALIDATED BY:    S4 (clock allowlist exactly-N; must move
+                 with the G01 commit), S5 prohibition
+                 half only (xfail stays), X10, R1 under
+                 a random seed, R8, the oracle, and the
+                 hotpath proven_per_event_sites counter
+                 for that class's FILES set (must go to
+                 0). Not the per-quote timer: S-32's
+                 same-tree control spanned 132,837–
+                 135,755 ns/quote (peak-to-peak 2,918,
+                 σ ≈ 1,220); intern-three-f-strings plus
+                 reuse one dict and one frozenset sat
+                 inside that envelope. getattr-one-read
+                 and retire-three-clock-reads are the
+                 same size. The instrument cannot resolve
+                 them, so cost cannot be the evidence.
+PARITY IMPACT:   Hold, per commit: all 64 HASH/COUNT
+                 constants, fingerprint,
+                 _BASELINE_CONFIG_HASH. These are not
+                 behaviour changes if the getattr becomes
+                 a direct read and the wall-clock reads
+                 remain telemetry-only. Cost cannot be
+                 the evidence (see VALIDATED BY). Do not
+                 book a µs delta from --repeats 1.
+DELETES:         the FILES getattr; the three proven
+                 wall-clock reads (and the paper-pair
+                 drain sibling if t0 goes); the S4
+                 allowlist entries those reads retire.
+                 Not the guarded replace calls. Not a
+                 module.
+NET DELTA:       0 modules, 0 public symbols, 0 branch
+                 points. Cost column: do not book.
+ROLLBACK:        revert per commit.
+```
 ```
 STEP:            S-33
 CLOSES:          G42, G41
-PROBLEM:         Engine 2 is **6.1× over its budget share**, and each additional
-                 sensor costs **+22.6 µs/quote — 70% of the entire per-quote
-                 budget for one sensor**. Engine 2 alone reaches ~277 µs at full
-                 registration, and the whole platform 335 µs/quote — 10.5× the
-                 32 µs/quote target. This is the single dominant cost and it
-                 grows linearly with the thing the platform exists to add. CORE
-                 §G; Inv-12 stress viability.
+PROBLEM:         Engine 2 is the dominant tick cost. Phase 4's
+                 +22.6 µs/quote-per-sensor is an average over 9 added
+                 sensors (A4.5), not a per-sensor exclusive time.
+                 `--mode sensorscale` today is pruned-vs-all
+                 cardinality, not per-sensor probes.
 FILES:           src/feelies/sensors/registry.py
                  src/feelies/features/
+                 (1) is a run of tools/arch/perfmeasure.py --mode
+                 sensorscale and --mode both; do not edit the tool
+                 unless this block is amended to name it.
+                 If (1) names sensors/horizon_scheduler.py or
+                 sensors/impl/*, STOP and amend FILES. Do not
+                 stretch. strategy_position_store.py is not in
+                 scope. Do not add a module.
 WHY THIS OWNER:  Engine 2 owns sensor fan-out and horizon aggregation.
 REFACTOR PATH:   **Measure before optimising, and the measurement does not
                  exist yet.** Phase 4 A4.5 records that the 22.6 µs/quote figure
@@ -3598,17 +3719,18 @@ REFACTOR PATH:   **Measure before optimising, and the measurement does not
 BLAST RADIUS:    platform-wide — engine 2 is on every quote
 VALIDATED BY:    S5, X10, the 5 engine-2 baselines, the oracle, and A5.6's
                  replay with two SIGNAL alphas registered
-PARITY IMPACT:   All 26 must hold. Engine 2 holds 5 baselines and is the
-                 best-pinned engine in the platform, which makes it the safest
-                 place in the plan to change hot-path code — the oracle sees
-                 almost everything engine 2 does.
-DELETES:         to be determined by the probes. **A step whose DELETES cannot
-                 be named before measuring is a step that must measure first**,
-                 which is why (1) is a probe and not an optimisation.
-NET DELTA:       unknown before (1). Declared as a projection of **0 modules, 0
-                 public symbols, 0 branch points** with cost as the only
-                 intended delta; if (1) shows otherwise, this step is re-planned
-                 rather than stretched.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. Engine 2's five:
+                 EXPECTED_LEVEL4_READING_{HASH,COUNT},
+                 EXPECTED_V03_READING_{HASH,COUNT},
+                 EXPECTED_LEVEL2_TICK_{HASH,COUNT},
+                 EXPECTED_LEVEL3_SNAPSHOT_{HASH,COUNT},
+                 EXPECTED_MULTI_SYMBOL_READING_{HASH,COUNT}.
+DELETES:         none until (1). Then only the named term in FILES.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points until
+                 (1) says otherwise — then re-plan, do not stretch.
+                 Cost is the intended delta; book it only from
+                 min-of-N, never from a single run.
 ROLLBACK:        revert per commit.
 ```
 
