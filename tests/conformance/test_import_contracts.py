@@ -32,7 +32,7 @@ _LAYER_PAIR = re.compile(
 )
 
 # Residual Five-import-tiers breaks after G16: kernel→engines (G40),
-# harness→cli/bootstrap, core→sensors.spec. Equality, not a subset:
+# harness→cli/bootstrap. Equality, not a subset:
 # a fourth pair fails immediately; G40's closure forces this set to change.
 _TIER_RESIDUALS = frozenset(
     {
@@ -49,7 +49,6 @@ _TIER_RESIDUALS = frozenset(
         ("feelies.kernel", "feelies.monitoring"),
         ("feelies.kernel", "feelies.execution"),
         ("feelies.kernel", "feelies.storage"),
-        ("feelies.core", "feelies.sensors"),
     }
 )
 
