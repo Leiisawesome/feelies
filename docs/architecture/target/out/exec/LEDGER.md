@@ -11884,3 +11884,248 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  (platform-wide). Not started.
                  Do not begin S-35c from this tree.
 
+---
+
+## S-35c1  2026-09-06T14:29:48+08:00
+  STEP:          S-35c1
+  BASE:          bc34c89e4a0a64fa26ee1183abfc313df2fffb5d
+  RESULT SHA:    9838d5384eece149c94da2b43b35b472820447d2 (exec/S-35c1; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing.
+                 Cuts execution → broker and execution →
+                 ingestion. G40 stays OPEN. S2 remains
+                 xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left; core→sensors not restored)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 execution 865; broker 67 passed / 4 skipped;
+                 kernel 390; docs 101
+                 mypy src/feelies: Success, 212 source files
+  TESTS:         capture pre-S-35c1 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-35c1 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Sunday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-35c1 vs post-S-35c1 and vs
+                 baseline_post-S-35b.json; 0 moved | MATCH.
+  FILES:         11 named paths (10 in the FILES field plus
+                 tests/execution/test_paper_backend.py
+                 declared by the f73b2a2 amendment). 5
+                 touched. verify_step not runnable -- S-35C1
+                 uppercased, frozen. Hand FILES: 0 extra
+                 CLEAN. Touched: execution/paper_backend.py,
+                 execution/backtest_backend.py,
+                 execution/backend.py, bootstrap.py,
+                 tests/execution/test_paper_backend.py.
+                 Named-not-edited: ingestion/idle_tick.py,
+                 ingestion/massive_normalizer.py,
+                 ingestion/massive_ws.py,
+                 ingestion/replay_feed.py,
+                 broker/ib/__init__.py,
+                 tests/conformance/test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved).
+                 tests/bootstrap/test_paper_branch.py not
+                 touched. Human plan commit f73b2a2 is
+                 outside FILES and was not made by the
+                 step.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 212 -> 212 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46129 -> 46147 (+18, undeclared)
+                 n_edges 681 -> 676
+                 n_modules 172 -> 172
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-35C1 --base bc34c89` exits 0 with
+                 "S-35C1 not in plan" (uppercase; Known lists
+                 S-35c1; frozen). Four checks by hand:
+                 FILES 11 named / 5 touched CLEAN (6
+                 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules 0 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- human gate
+                 required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD bc34c89 on arch/exec. Cut
+                 exec/S-35c1. Go confirmed branch head
+                 9838d5384eece149c94da2b43b35b472820447d2.
+                 Commit order:
+                 9f58089 -- paper_backend stops importing
+                 IBGatewayConnection / IBOrderRouter.
+                 Bootstrap builds the IB stack in
+                 _paper_injected (EOF) and passes the
+                 handles in. execution → broker falls.
+                 16 → 15; ingestion still fails, matching
+                 the block: 16 → 14 does not happen yet.
+                 52de471 -- paper_backend stops importing
+                 MassiveNormalizer / MassiveLiveFeed;
+                 backend drops the IdleTick import
+                 (Protocol events() uses object; the
+                 dataclass stays in ingestion.idle_tick);
+                 backtest_backend takes MarketDataSource
+                 instead of constructing ReplayFeed.
+                 Bootstrap injects ReplayFeed and the
+                 live feed. execution → ingestion falls.
+                 16 → 14. This commit still defaulted the
+                 three handles to None and reached for
+                 sys.modules if a caller omitted them.
+                 f73b2a2 -- human plan amend: handles are
+                 required; no None defaults; no
+                 sys.modules lookup. Declares
+                 tests/execution/test_paper_backend.py.
+                 9838d53 -- option (1). Removes the None
+                 defaults and the sys.modules fallback.
+                 ib_connection, order_router, live_feed
+                 are required keyword-only arguments.
+                 Construction kwargs (ib_host, ib_port,
+                 ib_client_id, massive_ws_url, plus the
+                 existing api-key/symbols/clock/normalizer)
+                 keep defaults and are del'd in the body
+                 so tests/bootstrap/test_paper_branch.py
+                 can keep passing those fields without
+                 being edited.
+                 Each edge and its cut:
+                 execution → broker was paper_backend
+                 importing IBGatewayConnection and
+                 IBOrderRouter. Other importers of those
+                 names (broker.ib itself, router.py,
+                 tests) were never the G40 pair. The
+                 names now live where they always did;
+                 bootstrap constructs them and injects.
+                 execution → ingestion was three sites:
+                 backend importing IdleTick, paper_backend
+                 importing MassiveNormalizer and
+                 MassiveLiveFeed, backtest_backend
+                 importing ReplayFeed. IdleTick remains
+                 in ingestion.idle_tick -- orchestrator
+                 (not in FILES) still imports it.
+                 ReplayFeed and MassiveLiveFeed remain in
+                 ingestion; the factories take the feed.
+                 S2 failing pairs 16 → 14. The block
+                 projected 16 → 14. Both named pairs
+                 fell. Remaining 14: alpha → composition,
+                 forensics, services, signals; execution →
+                 portfolio, risk; ingestion → risk;
+                 risk → alpha, execution, portfolio,
+                 services; sensors → monitoring;
+                 signals → alpha, monitoring.
+                 n_cycles held at 1. The only SCC is
+                 feelies.cli → feelies.cli.main.
+                 No hash moved at any commit. 64/64
+                 HASH/COUNT identical pre vs post and vs
+                 baseline_post-S-35b.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 The three tests now build MassiveLiveFeed
+                 + IBGatewayConnection + IBOrderRouter in
+                 a helper and pass those objects into
+                 build_paper_backend. Composition and
+                 start/connect tests assert identity of
+                 the returned feed/conn against the
+                 injected ones, plus mode/type and that
+                 start/connect were not called. The
+                 former host/port/client_id test no
+                 longer checks that the factory
+                 constructed an IB connection from those
+                 kwargs; it asserts the returned feed,
+                 connection, and router are the injected
+                 objects (is), and that the injected
+                 connection still carries the host/port/
+                 client_id it was built with.
+                 Omitting a handle raises at the call:
+                 TypeError missing 3 required
+                 keyword-only arguments, even when
+                 feelies.broker.ib and
+                 feelies.ingestion.massive_ws are already
+                 in sys.modules. paper_backend.py has
+                 neither import sys nor sys.modules.
+                 No new module; no _FILE_OWNERS or
+                 docs/prompts repair. S2's
+                 xfail(strict, GAP G40) stays until
+                 S-35e. No XPASS.
+                 FAIL_QUIET_KEEP still pins bootstrap.py
+                 KeyError at 1607 and
+                 (TypeError, ValueError) at 1825.
+                 Construction helpers landed at EOF so
+                 those lines did not move.
+                 Declared NET DELTA 0 modules, 0 public
+                 symbols, 0 branch points. Measured:
+                 modules 212 → 212 MATCH, public_symbols
+                 575 → 575 MATCH, sloc 46129 → 46147
+                 (+18, undeclared; 9838d53 removed the
+                 fallback after 52de471 had added it),
+                 n_edges 681 → 676, n_modules 172 → 172,
+                 cycles 1 → 1 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The first landing (52de471) kept optional
+                 handles with a sys.modules fallback.
+                 Callers that omitted a handle still
+                 resolved IB and Massive from whatever
+                 was already loaded, so the forbidden
+                 edge stayed live as a dict lookup
+                 import-linter cannot see -- the S-28a
+                 shape (contract green, behaviour not
+                 cut). S2 reported execution → broker
+                 and execution → ingestion gone while
+                 paper_backend could still obtain those
+                 types without an import statement. No
+                 test failed; it was caught by asking
+                 what the fallback does at runtime.
+                 What would catch the same shape next
+                 time: S2 cannot. import-linter / grimp
+                 walk import statements; sys.modules.get
+                 is not one. A src/feelies grep for
+                 sys.modules would have named the line
+                 (today it matches nothing under
+                 src/feelies). The rest of the tree uses
+                 sys.modules only to register a
+                 dynamically loaded test/script module
+                 under a fake name -- tests/*, and
+                 scripts/compare_multialpha_runs.py --
+                 not to fetch a forbidden package.
+                 verify_step.py uppercases S-35c1 to S-35C1
+                 then says it is not in the plan, while
+                 Known lists S-35c1. Frozen; four checks
+                 by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35a FINDING
+                 order_states inverted in place, S-35c3 owns
+                 risk → execution; perfmeasure.py
+                 DIRECT_PROBES two dead attributes, unowned;
+                 four exempted baseline tests.
+  NEXT:          S-35c2 cut execution → portfolio
+                 (platform-wide). Not started.
+                 Do not begin S-35c2 from this tree.
+
