@@ -4521,8 +4521,14 @@ CLOSES:          nothing. Isolates execution from broker,
 PROBLEM:         Remaining direct pairs on this cluster:
                  execution → broker, ingestion, risk,
                  portfolio; risk → execution; ingestion →
-                 risk (if S-35a did not fully invert flatten).
-FILES:           the seven execution files in S-35 plus
+                 risk (S-35a did not invert flatten).
+FILES:           src/feelies/execution/paper_backend.py
+                 src/feelies/execution/backtest_backend.py
+                 src/feelies/execution/backend.py
+                 src/feelies/execution/order_policy.py
+                 src/feelies/execution/intent.py
+                 src/feelies/execution/sized_intent_legs.py
+                 src/feelies/execution/position_manager.py
                  src/feelies/execution/order_lifecycle.py
                  src/feelies/execution/order_state.py
                  src/feelies/execution/trading_session.py
@@ -4548,6 +4554,8 @@ FILES:           the seven execution files in S-35 plus
                  tests/conformance/test_import_contracts.py
                  Do not include orchestrator.py. Do not flip
                  ci.yml. TYPE_CHECKING is not a cut.
+                 Do not restore ("feelies.core", "feelies.sensors")
+                 to _TIER_RESIDUALS.
 WHY THIS OWNER:  Engine 10 owns the order state machine and
                  _submit_tracked_order / _transition_order;
                  risk calling those is kernel dispatch, not
@@ -4592,8 +4600,15 @@ REFACTOR PATH:   (1) Position(+Protocol) to core. (2) backend
                  factories stop importing broker/ingestion;
                  bootstrap injects. (3) order_policy stops
                  importing risk; clamp/engine stop importing
-                 order_lifecycle. Kernel dispatch already
-                 exists for those calls.
+                 order_lifecycle and order_state. S-35a left
+                 _TERMINAL_ORDER_STATES inverted in kernel
+                 (name membership) and a local frozenset on
+                 clamp next to its OrderState import; moving
+                 the set onto order_state.py does not cut the
+                 pair. Clamp drops both execution imports;
+                 membership stays by name (kernel.order_states
+                 or string names). Kernel dispatch already
+                 exists for the lifecycle calls.
 BLAST RADIUS:    platform-wide
 PARITY IMPACT:   Hold. An import cut that moves a hash is a
                  finding, not a re-pin.
