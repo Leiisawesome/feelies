@@ -11204,3 +11204,247 @@ ALSO:        verify_step --list flags S-30f "declares hold but
                  baseline_post-S-34e.json, this ledger
                  entry.
 
+---
+
+## S-34f  2026-09-05T21:54:43+08:00
+  STEP:          S-34f
+  BASE:          e9077622f8b8dfa537dab87f1b0d29a673912a08
+  RESULT SHA:    9d6698e48107e752dea1362b0472da151edb0aa4 (exec/S-34f);
+                 merged 7bfe4f9d87fbadb77370da1ab00a4122bd5b6114
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. G40 stays
+                 OPEN. S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed after the commit
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 test_five_import_tiers passed
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 kernel 390; docs 101
+                 mypy src/feelies: Success, 211 source files
+  TESTS:         capture pre-S-34f GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-34f GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Saturday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-34f vs post-S-34f and vs
+                 baseline_post-S-34e.json; 0 moved | MATCH.
+  FILES:         3 implementation paths declared, 3 touched
+                 (verify_step not runnable -- S-34F
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: orchestrator.py,
+                 edge_weighted_sizer.py (destination, exists),
+                 tests/kernel/test_orchestrator.py.
+                 verify_step file_list would also count
+                 FILES-prose tokens and dir_list infers
+                 src/feelies/risk/ against FILES
+                 "Do not declare" -- frozen; this tree
+                 edited only the named dest file under that
+                 package.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 211 -> 211 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46081 -> 46082 (+1)
+                 n_edges 689 -> 689
+                 n_modules 173 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+                 orchestrator lines 3134 -> 3077 (-57)
+                 orchestrator methods 68 -> 67 (-1)
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 moved
+  VERIFY_STEP:   `S-34F --base e9077622` exits 1: S-34F not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 3 declared implementation / 3 touched
+                 CLEAN; PARITY 64/64 HASH+COUNT hold, 0 moved
+                 (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules 0 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is method names -- frozen. CLEAN,
+                 blast radius boundary -- human gate
+                 required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD e907762 on arch/exec. Cut
+                 exec/S-34f. Go confirmed branch head
+                 9d6698e.
+                 One body, one commit, no drawing body in
+                 this step so nothing to put last:
+                 9d6698e copies _record_size_shadow onto
+                 edge_weighted_sizer as a module-level
+                 function(self: Any). apply_tilt and
+                 SizeDivergence already this dest (S-22).
+                 SequenceGenerator constructions stayed at
+                 orchestrator.py:352 stream=orchestrator
+                 and :360 stream=hazard. Dest does not
+                 construct a generator.
+                 Orchestrator this step: 3134 -> 3077
+                 lines (-57); 68 -> 67 methods (-1). The
+                 class method left.
+                 n_cycles 1 -> 1. The only SCC is
+                 feelies.cli -> feelies.cli.main.
+                 Destination edge_weighted_sizer.py does
+                 not import kernel.orchestrator. No
+                 kernel-to-engine SCC.
+                 No hash moved. 64/64 HASH/COUNT identical
+                 pre vs post and vs baseline_post-S-34e.json.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Determinism 148 after the commit.
+                 Retargeted in that same commit, no shim:
+                 orchestrator.py:1654
+                 self._record_size_shadow ->
+                 _record_size_shadow(self, signal, quote);
+                 five TestSizeShadow binds at
+                 test_orchestrator.py:3218, :3230, :3237,
+                 :3243, :3249
+                 orch._record_size_shadow ->
+                 _record_size_shadow(orch, ...). Grep of
+                 src/ and tests/ for the attribute form is
+                 empty. The method is gone from Orchestrator.
+                 Closed-overs on the instance: _size_shadow_sizer,
+                 _size_shadow_sink, _alpha_registry,
+                 _account_equity. apply_tilt /
+                 SizeDivergence already dest. NBBOQuote
+                 from core.events. Not an S-34g miss.
+                 no-any-return none. Original -> None kept on
+                 self: Any (S-20).
+                 Block line cites vs this tree at
+                 pre-flight: body :2295-2350 was
+                 :2190-2245 (56 lines MATCH); call :1759
+                 was :1654; tests :3200, :3212, :3219,
+                 :3225, :3231 were :3217, :3229, :3236,
+                 :3242, :3248 (became :3218, :3230, :3237,
+                 :3243, :3249 after the import insert).
+                 Stale after S-34a through S-34e. Same body.
+                 Declared NET DELTA src modules 0, public
+                 symbols 0, branch points 0. Measured:
+                 modules 211 -> 211 MATCH, public_symbols
+                 575 -> 575 MATCH, sloc 46081 -> 46082
+                 (+1, undeclared), n_edges 689 -> 689,
+                 n_modules 173 -> 173, cycles 1 -> 1 MATCH,
+                 alphaleak 0 -> 0.
+                 Wave D, S-19 start through this close:
+                 orchestrator 5622 lines / 126 methods
+                 (S-19 pre) -> 3077 / 67. Removed across
+                 S-19 through S-34f: 2545 lines, 59
+                 methods. S-34 census (pre a-f): 4079 /
+                 83. Six extraction groups a-f plus S-34g
+                 cycle cut: 4079 / 83 -> 3077 / 67
+                 (-1002 lines, -16 methods). S-34g was
+                 the cycle cut, not an Orchestrator-method
+                 extraction.
+                 Remaining on the class against the S-34
+                 classification (39 kernel dispatch, 31
+                 engine work, 13 plumbing; 17 properties
+                 and 5 setters plumbing): dispatch 39
+                 and plumbing 13 unmoved. Engine work
+                 31 -> 15. Groups a-f are off the class.
+                 Still unmoved, named by S-34 and present
+                 on this tree: (g) _record_portfolio_net_shadow
+                 :2190, _record_net_shadow :2235;
+                 (h) _compose_scaled_quantity :2316;
+                 (i) _order_request_from_derisk :2826;
+                 (j) _emit_signal_edge_gate_suppression_alert
+                 :2122; (k) _borrow_tier_for :2990,
+                 _emit_locate_unavailable_alert :2994;
+                 (l) _reset_regime_session_state :2158,
+                 _restore_regime_snapshot :3058;
+                 (m) _standalone_signal_actionable_for_strategy_ownership
+                 :2782, _filter_standalone_signals_by_strategy_ownership
+                 :2799; (n) _is_consumed_by_portfolio :2758;
+                 (o) _publish_rejected_event_alert :3009,
+                 _emit_ack_drop_alert :2625. Fifteen
+                 methods. Locked scope ended at f; g-o
+                 are not this step.
+  FINDINGS:      This six-group (a-f) turned up what the
+                 plan did not anticipate:
+                 (1) A destination that imports orchestrator
+                 module names creates a kernel-to-engine
+                 SCC. S-34a opened n_cycles 1 -> 2;
+                 S-34g was inserted mid-family to cut it
+                 and to forbid dests b-f from repeating
+                 it. Not in the original a-f blocks.
+                 (2) A body that closes over a sibling on a
+                 different declared dest must land on the
+                 sibling's module. S-34d named
+                 order_admission for both bodies; landing
+                 _portfolio_leg_edge_block there would have
+                 added order_admission -> order_policy, an
+                 SCC and a new engine-9 -> engine-10 G40
+                 direction. Split inside FILES instead.
+                 (3) Line cites in the S-34 family go stale
+                 as siblings land. Re-derive every time
+                 (S-34c). This block's pins predated a-e.
+                 (4) A block may omit a closed-over that
+                 resolves from a shared (non-engine)
+                 module. S-34e: record_verdict /
+                 core.gate_registry. This step: NBBOQuote /
+                 core.events. Not an S-34g miss, not a
+                 dest split.
+                 (5) order_admission.py's purity docstring
+                 is now false (_emit_ssr_suppression_alert
+                 publishes via self._publish_alert). No
+                 remaining locked step names that file.
+                 UNOWNED.
+                 (6) tools/arch/perfmeasure.py:246 still
+                 pins
+                 "feelies.kernel.orchestrator:Orchestrator._record_size_shadow"
+                 as a string, not an attribute-call. Not in
+                 FILES. Stale. Same leftover-citation
+                 class as S-21.
+                 (7) perfmeasure.py DIRECT_PROBES pins two
+                 attributes that no longer resolve:
+                 X.size_shadow at :246
+                 (Orchestrator._record_size_shadow, this
+                 step) and E9.build_order
+                 (Orchestrator._try_build_order_from_intent,
+                 stale since S-24). _install_direct_probes
+                 records them in probes_unresolved and
+                 continues; the console table prints only
+                 STATS keys, so engine shares sum to 100%
+                 of a smaller set and the tool reports
+                 less than DIRECT_PROBES declares without
+                 saying so. Neither is a miss of a
+                 declared site: no step's FILES has named
+                 that file since S-20. Unowned.
+                 (8) The S-34 census labelled fifteen engine
+                 groups a through o, but S-34g was spent
+                 on the cycle cut rather than census
+                 group g (the net-shadow pair). The
+                 letter now means two things. The nine
+                 remaining groups are census g through o
+                 and have no step ids; allocating them
+                 would shift every letter after f
+                 (g→h … o→p).
+                 verify_step.py uppercases S-34f to S-34F.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34 FINDING G40 stays open and needs
+                 S-35; four exempted baseline tests.
+  NEXT:          S-35 close G40 (platform-wide). Not
+                 started. Do not begin S-35 from this tree.
+
