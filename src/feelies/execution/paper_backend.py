@@ -19,23 +19,25 @@ from collections.abc import Sequence
 from types import ModuleType
 
 from feelies.core.clock import Clock
-from feelies.execution.backend import ExecutionBackend, ExecutionMode, OrderRouter
-from feelies.ingestion.massive_normalizer import MassiveNormalizer
-from feelies.ingestion.massive_ws import MassiveLiveFeed
+from feelies.execution.backend import (
+    ExecutionBackend,
+    ExecutionMode,
+    MarketDataSource,
+    OrderRouter,
+)
 
 
-def _ib_module() -> ModuleType:
-    """IB types without a static ``feelies.broker`` import (G40).
+def _loaded_module(name: str, *, required: str) -> ModuleType:
+    """Resolve a module already imported by the caller (G40).
 
-    Composition-root callers inject the connection and router. Unit
-    tests that still construct via this factory import ``feelies.broker.ib``
-    first; the classes are then taken from ``sys.modules``.
+    Composition-root callers inject constructed handles. Unit tests that
+    still construct via this factory import the owning module first; the
+    classes are then taken from ``sys.modules``.
     """
-    loaded = sys.modules.get("feelies.broker.ib")
+    loaded = sys.modules.get(name)
     if loaded is None:
         raise TypeError(
-            "build_paper_backend requires ib_connection and order_router "
-            "from the composition root"
+            f"build_paper_backend requires {required} from the composition root"
         )
     return loaded
 
@@ -45,38 +47,49 @@ def build_paper_backend(
     massive_api_key: str,
     symbols: Sequence[str],
     clock: Clock,
-    normalizer: MassiveNormalizer,
+    normalizer: object,
     ib_host: str = "127.0.0.1",
     ib_port: int = 4002,
     ib_client_id: int = 1,
     massive_ws_url: str = "wss://socket.massive.com/stocks",
     ib_connection: object | None = None,
     order_router: OrderRouter | None = None,
-) -> tuple[ExecutionBackend, MassiveLiveFeed, object]:
+    live_feed: MarketDataSource | None = None,
+) -> tuple[ExecutionBackend, MarketDataSource, object]:
     """Compose a PAPER ``ExecutionBackend`` with a Massive feed + IB router.
 
     Does NOT call ``MassiveLiveFeed.start()`` or
     ``IBGatewayConnection.connect_and_start()``. The entry script owns
-    the connect-then-start ordering. Bootstrap injects the IB handle;
-    ``ib_host`` / ``ib_port`` / ``ib_client_id`` remain for callers that
-    still construct through this factory.
+    the connect-then-start ordering. Bootstrap injects the feed and IB
+    handle; construction kwargs remain for callers that still construct
+    through this factory.
     """
-    live_feed = MassiveLiveFeed(
-        api_key=massive_api_key,
-        symbols=symbols,
-        normalizer=normalizer,
-        clock=clock,
-        ws_url=massive_ws_url,
-    )
+    if live_feed is None:
+        live_feed = getattr(_loaded_module(
+            "feelies.ingestion.massive_ws",
+            required="live_feed",
+        ), "MassiveLiveFeed")(
+            api_key=massive_api_key,
+            symbols=symbols,
+            normalizer=normalizer,
+            clock=clock,
+            ws_url=massive_ws_url,
+        )
     if ib_connection is None:
-        ib_connection = getattr(_ib_module(), "IBGatewayConnection")(
+        ib_connection = getattr(_loaded_module(
+            "feelies.broker.ib",
+            required="ib_connection and order_router",
+        ), "IBGatewayConnection")(
             host=ib_host,
             port=ib_port,
             client_id=ib_client_id,
             clock=clock,
         )
     if order_router is None:
-        order_router = getattr(_ib_module(), "IBOrderRouter")(
+        order_router = getattr(_loaded_module(
+            "feelies.broker.ib",
+            required="ib_connection and order_router",
+        ), "IBOrderRouter")(
             connection=ib_connection,
             clock=clock,
         )

@@ -18,7 +18,6 @@ from enum import StrEnum
 from typing import Iterator, Protocol
 
 from feelies.core.events import NBBOQuote, OrderAck, OrderRequest, Trade
-from feelies.ingestion.idle_tick import IdleTick
 
 
 class ExecutionMode(StrEnum):
@@ -47,7 +46,7 @@ class MarketDataSource(Protocol):
     async fill drain only (no micro-SM transition).
     """
 
-    def events(self) -> Iterator[NBBOQuote | Trade | IdleTick]:
+    def events(self) -> Iterator[NBBOQuote | Trade | object]:
         """Yield market events (and idle sentinels) in timestamp order."""
         ...
 
