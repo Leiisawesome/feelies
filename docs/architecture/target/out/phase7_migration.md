@@ -4607,6 +4607,9 @@ FILES:           src/feelies/execution/order_policy.py
                  TYPE_CHECKING is not a cut.
                  Do not restore ("feelies.core", "feelies.sensors")
                  to _TIER_RESIDUALS.
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
 REFACTOR PATH:   one edge, three commits (S-35b shape).
                  (1) create core/position.py; copy Position
                  and the PositionStore Protocol unchanged
@@ -4621,6 +4624,9 @@ REFACTOR PATH:   one edge, three commits (S-35b shape).
                  execution → portfolio gone. 14 → 13.
                  Do not retarget risk. Do not change
                  PlatformConfig fields.
+                 The _FILE_OWNERS and docs/prompts repair lands in the commit
+                 that creates core/position.py, with a stated owner and reason
+                 (S-21).
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2 still xfail(strict, GAP G40);
                  package pairs 14 → 13 (execution →
