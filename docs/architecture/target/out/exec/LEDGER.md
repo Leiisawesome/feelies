@@ -11448,3 +11448,41 @@ ALSO:        verify_step --list flags S-30f "declares hold but
   NEXT:          S-35 close G40 (platform-wide). Not
                  started. Do not begin S-35 from this tree.
 
+---
+
+## END STATE  orchestrator extraction family closed at S-34f
+DATE:        2026-09-06
+CLOSED AT:   S-34f. Extraction commit 9d6698e; merge
+             7bfe4f9; reference baseline 49e35d6 on
+             arch/exec.
+CAUSE:       The locked extraction family was six groups
+             a–f plus the S-34g cycle cut. That work is
+             done. What remains on Orchestrator is not an
+             unfinished step; it is the residual S-34
+             classified and the locked scope chose not
+             to move.
+ORCHESTRATOR: 3077 lines / 67 methods (instance, excluding
+             17 properties and 5 setters).
+WAVE D:      5622 lines / 126 methods at S-19 start →
+             3077 / 67. Removed 2545 lines, 59 methods.
+RESIDUAL:    39 kernel dispatch, 13 plumbing, 15 engine
+             bodies across nine census groups g through o.
+             Those groups have no step ids. S-34g was
+             spent on the cycle cut, not census group g;
+             allocating steps would shift every letter
+             after f.
+DECISION:    record this as the campaign's end state for
+             the orchestrator, not as unfinished Wave D.
+             Extracting g–o does not close G40. Inv-8
+             purity beyond this point would be a new
+             campaign with its own FILES, not more S-34*
+             suffixes.
+LOCKED:      S-35 remains. It cuts engine-to-engine
+             imports S2 pins. It does not extract the
+             fifteen. Do not begin S-35 from a tree that
+             treats g–o as the next S-34 step.
+WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
+             only). G40 stays OPEN. perfmeasure.py
+             DIRECT_PROBES still pins two dead
+             Orchestrator attributes (unowned).
+
