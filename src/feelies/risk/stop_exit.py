@@ -43,13 +43,11 @@ from decimal import Decimal
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import NBBOQuote, DeRiskRequirement, Side
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
-from feelies.execution.trading_session import (
-    TradingSessionBounds,
-    in_session_flatten_window,
-)
 from feelies.portfolio.position_store import PositionStore
 
 _logger = logging.getLogger(__name__)
+
+_NS_PER_SECOND = 1_000_000_000
 
 # ── Stop-exit DeRiskRequirement signature (single source of truth) ───────
 # The kernel converts this requirement to an outbound OrderRequest. Any
@@ -72,6 +70,21 @@ STOP_EXIT_REASONS: frozenset[str] = frozenset(
         STOP_EXIT_REASON_SESSION_FLAT,
     }
 )
+
+
+def _in_session_flatten_window(
+    bounds: object | None,
+    *,
+    enabled: bool,
+    seconds_before_close: int,
+    at_ns: int,
+) -> bool:
+    """Whether ``at_ns`` is at or past the session-flatten deadline."""
+    if not enabled or bounds is None:
+        return False
+    effective = bounds.resolve_for_timestamp(at_ns)
+    deadline = effective.rth_close_ns - seconds_before_close * _NS_PER_SECOND
+    return at_ns >= deadline
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -137,7 +150,7 @@ class StopExitController:
         sequence_generator: SequenceGenerator,
         position_store: PositionStore,
         policy: StopExitPolicy,
-        trading_session_bounds: TradingSessionBounds | None = None,
+        trading_session_bounds: object | None = None,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
@@ -259,7 +272,7 @@ class StopExitController:
 
     def _session_flatten_triggered(self, quote: NBBOQuote) -> bool:
         """Whether the quote has crossed the session-flatten deadline."""
-        return in_session_flatten_window(
+        return _in_session_flatten_window(
             self._bounds,
             enabled=self._policy.session_flatten_enabled,
             seconds_before_close=self._policy.session_flatten_seconds_before_close,

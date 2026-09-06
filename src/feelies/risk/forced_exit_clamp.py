@@ -7,22 +7,12 @@ from typing import Any
 
 from feelies.core.events import AlertSeverity, OrderRequest, OrderType, Side
 from feelies.core.identifiers import derive_order_id
-from feelies.execution.order_lifecycle import _transition_order
-from feelies.execution.order_state import OrderState
 from feelies.kernel.forced_exit_reasons import (
     _RISK_FORCED_EXIT_REASONS,
     _SLICE_SCOPED_FORCED_EXIT_REASONS,
 )
+from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.risk.hazard_exit import HAZARD_EXIT_SOURCE_LAYER
-
-_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
-    {
-        OrderState.FILLED,
-        OrderState.CANCELLED,
-        OrderState.REJECTED,
-        OrderState.EXPIRED,
-    }
-)
 
 logger = logging.getLogger(__name__)
 
@@ -218,12 +208,13 @@ def _force_flatten_symbol_on_degrade(
     )
     try:
         self._track_order(order_id, side, order)
-        _transition_order(self,
-            order_id,
-            OrderState.SUBMITTED,
-            f"degrade_flatten:{reason}",
-            correlation_id=correlation_id,
-        )
+        if order_id in self._active_orders:
+            sm = self._active_orders[order_id][0]
+            sm.transition(
+                getattr(type(sm.state), "SUBMITTED"),
+                trigger=f"degrade_flatten:{reason}",
+                correlation_id=correlation_id,
+            )
         self._submit_to_router(order, triggering_quote=self._in_flight_quote)
         self._bus.publish(order)
         self._settle_router_acks(correlation_id, expected_order_ids={order_id})

@@ -37,15 +37,8 @@ from feelies.core.events import (
 )
 from feelies.core.gate_registry import record_verdict
 from feelies.core.identifiers import SequenceGenerator
-from feelies.execution.sized_intent_legs import resolve_mark
 from feelies.risk.sized_intent_orders import build_sized_intent_orders
-from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
-from feelies.execution.trading_session import (
-    TradingSessionBounds,
-    opens_or_increases_signed,
-    should_suppress_entry,
-)
 from feelies.risk.buying_power import (
     INSUFFICIENT_BUYING_POWER,
     BuyingPowerConfig,
@@ -60,6 +53,54 @@ def _emit_risk(gate_id: str, verdict: RiskVerdict) -> RiskVerdict:
     outcome = "PASS" if verdict.action is RiskAction.ALLOW else "FAIL"
     record_verdict(gate_id, outcome, verdict.reason)
     return verdict
+
+
+def _opens_or_increases_signed(current_qty: int, post_signed: int) -> bool:
+    """Entry detection: True iff the resulting position grows or flips sign."""
+    return abs(post_signed) > abs(current_qty) or (
+        current_qty != 0 and post_signed != 0 and (current_qty > 0) != (post_signed > 0)
+    )
+
+
+def _should_suppress_entry(
+    exchange_ts_ns: int,
+    bounds: object,
+    opens_or_increases: bool,
+) -> tuple[bool, str]:
+    """Whether an opening/increasing fill must be refused at ``exchange_ts_ns``."""
+    if not opens_or_increases:
+        return False, ""
+    effective = bounds.resolve_for_timestamp(exchange_ts_ns)
+    if not effective.covers_ns(exchange_ts_ns):
+        return True, "RTH_ENTRY_SUPPRESSED"
+    if effective.is_holiday:
+        return True, "MARKET_HOLIDAY"
+    if exchange_ts_ns < effective.no_entry_before_ns():
+        return True, "RTH_ENTRY_SUPPRESSED"
+    if exchange_ts_ns >= effective.rth_close_ns:
+        return True, "RTH_ENTRY_SUPPRESSED"
+    return False, ""
+
+
+def _resolve_mark(symbol: str, current: object, positions: object) -> Decimal:
+    """Return the best-available mark for translating USD -> shares."""
+    latest = getattr(positions, "latest_mark", None)
+    if callable(latest):
+        try:
+            m = latest(symbol)
+            if isinstance(m, Decimal) and m > 0:
+                return m
+        except Exception as exc:  # pragma: no cover - defensive
+            _logger.warning(
+                "resolve_mark(%s): latest_mark accessor raised %s; "
+                "falling back to avg_entry_price",
+                symbol,
+                exc,
+            )
+    avg = getattr(current, "avg_entry_price", Decimal("0"))
+    if isinstance(avg, Decimal) and avg > 0:
+        return avg
+    return Decimal("0")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -104,9 +145,9 @@ class BasicRiskEngine:
         *,
         bus: EventBus | None = None,
         alert_sequence_generator: SequenceGenerator | None = None,
-        pdt_constraint: PDTConstraint | None = None,
+        pdt_constraint: object | None = None,
         buying_power_config: BuyingPowerConfig | None = None,
-        trading_session_bounds: TradingSessionBounds | None = None,
+        trading_session_bounds: object | None = None,
         account_id: str = "default",
         warn_on_inert_entry_gates: bool = False,
     ) -> None:
@@ -453,7 +494,7 @@ class BasicRiskEngine:
         so PDT equity, Reg-T buying power, and RTH router gates share one
         implementation.
         """
-        return opens_or_increases_signed(current_qty, post_signed)
+        return _opens_or_increases_signed(current_qty, post_signed)
 
     def _check_pdt_min_equity(
         self,
@@ -505,7 +546,7 @@ class BasicRiskEngine:
             return None
         if not self._opens_or_increases(current_qty, post_signed):
             return None
-        suppress, reason = should_suppress_entry(
+        suppress, reason = _should_suppress_entry(
             order.timestamp_ns,
             self._trading_session_bounds,
             opens_or_increases=True,
@@ -660,7 +701,7 @@ class BasicRiskEngine:
         new entry leg must still count against the gross cap.
         """
         exposure = positions.total_exposure()
-        mark = resolve_mark(order.symbol, current, positions)
+        mark = _resolve_mark(order.symbol, current, positions)
         if mark <= 0 and order.limit_price is not None and order.limit_price > 0:
             mark = order.limit_price
         if mark <= 0:
