@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from feelies.execution.order_state import OrderState
-
-_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
+_TERMINAL_ORDER_STATE_NAMES: frozenset[str] = frozenset(
     {
-        OrderState.FILLED,
-        OrderState.CANCELLED,
-        OrderState.REJECTED,
-        OrderState.EXPIRED,
+        "FILLED",
+        "CANCELLED",
+        "REJECTED",
+        "EXPIRED",
     }
 )
+
+
+class _TerminalOrderStates:
+    """Membership by ``OrderState`` member or name; no execution import."""
+
+    def __contains__(self, item: object) -> bool:
+        name = getattr(item, "name", item)
+        return name in _TERMINAL_ORDER_STATE_NAMES
+
+
+_TERMINAL_ORDER_STATES: _TerminalOrderStates = _TerminalOrderStates()
