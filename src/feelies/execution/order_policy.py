@@ -9,7 +9,9 @@ from typing import Any
 
 from feelies.core.events import (
     AlertSeverity,
+    KillSwitchActivation,
     NBBOQuote,
+    OrderAckStatus,
     OrderRequest,
     OrderType,
     RiskAction,
@@ -44,11 +46,243 @@ from feelies.execution.position_manager import (
 from feelies.execution.regulatory.borrow_availability import BorrowTier, htb_fee_applies
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
-from feelies.core.position import Position
-from feelies.risk.engine import _escalate_risk
-from feelies.risk.post_exit_position_view import PostExitPositionView
+from feelies.core.position import Position, PositionStore
 
 logger = logging.getLogger(__name__)
+
+
+class _PostExitPositionView:
+    """Project one pending exit onto a position store without mutating it."""
+
+    __slots__ = ("_inner", "_symbol", "_adjustment")
+
+    def __init__(
+        self,
+        inner: PositionStore,
+        symbol: str,
+        quantity_adjustment: int,
+    ) -> None:
+        self._inner = inner
+        self._symbol = symbol
+        self._adjustment = quantity_adjustment
+
+    def _adjusted(self, position: Position) -> Position:
+        new_quantity = position.quantity + self._adjustment
+        mark = self.latest_mark(position.symbol)
+        unrealized_pnl = Decimal("0")
+        if new_quantity != 0:
+            if mark is not None and mark > 0:
+                unrealized_pnl = (mark - position.avg_entry_price) * new_quantity
+            else:
+                unrealized_pnl = position.unrealized_pnl
+        return Position(
+            symbol=position.symbol,
+            quantity=new_quantity,
+            avg_entry_price=position.avg_entry_price,
+            realized_pnl=position.realized_pnl,
+            unrealized_pnl=unrealized_pnl,
+            cumulative_fees=position.cumulative_fees,
+        )
+
+    def get(self, symbol: str) -> Position:
+        position = self._inner.get(symbol)
+        if symbol == self._symbol:
+            return self._adjusted(position)
+        return position
+
+    def all_positions(self) -> dict[str, Position]:
+        positions = dict(self._inner.all_positions())
+        if self._symbol in positions:
+            positions[self._symbol] = self._adjusted(positions[self._symbol])
+        return positions
+
+    def total_exposure(self) -> Decimal:
+        total = self._inner.total_exposure()
+        position = self._inner.get(self._symbol)
+        mark = self.latest_mark(self._symbol)
+        if mark is None or mark <= 0:
+            mark = position.avg_entry_price
+        old_contribution = abs(position.quantity) * mark
+        new_contribution = abs(position.quantity + self._adjustment) * mark
+        return total - old_contribution + new_contribution
+
+    def update(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("PostExitPositionView is read-only")
+
+    def debit_fees(self, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("PostExitPositionView is read-only")
+
+    def update_mark(self, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("PostExitPositionView is read-only")
+
+    def latest_mark(self, symbol: str) -> Decimal | None:
+        return self._inner.latest_mark(symbol)
+
+    def opened_at_ns(self, symbol: str) -> int | None:
+        return self._inner.opened_at_ns(symbol)
+
+
+def _emergency_flatten_all(
+    self: Any,
+    correlation_id: str,
+) -> tuple[dict[str, str], dict[str, int]]:
+    """Cancel resting orders and submit market exits for every open position."""
+    positions = self._positions.all_positions()
+    failures: dict[str, str] = {}
+    for symbol in sorted(positions):
+        pos = positions[symbol]
+        if pos.quantity == 0:
+            continue
+        side = Side.SELL if pos.quantity > 0 else Side.BUY
+        qty = abs(pos.quantity)
+        seq = self._seq.next()
+        order_id = derive_order_id(f"emergency_flatten:{correlation_id}:{symbol}:{seq}")
+
+        order = OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=seq,
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=qty,
+            strategy_id="emergency_flatten",
+            reason="FORCE_FLATTEN",
+        )
+
+        try:
+            self._track_order(order_id, side, order)
+            submit_exc = _submit_tracked_order(
+                self,
+                order,
+                trigger="emergency_flatten",
+            )
+            if submit_exc is not None:
+                failures[symbol] = f"submit_exception: {submit_exc!r}"
+                continue
+
+            self._bus.publish(order)
+            acks = self._settle_router_acks(correlation_id, expected_order_ids={order_id})
+            non_fill_acks = [
+                a
+                for a in acks
+                if a.order_id == order_id
+                and (a.filled_quantity or 0) == 0
+                and a.status in (OrderAckStatus.REJECTED, OrderAckStatus.CANCELLED)
+            ]
+            if non_fill_acks:
+                failures[symbol] = (
+                    f"{non_fill_acks[0].status.name}: {non_fill_acks[0].reason or 'no reason'}"
+                )
+        except Exception as exc:
+            logger.exception(
+                "Emergency flatten failed for %s (qty=%d) -- "
+                "position may remain open at LOCKED",
+                symbol,
+                pos.quantity,
+            )
+            failures[symbol] = f"submit_exception: {exc!r}"
+            if order_id in self._active_orders:
+                self._force_order_terminal_after_pipeline_error(
+                    order,
+                    exc,
+                    context="emergency_flatten",
+                )
+
+    residual: dict[str, int] = {
+        sym: p.quantity
+        for sym, p in self._positions.all_positions().items()
+        if p.quantity != 0
+    }
+    if residual or failures:
+        msg = (
+            f"Emergency flatten incomplete — residual positions: "
+            f"{residual}, total_exposure={self._positions.total_exposure()}, "
+            f"failures={failures}"
+        )
+        logger.critical(msg)
+        self._publish_alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            severity=AlertSeverity.CRITICAL,
+            alert_name="emergency_flatten_incomplete",
+            message=msg,
+        )
+    return failures, residual
+
+
+def _escalate_risk(self: Any, correlation_id: str) -> None:
+    """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
+
+    Monotonically tightens safety (platform inv 11).  Once R1
+    (WARNING) is entered, de-escalation is impossible without
+    completing the full cycle to R4 and human unlock.
+
+    At R3 (FORCED_FLATTEN) we attempt to close all non-zero
+    positions via emergency market orders before transitioning
+    to R4 (LOCKED).
+    """
+    level = self._risk_escalation.state
+    states = type(level)
+
+    if level == states.NORMAL:
+        self._risk_escalation.transition(
+            states.WARNING,
+            trigger="risk_threshold_approaching",
+            correlation_id=correlation_id,
+        )
+        level = states.WARNING
+
+    if level == states.WARNING:
+        self._risk_escalation.transition(
+            states.BREACH_DETECTED,
+            trigger="risk_breach_confirmed",
+            correlation_id=correlation_id,
+        )
+        level = states.BREACH_DETECTED
+
+    if level == states.BREACH_DETECTED:
+        self._risk_escalation.transition(
+            states.FORCED_FLATTEN,
+            trigger="forced_flatten_initiated",
+            correlation_id=correlation_id,
+        )
+        level = states.FORCED_FLATTEN
+
+    if level == states.FORCED_FLATTEN:
+        failures, residual = _emergency_flatten_all(self, correlation_id)
+        flatten_clean = not failures and not residual
+        self._risk_escalation.transition(
+            states.LOCKED,
+            trigger=(
+                "positions_zero_flatten_complete"
+                if flatten_clean
+                else "emergency_flatten_incomplete_residual_exposure"
+            ),
+            correlation_id=correlation_id,
+        )
+
+    if self._kill_switch is not None:
+        self._kill_switch.activate(
+            reason="risk_escalation_lockdown",
+            activated_by="orchestrator",
+        )
+        self._bus.publish(
+            KillSwitchActivation(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                reason="risk_escalation_lockdown",
+                activated_by="orchestrator",
+            )
+        )
+
+    self._macro.transition(
+        MacroState.RISK_LOCKDOWN,
+        trigger="RISK_BREACH",
+        correlation_id=correlation_id,
+    )
 
 
 def _round_trip_cost_bps(
@@ -614,7 +848,7 @@ def _execute_reverse(
 
     # Signed adjustment: the exit leg removes close_qty from position.
     exit_signed_adj = -close_qty if exit_side == Side.SELL else close_qty
-    post_exit_positions = PostExitPositionView(
+    post_exit_positions = _PostExitPositionView(
         self._positions,
         intent.symbol,
         exit_signed_adj,
