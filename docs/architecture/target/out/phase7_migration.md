@@ -4344,112 +4344,196 @@ ROLLBACK:        revert the commit. Independently revertible until a later
 ```
 
 ```
-STEP:            S-35
-CLOSES:          G40
-PROBLEM:         S2 test_twelve_engine_independence is still
-                 xfail(strict, GAP G40). lint-imports reports
-                 Twelve engine module sets BROKEN. The breaks
-                 are engine-to-engine imports, not residual
-                 orchestrator methods. Direct pairs:
-                   execution → broker
-                   execution → ingestion
-                   execution → risk
-                   execution → portfolio
-                   risk → execution
-                   risk → alpha
-                   risk → services
-                   risk → portfolio
-                   alpha → signals
-                   alpha → composition
-                   alpha → services
-                   alpha → forensics (via promotion.lifecycle)
-                   signals → alpha
-                   signals → monitoring
-                   sensors → monitoring
-                   forensics → risk
-                 Transitives through
-                 core.platform_config → sensors.spec:
-                   broker → sensors
-                   monitoring → sensors
-                   forensics → sensors
-                   alpha → sensors
-                 S-34a–o do not close any of these. Kernel
-                 dispatch imports are five-tiers residuals,
-                 not this xfail.
-FILES:           src/feelies/execution/paper_backend.py
-                 src/feelies/execution/backend.py
-                 src/feelies/execution/backtest_backend.py
-                 src/feelies/execution/order_policy.py
-                 src/feelies/execution/intent.py
-                 src/feelies/execution/sized_intent_legs.py
-                 src/feelies/execution/position_manager.py
+STEP:            S-35a
+CLOSES:          nothing. Makes the three S-34g kernel homes G40-safe.
+                 G40 stays OPEN until S-35e.
+PROBLEM:         import-linter follows through kernel/. fill_bindings
+                 re-exports regime_engine and kill_switch;
+                 forced_exit_reasons imports four risk modules;
+                 order_states imports execution.order_state.
+                 That is portfolio → {services, monitoring, risk}
+                 and part of risk → execution. None of those
+                 files are in the S-35 FILES list.
+FILES:           src/feelies/kernel/fill_bindings.py
+                 src/feelies/kernel/forced_exit_reasons.py
+                 src/feelies/kernel/order_states.py
+                 src/feelies/portfolio/fill_reconciliation.py
+                 src/feelies/risk/forced_exit_clamp.py
+                 src/feelies/forensics/gate_close_attribution.py
+                 tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py. Do not add a
+                 module. Homes already exist; invert their
+                 imports. Reason unions become string literals
+                 (or risk imports kernel, not the reverse).
+                 fill_bindings must not import an engine.
+                 order_states must not import execution.
+BLAST RADIUS:    platform-wide (G40 detector)
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. (Hold
+                 mention is the frozen false positive.)
+DELETES:         the four new G40 pairs named in PROBLEM.
+                 Not the xfail.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points
+ROLLBACK:        revert. Independently revertible from b–e.
+```
+```
+STEP:            S-35b
+CLOSES:          the four platform_config → sensors.spec
+                 transitives (broker, monitoring, forensics,
+                 alpha → sensors). G40 stays OPEN.
+PROBLEM:         SensorSpec lives in sensors.spec and is a
+                 PlatformConfig field. Everyone who imports
+                 platform_config (or inv12_stress / the
+                 journal) fails independence.
+FILES:           src/feelies/core/platform_config.py
+                 src/feelies/sensors/spec.py
+                 src/feelies/core/sensor_spec.py
+                   (destination, new; STOP was required to
+                   name it here before creating it)
+                 src/feelies/core/inv12_stress.py
+                 src/feelies/storage/submitted_order_journal.py
+                 src/feelies/broker/ib/connection.py
+                 src/feelies/monitoring/latency_budget.py
+                 src/feelies/forensics/decouple_backstop.py
+                 src/feelies/promotion/evidence.py
+                 src/feelies/alpha/loader.py
+                 src/feelies/alpha/dependency_graph.py
+                 tests/conformance/test_import_contracts.py
+                 Do not change PlatformConfig fields.
+                 Do not re-pin _BASELINE_CONFIG_HASH.
+                 Do not include ci.yml.
+BLAST RADIUS:    platform-wide
+PARITY IMPACT:   Hold. A snapshot-field change is S-29, STOP.
+DELETES:         core.platform_config → sensors.spec and the
+                 four transitives.
+NET DELTA:       src modules +1 (sensor_spec.py), public
+                 symbols 0, branch points 0
+ROLLBACK:        revert per commit with the new module.
+                 Land after S-35a. Independently revertible
+                 from c–e.
+```
+```
+STEP:            S-35c
+CLOSES:          nothing. Isolates execution from broker,
+                 ingestion, risk, and portfolio.
+PROBLEM:         Remaining direct pairs on this cluster:
+                 execution → broker, ingestion, risk,
+                 portfolio; risk → execution; ingestion →
+                 risk (if S-35a did not fully invert flatten).
+FILES:           the seven execution files in S-35 plus
+                 src/feelies/execution/order_lifecycle.py
+                 src/feelies/execution/order_state.py
+                 src/feelies/execution/trading_session.py
+                 src/feelies/execution/regulatory/pdt_constraint.py
+                 src/feelies/ingestion/data_integrity.py
+                 src/feelies/ingestion/idle_tick.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 src/feelies/ingestion/massive_ws.py
+                 src/feelies/ingestion/replay_feed.py
+                 src/feelies/broker/ib/__init__.py
+                 src/feelies/portfolio/position_store.py
+                 src/feelies/core/position.py
+                   (new; Position + PositionStore Protocol;
+                   name it before creating)
                  src/feelies/risk/engine.py
                  src/feelies/risk/basic_risk.py
+                 src/feelies/risk/forced_exit_clamp.py
+                 src/feelies/risk/sized_intent_orders.py
+                 src/feelies/risk/stop_exit.py
+                 src/feelies/bootstrap.py
+                   (construction-root invert for paper/backtest
+                   backends — STOP if omitted)
+                 tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py. Do not flip
+                 ci.yml. TYPE_CHECKING is not a cut.
+REFACTOR PATH:   (1) Position(+Protocol) to core. (2) backend
+                 factories stop importing broker/ingestion;
+                 bootstrap injects. (3) order_policy stops
+                 importing risk; clamp/engine stop importing
+                 order_lifecycle. Kernel dispatch already
+                 exists for those calls.
+BLAST RADIUS:    platform-wide
+PARITY IMPACT:   Hold. An import cut that moves a hash is a
+                 finding, not a re-pin.
+DELETES:         the execution-cluster pairs in PROBLEM.
+NET DELTA:       +1 module if Position moves; 0 symbols, 0
+                 branch points
+ROLLBACK:        revert per commit. Land after S-35a.
+                 Independently revertible from d–e except
+                 Position consumers in S-35d.
+```
+```
+STEP:            S-35d
+CLOSES:          nothing. Isolates alpha, signals, risk
+                 leftovers, forensics, monitoring.
+PROBLEM:         Remaining pairs: risk → alpha, risk →
+                 services, risk → portfolio (if Position
+                 already moved, only StrategyPositionStore
+                 residue); alpha ↔ signals; alpha →
+                 composition, services, forensics;
+                 signals → monitoring; sensors →
+                 monitoring; forensics → risk.
+FILES:           the six alpha files in S-35
+                 src/feelies/alpha/module.py
+                 src/feelies/alpha/cost_arithmetic.py
+                 src/feelies/signals/horizon_engine.py
+                 src/feelies/signals/horizon_protocol.py
+                 src/feelies/signals/regime_gate.py
+                 src/feelies/composition/protocol.py
+                 src/feelies/sensors/registry.py
+                 src/feelies/sensors/horizon_scheduler.py
+                 src/feelies/monitoring/telemetry.py
                  src/feelies/risk/position_sizer.py
                  src/feelies/risk/edge_weighted_sizer.py
                  src/feelies/risk/risk_wrapper.py
-                 src/feelies/risk/sized_intent_orders.py
-                 src/feelies/risk/stop_exit.py
-                 src/feelies/risk/post_exit_position_view.py
-                 src/feelies/risk/exit_composer.py
-                 src/feelies/risk/hazard_exit.py
-                 src/feelies/risk/deferral_cap.py
-                 src/feelies/alpha/signal_layer_module.py
-                 src/feelies/alpha/portfolio_layer_module.py
-                 src/feelies/alpha/layer_validator.py
-                 src/feelies/alpha/loader.py
-                 src/feelies/alpha/dependency_graph.py
-                 src/feelies/alpha/registry.py
-                 src/feelies/signals/horizon_engine.py
-                 src/feelies/sensors/registry.py
-                 src/feelies/sensors/horizon_scheduler.py
-                 src/feelies/forensics/gate_close_attribution.py
-                 src/feelies/forensics/decouple_backstop.py
-                 src/feelies/broker/ib/connection.py
-                 src/feelies/monitoring/latency_budget.py
-                 src/feelies/core/platform_config.py
-                 src/feelies/core/inv12_stress.py
-                 src/feelies/storage/submitted_order_journal.py
+                 src/feelies/risk/basic_risk.py
                  src/feelies/promotion/lifecycle.py
-                 src/feelies/promotion/evidence.py
+                 src/feelies/forensics/cost_circuit_breaker.py
+                 src/feelies/forensics/gate_close_attribution.py
+                 src/feelies/services/regime_engine.py
+                 src/feelies/services/regime_state_cache.py
+                 src/feelies/core/alpha_risk_budget.py
+                   (new; AlphaRiskBudget; name first)
                  tests/conformance/test_import_contracts.py
-                 Do not include orchestrator.py. Do not include
-                 .github/workflows/ci.yml. Do not add a module
-                 unless a cut has nowhere to live without one
-                 — then STOP and name it in FILES first.
-                 Do not rewrite the independence contract to
-                 KEPT by deleting engines from pyproject.toml.
-WHY THIS OWNER:  G40's detector is the twelve-engine
-                 independence contract, not the kernel.
-REFACTOR PATH:   (1) re-run lint-imports; the BROKEN pair list
-                 is the work. (2) cut or re-home every pair
-                 so no engine package imports another engine
-                 package, including via platform_config →
-                 sensors.spec. Typical homes: a protocol in
-                 core/, a TYPE_CHECKING-only import that the
-                 linter still sees (that is not a cut), or
-                 moving the shared type. (3) drop the G40
-                 xfail on test_twelve_engine_independence.
-                 (4) stop. Do not shrink _TIER_RESIDUALS. Do
-                 not flip ci.yml continue-on-error.
+                 Do not include orchestrator.py. Do not flip
+                 ci.yml.
+REFACTOR PATH:   move leaf types (AlphaRiskBudget,
+                 CostArithmetic, MetricCollector Protocol,
+                 composition.protocol) to core/. Delete
+                 telemetry imports (MetricEvent is enough).
+                 Cut lifecycle → cost_circuit_breaker.
 BLAST RADIUS:    platform-wide
-VALIDATED BY:    S2: test_twelve_engine_independence passes
-                 without xfail; lint-imports prints
-                 "Twelve engine module sets KEPT".
+PARITY IMPACT:   Hold.
+DELETES:         the L2/forensics/monitoring pairs in PROBLEM.
+NET DELTA:       +1 if AlphaRiskBudget moves
+ROLLBACK:        revert per commit. Land after S-35a.
+                 Position already in core from S-35c.
+```
+```
+STEP:            S-35e
+CLOSES:          G40
+PROBLEM:         After a–d, test_twelve_engine_independence
+                 must be KEPT with no remaining BROKEN
+                 pair. If any pair remains, STOP and
+                 name it; do not drop the xfail.
+FILES:           tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py.
+                 Do not include .github/workflows/ci.yml.
+                 Do not shrink _TIER_RESIDUALS.
+                 Do not rewrite the independence contract
+                 by deleting engines from pyproject.toml.
+REFACTOR PATH:   (1) lint-imports: Twelve engine module sets
+                 KEPT. (2) drop the G40 xfail. (3) stop.
+                 Five import tiers stays BROKEN.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 passes without xfail; lint-imports
+                 prints "Twelve engine module sets KEPT";
                  test_five_import_tiers still equals
-                 _TIER_RESIDUALS (kernel→engine dispatch
-                 remains). No XPASS on any other gap.
-PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
-                 fingerprint, _BASELINE_CONFIG_HASH. An
-                 import cut that moves a hash is a finding,
-                 not a re-pin.
-DELETES:         the G40 xfail marker. The engine-to-engine
-                 import edges named in PROBLEM.
-NET DELTA:       0 modules unless REFACTOR PATH stopped for
-                 a new protocol module. 0 public symbols, 0
-                 branch points, if the cuts are import-only.
-ROLLBACK:        revert per commit. Restore the xfail before
-                 restoring any edge.
+                 _TIER_RESIDUALS. No XPASS on any other gap.
+PARITY IMPACT:   Hold.
+DELETES:         the G40 xfail marker.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points
+ROLLBACK:        restore the xfail before restoring any edge.
 ```
 ---
 
