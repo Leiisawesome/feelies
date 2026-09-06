@@ -16,7 +16,7 @@ from datetime import date
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from feelies.alpha.discovery import load_and_register
 from feelies.portfolio.fill_attribution import FillAttributionLedger
@@ -62,7 +62,7 @@ from feelies.core.wiring_manifest import manifest_hash
 from feelies.core.session_clock import rth_open_ns
 from feelies.sensors.horizon_scheduler import HorizonScheduler, _publish_horizon_grid
 from feelies.sensors.registry import SensorRegistry
-from feelies.execution.backend import ExecutionBackend
+from feelies.execution.backend import ExecutionBackend, MarketDataSource, OrderRouter
 from feelies.execution.backtest_backend import (
     build_backtest_backend,
     build_passive_limit_backend,
@@ -145,8 +145,8 @@ class _BackendBundle:
     """Backend plus PAPER-only handles used by the entry script."""
 
     backend: ExecutionBackend
-    live_feed: "MassiveLiveFeed | None" = None
-    ib_connection: "IBGatewayConnection | None" = None
+    live_feed: object | None = None
+    ib_connection: object | None = None
 
 
 class StaleFactorLoadingsError(RuntimeError):
@@ -951,7 +951,7 @@ def _create_backend(
     if config.mode == OperatingMode.BACKTEST:
         if config.execution_mode in ("passive_limit", "minimum_cost"):
             backend, _ = build_passive_limit_backend(
-                event_log,
+                _replay_feed(event_log, clock, config.market_data_latency_ns),
                 clock,
                 latency_ns=config.backtest_fill_latency_ns,
                 market_data_latency_ns=config.market_data_latency_ns,
@@ -976,7 +976,7 @@ def _create_backend(
             return _BackendBundle(backend=backend)
 
         backend, _ = build_backtest_backend(
-            event_log,
+            _replay_feed(event_log, clock, config.market_data_latency_ns),
             clock,
             latency_ns=config.backtest_fill_latency_ns,
             market_data_latency_ns=config.market_data_latency_ns,
@@ -1005,7 +1005,6 @@ def _create_backend(
             )
         # Keep the optional IB stack out of BACKTEST-only imports.
         from feelies.execution.paper_backend import build_paper_backend
-
         backend, live_feed, ib_conn = build_paper_backend(
             massive_api_key=api_key,
             symbols=sorted(config.symbols),
@@ -1015,6 +1014,7 @@ def _create_backend(
             ib_port=config.ib_port,
             ib_client_id=config.ib_client_id,
             massive_ws_url=config.massive_ws_url,
+            **_paper_injected(api_key, config, clock, normalizer),
         )
         router = getattr(backend, "order_router", None)
         can_bind_ib = hasattr(ib_conn, "bind_submitted_order_journal")
@@ -1026,7 +1026,7 @@ def _create_backend(
             if router is not None:
                 submitted_order_journal.install_on(router)
             if can_bind_ib:
-                ib_conn.bind_submitted_order_journal(submitted_order_journal)
+                getattr(ib_conn, "bind_submitted_order_journal")(submitted_order_journal)
         return _BackendBundle(
             backend=backend,
             live_feed=live_feed,
@@ -2071,3 +2071,53 @@ def _enforce_factor_loadings_freshness(
             f"{len(missing)} universe symbol(s): {missing[:8]}"
             + ("..." if len(missing) > 8 else "")
         )
+
+
+def _replay_feed(
+    event_log: InMemoryEventLog,
+    clock: Clock,
+    market_data_latency_ns: int,
+) -> MarketDataSource:
+    from feelies.ingestion.replay_feed import ReplayFeed
+
+    return ReplayFeed(
+        event_log=event_log,
+        clock=clock,
+        market_data_latency_ns=market_data_latency_ns,
+    )
+
+
+class _PaperInjected(TypedDict):
+    live_feed: MarketDataSource
+    ib_connection: object
+    order_router: OrderRouter
+
+
+def _paper_injected(
+    api_key: str,
+    config: PlatformConfig,
+    clock: Clock,
+    normalizer: MassiveNormalizer,
+) -> _PaperInjected:
+    from feelies.broker.ib import IBGatewayConnection, IBOrderRouter
+    from feelies.ingestion.massive_ws import MassiveLiveFeed
+
+    live_feed = MassiveLiveFeed(
+        api_key=api_key,
+        symbols=sorted(config.symbols),
+        normalizer=normalizer,
+        clock=clock,
+        ws_url=config.massive_ws_url,
+    )
+    ib_conn = IBGatewayConnection(
+        host=config.ib_host,
+        port=config.ib_port,
+        client_id=config.ib_client_id,
+        clock=clock,
+    )
+    router = IBOrderRouter(connection=ib_conn, clock=clock)
+    return {
+        "live_feed": live_feed,
+        "ib_connection": ib_conn,
+        "order_router": router,
+    }

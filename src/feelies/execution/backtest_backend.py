@@ -15,14 +15,12 @@ import logging
 from decimal import Decimal
 
 from feelies.core.clock import Clock
-from feelies.execution.backend import ExecutionBackend
+from feelies.execution.backend import ExecutionBackend, MarketDataSource
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import CostModel
 from feelies.execution.moc_session import MocSessionBounds
 from feelies.execution.trading_session import TradingSessionBounds
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
-from feelies.ingestion.replay_feed import ReplayFeed
-from feelies.storage.event_log import EventLog
 
 _logger = logging.getLogger(__name__)
 
@@ -59,12 +57,10 @@ def _warn_on_zero_latency(
 
 
 def build_backtest_backend(
-    event_log: EventLog,
+    market_data: MarketDataSource,
     clock: Clock,
     *,
     cost_model: CostModel,
-    start_sequence: int = 0,
-    end_sequence: int | None = None,
     latency_ns: int = 0,
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
@@ -78,7 +74,7 @@ def build_backtest_backend(
     moc_penalty_bps: float = 0.0,
     trading_session_bounds: TradingSessionBounds | None = None,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
-    """Build a backtest ExecutionBackend from an event log.
+    """Build a backtest ExecutionBackend from an injected market-data source.
 
     Returns ``(backend, router)`` so the caller can wire
     ``router.on_quote()`` to the event bus for price tracking.
@@ -92,13 +88,6 @@ def build_backtest_backend(
         latency_ns=latency_ns,
         market_data_latency_ns=market_data_latency_ns,
         builder="build_backtest_backend",
-    )
-    feed = ReplayFeed(
-        event_log=event_log,
-        clock=clock,
-        start_sequence=start_sequence,
-        end_sequence=end_sequence,
-        market_data_latency_ns=market_data_latency_ns,
     )
     router = BacktestOrderRouter(
         clock=clock,
@@ -117,7 +106,7 @@ def build_backtest_backend(
     )
 
     backend = ExecutionBackend(
-        market_data=feed,
+        market_data=market_data,
         order_router=router,
         mode="BACKTEST",
     )
@@ -125,12 +114,10 @@ def build_backtest_backend(
 
 
 def build_passive_limit_backend(
-    event_log: EventLog,
+    market_data: MarketDataSource,
     clock: Clock,
     *,
     cost_model: CostModel,
-    start_sequence: int = 0,
-    end_sequence: int | None = None,
     latency_ns: int = 0,
     fill_delay_ticks: int = 3,
     max_resting_ticks: int = 50,
@@ -167,13 +154,6 @@ def build_passive_limit_backend(
         market_data_latency_ns=market_data_latency_ns,
         builder="build_passive_limit_backend",
     )
-    feed = ReplayFeed(
-        event_log=event_log,
-        clock=clock,
-        start_sequence=start_sequence,
-        end_sequence=end_sequence,
-        market_data_latency_ns=market_data_latency_ns,
-    )
     router = PassiveLimitOrderRouter(
         clock=clock,
         latency_ns=latency_ns,
@@ -197,7 +177,7 @@ def build_passive_limit_backend(
     )
 
     backend = ExecutionBackend(
-        market_data=feed,
+        market_data=market_data,
         order_router=router,
         mode="BACKTEST",
     )

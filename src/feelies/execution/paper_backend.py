@@ -16,11 +16,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from feelies.broker.ib import IBGatewayConnection, IBOrderRouter
 from feelies.core.clock import Clock
-from feelies.execution.backend import ExecutionBackend, ExecutionMode
-from feelies.ingestion.massive_normalizer import MassiveNormalizer
-from feelies.ingestion.massive_ws import MassiveLiveFeed
+from feelies.execution.backend import (
+    ExecutionBackend,
+    ExecutionMode,
+    MarketDataSource,
+    OrderRouter,
+)
 
 
 def build_paper_backend(
@@ -28,35 +30,29 @@ def build_paper_backend(
     massive_api_key: str,
     symbols: Sequence[str],
     clock: Clock,
-    normalizer: MassiveNormalizer,
+    normalizer: object,
+    ib_connection: object,
+    order_router: OrderRouter,
+    live_feed: MarketDataSource,
     ib_host: str = "127.0.0.1",
     ib_port: int = 4002,
     ib_client_id: int = 1,
     massive_ws_url: str = "wss://socket.massive.com/stocks",
-) -> tuple[ExecutionBackend, MassiveLiveFeed, IBGatewayConnection]:
-    """Compose a PAPER ``ExecutionBackend`` with a Massive feed + IB router.
+) -> tuple[ExecutionBackend, MarketDataSource, object]:
+    """Compose a PAPER ``ExecutionBackend`` with an injected feed + IB router.
 
     Does NOT call ``MassiveLiveFeed.start()`` or
     ``IBGatewayConnection.connect_and_start()``. The entry script owns
-    the connect-then-start ordering.
+    the connect-then-start ordering. Handles are required: bootstrap
+    constructs the feed and IB stack and injects them. Construction
+    kwargs remain so composition-root tests can pin forwarded config
+    fields; they are not used to build objects here.
     """
-    live_feed = MassiveLiveFeed(
-        api_key=massive_api_key,
-        symbols=symbols,
-        normalizer=normalizer,
-        clock=clock,
-        ws_url=massive_ws_url,
-    )
-    ib_conn = IBGatewayConnection(
-        host=ib_host,
-        port=ib_port,
-        client_id=ib_client_id,
-        clock=clock,
-    )
-    router = IBOrderRouter(connection=ib_conn, clock=clock)
+    del massive_api_key, symbols, clock, normalizer
+    del ib_host, ib_port, ib_client_id, massive_ws_url
     backend = ExecutionBackend(
         market_data=live_feed,
-        order_router=router,
+        order_router=order_router,
         mode=ExecutionMode.PAPER,
     )
-    return backend, live_feed, ib_conn
+    return backend, live_feed, ib_connection
