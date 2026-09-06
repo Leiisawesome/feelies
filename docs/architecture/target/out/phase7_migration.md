@@ -4620,6 +4620,251 @@ ROLLBACK:        revert per commit. Land after S-35a.
                  Position consumers in S-35d.
 ```
 ```
+STEP:            S-35c1
+CLOSES:          nothing. Cuts execution → broker and
+                 execution → ingestion. G40 stays OPEN.
+PROBLEM:         paper_backend imports IB and Massive;
+                 backend imports IdleTick; backtest_backend
+                 imports ReplayFeed. Those are construction,
+                 not engine-10 ownership. S2's xfail stays
+                 until S-35e.
+WHY THIS OWNER:  paper_backend / backtest_backend composing
+                 IB and Massive is composition-root work:
+                 bootstrap, not engine 9/10. IdleTick and
+                 ReplayFeed are the same invert: factories
+                 take the feed, they do not import ingestion.
+FILES:           src/feelies/execution/paper_backend.py
+                 src/feelies/execution/backtest_backend.py
+                 src/feelies/execution/backend.py
+                 src/feelies/ingestion/idle_tick.py
+                 src/feelies/ingestion/massive_normalizer.py
+                 src/feelies/ingestion/massive_ws.py
+                 src/feelies/ingestion/replay_feed.py
+                 src/feelies/broker/ib/__init__.py
+                 src/feelies/bootstrap.py
+                   (construction-root invert — STOP if omitted)
+                 tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py. Do not flip
+                 ci.yml. TYPE_CHECKING is not a cut.
+                 Do not restore ("feelies.core", "feelies.sensors")
+                 to _TIER_RESIDUALS.
+REFACTOR PATH:   one invert, two commits, same factory.
+                 They share paper_backend.py; (2) sees (1).
+                 (1) paper_backend drops IBGatewayConnection
+                 and IBOrderRouter; bootstrap injects the IB
+                 handle. execution → broker gone. 16 → 14
+                 does not happen yet — ingestion still fails.
+                 (2) paper_backend drops MassiveNormalizer
+                 and MassiveLiveFeed; backend drops IdleTick;
+                 backtest_backend drops ReplayFeed;
+                 bootstrap injects. execution → ingestion
+                 gone. 16 → 14. TYPE_CHECKING is not a cut.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 16 → 14 (execution → broker
+                 and execution → ingestion gone).
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left). No XPASS.
+PARITY IMPACT:   Hold. A moved hash means a factory now
+                 constructs a different feed or router, or
+                 bootstrap injects a different instance
+                 than the factory did — the invert was not
+                 a pure import cut. STOP, not a re-pin.
+DELETES:         execution → broker; execution → ingestion.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points
+ROLLBACK:        revert per commit. Land after S-35b.
+                 Independently revertible from c2–c4.
+                 Commit (2) is not independently revertible
+                 from (1) — both edit paper_backend.py.
+```
+```
+STEP:            S-35c2
+CLOSES:          nothing. Cuts execution → portfolio.
+                 G40 stays OPEN.
+PROBLEM:         order_policy, intent, position_manager
+                 import Position; sized_intent_legs imports
+                 PositionStore. Engine 7 owns the book of
+                 record; execution needs the type, not the
+                 portfolio package. S2's xfail stays until
+                 S-35e.
+WHY THIS OWNER:  Engine 7 owns Position as the book of
+                 record. The dataclass and Protocol move to
+                 core, not into execution. Risk still imports
+                 position_store / StrategyPositionStore;
+                 that pair is S-35d, not this cut.
+FILES:           src/feelies/execution/order_policy.py
+                 src/feelies/execution/intent.py
+                 src/feelies/execution/sized_intent_legs.py
+                 src/feelies/execution/position_manager.py
+                 src/feelies/portfolio/position_store.py
+                 src/feelies/core/position.py
+                   (new; Position + PositionStore Protocol;
+                   name it before creating)
+                 tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py. Do not
+                 include risk/*. Do not flip ci.yml.
+                 TYPE_CHECKING is not a cut.
+                 Do not restore ("feelies.core", "feelies.sensors")
+                 to _TIER_RESIDUALS.
+REFACTOR PATH:   one edge, three commits (S-35b shape).
+                 (1) create core/position.py; copy Position
+                 and the PositionStore Protocol unchanged
+                 from portfolio.position_store. Owner:
+                 audit_core_clock_config via _PACKAGE_OWNERS
+                 if core stays package-owned; otherwise the
+                 S-21 _FILE_OWNERS repair in this commit.
+                 (2) position_store re-exports from core
+                 (portfolio → core is legal).
+                 (3) the four execution files import from
+                 core.position, not portfolio.position_store.
+                 execution → portfolio gone. 14 → 13.
+                 Do not retarget risk. Do not change
+                 PlatformConfig fields.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 14 → 13 (execution →
+                 portfolio gone). risk → portfolio remains.
+                 tests/docs/test_prompt_coverage_map.py if
+                 the new core file needs the S-21
+                 _FILE_OWNERS repair — that repair belongs
+                 in commit (1). test_five_import_tiers
+                 still equals _TIER_RESIDUALS. No XPASS.
+PARITY IMPACT:   Hold. A snapshot-field add/delete is S-29,
+                 STOP. A moved hash means Position or
+                 PositionStore changed identity under a
+                 caller that already existed — the copy was
+                 not pure. STOP, not a re-pin.
+DELETES:         execution → portfolio.
+NET DELTA:       +1 module (position.py), 0 public symbols
+                 if the class leaves position_store as a
+                 re-export, 0 branch points
+ROLLBACK:        revert per commit with the new module.
+                 Land after S-35c1. Independently revertible
+                 from c3–c4. S-35d Position consumers are
+                 not independently revertible from this
+                 step once they retarget.
+```
+```
+STEP:            S-35c3
+CLOSES:          nothing. Cuts execution → risk and
+                 risk → execution. G40 stays OPEN.
+PROBLEM:         Two directed pairs, not one undirected
+                 edge. order_policy imports _escalate_risk
+                 and PostExitPositionView. Clamp, engine,
+                 basic_risk, stop_exit, sized_intent_orders
+                 import execution. Different files, different
+                 names. Both must fall or S2 still reports
+                 the cycle. S-35a left _TERMINAL_ORDER_STATES
+                 inverted in kernel and a local frozenset on
+                 clamp next to OrderState; moving the set
+                 onto order_state.py does not cut the pair.
+                 S2's xfail stays until S-35e.
+WHY THIS OWNER:  Engine 10 owns the order state machine and
+                 _submit_tracked_order / _transition_order;
+                 risk calling those is kernel dispatch, not
+                 engine-8 ownership of execution. Engine 9
+                 owns order_policy; it must not import
+                 engine 8 to escalate or to read a
+                 post-exit view.
+FILES:           src/feelies/execution/order_policy.py
+                 src/feelies/execution/order_lifecycle.py
+                 src/feelies/execution/order_state.py
+                 src/feelies/execution/trading_session.py
+                 src/feelies/execution/regulatory/pdt_constraint.py
+                 src/feelies/execution/sized_intent_legs.py
+                 src/feelies/risk/engine.py
+                 src/feelies/risk/basic_risk.py
+                 src/feelies/risk/forced_exit_clamp.py
+                 src/feelies/risk/sized_intent_orders.py
+                 src/feelies/risk/stop_exit.py
+                 tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py. Do not flip
+                 ci.yml. TYPE_CHECKING is not a cut.
+                 Do not restore ("feelies.core", "feelies.sensors")
+                 to _TIER_RESIDUALS.
+REFACTOR PATH:   one edge per commit. (1) order_policy drops
+                 _escalate_risk and PostExitPositionView.
+                 execution → risk gone. 13 → 12. Kernel
+                 dispatch already exists. Do not add
+                 post_exit_position_view.py to FILES.
+                 (2) clamp drops order_lifecycle and
+                 order_state; engine drops
+                 _submit_tracked_order; basic_risk drops
+                 resolve_mark, PDTConstraint,
+                 TradingSessionBounds / opens_or_increases
+                 _signed / should_suppress_entry; stop_exit
+                 drops TradingSessionBounds /
+                 in_session_flatten_window; sized_intent
+                 _orders drops plan_leg / rescale_leg.
+                 Membership stays by name
+                 (kernel.order_states or string names).
+                 risk → execution gone. 12 → 11.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 13 → 11 (execution → risk
+                 then risk → execution gone). Count from
+                 lint-imports after each commit. test_five
+                 _import_tiers still equals _TIER_RESIDUALS.
+                 No XPASS.
+PARITY IMPACT:   Hold. A moved hash means an order id, a
+                 transition, or a session-flatten decision
+                 changed — a call moved, not just an import.
+                 STOP, not a re-pin.
+DELETES:         execution → risk; risk → execution.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points
+ROLLBACK:        revert per commit. Land after S-35c2.
+                 Independently revertible from c4.
+                 Commit (1) edits order_policy.py, which
+                 c2 also edited; not independently revertible
+                 from c2. Commit (2) does not edit
+                 order_policy.py.
+```
+```
+STEP:            S-35c4
+CLOSES:          nothing. Cuts ingestion → risk. G40 stays
+                 OPEN.
+PROBLEM:         data_integrity imports
+                 _force_flatten_symbol_on_degrade from
+                 the clamp. S-35a did not invert flatten.
+                 Engine 1 owns the trigger; engine 8 owns
+                 the body. S2's xfail stays until S-35e.
+WHY THIS OWNER:  Engine 1 owns the flatten trigger (data
+                 integrity); engine 8 owns the flatten
+                 body (forced_exit_clamp). Neither package
+                 imports the other — kernel already
+                 dispatches.
+FILES:           src/feelies/ingestion/data_integrity.py
+                 src/feelies/risk/forced_exit_clamp.py
+                 tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py. Do not flip
+                 ci.yml. TYPE_CHECKING is not a cut.
+                 Do not restore ("feelies.core", "feelies.sensors")
+                 to _TIER_RESIDUALS.
+REFACTOR PATH:   one edge, one commit. data_integrity drops
+                 the clamp import. Kernel dispatch already
+                 exists. Do not edit clamp unless the
+                 invert requires it; named so a signature
+                 change is not a 29th file. ingestion →
+                 risk gone. 11 → 10.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 11 → 10 (ingestion → risk
+                 gone). test_five_import_tiers still equals
+                 _TIER_RESIDUALS. No XPASS.
+PARITY IMPACT:   Hold. A moved hash means a flatten now
+                 fires on a different tick or with a
+                 different order id — the invert moved a
+                 call, not just an import. STOP, not a
+                 re-pin.
+DELETES:         ingestion → risk.
+NET DELTA:       0 modules, 0 public symbols, 0 branch points
+ROLLBACK:        revert the commit. Land after S-35c3.
+                 Independently revertible from S-35d
+                 unless d also edits forced_exit_clamp.py
+                 (it does not today).
+```
+```
 STEP:            S-35d
 CLOSES:          nothing. Isolates alpha, signals, risk
                  leftovers, forensics, monitoring.
