@@ -44,7 +44,7 @@ from feelies.execution.position_manager import (
 from feelies.execution.regulatory.borrow_availability import BorrowTier, htb_fee_applies
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
-from feelies.portfolio.position_store import Position
+from feelies.core.position import Position
 from feelies.risk.engine import _escalate_risk
 from feelies.risk.post_exit_position_view import PostExitPositionView
 

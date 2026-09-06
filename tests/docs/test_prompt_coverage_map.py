@@ -43,6 +43,8 @@ _FILE_OWNERS: dict[str, str] = {
     # ── root-level modules ──────────────────────────────────────────
     "bootstrap.py": "audit_kernel",
     "__main__.py": "audit_kernel",
+    # ── core/ (package-owned; explicit row for the new module) ────────
+    "core/position.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",

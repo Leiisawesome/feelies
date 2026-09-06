@@ -28,7 +28,7 @@ from decimal import Decimal
 from feelies.core.events import NBBOQuote, Side, Signal, SignalDirection
 from feelies.execution.cost_model import CostModel, estimate_round_trip_cost_bps
 from feelies.execution.intent import OrderIntent, TradingIntent
-from feelies.portfolio.position_store import Position
+from feelies.core.position import Position
 
 
 class PlanLeg(Enum):

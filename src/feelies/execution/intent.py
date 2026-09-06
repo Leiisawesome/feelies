@@ -23,7 +23,7 @@ from enum import Enum, auto
 from typing import Protocol
 
 from feelies.core.events import Signal, SignalDirection
-from feelies.portfolio.position_store import Position
+from feelies.core.position import Position
 
 
 class TradingIntent(Enum):
