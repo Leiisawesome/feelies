@@ -11486,3 +11486,182 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
              DIRECT_PROBES still pins two dead
              Orchestrator attributes (unowned).
 
+---
+
+## S-35a  2026-09-06T11:04:00+08:00
+  STEP:          S-35a
+  BASE:          46fe48e5782c06c3d764295f4649db9a81db85ea
+  RESULT SHA:    00c14131f2182ca1ea37d832c93896b2c4a80226 (exec/S-35a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. G40 stays
+                 OPEN. S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 kernel 390; docs 101
+                 mypy src/feelies: Success, 211 source files
+  TESTS:         capture pre-S-35a GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-35a GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Sunday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-35a vs post-S-35a and vs
+                 baseline_post-S-34f.json; 0 moved | MATCH.
+  FILES:         7 implementation paths declared, 6 touched
+                 (verify_step not runnable -- S-35A
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: fill_bindings.py,
+                 forced_exit_reasons.py, order_states.py,
+                 fill_reconciliation.py, forced_exit_clamp.py,
+                 gate_close_attribution.py.
+                 Named-not-edited: test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 211 -> 211 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46082 -> 46113 (+31, undeclared)
+                 n_edges 689 -> 680
+                 n_modules 173 -> 171
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-35A --base 46fe48e` exits 1: S-35A not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 7 declared implementation / 6 touched
+                 CLEAN (1 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules 0 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- human gate
+                 required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 46fe48e on arch/exec. Cut
+                 exec/S-35a. Go confirmed branch head
+                 00c14131f2182ca1ea37d832c93896b2c4a80226.
+                 Commit order, one invert each:
+                 aa73e3c, f136e2b, 00c1413.
+                 aa73e3c cuts portfolio -> risk (and, as a
+                 side-effect of FILES, forensics -> risk).
+                 The kernel unions stop importing the four
+                 risk modules and become string literals
+                 equal to the old set expressions.
+                 fill_reconciliation already read those
+                 unions from kernel and keeps doing so.
+                 gate_close_attribution drops every risk
+                 import and aliases SAFETY_DERIVED_EXIT_REASONS
+                 to _SELF_ATTRIBUTED_FORCED_EXIT_REASONS.
+                 f136e2b cuts portfolio -> services and
+                 portfolio -> monitoring. fill_bindings
+                 deletes the regime_engine and kill_switch
+                 re-exports; TradeRecord stays, because
+                 storage is not a G40 engine.
+                 fill_reconciliation no longer imports those
+                 two names: _regime_label_for is a local
+                 Wave D helper over self._regime_engine,
+                 and the kill-switch observe is
+                 record_verdict("RT.KILL_SWITCH", ...) from
+                 core.gate_registry on self._kill_switch.
+                 00c1413 cuts the kernel follow-through of
+                 risk -> execution. kernel.order_states
+                 drops the execution import; membership is
+                 by OrderState.name so orchestrator, which
+                 is not in FILES, still imports the kernel
+                 name. clamp stops importing
+                 kernel.order_states and holds the
+                 frozenset next to the OrderState import it
+                 already had. The package pair stays: S2
+                 still reports risk -> execution via
+                 clamp's direct execution.order_state and
+                 execution.order_lifecycle imports, plus
+                 the other risk files that already imported
+                 execution.
+                 S2 failing pairs 24 -> 20. Declared
+                 24 -> 21. The extra pair is
+                 forensics -> risk, because FILES required
+                 gate_close_attribution not to import risk.
+                 n_cycles 1 -> 1. The only SCC is
+                 feelies.cli -> feelies.cli.main.
+                 No hash moved at any of the three commits.
+                 64/64 HASH/COUNT identical pre vs post and
+                 vs baseline_post-S-34f.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Determinism 148 after every commit.
+                 No new module; no _FILE_OWNERS or
+                 docs/prompts repair.
+                 S2's xfail(strict, GAP G40) stays until
+                 the family's last cut (S-35e). No XPASS.
+                 Declared NET DELTA 0 modules, 0 public
+                 symbols, 0 branch points. Measured:
+                 modules 211 -> 211 MATCH, public_symbols
+                 575 -> 575 MATCH, sloc 46082 -> 46113
+                 (+31, undeclared), n_edges 689 -> 680,
+                 n_modules 173 -> 171, cycles 1 -> 1 MATCH,
+                 alphaleak 0 -> 0.
+  FINDINGS:      order_states was inverted in place rather
+                 than moved onto execution.order_state as
+                 REFACTOR PATH (3) specified. That file is
+                 not in FILES. Landing the set there would
+                 have been a ninth file, and orchestrator.py
+                 (explicitly excluded) still imports
+                 _TERMINAL_ORDER_STATES from kernel, so the
+                 kernel name had to keep working without an
+                 execution import. What that leaves: S2's
+                 risk -> execution pair still fails, through
+                 clamp's direct OrderState import (and the
+                 other direct execution imports clamp and
+                 sibling risk modules already had).
+                 S-35b does not touch this pair (it is the
+                 SensorSpec hub). S-35c names it: PROBLEM
+                 lists risk -> execution, FILES includes
+                 execution/order_state.py and
+                 risk/forced_exit_clamp.py, VALIDATED BY
+                 projects the pair gone at 17 -> 11.
+                 S-35d assumes it is already gone.
+                 S-35e only drops the xfail. The leftover
+                 does not need a new step name; it is S-35c
+                 work. Do not begin S-35c from this tree.
+                 Also: _regime_label_for's body is now in
+                 fill_reconciliation; the original stays on
+                 services.regime_engine (not in FILES).
+                 Unowned leftover, same class as S-21.
+                 verify_step.py uppercases S-35a to S-35A.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; perfmeasure.py
+                 DIRECT_PROBES two dead attributes, unowned;
+                 four exempted baseline tests.
+  NEXT:          S-35b the four platform_config -> sensors.spec
+                 transitives (platform-wide). Not started.
+                 Do not begin S-35b from this tree.
+
