@@ -43,13 +43,7 @@ from feelies.core.events import (
     SignalDirection,
     TrendMechanism,
 )
-from feelies.risk.deferral_cap import DEFERRAL_EXIT_REASONS, DEFERRAL_EXIT_SOURCE_LAYER
-from feelies.risk.exit_composer import (
-    EXIT_COMPOSER_EXIT_REASONS,
-    EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED,
-    EXIT_COMPOSER_SOURCE_LAYER,
-)
-from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS
+from feelies.kernel.forced_exit_reasons import _SELF_ATTRIBUTED_FORCED_EXIT_REASONS
 
 # Every RISK-layer reason token that represents a gate-close-derived flatten,
 # i.e. an unwind that (pre-decoupling) would have ridden the SIGNAL-layer FLAT.
@@ -60,16 +54,12 @@ from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS
 # deferral age exit on the order alone.  Accepting it would let a hazard exit be
 # mis-joined to an unrelated safe=False episode and silently fabricate gate-close
 # provenance, so we drop every hazard-authored reason and let it fail loudly.
-SAFETY_DERIVED_EXIT_REASONS: frozenset[str] = (
-    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
-) - HAZARD_EXIT_REASONS
+SAFETY_DERIVED_EXIT_REASONS: frozenset[str] = _SELF_ATTRIBUTED_FORCED_EXIT_REASONS
 
 # The RISK-layer source tokens a safety-derived flatten is authored on (both the
 # exit composer and the deferral cap tag their orders ``"RISK"``).  A flatten on
 # any other layer cannot be a gate-close unwind (§3.1.6).
-SAFETY_DERIVED_SOURCE_LAYERS: frozenset[str] = frozenset(
-    {EXIT_COMPOSER_SOURCE_LAYER, DEFERRAL_EXIT_SOURCE_LAYER}
-)
+SAFETY_DERIVED_SOURCE_LAYERS: frozenset[str] = frozenset({"RISK"})
 
 # Only the fail-closed composer reason copies the triggering
 # ``SafetyStateChange.correlation_id`` onto the flatten order, so its join is
@@ -78,7 +68,7 @@ SAFETY_DERIVED_SOURCE_LAYERS: frozenset[str] = frozenset(
 # deferral-cap reasons stamp the triggering ``Trade.correlation_id`` (the
 # event-time clock proxy); both instead join to their safety episode on
 # ``(strategy_id, symbol)`` — never on ``correlation_id`` (§2.3, §3.3).
-_CORRELATION_JOINED_REASONS: frozenset[str] = frozenset({EXIT_COMPOSER_REASON_SAFETY_FAIL_CLOSED})
+_CORRELATION_JOINED_REASONS: frozenset[str] = frozenset({"SAFETY_FAIL_CLOSED"})
 
 Actuation = Literal["SIGNAL_FLAT", "RISK_FLATTEN"]
 

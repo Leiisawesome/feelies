@@ -16,11 +16,8 @@ from feelies.core.events import (
     PositionUpdate,
     Side,
 )
-from feelies.kernel.fill_bindings import (
-    TradeRecord,
-    _regime_label_for,
-    observe_kill_switch,
-)
+from feelies.core.gate_registry import record_verdict
+from feelies.kernel.fill_bindings import TradeRecord
 from feelies.kernel.forced_exit_reasons import (
     _RISK_FORCED_EXIT_REASONS,
     _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
@@ -28,6 +25,28 @@ from feelies.kernel.forced_exit_reasons import (
 from feelies.portfolio.fill_attribution import largest_remainder_split, split_fees
 
 logger = logging.getLogger(__name__)
+
+
+def _regime_label_for(self: Any, symbol: str) -> str:
+    """Dominant regime-state name for *symbol* at fill time (forensics).
+
+    Pure provenance capture for the trade journal: reads the regime
+    engine's already-computed posterior (no new computation, no
+    decision — Inv-5-safe) and returns its argmax state name.  Returns
+    "" when there is no engine or no posterior yet for the symbol, so a
+    cold or regime-less deployment simply records an empty regime label.
+    """
+    engine = self._regime_engine
+    if engine is None:
+        return ""
+    post = engine.current_state(symbol)
+    if not post:
+        return ""
+    names = list(engine.state_names)
+    if not names:
+        return ""
+    idx = max(range(len(post)), key=lambda i: post[i])
+    return names[idx] if idx < len(names) else ""
 
 
 def _order_owns_one_slice(order: OrderRequest) -> bool:
@@ -499,15 +518,17 @@ def _reconcile_fills(
                         "escalated": escalate,
                     },
                 )
-                if (
-                    escalate
-                    and self._kill_switch is not None
-                    and not observe_kill_switch(self._kill_switch.is_active)
-                ):
-                    self._kill_switch.activate(
-                        reason="realized_cost_persistent_overrun",
-                        activated_by="orchestrator",
+                if escalate and self._kill_switch is not None:
+                    kill_active = self._kill_switch.is_active
+                    record_verdict(
+                        "RT.KILL_SWITCH",
+                        "FAIL" if kill_active else "PASS",
                     )
+                    if not kill_active:
+                        self._kill_switch.activate(
+                            reason="realized_cost_persistent_overrun",
+                            activated_by="orchestrator",
+                        )
 
         if self._trade_journal is not None:
             for leg in _trade_journal_legs(

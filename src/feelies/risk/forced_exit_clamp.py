@@ -13,8 +13,16 @@ from feelies.kernel.forced_exit_reasons import (
     _RISK_FORCED_EXIT_REASONS,
     _SLICE_SCOPED_FORCED_EXIT_REASONS,
 )
-from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.risk.hazard_exit import HAZARD_EXIT_SOURCE_LAYER
+
+_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
+    {
+        OrderState.FILLED,
+        OrderState.CANCELLED,
+        OrderState.REJECTED,
+        OrderState.EXPIRED,
+    }
+)
 
 logger = logging.getLogger(__name__)
 
