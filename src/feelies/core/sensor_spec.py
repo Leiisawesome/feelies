@@ -24,7 +24,7 @@ from typing import Any, Mapping
 
 from feelies.core.events import Event, NBBOQuote, Trade
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger("feelies.sensors.spec")
 
 
 _VALID_SUBSCRIPTION_TYPES: tuple[type[Event], ...] = (NBBOQuote, Trade)
