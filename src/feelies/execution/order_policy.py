@@ -46,7 +46,7 @@ from feelies.execution.position_manager import (
 from feelies.execution.regulatory.borrow_availability import BorrowTier, htb_fee_applies
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
-from feelies.core.position import Position
+from feelies.core.position import Position, PositionStore
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class _PostExitPositionView:
 
     def __init__(
         self,
-        inner: Any,
+        inner: PositionStore,
         symbol: str,
         quantity_adjustment: int,
     ) -> None:

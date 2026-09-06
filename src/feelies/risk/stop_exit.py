@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Protocol
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import NBBOQuote, DeRiskRequirement, Side
@@ -48,6 +49,15 @@ from feelies.portfolio.position_store import PositionStore
 _logger = logging.getLogger(__name__)
 
 _NS_PER_SECOND = 1_000_000_000
+
+
+class _ResolvedSessionBounds(Protocol):
+    @property
+    def rth_close_ns(self) -> int: ...
+
+
+class _SessionBounds(Protocol):
+    def resolve_for_timestamp(self, ts_ns: int) -> _ResolvedSessionBounds: ...
 
 # ── Stop-exit DeRiskRequirement signature (single source of truth) ───────
 # The kernel converts this requirement to an outbound OrderRequest. Any
@@ -73,7 +83,7 @@ STOP_EXIT_REASONS: frozenset[str] = frozenset(
 
 
 def _in_session_flatten_window(
-    bounds: object | None,
+    bounds: _SessionBounds | None,
     *,
     enabled: bool,
     seconds_before_close: int,
@@ -150,7 +160,7 @@ class StopExitController:
         sequence_generator: SequenceGenerator,
         position_store: PositionStore,
         policy: StopExitPolicy,
-        trading_session_bounds: object | None = None,
+        trading_session_bounds: _SessionBounds | None = None,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator

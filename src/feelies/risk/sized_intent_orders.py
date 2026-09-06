@@ -162,12 +162,6 @@ def _rescale_leg(leg: _PlannedLeg, scaling_factor: float) -> _PlannedLeg | None:
         current_quantity=leg.current_quantity,
     )
 
-_logger = logging.getLogger(__name__)
-
-# Concrete engines accept additional_exposure; simple test doubles may ignore it.
-CheckOrder = Callable[..., RiskVerdict]
-DroppedLegsCallback = Callable[[SizedPositionIntent, list[tuple[str, str]]], None]
-
 
 def build_sized_intent_orders(
     intent: SizedPositionIntent,

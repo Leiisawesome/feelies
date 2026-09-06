@@ -20,6 +20,7 @@ import logging
 import math
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Protocol
 
 _logger = logging.getLogger(__name__)
 
@@ -49,6 +50,46 @@ from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.services.regime_state_cache import RegimeStateCache
 
 
+class _ResolvedSessionBounds(Protocol):
+    @property
+    def is_holiday(self) -> bool: ...
+    @property
+    def rth_close_ns(self) -> int: ...
+
+    def covers_ns(self, ts_ns: int) -> bool: ...
+    def no_entry_before_ns(self) -> int: ...
+
+
+class _SessionBounds(Protocol):
+    def resolve_for_timestamp(self, ts_ns: int) -> _ResolvedSessionBounds: ...
+
+
+class _PDTConfig(Protocol):
+    @property
+    def min_equity(self) -> Decimal: ...
+
+
+class _PDTConstraint(Protocol):
+    @property
+    def config(self) -> _PDTConfig: ...
+
+    def record_fill(
+        self,
+        account_id: str,
+        symbol: str,
+        prev_qty: int,
+        new_qty: int,
+        timestamp_ns: int,
+    ) -> None: ...
+
+    def should_suppress_entry(
+        self,
+        account_id: str,
+        current_equity: Decimal,
+        now_ns: int,
+    ) -> bool: ...
+
+
 def _emit_risk(gate_id: str, verdict: RiskVerdict) -> RiskVerdict:
     outcome = "PASS" if verdict.action is RiskAction.ALLOW else "FAIL"
     record_verdict(gate_id, outcome, verdict.reason)
@@ -64,7 +105,7 @@ def _opens_or_increases_signed(current_qty: int, post_signed: int) -> bool:
 
 def _should_suppress_entry(
     exchange_ts_ns: int,
-    bounds: object,
+    bounds: _SessionBounds,
     opens_or_increases: bool,
 ) -> tuple[bool, str]:
     """Whether an opening/increasing fill must be refused at ``exchange_ts_ns``."""
@@ -82,7 +123,7 @@ def _should_suppress_entry(
     return False, ""
 
 
-def _resolve_mark(symbol: str, current: object, positions: object) -> Decimal:
+def _resolve_mark(symbol: str, current: object, positions: PositionStore) -> Decimal:
     """Return the best-available mark for translating USD -> shares."""
     latest = getattr(positions, "latest_mark", None)
     if callable(latest):
@@ -145,9 +186,9 @@ class BasicRiskEngine:
         *,
         bus: EventBus | None = None,
         alert_sequence_generator: SequenceGenerator | None = None,
-        pdt_constraint: object | None = None,
+        pdt_constraint: _PDTConstraint | None = None,
         buying_power_config: BuyingPowerConfig | None = None,
-        trading_session_bounds: object | None = None,
+        trading_session_bounds: _SessionBounds | None = None,
         account_id: str = "default",
         warn_on_inert_entry_gates: bool = False,
     ) -> None:
