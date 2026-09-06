@@ -12361,3 +12361,272 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  execution (platform-wide). Not started.
                  Do not begin S-35c3 from this tree.
 
+---
+
+## S-35c3  2026-09-06T20:16:00+08:00
+  STEP:          S-35c3
+  BASE:          92c5d39437399b62e04455aa19bca92ce78845d4
+  RESULT SHA:    250d4b34cfcb5283642a5e6e5540db4ca6adbe05 (exec/S-35c3; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing.
+                 Cuts execution → risk and risk → execution.
+                 G40 stays OPEN. S2 remains xfail(strict, GAP G40).
+                 No XPASS.
+                 S2: 2 passed / 1 xfailed (G40) -> 2 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left; core→sensors not restored)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (pre)
+                 -> 117 passed / 6 xfailed (post).
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 passed after 250d4b3. mypy src/feelies:
+                 Success, 213 source files (after 1ae2c5a).
+  TESTS:         capture pre-S-35c3 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 capture post-S-35c3 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 The four EXEMPTIONS not re-run.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre vs post, 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         12 named paths in the FILES field. 6 touched.
+                 verify_step `S-35c3 --base 92c5d39` exits 1
+                 with "S-35C3 not in plan" (uppercase;
+                 Known lists S-35c3; frozen). Hand FILES:
+                 0 extra CLEAN. Touched:
+                 execution/order_policy.py,
+                 risk/engine.py, risk/basic_risk.py,
+                 risk/forced_exit_clamp.py,
+                 risk/sized_intent_orders.py,
+                 risk/stop_exit.py.
+                 Named-not-edited:
+                 execution/order_lifecycle.py,
+                 execution/order_state.py,
+                 execution/trading_session.py,
+                 execution/regulatory/pdt_constraint.py,
+                 execution/sized_intent_legs.py,
+                 tests/conformance/test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 213 -> 213 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46160 -> 46563 (+403, undeclared)
+                 n_edges 677 -> 669
+                 n_modules 173 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 pin moved
+  VERIFY_STEP:   `S-35C3 --base 92c5d39` exits 1 with
+                 "S-35C3 not in plan" (uppercase; Known lists
+                 S-35c3; frozen). Four checks by hand:
+                 FILES 12 named / 6 touched CLEAN
+                 (6 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved; TESTS
+                 4908->4908 passed, failed 0->0 (from
+                 captures); NET DELTA MATCH on modules 0
+                 symbols 0. Oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- human gate
+                 given for ledger, not for merge.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 92c5d39 on arch/exec. Cut
+                 exec/S-35c3. Go confirmed branch head
+                 250d4b34cfcb5283642a5e6e5540db4ca6adbe05.
+                 Four commits. Two directed-pair cuts,
+                 then two fixes inside FILES:
+                 baef327, c5669ab, 1ae2c5a, 250d4b3.
+                 baef327 cuts execution → risk.
+                 order_policy drops the risk imports of
+                 _escalate_risk and PostExitPositionView.
+                 The FORCE_FLATTEN path still escalates
+                 and still risk-checks the entry against a
+                 post-exit book: a local _escalate_risk /
+                 _emergency_flatten_all (RiskLevel by
+                 type(state).name, KillSwitchActivation from
+                 core) and a local _PostExitPositionView
+                 (Position and, after 1ae2c5a, PositionStore
+                 from core.position). Kernel still
+                 dispatches the engine-8 escalate on the
+                 SIGNAL and PORTFOLIO sites. 13 → 12.
+                 c5669ab cuts risk → execution. Clamp drops
+                 order_lifecycle and order_state; membership
+                 is kernel.order_states._TERMINAL_ORDER_STATES
+                 (by name); SUBMITTED is getattr(type(sm.state),
+                 "SUBMITTED") on self._active_orders.
+                 engine.py drops the order_lifecycle import
+                 of _submit_tracked_order. basic_risk drops
+                 resolve_mark, PDTConstraint,
+                 TradingSessionBounds, opens_or_increases_signed,
+                 should_suppress_entry; helpers are local.
+                 stop_exit drops TradingSessionBounds /
+                 in_session_flatten_window; local deadline
+                 arithmetic over bounds.resolve_for_timestamp.
+                 sized_intent_orders drops plan_leg /
+                 rescale_leg; local _plan_leg / _rescale_leg /
+                 _mint / _resolve_mark. 12 → 11.
+                 1ae2c5a types those copied surfaces
+                 instead of object / Any. order_policy's
+                 view takes PositionStore from
+                 core.position, already the source of
+                 Position. basic_risk and stop_exit declare
+                 local Protocols next to the use
+                 (_SessionBounds / _ResolvedSessionBounds,
+                 _PDTConstraint / _PDTConfig), with
+                 read-only @property members so a frozen
+                 dataclass still matches. sized_intent_orders
+                 drops the duplicate CheckOrder /
+                 DroppedLegsCallback assignment. No
+                 execution import came back.
+                 250d4b3 restructures the inlined submit.
+                 A local _submit_tracked_order on engine.py
+                 transitions to named SUBMITTED, then
+                 try/except on _submit_to_router returns
+                 the exception the way order_lifecycle did.
+                 The flatten loop continues on a non-None
+                 return. The except no longer swallows.
+                 No keep-row on test_fail_quiet.py.
+                 Both directed pairs fell, named separately:
+                 execution → risk at baef327, risk → execution
+                 at c5669ab. The two fix commits did not
+                 reintroduce either. Failing pair list
+                 before: alpha → composition, forensics,
+                 services, signals; execution → risk;
+                 ingestion → risk; risk → alpha, execution,
+                 portfolio, services; sensors → monitoring;
+                 signals → alpha, monitoring (13). After:
+                 the same list without execution → risk
+                 and without risk → execution (11).
+                 Projection 13 → 11 MATCH.
+                 n_cycles held at 1. The only SCC is
+                 feelies.cli → feelies.cli.main.
+                 No hash pin moved at any commit. 64/64
+                 HASH/COUNT identical pre vs post.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 No re-export, no TYPE_CHECKING-only move,
+                 no sys.modules lookup. The cuts are runtime
+                 import deletions plus local helpers,
+                 local Protocols, and name-based membership.
+                 S2's xfail(strict, GAP G40) stays until
+                 S-35e. No XPASS.
+                 Declared NET DELTA 0 modules, 0 public
+                 symbols, 0 branch points. Measured:
+                 modules 213 → 213 MATCH, public_symbols
+                 575 → 575 MATCH (local classes, Protocols,
+                 and helpers are _-prefixed), sloc 46160 →
+                 46563 (+403, undeclared; the copies of
+                 escalate/flatten, the view, plan_leg,
+                 session helpers, then the Protocols and
+                 the returned submit helper), n_edges
+                 677 → 669, n_modules 173 → 173, cycles
+                 1 → 1 MATCH, alphaleak 0 → 0.
+  FINDINGS:      (1) The first landing (baef327, c5669ab)
+                 broke the imports by widening annotations
+                 to object and Any, and by inlining
+                 _submit_tracked_order as try/except
+                 continue. That produced 13 mypy errors
+                 (object has no attribute on PDT/session
+                 bounds; Any returns on the post-exit
+                 view; duplicate CheckOrder aliases) and
+                 hid what those parameters actually
+                 require. It also introduced a fail-quiet
+                 handler at engine.py:225 that
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 caught. The original order_lifecycle
+                 helper returns the exception, so it was
+                 never quiet. Both were fixed inside FILES
+                 (1ae2c5a, 250d4b3). A keep-row on
+                 test_fail_quiet.py would have allowlisted
+                 a handler this step created.
+                 Removing an import by widening a type is
+                 not the same as removing the dependency.
+                 The caller still needs PDT config, session
+                 bounds, a position store, a submit path.
+                 object / Any only stops the type checker
+                 from seeing that need, and the need is
+                 still there at runtime. The correct
+                 mechanism is the one the block already
+                 allowed: a local copy next to the use --
+                 a Protocol that names the members, or the
+                 type imported from a legal owner
+                 (core.position) -- and a helper whose
+                 except returns, matching the shape that
+                 was deleted, rather than swallowing.
+                 (2) S-35a's local frozenset on clamp next
+                 to OrderState is gone. Clamp now imports
+                 _TERMINAL_ORDER_STATES from
+                 kernel.order_states and has no OrderState
+                 import. Membership is by name, as REFACTOR
+                 PATH allowed. Moving that set onto
+                 order_state.py was not done (the block
+                 said it would not cut the pair).
+                 (3) S-35c4's before-state still matches
+                 this tree: 11 pairs, ingestion → risk
+                 still live via data_integrity →
+                 forced_exit_clamp._force_flatten_symbol
+                 _on_degrade. Signature of that function
+                 is unchanged. Body now name-based
+                 SUBMITTED. c4 FILES still names clamp;
+                 "do not edit clamp unless the invert
+                 requires it" still holds. Projection
+                 11 → 10 is intact. c3 commit 2 (c5669ab)
+                 edited clamp, so c4 is not independently
+                 revertible from c3 if it also edits
+                 clamp; if it does not, revert of c4
+                 stays independent.
+                 (4) S-35d FILES include basic_risk,
+                 engine, stop_exit, sized_intent_orders
+                 -- all edited here. PositionStore still
+                 imports from portfolio.position_store
+                 on those files (and on hazard_exit,
+                 risk_wrapper, post_exit_position_view);
+                 d's retarget to core.position is still
+                 required. PDT / TradingSessionBounds
+                 imports are already gone, which d did
+                 not list as its work. Remaining pair
+                 count after c4 would be 10, not the
+                 11 → 0 VALIDATED BY (forensics → risk
+                 already gone at S-35a; ingestion → risk
+                 is c4). d's PROBLEM still lists
+                 forensics → risk and treats 11 as the
+                 start of d; after c4 the start is 10.
+                 (5) S-35e is unchanged. It still requires
+                 every remaining engine pair gone,
+                 including risk → portfolio, before the
+                 xfail drops. Do not begin S-35e from
+                 this tree.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35a FINDING
+                 order_states inverted in place; S-35c1 FINDING
+                 optional handle with sys.modules fallback;
+                 S-35c2 FINDING a re-export is not a cut;
+                 perfmeasure.py DIRECT_PROBES two dead
+                 attributes, unowned; four exempted baseline
+                 tests.
+  NEXT:          S-35c4 cut ingestion → risk
+                 (platform-wide). Not started.
+                 Do not begin S-35c4 from this tree.
+
