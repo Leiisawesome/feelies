@@ -20,7 +20,7 @@ from feelies.core.clock import WallClock
 from feelies.core.config import ConfigSnapshot
 from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote, Trade
-from feelies.sensors.spec import SensorSpec
+from feelies.core.sensor_spec import SensorSpec
 
 # Conservative defaults until measured broker and feed latency is available.
 DEFAULT_BACKTEST_FILL_LATENCY_NS: int = 50_000_000  # 50 ms order-submission leg
