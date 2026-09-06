@@ -11665,3 +11665,222 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  transitives (platform-wide). Not started.
                  Do not begin S-35b from this tree.
 
+---
+
+## S-35b  2026-09-06T11:56:25+08:00
+  STEP:          S-35b
+  BASE:          4ca7db91269a7832ffb4a91ed744526efa0fae6c
+  RESULT SHA:    d3d97620a8bd49365cf2f598518a0c09245b9238 (exec/S-35b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES the four
+                 platform_config -> sensors.spec transitives.
+                 G40 stays OPEN. S2 remains xfail(strict, GAP G40).
+                 No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (core->sensors dropped from the
+                 residual set in the cutting commit)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 kernel 390; sensors 285 passed / 1 skipped;
+                 core 245; docs 101
+                 mypy src/feelies: Success, 212 source files
+  TESTS:         capture pre-S-35b GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-35b GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Sunday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-35b vs post-S-35b and vs
+                 baseline_post-S-35a.json; 0 moved | MATCH.
+  FILES:         12 implementation paths declared, 4 touched
+                 (verify_step not runnable -- S-35B
+                 uppercased, frozen). Hand FILES: 0 extra
+                 CLEAN. Touched: core/sensor_spec.py (new),
+                 sensors/spec.py, core/platform_config.py,
+                 tests/conformance/test_import_contracts.py.
+                 Named-not-edited: inv12_stress.py,
+                 submitted_order_journal.py, connection.py,
+                 latency_budget.py, decouple_backstop.py,
+                 promotion/evidence.py, loader.py,
+                 dependency_graph.py (chain members; they only
+                 import platform_config / the journal / evidence,
+                 not sensors.spec).
+  NET DELTA:     declared src modules +1 (sensor_spec.py),
+                 public symbols 0, branch points 0.
+                 actual modules 211 -> 212 (+1 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46113 -> 46129 (+16, undeclared)
+                 n_edges 680 -> 681
+                 n_modules 171 -> 172
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-35B --base 4ca7db9` exits 1: S-35B not in
+                 plan (uppercase; frozen). Four checks by hand:
+                 FILES 12 declared implementation / 4 touched
+                 CLEAN (8 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules +1 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- human gate
+                 required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 4ca7db9 on arch/exec. Cut
+                 exec/S-35b. Go confirmed branch head
+                 d3d97620a8bd49365cf2f598518a0c09245b9238.
+                 Commit order:
+                 241ca93 creates core/sensor_spec.py, a copy
+                 of the SensorSpec dataclass. sensors.spec
+                 still defines the class; platform_config
+                 still imports it from there. No G40 pair
+                 moves yet.
+                 576d914 sensors.spec becomes a re-export
+                 of feelies.core.sensor_spec.SensorSpec.
+                 Registry and tests keep importing from
+                 sensors.spec. The four transitives still
+                 fail because platform_config still imports
+                 sensors.spec; import-linter follows that
+                 statement, not the class body.
+                 d3d9762 is the cut: platform_config imports
+                 SensorSpec from core.sensor_spec. The
+                 four chains die at the hub. _TIER_RESIDUALS
+                 drops ("feelies.core", "feelies.sensors")
+                 in the same commit so five-tiers still
+                 equals the residual set.
+                 Each transitive and its cut:
+                 broker -> sensors was
+                 connection.py:40 -> journal:26 ->
+                 platform_config -> sensors.spec:23. The
+                 journal import of ENGINE_LATENCY_BUDGETS
+                 is unchanged; the sensors hop is gone.
+                 monitoring -> sensors was
+                 latency_budget.py:17 -> platform_config
+                 -> sensors.spec. Same hub.
+                 forensics -> sensors was
+                 decouple_backstop.py:25 -> evidence:17 ->
+                 inv12_stress:20 (TYPE_CHECKING; not a
+                 cut, import-linter follows it) ->
+                 platform_config -> sensors.spec. Same hub.
+                 alpha -> sensors was loader.py:56 and
+                 dependency_graph.py:22 ->
+                 platform_config -> sensors.spec. Same hub.
+                 The eight named chain members were not
+                 edited. TYPE_CHECKING was not used as a
+                 cut.
+                 S2 failing pairs 20 -> 16. The block
+                 declared 21 -> 17. Both deltas are -4;
+                 the offset is S-35a's extra forensics ->
+                 risk, already on this tree. The four
+                 named transitives all fell. No named S2
+                 pair failed to fall.
+                 n_cycles 1 -> 1. The only SCC is
+                 feelies.cli -> feelies.cli.main.
+                 No hash moved at any of the three
+                 commits. 64/64 HASH/COUNT identical pre
+                 vs post and vs baseline_post-S-35a.json.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 No PlatformConfig field added or deleted.
+                 The platform_config diff is the SensorSpec
+                 import line. snapshot() hashes spec.cls
+                 module paths, not SensorSpec's own module,
+                 so the home move does not touch
+                 _BASELINE_CONFIG_HASH
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 New module core/sensor_spec.py. Owner:
+                 audit_core_clock_config, via
+                 _PACKAGE_OWNERS["core"]. No _FILE_OWNERS
+                 row. docs/prompts not edited: the VALIDATED
+                 BY repair is an if, and core/ is already
+                 package-owned; tests/docs 101 passed.
+                 S2's xfail(strict, GAP G40) stays until
+                 S-35e. No XPASS.
+                 Declared NET DELTA +1 module, 0 public
+                 symbols, 0 branch points. Measured:
+                 modules 211 -> 212 MATCH, public_symbols
+                 575 -> 575 MATCH (the class left spec.py
+                 as a re-export, which inventory does not
+                 count, and landed as one ClassDef in
+                 core), sloc 46113 -> 46129 (+16,
+                 undeclared), n_edges 680 -> 681,
+                 n_modules 171 -> 172, cycles 1 -> 1
+                 MATCH, alphaleak 0 -> 0.
+  FINDINGS:      (1) logging.getLogger(__name__) could not
+                 survive the move. tests/sensors/test_spec
+                 _throttle_guard.py pins caplog to
+                 "feelies.sensors.spec" and is not in FILES.
+                 The new module pins that logger name.
+                 Stay-inside-FILES, same class as S-35a
+                 inverting in place. Not a plan amend.
+                 (2) The four named G40 transitives all
+                 fell. No named S2 pair failed to fall.
+                 One extra fall the block did not list as
+                 an S2 pair: five-tiers core -> sensors
+                 (platform_config -> sensors.spec). That is
+                 the hub itself. _TIER_RESIDUALS had to
+                 drop it or test_five_import_tiers would
+                 fail equality. The comment already said
+                 G40's closure forces the set to change.
+                 The residual set is now 13 pairs, not 14.
+                 (3) Downstream counts. S-35c VALIDATED BY
+                 projects 17 -> 11. This tree is at 16.
+                 S-35c PROBLEM's six pairs are all still
+                 present (execution -> broker, ingestion,
+                 risk, portfolio; risk -> execution;
+                 ingestion -> risk). If those six fall,
+                 the landing count is 10, not 11. The
+                 cluster S-35c names is intact; only the
+                 integer is stale, inherited from S-35a's
+                 extra forensics -> risk, not from a miss
+                 of this step. S-35d projects 11 -> 0
+                 and lists forensics -> risk as remaining;
+                 that pair is already gone (S-35a), and
+                 S-35d's own WHY THIS OWNER says a remaining
+                 risk import on gate_close_attribution is
+                 a miss of a, STOP. S-35d's other named
+                 leftovers are all still present. S-35e
+                 only drops the xfail; it does not assume
+                 a count. S-35c/d/e all say five-tiers
+                 still equals _TIER_RESIDUALS: they must
+                 start from the 13-pair set this step
+                 left, not restore core -> sensors.
+                 verify_step.py uppercases S-35b to S-35B.
+                 Frozen; four checks by hand.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path attribution +
+                 missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35a FINDING
+                 order_states inverted in place, S-35c owns
+                 risk -> execution; perfmeasure.py
+                 DIRECT_PROBES two dead attributes, unowned;
+                 four exempted baseline tests.
+  NEXT:          S-35c isolates execution from broker,
+                 ingestion, risk, and portfolio
+                 (platform-wide). Not started.
+                 Do not begin S-35c from this tree.
+
