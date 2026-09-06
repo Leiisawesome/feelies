@@ -12129,3 +12129,235 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  (platform-wide). Not started.
                  Do not begin S-35c2 from this tree.
 
+---
+
+## S-35c2  2026-09-06T18:54:44+08:00
+  STEP:          S-35c2
+  BASE:          ff7d52edabb453ca24031d2b72a915adb4d6079b
+  RESULT SHA:    eed19f6284650d88ae28f850036b0314263720ac (exec/S-35c2; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing.
+                 Cuts execution → portfolio. G40 stays OPEN.
+                 S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 1 passed / 1 xfailed (G40) -> 1 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left; core→sensors not restored)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (no XPASS)
+                 execution 865; portfolio 52; kernel 390;
+                 docs 101
+                 mypy src/feelies: Success, 213 source files
+  TESTS:         capture pre-S-35c2 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed
+                 -> post-S-35c2 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed. The four EXEMPTIONS
+                 skipped (Sunday). No failure outside that set.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-S-35c2 vs post-S-35c2 and vs
+                 baseline_post-S-35c1.json; 0 moved | MATCH.
+  FILES:         10 named paths in the FILES field. 8 touched.
+                 verify_step not runnable -- S-35C2
+                 uppercased, frozen. Hand FILES: 0 extra
+                 CLEAN. Touched: core/position.py (new),
+                 portfolio/position_store.py,
+                 execution/order_policy.py,
+                 execution/intent.py,
+                 execution/position_manager.py,
+                 execution/sized_intent_legs.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited:
+                 tests/conformance/test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved),
+                 tests/docs/test_internal_links.py
+                 (README citation `core/position.py` resolves
+                 via src/feelies; no placeholder needed).
+  NET DELTA:     declared src modules +1 (position.py), public
+                 symbols 0 if the class leaves position_store as
+                 a re-export, 0 branch points.
+                 actual modules 212 -> 213 (+1 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46147 -> 46160 (+13, undeclared)
+                 n_edges 676 -> 677
+                 n_modules 172 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 moved
+  VERIFY_STEP:   `S-35C2 --base ff7d52e` exits 1 with
+                 "S-35C2 not in plan" (uppercase; Known lists
+                 S-35c2; frozen). Four checks by hand:
+                 FILES 10 named / 8 touched CLEAN (2
+                 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved (declared hold parsed as
+                 _BASELINE_CONFIG_HASH -- frozen); TESTS
+                 4908->4908 passed, failed 0->0 (from captures;
+                 verify_step does not print a TESTS section);
+                 NET DELTA MATCH on modules +1 symbols 0;
+                 oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- human gate
+                 required.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD ff7d52e on arch/exec. Cut
+                 exec/S-35c2. Go confirmed branch head
+                 eed19f6284650d88ae28f850036b0314263720ac.
+                 Three commits, one edge. (1) 15ace56
+                 created core/position.py as a
+                 byte-identical copy of Position and the
+                 PositionStore Protocol from
+                 portfolio.position_store, and put the
+                 S-21 coverage-map repair in that same
+                 commit: _FILE_OWNERS["core/position.py"]
+                 = audit_core_clock_config, README cites
+                 `core/position.py` next to `core/`.
+                 tests/docs 101 passed there. (2)
+                 1d57156 turned position_store into a
+                 re-export from core (portfolio → core is
+                 legal). (3) eed19f6 retargeted the four
+                 execution files to core.position.
+                 execution → portfolio fell.
+                 Position and the PositionStore Protocol
+                 now live in feelies.core.position.
+                 Importers updated to that module: the
+                 four execution files (order_policy,
+                 intent, position_manager → Position;
+                 sized_intent_legs → PositionStore) and
+                 the re-export in position_store.py.
+                 Everything else still imports from
+                 portfolio.position_store and gets the
+                 core names via re-export: Engine 7
+                 (memory_position_store,
+                 strategy_position_store,
+                 position_book_view, portfolio/__init__),
+                 kernel/orchestrator.py:164, seven risk
+                 files that take the Protocol, and the
+                 tests that constructed Position or
+                 annotated PositionStore. Risk was not
+                 retargeted; that is S-35d.
+                 S2 failing pairs 14 → 13. The block
+                 projected 14 → 13. The named pair fell.
+                 Remaining 13: alpha → composition,
+                 forensics, services, signals; execution →
+                 risk; ingestion → risk;
+                 risk → alpha, execution, portfolio,
+                 services; sensors → monitoring;
+                 signals → alpha, monitoring.
+                 n_cycles held at 1. The only SCC is
+                 feelies.cli → feelies.cli.main. Moving
+                 the dataclass and Protocol into core
+                 did not create another.
+                 No hash moved at any commit. 64/64
+                 HASH/COUNT identical pre vs post and vs
+                 baseline_post-S-35c1.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Owner of core/position.py:
+                 audit_core_clock_config. Why: Engine 7
+                 owns the book of record, but the type
+                 has to live in core so execution can name
+                 it without importing the portfolio
+                 package. core/ is already package-owned;
+                 the explicit _FILE_OWNERS row states
+                 that owner in the creating commit.
+                 No fallback, no sys.modules lookup, no
+                 TYPE_CHECKING-only move. The four
+                 execution files import
+                 feelies.core.position at runtime.
+                 S2's xfail(strict, GAP G40) stays until
+                 S-35e. No XPASS.
+                 Declared NET DELTA +1 module, 0 public
+                 symbols (re-export), 0 branch points.
+                 Measured: modules 212 → 213 MATCH,
+                 public_symbols 575 → 575 MATCH (one
+                 ClassDef left position_store and landed
+                 in core; inventory does not count the
+                 re-export), sloc 46147 → 46160 (+13,
+                 undeclared), n_edges 676 → 677,
+                 n_modules 172 → 173, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The block named four execution importers.
+                 The before-state had more, none of them
+                 needing a 13th FILES path because the
+                 re-export kept them compiling:
+                 portfolio/{memory_position_store,
+                 strategy_position_store,
+                 position_book_view, __init__};
+                 kernel/orchestrator.py:164 PositionStore;
+                 risk/engine.py:31, basic_risk.py:43,
+                 stop_exit.py:50, hazard_exit.py:25,
+                 risk_wrapper.py:37,
+                 sized_intent_orders.py:35,
+                 post_exit_position_view.py:8
+                 (Position and PositionStore);
+                 plus tests that import those names from
+                 portfolio.position_store. The G40 pair
+                 was only the four execution sites.
+                 S-35d PROBLEM says that once Position
+                 has moved, risk → portfolio is "only
+                 StrategyPositionStore residue." That is
+                 false on this tree. import-linter follows
+                 the import statement, not the re-export
+                 target, so every risk file that still
+                 writes `from feelies.portfolio.position_store
+                 import PositionStore` is still the pair.
+                 Those seven Protocol sites remain, plus
+                 StrategyPositionStore at
+                 risk_wrapper.py:38, exit_composer.py:68,
+                 deferral_cap.py:70. S-35d FILES names
+                 basic_risk and risk_wrapper, not engine,
+                 stop_exit, hazard_exit,
+                 sized_intent_orders,
+                 post_exit_position_view, exit_composer,
+                 or deferral_cap. If d ships against
+                 that PROBLEM sentence without amending
+                 FILES, risk → portfolio survives and
+                 S-35e must STOP rather than drop the
+                 xfail.
+                 S-35c3's 13 → 11 projection matches this
+                 tree. It shares order_policy.py and
+                 sized_intent_legs.py; ROLLBACK already
+                 said c3 commit (1) is not independently
+                 revertible from c2. Those two files now
+                 import Position / PositionStore from
+                 core; c3's listed drops are the risk
+                 and execution names, not those lines.
+                 S-35c4 does not share a production file
+                 with this cut. S-35e's detector is
+                 unchanged; it still requires every
+                 remaining engine pair, including risk →
+                 portfolio, to be gone before the xfail
+                 drops.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35a FINDING
+                 order_states inverted in place, S-35c3 owns
+                 risk → execution; S-35c1 FINDING optional
+                 handle with sys.modules fallback; perfmeasure.py
+                 DIRECT_PROBES two dead attributes, unowned;
+                 four exempted baseline tests.
+  NEXT:          S-35c3 cut execution → risk and risk →
+                 execution (platform-wide). Not started.
+                 Do not begin S-35c3 from this tree.
+
