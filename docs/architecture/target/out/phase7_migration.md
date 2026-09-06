@@ -4544,6 +4544,10 @@ FILES:           src/feelies/execution/paper_backend.py
                  ci.yml. TYPE_CHECKING is not a cut.
                  Do not restore ("feelies.core", "feelies.sensors")
                  to _TIER_RESIDUALS.
+                 (final) HANDLES ARE REQUIRED, not optional. No None defaults
+                 and no sys.modules lookup -- an optional handle with a fallback
+                 leaves the edge live, spelled as a lookup import-linter cannot
+                 see (S-28a). The signature must match the cut.
 REFACTOR PATH:   one invert, two commits, same factory.
                  They share paper_backend.py; (2) sees (1).
                  (1) paper_backend drops IBGatewayConnection
