@@ -4367,7 +4367,67 @@ FILES:           src/feelies/kernel/fill_bindings.py
                  (or risk imports kernel, not the reverse).
                  fill_bindings must not import an engine.
                  order_states must not import execution.
+WHY THIS OWNER:  Kernel owns the three homes because S-34g
+                 already put them there: portfolio cannot
+                 import risk, risk cannot import portfolio,
+                 and import-linter follows through kernel/
+                 so a home that imports an engine is not a
+                 cut. This step inverts those imports. It
+                 does not move the names into an engine.
+                 Reason tokens are risk-authored; kernel
+                 holds the union so both fill accounting
+                 and the clamp can read them. Terminal
+                 order states belong next to OrderState
+                 (engine 10); kernel.order_states must
+                 stop importing execution so the
+                 clamp's kernel import stops leaking that
+                 pair. Kill-switch observe and
+                 _regime_label_for stay on the
+                 Orchestrator instance (Wave D self: Any);
+                 fill_bindings must not re-export
+                 monitoring or services.
+REFACTOR PATH:   one invert per commit, no new module.
+                 (1) forced_exit_reasons: rewrite the
+                 three unions as kernel string literals
+                 (or have hazard_exit / exit_composer /
+                 deferral_cap / stop_exit import the
+                 kernel unions — risk → kernel, never
+                 kernel → risk). fill_reconciliation and
+                 gate_close_attribution keep the kernel
+                 import; they must not import risk.
+                 (2) fill_bindings: delete the
+                 regime_engine and kill_switch imports.
+                 fill_reconciliation reaches those
+                 through self: Any (already the Wave D
+                 shape). Do not re-export an engine name.
+                 (3) order_states last: move
+                 _TERMINAL_ORDER_STATES onto
+                 execution.order_state beside the enum;
+                 forced_exit_clamp imports it from there
+                 (direct risk → execution stays for S-35c);
+                 kernel.order_states drops the
+                 execution import. Do not leave a
+                 re-export that still imports execution.
+                 TYPE_CHECKING is not a cut. Do not
+                 drop the G40 xfail.                                  
 BLAST RADIUS:    platform-wide (G40 detector)
+VALIDATED BY:    S2: test_twelve_engine_independence still
+                 xfail(strict, GAP G40); lint-imports
+                 Twelve engine module sets still BROKEN.
+                 Package pairs 24 → 21 (portfolio →
+                 services, monitoring, risk gone;
+                 risk → execution remains via clamp's
+                 direct execution imports).
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS. No XPASS.
+                 tests/kernel/test_fill_attribution_seam.py,
+                 tests/kernel/test_orchestrator.py fill
+                 and forced-exit binds,
+                 tests/conformance/test_pathological_refusal.py,
+                 tests/conformance/test_import_contracts.py
+                 (test_fill_reconciliation_does_not_import
+                 _orchestrator still passes; dest still
+                 must not import orchestrator).
 PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
                  fingerprint, _BASELINE_CONFIG_HASH. (Hold
                  mention is the frozen false positive.)
@@ -4402,7 +4462,49 @@ FILES:           src/feelies/core/platform_config.py
                  Do not change PlatformConfig fields.
                  Do not re-pin _BASELINE_CONFIG_HASH.
                  Do not include ci.yml.
+WHY THIS OWNER:  Engine 2 owns SensorSpec as the registry's
+                 declaration, but the class is a frozen
+                 value object whose only dependency is
+                 core.events, and it is a PlatformConfig
+                 field. Core already owns PlatformConfig.
+                 Putting the type in core cuts
+                 platform_config → sensors.spec without
+                 moving registry behaviour. Sensors keep
+                 the registry and may re-export the type
+                 from core; core must not import sensors.
+                 Not broker, monitoring, forensics, or
+                 alpha — those are only transitive
+                 importers of the config hub.
+REFACTOR PATH:   (1) create core/sensor_spec.py; copy
+                 SensorSpec unchanged from sensors.spec.
+                 (2) sensors.spec re-exports from core
+                 (sensors → core is legal). (3)
+                 platform_config imports SensorSpec from
+                 core.sensor_spec, not sensors.spec.
+                 inv12_stress, submitted_order_journal,
+                 latency_budget, connection,
+                 decouple_backstop, promotion.evidence,
+                 loader, dependency_graph need no edit
+                 if they only import platform_config.
+                 Do not change PlatformConfig fields. Do
+                 not re-pin _BASELINE_CONFIG_HASH. A
+                 snapshot-field add/delete is S-29, STOP.
+                 TYPE_CHECKING is not a cut. Do not drop
+                 the G40 xfail.                 
 BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 21 → 17 (broker,
+                 monitoring, forensics, alpha → sensors
+                 gone). test_five_import_tiers still
+                 equals _TIER_RESIDUALS. No XPASS.
+                 tests/acceptance/test_backtest_app_baseline.py
+                 config-contract hash unmoved (the Hold
+                 mention of _BASELINE_CONFIG_HASH is the
+                 frozen false positive). Sensor registry
+                 tests and tests/docs/test_prompt_coverage
+                 _map.py if the new core file needs the
+                 S-21 _FILE_OWNERS repair — that repair
+                 belongs in commit (1).
 PARITY IMPACT:   Hold. A snapshot-field change is S-29, STOP.
 DELETES:         core.platform_config → sensors.spec and the
                  four transitives.
@@ -4446,6 +4548,46 @@ FILES:           the seven execution files in S-35 plus
                  tests/conformance/test_import_contracts.py
                  Do not include orchestrator.py. Do not flip
                  ci.yml. TYPE_CHECKING is not a cut.
+WHY THIS OWNER:  Engine 10 owns the order state machine and
+                 _submit_tracked_order / _transition_order;
+                 risk calling those is kernel dispatch, not
+                 engine-8 ownership of execution. Engine 9
+                 owns order_policy; it must not import
+                 engine 8 to escalate or to read a
+                 post-exit view. Engine 7 owns Position as
+                 the book of record; execution and risk
+                 need the type, not the portfolio package,
+                 so the dataclass and Protocol move to
+                 core, not into execution. Engine 1 owns
+                 the flatten trigger (data integrity);
+                 engine 8 owns the flatten body
+                 (forced_exit_clamp). Neither package
+                 imports the other — kernel already
+                 dispatches. paper_backend / backtest
+                 _backend composing IB and Massive is
+                 composition-root work: bootstrap, not
+                 engine 9/10.
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 17 → 11 (execution →
+                 broker, ingestion, risk, portfolio;
+                 risk → execution; ingestion → risk
+                 gone). risk → portfolio may remain if
+                 StrategyPositionStore is still imported;
+                 count from lint-imports, not this
+                 projection. test_five_import_tiers
+                 still equals _TIER_RESIDUALS. No XPASS.
+                 tests/kernel/test_orchestrator.py order
+                 and flatten paths,
+                 tests/kernel/test_orchestrator_order
+                 _routing.py,
+                 tests/broker/ib/ (no behaviour change;
+                 construction site only),
+                 tests/ingestion/,
+                 tests/execution/,
+                 scripts/run_paper.py construction if
+                 bootstrap now injects the IB handle,
+                 the oracle (an import cut that moves a
+                 hash is a finding, not a re-pin).                 
 REFACTOR PATH:   (1) Position(+Protocol) to core. (2) backend
                  factories stop importing broker/ingestion;
                  bootstrap injects. (3) order_policy stops
@@ -4497,6 +4639,51 @@ FILES:           the six alpha files in S-35
                  tests/conformance/test_import_contracts.py
                  Do not include orchestrator.py. Do not flip
                  ci.yml.
+WHY THIS OWNER:  Engine 5 owns AlphaRiskBudget as alpha
+                 metadata, but the type is primitives-only
+                 and engine 8 (sizer, wrapper) must read it
+                 without importing alpha — core, not
+                 risk. CostArithmetic is G12 disclosure
+                 owned by alpha authoring; it is a leaf
+                 (no engine imports) and signals must read
+                 it without importing alpha — core, not
+                 signals. HorizonSignal / regime_gate
+                 stay engine 4; alpha imports those
+                 today, which is the G40 pair — move only
+                 the protocol/DSL types alpha needs into
+                 core, keep evaluate() in signals.
+                 composition.protocol is engine 6's
+                 contract; alpha's PORTFOLIO layer must
+                 not import composition — the protocol
+                 type goes to core. Engine 11 owns
+                 MetricCollector; sensors and signals
+                 already emit MetricEvent on the bus and
+                 must stop importing monitoring.
+                 Promotion is not an engine, but
+                 lifecycle → cost_circuit_breaker makes
+                 alpha → forensics; cut that import so
+                 quarantine stays a forensics consumer
+                 of promotion, not a promotion import of
+                 forensics. forensics → risk is the same
+                 reason-token leak as S-35a; after a,
+                 gate_close_attribution should already
+                 use kernel unions — any remaining risk
+                 import here is a miss of a, STOP.
+VALIDATED BY:    S2 still xfail(strict, GAP G40) until
+                 lint-imports prints zero remaining
+                 engine-to-engine pairs; expected pairs
+                 11 → 0. If any pair remains, STOP, do not
+                 proceed to S-35e. test_five_import_tiers
+                 still equals _TIER_RESIDUALS. No XPASS.
+                 tests/alpha/, tests/signals/,
+                 tests/composition/,
+                 tests/sensors/,
+                 tests/risk/ (sizer / wrapper),
+                 tests/forensics/,
+                 tests/promotion/,
+                 tests/docs/test_prompt_coverage_map.py
+                 if core/alpha_risk_budget.py is created
+                 (S-21 _FILE_OWNERS in that commit).                 
 REFACTOR PATH:   move leaf types (AlphaRiskBudget,
                  CostArithmetic, MetricCollector Protocol,
                  composition.protocol) to core/. Delete
@@ -4522,6 +4709,14 @@ FILES:           tests/conformance/test_import_contracts.py
                  Do not shrink _TIER_RESIDUALS.
                  Do not rewrite the independence contract
                  by deleting engines from pyproject.toml.
+WHY THIS OWNER:  G40's detector is the twelve-engine
+                 independence contract, not the kernel
+                 and not any one engine. This step only
+                 drops the xfail after a–d have made
+                 that contract KEPT. Five-tiers kernel
+                 dispatch is a different contract and
+                 stays BROKEN. ci.yml continue-on-error
+                 does not flip until both are KEPT.                 
 REFACTOR PATH:   (1) lint-imports: Twelve engine module sets
                  KEPT. (2) drop the G40 xfail. (3) stop.
                  Five import tiers stays BROKEN.
