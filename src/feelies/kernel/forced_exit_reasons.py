@@ -2,25 +2,37 @@
 
 from __future__ import annotations
 
-from feelies.risk.deferral_cap import (
-    DEFERRAL_EXIT_REASONS,
-    DEFERRAL_SLICE_SCOPED_REASONS,
-)
-from feelies.risk.exit_composer import EXIT_COMPOSER_EXIT_REASONS
-from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS
-from feelies.risk.stop_exit import STOP_EXIT_REASONS
-
 # Risk-authored exits use one non-vetoable reason registry.
-_RISK_FORCED_EXIT_REASONS: frozenset[str] = (
-    HAZARD_EXIT_REASONS | EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS | STOP_EXIT_REASONS
+_RISK_FORCED_EXIT_REASONS: frozenset[str] = frozenset(
+    {
+        "HAZARD_SPIKE",
+        "HARD_EXIT_AGE",
+        "SAFETY_FAIL_CLOSED",
+        "DECOUPLING_REVOKED",
+        "MAX_HOLD_AFTER_SAFE_OFF",
+        "SESSION_FLATTEN",
+        "STOP_EXIT",
+        "SESSION_FLAT",
+    }
 )
 
 # Slice-scoped authors may reduce either symbol-net or strategy-slice exposure.
-_SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = (
-    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_EXIT_REASONS
+_SLICE_SCOPED_FORCED_EXIT_REASONS: frozenset[str] = frozenset(
+    {
+        "SAFETY_FAIL_CLOSED",
+        "DECOUPLING_REVOKED",
+        "HARD_EXIT_AGE",
+        "MAX_HOLD_AFTER_SAFE_OFF",
+        "SESSION_FLATTEN",
+    }
 )
 
 # Only unambiguous slice-scoped reasons self-attribute fills.
-_SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = (
-    EXIT_COMPOSER_EXIT_REASONS | DEFERRAL_SLICE_SCOPED_REASONS
+_SELF_ATTRIBUTED_FORCED_EXIT_REASONS: frozenset[str] = frozenset(
+    {
+        "SAFETY_FAIL_CLOSED",
+        "DECOUPLING_REVOKED",
+        "MAX_HOLD_AFTER_SAFE_OFF",
+        "SESSION_FLATTEN",
+    }
 )
