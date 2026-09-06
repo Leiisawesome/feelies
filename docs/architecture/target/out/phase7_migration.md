@@ -2144,6 +2144,9 @@ FILES:           src/feelies/kernel/orchestrator.py
                  docs/prompts/audit_forensics.md
                  docs/prompts/README.md
                  tests/docs/test_prompt_coverage_map.py (_FILE_OWNERS)
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
 WHY THIS OWNER:  Engine 7 is the sole book of record. Split the work: (A) the
                  S-19/S-20 extraction of the three methods plus the package
                  move of fill_attribution.py; (B) a read-only view type whose
@@ -4775,12 +4778,29 @@ STEP:            S-35d
 CLOSES:          nothing. Isolates alpha, signals, risk
                  leftovers, forensics, monitoring.
 PROBLEM:         Remaining pairs: risk → alpha, risk →
-                 services, risk → portfolio (if Position
-                 already moved, only StrategyPositionStore
-                 residue); alpha ↔ signals; alpha →
-                 composition, services, forensics;
-                 signals → monitoring; sensors →
-                 monitoring; forensics → risk.
+                 services, risk → portfolio; alpha ↔
+                 signals; alpha → composition, services,
+                 forensics; signals → monitoring;
+                 sensors → monitoring; forensics →
+                 risk.
+                 risk → portfolio is not only
+                 StrategyPositionStore residue.
+                 import-linter follows the import
+                 statement, not the re-export, so seven
+                 risk files still spell
+                 feelies.portfolio.position_store for
+                 the Protocol:
+                 engine.py, basic_risk.py,
+                 stop_exit.py, hazard_exit.py,
+                 risk_wrapper.py,
+                 sized_intent_orders.py,
+                 post_exit_position_view.py.
+                 Cut: retarget those seven to
+                 feelies.core.position (S-35c2 invert).
+                 StrategyPositionStore residue is a
+                 separate import, not core.position:
+                 risk_wrapper.py, exit_composer.py,
+                 deferral_cap.py.
 FILES:           the six alpha files in S-35
                  src/feelies/alpha/module.py
                  src/feelies/alpha/cost_arithmetic.py
@@ -4795,6 +4815,13 @@ FILES:           the six alpha files in S-35
                  src/feelies/risk/edge_weighted_sizer.py
                  src/feelies/risk/risk_wrapper.py
                  src/feelies/risk/basic_risk.py
+                 src/feelies/risk/engine.py
+                 src/feelies/risk/stop_exit.py
+                 src/feelies/risk/hazard_exit.py
+                 src/feelies/risk/sized_intent_orders.py
+                 src/feelies/risk/post_exit_position_view.py
+                 src/feelies/risk/exit_composer.py
+                 src/feelies/risk/deferral_cap.py
                  src/feelies/promotion/lifecycle.py
                  src/feelies/forensics/cost_circuit_breaker.py
                  src/feelies/forensics/gate_close_attribution.py
