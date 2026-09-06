@@ -178,6 +178,29 @@ def _maybe_flip_buying_power_at_rth_close(self: Any, quote: NBBOQuote) -> None:
     self._rth_close_bp_flipped = True
 
 
+def _submit_tracked_order(
+    self: Any,
+    order: OrderRequest,
+    *,
+    trigger: str = "submitted",
+) -> Exception | None:
+    """Submit a tracked order and terminalize its state if routing fails."""
+    order_id = order.order_id
+    if order_id in self._active_orders:
+        sm = self._active_orders[order_id][0]
+        sm.transition(
+            getattr(type(sm.state), "SUBMITTED"),
+            trigger=trigger,
+            correlation_id=order.correlation_id,
+        )
+    try:
+        self._submit_to_router(order, triggering_quote=self._in_flight_quote)
+    except Exception as exc:
+        self._reject_order_after_submit_failure(order, exc)
+        return exc
+    return None
+
+
 def _emergency_flatten_all(
     self: Any,
     correlation_id: str,
@@ -213,17 +236,10 @@ def _emergency_flatten_all(
 
         try:
             self._track_order(order_id, side, order)
-            if order_id in self._active_orders:
-                sm = self._active_orders[order_id][0]
-                sm.transition(
-                    getattr(type(sm.state), "SUBMITTED"),
-                    trigger="emergency_flatten",
-                    correlation_id=order.correlation_id,
-                )
-            try:
-                self._submit_to_router(order, triggering_quote=self._in_flight_quote)
-            except Exception as submit_exc:
-                self._reject_order_after_submit_failure(order, submit_exc)
+            submit_exc = _submit_tracked_order(
+                self, order, trigger="emergency_flatten"
+            )
+            if submit_exc is not None:
                 failures[symbol] = f"submit_exception: {submit_exc!r}"
                 continue
 
