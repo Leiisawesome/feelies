@@ -1004,8 +1004,16 @@ def _create_backend(
                 f"PAPER mode requires a MassiveNormalizer instance, got {actual}"
             )
         # Keep the optional IB stack out of BACKTEST-only imports.
+        from feelies.broker.ib import IBGatewayConnection, IBOrderRouter
         from feelies.execution.paper_backend import build_paper_backend
 
+        ib_conn = IBGatewayConnection(
+            host=config.ib_host,
+            port=config.ib_port,
+            client_id=config.ib_client_id,
+            clock=clock,
+        )
+        router = IBOrderRouter(connection=ib_conn, clock=clock)
         backend, live_feed, ib_conn = build_paper_backend(
             massive_api_key=api_key,
             symbols=sorted(config.symbols),
@@ -1015,6 +1023,8 @@ def _create_backend(
             ib_port=config.ib_port,
             ib_client_id=config.ib_client_id,
             massive_ws_url=config.massive_ws_url,
+            ib_connection=ib_conn,
+            order_router=router,
         )
         router = getattr(backend, "order_router", None)
         can_bind_ib = hasattr(ib_conn, "bind_submitted_order_journal")
