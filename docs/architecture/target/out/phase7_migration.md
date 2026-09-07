@@ -4785,120 +4785,458 @@ ROLLBACK:        revert the commit. Land after S-35c3.
                  (it does not today).
 ```
 ```
-STEP:            S-35d
-CLOSES:          nothing. Isolates alpha, signals, risk
-                 leftovers, forensics, monitoring.
-PROBLEM:         Remaining pairs: risk → alpha, risk →
-                 services, risk → portfolio; alpha ↔
-                 signals; alpha → composition, services,
-                 forensics; signals → monitoring;
-                 sensors → monitoring; forensics →
-                 risk.
-                 risk → portfolio is not only
-                 StrategyPositionStore residue.
-                 import-linter follows the import
-                 statement, not the re-export, so seven
-                 risk files still spell
-                 feelies.portfolio.position_store for
-                 the Protocol:
-                 engine.py, basic_risk.py,
-                 stop_exit.py, hazard_exit.py,
-                 risk_wrapper.py,
-                 sized_intent_orders.py,
-                 post_exit_position_view.py.
-                 Cut: retarget those seven to
-                 feelies.core.position (S-35c2 invert).
-                 StrategyPositionStore residue is a
-                 separate import, not core.position:
-                 risk_wrapper.py, exit_composer.py,
-                 deferral_cap.py.
-FILES:           the six alpha files in S-35
-                 src/feelies/alpha/module.py
-                 src/feelies/alpha/cost_arithmetic.py
-                 src/feelies/signals/horizon_engine.py
-                 src/feelies/signals/horizon_protocol.py
-                 src/feelies/signals/regime_gate.py
+STEP:            S-35d1
+CLOSES:          nothing. Cuts alpha → forensics.
+                 G40 stays OPEN.
+PROBLEM:         The only G40 statement is
+                 promotion.lifecycle:45 importing
+                 QuarantineRecommendation. registry.py
+                 imports lifecycle, not forensics; do
+                 not edit registry. forensics → risk is
+                 already gone (S-35a); if
+                 gate_close_attribution still imports
+                 risk, STOP, that is a miss of a, not
+                 this cut. S2's xfail stays until
+                 S-35e.
+WHY THIS OWNER:  Engine 12 emits the recommendation;
+                 engine 5 / promotion performs the
+                 SM write. Lifecycle must not import
+                 forensics. CLI already calls
+                 apply_recommendation.
+FILES:           src/feelies/promotion/lifecycle.py
+                 src/feelies/cli/forensics.py
+                 tests/forensics/test_cost_circuit_breaker.py
+                 tests/conformance/test_import_contracts.py
+                 Do not include orchestrator.py. Do not
+                 include bootstrap.py. Do not include
+                 cost_circuit_breaker.py. Do not add a
+                 module. Do not include docs/prompts
+                 or the coverage-map tests. Do not flip
+                 ci.yml. TYPE_CHECKING is not a cut.
+REFACTOR PATH:   Invert the hop, do not add a handle
+                 and do not move the dataclass. (1)
+                 apply_recommendation takes the fields
+                 _recommendation_to_quarantine_evidence
+                 already reads (reason, net,
+                 mean_cost_bps, realized_margin_ratio,
+                 decay_z) instead of
+                 QuarantineRecommendation. Drop the
+                 forensics import. (2) cli/forensics.py
+                 and the circuit-breaker tests pass
+                 those fields from the object they
+                 already hold. Do not route through
+                 the kernel. Do not create a core DTO
+                 in this step. 10 → 9.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 10 → 9 (alpha →
+                 forensics gone). If the count does
+                 not drop, the transitive path is not
+                 lifecycle.py:45, STOP. test_five_import_tiers
+                 still equals _TIER_RESIDUALS. No XPASS.
+                 tests/forensics/test_cost_circuit_breaker.py
+                 tests/promotion/
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH.
+                 A moved hash means quarantine
+                 metadata or the LIVE→QUARANTINED
+                 ledger row changed. STOP, not a
+                 re-pin.
+DELETES:         alpha → forensics.
+NET DELTA:       0 modules, 0 public symbols, 0 branch
+                 points
+ROLLBACK:        revert per commit. Land after S-35c4.
+                 Independently revertible from d2–d5.
+```
+```
+STEP:            S-35d2
+CLOSES:          nothing. Cuts alpha → composition.
+                 G40 stays OPEN.
+PROBLEM:         The only G40 statement is
+                 alpha.portfolio_layer_module:16
+                 importing CompositionContextError
+                 from composition.protocol. engine.py
+                 and selection_policy.py import
+                 protocol inside composition; those
+                 are not this pair. S2's xfail stays
+                 until S-35e.
+WHY THIS OWNER:  Engine 6 owns the PORTFOLIO contract.
+                 Alpha's loaded PORTFOLIO module needs
+                 the exception type, not the composition
+                 package. The type goes to core.
+FILES:           src/feelies/alpha/portfolio_layer_module.py
                  src/feelies/composition/protocol.py
+                 src/feelies/core/composition_protocol.py
+                   (new; CompositionContextError;
+                   name first)
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
+                 Do not include orchestrator.py. Do not
+                 include composition/engine.py or
+                 selection_policy.py. Do not flip
+                 ci.yml. TYPE_CHECKING is not a cut.
+REFACTOR PATH:   S-35c2 invert, one name. (1) create
+                 core/composition_protocol.py; copy
+                 CompositionContextError unchanged.
+                 Coverage-map / README / _FILE_OWNERS
+                 if needed land in this commit (S-21).
+                 (2) composition.protocol re-exports
+                 from core (composition → core is
+                 legal). (3) portfolio_layer_module.py
+                 imports from
+                 feelies.core.composition_protocol,
+                 not composition.protocol. Re-export
+                 without retarget is not a cut. 9 → 8.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 9 → 8 (alpha →
+                 composition gone). If the pair
+                 remains, the importer was not
+                 retargeted, STOP. test_five_import_tiers
+                 still equals _TIER_RESIDUALS. No XPASS.
+                 tests/composition/ tests/alpha/
+                 tests/docs/test_prompt_coverage_map.py
+                 in commit (1).
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH.
+                 A moved hash means CompositionContextError
+                 changed identity under a caller that
+                 already existed — the copy was not
+                 pure. STOP, not a re-pin.
+DELETES:         alpha → composition.
+NET DELTA:       +1 module (composition_protocol.py),
+                 0 public symbols if protocol.py
+                 re-exports, 0 branch points
+ROLLBACK:        revert per commit with the new
+                 module. Land after S-35d1.
+                 Independently revertible from d1 and
+                 from d3–d5 (own coverage-map row).
+```
+```
+STEP:            S-35d3
+CLOSES:          nothing. Cuts sensors → monitoring,
+                 signals → monitoring, and signals →
+                 alpha. G40 stays OPEN.
+PROBLEM:         Two names, one shared importer.
+                 MetricCollector: sensors.registry:27,
+                 sensors.horizon_scheduler:33,
+                 signals.horizon_engine:30. The
+                 collector is already a constructor
+                 argument; bootstrap already passes it.
+                 horizon_engine:589 and registry still
+                 call record(MetricEvent(...)).
+                 Deleting the import and duck-typing
+                 is S-35c3. CostArithmetic:
+                 horizon_engine:15 only is the G40
+                 statement. loader /
+                 signal_layer_module / layer_validator
+                 import cost_arithmetic inside alpha;
+                 those are not this pair. S2's xfail
+                 stays until S-35e.
+WHY THIS OWNER:  Engine 11 owns how metrics are
+                 collected; engines 2 and 4 already
+                 emit MetricEvent. The Protocol goes
+                 to core, not into sensors or signals.
+                 CostArithmetic is G12 disclosure;
+                 signals must read it without
+                 importing alpha — core, not signals.
+FILES:           src/feelies/signals/horizon_engine.py
                  src/feelies/sensors/registry.py
                  src/feelies/sensors/horizon_scheduler.py
                  src/feelies/monitoring/telemetry.py
-                 src/feelies/risk/position_sizer.py
-                 src/feelies/risk/edge_weighted_sizer.py
-                 src/feelies/risk/risk_wrapper.py
+                 src/feelies/alpha/cost_arithmetic.py
+                 src/feelies/core/metric_collector.py
+                   (new; MetricCollector Protocol;
+                   name first)
+                 src/feelies/core/cost_arithmetic.py
+                   (new; CostArithmetic; name first)
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
+                 Do not include orchestrator.py. Do not
+                 include bootstrap.py. Do not include
+                 alpha/loader.py,
+                 signal_layer_module.py, or
+                 layer_validator.py. Do not flip
+                 ci.yml. TYPE_CHECKING is not a cut.
+REFACTOR PATH:   Two names to core in one gate because
+                 they share horizon_engine.py. Not
+                 deletion. Not a new handle. (1)
+                 create core/metric_collector.py;
+                 copy the Protocol unchanged;
+                 telemetry.py re-exports. Coverage
+                 map in this commit (S-21). (2)
+                 registry.py, horizon_scheduler.py,
+                 horizon_engine.py import the Protocol
+                 from core, not monitoring.telemetry.
+                 Keep record() and the constructor
+                 argument. (3) create
+                 core/cost_arithmetic.py; copy
+                 CostArithmetic unchanged;
+                 alpha.cost_arithmetic re-exports.
+                 horizon_engine.py imports from core,
+                 not alpha.cost_arithmetic. Two
+                 commits, this step; they share
+                 horizon_engine.py and are not
+                 independently revertible. 8 → 5.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 8 → 5 (sensors →
+                 monitoring, signals → monitoring,
+                 signals → alpha gone). If any of
+                 those three remains, STOP. test_five_import_tiers
+                 still equals _TIER_RESIDUALS. No XPASS.
+                 tests/signals/ tests/sensors/
+                 tests/docs/test_prompt_coverage_map.py
+                 in the commits that create the core
+                 files.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH.
+                 A moved hash means a metric
+                 sequence/correlation_id changed, or
+                 CostArithmetic fields on emitted
+                 signals changed — the copy was not
+                 pure, or record() was dropped. STOP,
+                 not a re-pin.
+DELETES:         sensors → monitoring; signals →
+                 monitoring; signals → alpha.
+NET DELTA:       +2 modules, 0 public symbols if the
+                 old modules re-export, 0 branch points
+ROLLBACK:        revert per commit with the new
+                 modules. Land after S-35d2. Commit
+                 (3) is not independently revertible
+                 from (1)–(2). Independently
+                 revertible from d1–d2 and d4–d5.
+```
+```
+STEP:            S-35d4
+CLOSES:          nothing. Cuts alpha → signals and
+                 alpha → services. G40 stays OPEN.
+PROBLEM:         Two pairs, one shared importer
+                 (loader.py). alpha → signals
+                 statements: signal_layer_module:37
+                 HorizonSignal; signal_layer_module:38,
+                 layer_validator:558, loader:58,
+                 dependency_graph:25 RegimeGate /
+                 compile_expression. Alpha constructs
+                 RegimeGate.from_spec — a Protocol-only
+                 move does not cut. alpha → services:
+                 loader:57 RegimeEngine and
+                 get_regime_engine. Bootstrap already
+                 injects the instance. The leftover is
+                 the factory fallback at
+                 _resolve_regime_engine. tests/alpha/
+                 test_signal_layer_loader.py
+                 monkeypatches
+                 feelies.alpha.loader.get_regime_engine.
+                 S2's xfail stays until S-35e.
+WHY THIS OWNER:  Engine 4 owns evaluate(); alpha needs
+                 the Protocol and the DSL types it
+                 constructs — those go to core, keep
+                 evaluate() in signals. Engine 3 owns
+                 RegimeEngine construction; that is
+                 bootstrap, already done. Loader must
+                 not keep a factory fallback.
+FILES:           src/feelies/alpha/loader.py
+                 src/feelies/alpha/signal_layer_module.py
+                 src/feelies/alpha/layer_validator.py
+                 src/feelies/alpha/dependency_graph.py
+                 src/feelies/signals/horizon_protocol.py
+                 src/feelies/signals/regime_gate.py
+                 src/feelies/core/horizon_protocol.py
+                   (new; HorizonSignal Protocol;
+                   name first)
+                 src/feelies/core/regime_gate.py
+                   (new; RegimeGate, RegimeGateError,
+                   compile_expression; name first)
+                 tests/alpha/test_signal_layer_loader.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
+                 Do not include orchestrator.py. Do not
+                 include bootstrap.py. Do not include
+                 services/regime_engine.py. Do not add
+                 a required get_regime_engine handle.
+                 Do not flip ci.yml. TYPE_CHECKING is
+                 not a cut.
+REFACTOR PATH:   Mechanism first, one gate because
+                 loader.py is shared. (1) create
+                 core/horizon_protocol.py and
+                 core/regime_gate.py; copy the Protocol
+                 and the DSL types alpha constructs.
+                 Coverage map in these commits (S-21).
+                 signals modules re-export (signals →
+                 core is legal). (2) retarget the four
+                 alpha importers listed in PROBLEM to
+                 core, not feelies.signals.*. (3) in
+                 loader.py, delete get_regime_engine
+                 and the services import. Annotate the
+                 remaining engine with a local Protocol
+                 that has state_names. YAML engine
+                 without an injected instance becomes
+                 AlphaLoadError. Retarget
+                 test_alpha_loader_forwards_regime_engine_options
+                 and
+                 test_alpha_loader_invalid_regime_engine_options_raise_alpha_load_error
+                 to that error. Do not inject a
+                 factory handle. 5 → 3.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 5 → 3 (alpha → signals
+                 and alpha → services gone). If either
+                 remains, STOP. test_five_import_tiers
+                 still equals _TIER_RESIDUALS. No XPASS.
+                 tests/alpha/test_signal_layer_loader.py
+                 tests/docs/test_prompt_coverage_map.py
+                 in the commits that create the core
+                 files.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH.
+                 A moved hash means gate compile /
+                 evaluate or load-time P(state) checks
+                 changed, or a spec that previously
+                 constructed a standalone engine now
+                 fails closed. STOP, not a re-pin.
+DELETES:         alpha → signals; alpha → services.
+NET DELTA:       +2 modules, 0 public symbols if
+                 signals re-export, 0 branch points
+ROLLBACK:        revert per commit with the new
+                 modules. Land after S-35d3. The
+                 loader.py edits are not independently
+                 revertible from each other.
+                 Independently revertible from d1–d3
+                 and d5.
+```
+```
+STEP:            S-35d5
+CLOSES:          nothing. Cuts risk → portfolio, risk →
+                 alpha, and risk → services. G40 stays
+                 OPEN. After this step the twelve-engine
+                 count must be zero; S-35e only drops
+                 the xfail.
+PROBLEM:         Three pairs, three shared files
+                 (risk_wrapper.py, position_sizer.py,
+                 basic_risk.py) so one gate. Each pair
+                 has two names; cutting one name leaves
+                 the pair. risk → portfolio:
+                 feelies.portfolio.position_store in
+                 engine.py:30, basic_risk.py:42,
+                 stop_exit.py:47, hazard_exit.py:25,
+                 risk_wrapper.py:37,
+                 sized_intent_orders.py:38,
+                 post_exit_position_view.py:8;
+                 feelies.portfolio.strategy_position_store
+                 in risk_wrapper.py:38,
+                 exit_composer.py:68,
+                 deferral_cap.py:70. SPS is not
+                 core.position. risk → alpha:
+                 AlphaRiskBudget from alpha.module in
+                 edge_weighted_sizer.py:15,
+                 position_sizer.py:21,
+                 risk_wrapper.py:25; AlphaRegistry from
+                 alpha.registry in risk_wrapper.py:26.
+                 risk → services:
+                 RegimeStateCache from
+                 regime_state_cache in basic_risk.py:50,
+                 position_sizer.py:23. The cache class
+                 holds a bus and cannot move to core.
+                 S2's xfail stays until S-35e.
+WHY THIS OWNER:  Engine 7 owns the book; PositionStore
+                 is already in core from S-35c2. Engine 5
+                 owns AlphaRiskBudget as primitives;
+                 engine 8 must read it without importing
+                 alpha — core, not risk. AlphaRegistry
+                 stays engine 5; wrapper needs get(),
+                 not the registry module. Engine 3 owns
+                 the cache implementation; risk needs
+                 latest/reset.
+FILES:           src/feelies/risk/engine.py
                  src/feelies/risk/basic_risk.py
-                 src/feelies/risk/engine.py
                  src/feelies/risk/stop_exit.py
                  src/feelies/risk/hazard_exit.py
+                 src/feelies/risk/risk_wrapper.py
                  src/feelies/risk/sized_intent_orders.py
                  src/feelies/risk/post_exit_position_view.py
                  src/feelies/risk/exit_composer.py
                  src/feelies/risk/deferral_cap.py
-                 src/feelies/promotion/lifecycle.py
-                 src/feelies/forensics/cost_circuit_breaker.py
-                 src/feelies/forensics/gate_close_attribution.py
-                 src/feelies/services/regime_engine.py
-                 src/feelies/services/regime_state_cache.py
+                 src/feelies/risk/position_sizer.py
+                 src/feelies/risk/edge_weighted_sizer.py
+                 src/feelies/alpha/module.py
                  src/feelies/core/alpha_risk_budget.py
                    (new; AlphaRiskBudget; name first)
                  tests/conformance/test_import_contracts.py
-                 Do not include orchestrator.py. Do not flip
-                 ci.yml.
-WHY THIS OWNER:  Engine 5 owns AlphaRiskBudget as alpha
-                 metadata, but the type is primitives-only
-                 and engine 8 (sizer, wrapper) must read it
-                 without importing alpha — core, not
-                 risk. CostArithmetic is G12 disclosure
-                 owned by alpha authoring; it is a leaf
-                 (no engine imports) and signals must read
-                 it without importing alpha — core, not
-                 signals. HorizonSignal / regime_gate
-                 stay engine 4; alpha imports those
-                 today, which is the G40 pair — move only
-                 the protocol/DSL types alpha needs into
-                 core, keep evaluate() in signals.
-                 composition.protocol is engine 6's
-                 contract; alpha's PORTFOLIO layer must
-                 not import composition — the protocol
-                 type goes to core. Engine 11 owns
-                 MetricCollector; sensors and signals
-                 already emit MetricEvent on the bus and
-                 must stop importing monitoring.
-                 Promotion is not an engine, but
-                 lifecycle → cost_circuit_breaker makes
-                 alpha → forensics; cut that import so
-                 quarantine stays a forensics consumer
-                 of promotion, not a promotion import of
-                 forensics. forensics → risk is the same
-                 reason-token leak as S-35a; after a,
-                 gate_close_attribution should already
-                 use kernel unions — any remaining risk
-                 import here is a miss of a, STOP.
-VALIDATED BY:    S2 still xfail(strict, GAP G40) until
-                 lint-imports prints zero remaining
-                 engine-to-engine pairs; expected pairs
-                 11 → 0. If any pair remains, STOP, do not
-                 proceed to S-35e. test_five_import_tiers
-                 still equals _TIER_RESIDUALS. No XPASS.
-                 tests/alpha/, tests/signals/,
-                 tests/composition/,
-                 tests/sensors/,
-                 tests/risk/ (sizer / wrapper),
-                 tests/forensics/,
-                 tests/promotion/,
                  tests/docs/test_prompt_coverage_map.py
-                 if core/alpha_risk_budget.py is created
-                 (S-21 _FILE_OWNERS in that commit).                 
-REFACTOR PATH:   move leaf types (AlphaRiskBudget,
-                 CostArithmetic, MetricCollector Protocol,
-                 composition.protocol) to core/. Delete
-                 telemetry imports (MetricEvent is enough).
-                 Cut lifecycle → cost_circuit_breaker.
+                 tests/docs/test_internal_links.py
+                 docs/prompts/README.md
+                 Do not include orchestrator.py. Do not
+                 include core/position.py. Do not
+                 include
+                 portfolio/strategy_position_store.py.
+                 Do not include alpha/registry.py. Do
+                 not include
+                 services/regime_state_cache.py. Do not
+                 include forced_exit_clamp.py. Do not
+                 flip ci.yml. TYPE_CHECKING is not a
+                 cut. Do not widen to object or Any
+                 (S-35c3).
+REFACTOR PATH:   Three names-per-pair cuts, this order,
+                 one gate. (1) Retarget the seven
+                 position_store statements to
+                 feelies.core.position. Local Protocol
+                 for SPS (get(strategy_id, symbol) and
+                 the get_strategy_* reads on
+                 risk_wrapper / exit_composer /
+                 deferral_cap). Both names, or risk →
+                 portfolio stays. (2) create
+                 core/alpha_risk_budget.py; copy
+                 AlphaRiskBudget unchanged; module.py
+                 re-exports; coverage map in this
+                 commit (S-21). Retarget the three
+                 AlphaRiskBudget imports to core.
+                 Local Protocol with get() on
+                 risk_wrapper.py for AlphaRegistry.
+                 Both names, or risk → alpha stays.
+                 (3) Local Protocol with latest and
+                 reset on basic_risk.py and
+                 position_sizer.py. Do not move the
+                 cache class. 3 → 0. If any of the
+                 three pairs remains, STOP, do not
+                 start S-35e.
 BLAST RADIUS:    platform-wide
-PARITY IMPACT:   Hold.
-DELETES:         the L2/forensics/monitoring pairs in PROBLEM.
-NET DELTA:       +1 if AlphaRiskBudget moves
-ROLLBACK:        revert per commit. Land after S-35a.
-                 Position already in core from S-35c.
+VALIDATED BY:    S2 still xfail(strict, GAP G40);
+                 package pairs 3 → 0. lint-imports
+                 prints zero remaining engine-to-engine
+                 pairs. If any pair remains, STOP, do
+                 not proceed to S-35e. The xfail drop
+                 will not hide a leftover — it will
+                 fail. test_five_import_tiers still
+                 equals _TIER_RESIDUALS. No XPASS.
+                 tests/risk/ (sizer / wrapper)
+                 tests/docs/test_prompt_coverage_map.py
+                 in the AlphaRiskBudget commit.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH.
+                 A moved hash means a size, a slice
+                 read, or a regime scale factor
+                 changed — a Protocol member was
+                 dropped or Position/AlphaRiskBudget
+                 identity changed. STOP, not a re-pin.
+DELETES:         risk → portfolio; risk → alpha;
+                 risk → services.
+NET DELTA:       +1 module (alpha_risk_budget.py),
+                 0 public symbols if module.py
+                 re-exports, 0 branch points
+ROLLBACK:        revert per commit with the new
+                 module. Land after S-35d4. The three
+                 commits share risk_wrapper.py /
+                 position_sizer.py / basic_risk.py and
+                 are not independently revertible.
+                 Independently revertible from d1–d4
+                 as a unit.
 ```
 ```
 STEP:            S-35e
