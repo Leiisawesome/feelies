@@ -4746,7 +4746,14 @@ WHY THIS OWNER:  Engine 1 owns the flatten trigger (data
 FILES:           src/feelies/ingestion/data_integrity.py
                  src/feelies/risk/forced_exit_clamp.py
                  tests/conformance/test_import_contracts.py
-                 Do not include orchestrator.py. Do not flip
+                 src/feelies/kernel/orchestrator.py
+                   (the invert: bind the flatten as a required handle, or call
+                   the clamp from the kernel after the trigger. The two data
+                   integrity call sites at :405 and :427 have no other route --
+                   copying the body into engine 1 is not an invert, and object,
+                   Any, a re-export or a sys.modules lookup are the S-35c3,
+                   S-35c2 and S-35c1 misses respectively.)
+                 Do not flip.
                  ci.yml. TYPE_CHECKING is not a cut.
                  Do not restore ("feelies.core", "feelies.sensors")
                  to _TIER_RESIDUALS.
@@ -4766,6 +4773,10 @@ PARITY IMPACT:   Hold. A moved hash means a flatten now
                  different order id — the invert moved a
                  call, not just an import. STOP, not a
                  re-pin.
+                 The kernel now dispatches flatten, so a moved hash also means
+                 the trigger fires at a different point in the tick. Establish
+                 which determinism tapes reach data_integrity's GAP_DETECTED
+                 path before declaring.
 DELETES:         ingestion → risk.
 NET DELTA:       0 modules, 0 public symbols, 0 branch points
 ROLLBACK:        revert the commit. Land after S-35c3.
