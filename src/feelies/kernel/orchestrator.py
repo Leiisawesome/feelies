@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from dataclasses import fields, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from types import MappingProxyType
+from types import MappingProxyType, MethodType
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 logger = logging.getLogger(__name__)
@@ -176,6 +176,7 @@ from feelies.risk.forced_exit_clamp import (
     _emit_forced_exit_resized_alert,
     _emit_forced_exit_stood_down_alert,
     _emit_forced_exit_supersedes_pending_alert,
+    _force_flatten_symbol_on_degrade,
     _forced_exit_closable_quantity,
     _forced_exit_reduces,
     _has_pending_forced_exit_for_symbol,
@@ -415,6 +416,9 @@ class Orchestrator:
         # Pre-clamp quantity of a mandated exit the kernel resized, by order id.
         # Only written on that exceptional path; cleared with the order.
         self._forced_exit_announced_quantity: dict[str, int] = {}
+        self._force_flatten_symbol_on_degrade = MethodType(
+            _force_flatten_symbol_on_degrade, self
+        )
         # Latest signal mechanism per strategy and symbol, used only for fills.
         self._last_signal_mechanism: dict[tuple[str, str], tuple[TrendMechanism | None, int]] = {}
         # Passive reductions that require MARKET fallback on unfilled residuals.
