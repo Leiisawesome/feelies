@@ -42,7 +42,6 @@ from feelies.promotion.evidence import (
     validate_gate,
 )
 from feelies.promotion.ledger import PromotionLedger, PromotionLedgerEntry
-from feelies.forensics.cost_circuit_breaker import QuarantineRecommendation
 from feelies.core.clock import Clock
 from feelies.core.state_machine import StateMachine, TransitionRecord
 
@@ -405,8 +404,12 @@ class AlphaLifecycle:
 
     def apply_recommendation(
         self,
-        recommendation: QuarantineRecommendation,
         *,
+        reason: str,
+        net: float,
+        mean_cost_bps: float,
+        realized_margin_ratio: float,
+        decay_z: float | None,
         actor: str = "cost-circuit-breaker",
         correlation_id: str = "",
     ) -> bool:
@@ -421,8 +424,15 @@ class AlphaLifecycle:
         if not self.is_live:
             return False
         self.quarantine(
-            f"{actor}: {recommendation.reason}",
-            structured_evidence=[_recommendation_to_quarantine_evidence(recommendation)],
+            f"{actor}: {reason}",
+            structured_evidence=[
+                _recommendation_to_quarantine_evidence(
+                    net=net,
+                    mean_cost_bps=mean_cost_bps,
+                    realized_margin_ratio=realized_margin_ratio,
+                    decay_z=decay_z,
+                )
+            ],
             correlation_id=correlation_id,
         )
         return True
@@ -853,7 +863,11 @@ class AlphaLifecycle:
 
 
 def _recommendation_to_quarantine_evidence(
-    decision: QuarantineRecommendation,
+    *,
+    net: float,
+    mean_cost_bps: float,
+    realized_margin_ratio: float,
+    decay_z: float | None,
 ) -> QuarantineTriggerEvidence:
     """Project a circuit-breaker decision into structured quarantine evidence.
 
@@ -873,14 +887,14 @@ def _recommendation_to_quarantine_evidence(
     ``reason`` records the real driver.
     """
     symptoms: list[str] = []
-    if decision.net <= 0.0:
+    if net <= 0.0:
         symptoms.append("net_negative_over_window")
-    if decision.mean_cost_bps > 0.0 and decision.realized_margin_ratio < 1.0:
+    if mean_cost_bps > 0.0 and realized_margin_ratio < 1.0:
         symptoms.append("realized_edge_below_cost")
-    if decision.decay_z is not None and decision.decay_z > 2.0:
+    if decay_z is not None and decay_z > 2.0:
         symptoms.append("edge_decay_zscore")
 
-    margin = decision.realized_margin_ratio
+    margin = realized_margin_ratio
     compression = 1.0 if not math.isfinite(margin) else max(0.0, margin)
 
     return QuarantineTriggerEvidence(
