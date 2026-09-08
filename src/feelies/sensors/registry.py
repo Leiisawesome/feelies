@@ -24,7 +24,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
-from feelies.monitoring.telemetry import MetricCollector
+from feelies.core.metric_collector import MetricCollector
 from feelies.sensors.errors import (
     DuplicateSensorRegistrationError,
     UnresolvedSensorDependencyError,

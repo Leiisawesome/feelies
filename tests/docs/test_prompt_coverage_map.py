@@ -46,6 +46,7 @@ _FILE_OWNERS: dict[str, str] = {
     # ── core/ (package-owned; explicit row for the new module) ────────
     "core/position.py": "audit_core_clock_config",
     "core/composition_protocol.py": "audit_core_clock_config",
+    "core/metric_collector.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",

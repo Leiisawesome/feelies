@@ -27,7 +27,7 @@ from feelies.core.events import (
     TrendMechanism,
 )
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
-from feelies.monitoring.telemetry import MetricCollector
+from feelies.core.metric_collector import MetricCollector
 from feelies.signals.horizon_protocol import HorizonSignal
 from feelies.signals.regime_gate import (
     Bindings,
