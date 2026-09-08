@@ -4919,18 +4919,23 @@ STEP:            S-35d3
 CLOSES:          nothing. Cuts sensors → monitoring,
                  signals → monitoring, and signals →
                  alpha. G40 stays OPEN.
-PROBLEM:         Two names, one shared importer.
-                 MetricCollector: sensors.registry:27,
+PROBLEM:         Two names, one shared importer
+                 (horizon_engine.py). MetricCollector
+                 G40 statements: sensors.registry:27,
                  sensors.horizon_scheduler:33,
-                 signals.horizon_engine:30. The
-                 collector is already a constructor
-                 argument; bootstrap already passes it.
-                 horizon_engine:589 and registry still
-                 call record(MetricEvent(...)).
-                 Deleting the import and duck-typing
-                 is S-35c3. CostArithmetic:
-                 horizon_engine:15 only is the G40
-                 statement. loader /
+                 signals.horizon_engine:30. Not this
+                 pair: features.aggregator:32 (features
+                 is not in the twelve-engine set),
+                 orchestrator.py:162 (kernel),
+                 monitoring/__init__.py (same-package
+                 re-export). The collector is already a
+                 constructor argument; bootstrap
+                 already passes it. horizon_engine:589
+                 and registry still call
+                 record(MetricEvent(...)). Deleting the
+                 import and duck-typing is S-35c3.
+                 CostArithmetic G40 statement:
+                 horizon_engine:15 only. loader /
                  signal_layer_module / layer_validator
                  import cost_arithmetic inside alpha;
                  those are not this pair. S2's xfail
@@ -4958,37 +4963,49 @@ FILES:           src/feelies/signals/horizon_engine.py
                  docs/prompts/README.md
                  Do not include orchestrator.py. Do not
                  include bootstrap.py. Do not include
+                 features/aggregator.py. Do not include
+                 monitoring/__init__.py. Do not include
                  alpha/loader.py,
                  signal_layer_module.py, or
                  layer_validator.py. Do not flip
                  ci.yml. TYPE_CHECKING is not a cut.
 REFACTOR PATH:   Two names to core in one gate because
                  they share horizon_engine.py. Not
-                 deletion. Not a new handle. (1)
-                 create core/metric_collector.py;
-                 copy the Protocol unchanged;
-                 telemetry.py re-exports. Coverage
-                 map in this commit (S-21). (2)
-                 registry.py, horizon_scheduler.py,
-                 horizon_engine.py import the Protocol
-                 from core, not monitoring.telemetry.
-                 Keep record() and the constructor
-                 argument. (3) create
+                 deletion. Not a new handle. Invert,
+                 same shape as S-35d2: a re-export
+                 makes the name available but leaves
+                 the import statement; import-linter
+                 follows the statement. The pair drops
+                 only on retarget. (1) create
+                 core/metric_collector.py; copy the
+                 Protocol unchanged; telemetry.py
+                 re-exports. Coverage map in this
+                 commit (S-21). Retarget registry.py,
+                 horizon_scheduler.py, and
+                 horizon_engine.py to
+                 feelies.core.metric_collector, not
+                 monitoring.telemetry. Keep record()
+                 and the constructor argument.
+                 aggregator.py and orchestrator.py
+                 keep the telemetry re-export.
+                 sensors → monitoring and signals →
+                 monitoring gone. (2) create
                  core/cost_arithmetic.py; copy
                  CostArithmetic unchanged;
                  alpha.cost_arithmetic re-exports.
                  horizon_engine.py imports from core,
-                 not alpha.cost_arithmetic. Two
-                 commits, this step; they share
-                 horizon_engine.py and are not
-                 independently revertible. 8 → 5.
+                 not alpha.cost_arithmetic. signals →
+                 alpha gone. Two commits, this step;
+                 they share horizon_engine.py and are
+                 not independently revertible. 8 → 5.
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2 still xfail(strict, GAP G40);
                  package pairs 8 → 5 (sensors →
                  monitoring, signals → monitoring,
                  signals → alpha gone). If any of
-                 those three remains, STOP. test_five_import_tiers
-                 still equals _TIER_RESIDUALS. No XPASS.
+                 those three remains, STOP. test_five
+                 _import_tiers still equals
+                 _TIER_RESIDUALS. No XPASS.
                  tests/signals/ tests/sensors/
                  tests/docs/test_prompt_coverage_map.py
                  in the commits that create the core
@@ -5007,9 +5024,9 @@ NET DELTA:       +2 modules, 0 public symbols if the
                  old modules re-export, 0 branch points
 ROLLBACK:        revert per commit with the new
                  modules. Land after S-35d2. Commit
-                 (3) is not independently revertible
-                 from (1)–(2). Independently
-                 revertible from d1–d2 and d4–d5.
+                 (2) is not independently revertible
+                 from (1). Independently revertible
+                 from d1–d2 and d4–d5.
 ```
 ```
 STEP:            S-35d4
