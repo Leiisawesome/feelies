@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from typing import Any, Callable, Mapping
 
 from feelies.alpha.module import AlphaManifest
-from feelies.composition.protocol import CompositionContextError
+from feelies.core.composition_protocol import CompositionContextError
 from feelies.core.events import (
     CrossSectionalContext,
     SizedPositionIntent,
