@@ -129,7 +129,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `forensics/` | forensics |
 | `research/` | research_validation |
 | `kernel/`, `bus/`, `bootstrap.py`, `__main__.py` | kernel |
-| `core/`, `core/position.py`, `core/composition_protocol.py`, `core/metric_collector.py` | core_clock_config |
+| `core/`, `core/position.py`, `core/composition_protocol.py`, `core/metric_collector.py`, `core/cost_arithmetic.py` | core_clock_config |
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) · forensics (`forensics`) |

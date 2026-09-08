@@ -12,8 +12,8 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
-from feelies.alpha.cost_arithmetic import CostArithmetic
 from feelies.bus.event_bus import EventBus
+from feelies.core.cost_arithmetic import CostArithmetic
 from feelies.core.events import (
     EXIT_ONLY_MECHANISMS,
     HorizonFeatureSnapshot,
