@@ -4,6 +4,10 @@ Implementations map barrier-synchronized cross-sectional context to a sized
 position intent. They must be deterministic, idempotent, and independent of
 mapping iteration order. Invalid or infeasible context raises
 ``CompositionContextError``; the engine converts it to no position change.
+
+The exception lives in :mod:`feelies.core.composition_protocol` so the loaded
+PORTFOLIO module can name it without importing the composition package. This
+module re-exports it; Engine 6 implementations keep importing from here.
 """
 
 from __future__ import annotations
@@ -12,11 +16,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
+from feelies.core.composition_protocol import CompositionContextError
 from feelies.core.events import CrossSectionalContext, Signal, SizedPositionIntent
-
-
-class CompositionContextError(Exception):
-    """Raised when a portfolio alpha cannot construct a valid intent."""
 
 
 @dataclass(frozen=True, slots=True)
