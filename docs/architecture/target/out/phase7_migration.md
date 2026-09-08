@@ -5075,6 +5075,13 @@ REFACTOR PATH:   Mechanism first, one gate because
                  test_alpha_loader_invalid_regime_engine_options_raise_alpha_load_error
                  to that error. Do not inject a
                  factory handle. 5 → 3.
+                 (note) Copy the DSL, but from_spec must NOT call
+                 gate._referenced_identifiers. That private reach is keyed by
+                 path in COMPOSITION_ROOT_PRIVATE_ALLOWLIST, so a verbatim copy
+                 re-homes the site and trips S17. Walk the ON/OFF identifiers
+                 without reaching into another object's privates rather than
+                 retargeting the allowlist row -- moving the key would preserve
+                 the violation, which is the opposite of what this family does.
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2 still xfail(strict, GAP G40);
                  package pairs 5 → 3 (alpha → signals
