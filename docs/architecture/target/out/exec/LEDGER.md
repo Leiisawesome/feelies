@@ -13207,3 +13207,226 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  (platform-wide). Not started.
                  Do not begin S-35d3 from this tree.
 
+## S-35d3  2026-09-08T11:07:18+08:00
+  STEP:          S-35d3
+  BASE:          6af5f7b126dcc0b57972490a8ec1a90bb2c07d0e
+  RESULT SHA:    c9a65327573e5a2324bd15128400bac07127a1b6 (exec/S-35d3; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing.
+                 Cuts sensors → monitoring, signals →
+                 monitoring, and signals → alpha. G40 stays OPEN.
+                 S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 2 passed / 1 xfailed (G40) -> 2 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left; core→sensors not restored)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (pre)
+                 -> 117 passed / 6 xfailed (post).
+                 mypy src/feelies: Success, 216 source files
+                 (214 -> 216).
+  TESTS:         capture pre-S-35d3 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 capture post-S-35d3 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 sensors 285 passed / 1 skipped; signals 157;
+                 monitoring 42; kernel 390; docs 101.
+                 The four EXEMPTIONS not re-run as failures.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre vs post and vs
+                 baseline_post-S-35d2.json, 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         11 named paths in the FILES field. 9 touched.
+                 verify_step `S-35D3 --base 6af5f7b` exits 1
+                 with "S-35D3 not in plan" (uppercase;
+                 Known lists S-35d3; frozen). Hand FILES:
+                 0 extra CLEAN. Touched:
+                 core/metric_collector.py (new),
+                 core/cost_arithmetic.py (new),
+                 monitoring/telemetry.py,
+                 sensors/registry.py,
+                 sensors/horizon_scheduler.py,
+                 signals/horizon_engine.py,
+                 alpha/cost_arithmetic.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited:
+                 tests/conformance/test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved),
+                 tests/docs/test_internal_links.py
+                 (README citations `core/metric_collector.py`
+                 and `core/cost_arithmetic.py` resolve via
+                 src/feelies; no placeholder needed).
+  NET DELTA:     declared src modules +2 (metric_collector.py,
+                 cost_arithmetic.py), public symbols 0 if the
+                 old modules re-export, 0 branch points.
+                 actual modules 214 -> 216 (+2 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46592 -> 46631 (+39, undeclared)
+                 n_edges 668 -> 670
+                 n_modules 173 -> 175
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 pin moved
+  VERIFY_STEP:   `S-35D3 --base 6af5f7b` exits 1 with
+                 "S-35D3 not in plan" (uppercase; Known lists
+                 S-35d3; frozen). Four checks by hand:
+                 FILES 11 named / 9 touched CLEAN
+                 (2 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved; TESTS
+                 4908->4908 passed, failed 0->0 (from
+                 captures); NET DELTA MATCH on modules +2
+                 symbols 0. Oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- Go confirmed
+                 branch head
+                 c9a65327573e5a2324bd15128400bac07127a1b6
+                 on exec/S-35d3. Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Go confirmed branch head
+                 c9a65327573e5a2324bd15128400bac07127a1b6
+                 on exec/S-35d3. Parent 6af5f7b on
+                 arch/exec. Two commits, three pairs, one
+                 shared importer (horizon_engine.py).
+                 Commit (1) 0ef43d7 inverted MetricCollector:
+                 created core/metric_collector.py, made
+                 telemetry.py re-export, and retargeted
+                 registry.py, horizon_scheduler.py, and
+                 horizon_engine.py onto
+                 feelies.core.metric_collector. Commit (2)
+                 c9a6532 inverted CostArithmetic: created
+                 core/cost_arithmetic.py, made
+                 alpha.cost_arithmetic re-export, and
+                 retargeted horizon_engine.py onto
+                 feelies.core.cost_arithmetic. Neither cut
+                 is a handle; both are an invert of the hop.
+                 MetricCollector now lives in
+                 feelies.core.metric_collector.
+                 sensors.registry, sensors.horizon_scheduler,
+                 and signals.horizon_engine import it at
+                 runtime. telemetry.py re-exports the same
+                 Protocol. aggregator.py and
+                 orchestrator.py keep that re-export, as
+                 the block required. record() and the
+                 constructor argument remain.
+                 CostArithmetic now lives in
+                 feelies.core.cost_arithmetic.
+                 signals.horizon_engine imports it at
+                 runtime. alpha.cost_arithmetic re-exports
+                 the same class so G12 authors and loaders
+                 keep their old path.
+                 Failing-pair count 8 → 5 against the
+                 block's 8 → 5. Per commit: 8 → 6 on
+                 0ef43d7 (sensors → monitoring and signals →
+                 monitoring gone), then 6 → 5 on
+                 c9a6532 (signals → alpha gone).
+                 Projection MATCH.
+                 n_cycles held at 1. The only SCC is
+                 feelies.cli → feelies.cli.main.
+                 No hash moved. 64/64 HASH/COUNT
+                 identical pre vs post and vs
+                 baseline_post-S-35d2.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Owner of both new modules:
+                 audit_core_clock_config. Each creating
+                 commit landed its _FILE_OWNERS row, the
+                 README citation next to `core/`, and the
+                 edit to tests/docs/test_prompt_coverage_map.py.
+                 tests/docs 101 passed at the gate.
+                 Declared NET DELTA +2 modules, 0 public
+                 symbols (old modules re-export), 0
+                 branch points. Measured: modules
+                 214 → 216 MATCH, public_symbols
+                 575 → 575 MATCH, sloc 46592 → 46631
+                 (+39, undeclared), n_edges 668 → 670,
+                 n_modules 173 → 175, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 None of the four failed mechanisms.
+                 S2's xfail(strict, GAP G40) stays until
+                 S-35e. No XPASS.
+                 Unlike S-35d2, no commit here left a
+                 re-export standing without its retarget.
+                 Both landed in the same SHA, so the pair
+                 dropped immediately (8 → 6, then 6 → 5).
+                 That is the pattern to keep: the retarget
+                 is what counts, and splitting it into its
+                 own commit only creates a window where
+                 the contract still fails.
+  FINDINGS:      (1) CostArithmetic is not a standalone
+                 type. The plan said copy CostArithmetic
+                 unchanged; the class uses
+                 CostArithmeticError, compute_margin_ratio,
+                 MIN_MARGIN_RATIO, MARGIN_RATIO_TOLERANCE,
+                 DEFAULT_COST_BASIS, ROUND_TRIP_FACTOR,
+                 and the private field/basis tables.
+                 Those moved with it. Leaving them in
+                 alpha would have been core → alpha.
+                 DEFAULT_COST_BASIS and ROUND_TRIP_FACTOR
+                 were never in __all__ and had no
+                 importer; they now live only on
+                 feelies.core.cost_arithmetic.
+                 public_symbols held at 575.
+                 (2) S-35d4, S-35d5, and S-35e do not
+                 assume MetricCollector is still defined
+                 in monitoring.telemetry, or that
+                 CostArithmetic is still defined in
+                 alpha.cost_arithmetic. d4's FILES do
+                 not include cost_arithmetic.py,
+                 telemetry.py, registry.py, or
+                 horizon_scheduler.py. loader.py,
+                 signal_layer_module.py, and
+                 layer_validator.py still import
+                 CostArithmetic from the alpha re-export,
+                 which still works. Pair arithmetic
+                 still matches this after-state: d4
+                 5 → 3, d5 3 → 0, then S-35e drops the
+                 xfail. d4's start of 5 is this tree.
+                 S-35e still requires twelve-engine KEPT
+                 with zero remaining pairs before the
+                 xfail drops; this cut did not change
+                 that. No twentieth file.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35c1 FINDING
+                 optional handle with sys.modules fallback;
+                 S-35c2 FINDING a re-export is not a cut;
+                 S-35c3 FINDING removing an import by
+                 widening to object or Any is not removing
+                 the dependency; S-35c4 FINDING a FILES
+                 prohibition written before the cut mechanism
+                 is known blocks the only real cut;
+                 S-35d1 FINDING follow the code, not the
+                 field list; S-35d2 FINDING a re-export
+                 made the name available but left the
+                 import statement; S-35d3 FINDING
+                 CostArithmetic is not a standalone type;
+                 perfmeasure.py DIRECT_PROBES two dead
+                 attributes, unowned; four exempted baseline
+                 tests.
+  NEXT:          S-35d4 cut alpha → signals and alpha →
+                 services (platform-wide). Not started.
+                 Do not begin S-35d4 from this tree.
+
