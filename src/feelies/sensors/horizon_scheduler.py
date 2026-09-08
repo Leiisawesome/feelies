@@ -29,8 +29,8 @@ from typing import Callable, Iterable, Literal
 
 from feelies.core.events import Event, HorizonTick
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
+from feelies.core.metric_collector import MetricCollector
 from feelies.kernel.exception_taxonomy import KernelFault
-from feelies.monitoring.telemetry import MetricCollector
 
 _logger = logging.getLogger(__name__)
 

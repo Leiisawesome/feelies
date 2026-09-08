@@ -5,22 +5,14 @@ on the bus.  This layer defines HOW metrics are collected, stored,
 and surfaced.  Individual layers define WHAT they emit.
 
 Metrics collected at p50, p95, p99, p99.9 where applicable.
+
+The Protocol lives in :mod:`feelies.core.metric_collector` so engines 2
+and 4 can name it without importing the monitoring package. This module
+re-exports it; Engine 11 implementations keep importing from here.
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+from feelies.core.metric_collector import MetricCollector
 
-from feelies.core.events import MetricEvent
-
-
-class MetricCollector(Protocol):
-    """Collects and aggregates metrics emitted by all layers."""
-
-    def record(self, metric: MetricEvent) -> None:
-        """Record a metric observation."""
-        ...
-
-    def flush(self) -> None:
-        """Flush buffered metrics to storage."""
-        ...
+__all__ = ["MetricCollector"]
