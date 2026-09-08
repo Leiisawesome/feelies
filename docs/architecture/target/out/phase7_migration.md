@@ -4924,39 +4924,33 @@ PROBLEM:         Two names, one shared importer
                  G40 statements: sensors.registry:27,
                  sensors.horizon_scheduler:33,
                  signals.horizon_engine:30. Not this
-                 pair: features.aggregator:32 (features
-                 is not in the twelve-engine set),
-                 orchestrator.py:162 (kernel),
-                 monitoring/__init__.py (same-package
-                 re-export). The collector is already a
-                 constructor argument; bootstrap
-                 already passes it. horizon_engine:589
-                 and registry still call
-                 record(MetricEvent(...)). Deleting the
-                 import and duck-typing is S-35c3.
-                 CostArithmetic G40 statement:
-                 horizon_engine:15 only. loader /
-                 signal_layer_module / layer_validator
-                 import cost_arithmetic inside alpha;
-                 those are not this pair. S2's xfail
-                 stays until S-35e.
+                 pair: features.aggregator:32,
+                 orchestrator.py:162,
+                 monitoring/__init__.py. CostArithmetic
+                 G40 statement: horizon_engine:15 only.
+                 CostArithmetic is not a standalone type;
+                 the helpers it uses moved with it.
+                 loader / signal_layer_module /
+                 layer_validator import cost_arithmetic
+                 inside alpha; those are not this pair.
+                 S2's xfail stays until S-35e.
 WHY THIS OWNER:  Engine 11 owns how metrics are
                  collected; engines 2 and 4 already
                  emit MetricEvent. The Protocol goes
-                 to core, not into sensors or signals.
-                 CostArithmetic is G12 disclosure;
-                 signals must read it without
-                 importing alpha — core, not signals.
+                 to core. CostArithmetic is G12
+                 disclosure; signals must read it
+                 without importing alpha — core, not
+                 signals.
 FILES:           src/feelies/signals/horizon_engine.py
                  src/feelies/sensors/registry.py
                  src/feelies/sensors/horizon_scheduler.py
                  src/feelies/monitoring/telemetry.py
                  src/feelies/alpha/cost_arithmetic.py
                  src/feelies/core/metric_collector.py
-                   (new; MetricCollector Protocol;
-                   name first)
+                   (new; MetricCollector Protocol)
                  src/feelies/core/cost_arithmetic.py
-                   (new; CostArithmetic; name first)
+                   (new; CostArithmetic and the helpers
+                   it uses)
                  tests/conformance/test_import_contracts.py
                  tests/docs/test_prompt_coverage_map.py
                  tests/docs/test_internal_links.py
@@ -4969,64 +4963,34 @@ FILES:           src/feelies/signals/horizon_engine.py
                  signal_layer_module.py, or
                  layer_validator.py. Do not flip
                  ci.yml. TYPE_CHECKING is not a cut.
-REFACTOR PATH:   Two names to core in one gate because
-                 they share horizon_engine.py. Not
-                 deletion. Not a new handle. Invert,
-                 same shape as S-35d2: a re-export
-                 makes the name available but leaves
-                 the import statement; import-linter
-                 follows the statement. The pair drops
-                 only on retarget. (1) create
-                 core/metric_collector.py; copy the
-                 Protocol unchanged; telemetry.py
-                 re-exports. Coverage map in this
-                 commit (S-21). Retarget registry.py,
+REFACTOR PATH:   Invert. Re-export and retarget in the
+                 same SHA; a re-export without retarget
+                 does not drop the pair. (1) create
+                 core/metric_collector.py; telemetry.py
+                 re-exports; retarget registry.py,
                  horizon_scheduler.py, and
                  horizon_engine.py to
-                 feelies.core.metric_collector, not
-                 monitoring.telemetry. Keep record()
-                 and the constructor argument.
-                 aggregator.py and orchestrator.py
-                 keep the telemetry re-export.
-                 sensors → monitoring and signals →
-                 monitoring gone. (2) create
-                 core/cost_arithmetic.py; copy
-                 CostArithmetic unchanged;
-                 alpha.cost_arithmetic re-exports.
-                 horizon_engine.py imports from core,
-                 not alpha.cost_arithmetic. signals →
-                 alpha gone. Two commits, this step;
-                 they share horizon_engine.py and are
-                 not independently revertible. 8 → 5.
+                 feelies.core.metric_collector. 8 → 6.
+                 (2) create core/cost_arithmetic.py
+                 (class plus helpers); alpha.cost_arithmetic
+                 re-exports; horizon_engine.py imports
+                 from core. 6 → 5. Two commits. 8 → 5.
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2 still xfail(strict, GAP G40);
-                 package pairs 8 → 5 (sensors →
-                 monitoring, signals → monitoring,
-                 signals → alpha gone). If any of
-                 those three remains, STOP. test_five
-                 _import_tiers still equals
-                 _TIER_RESIDUALS. No XPASS.
-                 tests/signals/ tests/sensors/
-                 tests/docs/test_prompt_coverage_map.py
-                 in the commits that create the core
-                 files.
+                 package pairs 8 → 5. Per commit 8 → 6
+                 → 5. No XPASS.
 PARITY IMPACT:   Hold: all 64 HASH/COUNT constants,
                  the fingerprint, _BASELINE_CONFIG_HASH.
-                 A moved hash means a metric
-                 sequence/correlation_id changed, or
-                 CostArithmetic fields on emitted
-                 signals changed — the copy was not
-                 pure, or record() was dropped. STOP,
-                 not a re-pin.
 DELETES:         sensors → monitoring; signals →
                  monitoring; signals → alpha.
-NET DELTA:       +2 modules, 0 public symbols if the
-                 old modules re-export, 0 branch points
+NET DELTA:       +2 modules, 0 public symbols, 0 branch
+                 points. Landed modules 214 → 216,
+                 public_symbols 575 → 575, sloc +39
+                 undeclared.
 ROLLBACK:        revert per commit with the new
-                 modules. Land after S-35d2. Commit
-                 (2) is not independently revertible
-                 from (1). Independently revertible
-                 from d1–d2 and d4–d5.
+                 modules. Landed on arch/exec as
+                 857e363 (merge), 13af192 (captures),
+                 731d386 (reference baseline).
 ```
 ```
 STEP:            S-35d4
@@ -5034,19 +4998,23 @@ CLOSES:          nothing. Cuts alpha → signals and
                  alpha → services. G40 stays OPEN.
 PROBLEM:         Two pairs, one shared importer
                  (loader.py). alpha → signals
-                 statements: signal_layer_module:37
-                 HorizonSignal; signal_layer_module:38,
-                 layer_validator:558, loader:58,
-                 dependency_graph:25 RegimeGate /
+                 statements, follow the code:
+                 signal_layer_module:37 HorizonSignal;
+                 signal_layer_module:38 RegimeGate;
+                 loader:58 RegimeGate, RegimeGateError;
+                 dependency_graph:25 RegimeGate;
+                 layer_validator:558 UnsafeExpressionError,
                  compile_expression. Alpha constructs
                  RegimeGate.from_spec — a Protocol-only
-                 move does not cut. alpha → services:
-                 loader:57 RegimeEngine and
-                 get_regime_engine. Bootstrap already
-                 injects the instance. The leftover is
-                 the factory fallback at
-                 _resolve_regime_engine. tests/alpha/
-                 test_signal_layer_loader.py
+                 move does not cut. Leaving
+                 UnsafeExpressionError on
+                 feelies.signals.regime_gate leaves the
+                 pair. alpha → services: loader:57
+                 RegimeEngine and get_regime_engine.
+                 Bootstrap already injects the instance.
+                 The leftover is the factory fallback
+                 at _resolve_regime_engine.
+                 tests/alpha/test_signal_layer_loader.py
                  monkeypatches
                  feelies.alpha.loader.get_regime_engine.
                  S2's xfail stays until S-35e.
@@ -5068,6 +5036,7 @@ FILES:           src/feelies/alpha/loader.py
                    name first)
                  src/feelies/core/regime_gate.py
                    (new; RegimeGate, RegimeGateError,
+                   UnsafeExpressionError,
                    compile_expression; name first)
                  tests/alpha/test_signal_layer_loader.py
                  tests/conformance/test_import_contracts.py
@@ -5081,20 +5050,25 @@ FILES:           src/feelies/alpha/loader.py
                  Do not flip ci.yml. TYPE_CHECKING is
                  not a cut.
 REFACTOR PATH:   Mechanism first, one gate because
-                 loader.py is shared. (1) create
-                 core/horizon_protocol.py and
+                 loader.py is shared. Invert. Re-export
+                 and retarget in the same SHA. (1)
+                 create core/horizon_protocol.py and
                  core/regime_gate.py; copy the Protocol
-                 and the DSL types alpha constructs.
-                 Coverage map in these commits (S-21).
-                 signals modules re-export (signals →
-                 core is legal). (2) retarget the four
-                 alpha importers listed in PROBLEM to
-                 core, not feelies.signals.*. (3) in
-                 loader.py, delete get_regime_engine
-                 and the services import. Annotate the
-                 remaining engine with a local Protocol
-                 that has state_names. YAML engine
-                 without an injected instance becomes
+                 and every DSL name the four alpha
+                 statements import, including
+                 UnsafeExpressionError. Coverage map
+                 in these commits (S-21). signals
+                 modules re-export (signals → core is
+                 legal). (2) retarget the four alpha
+                 importers to core, not
+                 feelies.signals.*. Every name on those
+                 statements, or alpha → signals stays.
+                 (3) in loader.py, delete
+                 get_regime_engine and the services
+                 import. Annotate the remaining engine
+                 with a local Protocol that has
+                 state_names. YAML engine without an
+                 injected instance becomes
                  AlphaLoadError. Retarget
                  test_alpha_loader_forwards_regime_engine_options
                  and
