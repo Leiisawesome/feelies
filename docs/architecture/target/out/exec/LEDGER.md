@@ -12803,3 +12803,210 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  (platform-wide). Not started.
                  Do not begin S-35d from this tree.
 
+---
+
+## S-35d1  2026-09-08T09:17:11+08:00
+  STEP:          S-35d1
+  BASE:          7a7770de24b739498f810a9aef74862f0055ab51
+  RESULT SHA:    52adc4552280030acdd9a84368794af45696a855 (exec/S-35d1; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing.
+                 Cuts alpha → forensics. G40 stays OPEN.
+                 S2 remains xfail(strict, GAP G40). No XPASS.
+                 S2: 2 passed / 1 xfailed (G40) -> 2 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left; core→sensors not restored)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 6 xfailed (pre)
+                 -> 117 passed / 6 xfailed (post).
+                 mypy src/feelies: Success, 213 source files.
+  TESTS:         capture pre-S-35d1 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 capture post-S-35d1 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 kernel 390; docs 101;
+                 tests/forensics/test_cost_circuit_breaker.py
+                 + tests/promotion 308.
+                 The four EXEMPTIONS not re-run as failures.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre vs post and vs
+                 baseline_post-S-35c4.json, 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         4 named paths in the FILES field. 3 touched.
+                 verify_step `S-35D1 --base 7a7770d` exits 1
+                 with "S-35D1 not in plan" (uppercase;
+                 Known lists S-35d1; frozen). Hand FILES:
+                 0 extra CLEAN. Touched:
+                 promotion/lifecycle.py,
+                 cli/forensics.py,
+                 tests/forensics/test_cost_circuit_breaker.py.
+                 Named-not-edited:
+                 tests/conformance/test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 213 -> 213 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46564 -> 46582 (+18, undeclared)
+                 n_edges 668 -> 667
+                 n_modules 173 -> 173
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   `S-35D1 --base 7a7770d` exits 1 with
+                 "S-35D1 not in plan" (uppercase; Known lists
+                 S-35d1; frozen). Four checks by hand:
+                 FILES 4 named / 3 touched CLEAN
+                 (1 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved; TESTS
+                 4908->4908 passed, failed 0->0 (from
+                 captures); NET DELTA MATCH on modules 0
+                 symbols 0. Oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- human gate
+                 given; branch head confirmed; not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Go confirmed branch head
+                 52adc4552280030acdd9a84368794af45696a855
+                 on exec/S-35d1. Parent 7a7770d on
+                 arch/exec (plan: split S-35d into
+                 independent pair cuts). One commit,
+                 one edge.
+                 Commit order: 52adc45 only. That commit
+                 is the alpha → forensics cut. The
+                 mechanism is an invert of the hop, not
+                 a handle and not a moved dataclass.
+                 apply_recommendation no longer takes
+                 QuarantineRecommendation; it takes
+                 reason, net, mean_cost_bps,
+                 realized_margin_ratio, decay_z.
+                 _recommendation_to_quarantine_evidence
+                 takes the four fields it actually
+                 reads (net, mean_cost_bps,
+                 realized_margin_ratio, decay_z). The
+                 forensics import at lifecycle.py:45 is
+                 gone. cli/forensics.py and the
+                 circuit-breaker tests still hold a
+                 QuarantineRecommendation and pass those
+                 fields in. QuarantineRecommendation
+                 stays in
+                 feelies.forensics.cost_circuit_breaker.
+                 No kernel route, no core DTO.
+                 Failing-pair count 10 → 9 against the
+                 block's 10 → 9. Before: alpha →
+                 composition, forensics, services,
+                 signals; risk → alpha, portfolio,
+                 services; sensors → monitoring;
+                 signals → alpha, monitoring. After:
+                 the same list without alpha →
+                 forensics. Projection MATCH. The
+                 dropped chain was alpha.registry →
+                 promotion.lifecycle (l.29) →
+                 forensics.cost_circuit_breaker (l.45).
+                 registry.py was not edited.
+                 n_cycles held at 1. The only SCC is
+                 feelies.cli → feelies.cli.main.
+                 No hash moved. 64/64 HASH/COUNT
+                 identical pre vs post and vs
+                 baseline_post-S-35c4.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 mypy src/feelies (Success, 213 source
+                 files) and conformance (117 passed /
+                 6 xfailed, no XPASS) ran after the
+                 commit and before the blast-radius
+                 gate. S2's xfail(strict, GAP G40)
+                 stays until S-35e.
+                 No new module, so no owner and no
+                 _FILE_OWNERS / docs/prompts repair.
+                 None of the four failed mechanisms:
+                 no re-export, no TYPE_CHECKING-only
+                 move, no sys.modules lookup, no
+                 widening to object or Any. The types
+                 on the new parameters are str, float,
+                 and float | None.
+                 Declared NET DELTA 0 modules, 0 public
+                 symbols, 0 branch points. Measured:
+                 modules 213 → 213 MATCH,
+                 public_symbols 575 → 575 MATCH,
+                 sloc 46564 → 46582 (+18, undeclared;
+                 the field list, the helper, the test
+                 call sites), n_edges 668 → 667,
+                 n_modules 173 → 173, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 gate_close_attribution still does not
+                 import risk.
+  FINDINGS:      (1) The block named every importer of
+                 the cut. src QuarantineRecommendation
+                 sites were lifecycle.py:45 (the hop),
+                 cli/forensics.py (caller; still
+                 imports the dataclass from forensics,
+                 which is not a G40 pair), and
+                 cost_circuit_breaker.py (definition,
+                 not edited). apply_recommendation
+                 callers were only cli/forensics.py
+                 and tests/forensics/
+                 test_cost_circuit_breaker.py. No ninth
+                 file. registry.py imports lifecycle,
+                 not forensics, as the PROBLEM said.
+                 (2) REFACTOR PATH listed reason as a
+                 field _recommendation_to_quarantine_evidence
+                 already reads. The helper never read
+                 reason; apply_recommendation used it
+                 for the quarantine message. reason
+                 landed on apply_recommendation; the
+                 helper took the four fields it
+                 actually reads. Not a missed importer.
+                 (3) S-35d2 through S-35d5 and S-35e do
+                 not assume the old
+                 apply_recommendation(
+                 QuarantineRecommendation) shape. Their
+                 FILES do not include lifecycle.py or
+                 cli/forensics.py. Pair arithmetic
+                 still matches this after-state:
+                 d2 9 → 8, d3 8 → 5, d4 5 → 3,
+                 d5 3 → 0, then S-35e drops the xfail.
+                 d2's start of 9 is this tree. S-35e
+                 still requires twelve-engine KEPT with
+                 zero remaining pairs before the xfail
+                 drops; this cut did not change that.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35c1 FINDING
+                 optional handle with sys.modules fallback;
+                 S-35c2 FINDING a re-export is not a cut;
+                 S-35c3 FINDING removing an import by
+                 widening to object or Any is not removing
+                 the dependency; S-35c4 FINDING a FILES
+                 prohibition written before the cut mechanism
+                 is known blocks the only real cut;
+                 perfmeasure.py DIRECT_PROBES two dead
+                 attributes, unowned; four exempted baseline
+                 tests.
+  NEXT:          S-35d2 cut alpha → composition
+                 (platform-wide). Not started.
+                 Do not begin S-35d2 from this tree.
+
