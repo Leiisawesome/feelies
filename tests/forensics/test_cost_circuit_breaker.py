@@ -165,7 +165,14 @@ def test_apply_quarantines_live_alpha_and_records_ledger(tmp_path) -> None:
         decay_z=None,
     )
     rec = QuarantineRecommendation.from_decision(decision)
-    applied = lc.apply_recommendation(rec, correlation_id="cb1")
+    applied = lc.apply_recommendation(
+        reason=rec.reason,
+        net=rec.net,
+        mean_cost_bps=rec.mean_cost_bps,
+        realized_margin_ratio=rec.realized_margin_ratio,
+        decay_z=rec.decay_z,
+        correlation_id="cb1",
+    )
 
     assert applied is True
     assert lc.state == AlphaLifecycleState.QUARANTINED
@@ -192,7 +199,13 @@ def test_apply_skips_non_live_alpha() -> None:
         decay_z=None,
     )
     rec = QuarantineRecommendation.from_decision(decision)
-    applied = lc.apply_recommendation(rec)
+    applied = lc.apply_recommendation(
+        reason=rec.reason,
+        net=rec.net,
+        mean_cost_bps=rec.mean_cost_bps,
+        realized_margin_ratio=rec.realized_margin_ratio,
+        decay_z=rec.decay_z,
+    )
     assert applied is False
     assert lc.state == AlphaLifecycleState.RESEARCH
 
@@ -235,8 +248,13 @@ def test_apply_records_structured_quarantine_evidence(tmp_path) -> None:
         realized_margin_ratio=0.0,
         decay_z=None,
     )
+    rec = QuarantineRecommendation.from_decision(decision)
     lc.apply_recommendation(
-        QuarantineRecommendation.from_decision(decision),
+        reason=rec.reason,
+        net=rec.net,
+        mean_cost_bps=rec.mean_cost_bps,
+        realized_margin_ratio=rec.realized_margin_ratio,
+        decay_z=rec.decay_z,
         correlation_id="cb1",
     )
 
@@ -273,7 +291,17 @@ def test_engine_5_demotion_always_commits(tmp_path) -> None:
             decay_z=None,
         )
     )
-    assert lc.apply_recommendation(rec, correlation_id="cb1") is True
+    assert (
+        lc.apply_recommendation(
+            reason=rec.reason,
+            net=rec.net,
+            mean_cost_bps=rec.mean_cost_bps,
+            realized_margin_ratio=rec.realized_margin_ratio,
+            decay_z=rec.decay_z,
+            correlation_id="cb1",
+        )
+        is True
+    )
     assert lc.state == AlphaLifecycleState.QUARANTINED
     entry = ledger.latest_for("bleeder")
     assert entry is not None

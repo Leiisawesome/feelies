@@ -149,7 +149,11 @@ def _handle_circuit_breaker(args: argparse.Namespace) -> int:
             if lifecycle is None:
                 continue
             if lifecycle.apply_recommendation(
-                rec,
+                reason=rec.reason,
+                net=rec.net,
+                mean_cost_bps=rec.mean_cost_bps,
+                realized_margin_ratio=rec.realized_margin_ratio,
+                decay_z=rec.decay_z,
                 actor="cost-circuit-breaker",
                 correlation_id=args.correlation_id,
             ):
