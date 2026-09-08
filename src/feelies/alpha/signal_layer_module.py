@@ -34,8 +34,8 @@ from feelies.core.events import (
     TrendMechanism,
 )
 from feelies.features.definition import FeatureDefinition
-from feelies.signals.horizon_protocol import HorizonSignal
-from feelies.signals.regime_gate import RegimeGate
+from feelies.core.horizon_protocol import HorizonSignal
+from feelies.core.regime_gate import RegimeGate
 
 
 class LoadedSignalLayerModule:

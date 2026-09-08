@@ -22,7 +22,7 @@ from feelies.alpha.registry import AlphaRegistry
 from feelies.core.platform_config import PlatformConfig
 from feelies.core.errors import ConfigurationError
 from feelies.features.protocol import HorizonFeature
-from feelies.signals.regime_gate import RegimeGate
+from feelies.core.regime_gate import RegimeGate
 
 logger = logging.getLogger(__name__)
 

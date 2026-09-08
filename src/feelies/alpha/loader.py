@@ -55,7 +55,7 @@ from feelies.core.events import (
 )
 from feelies.core.platform_config import compute_manifest_hash
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
-from feelies.signals.regime_gate import RegimeGate, RegimeGateError
+from feelies.core.regime_gate import RegimeGate, RegimeGateError
 
 logger = logging.getLogger(__name__)
 
