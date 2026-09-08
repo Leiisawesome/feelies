@@ -20,6 +20,7 @@ import inspect
 import logging
 import math
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -62,8 +63,10 @@ logger = logging.getLogger(__name__)
 class _RegimeEngine(Protocol):
     """Injected engine surface the loader reads at load time."""
 
-    state_names: object
-    current_state: object
+    @property
+    def state_names(self) -> Sequence[str]: ...
+
+    def current_state(self, symbol: str) -> list[float] | None: ...
 
 # At most three parameters may declare an optimization range. Validation bounds
 # do not count toward this limit.
