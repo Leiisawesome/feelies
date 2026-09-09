@@ -29,13 +29,12 @@ _LAYER_PAIR = re.compile(
     re.M,
 )
 
-# Residual Five-import-tiers breaks: kernel→engine dispatch and
-# harness→bootstrap. Equality, not a subset:
-# a thirteenth pair fails immediately. G40's close does not
+# Residual Five-import-tiers breaks: kernel→engine dispatch.
+# Equality, not a subset:
+# a twelfth pair fails immediately. G40's close does not
 # require this set to change.
 _TIER_RESIDUALS = frozenset(
     {
-        ("feelies.harness", "feelies.bootstrap"),
         ("feelies.kernel", "feelies.ingestion"),
         ("feelies.kernel", "feelies.alpha"),
         ("feelies.kernel", "feelies.portfolio"),

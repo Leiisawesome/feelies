@@ -21,6 +21,7 @@ from typing import NoReturn
 
 import pytest
 
+from feelies.bootstrap import build_platform
 from feelies.core.platform_config import PlatformConfig
 from feelies.harness import (
     compute_config_hash,
@@ -360,6 +361,7 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
         _BASELINE_SYMBOL,
         _BASELINE_DATE,
         time.monotonic(),
+        platform_factory=build_platform,
         prep=prep,
     )
 

@@ -78,6 +78,7 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
+    from feelies.bootstrap import build_platform
     from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
 
     load_dotenv_optional()
@@ -85,4 +86,4 @@ if __name__ == "__main__":
     if api_key is None:
         print(MASSIVE_API_KEY_ERROR, file=sys.stderr)
         sys.exit(1)
-    sys.exit(main(api_key=api_key))
+    sys.exit(main(api_key=api_key, platform_factory=build_platform))
