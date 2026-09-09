@@ -14777,3 +14777,184 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
                  baseline_post-T-01.json, this ledger
                  entry.
 
+---
+
+## T-02  2026-09-09T20:57:51+08:00
+  STEP:          T-02
+  BASE:          59d2b37988c970fe6e29a96db12cf14157383c93
+  RESULT SHA:    92d6cccc953c397532e58560121ebedbbd5ad4c6 (exec/T-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 harness → bootstrap. Five import tiers stays BROKEN
+                 12 → 11. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED on
+                 unexpected [('feelies.harness', 'feelies.bootstrap')]
+                 before the cut; 3 passed after.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (11 pairs), Twelve engine
+                 module sets KEPT. test_five_import_tiers
+                 equals the shrunk 11-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows 590->588,
+                 795->794, 832->831 in the same commit).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 mypy src/feelies: Success, 219 source files
+                 (before the gate).
+  TESTS:         capture pre-T-02 RED 4908 passed / 2 failed /
+                 18 skipped / 5 xfailed. FAILED
+                 tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (IB after-hours EXEMPTION) and
+                 tests/ingestion/test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 (live-feed class). Direct re-run of that
+                 file: 3 passed / 2 skipped, no code change.
+                 -> capture post-T-02 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed. IB
+                 after-hours EXEMPTION only. No failure
+                 outside the accepted set.
+                 vs post-T-01 RED 4909 passed / 1 failed /
+                 18 skipped / 5 xfailed: passed held on the
+                 post capture; pre was -1 passed / +1 failed
+                 on the live-feed flake.
+                 not-paper_rth: 4908 passed / 1 failed / 5
+                 skipped / 14 deselected / 5 xfailed. Failed
+                 1 is the IB after-hours EXEMPTION.
+                 APP oracle 2 passed. cli 64; harness 55;
+                 kernel 390; docs 101.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-02 vs post-T-02 and vs
+                 baseline_post-T-01.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         9 declared, 9 touched, 9 committed (clean vs
+                 92d6ccc). Hand FILES: 0 extra CLEAN.
+                 Touched: backtest_runner.py,
+                 cli/backtest.py, scripts/run_backtest.py,
+                 test_backtest_runner.py,
+                 test_backtest_app_baseline.py,
+                 compare_multialpha_runs.py,
+                 perfmeasure.py,
+                 test_import_contracts.py,
+                 test_fail_quiet.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: bootstrap.py,
+                 harness/__init__.py, cli/main.py,
+                 cli/env.py, ci.yml, DIRECT_PROBES.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 219 -> 219 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46691 -> 46705 (+14, undeclared)
+                 n_edges 668 -> 668
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 9 declared / 9 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4908->4909 passed, failed 2->1 (IB
+                 after-hours EXEMPTION both sides; live-feed
+                 flake on pre-capture passed on direct
+                 re-run and on post-capture); NET DELTA
+                 MATCH on modules 0 symbols 0. CLEAN.
+                 Go confirmed on branch head
+                 92d6cccc953c397532e58560121ebedbbd5ad4c6.
+                 Not merged.
+  NOTES:         One commit on exec/T-02,
+                 92d6cccc953c397532e58560121ebedbbd5ad4c6,
+                 "T-02: invert harness->bootstrap; entry
+                 points supply a required platform_factory".
+                 Parent 59d2b37 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 12 to 11:
+                 ("feelies.harness", "feelies.bootstrap")
+                 dropped; the eleven kernel→engine
+                 dispatch pairs remain. The pin, the
+                 code, and the keep-rows moved together
+                 in that commit -- _TIER_RESIDUALS lost
+                 the pair, backtest_runner.py lost the
+                 feelies.bootstrap import, FAIL_QUIET_KEEP
+                 retargeted the three backtest_runner
+                 rows. Measured keep-row shift
+                 590/795/832 → 588/794/831. That is not
+                 the block's 589/794/831 sketch. The
+                 import plus its following blank were
+                 two lines above the first keep-row, so
+                 590 moved two, not one. One signature
+                 line then landed between the first row
+                 and the other two, which put 795 and
+                 832 back by one and left 588/794/831.
+                 APP oracle passed (2 passed; hashes and
+                 fill count unmoved). S2 KEPT at zero
+                 twelve-engine pairs. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 platform_factory is required
+                 keyword-only on
+                 _run_backtest_phases_2_7,
+                 run_backtest_api, and main. No default
+                 anywhere on those three, not even
+                 build_platform. bootstrap.py and
+                 DIRECT_PROBES were not touched.
+                 Declared NET DELTA 0 src modules, 0
+                 public symbols, 0 branch points.
+                 Measured: modules 219 → 219 MATCH,
+                 public_symbols 575 → 575 MATCH,
+                 sloc 46691 → 46705 (+14, undeclared),
+                 n_edges 668 → 668, n_modules 177 → 177,
+                 cycles 1 → 1 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The block instructed measuring the
+                 keep-rows rather than assuming them,
+                 and the measured result differed from
+                 the 589/794/831 sketch by one row
+                 (588, not 589, on the first handler).
+                 A line-pinned allowlist is (path, line,
+                 exc_type) with no enclosing-symbol key.
+                 Counting only the named deletion, or
+                 trusting a sketch that does, is how a
+                 previously-passing fail_quiet test
+                 goes red after an otherwise correct
+                 cut -- T-01's first landing. Remaining
+                 steps that touch keep-row files
+                 (alpha/layer_validator.py,
+                 composition/factor_neutralizer.py,
+                 ingestion/massive_ingestor.py,
+                 ingestion/massive_ws.py) should all
+                 carry the same measure-do-not-assume
+                 instruction. Retarget what the scanner
+                 names after the cut, in the same
+                 commit. Do not pad a blank to match a
+                 sketch.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-03 bind injected types: alpha, sensors,
+                 signals (boundary). Not started. Do not
+                 begin T-03. Go confirmed on
+                 92d6cccc953c397532e58560121ebedbbd5ad4c6.
+                 Left uncommitted:
+                 baseline_pre-T-02.json,
+                 baseline_post-T-02.json, this ledger
+                 entry.
+
