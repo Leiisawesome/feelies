@@ -70,6 +70,19 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  that edits a keep-row file states the shift as
                  measured after the cut, in the same commit, never as
                  predicted before it.
+                 PROTOCOL MODULES ARE PER ENGINE CONCERN.
+                 One Protocol module per engine concern in
+                 core, named for the thing, never for the
+                 step. Existing modules are retargeted
+                 rather than duplicated -- position.py,
+                 metric_collector.py, horizon_protocol.py,
+                 composition_protocol.py. No shared
+                 kernel_ports.py: a step that appends to a
+                 shared module is not independently
+                 revertible from the steps that append
+                 after it, and later groups carry helper
+                 functions as well as constructor types;
+                 a ports file invites that category error.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
@@ -257,4 +270,98 @@ NET DELTA:       src modules 0, public symbols 0, branch points 0
 ROLLBACK:        revert the commit. Independently revertible from T-03
                  (same backtest_runner.py; not independently revertible
                  once T-03 lands).
+```
+
+```
+STEP:            T-03
+CLOSES:          nothing. Drops kernel → alpha, kernel → sensors,
+                 kernel → signals. Five import tiers stays BROKEN.
+                 11 → 8. G40 stays CLOSED.
+PROBLEM:         feelies.kernel.orchestrator imports four injected
+                 types from three engine packages: AlphaRegistry
+                 (TYPE_CHECKING, l.25), HorizonScheduler (l.190),
+                 SensorRegistry (l.191), HorizonSignalEngine (l.194).
+                 Used only as constructor/property annotations
+                 (l.266, 271-273, 670). Runtime calls methods on the
+                 injected instances; no isinstance, no construction.
+                 That is T5 importing T2/T3/T4 for names. Bootstrap
+                 already constructs all four and passes them in
+                 (bootstrap.py ~676-685).
+WHY THIS OWNER:  T5 core already owns the names kernel may use.
+                 The illegal edges are annotation imports. The invert
+                 is Protocols in core, named for the engine concern,
+                 not relocating the concretes and not a TYPE_CHECKING
+                 delete. Two new modules (alpha_registry,
+                 sensor_registry) plus HorizonScheduler and
+                 HorizonSignalEngine added to horizon_protocol.py --
+                 that file already owns the horizon concern
+                 (HorizonSignal). A third new horizon module would
+                 duplicate it. SensorRegistry is not horizon; it
+                 does not go there.
+REFACTOR PATH:   one commit. Mechanism: kernel annotates against
+                 core Protocols; bootstrap already constructs the
+                 concretes and is not in FILES. No object/Any, no
+                 getattr, no sys.modules, no TYPE_CHECKING-only move,
+                 no re-export of the Protocol from the engine package
+                 as the cut, no kernel_ports.py, no explicit
+                 subclassing of the Protocol on the concrete (structural).
+                 Alpha is TYPE_CHECKING-only. Retarget the annotation
+                 at orchestrator.py:25 to feelies.core.alpha_registry;
+                 do not delete l.25 as the cut while the name still
+                 binds feelies.alpha.registry. That deletion is the
+                 fifth catalogued non-cut.
+                 (1) add src/feelies/core/alpha_registry.py:
+                 AlphaRegistry Protocol, has_portfolio_alphas.
+                 (2) add src/feelies/core/sensor_registry.py:
+                 SensorRegistry Protocol, is_empty.
+                 (3) add HorizonScheduler (on_event → tuple of
+                 HorizonTick) and HorizonSignalEngine (is_empty
+                 property) to horizon_protocol.py; extend __all__.
+                 (4) orchestrator: import the four names from core;
+                 drop feelies.alpha.registry, feelies.sensors.*,
+                 feelies.signals.horizon_engine. Keep the call sites.
+                 (5) drop ("feelies.kernel", "feelies.alpha"),
+                 ("feelies.kernel", "feelies.sensors"),
+                 ("feelies.kernel", "feelies.signals") from
+                 _TIER_RESIDUALS in the same commit (equality, 8
+                 remain). (6) coverage map for the two new modules:
+                 _FILE_OWNERS rows (audit_core_clock_config) and the
+                 README core_clock_config citation list, same commit,
+                 S-21. horizon_protocol.py already has a row.
+                 orchestrator.py and the core Protocol files are not
+                 keep-row files; do not include test_fail_quiet.py.
+                 Do not edit bootstrap.py. Do not edit
+                 alpha/layer_validator.py. Do not include
+                 harness/__init__.py, cli/, ci.yml.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/alpha_registry.py
+                 src/feelies/core/sensor_registry.py
+                 src/feelies/core/horizon_protocol.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 8-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP
+                 oracle). No XPASS. lint-imports: Five import tiers
+                 still BROKEN, Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP. test_prompt_coverage_map
+                 owns the two new modules.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module kernel names for the four
+                 injected types changes. A moved HASH or COUNT means
+                 the Protocol call was not a transparent substitute
+                 (surface, attribute, or a silent default) — STOP,
+                 do not re-pin.
+DELETES:         the kernel → alpha, kernel → sensors, and
+                 kernel → signals pairs; the four engine-package
+                 imports from orchestrator.
+NET DELTA:       src modules +2, public symbols +4, branch points 0
+ROLLBACK:        revert the commit. The two new Protocol modules
+                 revert with it. Independently revertible from T-04
+                 on those two files; orchestrator.py is shared with
+                 T-04 and is not independently revertible once T-04
+                 lands.
 ```
