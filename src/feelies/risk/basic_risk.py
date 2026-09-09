@@ -38,8 +38,8 @@ from feelies.core.events import (
 )
 from feelies.core.gate_registry import record_verdict
 from feelies.core.identifiers import SequenceGenerator
+from feelies.core.position import PositionStore
 from feelies.risk.sized_intent_orders import build_sized_intent_orders
-from feelies.portfolio.position_store import PositionStore
 from feelies.risk.buying_power import (
     INSUFFICIENT_BUYING_POWER,
     BuyingPowerConfig,

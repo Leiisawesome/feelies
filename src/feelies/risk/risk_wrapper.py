@@ -21,6 +21,7 @@ Invariants preserved:
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Protocol
 
 from feelies.alpha.module import AlphaRiskBudget
 from feelies.alpha.registry import AlphaRegistry
@@ -34,13 +35,24 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.gate_registry import record_verdict
-from feelies.portfolio.position_store import PositionStore
-from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.core.position import Position, PositionStore
 from feelies.risk.basic_risk import RiskConfig
 from feelies.risk.buying_power import BuyingPowerPhase
 from feelies.risk.engine import RiskEngine
 from feelies.risk.sized_intent_orders import build_sized_intent_orders
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
+
+
+class _StrategyPositionStore(Protocol):
+    def get(self, strategy_id: str, symbol: str) -> Position: ...
+
+    def get_strategy_realized_pnl(self, strategy_id: str) -> Decimal: ...
+
+    def get_strategy_cumulative_fees(self, strategy_id: str) -> Decimal: ...
+
+    def get_strategy_unrealized_pnl(self, strategy_id: str) -> Decimal: ...
+
+    def get_strategy_exposure(self, strategy_id: str) -> Decimal: ...
 
 
 class AlphaBudgetRiskWrapper:
@@ -50,7 +62,7 @@ class AlphaBudgetRiskWrapper:
         self,
         inner: RiskEngine,
         registry: AlphaRegistry,
-        strategy_positions: StrategyPositionStore,
+        strategy_positions: _StrategyPositionStore,
         platform_config: RiskConfig,
         account_equity: Decimal,
     ) -> None:

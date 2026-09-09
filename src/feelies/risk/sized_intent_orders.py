@@ -35,7 +35,7 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.identifiers import derive_order_id
-from feelies.portfolio.position_store import PositionStore
+from feelies.core.position import PositionStore
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
 _logger = logging.getLogger(__name__)

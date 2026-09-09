@@ -56,7 +56,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Protocol
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
@@ -66,8 +66,8 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
+from feelies.core.position import Position
 from feelies.core.session_clock import rth_close_ns
-from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
 _logger = logging.getLogger(__name__)
 
@@ -108,6 +108,12 @@ _REASON_TIE_BREAK: dict[str, int] = {
     DEFERRAL_REASON_MAX_HOLD: 1,
     DEFERRAL_REASON_SESSION_FLATTEN: 2,
 }
+
+
+class _StrategyPositionStore(Protocol):
+    def get(self, strategy_id: str, symbol: str) -> Position: ...
+
+    def opened_at_ns(self, strategy_id: str, symbol: str) -> int | None: ...
 
 
 @dataclass(frozen=True)
@@ -177,7 +183,7 @@ class DeferralCapController:
         *,
         bus: EventBus,
         sequence_generator: SequenceGenerator,
-        position_store: StrategyPositionStore,
+        position_store: _StrategyPositionStore,
         policies: Mapping[str, DeferralPolicy] | None = None,
         session_flatten_enabled: bool = True,
         session_flatten_seconds_before_close: int = 0,

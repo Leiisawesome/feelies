@@ -55,7 +55,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Mapping
+from typing import Mapping, Protocol
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
@@ -65,7 +65,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
-from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.core.position import Position
 
 _logger = logging.getLogger(__name__)
 
@@ -100,6 +100,14 @@ EXIT_COMPOSER_EXIT_REASONS: frozenset[str] = frozenset(
 _FAIL_CLOSED_SAFETY_REASONS: frozenset[SafetyReason] = frozenset(
     {"missing_binding", "gate_error", "arithmetic_error"}
 )
+
+
+class _StrategyPositionStore(Protocol):
+    def get(self, strategy_id: str, symbol: str) -> Position: ...
+
+    def opened_at_ns(self, strategy_id: str, symbol: str) -> int | None: ...
+
+    def open_positions(self, strategy_id: str) -> dict[str, Position]: ...
 
 
 class BookState(Enum):
@@ -257,7 +265,7 @@ class ExitComposer:
         *,
         bus: EventBus,
         sequence_generator: SequenceGenerator,
-        position_store: StrategyPositionStore,
+        position_store: _StrategyPositionStore,
         policies: Mapping[str, ExitComposerPolicy] | None = None,
     ) -> None:
         self._bus = bus
