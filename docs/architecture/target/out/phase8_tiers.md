@@ -101,7 +101,57 @@ LADDER:          Pair count is the layers contract, not G40.
 ## G. Migration plan
 
 Step blocks land in the fence below. `verify_step` parses fenced `STEP:`
-blocks (the P7 template). None yet.
+blocks (the P7 template).
 
 ```
+STEP:            T-01
+CLOSES:          nothing. Drops harness → cli. Five import tiers stays
+                 BROKEN. 13 → 12. G40 stays CLOSED.
+PROBLEM:         feelies.harness.backtest_runner imports feelies.cli.env
+                 (l.35) and looks up MASSIVE_API_KEY inside
+                 run_backtest_api. That is T3 importing T1. The three
+                 names are only used at run_backtest_api:929-932.
+                 Callers that reach that lookup: cli/backtest.py:33,
+                 backtest_runner.main:1026, scripts/run_backtest.py:81.
+                 No test calls either function.
+FILES:           src/feelies/harness/backtest_runner.py
+                 src/feelies/cli/backtest.py
+                 scripts/run_backtest.py
+                 tests/conformance/test_import_contracts.py
+                 Do not add a module. Do not move cli/env.py. Do not
+                 include tests/conftest.py. Do not include
+                 harness/__init__.py (re-export, not a call). Do not
+                 include cli/main.py. Do not include cli/env.py.
+                 Do not include .github/workflows/ci.yml.
+WHY THIS OWNER:  T1 already owns operator env. The illegal edge is
+                 harness reaching up for a secret. The invert is the
+                 entry point supplying a required api_key, not relocating
+                 dotenv into core or harness.
+REFACTOR PATH:   one commit. (1) run_backtest_api and main take required
+                 api_key; drop the feelies.cli.env import; no os.getenv,
+                 no None default, no getattr, no sys.modules.
+                 (2) cli.backtest.run_backtest_handler: load_dotenv_optional,
+                 massive_api_key_from_env, print MASSIVE_API_KEY_ERROR
+                 and return 1 on None, else pass the string.
+                 (3) scripts/run_backtest.py if __name__: same load, then
+                 main(..., api_key=...).
+                 (4) drop ("feelies.harness", "feelies.cli") from
+                 _TIER_RESIDUALS (equality, 12 remain).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 12-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/cli/test_backtest_cli.py; tests/cli/
+                 test_cli_import_isolation.py; tests/harness/
+                 test_backtest_runner.py. No XPASS. lint-imports: Five
+                 import tiers still BROKEN, Twelve engine module sets
+                 KEPT. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only who reads the key changes.
+DELETES:         the harness → cli pair; the cli.env import from
+                 backtest_runner.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible from T-02
+                 (same backtest_runner.py; not independently revertible
+                 once T-02 lands).
 ```
