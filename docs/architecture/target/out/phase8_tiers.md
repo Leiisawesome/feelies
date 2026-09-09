@@ -62,6 +62,14 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  ingestion/massive_ws.py (185, 228, 344). Re-keying by
                  enclosing symbol would be a consumer change, not a row
                  edit -- out of scope here.
+                 MEASURE KEEP-ROWS, DO NOT ASSUME THEM. T-02's block
+                 sketched 589/794/831; the measured result was
+                 588/794/831, because the deleted import carried a
+                 blank line with it and a new signature line landed
+                 between the first row and the other two. Every step
+                 that edits a keep-row file states the shift as
+                 measured after the cut, in the same commit, never as
+                 predicted before it.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
