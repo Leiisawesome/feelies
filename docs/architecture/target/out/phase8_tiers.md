@@ -169,3 +169,84 @@ ROLLBACK:        revert the commit. Independently revertible from T-02
                  (same backtest_runner.py; not independently revertible
                  once T-02 lands).
 ```
+
+```
+STEP:            T-02
+CLOSES:          nothing. Drops harness → bootstrap. Five import tiers stays
+                 BROKEN. 12 → 11. G40 stays CLOSED.
+PROBLEM:         feelies.harness.backtest_runner imports
+                 feelies.bootstrap.build_platform (l.30) and calls it inside
+                 _run_backtest_phases_2_7 (l.714-723) after prep. That is T3
+                 importing the composition root. The only in-package caller is
+                 run_backtest_api:1001. External callers of
+                 _run_backtest_phases_2_7, all of which currently rely on
+                 harness composing: tests/harness/test_backtest_runner.py:137
+                 and :182, tests/acceptance/test_backtest_app_baseline.py:353,
+                 scripts/compare_multialpha_runs.py:421,
+                 tools/arch/perfmeasure.py:576. No test calls run_backtest_api
+                 or harness main. scripts/run_backtest.py re-exports the
+                 function; it does not call it.
+WHY THIS OWNER:  T1 already owns the operator entry. The illegal edge is
+                 harness reaching up for construction. The invert is the entry
+                 point supplying a required platform_factory, not relocating
+                 bootstrap into harness or moving construction into T3.
+FILES:           src/feelies/harness/backtest_runner.py
+                 src/feelies/cli/backtest.py
+                 scripts/run_backtest.py
+                 tests/harness/test_backtest_runner.py
+                 tests/acceptance/test_backtest_app_baseline.py
+                 scripts/compare_multialpha_runs.py
+                 tools/arch/perfmeasure.py
+                 tests/conformance/test_import_contracts.py
+                 tests/conformance/test_fail_quiet.py
+                 Do not add a module. Do not edit bootstrap.py. Do not
+                 include harness/__init__.py (re-export, not a call). Do not
+                 include cli/main.py. Do not include cli/env.py. Do not
+                 include .github/workflows/ci.yml. Do not touch
+                 perfmeasure.py DIRECT_PROBES.
+REFACTOR PATH:   one commit. Mechanism: required keyword-only
+                 platform_factory on _run_backtest_phases_2_7, run_backtest_api,
+                 and main; threaded from the entry points; bootstrap untouched.
+                 No None default, no getattr, no sys.modules, no
+                 TYPE_CHECKING import of build_platform. A default added so
+                 an undeclared caller keeps working is not a cut (S-35c1).
+                 (1) drop the feelies.bootstrap import from backtest_runner;
+                 call platform_factory at the existing compose site with the
+                 same kwargs. (2) cli.backtest.run_backtest_handler: import
+                 build_platform, pass it into run_backtest_api.
+                 (3) scripts/run_backtest.py if __name__: same, then
+                 main(..., platform_factory=build_platform).
+                 (4) test_backtest_runner.py (both sites), the APP oracle,
+                 compare_multialpha_runs.py, and perfmeasure.py pass
+                 platform_factory=build_platform. (5) drop
+                 ("feelies.harness", "feelies.bootstrap") from
+                 _TIER_RESIDUALS (equality, 11 remain). (6) FAIL_QUIET_KEEP
+                 is line-pinned. Deleting backtest_runner.py:30 shifts 590,
+                 795, 832 by one, to 589, 794, 831. One extra signature line
+                 on _run_backtest_phases_2_7, between the first keep-row and
+                 the other two, puts 795 and 832 back and leaves 590→589.
+                 Measure the three rows after the cut; retarget what actually
+                 moved, in this commit. Do not assume the numbers. Do not
+                 re-key by enclosing symbol. bootstrap.py 1607 and 1825 do
+                 not move.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 11-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP oracle);
+                 tests/harness/test_backtest_runner.py; tests/cli/
+                 test_backtest_cli.py. No XPASS. lint-imports: Five import
+                 tiers still BROKEN, Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is unmoved;
+                 only who names build_platform changes. A moved HASH or
+                 COUNT means the factory call was not a transparent
+                 substitute (kwargs, order, or a silent default) — STOP,
+                 do not re-pin.
+DELETES:         the harness → bootstrap pair; the bootstrap import from
+                 backtest_runner.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible from T-03
+                 (same backtest_runner.py; not independently revertible
+                 once T-03 lands).
+```
