@@ -11482,7 +11482,7 @@ LOCKED:      S-35 remains. It cuts engine-to-engine
              fifteen. Do not begin S-35 from a tree that
              treats g–o as the next S-34 step.
 WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
-             only). G40 stays OPEN. perfmeasure.py
+             only). G40 CLOSED at S-35e. perfmeasure.py
              DIRECT_PROBES still pins two dead
              Orchestrator attributes (unowned).
 
@@ -14223,4 +14223,91 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  waits on a step this campaign does not
                  contain. Do not flip ci.yml. Do not
                  begin another suffix from this tree.
+
+## CAMPAIGN CLOSE  Phase 7 execution
+DATE:        2026-09-09
+CLOSED AT:   S-35e. Merge 833c115; ledger d613056;
+             reference baseline 749be72 on arch/exec.
+LOCKED:      35 steps (S-01…S-35).
+EXECUTED:    72 unique step ids passed (retries not
+             recounted). 32 locked ids ran as
+             themselves (S-01…S-29, S-32, S-33,
+             S-34). 40 were splits of locked steps
+             (S-04b, S-05a, S-06a, S-11a, S-11b,
+             S-12a, S-17a, S-19a, S-28a, S-28b,
+             S-30a–e/g/h, S-31a–c, S-32a, S-34a–g,
+             S-35a–e). Those 40 are the mid-campaign
+             additions. S-30, S-31, S-35 never ran
+             as the bare id. S-30f was never cut.
+             S-04c was queued and never written.
+CLOSED:      G01 S-03/S-32; G02 S-12; G03 S-08;
+             G04 S-15; G05 S-17; G06 S-16; G07 S-09;
+             G08 S-02/S-32; G09 S-13; G11 S-20/S-17;
+             G12 S-18; G13 S-20; G14 S-19; G15 S-26;
+             G16 S-04; G17 S-11; G18 S-27;
+             G19 S-23/S-26; G20 S-05; G21 S-21;
+             G22 S-22; G23 S-06; G24 S-24; G25 S-29;
+             G26 S-28; G27 S-25; G29 S-17;
+             G30 S-16/S-27; G31 S-30c; G33 S-30b;
+             G34 S-21; G35 S-30e; G37 S-14; G38 S-11;
+             G40 S-35e; G43 S-07.
+REMAINS OPEN:
+             G10 S-12/S-31 (S11 xfail)
+             G28 S-12 (S11 xfail)
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN
+             G39 S-12 (S15/S17 xfail)
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed, S9 xfail
+             is the unresolved-unit list
+             Orchestrator residual: 15 engine bodies,
+             groups g–o, no step ids — S-34f END
+             STATE, deliberate
+             Five import tiers BROKEN (13 pairs) —
+             deliberately unowned
+             perfmeasure.py DIRECT_PROBES — unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own step,
+             never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix — frozen
+             at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step
+             R6 14/31 resets — S-15/S-30; 17 never
+             invoked
+CI.YML:      Import contracts still has
+             continue-on-error: true. It waits on
+             Five import tiers KEPT. Twelve engine
+             module sets is already KEPT. No step
+             owns the five-tier close or the CI flip.
+             Do not flip it on this merge.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are only
+             test_after_hours_reject_surfaces_as_rejected,
+             test_g12_cost_exceeds_disclosure_alert,
+             test_multi_symbol_subscribe,
+             test_sustained_quotes_with_idle_ticks.
+             A failure outside that set is a stop.
+             Wave D: extract by FILES-locked census
+             group; do not invent suffixes for g–o;
+             Inv-8 beyond S-34f is a new campaign.
+             The four failed cut mechanisms: a
+             re-export is not a cut; a TYPE_CHECKING-
+             only move is not a cut; a sys.modules
+             lookup is not a cut; widening a type to
+             object or Any is not removing the
+             dependency.
 

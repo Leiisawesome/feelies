@@ -5535,7 +5535,7 @@ step; three carry an explicit deferral of part of their scope, recorded in G.9.
 | G37 | P1 | S-14 | S14 |
 | G38 | P1 | S-11 | S13, C4, X6 |
 | G39 | P1 | S-12 | S15, S17 |
-| G40 | P1 | S-34 | S2 |
+| G40 | P1 | S-35e | S2 |
 | G41 | P1 | S-07, S-33 | S5 |
 | G42 | P1 | S-33 | S5, R7 |
 | G43 | **P0** | **S-07** | X1, X10 |
