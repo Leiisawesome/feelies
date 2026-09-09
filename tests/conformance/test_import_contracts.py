@@ -14,8 +14,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 _FILL_RECONCILIATION = (
     Path(__file__).resolve().parents[2]
     / "src"
@@ -31,9 +29,10 @@ _LAYER_PAIR = re.compile(
     re.M,
 )
 
-# Residual Five-import-tiers breaks after G16: kernel→engines (G40),
+# Residual Five-import-tiers breaks: kernel→engine dispatch and
 # harness→cli/bootstrap. Equality, not a subset:
-# a fourth pair fails immediately; G40's closure forces this set to change.
+# a fourteenth pair fails immediately. G40's close does not
+# require this set to change.
 _TIER_RESIDUALS = frozenset(
     {
         ("feelies.harness", "feelies.bootstrap"),
@@ -107,7 +106,6 @@ def test_five_import_tiers() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G40")
 def test_twelve_engine_independence() -> None:
     out, _kept, _broken, statuses = run_import_linter()
     assert "Twelve engine module sets" in statuses, out
