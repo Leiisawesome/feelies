@@ -4998,26 +4998,33 @@ CLOSES:          nothing. Cuts alpha → signals and
                  alpha → services. G40 stays OPEN.
 PROBLEM:         Two pairs, one shared importer
                  (loader.py). alpha → signals
-                 statements, follow the code:
-                 signal_layer_module:37 HorizonSignal;
-                 signal_layer_module:38 RegimeGate;
-                 loader:58 RegimeGate, RegimeGateError;
-                 dependency_graph:25 RegimeGate;
-                 layer_validator:558 UnsafeExpressionError,
+                 statements: signal_layer_module
+                 HorizonSignal and RegimeGate;
+                 loader RegimeGate, RegimeGateError;
+                 dependency_graph RegimeGate;
+                 layer_validator UnsafeExpressionError,
                  compile_expression. Alpha constructs
                  RegimeGate.from_spec — a Protocol-only
                  move does not cut. Leaving
                  UnsafeExpressionError on
                  feelies.signals.regime_gate leaves the
-                 pair. alpha → services: loader:57
-                 RegimeEngine and get_regime_engine.
-                 Bootstrap already injects the instance.
-                 The leftover is the factory fallback
-                 at _resolve_regime_engine.
+                 pair. A verbatim copy of from_spec
+                 re-homes gate._referenced_identifiers,
+                 a path-keyed S17 site on
+                 signals/regime_gate.py. Re-keying
+                 COMPOSITION_ROOT_PRIVATE_ALLOWLIST is
+                 not a cut. from_spec must walk ON/OFF
+                 via compile_expression. alpha →
+                 services: loader RegimeEngine and
+                 get_regime_engine. Bootstrap already
+                 injects. The leftover was the factory
+                 fallback at _resolve_regime_engine.
                  tests/alpha/test_signal_layer_loader.py
-                 monkeypatches
+                 monkeypatched
                  feelies.alpha.loader.get_regime_engine.
-                 S2's xfail stays until S-35e.
+                 A local Protocol whose members are
+                 object fails mypy. S2's xfail stays
+                 until S-35e.
 WHY THIS OWNER:  Engine 4 owns evaluate(); alpha needs
                  the Protocol and the DSL types it
                  constructs — those go to core, keep
@@ -5026,18 +5033,30 @@ WHY THIS OWNER:  Engine 4 owns evaluate(); alpha needs
                  bootstrap, already done. Loader must
                  not keep a factory fallback.
 FILES:           src/feelies/alpha/loader.py
+                   (retarget RegimeGate to core; drop
+                   get_regime_engine; local
+                   _RegimeEngine Protocol)
                  src/feelies/alpha/signal_layer_module.py
                  src/feelies/alpha/layer_validator.py
                  src/feelies/alpha/dependency_graph.py
                  src/feelies/signals/horizon_protocol.py
+                   (re-export HorizonSignal from core)
                  src/feelies/signals/regime_gate.py
+                   (re-export the DSL from core)
                  src/feelies/core/horizon_protocol.py
                    (new; HorizonSignal Protocol;
-                   name first)
+                   name first; owner
+                   audit_core_clock_config)
                  src/feelies/core/regime_gate.py
-                   (new; RegimeGate, RegimeGateError,
+                   (new; whole DSL so core does not
+                   import signals: RegimeGate,
+                   RegimeGateError,
                    UnsafeExpressionError,
-                   compile_expression; name first)
+                   compile_expression, Bindings,
+                   evaluate, UnknownIdentifierError,
+                   UnknownRegimeStateError; from_spec
+                   walks ON/OFF via compile_expression,
+                   no gate._referenced_identifiers)
                  tests/alpha/test_signal_layer_loader.py
                  tests/conformance/test_import_contracts.py
                  tests/docs/test_prompt_coverage_map.py
@@ -5047,67 +5066,60 @@ FILES:           src/feelies/alpha/loader.py
                  include bootstrap.py. Do not include
                  services/regime_engine.py. Do not add
                  a required get_regime_engine handle.
+                 Do not include wiring_manifest.py.
                  Do not flip ci.yml. TYPE_CHECKING is
-                 not a cut.
-REFACTOR PATH:   Mechanism first, one gate because
-                 loader.py is shared. Invert. Re-export
-                 and retarget in the same SHA. (1)
-                 create core/horizon_protocol.py and
-                 core/regime_gate.py; copy the Protocol
-                 and every DSL name the four alpha
-                 statements import, including
-                 UnsafeExpressionError. Coverage map
-                 in these commits (S-21). signals
-                 modules re-export (signals → core is
-                 legal). (2) retarget the four alpha
-                 importers to core, not
-                 feelies.signals.*. Every name on those
-                 statements, or alpha → signals stays.
-                 (3) in loader.py, delete
-                 get_regime_engine and the services
-                 import. Annotate the remaining engine
-                 with a local Protocol that has
-                 state_names. YAML engine without an
-                 injected instance becomes
-                 AlphaLoadError. Retarget
-                 test_alpha_loader_forwards_regime_engine_options
-                 and
-                 test_alpha_loader_invalid_regime_engine_options_raise_alpha_load_error
-                 to that error. Do not inject a
-                 factory handle. 5 → 3.
-                 (note) Copy the DSL, but from_spec must NOT call
-                 gate._referenced_identifiers. That private reach is keyed by
-                 path in COMPOSITION_ROOT_PRIVATE_ALLOWLIST, so a verbatim copy
-                 re-homes the site and trips S17. Walk the ON/OFF identifiers
-                 without reaching into another object's privates rather than
-                 retargeting the allowlist row -- moving the key would preserve
-                 the violation, which is the opposite of what this family does.
+                 not a cut. Do not widen Protocol
+                 members to object or Any.
+REFACTOR PATH:   Landed as three commits on
+                 exec/S-35d4, merged to arch/exec as
+                 2506279. Re-export and retarget in the
+                 same SHA. (1) 38b99a5: create
+                 core/horizon_protocol.py and
+                 core/regime_gate.py; coverage map in
+                 this commit; signals re-export;
+                 retarget the four alpha importers to
+                 feelies.core.*. from_spec walks ON/OFF
+                 via compile_expression. S17 passed,
+                 wiring_manifest.py untouched. 5 → 4
+                 (alpha → signals gone).
+                 horizon_engine.py stays on the signals
+                 re-export (same package, not G40).
+                 (2) 38eb6a4: delete get_regime_engine
+                 and the services import. YAML
+                 regimes.engine without an injected
+                 instance is AlphaLoadError. Remaining
+                 engine is a local Protocol. Two loader
+                 tests retarget to that error. No
+                 factory handle. 4 → 3 (alpha →
+                 services gone). (3) c4642fe: Protocol
+                 is @property state_names ->
+                 Sequence[str] and
+                 current_state(symbol) ->
+                 list[float] | None. object on both
+                 members failed mypy. 3 → 3.
+                 Projection 5 → 3 MATCH. n_cycles 1
+                 (cli SCC only).
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2 still xfail(strict, GAP G40);
                  package pairs 5 → 3 (alpha → signals
-                 and alpha → services gone). If either
-                 remains, STOP. test_five_import_tiers
+                 and alpha → services gone). Remaining:
+                 risk → portfolio, risk → services,
+                 risk → alpha. test_five_import_tiers
                  still equals _TIER_RESIDUALS. No XPASS.
-                 tests/alpha/test_signal_layer_loader.py
-                 tests/docs/test_prompt_coverage_map.py
-                 in the commits that create the core
-                 files.
+                 S17 passed without an allowlist edit.
 PARITY IMPACT:   Hold: all 64 HASH/COUNT constants,
-                 the fingerprint, _BASELINE_CONFIG_HASH.
-                 A moved hash means gate compile /
-                 evaluate or load-time P(state) checks
-                 changed, or a spec that previously
-                 constructed a standalone engine now
-                 fails closed. STOP, not a re-pin.
+                 the fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6,
+                 _BASELINE_CONFIG_HASH. No hash moved.
 DELETES:         alpha → signals; alpha → services.
-NET DELTA:       +2 modules, 0 public symbols if
-                 signals re-export, 0 branch points
-ROLLBACK:        revert per commit with the new
-                 modules. Land after S-35d3. The
-                 loader.py edits are not independently
-                 revertible from each other.
-                 Independently revertible from d1–d3
-                 and d5.
+NET DELTA:       +2 modules, 0 public symbols
+                 (signals re-export), 0 branch points.
+                 Measured: modules 216 → 218,
+                 public_symbols 575 → 575, n_cycles 1.
+ROLLBACK:        revert the merge 2506279. Captures
+                 5a3442f, reference baseline f1b320e.
+                 Landed after S-35d3. Independently
+                 revertible from d5 as a unit.
 ```
 ```
 STEP:            S-35d5
@@ -5118,15 +5130,15 @@ CLOSES:          nothing. Cuts risk → portfolio, risk →
                  the xfail.
 PROBLEM:         Three pairs, three shared files
                  (risk_wrapper.py, position_sizer.py,
-                 basic_risk.py) so one gate. Each pair
-                 has two names; cutting one name leaves
-                 the pair. risk → portfolio:
+                 basic_risk.py) so one gate. Cutting one
+                 name leaves the pair. risk → portfolio:
                  feelies.portfolio.position_store in
                  engine.py:30, basic_risk.py:42,
                  stop_exit.py:47, hazard_exit.py:25,
                  risk_wrapper.py:37,
                  sized_intent_orders.py:38,
-                 post_exit_position_view.py:8;
+                 post_exit_position_view.py:8
+                 (Position, PositionStore);
                  feelies.portfolio.strategy_position_store
                  in risk_wrapper.py:38,
                  exit_composer.py:68,
@@ -5137,35 +5149,73 @@ PROBLEM:         Three pairs, three shared files
                  position_sizer.py:21,
                  risk_wrapper.py:25; AlphaRegistry from
                  alpha.registry in risk_wrapper.py:26.
-                 risk → services:
+                 engine.py and edge_weighted_sizer.py
+                 call _alpha_registry.get but do not
+                 import AlphaRegistry. risk → services:
                  RegimeStateCache from
                  regime_state_cache in basic_risk.py:50,
-                 position_sizer.py:23. The cache class
-                 holds a bus and cannot move to core.
-                 S2's xfail stays until S-35e.
+                 position_sizer.py:23 — one name, not
+                 two. The cache class holds a bus and
+                 cannot move to core. S2's xfail stays
+                 until S-35e.
 WHY THIS OWNER:  Engine 7 owns the book; PositionStore
                  is already in core from S-35c2. Engine 5
                  owns AlphaRiskBudget as primitives;
                  engine 8 must read it without importing
                  alpha — core, not risk. AlphaRegistry
-                 stays engine 5; wrapper needs get(),
-                 not the registry module. Engine 3 owns
-                 the cache implementation; risk needs
-                 latest/reset.
+                 stays engine 5; wrapper needs get() →
+                 manifest.risk_budget, not the registry
+                 module and not AlphaModule.
+                 Engine 3 owns the cache; risk reads
+                 latest() → RegimeState.
 FILES:           src/feelies/risk/engine.py
+                   (retarget PositionStore to
+                   feelies.core.position)
                  src/feelies/risk/basic_risk.py
+                   (retarget PositionStore; local
+                   Protocol latest(symbol) ->
+                   RegimeState | None from
+                   core.events; reads posteriors and
+                   state_names. reset is unused.)
                  src/feelies/risk/stop_exit.py
                  src/feelies/risk/hazard_exit.py
                  src/feelies/risk/risk_wrapper.py
+                   (retarget PositionStore; local SPS
+                   Protocol: get(strategy_id, symbol)
+                   -> Position, get_strategy_realized_pnl
+                   / get_strategy_cumulative_fees /
+                   get_strategy_unrealized_pnl /
+                   get_strategy_exposure -> Decimal;
+                   local registry Protocol: get(alpha_id)
+                   -> type with .manifest.risk_budget:
+                   AlphaRiskBudget, KeyError. Nested
+                   local Protocols, not AlphaModule /
+                   AlphaManifest / object.)
                  src/feelies/risk/sized_intent_orders.py
                  src/feelies/risk/post_exit_position_view.py
+                   (retarget Position and PositionStore
+                   together)
                  src/feelies/risk/exit_composer.py
+                   (local SPS Protocol: get -> Position,
+                   opened_at_ns -> int | None,
+                   open_positions -> dict[str, Position])
                  src/feelies/risk/deferral_cap.py
+                   (local SPS Protocol: get -> Position,
+                   opened_at_ns -> int | None)
                  src/feelies/risk/position_sizer.py
+                   (retarget AlphaRiskBudget to core;
+                   same latest() Protocol as
+                   basic_risk)
                  src/feelies/risk/edge_weighted_sizer.py
+                   (retarget AlphaRiskBudget to core;
+                   do not add an AlphaRegistry import)
                  src/feelies/alpha/module.py
+                   (re-export AlphaRiskBudget from core)
                  src/feelies/core/alpha_risk_budget.py
-                   (new; AlphaRiskBudget; name first)
+                   (new; copy AlphaRiskBudget unchanged;
+                   public frozen dataclass, no private
+                   reach; name first; owner
+                   audit_core_clock_config)
                  tests/conformance/test_import_contracts.py
                  tests/docs/test_prompt_coverage_map.py
                  tests/docs/test_internal_links.py
@@ -5180,30 +5230,38 @@ FILES:           src/feelies/risk/engine.py
                  include forced_exit_clamp.py. Do not
                  flip ci.yml. TYPE_CHECKING is not a
                  cut. Do not widen to object or Any
-                 (S-35c3).
+                 (S-35c3). Do not import AlphaModule or
+                 AlphaManifest from alpha to type get()
+                 (that keeps risk → alpha).
 REFACTOR PATH:   Three names-per-pair cuts, this order,
-                 one gate. (1) Retarget the seven
-                 position_store statements to
-                 feelies.core.position. Local Protocol
-                 for SPS (get(strategy_id, symbol) and
-                 the get_strategy_* reads on
-                 risk_wrapper / exit_composer /
-                 deferral_cap). Both names, or risk →
-                 portfolio stays. (2) create
+                 one gate. Re-export and retarget in the
+                 same SHA. (1) Retarget the seven
+                 position_store statements, including
+                 Position on post_exit, to
+                 feelies.core.position. Local SPS
+                 Protocols on risk_wrapper /
+                 exit_composer / deferral_cap with every
+                 member those files call, typed with
+                 Position from core.position and Decimal.
+                 Both package names, or risk → portfolio
+                 stays. (2) create
                  core/alpha_risk_budget.py; copy
                  AlphaRiskBudget unchanged; module.py
                  re-exports; coverage map in this
                  commit (S-21). Retarget the three
                  AlphaRiskBudget imports to core.
-                 Local Protocol with get() on
-                 risk_wrapper.py for AlphaRegistry.
+                 Nested local Protocols on
+                 risk_wrapper.py for get() →
+                 manifest.risk_budget: AlphaRiskBudget.
                  Both names, or risk → alpha stays.
-                 (3) Local Protocol with latest and
-                 reset on basic_risk.py and
+                 (3) Local Protocol with
+                 latest(symbol) -> RegimeState | None
+                 (core.events) on basic_risk.py and
                  position_sizer.py. Do not move the
-                 cache class. 3 → 0. If any of the
-                 three pairs remains, STOP, do not
-                 start S-35e.
+                 cache class. Do not add unused reset
+                 as a substitute for a typed return.
+                 3 → 0. If any of the three pairs
+                 remains, STOP, do not start S-35e.
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2 still xfail(strict, GAP G40);
                  package pairs 3 → 0. lint-imports
