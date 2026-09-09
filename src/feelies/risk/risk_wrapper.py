@@ -23,8 +23,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Protocol
 
-from feelies.alpha.module import AlphaRiskBudget
-from feelies.alpha.registry import AlphaRegistry
+from feelies.core.alpha_risk_budget import AlphaRiskBudget
 from feelies.core.events import (
     OrderRequest,
     RiskAction,
@@ -55,13 +54,27 @@ class _StrategyPositionStore(Protocol):
     def get_strategy_exposure(self, strategy_id: str) -> Decimal: ...
 
 
+class _AlphaRiskBudgetManifest(Protocol):
+    @property
+    def risk_budget(self) -> AlphaRiskBudget: ...
+
+
+class _RegisteredAlpha(Protocol):
+    @property
+    def manifest(self) -> _AlphaRiskBudgetManifest: ...
+
+
+class _AlphaRegistry(Protocol):
+    def get(self, alpha_id: str) -> _RegisteredAlpha: ...
+
+
 class AlphaBudgetRiskWrapper:
     """Wraps a RiskEngine with per-alpha budget enforcement."""
 
     def __init__(
         self,
         inner: RiskEngine,
-        registry: AlphaRegistry,
+        registry: _AlphaRegistry,
         strategy_positions: _StrategyPositionStore,
         platform_config: RiskConfig,
         account_equity: Decimal,

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from feelies.alpha.module import AlphaRiskBudget
+from feelies.core.alpha_risk_budget import AlphaRiskBudget
 from feelies.core.events import NBBOQuote, Signal, SignalDirection
 from feelies.risk.position_sizer import PositionSizer
 

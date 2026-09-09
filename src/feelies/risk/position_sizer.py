@@ -18,7 +18,7 @@ import math
 from decimal import Decimal
 from typing import Protocol
 
-from feelies.alpha.module import AlphaRiskBudget
+from feelies.core.alpha_risk_budget import AlphaRiskBudget
 from feelies.core.events import Signal
 from feelies.services.regime_state_cache import RegimeStateCache
 
