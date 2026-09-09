@@ -44,7 +44,7 @@ from typing import Protocol
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import NBBOQuote, DeRiskRequirement, Side
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
-from feelies.portfolio.position_store import PositionStore
+from feelies.core.position import PositionStore
 
 _logger = logging.getLogger(__name__)
 

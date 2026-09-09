@@ -22,7 +22,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
-from feelies.portfolio.position_store import PositionStore
+from feelies.core.position import PositionStore
 
 _logger = logging.getLogger(__name__)
 

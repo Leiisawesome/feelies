@@ -26,8 +26,8 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.identifiers import derive_order_id
+from feelies.core.position import PositionStore
 from feelies.kernel.macro import MacroState
-from feelies.portfolio.position_store import PositionStore
 from feelies.risk.escalation import RiskLevel
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 

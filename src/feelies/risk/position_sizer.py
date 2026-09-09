@@ -18,9 +18,12 @@ import math
 from decimal import Decimal
 from typing import Protocol
 
-from feelies.alpha.module import AlphaRiskBudget
-from feelies.core.events import Signal
-from feelies.services.regime_state_cache import RegimeStateCache
+from feelies.core.alpha_risk_budget import AlphaRiskBudget
+from feelies.core.events import RegimeState, Signal
+
+
+class _RegimeStateCache(Protocol):
+    def latest(self, symbol: str) -> RegimeState | None: ...
 
 
 class PositionSizer(Protocol):
@@ -69,7 +72,7 @@ class BudgetBasedSizer:
 
     def __init__(
         self,
-        regime_states: RegimeStateCache | None = None,
+        regime_states: _RegimeStateCache | None = None,
         regime_factors: dict[str, float] | None = None,
     ) -> None:
         self._regime_states = regime_states

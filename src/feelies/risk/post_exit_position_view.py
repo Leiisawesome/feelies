@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from feelies.portfolio.position_store import Position, PositionStore
+from feelies.core.position import Position, PositionStore
 
 
 class PostExitPositionView:

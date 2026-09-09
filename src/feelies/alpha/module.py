@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from feelies.core.alpha_risk_budget import AlphaRiskBudget as AlphaRiskBudget
 from feelies.features.definition import FeatureDefinition
 
 _TYPE_MAP: dict[str, type] = {
@@ -73,24 +74,6 @@ class ParameterDef:
                 )
 
         return errors
-
-
-# ── Per-alpha risk budget ────────────────────────────────────────────
-
-
-@dataclass(frozen=True, kw_only=True)
-class AlphaRiskBudget:
-    """Risk constraints scoped to a single alpha module.
-
-    These feed into the risk engine's per-strategy budget allocation.
-    The risk engine is free to enforce tighter limits than declared
-    here; these are the alpha's self-declared operating envelope.
-    """
-
-    max_position_per_symbol: int
-    max_gross_exposure_pct: float
-    max_drawdown_pct: float
-    capital_allocation_pct: float
 
 
 # ── Alpha manifest ──────────────────────────────────────────────────
