@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
+from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
 from feelies.harness.backtest_cli import add_backtest_api_arguments
 from feelies.harness.backtest_runner import (
     _configure_logging_for_cli,
@@ -30,7 +32,12 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 def run_backtest_handler(args: argparse.Namespace) -> int:
     _force_utf8_console()
     _configure_logging_for_cli()
-    return run_backtest_api(args)
+    load_dotenv_optional()
+    api_key = massive_api_key_from_env()
+    if api_key is None:
+        print(MASSIVE_API_KEY_ERROR, file=sys.stderr)
+        return 1
+    return run_backtest_api(args, api_key=api_key)
 
 
 __all__ = ["register", "run_backtest_handler"]

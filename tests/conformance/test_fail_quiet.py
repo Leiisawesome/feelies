@@ -87,19 +87,19 @@ FAIL_QUIET_KEEP: tuple[FailQuietKeep, ...] = (
     ),
     FailQuietKeep(
         "src/feelies/harness/backtest_runner.py",
-        591,
+        590,
         "Exception",
         "stdout/stderr reconfigure best-effort on consoles that reject encoding changes",
     ),
     FailQuietKeep(
         "src/feelies/harness/backtest_runner.py",
-        796,
+        795,
         "Exception",
         "optional psutil HIGH_PRIORITY_CLASS; missing psutil must not skip the replay",
     ),
     FailQuietKeep(
         "src/feelies/harness/backtest_runner.py",
-        833,
+        832,
         "Exception",
         "best-effort nice() restore in finally; raising would mask the original exception",
     ),
