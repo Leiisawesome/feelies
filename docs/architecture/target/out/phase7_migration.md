@@ -5300,10 +5300,22 @@ CLOSES:          G40
 PROBLEM:         After a–d, test_twelve_engine_independence
                  must be KEPT with no remaining BROKEN
                  pair. If any pair remains, STOP and
-                 name it; do not drop the xfail.
+                 name it; do not drop the xfail. The
+                 suite is currently one strict XPASS on
+                 that test. Five import tiers is still
+                 BROKEN on _TIER_RESIDUALS; that is not
+                 G40.
 FILES:           tests/conformance/test_import_contracts.py
+                 (drop the G40 xfail; reword the
+                 _TIER_RESIDUALS comment so
+                 kernel→engine / harness residuals are
+                 five-tier dispatch, not G40, and so
+                 G40's close does not claim the set
+                 must change)
                  Do not include orchestrator.py.
                  Do not include .github/workflows/ci.yml.
+                 Do not include tests/conformance/registry.py.
+                 Do not include phase7_migration.md G.8.
                  Do not shrink _TIER_RESIDUALS.
                  Do not rewrite the independence contract
                  by deleting engines from pyproject.toml.
@@ -5314,15 +5326,20 @@ WHY THIS OWNER:  G40's detector is the twelve-engine
                  that contract KEPT. Five-tiers kernel
                  dispatch is a different contract and
                  stays BROKEN. ci.yml continue-on-error
-                 does not flip until both are KEPT.                 
+                 does not flip until both are KEPT.
 REFACTOR PATH:   (1) lint-imports: Twelve engine module sets
-                 KEPT. (2) drop the G40 xfail. (3) stop.
-                 Five import tiers stays BROKEN.
+                 KEPT with zero remaining engine pairs.
+                 (2) drop the G40 xfail. (3) reword the
+                 _TIER_RESIDUALS comment in this file.
+                 (4) stop. Five import tiers stays
+                 BROKEN. ci.yml untouched.
 BLAST RADIUS:    platform-wide
 VALIDATED BY:    S2 passes without xfail; lint-imports
                  prints "Twelve engine module sets KEPT";
                  test_five_import_tiers still equals
-                 _TIER_RESIDUALS. No XPASS on any other gap.
+                 _TIER_RESIDUALS (13 pairs). No XPASS
+                 on any other gap. pytest -m "not
+                 paper_rth" has zero failures.
 PARITY IMPACT:   Hold.
 DELETES:         the G40 xfail marker.
 NET DELTA:       0 modules, 0 public symbols, 0 branch points
