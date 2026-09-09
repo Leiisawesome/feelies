@@ -13707,3 +13707,304 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  (platform-wide). Not started.
                  Do not begin S-35d5 from this tree.
                  Pair count is 3. d5 reaches zero from 3.
+
+---
+
+## S-35d5  2026-09-09T09:48:20+08:00
+  STEP:          S-35d5
+  BASE:          f2d4eebcf1ab0a3d111a9891600a9933cc05ff10
+  RESULT SHA:    e6fbc684a67bbaa0740030a03da22071847f5f09 (exec/S-35d5; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing.
+                 Cuts risk → portfolio, risk → alpha, and
+                 risk → services. G40 stays OPEN. S2 remains
+                 xfail(strict, GAP G40) on the file. The
+                 twelve-engine count is zero, so running S2
+                 without --runxfail is XPASS(strict) G40 --
+                 the sandwich S-35e exists to close. No
+                 XPASS on any other gap.
+                 S2: 2 passed / 1 xfailed (G40) ->
+                 --runxfail 3 passed (Twelve engine module
+                 sets KEPT); without --runxfail
+                 XPASS(strict) G40
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left; core→sensors not restored)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 test_s17_private_reach_only_on_composition_root_allowlist
+                 passed after every commit and at the
+                 gate; wiring_manifest.py not edited
+                 conformance 117 passed / 6 xfailed (pre)
+                 -> 117 passed / 1 failed (G40 XPASS) /
+                 5 xfailed (post, xfail still on the
+                 test). mypy src/feelies: Success, 219
+                 source files (218 -> 219).
+  TESTS:         capture pre-S-35d5 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 capture post-S-35d5 RED 4908 passed / 1 failed /
+                 19 skipped / 5 xfailed. The one failure
+                 is test_twelve_engine_independence
+                 XPASS(strict) G40. No failure outside
+                 that XPASS and the four EXEMPTIONS.
+                 not-paper_rth: 4907 passed / 1 failed / 6
+                 skipped / 14 deselected / 5 xfailed --
+                 the same G40 XPASS.
+                 risk 336; portfolio 52; alpha 441;
+                 services 108; kernel 390; docs 101.
+                 The four EXEMPTIONS not re-run as failures.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre vs post and vs
+                 baseline_post-S-35d4.json, 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         17 named paths in the FILES field. 15 touched.
+                 verify_step `S-35D5 --base f2d4eeb` exits 1
+                 with "S-35D5 not in plan" (uppercase;
+                 Known lists S-35d5; frozen). Hand FILES:
+                 0 extra CLEAN. Touched:
+                 risk/engine.py,
+                 risk/basic_risk.py,
+                 risk/stop_exit.py,
+                 risk/hazard_exit.py,
+                 risk/risk_wrapper.py,
+                 risk/sized_intent_orders.py,
+                 risk/post_exit_position_view.py,
+                 risk/exit_composer.py,
+                 risk/deferral_cap.py,
+                 risk/position_sizer.py,
+                 risk/edge_weighted_sizer.py,
+                 alpha/module.py,
+                 core/alpha_risk_budget.py (new),
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited:
+                 tests/conformance/test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved),
+                 tests/docs/test_internal_links.py
+                 (README citation `core/alpha_risk_budget.py`
+                 resolves via src/feelies; no placeholder needed).
+  NET DELTA:     declared src modules +1 (alpha_risk_budget.py),
+                 public symbols 0 if module.py re-exports,
+                 0 branch points.
+                 actual modules 218 -> 219 (+1 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46661 -> 46690 (+29, undeclared)
+                 n_edges 671 -> 668
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 pin moved
+  VERIFY_STEP:   `S-35D5 --base f2d4eeb` exits 1 with
+                 "S-35D5 not in plan" (uppercase; Known lists
+                 S-35d5; frozen). Four checks by hand:
+                 FILES 17 named / 15 touched CLEAN
+                 (2 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved; TESTS
+                 4908->4908 passed, failed 0->1 (G40
+                 XPASS from captures); NET DELTA MATCH
+                 on modules +1 symbols 0. Oracle would
+                 still say "deletions with no negative
+                 delta" because DELETES is package pairs
+                 -- frozen. CLEAN, blast radius
+                 platform-wide -- Go confirmed branch
+                 head
+                 e6fbc684a67bbaa0740030a03da22071847f5f09
+                 on exec/S-35d5. Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Go confirmed branch head
+                 e6fbc684a67bbaa0740030a03da22071847f5f09
+                 on exec/S-35d5. Parent f2d4eeb on
+                 arch/exec. Three commits, three pairs,
+                 three shared files (risk_wrapper.py,
+                 position_sizer.py, basic_risk.py).
+                 Commit (1) ca58c49 retargeted the seven
+                 position_store imports, including
+                 Position on post_exit_position_view,
+                 onto feelies.core.position. Local SPS
+                 Protocols landed on risk_wrapper,
+                 exit_composer, and deferral_cap with
+                 every member those files call, typed
+                 with Position from core.position and
+                 Decimal. Both package names gone in
+                 the same SHA.
+                 Commit (2) bab857b created
+                 core/alpha_risk_budget.py, made
+                 module.py re-export
+                 (AlphaRiskBudget as AlphaRiskBudget),
+                 and retargeted the three
+                 AlphaRiskBudget imports plus the
+                 AlphaRegistry import onto core /
+                 nested local Protocols in the same
+                 SHA. Coverage map and README citation
+                 landed in this commit.
+                 Commit (3) e6fbc68 replaced
+                 RegimeStateCache with a local Protocol
+                 latest(symbol) -> RegimeState | None
+                 on basic_risk.py and position_sizer.py.
+                 The cache class was not moved. reset
+                 is not a Protocol member.
+                 Cut (1) is a retarget, not a handle.
+                 Position and PositionStore already
+                 live in feelies.core.position from
+                 S-35c2. portfolio.position_store still
+                 re-exports them. StrategyPositionStore
+                 stays in
+                 feelies.portfolio.strategy_position_store;
+                 risk no longer imports that module.
+                 Cut (2) is an invert of the hop.
+                 AlphaRiskBudget now lives in
+                 feelies.core.alpha_risk_budget.
+                 module.py re-exports so loader and
+                 alpha.__init__ keep the old path.
+                 AlphaRegistry stays in
+                 feelies.alpha.registry; risk_wrapper
+                 reads get() -> manifest.risk_budget
+                 through nested local Protocols, not
+                 AlphaModule / AlphaManifest / object.
+                 engine.py and edge_weighted_sizer.py
+                 still call _alpha_registry.get and
+                 still do not import AlphaRegistry.
+                 Cut (3) is a typed handle, cache not
+                 moved. RegimeStateCache stays in
+                 feelies.services.regime_state_cache.
+                 risk reads latest() to RegimeState
+                 from core.events.
+                 Failing-pair count 3 → 0 against the
+                 block's 3 → 0. Per commit: 3 → 2 on
+                 ca58c49 (risk → portfolio gone),
+                 2 → 1 on bab857b (risk → alpha gone),
+                 1 → 0 on e6fbc68 (risk → services
+                 gone). Projection MATCH. The count
+                 reached zero. S-35e can now drop the
+                 xfail.
+                 After ca58c49, remaining:
+                 feelies.risk → feelies.services;
+                 feelies.risk → feelies.alpha.
+                 After bab857b, remaining:
+                 feelies.risk → feelies.services.
+                 After e6fbc68, remaining: none.
+                 lint-imports prints Twelve engine
+                 module sets KEPT.
+                 n_cycles held at 1. The only SCC is
+                 feelies.cli → feelies.cli.main.
+                 No hash moved. 64/64 HASH/COUNT
+                 identical pre vs post and vs
+                 baseline_post-S-35d4.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Owner of core/alpha_risk_budget.py:
+                 audit_core_clock_config. The creating
+                 commit (bab857b) landed the
+                 _FILE_OWNERS row and the README
+                 citation next to `core/`. tests/docs
+                 101 passed at the gate.
+                 Re-export and retarget landed together
+                 on bab857b, so risk → alpha dropped
+                 immediately. That is the S-35d3
+                 pattern. AlphaRiskBudget is a public
+                 frozen dataclass, four public fields,
+                 no private reach; S17 passed with no
+                 allowlist edit. No Protocol member is
+                 object.
+                 Declared NET DELTA +1 module, 0 public
+                 symbols (module.py re-exports), 0
+                 branch points. Measured: modules
+                 218 → 219 MATCH, public_symbols
+                 575 → 575 MATCH, sloc 46661 → 46690
+                 (+29, undeclared), n_edges 671 → 668,
+                 n_modules 177 → 177, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 None of the four failed mechanisms.
+                 S2's xfail(strict, GAP G40) is still
+                 intact because S-35e drops it, not
+                 this step. That is why the post
+                 capture is RED on G40 XPASS with
+                 passed count unmoved.
+  FINDINGS:      (1) `from feelies.core.alpha_risk_budget
+                 import AlphaRiskBudget` is not a mypy
+                 --strict re-export. loader.py and
+                 alpha/__init__.py failed attr-defined.
+                 `import AlphaRiskBudget as
+                 AlphaRiskBudget` is the re-export.
+                 Folded into bab857b so re-export and
+                 retarget stayed one SHA. A class that
+                 still has other importers on the old
+                 module needs the PEP 484 explicit form,
+                 not a bare import.
+                 (2) Zero remaining engine pairs plus
+                 xfail(strict) is XPASS, not a green
+                 suite. The plan asked for both "pairs
+                 3 → 0" and "S2 still xfail" and "No
+                 XPASS". Those three cannot hold at
+                 once. The xfail stayed; the post
+                 capture is RED on that XPASS only.
+                 S-35e drops the marker. That is not a
+                 leftover pair.
+                 S-35e must check more than the xfail
+                 drop. lint-imports has two contracts.
+                 Twelve engine module sets is now KEPT.
+                 Five import tiers is still BROKEN on
+                 the 13-pair _TIER_RESIDUALS set S-35b
+                 left (kernel dispatch plus harness
+                 leftovers; core→sensors not restored).
+                 S-35e's FILES forbid shrinking
+                 _TIER_RESIDUALS and forbid flipping
+                 ci.yml. ci.yml continue-on-error
+                 cannot flip until BOTH contracts are
+                 KEPT -- not even after S-35e, and not
+                 in this step. After the xfail drop,
+                 confirm: Twelve engine module sets
+                 KEPT with zero remaining pairs;
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS; no XPASS on any other
+                 gap; ci.yml untouched.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35c1 FINDING
+                 optional handle with sys.modules fallback;
+                 S-35c2 FINDING a re-export is not a cut;
+                 S-35c3 FINDING removing an import by
+                 widening to object or Any is not removing
+                 the dependency; S-35c4 FINDING a FILES
+                 prohibition written before the cut mechanism
+                 is known blocks the only real cut;
+                 S-35d1 FINDING follow the code, not the
+                 field list; S-35d2 FINDING a re-export
+                 made the name available but left the
+                 import statement; S-35d3 NOTE re-export
+                 and retarget in the same SHA; S-35d3
+                 FINDING CostArithmetic is not a standalone
+                 type; S-35d4 FINDING a verbatim copy of a
+                 private reach re-homes an S17 site;
+                 S-35d4 FINDING object is not a type;
+                 S-35d5 FINDING a bare import is not a
+                 mypy --strict re-export; S-35d5 FINDING
+                 zero pairs plus xfail(strict) is XPASS;
+                 perfmeasure.py DIRECT_PROBES two dead
+                 attributes, unowned; four exempted baseline
+                 tests.
+  NEXT:          S-35e drop S2's xfail; close G40
+                 (platform-wide). Pair count is 0.
+                 Twelve-engine independence is KEPT.
+                 S-35e can drop the xfail. Five import
+                 tiers stays BROKEN. Do not flip ci.yml.
+                 Do not begin S-35e from this tree.
+
