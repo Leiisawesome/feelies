@@ -20,8 +20,9 @@ import inspect
 import logging
 import math
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 import yaml  # pyright: ignore[reportMissingModuleSource]
 
@@ -54,10 +55,18 @@ from feelies.core.events import (
     TrendMechanism,
 )
 from feelies.core.platform_config import compute_manifest_hash
-from feelies.services.regime_engine import RegimeEngine, get_regime_engine
-from feelies.signals.regime_gate import RegimeGate, RegimeGateError
+from feelies.core.regime_gate import RegimeGate, RegimeGateError
 
 logger = logging.getLogger(__name__)
+
+
+class _RegimeEngine(Protocol):
+    """Injected engine surface the loader reads at load time."""
+
+    @property
+    def state_names(self) -> Sequence[str]: ...
+
+    def current_state(self, symbol: str) -> list[float] | None: ...
 
 # At most three parameters may declare an optimization range. Validation bounds
 # do not count toward this limit.
@@ -204,10 +213,10 @@ class AlphaLoadError(Exception):
 class AlphaLoader:
     """Parse ``.alpha.yaml`` files into layer-specialised loaded modules.
 
-    Optional ``regime_engine_options`` are forwarded as ``**kwargs`` to
-    :func:`feelies.services.regime_engine.get_regime_engine` when this
-    loader must instantiate a standalone regime engine (no shared
-    ``regime_engine`` instance was supplied at construction).
+    An optional ``regime_engine`` is the instance bootstrap already injects.
+    A YAML ``regimes.engine`` without that instance is ``AlphaLoadError``.
+    ``regime_engine_options`` is accepted for call-site compatibility and is
+    not used to construct an engine.
 
     Dispatch in :meth:`load_from_dict`:
 
@@ -220,7 +229,7 @@ class AlphaLoader:
 
     def __init__(
         self,
-        regime_engine: RegimeEngine | None = None,
+        regime_engine: _RegimeEngine | None = None,
         *,
         enforce_trend_mechanism: bool = False,
         enforce_layer_gates: bool = True,
@@ -1398,7 +1407,7 @@ class AlphaLoader:
     @staticmethod
     def _validate_gate_posterior_states(
         regime_gate: RegimeGate,
-        regime_engine: RegimeEngine | None,
+        regime_engine: _RegimeEngine | None,
         source: str,
     ) -> None:
         """Reject ``P(<state>)`` names the resolved engine cannot emit."""
@@ -1421,7 +1430,7 @@ class AlphaLoader:
         self,
         regimes_raw: dict[str, Any] | None,
         source: str,
-    ) -> RegimeEngine | None:
+    ) -> _RegimeEngine | None:
         if regimes_raw is None:
             return self._regime_engine
 
@@ -1431,25 +1440,17 @@ class AlphaLoader:
 
         if self._regime_engine is not None:
             return self._regime_engine
-
-        try:
-            return get_regime_engine(
-                engine_name,
-                **dict(self._regime_engine_options),
-            )
-        except KeyError as exc:
-            raise AlphaLoadError(f"{source}: {exc}") from exc
-        except TypeError as exc:
-            raise AlphaLoadError(
-                f"{source}: invalid regime_engine_options for engine {engine_name!r}: {exc}"
-            ) from exc
+        raise AlphaLoadError(
+            f"{source}: regimes.engine {engine_name!r} requires an injected "
+            f"regime engine; AlphaLoader was constructed without one"
+        )
 
     # ── Namespace construction ────────────────────────────────
 
     def _build_namespace(
         self,
         alpha_id: str,
-        regime_engine: RegimeEngine | None,
+        regime_engine: _RegimeEngine | None,
     ) -> dict[str, Any]:
         ns: dict[str, Any] = {
             **_SAFE_BUILTINS,

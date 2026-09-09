@@ -6,7 +6,7 @@ Each newly active gate is *purely structural* — it operates on the
 raw YAML spec dict without invoking the alpha loader's compilation
 machinery.  Deep semantic checks (e.g. parsing the regime-gate DSL
 into an AST) live in the dedicated parsers
-(:class:`feelies.signals.regime_gate.RegimeGate`,
+(:class:`feelies.core.regime_gate.RegimeGate`,
 :class:`feelies.alpha.cost_arithmetic.CostArithmetic`) and are
 re-used here so a single error class
 (:class:`LayerValidationError`) is raised from the gate path.
@@ -539,7 +539,7 @@ class LayerValidator:
 
         Parse both ``on_condition`` and
         ``off_condition`` through the regime-gate DSL compiler
-        (:func:`feelies.signals.regime_gate.compile_expression`).
+        (:func:`feelies.core.regime_gate.compile_expression`).
         Any unsafe AST node, attribute access, lambda, comprehension,
         or non-whitelisted call surfaces as
         :class:`LayerValidationError` here so the operator sees the
@@ -555,7 +555,7 @@ class LayerValidator:
                 f"'regime_gate:' mapping; got "
                 f"{type(gate_block).__name__}"
             )
-        from feelies.signals.regime_gate import (
+        from feelies.core.regime_gate import (
             UnsafeExpressionError,
             compile_expression,
         )
