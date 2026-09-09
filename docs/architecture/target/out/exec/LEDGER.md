@@ -14446,3 +14446,334 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
                  T-02. Do not cut FILES from this
                  tree.
 
+---
+
+## T-01  2026-09-09T19:36:36+08:00
+  STEP:          T-01
+  BASE:          6610474278a14c1082ea504b15ce911a1582e355
+  RESULT SHA:    none (exec/T-01 cut at dfc8a89 then deleted)
+  VERDICT:       reverted
+  CONFORMANCE:   import contracts 3 passed before and after
+                 the cut. S2 KEPT at zero twelve-engine
+                 pairs before and after. lint-imports
+                 after the cut: Five import tiers BROKEN
+                 (12 pairs), Twelve engine module sets
+                 KEPT. test_five_import_tiers equalled
+                 the shrunk 12-pair pin on the cut.
+                 S12: 2 passed (before)
+                 S14: 2 passed (before)
+                 S17: 3 passed (before)
+                 mypy src/feelies: Success, 219 source
+                 files (before the gate).
+                 Full conformance after the cut:
+                 117 passed / 1 failed / 5 xfailed.
+                 FAILED tests/conformance/
+                 test_fail_quiet.py::
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 AssertionError: 3 fail-quiet handler(s)
+                 not in FAIL_QUIET_KEEP. First:
+                 src/feelies/harness/backtest_runner.py:590
+                 except Exception
+                 That test passed on the GREEN pre-T-01
+                 capture. No XPASS. Stop-the-line:
+                 previously-passing test now failing.
+                 FAIL_QUIET_KEEP is not in FILES.
+  TESTS:         capture pre-T-01 GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 vs post-S-35e GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed:
+                 skipped 19 -> 18, passed +1; failed held
+                 at 0. No failure in the accepted set.
+                 Post-cut capture not taken. Conformance
+                 STOP before tests/cli, tests/harness,
+                 tests/kernel, tests/docs, not-paper_rth.
+                 determinism 148 passed on the cut.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-01 vs
+                 baseline_post-S-35e.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Determinism 148 on the cut; no hash pin
+                 moved.
+  FILES:         4 declared, 4 touched on dfc8a89, 0 extra.
+                 Hand FILES CLEAN vs the declared set.
+                 Revert: git checkout arch/exec; git
+                 branch -D exec/T-01. HEAD
+                 6610474278a14c1082ea504b15ce911a1582e355
+                 on arch/exec; working tree has this
+                 ledger and baseline_pre-T-01.json only.
+                 Named-edited then reverted:
+                 backtest_runner.py, cli/backtest.py,
+                 scripts/run_backtest.py,
+                 test_import_contracts.py.
+  NET DELTA:     declared src modules 0, public symbols
+                 0, branch points 0.
+                 actual not landed (reverted). On the
+                 cut, measure.py imports: 177 modules,
+                 668 edges, 1 cycle (feelies.cli ->
+                 feelies.cli.main) -- same as pre-flight.
+  DETERMINISM:   148 passed on the cut; no hash pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse
+                 T-*. Four checks by hand:
+                 FILES 4 declared / 4 touched on dfc8a89
+                 / 0 extra CLEAN vs FILES; HEAD after
+                 revert has 0 FILES edits;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS previously-passing fail_quiet
+                 failed after the cut -- STOP;
+                 NET DELTA declared 0/0/0, not landed.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 6610474278a14c1082ea504b15ce911a1582e355
+                 on arch/exec. tools/exec vs
+                 exec-tools-v1 empty. Pre-flight
+                 porcelain: untracked
+                 baseline_pre-T-01.json from the prior
+                 attempt, overwritten GREEN.
+                 n_cycles 1 before and after the cut
+                 (feelies.cli -> feelies.cli.main).
+                 13 pairs before, verbatim:
+                 ("feelies.harness", "feelies.bootstrap")
+                 ("feelies.harness", "feelies.cli")
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.signals")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 12 pairs after the cut, verbatim:
+                 ("feelies.harness", "feelies.bootstrap")
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.signals")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Pin and code dropped
+                 ("feelies.harness", "feelies.cli") in
+                 the same commit dfc8a89. S2 KEPT at
+                 zero twelve-engine pairs on the cut.
+                 Before-state in FILES: import
+                 backtest_runner.py:35
+                 MASSIVE_API_KEY_ERROR,
+                 load_dotenv_optional,
+                 massive_api_key_from_env used at
+                 run_backtest_api:929-932. Callers
+                 cli/backtest.py:33,
+                 backtest_runner.main:1026,
+                 scripts/run_backtest.py:81. All three
+                 in FILES. api_key was required
+                 keyword-only on run_backtest_api and
+                 main; no None default, no os.getenv,
+                 no getattr, no sys.modules. Reverted
+                 with the branch.
+  FINDINGS:      FAIL_QUIET_KEEP line-pins three
+                 backtest_runner.py handlers at 591,
+                 796, 833. Dropping the one-line
+                 feelies.cli.env import at :35 shifts
+                 them to 590, 795, 832. The lookup
+                 deletion at :929 sits below all three
+                 and would not have moved them. The
+                 test is not in T-01 FILES; a fifth
+                 file is a STOP. The plan does not
+                 contain this decision. Not fixed.
+                 Do not pad a blank line to keep the
+                 pin.
+                 Plan amendment required: add
+                 tests/conformance/test_fail_quiet.py
+                 to FILES and retarget 591->590,
+                 796->795, 833->832 in lockstep with
+                 the import drop. Do not invent that
+                 retarget on this tree.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          amend T-01 FILES in
+                 phase8_tiers.md. Retry T-01 from
+                 arch/exec 6610474 after that
+                 amendment. Do not begin T-02.
+
+---
+
+## T-01  2026-09-09T20:10:38+08:00
+  STEP:          T-01
+  BASE:          59bda8228fe9336f544f6049fbd9d97bc7b34236
+  RESULT SHA:    ef685b96f189c14523e98233212cd0f2bbacc45a (exec/T-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 harness → cli. Five import tiers stays BROKEN
+                 13 → 12. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (12 pairs), Twelve engine
+                 module sets KEPT. test_five_import_tiers
+                 equals the shrunk 12-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows 591->590,
+                 796->795, 833->832 in the same commit).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 mypy src/feelies: Success, 219 source files
+                 (before the gate).
+  TESTS:         capture pre-T-01 RED 4909 passed / 1 failed /
+                 18 skipped / 5 xfailed. FAILED
+                 tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (IB after-hours EXEMPTION).
+                 -> capture post-T-01 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed. Same
+                 EXEMPTION only. No failure outside the
+                 accepted set.
+                 vs post-S-35e GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: skipped 19 -> 18,
+                 failed 0 -> 1; passed held. The extra
+                 failure is the IB after-hours test running.
+                 not-paper_rth: 4907 passed / 2 failed / 5
+                 skipped / 14 deselected / 5 xfailed. The
+                 second failure is
+                 tests/ingestion/test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 (live-feed class). Direct re-run of that
+                 file: 3 passed / 2 skipped, no code change.
+                 cli 64; harness 55; kernel 390; docs 101.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-01 vs post-T-01 and vs
+                 baseline_post-S-35e.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         5 declared, 5 touched, 5 committed (clean vs
+                 ef685b9). Hand FILES: 0 extra CLEAN.
+                 Touched: backtest_runner.py,
+                 cli/backtest.py, scripts/run_backtest.py,
+                 test_import_contracts.py,
+                 test_fail_quiet.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: cli/env.py,
+                 cli/main.py, harness/__init__.py,
+                 tests/conftest.py, ci.yml.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 219 -> 219 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46690 -> 46691 (+1, undeclared)
+                 n_edges 668 -> 668
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 5 declared / 5 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 1->1 (IB
+                 after-hours EXEMPTION both sides; live-feed
+                 flake on not-paper_rth passed on direct
+                 re-run); NET DELTA MATCH on modules 0
+                 symbols 0. CLEAN. Go confirmed on branch
+                 head
+                 ef685b96f189c14523e98233212cd0f2bbacc45a.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Go confirmed branch head
+                 ef685b96f189c14523e98233212cd0f2bbacc45a
+                 on exec/T-01. Parent 59bda82 on
+                 arch/exec. tools/exec vs exec-tools-v1
+                 empty. One commit, ef685b9, "T-01: invert
+                 harness->cli; entry points supply a
+                 required api_key". Pair count 13 to 12:
+                 ("feelies.harness", "feelies.cli") is
+                 gone; harness→bootstrap and the eleven
+                 kernel→engine dispatch pairs remain. The
+                 pin, the code, and the three keep-rows
+                 moved in that same commit --
+                 _TIER_RESIDUALS dropped the pair,
+                 backtest_runner.py dropped the
+                 feelies.cli.env import, FAIL_QUIET_KEEP
+                 retargeted 591→590, 796→795, 833→832.
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 api_key is required keyword-only on
+                 run_backtest_api and main; the lookup
+                 is in run_backtest_handler and the
+                 script's __main__. No None default, no
+                 os.getenv, no getattr, no sys.modules
+                 anywhere on the inverted path. mypy
+                 (Success, 219 files) and the full
+                 conformance suite (118 passed / 5
+                 xfailed, no XPASS) ran before the gate.
+                 Declared NET DELTA 0 modules, 0 public
+                 symbols, 0 branch points. Measured:
+                 modules 219 → 219 MATCH, public_symbols
+                 575 → 575 MATCH, sloc 46690 → 46691
+                 (+1, undeclared), n_edges 668 → 668,
+                 n_modules 177 → 177, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The first attempt landed the identical
+                 cut and was reverted at the gate
+                 because FAIL_QUIET_KEEP is line-pinned
+                 and three backtest_runner.py rows
+                 shifted by one (591, 796, 833 → 590,
+                 795, 832). The original T-01 block did
+                 not name test_fail_quiet.py because the
+                 mechanism was written before the
+                 line-shift was known -- the S-35c4
+                 shape. The campaign block now carries
+                 the standing invariant (a step that
+                 inserts or deletes lines above a
+                 keep-row must name
+                 tests/conformance/test_fail_quiet.py
+                 in FILES and retarget those rows in
+                 the same commit) and lists the
+                 keep-row files. T-02 hits the same
+                 class twice: backtest_runner.py again,
+                 and bootstrap.py at 1607 and 1825.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-02 harness → bootstrap (boundary).
+                 Not started. Do not begin T-02. Go
+                 confirmed on
+                 ef685b96f189c14523e98233212cd0f2bbacc45a.
+                 Left uncommitted:
+                 baseline_pre-T-01.json,
+                 baseline_post-T-01.json, this ledger
+                 entry.
+
