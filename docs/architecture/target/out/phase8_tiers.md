@@ -49,6 +49,19 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  contracts are KEPT. Do not rewrite the layers
                  contract by deleting engines or adding
                  ignore_imports.
+                 FAIL_QUIET_KEEP is line-pinned (path, line, exc_type)
+                 with no enclosing-symbol key. A step that inserts or
+                 deletes lines above a keep-row must name
+                 tests/conformance/test_fail_quiet.py in FILES and
+                 retarget those rows in the same commit. Keep-row files
+                 in this campaign: harness/backtest_runner.py (591, 796,
+                 833), bootstrap.py (1607, 1825),
+                 alpha/layer_validator.py (1190),
+                 composition/factor_neutralizer.py (28, 139),
+                 ingestion/massive_ingestor.py (73),
+                 ingestion/massive_ws.py (185, 228, 344). Re-keying by
+                 enclosing symbol would be a consumer change, not a row
+                 edit -- out of scope here.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
@@ -118,6 +131,7 @@ FILES:           src/feelies/harness/backtest_runner.py
                  src/feelies/cli/backtest.py
                  scripts/run_backtest.py
                  tests/conformance/test_import_contracts.py
+                 tests/conformance/test_fail_quiet.py
                  Do not add a module. Do not move cli/env.py. Do not
                  include tests/conftest.py. Do not include
                  harness/__init__.py (re-export, not a call). Do not
