@@ -3020,6 +3020,15 @@ WATCH:       the accepted baseline failure set is now three tests across two
              hours and feed activity. A failure OUTSIDE that set is a stop.
              `uv run pytest -q -m "not paper_rth"` was clean at 4853 passed
              immediately before this capture.
+ALSO:        test_websocket_feed_emits_live_massive_event, same file, same
+             cause. Failed at the T-01 pre-flight capture and passed on a
+             direct re-run minutes later (3 passed, 2 skipped) with no code
+             change. The exemption's list is the file's live-feed class, not
+             three named tests -- any test in
+             tests/ingestion/test_massive_functional.py that requires live
+             quote or trade flow is exposed. The accepted baseline failure
+             set is therefore: the IB after-hours test, g12, and any
+             live-feed test in that file.
 
 ---
 
@@ -14310,4 +14319,130 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              lookup is not a cut; widening a type to
              object or Any is not removing the
              dependency.
+
+---
+
+## T-01  2026-09-09T19:15:00+08:00
+  STEP:          T-01
+  BASE:          63bfbfdb123d51f26f859114896861d99b44542c
+  RESULT SHA:    none (exec/T-01 never cut)
+  VERDICT:       blocked
+  CONFORMANCE:   not started. Pre-flight import contracts
+                 3 passed. S2 KEPT at zero twelve-engine
+                 pairs. test_five_import_tiers equals the
+                 13-pair _TIER_RESIDUALS. lint-imports:
+                 Five import tiers BROKEN, Twelve engine
+                 module sets KEPT.
+                 S12: 2 passed (not started after)
+                 S14: 2 passed (not started after)
+                 S17: 3 passed (not started after)
+  TESTS:         capture pre-T-01 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/ingestion/
+                 test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 That name is outside the four EXEMPTIONS
+                 (test_after_hours_reject_surfaces_as_rejected,
+                 test_g12_cost_exceeds_disclosure_alert,
+                 test_multi_symbol_subscribe,
+                 test_sustained_quotes_with_idle_ticks).
+                 baseline.py printed "BASELINE: RED --
+                 do not start execution". No
+                 implementation. No branch.
+                 vs post-S-35e GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed: skipped
+                 19 -> 18, failed 0 -> 1; passed held.
+                 determinism 148 passed.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-01 vs
+                 baseline_post-S-35e.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         4 declared, 0 touched. exec/T-01 not
+                 created. Hand FILES CLEAN.
+                 Named-not-edited: all four
+                 (backtest_runner.py, cli/backtest.py,
+                 scripts/run_backtest.py,
+                 test_import_contracts.py).
+  NET DELTA:     declared src modules 0, public symbols
+                 0, branch points 0.
+                 actual not measured after a cut (none).
+                 pre-flight evidence: modules 219,
+                 public_symbols 575, sloc 46690,
+                 n_edges 668, n_modules 177, cycles 1,
+                 alphaleak 0. n_cycles 1
+                 (feelies.cli -> feelies.cli.main).
+  DETERMINISM:   148 passed; no hash pin moved (no cut)
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse
+                 T-*. Four checks by hand:
+                 FILES 4 declared / 0 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS capture RED, failure outside the
+                 four EXEMPTIONS -- STOP;
+                 NET DELTA not applicable (no commit).
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 63bfbfdb123d51f26f859114896861d99b44542c
+                 on arch/exec. tools/exec vs
+                 exec-tools-v1 empty. Pre-flight
+                 porcelain: capture artifact only
+                 after baseline.py wrote
+                 baseline_pre-T-01.json.
+                 13 pairs verbatim:
+                 ("feelies.harness", "feelies.bootstrap")
+                 ("feelies.harness", "feelies.cli")
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.signals")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT (0 twelve-engine pairs).
+                 Before-state in FILES only: import
+                 backtest_runner.py:35
+                 MASSIVE_API_KEY_ERROR,
+                 load_dotenv_optional,
+                 massive_api_key_from_env used at
+                 run_backtest_api:929-932. Callers
+                 cli/backtest.py:33,
+                 backtest_runner.main:1026,
+                 scripts/run_backtest.py:81. All three
+                 in FILES. No FILES-visible caller of
+                 run_backtest_api or main outside those
+                 sites. Cut not begun.
+  FINDINGS:      test_websocket_feed_emits_live_massive_event
+                 failed on the pre-T-01 capture. Same
+                 file as the two live-Massive
+                 EXEMPTIONS. S-13 EXEMPTION recorded
+                 this test flipping red then green
+                 during S-11a and did not add it to
+                 the accepted set. Campaign standing
+                 rule: a failure outside the four
+                 named tests is a stop. Not a T-01
+                 defect. Not fixed. Do not start the
+                 cut from a RED capture.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          retry T-01 from arch/exec 63bfbfd
+                 when that websocket test is not red,
+                 or a plan amendment if the accepted
+                 set is to include it. Do not begin
+                 T-02. Do not cut FILES from this
+                 tree.
 
