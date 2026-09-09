@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from feelies.bootstrap import build_platform
 from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
 from feelies.harness.backtest_cli import add_backtest_api_arguments
 from feelies.harness.backtest_runner import (
@@ -37,7 +38,7 @@ def run_backtest_handler(args: argparse.Namespace) -> int:
     if api_key is None:
         print(MASSIVE_API_KEY_ERROR, file=sys.stderr)
         return 1
-    return run_backtest_api(args, api_key=api_key)
+    return run_backtest_api(args, api_key=api_key, platform_factory=build_platform)
 
 
 __all__ = ["register", "run_backtest_handler"]
