@@ -14008,3 +14008,219 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  tiers stays BROKEN. Do not flip ci.yml.
                  Do not begin S-35e from this tree.
 
+## S-35e  2026-09-09T10:28:51+08:00
+  STEP:          S-35e
+  BASE:          0d3c28f2f86f4c0881fb099466d92bf97ebb1797
+  RESULT SHA:    016c4d6dd19e6507ef29a8eb484e948198dc1187 (exec/S-35e; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES G40. S2 (test_twelve_engine_independence)
+                 failed-before: XPASS(strict) G40 on the
+                 post-S-35d5 capture | passes-after: yes,
+                 as a normal test, no xfail. No XPASS
+                 on any gap.
+                 S2: --runxfail 3 passed (Twelve engine
+                 module sets KEPT, pair count 0) ->
+                 3 passed without xfail. lint-imports
+                 prints "Twelve engine module sets KEPT".
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (13 pairs; kernel
+                 dispatch plus harness leftovers). The
+                 pytest test PASSES; the Five import
+                 tiers contract stays BROKEN. That is
+                 not G40. It blocks flipping ci.yml
+                 continue-on-error until both contracts
+                 are KEPT.
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 conformance 117 passed / 1 failed
+                 (G40 XPASS) / 5 xfailed (pre, xfail
+                 still on the test) -> 118 passed / 5
+                 xfailed (post). Remaining xfail: G39,
+                 G10/G28, G36, G41/G42/G44/G45, G46.
+                 mypy src/feelies: Success, 219 source
+                 files.
+  TESTS:         capture post-S-35d5 RED 4908 passed / 1
+                 failed / 19 skipped / 5 xfailed (the
+                 failure is G40 XPASS).
+                 capture post-S-35e GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. +1
+                 passed / -1 failed is S2 becoming a
+                 normal pass. The four EXEMPTIONS
+                 skipped (Wednesday). No failure
+                 outside that set.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 docs 101; determinism 148 -> 148 after
+                 the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical post-S-35d5 vs post-S-35e;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         1 named path in the FILES field. 1
+                 touched. verify_step `S-35E --base
+                 0d3c28f` exits 1 with "S-35E not in
+                 plan" (uppercase; Known lists S-35e;
+                 frozen). Hand FILES: 0 extra CLEAN.
+                 Touched: tests/conformance/test_import_contracts.py
+                 (G40 xfail dropped; unused pytest
+                 import removed; _TIER_RESIDUALS set
+                 unmoved; comment reworded so kernel
+                 →engine / harness residuals are
+                 five-tier dispatch, not G40, and G40's
+                 close does not require the set to
+                 change).
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 orchestrator.py, ci.yml,
+                 tests/conformance/registry.py,
+                 phase7_migration.md G.8.
+  NET DELTA:     declared src modules 0, public symbols
+                 0, branch points 0.
+                 actual modules 219 -> 219 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46690 -> 46690 (+0 MATCH)
+                 n_edges 668 -> 668
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no
+                 hash pin moved
+  VERIFY_STEP:   `S-35E --base 0d3c28f` exits 1 with
+                 "S-35E not in plan" (uppercase; Known
+                 lists S-35e; frozen). Four checks by
+                 hand:
+                 FILES 1 named / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4908->4909 passed, failed 1->0
+                 (G40 XPASS cleared; four EXEMPTIONS
+                 skipped); NET DELTA MATCH on modules 0
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 016c4d6dd19e6507ef29a8eb484e948198dc1187.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Go confirmed branch head
+                 016c4d6dd19e6507ef29a8eb484e948198dc1187
+                 on exec/S-35e. Parent 0d3c28f on
+                 arch/exec. One commit. Capture artifact
+                 at 016c4d6, dirty=false, sha match.
+                 G40 CLOSED. Evidence from this tree:
+                 test_twelve_engine_independence has no
+                 xfail and asserts KEPT; lint-imports
+                 prints "Twelve engine module sets
+                 KEPT"; engine-to-engine pair count is
+                 0; conformance 118 passed / 5 xfailed
+                 with no XPASS; not-paper_rth 4908
+                 passed / 0 failed / 5 xfailed; capture
+                 post-S-35e GREEN 4909 passed / 0 failed
+                 / 19 skipped / 5 xfailed.
+                 G40 sites:
+                 updated -- tests/conformance/
+                 test_import_contracts.py (xfail
+                 dropped; _TIER_RESIDUALS comment no
+                 longer calls kernel dispatch G40 or
+                 claims the set must change);
+                 this ledger entry.
+                 reported, not edited (S-35e FILES
+                 forbid): tests/conformance/
+                 registry.py:79 GapEntry("P1",
+                 ("S-34",), ("S2",));
+                 phase7_migration.md G.8
+                 `| G40 | P1 | S-34 | S2 |`;
+                 .github/workflows/ci.yml:95-97
+                 comment still names independence as
+                 G40 (S-34) and keeps
+                 continue-on-error; S-34f END STATE
+                 WATCH still says G40 stays OPEN
+                 (historical; close is this entry).
+                 Remaining OPEN across the campaign,
+                 owned vs unowned:
+                 G36 OPEN -- owned by S-30g, which
+                 adjudicated the seventeen and left
+                 S6 xfail(strict, GAP G36). No later
+                 step. Deliberately left OPEN.
+                 G44 partial -- owned by S-31c, which
+                 closed nothing and left S5 xfail
+                 still naming G41 G42 G44 G45. No
+                 later step finishes it.
+                 G32 / S-30f -- deferred by the
+                 S-30f DEFERRAL. G32 stays OPEN. S-30f
+                 was never cut. Owned as a deferral,
+                 not as unfinished work.
+                 Orchestrator residual -- S-34f END
+                 STATE: 15 engine bodies across nine
+                 census groups g-o with no step ids.
+                 Deliberate. Not an unfinished S-34.
+                 A new campaign would own g-o, not
+                 another suffix.
+                 perfmeasure.py DIRECT_PROBES -- two
+                 dead Orchestrator attributes. Unowned.
+                 No step. S-34f WATCH recorded it.
+                 Five import tiers BROKEN -- 13
+                 pairs, still equal to
+                 _TIER_RESIDUALS (11 kernel→engine
+                 dispatch + harness→bootstrap and
+                 harness→cli). The pytest test
+                 PASSES; the lint-imports contract is
+                 BROKEN. Not G40. This campaign has
+                 no step that closes it. S-35e FILES
+                 forbade shrinking the set and forbade
+                 flipping ci.yml. Unowned by any
+                 remaining S-* id.
+                 G41 and G42 OPEN -- owned by S-33,
+                 which closed nothing. S5 xfail
+                 intact.
+                 G45 OPEN -- owned by S-32 / S-32a;
+                 S-32 recorded G45 stays OPEN.
+                 G39, G10, G28 -- S5/S11/S17 family
+                 still xfail. Owned by S-12 (G39,
+                 G28) and S-12/S-31 (G10). No later
+                 step dropped those markers.
+                 G46 -- S-10 registered it; S9
+                 xfail(strict) remains on undetermined
+                 units. Substance closed; the xfail
+                 is the remaining unresolved-unit
+                 list, owned by S-10/S9.
+                 Carried, not a remaining S-* :
+                 G6 vs empty depends_on_sensors
+                 (S-01 finding, no step);
+                 config-path attribution + missing
+                 loader alpha_id (queued for S-04c,
+                 never written);
+                 serialization.py missing
+                 __schema_version__ fail-open (its
+                 own step, never allocated);
+                 verify_step uppercase / unfenced /
+                 named-constant / letter-suffix
+                 (frozen at exec-tools-v1; unowned);
+                 152 research cache days stale,
+                 APP/2026-03-26 current (no step);
+                 R6 exercises 14 of 31 resets
+                 (S-15/S-30; 17 never invoked);
+                 four EXEMPTION tests
+                 (environmental, not a gap).
+                 ci.yml: the Import contracts job still
+                 has continue-on-error: true. It is
+                 waiting on Five import tiers KEPT.
+                 Twelve engine module sets is already
+                 KEPT. The job comment still cites G40
+                 (S-34) as the independence half; that
+                 half is done. continue-on-error does
+                 not drop until both contracts are
+                 KEPT. That flip needs its own step.
+                 There is no remaining S-* for it.
+                 Do not flip ci.yml on a merge of
+                 S-35e.
+  FINDINGS:      none. The XPASS S-35d5 recorded is the
+                 marker this step dropped.
+  NEXT:          campaign close. G40 CLOSED. Five
+                 import tiers stays BROKEN. ci.yml
+                 waits on a step this campaign does not
+                 contain. Do not flip ci.yml. Do not
+                 begin another suffix from this tree.
+
