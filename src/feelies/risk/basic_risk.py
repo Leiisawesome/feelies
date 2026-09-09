@@ -29,6 +29,7 @@ from feelies.core.events import (
     Alert,
     AlertSeverity,
     OrderRequest,
+    RegimeState,
     RiskAction,
     RiskVerdict,
     Side,
@@ -47,7 +48,6 @@ from feelies.risk.buying_power import (
     buying_power_limit,
 )
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
-from feelies.services.regime_state_cache import RegimeStateCache
 
 
 class _ResolvedSessionBounds(Protocol):
@@ -88,6 +88,10 @@ class _PDTConstraint(Protocol):
         current_equity: Decimal,
         now_ns: int,
     ) -> bool: ...
+
+
+class _RegimeStateCache(Protocol):
+    def latest(self, symbol: str) -> RegimeState | None: ...
 
 
 def _emit_risk(gate_id: str, verdict: RiskVerdict) -> RiskVerdict:
@@ -182,7 +186,7 @@ class BasicRiskEngine:
     def __init__(
         self,
         config: RiskConfig,
-        regime_states: RegimeStateCache | None = None,
+        regime_states: _RegimeStateCache | None = None,
         *,
         bus: EventBus | None = None,
         alert_sequence_generator: SequenceGenerator | None = None,
