@@ -13430,3 +13430,280 @@ WATCH:       n_cycles 1 (feelies.cli → feelies.cli.main
                  services (platform-wide). Not started.
                  Do not begin S-35d4 from this tree.
 
+---
+
+## S-35d4  2026-09-09T08:45:15+08:00
+  STEP:          S-35d4
+  BASE:          6210a0f872e75c3cd168fc1f455c00862221848a
+  RESULT SHA:    c4642febac292688a5b46589f700b55527326571 (exec/S-35d4; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing.
+                 Cuts alpha → signals and alpha → services.
+                 G40 stays OPEN. S2 remains xfail(strict, GAP G40).
+                 No XPASS.
+                 S2: 2 passed / 1 xfailed (G40) -> 2 passed / 1 xfailed
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 test_five_import_tiers still equals
+                 _TIER_RESIDUALS (the 13-pair set S-35b
+                 left; core→sensors not restored)
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 passed
+                 test_s17_private_reach_only_on_composition_root_allowlist
+                 passed after commit 1 and at the gate;
+                 wiring_manifest.py not edited
+                 conformance 117 passed / 6 xfailed (pre)
+                 -> 117 passed / 6 xfailed (post).
+                 mypy src/feelies: Success, 218 source files
+                 (216 -> 218).
+  TESTS:         capture pre-S-35d4 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 capture post-S-35d4 GREEN 4908 passed / 0 failed /
+                 19 skipped / 6 xfailed.
+                 not-paper_rth: 4907 passed / 0 failed / 6
+                 skipped / 14 deselected / 6 xfailed.
+                 risk 336; alpha 441; kernel 390; docs 101.
+                 The four EXEMPTIONS not re-run as failures.
+                 determinism 148 -> 148 after every commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre vs post and vs
+                 baseline_post-S-35d3.json, 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         13 named paths in the FILES field. 11 touched.
+                 verify_step `S-35D4 --base 6210a0f` exits 1
+                 with "S-35D4 not in plan" (uppercase;
+                 Known lists S-35d4; frozen). Hand FILES:
+                 0 extra CLEAN. Touched:
+                 core/horizon_protocol.py (new),
+                 core/regime_gate.py (new),
+                 signals/horizon_protocol.py,
+                 signals/regime_gate.py,
+                 alpha/loader.py,
+                 alpha/signal_layer_module.py,
+                 alpha/layer_validator.py,
+                 alpha/dependency_graph.py,
+                 tests/alpha/test_signal_layer_loader.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited:
+                 tests/conformance/test_import_contracts.py
+                 (xfail kept; _TIER_RESIDUALS unmoved),
+                 tests/docs/test_internal_links.py
+                 (README citations `core/horizon_protocol.py`
+                 and `core/regime_gate.py` resolve via
+                 src/feelies; no placeholder needed).
+                 wiring_manifest.py not in FILES and not
+                 edited.
+  NET DELTA:     declared src modules +2 (horizon_protocol.py,
+                 regime_gate.py), public symbols 0 if signals
+                 re-export, 0 branch points.
+                 actual modules 216 -> 218 (+2 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46631 -> 46661 (+30, undeclared)
+                 n_edges 670 -> 671
+                 n_modules 175 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after every commit; no hash
+                 pin moved
+  VERIFY_STEP:   `S-35D4 --base 6210a0f` exits 1 with
+                 "S-35D4 not in plan" (uppercase; Known lists
+                 S-35d4; frozen). Four checks by hand:
+                 FILES 13 named / 11 touched CLEAN
+                 (2 named-not-edited); PARITY 64/64
+                 HASH+COUNT hold, 0 moved; TESTS
+                 4908->4908 passed, failed 0->0 (from
+                 captures); NET DELTA MATCH on modules +2
+                 symbols 0. Oracle would still say
+                 "deletions with no negative delta" because
+                 DELETES is package pairs -- frozen. CLEAN,
+                 blast radius platform-wide -- Go confirmed
+                 branch head
+                 c4642febac292688a5b46589f700b55527326571
+                 on exec/S-35d4. Not merged. This entry
+                 replaces the blocked leftover from the
+                 verbatim-copy attempt.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Go confirmed branch head
+                 c4642febac292688a5b46589f700b55527326571
+                 on exec/S-35d4. Parent 6210a0f on
+                 arch/exec (plan: from_spec must not call
+                 gate._referenced_identifiers; no FILES
+                 change). Three commits, two pairs, one
+                 shared importer (loader.py).
+                 Commit (1) 38b99a5 inverted HorizonSignal
+                 and the regime-gate DSL: created
+                 core/horizon_protocol.py and
+                 core/regime_gate.py, made
+                 signals.horizon_protocol and
+                 signals.regime_gate re-export, and
+                 retargeted loader.py,
+                 signal_layer_module.py,
+                 layer_validator.py, and
+                 dependency_graph.py onto
+                 feelies.core.* in the same SHA.
+                 from_spec walks ON/OFF identifiers via
+                 compile_expression; it does not call
+                 gate._referenced_identifiers. S17
+                 passed on that commit with no
+                 allowlist edit.
+                 Commit (2) 38eb6a4 deleted
+                 get_regime_engine and the services
+                 import. YAML regimes.engine without an
+                 injected instance is AlphaLoadError.
+                 Remaining engine is a local Protocol.
+                 The two named loader tests retarget
+                 to that error. No factory handle.
+                 Commit (3) c4642fe gave the Protocol
+                 @property state_names -> Sequence[str]
+                 and current_state(symbol) ->
+                 list[float] | None, because object on
+                 both members failed mypy. Still no
+                 services import.
+                 Cut (1) is an invert of the hop, not a
+                 handle. HorizonSignal now lives in
+                 feelies.core.horizon_protocol.
+                 signal_layer_module.py imports it at
+                 runtime. signals.horizon_protocol
+                 re-exports so Engine 4 keeps its old
+                 path. RegimeGate, RegimeGateError,
+                 UnsafeExpressionError, and
+                 compile_expression now live in
+                 feelies.core.regime_gate (the whole
+                 DSL module moved with them;
+                 Bindings, evaluate,
+                 UnknownIdentifierError,
+                 UnknownRegimeStateError went along so
+                 core would not import signals).
+                 loader.py, signal_layer_module.py,
+                 layer_validator.py, and
+                 dependency_graph.py import from core
+                 at runtime. signals.regime_gate
+                 re-exports. horizon_engine.py stays on
+                 the signals re-export (same package,
+                 not G40, not in FILES).
+                 Cut (2) is a required handle with no
+                 default: loader no longer constructs a
+                 standalone engine. Bootstrap already
+                 injects. get_regime_engine stays in
+                 feelies.services.regime_engine.
+                 Failing-pair count 5 → 3 against the
+                 block's 5 → 3. Per commit: 5 → 4 on
+                 38b99a5 (alpha → signals gone), 4 → 3
+                 on 38eb6a4 (alpha → services gone),
+                 3 → 3 on c4642fe. Projection MATCH.
+                 S-35d5 reaches zero from 3: the three
+                 remaining pairs are exactly d5's
+                 FILES (risk → portfolio, risk → alpha,
+                 risk → services). S-35e still requires
+                 twelve-engine KEPT with zero remaining
+                 pairs before the xfail drops.
+                 After 38b99a5, remaining:
+                 feelies.alpha → feelies.services;
+                 feelies.risk → feelies.services;
+                 feelies.risk → feelies.portfolio;
+                 feelies.risk → feelies.alpha.
+                 After 38eb6a4 and c4642fe, remaining:
+                 feelies.risk → feelies.portfolio;
+                 feelies.risk → feelies.services;
+                 feelies.risk → feelies.alpha.
+                 n_cycles held at 1. The only SCC is
+                 feelies.cli → feelies.cli.main.
+                 No hash moved. 64/64 HASH/COUNT
+                 identical pre vs post and vs
+                 baseline_post-S-35d3.json. Fingerprint
+                 unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Owner of both new modules:
+                 audit_core_clock_config. The creating
+                 commit (38b99a5) landed the
+                 _FILE_OWNERS rows and the README
+                 citations next to `core/`. tests/docs
+                 101 passed at the gate.
+                 Re-export and retarget landed together
+                 on 38b99a5, so alpha → signals dropped
+                 immediately. That is the S-35d3
+                 pattern. from_spec walks ON/OFF via
+                 compile_expression with no private
+                 reach; S17 passes without an allowlist
+                 edit.
+                 Declared NET DELTA +2 modules, 0 public
+                 symbols (signals re-export), 0
+                 branch points. Measured: modules
+                 216 → 218 MATCH, public_symbols
+                 575 → 575 MATCH, sloc 46631 → 46661
+                 (+30, undeclared), n_edges 670 → 671,
+                 n_modules 175 → 177, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 None of the four failed mechanisms.
+                 S2's xfail(strict, GAP G40) stays until
+                 S-35e. No XPASS.
+  FINDINGS:      (1) The first attempt (dangling 6f240bc)
+                 copied from_spec verbatim. That
+                 re-homed gate._referenced_identifiers
+                 from signals/regime_gate.py to
+                 core/regime_gate.py, a path-keyed S17
+                 site, and tripped
+                 COMPOSITION_ROOT_PRIVATE_ALLOWLIST.
+                 Retargeting the allowlist row was
+                 available and was rejected -- it would
+                 have moved a boundary violation rather
+                 than closed it. Any later step that
+                 copies a module containing a private
+                 reach must walk or invert that reach
+                 in the creating commit. Re-keying the
+                 S17 row is not a cut.
+                 (2) The block specified a Protocol with
+                 state_names. Annotating both members as
+                 object failed mypy (frozenset() and
+                 bootstrap's RegimeEngine were not a
+                 structural match). Commit 3 exists
+                 because of it. That is the S-35c3
+                 shape again: object is not a type, it
+                 is the absence of one. The landed
+                 Protocol is @property state_names ->
+                 Sequence[str] and
+                 current_state(symbol) -> list[float]
+                 | None, the members loader actually
+                 reads, still with no services import.
+                 Carried, not fixed: G6 vs empty
+                 depends_on_sensors; config-path
+                 attribution + missing loader alpha_id (S-04c);
+                 serialization.py missing __schema_version__
+                 fail-open; ci.yml continue-on-error until both
+                 contracts KEPT; verify_step frozen bugs; 152
+                 research cache days stale (APP/2026-03-26
+                 current); R6 14/31 resets; S-20, S-21, S-23,
+                 S-24, S-26, S-28a, S-29 findings as recorded;
+                 S-30c through S-30h concept residue; S-30g G36
+                 OPEN; S-31c G44 partial; S-32 and S-33
+                 instruments cannot resolve effects of this
+                 size; S-34a/S-34g n_cycles watch; S-34f END
+                 STATE residual is deliberate; S-35c1 FINDING
+                 optional handle with sys.modules fallback;
+                 S-35c2 FINDING a re-export is not a cut;
+                 S-35c3 FINDING removing an import by
+                 widening to object or Any is not removing
+                 the dependency; S-35c4 FINDING a FILES
+                 prohibition written before the cut mechanism
+                 is known blocks the only real cut;
+                 S-35d1 FINDING follow the code, not the
+                 field list; S-35d2 FINDING a re-export
+                 made the name available but left the
+                 import statement; S-35d3 NOTE re-export
+                 and retarget in the same SHA; S-35d3
+                 FINDING CostArithmetic is not a standalone
+                 type; S-35d4 FINDING a verbatim copy of a
+                 private reach re-homes an S17 site;
+                 S-35d4 FINDING object is not a type;
+                 perfmeasure.py DIRECT_PROBES two dead
+                 attributes, unowned; four exempted baseline
+                 tests.
+  NEXT:          S-35d5 cut risk → portfolio, risk →
+                 alpha, and risk → services
+                 (platform-wide). Not started.
+                 Do not begin S-35d5 from this tree.
+                 Pair count is 3. d5 reaches zero from 3.
