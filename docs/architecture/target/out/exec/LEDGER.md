@@ -15359,3 +15359,215 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
                  baseline_post-T-04a.json, this ledger
                  entry.
 
+---
+
+## T-04b  2026-09-10T14:01:00+08:00
+  STEP:          T-04b
+  BASE:          b5eaa5f2110cd7fec8d3366537bc10be428721f1
+  RESULT SHA:    2e6606598c0f6423eb87bb3f539f181495890d95 (exec/T-04b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → composition. Five import tiers stays
+                 BROKEN. 8 → 7. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED on
+                 unexpected [('feelies.kernel',
+                 'feelies.composition')] before the cut; 3
+                 passed after the cut (7-pair pin).
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (7 pairs), Twelve
+                 engine module sets KEPT. test_five_import_tiers
+                 equals the shrunk 7-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (bootstrap keep-rows
+                 1607 KeyError and 1825 TypeError/ValueError
+                 unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; composition 61
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate).
+  TESTS:         capture pre-T-04b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-04b GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-04b vs post-T-04b and vs
+                 baseline_post-T-04a.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         23 declared, 23 touched, 23 committed (clean vs
+                 2e660659). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 composition_protocol.py, bootstrap.py,
+                 test_orchestrator.py (28: 1 factory + 27
+                 raw),
+                 test_orchestrator_bus_sized_intent.py (4),
+                 test_forced_exit_attribution_replay.py (3),
+                 test_anti_lookahead.py (2),
+                 test_trade_path_regime_gate_cold_start.py (1),
+                 test_position_pnl_replay.py (1),
+                 test_reducing_signal_survives_risk_gate.py (1),
+                 test_orchestrator_hazard_exit_routing.py (1),
+                 test_data_integrity_runtime.py (1),
+                 test_symbol_halted_replay.py (1),
+                 test_orchestrator_shutdown_drain.py (1),
+                 test_orchestrator_async_fill_latency.py (1),
+                 test_orchestrator_bus_signal.py (1),
+                 test_registration_order.py (1),
+                 test_orchestrator_exit_composer_routing.py (1),
+                 test_orchestrator_idle_tick.py (1),
+                 test_standalone_signal_ownership.py (1),
+                 test_regime_hazard_engine_wiring.py (1),
+                 test_dual_scale_down_e2e.py (1),
+                 test_import_contracts.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: the five funnel files
+                 (test_fill_attribution_seam.py,
+                 test_pathological_refusal.py,
+                 test_reverse_edge_calibration.py,
+                 test_orchestrator_order_routing.py,
+                 test_orchestrator_edge_calibration.py),
+                 test_fail_quiet.py, factor_neutralizer.py
+                 (keep-rows 28, 139),
+                 composition/selection_policy.py,
+                 composition/protocol.py,
+                 compare_multialpha_runs.py,
+                 harness/__init__.py, cli/, ci.yml,
+                 test_emit_edge_calibration.py,
+                 test_backtest_report.py.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols +1,
+                 branch points 0
+                 (SelectionPolicy Protocol; nested winner type
+                 is underscored).
+                 actual modules 221 -> 221 (+0 MATCH)
+                 public_symbols 580 -> 581 (+1 MATCH)
+                 sloc 46767 -> 46771 (+4, undeclared)
+                 n_edges 669 -> 668
+                 n_modules 178 -> 178
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 23 declared / 23 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules 0
+                 symbols +1. CLEAN. Go confirmed on branch
+                 head
+                 2e6606598c0f6423eb87bb3f539f181495890d95.
+                 Not merged.
+  NOTES:         One commit on exec/T-04b,
+                 2e6606598c0f6423eb87bb3f539f181495890d95,
+                 "T-04b: invert kernel->composition; composition
+                 root supplies a required SelectionPolicy".
+                 Parent b5eaa5f2 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 8 to 7. The pin and the code
+                 dropped ("feelies.kernel",
+                 "feelies.composition") in that same commit.
+                 Fail-first: with the 7-pair pin in place and
+                 kernel still importing composition,
+                 test_five_import_tiers FAILED on unexpected
+                 [('feelies.kernel', 'feelies.composition')];
+                 after the cut it passed against the shrunk
+                 pin. Remaining, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 52 test constructor sites plus bootstrap,
+                 matching the block per file:
+                 test_orchestrator.py 28 (1 factory + 27
+                 raw),
+                 test_orchestrator_bus_sized_intent.py 4,
+                 test_forced_exit_attribution_replay.py 3,
+                 test_anti_lookahead.py 2, then 1 each in
+                 the other 15 FILES test files, and the
+                 one _RootOrchestrator site. Updating
+                 _build_orchestrator alone would have left
+                 the 27 raw sites. No default remains: no
+                 selection_policy: SelectionPolicy | None, no
+                 else Top1SelectionPolicy(), no
+                 Top1SelectionPolicy() default anywhere.
+                 core/composition_protocol.py imports Signal
+                 and SignalDirection from feelies.core.events
+                 and nothing from feelies.composition. The
+                 five funnel files were not touched
+                 (test_fill_attribution_seam.py,
+                 test_pathological_refusal.py,
+                 test_reverse_edge_calibration.py,
+                 test_orchestrator_order_routing.py,
+                 test_orchestrator_edge_calibration.py).
+                 Bootstrap keep-rows measured after the
+                 cut, unmoved: 1607 except KeyError, 1825
+                 except (TypeError, ValueError). mypy
+                 src/feelies: Success, 221 source files,
+                 before the gate. APP oracle 2 passed;
+                 hashes and fill count unmoved. S2 KEPT at
+                 zero twelve-engine pairs. n_cycles held at
+                 1 (feelies.cli → feelies.cli.main).
+                 Declared NET DELTA 0 src modules, +1 public
+                 symbol, 0 branch points. Measured from the
+                 two capture artifacts: modules 221 → 221
+                 MATCH, public_symbols 580 → 581 MATCH,
+                 sloc 46767 → 46771 (+4, undeclared),
+                 n_edges 669 → 668, n_modules 178 → 178,
+                 cycles 1 → 1 MATCH, alphaleak 0 → 0.
+                 selection_policy sits after defaults, so
+                 required-no-default at that slot is
+                 keyword-only (`*,` on the preceding line).
+  FINDINGS:      The bootstrap squeeze is a semicolon-joined
+                 import, the only zero-line spelling that
+                 binds Top1SelectionPolicy in that file,
+                 chosen because test_fail_quiet.py is not in
+                 FILES and any added line would move keep-rows
+                 1607 and 1825. ruff check does not flag it --
+                 select is DTZ, F401, F841, and neither E401
+                 nor E702 is enabled. ruff format WOULD split
+                 it, but bootstrap.py already failed ruff
+                 format --check at the parent commit on a
+                 pre-existing blank-line hunk, so this step
+                 did not make a clean file dirty. S-19a's
+                 accepted orchestrator semicolon joins are
+                 in the same position. If ruff format ever
+                 becomes a gate, every keep-row squeeze in
+                 this codebase becomes a conflict between two
+                 guards, and no step owns that.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-05a four regime helpers; pin stays 7
+                 (boundary). Not started. Do not begin T-05a.
+                 Go confirmed on
+                 2e6606598c0f6423eb87bb3f539f181495890d95.
+                 Left uncommitted:
+                 baseline_pre-T-04b.json,
+                 baseline_post-T-04b.json, this ledger
+                 entry.
+
