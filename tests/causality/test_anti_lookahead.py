@@ -43,6 +43,7 @@ from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.features.aggregator import HorizonAggregator
 from feelies.ingestion.replay_feed import ReplayFeed
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -356,6 +357,7 @@ class TestRegulatoryAntiLookahead:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -404,6 +406,7 @@ class TestRegulatoryAntiLookahead:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(

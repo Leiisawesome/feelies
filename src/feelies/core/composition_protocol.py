@@ -22,6 +22,18 @@ class CompositionEngine(Protocol):
     """Injected composition engine. Kernel never calls methods by name."""
 
 
+class _SelectionPolicyResult(Protocol):
+    winner: Signal | None
+
+
+class SelectionPolicy(Protocol):
+    """Injected standalone-signal selection policy."""
+
+    def select(self, signals: Sequence[Signal]) -> _SelectionPolicyResult:
+        """Pick at most one winner from this tick's standalone SIGNAL buffer."""
+        ...
+
+
 def _signal_reduces_book(current_qty: int, direction: SignalDirection) -> bool:
     """True when *direction* would close or offset a non-flat *current_qty*."""
     if current_qty == 0:

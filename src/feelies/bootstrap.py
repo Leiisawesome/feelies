@@ -9,7 +9,7 @@ omitted when their configuration is empty.
 from __future__ import annotations
 
 import logging
-import os
+import os; from feelies.composition.selection_policy import Top1SelectionPolicy
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -685,7 +685,7 @@ def build_platform(
         horizon_signal_engine=horizon_signal_engine,
         regime_hazard_detector=regime_hazard_detector,
         hazard_sequence_generator=hazard_seq,
-        composition_engine=composition_engine,
+        composition_engine=composition_engine, selection_policy=Top1SelectionPolicy(),
         hazard_exit_controller=hazard_exit_controller,
         trading_session_bounds=trading_session_bounds,
         moc_bounds_configured=moc_bounds is not None,

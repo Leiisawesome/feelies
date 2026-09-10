@@ -24,6 +24,7 @@ from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
@@ -123,6 +124,7 @@ def _run(router_cls: type[Any], *, stop_first: bool) -> _Run:
         policy=StopExitPolicy(stop_loss_per_share=1.0),
     )
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=ExecutionBackend(

@@ -47,6 +47,7 @@ from feelies.execution.backend import ExecutionBackend
 from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -235,6 +236,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,
