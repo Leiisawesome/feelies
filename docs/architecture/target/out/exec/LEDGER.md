@@ -15571,3 +15571,29 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
                  baseline_post-T-04b.json, this ledger
                  entry.
 
+---
+
+## FINDING  keep-row squeezes conflict with ruff format
+DATE:        2026-09-10
+CAUSE:       FAIL_QUIET_KEEP and the Inv-10 allowlist are
+             line-pinned, so a step that must not move a keep-row
+             squeezes new code onto an existing line. S-19a did it
+             with semicolon-joined statements in orchestrator.py at
+             455, 1474 and 1480; T-04b did it with a
+             semicolon-joined import in bootstrap.py and a
+             two-kwarg call line.
+STATE:       ruff check does not flag any of them -- select is DTZ,
+             F401, F841, and neither E401 nor E702 is enabled. CI
+             runs ruff format --check, and it WOULD split every one
+             of them. bootstrap.py and orchestrator.py already fail
+             that check on pre-existing hunks, so no step made a
+             clean file dirty.
+RISK:        if ruff format ever becomes enforcing, every keep-row
+             squeeze becomes a conflict between two guards: the
+             formatter wants the line split, the allowlist wants
+             the line numbers still. Resolving it means re-keying
+             the allowlists by enclosing symbol -- which S-19a
+             costed as a consumer change and left undone -- or
+             exempting those files from the formatter.
+OWNER:       none. No step in this campaign or the last owns it.
+
