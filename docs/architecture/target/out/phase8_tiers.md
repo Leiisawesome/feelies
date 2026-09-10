@@ -83,6 +83,18 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  after it, and later groups carry helper
                  functions as well as constructor types;
                  a ports file invites that category error.
+                 CHECK FOR A PUBLIC PROPERTY BEFORE WRITING A
+                 PROTOCOL SURFACE. T-03's first attempt scoped
+                 AlphaRegistry to the one method kernel calls
+                 and failed mypy on seven attribute errors in
+                 harness and cli, none of them in FILES,
+                 because orchestrator hands the instance out
+                 through a public alpha_registry property. A
+                 Protocol on a type the orchestrator exposes
+                 must cover every consumer of that property,
+                 not just the kernel's own calls. Enumerate
+                 the property's callers before writing the
+                 surface.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
