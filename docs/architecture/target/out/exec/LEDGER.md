@@ -15597,3 +15597,199 @@ RISK:        if ruff format ever becomes enforcing, every keep-row
              exempting those files from the formatter.
 OWNER:       none. No step in this campaign or the last owns it.
 
+---
+
+## T-05a  2026-09-10T16:45:00+08:00
+  STEP:          T-05a
+  BASE:          794995437e85c649efc368c33fa1fed22b1ae6de
+  RESULT SHA:    e80bb2f712e3d4da359a55e9966bd02d528c00b3 (exec/T-05a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 7. Does not drop kernel → services. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 7-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (7 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; services 108
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate).
+  TESTS:         capture pre-T-05a GREEN 4910 passed / 0 failed /
+                 18 skipped / 5 xfailed.
+                 -> capture post-T-05a GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-04b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: skipped 19 -> 18,
+                 passed +1; failed held at 0. Environmental
+                 skip-to-pass, not a regression.
+                 not-paper_rth: 4909 passed / 0 failed / 5
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-05a vs post-T-05a and vs
+                 baseline_post-T-04b.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 7 before and 7
+                 after. This step moves helpers; T-05b
+                 Protocols the two injected types. An unchanged
+                 count is the declared outcome.
+  FILES:         3 declared, 3 touched, 3 committed (clean vs
+                 e80bb2f7). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 regime_engine.py,
+                 test_orchestrator.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 bootstrap.py, test_fail_quiet.py,
+                 perfmeasure.py (DIRECT_PROBES unowned;
+                 still names
+                 feelies.services.regime_engine:_update_regime),
+                 fill_reconciliation.py, regime_hazard_detector.py,
+                 core/regime_gate.py, harness/, cli/, ci.yml.
+                 No keep-row file is touched: orchestrator.py
+                 and regime_engine.py are not in FAIL_QUIET_KEEP.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 (underscored helpers relocate; not public).
+                 actual modules 221 -> 221 (+0 MATCH)
+                 public_symbols 581 -> 581 (+0 MATCH)
+                 sloc 46771 -> 46772 (+1, undeclared)
+                 n_edges 668 -> 667
+                 n_modules 178 -> 178
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 3 declared / 3 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules 0
+                 symbols 0. CLEAN. Go confirmed on branch
+                 head
+                 e80bb2f712e3d4da359a55e9966bd02d528c00b3.
+                 Not merged.
+  NOTES:         One commit on exec/T-05a,
+                 e80bb2f712e3d4da359a55e9966bd02d528c00b3,
+                 "T-05a: return regime helpers to kernel; pin
+                 stays 7". Parent 79499543 on arch/exec.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The pin stayed at 7. That is the declared
+                 outcome, not a failed cut. This step only
+                 returned the four helpers. Kernel still
+                 imports RegimeEngine and
+                 RegimeHazardDetector from services, so the
+                 kernel → services pair is still there. T-05b
+                 is the invert that drops it.
+                 Remaining pairs, verbatim, before and after:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 The four helpers
+                 (_calibrate_regime_engine,
+                 _checkpoint_feature_snapshots,
+                 _restore_feature_snapshots, _update_regime)
+                 and the two private callees
+                 (_checkpoint_regime_snapshot,
+                 _maybe_publish_hazard_spike) moved with
+                 bodies unchanged. The callees had no other
+                 caller in services; they existed only for
+                 those four, so they travelled with them.
+                 Call sites in orchestrator were kept.
+                 Import adjustments that travelled with the
+                 bodies: hashlib, itertools,
+                 RegimeHazardSpike, and FeatureSnapshotMeta
+                 came into kernel. The same names that
+                 services no longer needed after the move
+                 dropped out of it -- itertools,
+                 RegimeHazardSpike, FeatureSnapshotMeta
+                 (and AlertSeverity, used only by the
+                 calibration alerts). hashlib stayed in
+                 services because HMM3 still hashes
+                 checkpoints. Kernel also imports
+                 regime_posterior_entropy_nats from
+                 services so the unchanged _update_regime
+                 body still binds; that name was not moved.
+                 _regime_label_for stayed in services.
+                 Kernel does not import it.
+                 fill_reconciliation.py has its own copy
+                 and was not in FILES; it was not touched.
+                 The one retargeted importer is
+                 tests/kernel/test_orchestrator.py:
+                 `_calibrate_regime_engine` now comes from
+                 feelies.kernel.orchestrator, not
+                 feelies.services.regime_engine.
+                 mypy src/feelies: Success, 221 source files,
+                 before the gate. APP oracle 2 passed;
+                 hashes and fill count unmoved. S2 KEPT at
+                 zero twelve-engine pairs. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main). Declared
+                 NET DELTA 0 src modules, 0 public symbols, 0
+                 branch points. Measured from the two capture
+                 artifacts: modules 221 → 221 MATCH,
+                 public_symbols 581 → 581 MATCH, sloc 46771
+                 → 46772 (+1, undeclared), n_edges 668 →
+                 667 (services dropped FeatureSnapshotMeta),
+                 n_modules 178 → 178, cycles 1 → 1 MATCH,
+                 alphaleak 0 → 0.
+  FINDINGS:      perfmeasure.py DIRECT_PROBES entry
+                 E3.update_regime
+                 (feelies.services.regime_engine:_update_regime)
+                 now resolves to nothing. It joins
+                 X.size_shadow
+                 (Orchestrator._record_size_shadow, S-34f)
+                 and E9.build_order
+                 (Orchestrator._try_build_order_from_intent,
+                 stale since S-24). Engine 3 loses the
+                 exclusive time of the M2 path -- posterior,
+                 the RegimeState publish, the hazard spike --
+                 and the console table still prints only
+                 STATS keys, so the remaining shares sum to
+                 100% of a smaller set without saying so.
+                 Three dead probes, still unowned.
+                 perfmeasure.py is not in FILES. Reported,
+                 not fixed. Every remaining rung which moves
+                 a probed function will add another, and the
+                 tool's console output is now materially
+                 incomplete rather than marginally so.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-05b Protocols on RegimeEngine and
+                 RegimeHazardDetector; pin 7 to 6
+                 (boundary). Not started. Do not begin T-05b.
+                 Go confirmed on
+                 e80bb2f712e3d4da359a55e9966bd02d528c00b3.
+                 Left uncommitted:
+                 baseline_pre-T-05a.json,
+                 baseline_post-T-05a.json, this ledger
+                 entry.
+
