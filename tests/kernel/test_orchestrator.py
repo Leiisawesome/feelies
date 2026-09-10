@@ -63,7 +63,7 @@ from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.composition.selection_policy import Top1SelectionPolicy
-from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.orchestrator import Orchestrator, _calibrate_regime_engine
 from feelies.portfolio.fill_reconciliation import (
     _distribute_fill_to_strategies,
     _reconcile_fills,
@@ -79,7 +79,6 @@ from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.engine import _compute_target_quantity, _emergency_flatten_all
 from feelies.risk.edge_weighted_sizer import _record_size_shadow
 from feelies.risk.escalation import RiskLevel
-from feelies.services.regime_engine import _calibrate_regime_engine
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
