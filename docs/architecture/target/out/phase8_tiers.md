@@ -884,18 +884,21 @@ ROLLBACK:        revert the commit. Independently revertible from
 STEP:            T-05b
 CLOSES:          nothing. Drops kernel → services. Five import
                  tiers stays BROKEN. 7 → 6. G40 stays CLOSED.
-PROBLEM:         After T-05a, kernel still imports RegimeEngine from
-                 feelies.services.regime_engine (runtime, l.191) and
-                 RegimeHazardDetector from
+PROBLEM:         After T-05a, kernel still imports three names from
+                 feelies.services, not two. feelies.kernel.orchestrator
+                 is the only kernel file that imports that package.
+                 RegimeEngine from feelies.services.regime_engine
+                 (runtime, l.194) and RegimeHazardDetector from
                  feelies.services.regime_hazard_detector (runtime,
-                 l.192). Both are injected optional (| None = None);
+                 l.195). Both are injected optional (| None = None);
                  stored; never default-constructed in kernel. None
                  is not the illegal import (T-04b's default was
                  Top1SelectionPolicy()). Bootstrap already constructs
                  and passes them. Runtime named calls: restore on
-                 the engine at :3070; RegimeHazardDetector.reset at
-                 :2165. After T-05a the returned helpers also name
-                 posterior, state_names, checkpoint, and detect.
+                 the engine at :3293; posterior(quote) at :374;
+                 state_names at :377; checkpoint() at :249;
+                 RegimeHazardDetector.reset at :2388; detect at
+                 :425. After T-05a the returned helpers name those.
                  calibrate, calibrated, discriminability, and
                  discriminability_for_symbol stay getattr inside
                  _calibrate_regime_engine / _update_regime. reset is
@@ -910,6 +913,23 @@ PROBLEM:         After T-05a, kernel still imports RegimeEngine from
                  that is wider than kernel's named calls and lives in
                  the engine package; importing that Protocol is still
                  kernel → services.
+                 Third name, function, no Protocol can replace it:
+                 regime_posterior_entropy_nats from
+                 feelies.services.regime_engine (runtime, l.194),
+                 called at _update_regime :403 to fill
+                 RegimeState.posterior_entropy_nats. Signature
+                 (posteriors: Sequence[float]) -> float. Pure
+                 Shannon entropy in nats; no orchestrator, no engine
+                 instance, no state. T-05a PROBLEM counted six names
+                 (four helpers + two types). The function lived in
+                 the same services module as _update_regime and
+                 needed no kernel import until the helper returned
+                 with the body unchanged. Other callers
+                 (tests/services, tests/core, tests/determinism,
+                 scripts/regime_diagnostics.py, services/__init__.py)
+                 are not kernel. Honest owner is core, same shape as
+                 T-04a's Signal predicates. Leaving it on the kernel
+                 import leaves the pair and the pin at 7.
 WHY THIS OWNER:  T5 core already owns the names kernel may use. The
                  illegal edge is kernel naming Engine 3 for injected
                  types. The invert is a core Protocol module named
@@ -919,20 +939,24 @@ WHY THIS OWNER:  T5 core already owns the names kernel may use. The
                  core/regime_gate.py (that file is the gate DSL).
                  The helpers' return in T-05a does not replace this
                  bind.
-REFACTOR PATH:   one commit. Mechanism: Selection-style Protocols in
-                 a new feelies.core.regime_protocol (named for the
-                 thing, not the step; one module per engine concern).
-                 Kernel retargets both annotations there. Required
-                 surface is every named kernel call after T-05a, not
-                 a copy of the services Protocol. Structural; no
-                 subclassing on HMM3StateFractional or
-                 RegimeHazardDetector. No object/Any, no getattr
-                 fallback, no sys.modules, no TYPE_CHECKING-only
-                 move, no re-export of the Protocol from the engine
-                 package as the cut, no kernel_ports.py.
+REFACTOR PATH:   one commit. Mechanism: Selection-style Protocols
+                 plus the pure entropy function in a new
+                 feelies.core.regime_protocol (named for the
+                 regime concern, not the step; one module per
+                 engine concern). Kernel retargets both type
+                 annotations and the entropy import there.
+                 Required Protocol surface is every named kernel
+                 call after T-05a, not a copy of the services
+                 Protocol. Structural; no subclassing on
+                 HMM3StateFractional or RegimeHazardDetector. No
+                 object/Any, no getattr fallback, no sys.modules,
+                 no TYPE_CHECKING-only move, no re-export of the
+                 Protocol from the engine package as the cut, no
+                 kernel_ports.py. Do not inline the entropy formula
+                 in _update_regime; do not copy the body.
                  Per-name Protocol surface:
                  RegimeEngine: restore(data: bytes) -> None (named
-                 at :3070); posterior(quote: NBBOQuote) ->
+                 at :3293); posterior(quote: NBBOQuote) ->
                  list[float] (named in returned _update_regime);
                  state_names -> Sequence[str] (named there);
                  checkpoint() -> bytes (named in returned
@@ -945,16 +969,23 @@ REFACTOR PATH:   one commit. Mechanism: Selection-style Protocols in
                  imported; services reset(symbol) is the wrong arity
                  for getattr reset()).
                  RegimeHazardDetector: reset() -> None (named at
-                 :2165); detect(prev: RegimeState | None,
+                 :2388); detect(prev: RegimeState | None,
                  curr: RegimeState) -> RegimeHazardSpike | None
                  (named in returned _maybe_publish_hazard_spike).
-                 Import Signal/quote/state/spike types from
-                 feelies.core.events. Import nothing from
-                 feelies.services.
+                 regime_posterior_entropy_nats(posteriors:
+                 Sequence[float]) -> float — move the body from
+                 services.regime_engine into this module; kernel
+                 imports it from core. services.regime_engine
+                 re-exports the name from core (alias, T-04a);
+                 that is not the cut. Import Signal/quote/state/
+                 spike types from feelies.core.events. Import
+                 nothing from feelies.services.
                  (1) add src/feelies/core/regime_protocol.py with those
-                 two Protocols. Nested winner types are not needed;
-                 detect's return is already a core event.
-                 (2) orchestrator: import both from
+                 two Protocols and the entropy function. Nested winner
+                 types are not needed; detect's return is already a
+                 core event.
+                 (2) orchestrator: import both Protocols and
+                 regime_posterior_entropy_nats from
                  feelies.core.regime_protocol; drop
                  feelies.services.regime_engine and
                  feelies.services.regime_hazard_detector. Keep
@@ -962,10 +993,15 @@ REFACTOR PATH:   one commit. Mechanism: Selection-style Protocols in
                  Leave getattr as getattr. Leave the services
                  Protocol in place for services/bootstrap/alpha —
                  that re-export is not the cut.
-                 (3) drop ("feelies.kernel", "feelies.services") from
+                 (3) services/regime_engine.py: delete the def;
+                 `from feelies.core.regime_protocol import
+                 regime_posterior_entropy_nats as
+                 regime_posterior_entropy_nats`. Leave HMM3 and
+                 the services Protocol unedited.
+                 (4) drop ("feelies.kernel", "feelies.services") from
                  _TIER_RESIDUALS in the same commit (equality, 6
                  remain).
-                 (4) new core module: _FILE_OWNERS row and README
+                 (5) new core module: _FILE_OWNERS row and README
                  citation in this commit (S-21), same as T-03.
 BLAST RADIUS:    boundary
 VALIDATED BY:    test_five_import_tiers equals the 6-pair pin;
@@ -983,23 +1019,28 @@ PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
                  default) — STOP, do not re-pin.
 FILES:           src/feelies/kernel/orchestrator.py
                  src/feelies/core/regime_protocol.py
+                 src/feelies/services/regime_engine.py
                  tests/conformance/test_import_contracts.py
                  tests/docs/test_prompt_coverage_map.py
                  docs/prompts/README.md
-                 Do not invert the concretes. Do not edit
+                 services/regime_engine.py is the T-04a
+                 selection_policy.py re-export only: replace the
+                 def with an alias from core; do not invert HMM3
+                 or the services Protocol. Do not retarget
+                 tests/scripts/services/__init__.py — the re-export
+                 is not the cut. Do not edit
+                 services/regime_hazard_detector.py. Do not edit
                  bootstrap.py. Do not include
                  tests/conformance/test_fail_quiet.py. No keep-row
-                 file is touched (same list as T-05a). Do not
-                 include services/regime_engine.py or
-                 services/regime_hazard_detector.py (structural; the
-                 services Protocol stays for non-kernel consumers).
-                 Do not include core/regime_gate.py. Do not include
+                 file is touched. Do not include
+                 core/regime_gate.py. Do not include
                  harness/, cli/, .github/workflows/ci.yml.
 DELETES:         the kernel → services pair; the services.regime_engine
                  and services.regime_hazard_detector imports from
                  orchestrator.
-NET DELTA:       src modules +1, public symbols +2, branch points 0
-                 (RegimeEngine and RegimeHazardDetector Protocols).
+NET DELTA:       src modules +1, public symbols +3, branch points 0
+                 (RegimeEngine and RegimeHazardDetector Protocols,
+                 and regime_posterior_entropy_nats).
 ROLLBACK:        revert the commit. The new Protocol module reverts
                  with it. Independently revertible from T-06 until
                  T-06 lands; orchestrator.py is shared with T-05a
