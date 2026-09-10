@@ -23,7 +23,13 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Protocol, runtime_checkable
 
-from feelies.core.events import HorizonFeatureSnapshot, RegimeState, Signal
+from feelies.core.events import (
+    Event,
+    HorizonFeatureSnapshot,
+    HorizonTick,
+    RegimeState,
+    Signal,
+)
 
 
 @runtime_checkable
@@ -47,4 +53,21 @@ class HorizonSignal(Protocol):
         ...
 
 
-__all__ = ["HorizonSignal"]
+class HorizonScheduler(Protocol):
+    """Emits horizon-boundary ticks from quote and trade events."""
+
+    def on_event(self, event: Event) -> tuple[HorizonTick, ...]:
+        """Return ticks whose boundaries the event crossed, or an empty tuple."""
+        ...
+
+
+class HorizonSignalEngine(Protocol):
+    """Layer-2 engine over registered ``HorizonSignal`` implementations."""
+
+    @property
+    def is_empty(self) -> bool:
+        """True iff no SIGNAL alphas have been registered."""
+        ...
+
+
+__all__ = ["HorizonSignal", "HorizonScheduler", "HorizonSignalEngine"]

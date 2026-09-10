@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from feelies.portfolio.fill_attribution import FillAttributionLedger
-    from feelies.alpha.registry import AlphaRegistry
+    from feelies.core.alpha_registry import AlphaRegistry
     from feelies.composition.engine import CompositionEngine
     from feelies.risk.hazard_exit import HazardExitController
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
@@ -187,11 +187,10 @@ from feelies.risk.edge_weighted_sizer import (
     _record_size_shadow,
 )
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
-from feelies.sensors.horizon_scheduler import HorizonScheduler
-from feelies.sensors.registry import SensorRegistry
+from feelies.core.horizon_protocol import HorizonScheduler, HorizonSignalEngine
+from feelies.core.sensor_registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine, _calibrate_regime_engine, _checkpoint_feature_snapshots, _restore_feature_snapshots, _update_regime  # noqa: E501
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
-from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal
