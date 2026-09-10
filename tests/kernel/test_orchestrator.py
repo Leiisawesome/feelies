@@ -62,6 +62,7 @@ from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.fill_reconciliation import (
     _distribute_fill_to_strategies,
@@ -424,6 +425,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,
@@ -520,6 +522,7 @@ class TestOrchestratorBoot:
             mode="BACKTEST",
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=EventBus(),
             backend=backend,
@@ -600,6 +603,7 @@ class TestOrchestratorFullPipeline:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -763,6 +767,7 @@ class TestOrchestratorFullPipeline:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -794,6 +799,7 @@ class TestOrchestratorFullPipeline:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -1116,6 +1122,7 @@ class TestOrchestratorFillReconcileGuards:
         router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -1273,6 +1280,7 @@ class TestOrchestratorFlatSignalExit:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2035,6 +2043,7 @@ class TestOrchestratorMacroLifecycleRemediation:
         kill.activate("pre_unlock", activated_by="test")
         bus = EventBus()
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2407,6 +2416,7 @@ class TestScaleDownToZeroSuppression:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2471,6 +2481,7 @@ class TestEdgeCostGate:
         )
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -2618,6 +2629,7 @@ class TestPositionManagerTrim:
         pos_store.update("AAPL", 150, Decimal("100"))  # long 150
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2671,6 +2683,7 @@ class TestPositionManagerTrim:
         pos_store.update("AAPL", 150, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2714,6 +2727,7 @@ class TestPositionManagerTrim:
         pos_store.update("AAPL", 150, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2801,6 +2815,7 @@ class TestSessionFlatten:
             pos_store.update("AAPL", position, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2930,6 +2945,7 @@ class TestWorkingExitFallback:
         bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3014,6 +3030,7 @@ class TestWorkingExitFallback:
         pos.update("AAPL", 150, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3057,6 +3074,7 @@ class TestNetShadow:
         bus = EventBus()
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3266,6 +3284,7 @@ class TestNetDrive:
         pos = MemoryPositionStore()
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3409,6 +3428,7 @@ class TestLotLedgerIntegration:
         pos = MemoryPositionStore()
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3448,6 +3468,7 @@ class TestLotLedgerIntegration:
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         # seed the ledger to mirror the preloaded position
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3532,6 +3553,7 @@ class TestReversalEdgeGuard:
             mode="BACKTEST",
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -3654,6 +3676,7 @@ class TestRestingOrderGuardAfterRisk:
             mode="BACKTEST",
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -4049,6 +4072,7 @@ class TestExitBypassesMinOrderShares:
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4105,6 +4129,7 @@ class TestExitBypassesEdgeCostGate:
         bt_router.on_quote(quote)
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4157,6 +4182,7 @@ class TestHaltModeling:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4290,6 +4316,7 @@ class TestHaltModeling:
             fill_hazard_max=Decimal("0"),
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4528,6 +4555,7 @@ class TestSSRRefuseShort:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4634,6 +4662,7 @@ class TestBorrowAvailability:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(

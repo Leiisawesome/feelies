@@ -154,6 +154,7 @@ def test_orchestrator_position_update_mapping_matches_this_baselines_assumption(
     from feelies.core.events import RiskAction, SignalDirection
     from feelies.execution.backend import ExecutionBackend
     from feelies.execution.backtest_router import BacktestOrderRouter
+    from feelies.composition.selection_policy import Top1SelectionPolicy
     from feelies.kernel.orchestrator import Orchestrator
     from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -172,6 +173,7 @@ def test_orchestrator_position_update_mapping_matches_this_baselines_assumption(
     store = MemoryPositionStore()
     bt_router = BacktestOrderRouter(clock=clock)
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=ExecutionBackend(

@@ -44,6 +44,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.backend import ExecutionBackend
 from feelies.kernel.forced_exit_reasons import _RISK_FORCED_EXIT_REASONS
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
@@ -143,6 +144,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,

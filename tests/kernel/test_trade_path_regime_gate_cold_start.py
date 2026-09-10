@@ -24,6 +24,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.sensors.horizon_scheduler import HorizonScheduler
@@ -132,6 +133,7 @@ def _build_orch(*, with_regime: bool) -> tuple[Orchestrator, EventBus, list[Hori
         mode="BACKTEST",
     )
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,

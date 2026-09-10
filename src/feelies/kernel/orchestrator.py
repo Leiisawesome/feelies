@@ -27,9 +27,8 @@ if TYPE_CHECKING:
     from feelies.risk.hazard_exit import HazardExitController
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
-from feelies.composition.protocol import SelectionPolicy
-from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.core.composition_protocol import (
+    SelectionPolicy,
     StandaloneArbitrationCollision,
     collision_is_harmless_flat_gate_close,
     is_redundant_gate_close_flat,
@@ -275,8 +274,8 @@ class Orchestrator:
         composition_engine: "CompositionEngine | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
         trading_session_bounds: TradingSessionBounds | None = None,
-        moc_bounds_configured: bool = False,
-        selection_policy: SelectionPolicy | None = None,
+        moc_bounds_configured: bool = False, *,
+        selection_policy: SelectionPolicy,
         edge_calibration_factors: Mapping[str, float] | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
@@ -362,9 +361,7 @@ class Orchestrator:
         # references support orchestration and inspection.
         self._composition_engine = composition_engine
         self._hazard_exit_controller = hazard_exit_controller
-        self._selection_policy: SelectionPolicy = (
-            selection_policy if selection_policy is not None else Top1SelectionPolicy()
-        )
+        self._selection_policy: SelectionPolicy = selection_policy
         self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = signal_order_trace_sink
         self._paper_session_recorder: PaperSessionRecorder | None = None
         self._quote_tick_in_flight: bool = False; self._in_flight_quote: NBBOQuote | None = None

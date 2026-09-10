@@ -53,6 +53,7 @@ from feelies.execution.order_lifecycle import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
@@ -253,6 +254,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,
@@ -803,6 +805,7 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         engine.attach()
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -1005,6 +1008,7 @@ class TestPortfolioLegEdgeCostGate:
             market_data=_StubMarketData(), order_router=bt_router, mode="BACKTEST"
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -1068,6 +1072,7 @@ class TestPortfolioLegEdgeCostGate:
         _seed_position(positions, "AAPL", 200, "150.00")
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(

@@ -22,6 +22,7 @@ from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
@@ -154,6 +155,7 @@ def _orch_with_normalizer(
         mode="BACKTEST",
     )
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=EventBus(),
         backend=backend,

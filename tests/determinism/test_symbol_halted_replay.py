@@ -23,6 +23,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -62,6 +63,7 @@ def _replay() -> dict[str, tuple[str, int]]:
     position_store = MemoryPositionStore()
     bt_router = BacktestOrderRouter(clock=clock)
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=ExecutionBackend(
