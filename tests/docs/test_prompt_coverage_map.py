@@ -53,6 +53,7 @@ _FILE_OWNERS: dict[str, str] = {
     "core/alpha_risk_budget.py": "audit_core_clock_config",
     "core/alpha_registry.py": "audit_core_clock_config",
     "core/sensor_registry.py": "audit_core_clock_config",
+    "core/regime_protocol.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",

@@ -191,8 +191,11 @@ from feelies.risk.edge_weighted_sizer import (
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.core.horizon_protocol import HorizonScheduler, HorizonSignalEngine
 from feelies.core.sensor_registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine, regime_posterior_entropy_nats
-from feelies.services.regime_hazard_detector import RegimeHazardDetector
+from feelies.core.regime_protocol import (
+    RegimeEngine,
+    RegimeHazardDetector,
+    regime_posterior_entropy_nats,
+)
 from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal
