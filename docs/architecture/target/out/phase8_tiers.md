@@ -766,3 +766,243 @@ ROLLBACK:        revert the commit. Independently revertible from
                  with T-04a and T-05 and is not independently
                  revertible once T-05 lands.
 ```
+
+```
+STEP:            T-05a
+CLOSES:          nothing. Pin stays 7. Does not drop kernel →
+                 services. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A step that leaves the count unchanged
+                 is legitimate here and must not be mistaken for a
+                 failed cut.
+PROBLEM:         feelies.kernel.orchestrator is the only kernel file
+                 that imports feelies.services. Six names in two
+                 modules. This step is the four underscored helpers
+                 from services.regime_engine (runtime, l.191):
+                 _calibrate_regime_engine, _checkpoint_feature_snapshots,
+                 _restore_feature_snapshots, _update_regime. Used at
+                 :818, :819, :1002, :1543, each as f(self, ...). They
+                 take the orchestrator as self: Any and mutate kernel
+                 session state (_bus, _seq, _hazard_seq,
+                 _last_regime_state, _publish_alert). Two private
+                 callees in the same file exist only for those four:
+                 _checkpoint_regime_snapshot, _maybe_publish_hazard_spike.
+                 They travel with the four. _regime_label_for is also
+                 in that file from S-19; kernel does not import it —
+                 not this rung. RegimeEngine and RegimeHazardDetector
+                 stay for T-05b. A helpers-only step that left those
+                 two types would leave the pair; that is the declared
+                 outcome, same shape as T-04a.
+WHY THIS OWNER:  The bodies were written in the kernel and parked in
+                 services in S-19 (_calibrate_regime_engine,
+                 _update_regime, plus the two private callees) and S-20
+                 (_restore_feature_snapshots, _checkpoint_feature_snapshots,
+                 because after S-19 they only touch regime snapshots).
+                 services/regime_engine.py already holds those
+                 kernel-authored helper bodies. This is a return
+                 move, not a new home. Honest owner is kernel: they
+                 take orchestrator as self and write kernel session
+                 fields. Core would be convenient, not honest — T-04a
+                 put pure Signal predicates in core because they had no
+                 orchestrator. These are the opposite. Injecting four
+                 callables is the wrong cost.
+REFACTOR PATH:   one commit. Mechanism: return the four helpers and
+                 the two private callees from
+                 feelies.services.regime_engine to
+                 feelies.kernel.orchestrator as the same module-level
+                 functions taking the orchestrator as self. Kernel
+                 drops those names from the services import; keeps
+                 RegimeEngine and RegimeHazardDetector. Call sites
+                 stay. No object/Any widening, no getattr, no
+                 sys.modules, no TYPE_CHECKING-only move, no
+                 kernel_ports.py, no new module, no re-export of the
+                 helpers from services as the cut.
+                 (1) move _calibrate_regime_engine,
+                 _checkpoint_feature_snapshots,
+                 _restore_feature_snapshots, _update_regime,
+                 _checkpoint_regime_snapshot, and
+                 _maybe_publish_hazard_spike into orchestrator.py.
+                 Bodies unchanged. _restore_feature_snapshots already
+                 calls Orchestrator._restore_regime_snapshot; that
+                 callee stays. Leave _regime_label_for in services
+                 (kernel does not import it).
+                 (2) orchestrator: drop the four names from
+                 feelies.services.regime_engine; keep RegimeEngine from
+                 that module and RegimeHazardDetector from
+                 regime_hazard_detector. Keep the call sites.
+                 (3) tests/kernel/test_orchestrator.py: retarget
+                 `_calibrate_regime_engine` from
+                 feelies.services.regime_engine onto kernel
+                 (the one FILES-visible importer of a helper).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 7-pair pin (pin
+                 does not move); test_twelve_engine_independence
+                 KEPT at zero pairs; tests/acceptance/
+                 test_backtest_app_baseline.py (APP oracle). No
+                 XPASS. lint-imports: Five import tiers still BROKEN,
+                 Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module defines the four
+                 helpers changes. A moved HASH or COUNT means the
+                 returned helper was not a transparent substitute
+                 (body, order, or a silent default) — STOP, do not
+                 re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/services/regime_engine.py
+                 tests/kernel/test_orchestrator.py
+                 Do not add a module. Do not invert RegimeEngine or
+                 RegimeHazardDetector. Do not edit bootstrap.py. Do
+                 not include tests/conformance/test_import_contracts.py
+                 (pin does not move). Do not include
+                 tests/conformance/test_fail_quiet.py. No keep-row
+                 file is touched: orchestrator.py and
+                 regime_engine.py are not in FAIL_QUIET_KEEP;
+                 bootstrap.py 1607/1825, backtest_runner.py
+                 588/794/831, layer_validator.py 1190,
+                 factor_neutralizer.py 28/139,
+                 massive_ingestor.py 73, massive_ws.py 185/228/344
+                 stay unedited. Do not include
+                 tools/arch/perfmeasure.py (DIRECT_PROBES is unowned;
+                 it still names feelies.services.regime_engine:_update_regime).
+                 Do not include portfolio/fill_reconciliation.py.
+                 Do not include services/regime_hazard_detector.py.
+                 Do not include core/regime_gate.py. Do not include
+                 harness/, cli/, .github/workflows/ci.yml.
+DELETES:         the engine-package imports of the four helpers from
+                 orchestrator. Does not delete the kernel → services
+                 pair.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+                 (underscored helpers relocate; not public).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-05b until T-05b lands; orchestrator.py is shared with
+                 T-05b and is not independently revertible once T-05b
+                 lands.
+```
+
+```
+STEP:            T-05b
+CLOSES:          nothing. Drops kernel → services. Five import
+                 tiers stays BROKEN. 7 → 6. G40 stays CLOSED.
+PROBLEM:         After T-05a, kernel still imports RegimeEngine from
+                 feelies.services.regime_engine (runtime, l.191) and
+                 RegimeHazardDetector from
+                 feelies.services.regime_hazard_detector (runtime,
+                 l.192). Both are injected optional (| None = None);
+                 stored; never default-constructed in kernel. None
+                 is not the illegal import (T-04b's default was
+                 Top1SelectionPolicy()). Bootstrap already constructs
+                 and passes them. Runtime named calls: restore on
+                 the engine at :3070; RegimeHazardDetector.reset at
+                 :2165. After T-05a the returned helpers also name
+                 posterior, state_names, checkpoint, and detect.
+                 calibrate, calibrated, discriminability, and
+                 discriminability_for_symbol stay getattr inside
+                 _calibrate_regime_engine / _update_regime. reset is
+                 also reachable via getattr through _maybe_reset;
+                 that walk does not list either engine, and named
+                 reset is the detector. No public orchestrator
+                 property hands either instance out — no
+                 harness/cli extra surface (T-03). services/
+                 regime_engine.py already defines a RegimeEngine
+                 Protocol (state_names, n_states, posterior,
+                 current_state, reset(symbol), checkpoint, restore)
+                 that is wider than kernel's named calls and lives in
+                 the engine package; importing that Protocol is still
+                 kernel → services.
+WHY THIS OWNER:  T5 core already owns the names kernel may use. The
+                 illegal edge is kernel naming Engine 3 for injected
+                 types. The invert is a core Protocol module named
+                 for the regime concern, not relocating HMM3 or the
+                 detector, not deleting the TYPE_CHECKING-equivalent
+                 runtime import, and not appending to
+                 core/regime_gate.py (that file is the gate DSL).
+                 The helpers' return in T-05a does not replace this
+                 bind.
+REFACTOR PATH:   one commit. Mechanism: Selection-style Protocols in
+                 a new feelies.core.regime_protocol (named for the
+                 thing, not the step; one module per engine concern).
+                 Kernel retargets both annotations there. Required
+                 surface is every named kernel call after T-05a, not
+                 a copy of the services Protocol. Structural; no
+                 subclassing on HMM3StateFractional or
+                 RegimeHazardDetector. No object/Any, no getattr
+                 fallback, no sys.modules, no TYPE_CHECKING-only
+                 move, no re-export of the Protocol from the engine
+                 package as the cut, no kernel_ports.py.
+                 Per-name Protocol surface:
+                 RegimeEngine: restore(data: bytes) -> None (named
+                 at :3070); posterior(quote: NBBOQuote) ->
+                 list[float] (named in returned _update_regime);
+                 state_names -> Sequence[str] (named there);
+                 checkpoint() -> bytes (named in returned
+                 _checkpoint_regime_snapshot). Do not put
+                 calibrate, calibrated, discriminability, or
+                 discriminability_for_symbol on the Protocol —
+                 getattr, T-03. Do not put n_states, current_state,
+                 or reset(symbol: str) on it — kernel never names
+                 them (current_state is _regime_label_for, not
+                 imported; services reset(symbol) is the wrong arity
+                 for getattr reset()).
+                 RegimeHazardDetector: reset() -> None (named at
+                 :2165); detect(prev: RegimeState | None,
+                 curr: RegimeState) -> RegimeHazardSpike | None
+                 (named in returned _maybe_publish_hazard_spike).
+                 Import Signal/quote/state/spike types from
+                 feelies.core.events. Import nothing from
+                 feelies.services.
+                 (1) add src/feelies/core/regime_protocol.py with those
+                 two Protocols. Nested winner types are not needed;
+                 detect's return is already a core event.
+                 (2) orchestrator: import both from
+                 feelies.core.regime_protocol; drop
+                 feelies.services.regime_engine and
+                 feelies.services.regime_hazard_detector. Keep
+                 constructor optionality and the call sites.
+                 Leave getattr as getattr. Leave the services
+                 Protocol in place for services/bootstrap/alpha —
+                 that re-export is not the cut.
+                 (3) drop ("feelies.kernel", "feelies.services") from
+                 _TIER_RESIDUALS in the same commit (equality, 6
+                 remain).
+                 (4) new core module: _FILE_OWNERS row and README
+                 citation in this commit (S-21), same as T-03.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 6-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP
+                 oracle). No XPASS. lint-imports: Five import tiers
+                 still BROKEN, Twelve engine module sets KEPT. A
+                 new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module kernel names for the two
+                 injected types changes. A moved HASH or COUNT
+                 means the Protocol call was not a transparent
+                 substitute (surface, attribute, or a silent
+                 default) — STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/regime_protocol.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 Do not invert the concretes. Do not edit
+                 bootstrap.py. Do not include
+                 tests/conformance/test_fail_quiet.py. No keep-row
+                 file is touched (same list as T-05a). Do not
+                 include services/regime_engine.py or
+                 services/regime_hazard_detector.py (structural; the
+                 services Protocol stays for non-kernel consumers).
+                 Do not include core/regime_gate.py. Do not include
+                 harness/, cli/, .github/workflows/ci.yml.
+DELETES:         the kernel → services pair; the services.regime_engine
+                 and services.regime_hazard_detector imports from
+                 orchestrator.
+NET DELTA:       src modules +1, public symbols +2, branch points 0
+                 (RegimeEngine and RegimeHazardDetector Protocols).
+ROLLBACK:        revert the commit. The new Protocol module reverts
+                 with it. Independently revertible from T-06 until
+                 T-06 lands; orchestrator.py is shared with T-05a
+                 and T-06 and is not independently revertible once T-06
+                 lands.
+```
