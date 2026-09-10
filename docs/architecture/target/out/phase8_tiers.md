@@ -399,3 +399,327 @@ ROLLBACK:        revert the commit. The two new Protocol modules
                  T-04 and is not independently revertible once T-04
                  lands.
 ```
+
+```
+STEP:            T-04a
+CLOSES:          nothing. Pin stays 8. Does not drop kernel →
+                 composition. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A step that leaves the count unchanged
+                 is legitimate here and must not be mistaken for a
+                 failed cut.
+PROBLEM:         feelies.kernel.orchestrator is the only kernel file
+                 that imports feelies.composition. Seven names:
+                 CompositionEngine from composition.engine
+                 (TYPE_CHECKING, l.26); SelectionPolicy from
+                 composition.protocol (runtime, l.30);
+                 StandaloneArbitrationCollision, Top1SelectionPolicy,
+                 collision_is_harmless_flat_gate_close,
+                 is_redundant_gate_close_flat,
+                 standalone_signal_actionable_for_strategy from
+                 composition.selection_policy (runtime, l.31-36).
+                 CompositionEngine is injected optional; stored;
+                 is None at :1168; getattr reset at :2522. No public
+                 property. Kernel never calls is_empty or reset by
+                 name. Bootstrap already constructs and passes it
+                 (bootstrap.py ~558, ~688). An empty Protocol is
+                 enough. Deleting l.26 while the name still binds
+                 feelies.composition.engine is not a cut.
+                 StandaloneArbitrationCollision is a frozen
+                 dataclass kernel constructs at :1594-1605.
+                 Public property arbitration_collisions at :630.
+                 scripts/compare_multialpha_runs.py imports that
+                 name from kernel (not composition) and reads
+                 candidate_count, strategy_ids, kinds, harmless.
+                 After the move, orchestrator still binds the name
+                 from core, so that script import stays valid.
+                 The three helpers (and private
+                 _signal_reduces_book) are pure predicates on
+                 Signal plus book qty, used on the standalone
+                 SIGNAL path before select(). Honest owner is
+                 core, not Engine 6. Injecting three callables is
+                 the wrong cost. SelectionPolicy and
+                 Top1SelectionPolicy stay for T-04b.
+WHY THIS OWNER:  T5 core already owns the names kernel may use.
+                 composition_protocol.py already owns the
+                 composition concern (CompositionContextError).
+                 The illegal edges here are annotation and helper
+                 imports. The invert is names in that existing
+                 module, not relocating Top1, not a TYPE_CHECKING
+                 delete, and not a new module. A second composition
+                 Protocol file would duplicate it.
+REFACTOR PATH:   one commit. Mechanism: move the collision record and
+                 the three Signal predicates (plus private
+                 _signal_reduces_book) into
+                 feelies.core.composition_protocol; retarget
+                 CompositionEngine at orchestrator.py:26 onto that
+                 same module; re-export the moved names from
+                 feelies.composition.selection_policy as a
+                 convenience for consumers that already import them
+                 from Engine 6. That re-export is not the cut. Do
+                 not invert selection_policy. No object/Any, no
+                 getattr, no sys.modules, no TYPE_CHECKING-only
+                 move, no re-export of the Protocol from the engine
+                 package as the cut, no kernel_ports.py, no explicit
+                 subclassing of the Protocol on the concrete
+                 (structural).
+                 CompositionEngine is TYPE_CHECKING-only. Retarget
+                 the annotation at orchestrator.py:26 to
+                 feelies.core.composition_protocol; do not delete
+                 l.26 as the cut while the name still binds
+                 feelies.composition.engine. That retarget, not a
+                 delete of l.26, is the fifth catalogued non-cut.
+                 (1) extend src/feelies/core/composition_protocol.py:
+                 CompositionEngine Protocol (empty; kernel never
+                 calls methods by name; reset stays getattr, not a
+                 Protocol member); StandaloneArbitrationCollision
+                 frozen dataclass (candidate_count, strategy_ids,
+                 kinds, harmless); the three helpers and
+                 _signal_reduces_book. Import Signal /
+                 SignalDirection from feelies.core.events. Do not
+                 import feelies.composition. The property at
+                 orchestrator.py:630 stays
+                 tuple[StandaloneArbitrationCollision, ...], so
+                 this surface covers the kernel property and
+                 compare_multialpha_runs.py without retargeting
+                 the script.
+                 (2) selection_policy.py: delete the moved bodies;
+                 re-export the four public names from
+                 feelies.core.composition_protocol. Keep
+                 Top1SelectionPolicy here. The re-export is a
+                 convenience for consumers (including
+                 tests/kernel/test_standalone_signal_ownership.py);
+                 it is not the cut.
+                 (3) orchestrator: import CompositionEngine,
+                 StandaloneArbitrationCollision, and the three
+                 helpers from feelies.core.composition_protocol;
+                 drop those names from composition.engine and
+                 composition.selection_policy. Keep
+                 SelectionPolicy from composition.protocol and
+                 Top1SelectionPolicy from selection_policy. Keep
+                 the call sites.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 8-pair pin (pin
+                 does not move); test_twelve_engine_independence
+                 KEPT at zero pairs; tests/acceptance/
+                 test_backtest_app_baseline.py (APP oracle). No
+                 XPASS. lint-imports: Five import tiers still BROKEN,
+                 Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module kernel names for
+                 CompositionEngine, the collision record, and the
+                 three helpers changes. A moved HASH or COUNT
+                 means the Protocol or helper was not a transparent
+                 substitute (surface, field, or a silent default)
+                 — STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/composition_protocol.py
+                 src/feelies/composition/selection_policy.py
+                 Do not add a module. Do not invert
+                 selection_policy. Do not edit bootstrap.py. Do not
+                 include tests/conformance/test_import_contracts.py
+                 (pin does not move). Do not include
+                 scripts/compare_multialpha_runs.py; it keeps
+                 importing StandaloneArbitrationCollision from
+                 kernel. Do not include
+                 tests/conformance/test_fail_quiet.py.
+                 composition/factor_neutralizer.py is not in
+                 FILES; keep-rows 28 (ImportError) and 139
+                 (np.linalg.LinAlgError) stay untouched. Do not
+                 include tests/docs/test_prompt_coverage_map.py
+                 or docs/prompts/README.md
+                 (composition_protocol.py already has a row and a
+                 README citation). Do not include
+                 tests/kernel/test_standalone_signal_ownership.py
+                 (re-export covers it). Do not include
+                 composition/engine.py or composition/protocol.py.
+                 Do not include harness/__init__.py, cli/,
+                 .github/workflows/ci.yml.
+DELETES:         the engine-package imports of CompositionEngine,
+                 StandaloneArbitrationCollision, and the three
+                 helpers from orchestrator. Does not delete the
+                 kernel → composition pair.
+NET DELTA:       src modules 0, public symbols +1, branch points 0
+                 (CompositionEngine Protocol is new; the three
+                 helpers and collision relocate: selection_policy
+                 loses four public names that become imports;
+                 composition_protocol gains them).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-04b until T-04b lands; orchestrator.py and
+                 composition_protocol.py are shared with T-04b
+                 and are not independently revertible once T-04b
+                 lands.
+```
+
+```
+STEP:            T-04b
+CLOSES:          nothing. Drops kernel → composition. Five import
+                 tiers stays BROKEN. 8 → 7. G40 stays CLOSED.
+PROBLEM:         After T-04a, kernel still imports SelectionPolicy
+                 from feelies.composition.protocol (runtime, l.30)
+                 and Top1SelectionPolicy from
+                 feelies.composition.selection_policy. Constructor
+                 takes selection_policy: SelectionPolicy | None = None
+                 at :279 and defaults at :365-366 with
+                 Top1SelectionPolicy(). Runtime uses
+                 select(buf).winner at :1636 and
+                 type(...).__name__ at :1634. Nothing currently
+                 passes selection_policy= — not bootstrap
+                 (_RootOrchestrator at ~659), not any of the 52
+                 real Orchestrator( sites in 19 test files. A
+                 default Top1SelectionPolicy() is the illegal
+                 import itself. No legitimate default both
+                 preserves Top-1 and drops kernel → composition.
+                 Same shape as T-02: a default added so an
+                 undeclared caller keeps working is not a cut
+                 (S-35c1; T-02's default was
+                 platform_factory=build_platform). selection_policy
+                 is not a public property; no extra Protocol surface
+                 for harness or cli.
+WHY THIS OWNER:  T5 core already owns the names kernel may use.
+                 SelectionPolicy is the injected type. The
+                 illegal edge is the default constructing Top1.
+                 The invert is the composition root supplying a
+                 required SelectionPolicy, not relocating Top1 into
+                 kernel and not a default that keeps the import.
+REFACTOR PATH:   one commit. Mechanism: SelectionPolicy Protocol in
+                 feelies.core.composition_protocol (same file as
+                 T-04a); selection_policy required, no default;
+                 bootstrap and every real Orchestrator( site pass
+                 Top1SelectionPolicy(). No object/Any, no getattr,
+                 no sys.modules, no TYPE_CHECKING-only move, no
+                 re-export of the Protocol from the engine package
+                 as the cut, no kernel_ports.py, no explicit
+                 subclassing of the Protocol on Top1 (structural).
+                 A default = Top1SelectionPolicy() is the illegal
+                 import itself; no default is legitimate (T-02 /
+                 S-35c1 parallel).
+                 (1) add SelectionPolicy Protocol to
+                 composition_protocol.py. Member: select → nested
+                 Protocol with only winner: Signal | None. Do not
+                 import SelectionResult or anything else from
+                 feelies.composition (that would be core →
+                 composition). Nested name underscored so it is
+                 not a public symbol.
+                 (2) orchestrator: import SelectionPolicy from
+                 feelies.core.composition_protocol; drop
+                 feelies.composition.protocol and
+                 Top1SelectionPolicy. Required
+                 selection_policy: SelectionPolicy with no default
+                 and no | None. Delete the ternary at :365-366;
+                 store the argument. Keep the call sites.
+                 (3) bootstrap.py passes
+                 selection_policy=Top1SelectionPolicy() into
+                 _RootOrchestrator. bootstrap.py is a keep-row file
+                 (1607 KeyError, 1825 TypeError/ValueError).
+                 test_fail_quiet.py is not in FILES, so this step
+                 must not insert or delete lines above those rows:
+                 squeeze the Top1SelectionPolicy import onto an
+                 existing import line and
+                 selection_policy=Top1SelectionPolicy() onto an
+                 existing _RootOrchestrator argument line. Measure
+                 1607 and 1825 after the cut; if they moved, STOP.
+                 (4) every real Orchestrator( site in the 19 test
+                 files passes selection_policy=Top1SelectionPolicy().
+                 tests/kernel/test_orchestrator.py: updating
+                 _build_orchestrator does not cover that file's 27
+                 raw sites. Files that import _build_orchestrator
+                 from test_orchestrator.py and have no
+                 Orchestrator( of their own need no edit of their
+                 own: tests/kernel/test_fill_attribution_seam.py,
+                 tests/conformance/test_pathological_refusal.py,
+                 tests/kernel/test_reverse_edge_calibration.py,
+                 tests/kernel/test_orchestrator_order_routing.py,
+                 tests/kernel/test_orchestrator_edge_calibration.py.
+                 (5) drop ("feelies.kernel", "feelies.composition")
+                 from _TIER_RESIDUALS in the same commit (equality,
+                 7 remain).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 7-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP
+                 oracle). No XPASS. lint-imports: Five import tiers
+                 still BROKEN, Twelve engine module sets KEPT. A
+                 new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only who constructs Top1 and which
+                 module kernel names for SelectionPolicy changes.
+                 A moved HASH or COUNT means the Protocol call or
+                 the required handle was not a transparent
+                 substitute (surface, a silent default, or a
+                 different policy) — STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/composition_protocol.py
+                 src/feelies/bootstrap.py
+                 (1 site: _RootOrchestrator ~659; squeeze, see
+                 REFACTOR PATH)
+                 tests/kernel/test_orchestrator.py
+                 (28: 1 factory + 27 raw)
+                 tests/kernel/test_orchestrator_bus_sized_intent.py
+                 (4: 1 local factory + 3 raw)
+                 tests/determinism/test_forced_exit_attribution_replay.py
+                 (3)
+                 tests/causality/test_anti_lookahead.py
+                 (2)
+                 tests/kernel/test_trade_path_regime_gate_cold_start.py
+                 (1)
+                 tests/determinism/test_position_pnl_replay.py
+                 (1)
+                 tests/kernel/test_reducing_signal_survives_risk_gate.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (1 local factory)
+                 tests/kernel/test_data_integrity_runtime.py
+                 (1 local factory)
+                 tests/determinism/test_symbol_halted_replay.py
+                 (1)
+                 tests/kernel/test_orchestrator_shutdown_drain.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_async_fill_latency.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_bus_signal.py
+                 (1 local factory)
+                 tests/conformance/test_registration_order.py
+                 (1)
+                 tests/kernel/test_orchestrator_exit_composer_routing.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_idle_tick.py
+                 (1 local factory)
+                 tests/kernel/test_standalone_signal_ownership.py
+                 (1 local factory)
+                 tests/services/test_regime_hazard_engine_wiring.py
+                 (1 local factory)
+                 tests/integration/test_dual_scale_down_e2e.py
+                 (1)
+                 tests/conformance/test_import_contracts.py
+                 Do not add a module. Do not include
+                 scripts/compare_multialpha_runs.py; it keeps
+                 importing StandaloneArbitrationCollision from
+                 kernel. Do not include
+                 tests/conformance/test_fail_quiet.py.
+                 composition/factor_neutralizer.py is not in
+                 FILES; keep-rows 28 and 139 stay untouched. Do
+                 not include the five test_orchestrator.py-factory
+                 funnel files listed in REFACTOR PATH. Do not
+                 include tests/harness/test_emit_edge_calibration.py
+                 or tests/harness/test_backtest_report.py
+                 (_FakeOrchestrator, not a real constructor). Do
+                 not include composition/selection_policy.py
+                 (T-04a re-export; not this cut) or
+                 composition/protocol.py (Top1 still imports
+                 SelectionPolicy from there; structural). Do not
+                 include harness/__init__.py, cli/,
+                 .github/workflows/ci.yml.
+DELETES:         the kernel → composition pair; the
+                 composition.protocol and Top1SelectionPolicy
+                 imports from orchestrator; the Top1 default.
+NET DELTA:       src modules 0, public symbols +1, branch points 0
+                 (SelectionPolicy Protocol; nested winner type is
+                 underscored).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-05 until T-05 lands; orchestrator.py is shared
+                 with T-04a and T-05 and is not independently
+                 revertible once T-05 lands.
+```
