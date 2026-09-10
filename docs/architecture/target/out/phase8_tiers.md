@@ -95,6 +95,20 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  not just the kernel's own calls. Enumerate
                  the property's callers before writing the
                  surface.
+                 SIZE A RUNG BY A PER-NAME CENSUS, NOT A
+                 PACKAGE LABEL. T-04's one-line description
+                 named selection_policy; kernel imported
+                 seven names from three composition modules,
+                 and a Protocol-only step would have left
+                 five in place with the pin unmoved. Before
+                 a rung is written as a block, enumerate
+                 every kernel import of that package with
+                 line and kind, classify each as injected,
+                 default-constructed, annotation-only, or a
+                 function/enum/dataclass that no Protocol
+                 can replace, and check for a public
+                 orchestrator property. A rung whose names
+                 mix those kinds splits.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
@@ -105,6 +119,8 @@ NON-CUTS:        A re-export without retarget is not a cut.
 LADDER:          Pair count is the layers contract, not G40.
                  Shared-file steps are sequential, not
                  independently revertible.
+                 A step that does not empty a package
+                 does not move the pin.
                    now                                              13
                    1  harness → cli (env down)                     12
                    2  harness → bootstrap (composition-root up)   11
@@ -112,26 +128,53 @@ LADDER:          Pair count is the layers contract, not G40.
                       (alpha, sensors, signals)                      8
                    4  bind: selection_policy required
                       (composition)                                 7
-                   5  bind: regime/hazard helpers
-                      (services)                                    6
-                   6  bind: feed and telemetry leftovers
-                      (ingestion, monitoring)                      4
-                   7  bind: book of record
-                      (portfolio)                                    3
-                   8  bind: tick path
-                      (risk, execution)                              1
-                   9  storage (orchestrator and fill_bindings
-                      retarget)                                      0
-                  10  empty pin AND Five import tiers KEPT
-                      AND drop continue-on-error               0 KEPT
+                   T-05a  four regime helpers (functions;
+                          services)                                 7
+                   T-05b  RegimeEngine, RegimeHazardDetector
+                          Protocols (services)                      6
+                   T-06a  halt helpers, IdleTick, DataHealth,
+                          HaltTradeability, MarketDataNormalizer
+                          (ingestion)                                 5
+                   T-06b  MetricCollector retarget; invert
+                          LatencyBudgetMonitor; KillSwitch
+                          (property), AlertManager,
+                          PaperSessionRecorder;
+                          observe_kill_switch,
+                          apply_breach_response (monitoring)       4
+                   T-07a  fill helpers; LotLedger invert;
+                          PositionBookView (portfolio)              4
+                   T-07b  PositionStore retarget; Protocol
+                          FillAttributionLedger,
+                          StrategyPositionStore (portfolio)        3
+                   T-08a  risk helpers, HAZARD_EXIT bind,
+                          RiskLevel; invert BudgetBasedSizer
+                          and create_risk_escalation_machine;
+                          Protocol RiskEngine,
+                          HazardExitController, PositionSizer,
+                          EdgeWeightedSizer (risk)                2
+                   T-08b  invert SignalPositionTranslator,
+                          PortfolioNetter, DesiredTargetBook,
+                          MarketContext,
+                          create_order_state_machine,
+                          min-cost policy; Protocol
+                          ExecutionBackend and remaining
+                          injected types;
+                          enums/dataclasses/functions
+                          (execution)                                1
+                   T-09a  TradeRecord; fill_bindings retarget
+                          (storage)                                  1
+                   T-09b  EventLog, FeatureSnapshotStore,
+                          TradeJournal query (storage)              0
+                   close  empty pin AND Five import tiers KEPT
+                          AND drop continue-on-error          0 KEPT
                  Gate at every pair-dropping step: pairs ==
                  the expected remaining _TIER_RESIDUALS.
                  S2 (test_twelve_engine_independence) re-run
                  after every pair-dropping step; stays KEPT
                  at zero pairs. A new twelve-engine pair is a
                  STOP.
-                 Step 10 adds statuses["Five import tiers"]
-                 == "KEPT" beside pairs == frozenset().
+                 The close rung adds statuses["Five import
+                 tiers"] == "KEPT" beside pairs == frozenset().
                  If pairs == frozenset() but
                  statuses["Five import tiers"] reports BROKEN,
                  the campaign has not closed and
