@@ -36,13 +36,10 @@ _LAYER_PAIR = re.compile(
 _TIER_RESIDUALS = frozenset(
     {
         ("feelies.kernel", "feelies.ingestion"),
-        ("feelies.kernel", "feelies.alpha"),
         ("feelies.kernel", "feelies.portfolio"),
         ("feelies.kernel", "feelies.composition"),
-        ("feelies.kernel", "feelies.sensors"),
         ("feelies.kernel", "feelies.services"),
         ("feelies.kernel", "feelies.risk"),
-        ("feelies.kernel", "feelies.signals"),
         ("feelies.kernel", "feelies.monitoring"),
         ("feelies.kernel", "feelies.execution"),
         ("feelies.kernel", "feelies.storage"),
