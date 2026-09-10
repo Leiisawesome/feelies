@@ -15164,3 +15164,198 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
                  baseline_post-T-03.json, this ledger
                  entry.
 
+---
+
+## T-04a  2026-09-10T10:55:00+08:00
+  STEP:          T-04a
+  BASE:          4a4328be2d9a7add134384f15e0e1eccb869f99b
+  RESULT SHA:    04e52fa05a6814d327a3d904b4d40d5b78546bff (exec/T-04a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 8. Does not drop kernel → composition. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 8-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (8 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; composition 61
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate).
+  TESTS:         capture pre-T-04a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-04a GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-04a vs post-T-04a and vs
+                 baseline_post-T-03.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 8 before and 8
+                 after. This step moves names; T-04b inverts
+                 the policy. An unchanged count is the declared
+                 outcome.
+  FILES:         3 declared, 3 touched, 3 committed (clean vs
+                 04e52fa0). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 composition_protocol.py,
+                 selection_policy.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 compare_multialpha_runs.py, bootstrap.py,
+                 test_fail_quiet.py, factor_neutralizer.py
+                 (keep-rows 28 ImportError, 139
+                 LinAlgError), test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 test_standalone_signal_ownership.py
+                 (re-export covers it), composition/engine.py,
+                 composition/protocol.py, harness/__init__.py,
+                 cli/, ci.yml.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols +1,
+                 branch points 0
+                 (CompositionEngine Protocol is new; the three
+                 helpers and collision relocate).
+                 actual modules 221 -> 221 (+0 MATCH)
+                 public_symbols 579 -> 580 (+1 MATCH)
+                 sloc 46756 -> 46767 (+11, undeclared)
+                 n_edges 667 -> 669
+                 n_modules 177 -> 178
+                 (import graph: composition_protocol is now
+                 imported; not a new src file)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 3 declared / 3 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules 0
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 04e52fa05a6814d327a3d904b4d40d5b78546bff.
+                 Not merged.
+  NOTES:         One commit on exec/T-04a,
+                 04e52fa05a6814d327a3d904b4d40d5b78546bff,
+                 "T-04a: move collision record and Signal
+                 predicates into core; retarget
+                 CompositionEngine". Parent 4a4328be on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The pin stayed at 8. That is the declared
+                 outcome: T-04a only moves names into core so
+                 kernel can stop importing them from Engine 6.
+                 Kernel still imports SelectionPolicy and
+                 Top1SelectionPolicy from composition, so the
+                 kernel → composition pair is still there. The
+                 invert that drops the pair is T-04b. An
+                 unchanged count here is not a failed cut.
+                 Remaining pairs, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Four names moved into
+                 core/composition_protocol.py:
+                 StandaloneArbitrationCollision,
+                 collision_is_harmless_flat_gate_close,
+                 is_redundant_gate_close_flat,
+                 standalone_signal_actionable_for_strategy
+                 (plus private _signal_reduces_book). That
+                 file imports Signal and SignalDirection from
+                 feelies.core.events and nothing from
+                 feelies.composition. Line 26 was retargeted
+                 from composition.engine to
+                 feelies.core.composition_protocol; it was not
+                 deleted. CompositionEngine is an empty
+                 Protocol; reset stays getattr
+                 (orchestrator.py:2507). Orchestrator still
+                 binds StandaloneArbitrationCollision at
+                 module level, so
+                 scripts/compare_multialpha_runs.py keeps
+                 importing it from kernel and needed no edit.
+                 Proved:
+                 uv run python -c "from feelies.kernel.orchestrator import StandaloneArbitrationCollision; print('ok')"
+                 printed ok. The re-export of those four
+                 names from composition.selection_policy is
+                 a convenience for consumers
+                 (tests/kernel/test_standalone_signal_ownership.py
+                 among them); it is not the cut. Top1 stays
+                 defined there. factor_neutralizer.py rows 28
+                 (ImportError) and 139 (LinAlgError) were not
+                 in FILES and were not touched. mypy
+                 src/feelies: Success, 221 source files,
+                 before the gate. APP oracle 2 passed;
+                 hashes and fill count unmoved. S2 KEPT at
+                 zero twelve-engine pairs. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main). Declared
+                 NET DELTA 0 src modules, +1 public symbol, 0
+                 branch points. Measured from the two capture
+                 artifacts: modules 221 → 221 MATCH,
+                 public_symbols 579 → 580 MATCH, sloc 46756
+                 → 46767 (+11, undeclared), n_edges 667 →
+                 669, n_modules 177 → 178 (composition_protocol
+                 entered the import graph; not a new src
+                 file), cycles 1 → 1 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The ladder's original T-04 sketch would not
+                 have dropped the pair. Rung 4 is "bind:
+                 selection_policy required (composition)" 8→7.
+                 It named only selection_policy. Kernel
+                 imported seven names from three composition
+                 modules -- CompositionEngine from
+                 composition.engine, SelectionPolicy from
+                 composition.protocol, and
+                 StandaloneArbitrationCollision,
+                 Top1SelectionPolicy, and the three helpers
+                 from composition.selection_policy.
+                 Inverting Top1 / SelectionPolicy alone would
+                 have left CompositionEngine, the collision
+                 record, and the three helpers, and the
+                 kernel → composition pair would have
+                 remained. T-05 through T-09 were sized the
+                 same way, from the campaign's opening analysis
+                 rather than from a per-name read of what
+                 kernel actually imports. Each of those
+                 rungs should be checked for the same
+                 shortfall before its block is written.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-04b required selection_policy; pin 8 to 7
+                 (boundary). Not started. Do not begin T-04b.
+                 Go confirmed on
+                 04e52fa05a6814d327a3d904b4d40d5b78546bff.
+                 Left uncommitted:
+                 baseline_pre-T-04a.json,
+                 baseline_post-T-04a.json, this ledger
+                 entry.
+
