@@ -287,6 +287,17 @@ PROBLEM:         feelies.kernel.orchestrator imports four injected
                  That is T5 importing T2/T3/T4 for names. Bootstrap
                  already constructs all four and passes them in
                  (bootstrap.py ~676-685).
+                 The alpha_registry property hands the
+                 instance to feelies.harness.backtest_runner,
+                 feelies.harness.backtest_report and
+                 feelies.cli.forensics, which call alpha_ids,
+                 get and get_lifecycle. The Protocol must
+                 cover their typed use or mypy fails in files
+                 outside FILES. Typing the property as the
+                 concrete keeps the import and the pair.
+                 sensor_registry, horizon_scheduler and
+                 horizon_signal_engine have no public
+                 property and no such exposure.
 WHY THIS OWNER:  T5 core already owns the names kernel may use.
                  The illegal edges are annotation imports. The invert
                  is Protocols in core, named for the engine concern,
@@ -311,7 +322,18 @@ REFACTOR PATH:   one commit. Mechanism: kernel annotates against
                  binds feelies.alpha.registry. That deletion is the
                  fifth catalogued non-cut.
                  (1) add src/feelies/core/alpha_registry.py:
-                 AlphaRegistry Protocol, has_portfolio_alphas.
+                 AlphaRegistry Protocol. Members:
+                 has_portfolio_alphas() -> bool;
+                 alpha_ids() -> frozenset[str];
+                 get(alpha_id: str) returning a nested
+                 Protocol with only manifest.version: str;
+                 get_lifecycle(alpha_id: str) -> object | None.
+                 Do not import feelies.alpha. reset and
+                 portfolio_alphas stay getattr, not
+                 Protocol members. The property at
+                 orchestrator.py:670 stays AlphaRegistry
+                 | None, so this surface covers harness
+                 and cli as well as kernel.
                  (2) add src/feelies/core/sensor_registry.py:
                  SensorRegistry Protocol, is_empty.
                  (3) add HorizonScheduler (on_event → tuple of
