@@ -14958,3 +14958,209 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
                  baseline_post-T-02.json, this ledger
                  entry.
 
+---
+
+## T-03  2026-09-10T09:47:22+08:00
+  STEP:          T-03
+  BASE:          781feafe033bf01ffcefdebc0fefdd7ede444b08
+  RESULT SHA:    ca3de3917ceee55771557e9fa13eaff9e86e1c83 (exec/T-03; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → alpha, kernel → sensors,
+                 kernel → signals. Five import tiers stays
+                 BROKEN. 11 → 8. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED
+                 on unexpected [('feelies.kernel',
+                 'feelies.alpha'), ('feelies.kernel',
+                 'feelies.sensors'), ('feelies.kernel',
+                 'feelies.signals')] before the cut; 3
+                 passed after the cut (8-pair pin).
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (8 pairs), Twelve
+                 engine module sets KEPT. test_five_import_tiers
+                 equals the shrunk 8-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; determinism 148
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate). harness/backtest_runner.py,
+                 harness/backtest_report.py, cli/forensics.py
+                 unedited.
+  TESTS:         capture pre-T-03 GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-03 GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-02 RED 4909 passed / 1 failed /
+                 18 skipped / 5 xfailed: the IB after-hours
+                 EXEMPTION skipped this capture (skipped
+                 19 vs 18).
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed. kernel 390; harness+cli
+                 119; sensors+signals+alpha 883 passed / 1
+                 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-03 vs post-T-03 and vs
+                 baseline_post-T-02.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         7 declared, 7 touched, 7 committed (clean vs
+                 ca3de391). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 alpha_registry.py, sensor_registry.py,
+                 horizon_protocol.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched: bootstrap.py,
+                 alpha/layer_validator.py,
+                 harness/backtest_runner.py,
+                 harness/backtest_report.py,
+                 cli/forensics.py, harness/__init__.py,
+                 cli/, ci.yml, test_fail_quiet.py,
+                 concretes.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols +4,
+                 branch points 0.
+                 actual modules 219 -> 221 (+2 MATCH)
+                 public_symbols 575 -> 579 (+4 MATCH)
+                 sloc 46705 -> 46756 (+51, undeclared)
+                 n_edges 668 -> 667 (-1)
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 7 declared / 7 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +4. CLEAN. Go confirmed on
+                 branch head
+                 ca3de3917ceee55771557e9fa13eaff9e86e1c83.
+                 Not merged.
+  NOTES:         One commit on exec/T-03,
+                 ca3de3917ceee55771557e9fa13eaff9e86e1c83,
+                 "T-03: bind injected types via core
+                 Protocols; drop kernel->alpha, sensors,
+                 signals". Parent 781feafe on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 11 to 8. The pin and the
+                 code dropped all three together in
+                 that commit:
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.signals").
+                 Remaining, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Four Protocol surfaces, all
+                 structural, no subclassing on the
+                 concrete: AlphaRegistry
+                 (has_portfolio_alphas, alpha_ids, get
+                 returning a nested Protocol with
+                 only manifest.version: str,
+                 get_lifecycle -> object | None);
+                 SensorRegistry (is_empty);
+                 HorizonScheduler (on_event -> tuple
+                 of HorizonTick); HorizonSignalEngine
+                 (is_empty property). The four
+                 concretes already match that surface;
+                 none inherit the Protocol.
+                 Line 25 was retargeted from
+                 feelies.alpha.registry to
+                 feelies.core.alpha_registry, not
+                 deleted. Deleting a TYPE_CHECKING-
+                 only import is the fifth catalogued
+                 non-cut; the pair would have dropped
+                 without a real cut.
+                 reset and portfolio_alphas stayed
+                 getattr (orchestrator.py:2507,
+                 :2773). They are not Protocol members.
+                 Two new core modules,
+                 alpha_registry.py and
+                 sensor_registry.py, gained
+                 _FILE_OWNERS rows
+                 (audit_core_clock_config) and the
+                 README core_clock_config citation in
+                 this same commit (S-21).
+                 mypy src/feelies: Success, 221 source
+                 files. The three property-consumer
+                 files -- harness/backtest_runner.py,
+                 harness/backtest_report.py,
+                 cli/forensics.py -- were not edited.
+                 APP oracle 2 passed; hashes and fill
+                 count unmoved. S2 KEPT at zero
+                 twelve-engine pairs. n_cycles held at
+                 1 (feelies.cli → feelies.cli.main).
+                 bootstrap.py was not touched.
+                 Declared NET DELTA +2 src modules, +4
+                 public symbols, 0 branch points.
+                 Measured: modules 219 → 221 MATCH,
+                 public_symbols 575 → 579 MATCH,
+                 sloc 46705 → 46756 (+51, undeclared),
+                 n_edges 668 → 667, n_modules 177 →
+                 177, cycles 1 → 1 MATCH, alphaleak
+                 0 → 0.
+  FINDINGS:      The first attempt scoped
+                 AlphaRegistry to has_portfolio_alphas
+                 and mypy failed on seven attribute
+                 errors in
+                 harness/backtest_runner.py,
+                 harness/backtest_report.py and
+                 cli/forensics.py -- none of them in
+                 FILES. The cause is that
+                 orchestrator exposes the instance
+                 through a public alpha_registry
+                 property, so the Protocol has to
+                 cover every consumer of that
+                 property, not just kernel's own
+                 calls. For the remaining groups:
+                 before writing a Protocol surface,
+                 check whether the orchestrator hands
+                 the instance out, and if so
+                 enumerate the property's callers
+                 first. sensor_registry,
+                 horizon_scheduler and
+                 horizon_signal_engine had no such
+                 property and were unaffected.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-04 bind selection_policy required:
+                 composition (boundary). Not started.
+                 Do not begin T-04. Go confirmed on
+                 ca3de3917ceee55771557e9fa13eaff9e86e1c83.
+                 Left uncommitted:
+                 baseline_pre-T-03.json,
+                 baseline_post-T-03.json, this ledger
+                 entry.
+
