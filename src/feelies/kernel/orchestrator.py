@@ -23,14 +23,14 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from feelies.portfolio.fill_attribution import FillAttributionLedger
     from feelies.core.alpha_registry import AlphaRegistry
-    from feelies.composition.engine import CompositionEngine
+    from feelies.core.composition_protocol import CompositionEngine
     from feelies.risk.hazard_exit import HazardExitController
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
 from feelies.composition.protocol import SelectionPolicy
-from feelies.composition.selection_policy import (
+from feelies.composition.selection_policy import Top1SelectionPolicy
+from feelies.core.composition_protocol import (
     StandaloneArbitrationCollision,
-    Top1SelectionPolicy,
     collision_is_harmless_flat_gate_close,
     is_redundant_gate_close_flat,
     standalone_signal_actionable_for_strategy,
