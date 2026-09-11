@@ -1058,6 +1058,133 @@ ROLLBACK:        revert the commit. The new Protocol module reverts
 ```
 
 ```
+STEP:            T-06z
+CLOSES:          nothing. Pin stays 6. Does not drop kernel →
+                 ingestion. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A placement step, not a cut, same
+                 shape as T-04a: an unchanged count is the
+                 declared outcome, not a failed cut.
+PROBLEM:         T-06a must put _HaltTradeability and
+                 _sync_halt_store_and_health in
+                 feelies.core.data_health. Those bodies raise
+                 KernelFault from
+                 feelies.kernel.exception_taxonomy. Core is the
+                 bottom layer (below kernel). core → kernel is a
+                 new layers violation, not in _TIER_RESIDUALS.
+                 KernelFault is a FeeliesError subclass with a
+                 nested Kind enum. It imports only
+                 feelies.core.errors. It names no orchestrator
+                 state. Five raisers construct it:
+                 kernel.orchestrator (TICK_PIPELINE),
+                 ingestion.data_integrity (SESSION_HALT),
+                 ingestion.massive_ws (INGRESS_ADMIT),
+                 alpha.registry (UNIVERSE),
+                 sensors.horizon_scheduler (HORIZON_GRID).
+                 Five tests import it from
+                 kernel.exception_taxonomy:
+                 test_exception_containment,
+                 test_session_halt_authority,
+                 test_ingress_admit, test_universe_authority,
+                 test_horizon_grid. S-30a pinned the type to
+                 kernel by role (the kernel contains it), not by
+                 data.
+WHY THIS OWNER:  T5 core already owns FeeliesError and
+                 FailureMode. KernelFault is a FeeliesError.
+                 The illegal edge is a core module raising a
+                 kernel type. The invert is the body in core,
+                 aliased from kernel, not relocating the
+                 raisers and not folding Kind into a second
+                 FeeliesError subclass per member.
+REFACTOR PATH:   one commit. Mechanism: move the KernelFault
+                 body into a new feelies.core.exception_taxonomy
+                 (core/exception_taxonomy.py). Alias-re-export
+                 from kernel/exception_taxonomy.py so the five
+                 raisers and the five test importers need no
+                 retarget. No object/Any, no getattr, no
+                 sys.modules, no TYPE_CHECKING-only move, no
+                 kernel_ports.py, no subclassing on the
+                 concretes. Do not fold into core/errors.py:
+                 that file is one class per FailureMode;
+                 KernelFault is one type with a nested Kind
+                 ("do not subclass for each §F item", S-30a).
+                 Mixing them is the shared-module error the
+                 campaign forbids (one module per concern,
+                 named for the thing). The existing module is
+                 kernel/exception_taxonomy.py; the invert is
+                 that concern in core, not an append onto
+                 errors.py.
+                 (1) add src/feelies/core/exception_taxonomy.py
+                 with the KernelFault body unchanged. Import
+                 FailureMode and FeeliesError from
+                 feelies.core.errors. Import nothing from
+                 feelies.kernel.
+                 (2) kernel/exception_taxonomy.py: delete the
+                 body; `from feelies.core.exception_taxonomy
+                 import KernelFault as KernelFault`. Keep the
+                 module docstring. That alias is a convenience
+                 for the ten importers; it is not a cut.
+                 (3) do not retarget the five raisers or the
+                 five tests. engine → kernel is legal; engine
+                 → core is legal. None of those edges is in
+                 _TIER_RESIDUALS. The alias does not add a
+                 pair and does not drop one. THE PIN DOES NOT
+                 MOVE.
+                 (4) new core module: _FILE_OWNERS row
+                 (audit_core_clock_config) and the README
+                 core_clock_config citation, same commit, S-21.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved
+                 6-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs; tests/acceptance/
+                 test_backtest_app_baseline.py (APP oracle);
+                 tests/conformance/test_exception_containment.py
+                 (taxonomy kinds and tick fail-into, via the
+                 alias). No XPASS. lint-imports: Five import
+                 tiers still BROKEN (6 pairs), Twelve engine
+                 module sets KEPT. A new twelve-engine pair is
+                 a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. The
+                 ingest/replay body is unmoved; only which
+                 module defines KernelFault changes. A moved
+                 HASH or COUNT means the alias was not the
+                 same type (class identity, Kind member, or a
+                 silent default) — STOP, do not re-pin.
+FILES:           src/feelies/core/exception_taxonomy.py
+                 src/feelies/kernel/exception_taxonomy.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 kernel/exception_taxonomy.py is the T-04a
+                 selection_policy.py re-export only: replace
+                 the class with an alias from core. Do not
+                 retarget orchestrator.py, data_integrity.py,
+                 massive_ws.py, alpha/registry.py,
+                 sensors/horizon_scheduler.py, or the five
+                 test importers. Do not include
+                 tests/conformance/test_import_contracts.py
+                 (pin does not move). Do not include
+                 tests/conformance/test_fail_quiet.py. No
+                 keep-row file is touched: exception_taxonomy.py
+                 is not in FAIL_QUIET_KEEP; massive_ws.py
+                 (185, 228, 344) imports KernelFault through
+                 the kernel alias and is not in FILES. Do not
+                 include core/errors.py. Do not include
+                 harness/, cli/, .github/workflows/ci.yml.
+DELETES:         the KernelFault body from
+                 kernel/exception_taxonomy.py. Does not delete
+                 the kernel → ingestion pair.
+NET DELTA:       src modules +1, public symbols 0, branch
+                 points 0 (KernelFault relocates; the kernel
+                 alias is ImportFrom, which measure.py does
+                 not count).
+ROLLBACK:        revert the commit. The new module reverts
+                 with it. Independently revertible from T-06a
+                 until T-06a lands; after T-06a,
+                 core/data_health.py imports KernelFault from
+                 this module.
+```
+
+```
 STEP:            T-06a
 CLOSES:          nothing. Drops kernel → ingestion. Five import
                  tiers stays BROKEN. 6 → 5. G40 stays CLOSED.
@@ -1080,6 +1207,17 @@ PROBLEM:         After T-05b, kernel still imports twelve names from
                  _sync_halt_store_and_health, which massive_normalizer
                  also calls, plus HaltSignal and classify_halt_status
                  underneath _sync. Core must not import ingestion.
+                 G33 AST-pins halt-store writes,
+                 transition(DataHealth.HALTED), and
+                 KernelFault(SESSION_HALT) constructions to the path
+                 string _AUTHORITY. S-30b locked that path to
+                 ingestion/data_integrity.py because that is where the
+                 producer was put; the invariant is one producer of
+                 halt state, not the ingestion package. After the
+                 bodies move, _AUTHORITY follows the store to
+                 core/data_health.py. T-06z has already moved
+                 KernelFault into core, so data_health.py does not
+                 import feelies.kernel.
 WHY THIS OWNER:  T5 core already owns names kernel may use. Empty the
                  package in one step so the pin moves. A helpers-only
                  return leaves DataHealth, IdleTick,
@@ -1104,13 +1242,22 @@ REFACTOR PATH:   one commit. Mechanism: relocate DataHealth,
                  optionality. Leave getattr (_halt_tradeability,
                  _maybe_reset) as getattr. isinstance on
                  _HaltTradeability stays, against the inverted class.
-                 Drop ("feelies.kernel", "feelies.ingestion") from
-                 _TIER_RESIDUALS in the same commit. New core
-                 modules: _FILE_OWNERS rows and README citation (S-21).
+                 data_health.py imports KernelFault from
+                 feelies.core.exception_taxonomy (T-06z), not from
+                 feelies.kernel. Drop ("feelies.kernel",
+                 "feelies.ingestion") from _TIER_RESIDUALS in the
+                 same commit. New core modules: _FILE_OWNERS rows and
+                 README citation (S-21). Retarget G33 `_AUTHORITY`
+                 to `src/feelies/core/data_health.py` in the same
+                 commit; leave that file's runtime imports of
+                 _HaltTradeability / _require_halt_authority /
+                 _data_health_blocks_trading on data_integrity
+                 (aliases).
 BLAST RADIUS:    boundary
 VALIDATED BY:    test_five_import_tiers equals the 5-pair pin;
                  test_twelve_engine_independence KEPT at zero pairs;
-                 tests/acceptance/test_backtest_app_baseline.py.
+                 tests/acceptance/test_backtest_app_baseline.py;
+                 tests/conformance/test_session_halt_authority.py.
                  No XPASS. A new twelve-engine pair is a STOP.
 PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
                  _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
@@ -1121,16 +1268,19 @@ FILES:           src/feelies/kernel/orchestrator.py
                  src/feelies/ingestion/data_integrity.py
                  src/feelies/ingestion/idle_tick.py
                  tests/conformance/test_import_contracts.py
+                 tests/conformance/test_session_halt_authority.py
                  tests/docs/test_prompt_coverage_map.py
                  docs/prompts/README.md
                  data_integrity.py and idle_tick.py are alias
-                 re-exports only for relocated names. Do not invert
+                 re-exports only for relocated names. G33 file is
+                 the _AUTHORITY retarget only. Do not invert
                  MassiveNormalizer. Do not retarget bootstrap,
                  massive_normalizer.py, massive_ingestor.py,
                  massive_ws.py. Do not include
                  tests/conformance/test_fail_quiet.py. No keep-row
                  file is touched. Do not include harness/, cli/,
-                 .github/workflows/ci.yml.
+                 .github/workflows/ci.yml. Do not include
+                 core/exception_taxonomy.py (T-06z).
 DELETES:         the kernel → ingestion pair; the data_integrity,
                  idle_tick, and normalizer imports from orchestrator.
 NET DELTA:       src modules +2, public symbols +1, branch points 0
@@ -1140,6 +1290,9 @@ NET DELTA:       src modules +2, public symbols +1, branch points 0
 ROLLBACK:        revert the commit. The new modules revert with it.
                  Independently revertible from T-06b until T-06b
                  lands; orchestrator.py is shared with T-06b.
+                 Not independently revertible from T-06z once this
+                 lands (data_health.py imports KernelFault from
+                 core.exception_taxonomy).
 ```
 
 ```
