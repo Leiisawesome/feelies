@@ -1056,3 +1056,188 @@ ROLLBACK:        revert the commit. The new Protocol module reverts
                  and T-06 and is not independently revertible once T-06
                  lands.
 ```
+
+```
+STEP:            T-06a
+CLOSES:          nothing. Drops kernel → ingestion. Five import
+                 tiers stays BROKEN. 6 → 5. G40 stays CLOSED.
+PROBLEM:         After T-05b, kernel still imports twelve names from
+                 feelies.ingestion, all from orchestrator, all runtime.
+                 Eight functions from data_integrity (l.138-145):
+                 _bind_halt_tradeability, _configure_halt_from_config,
+                 _require_halt_authority, _reset_halt_state,
+                 _update_halt_state, _update_ssr_state,
+                 _data_health_blocks_trading, _verify_data_integrity.
+                 DataHealth (enum, l.136). IdleTick (dataclass, l.147,
+                 isinstance). _HaltTradeability (l.137): injected
+                 optional; _bind default-constructs it; isinstance
+                 in bind/require — not a Protocol. MarketDataNormalizer
+                 (l.148) is already a Protocol in ingestion; injecting
+                 that type is still kernel → ingestion. Named on the
+                 normalizer: health (orchestrator) and all_health
+                 (returned helpers). No public normalizer property.
+                 Returning _update_halt_state drags
+                 _sync_halt_store_and_health, which massive_normalizer
+                 also calls, plus HaltSignal and classify_halt_status
+                 underneath _sync. Core must not import ingestion.
+WHY THIS OWNER:  T5 core already owns names kernel may use. Empty the
+                 package in one step so the pin moves. A helpers-only
+                 return leaves DataHealth, IdleTick,
+                 _HaltTradeability, MarketDataNormalizer, and _sync
+                 and the pin stays 6.
+REFACTOR PATH:   one commit. Mechanism: relocate DataHealth,
+                 HaltSignal, classify_halt_status,
+                 _sync_halt_store_and_health, and _HaltTradeability
+                 into feelies.core.data_health
+                 (core/data_health.py). Relocate IdleTick into
+                 feelies.core.idle_tick (core/idle_tick.py).
+                 Alias-re-export from data_integrity and idle_tick
+                 so bootstrap, massive_normalizer, massive_ingestor,
+                 massive_ws need no retarget. Return the eight kernel
+                 helpers and the private callees that have no other
+                 caller (_bound_trade_feed_health_sm,
+                 _halt_health_xor_store, _emit_symbol_halted). Kernel
+                 annotates MarketDataNormalizer against a core
+                 Protocol in data_health.py whose named surface is
+                 health and all_health; leave the ingestion Protocol
+                 in place for implementations. Keep constructor
+                 optionality. Leave getattr (_halt_tradeability,
+                 _maybe_reset) as getattr. isinstance on
+                 _HaltTradeability stays, against the inverted class.
+                 Drop ("feelies.kernel", "feelies.ingestion") from
+                 _TIER_RESIDUALS in the same commit. New core
+                 modules: _FILE_OWNERS rows and README citation (S-21).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 5-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/data_health.py
+                 src/feelies/core/idle_tick.py
+                 src/feelies/ingestion/data_integrity.py
+                 src/feelies/ingestion/idle_tick.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 data_integrity.py and idle_tick.py are alias
+                 re-exports only for relocated names. Do not invert
+                 MassiveNormalizer. Do not retarget bootstrap,
+                 massive_normalizer.py, massive_ingestor.py,
+                 massive_ws.py. Do not include
+                 tests/conformance/test_fail_quiet.py. No keep-row
+                 file is touched. Do not include harness/, cli/,
+                 .github/workflows/ci.yml.
+DELETES:         the kernel → ingestion pair; the data_integrity,
+                 idle_tick, and normalizer imports from orchestrator.
+NET DELTA:       src modules +2, public symbols +1, branch points 0
+                 (core MarketDataNormalizer Protocol). DataHealth,
+                 HaltSignal, classify_halt_status, _sync,
+                 _HaltTradeability, IdleTick are relocations.
+ROLLBACK:        revert the commit. The new modules revert with it.
+                 Independently revertible from T-06b until T-06b
+                 lands; orchestrator.py is shared with T-06b.
+```
+
+```
+STEP:            T-06b
+CLOSES:          nothing. Drops kernel → monitoring. Five import
+                 tiers stays BROKEN. 5 → 4. G40 stays CLOSED.
+PROBLEM:         After T-06a, kernel still imports seven names from
+                 feelies.monitoring, all from orchestrator, all runtime.
+                 MetricCollector from telemetry (l.164) is already a
+                 core Protocol re-export; importing telemetry is still
+                 kernel → monitoring. Required constructor arg.
+                 Named: record, flush. Public property
+                 metric_collector; harness getattr/_events and
+                 isinstance(InMemoryMetricCollector) stay getattr /
+                 isinstance. KillSwitch from kill_switch (l.158):
+                 already a Protocol; injected optional. Named:
+                 is_active, reset(operator, audit_token). Public
+                 property kill_switch — harness reads is_active;
+                 test_kill_switch_consumer calls activate and
+                 is_active. observe_kill_switch (l.158) is a
+                 function. _LatencyBudgetMonitor (l.160) is
+                 default-constructed at init :705 and again in
+                 reset() :2793; named observe. _apply_breach_response
+                 (l.161) calls KillSwitch.activate. AlertManager
+                 (l.157) already a Protocol; injected optional; named
+                 emit; no public property. PaperSessionRecorder (l.163)
+                 is a concrete class; public setter only; named
+                 record_idle_tick, record_timing.
+WHY THIS OWNER:  T5 core. MetricCollector already lives there.
+                 Empty the package in one step. Returning
+                 _apply_breach_response without a core KillSwitch
+                 leaves the pair. Default-constructing
+                 _LatencyBudgetMonitor in reset() without inverting
+                 the class leaves the pair.
+REFACTOR PATH:   one commit. Mechanism: retarget MetricCollector to
+                 feelies.core.metric_collector (existing module; do
+                 not copy). Move KillSwitch Protocol and
+                 observe_kill_switch into feelies.core.kill_switch
+                 (core/kill_switch.py) with alias from
+                 monitoring.kill_switch; kernel Protocol surface is
+                 is_active, activate, reset — the property's
+                 consumers. Invert _LatencyBudgetMonitor into
+                 feelies.core.latency_budget (core/latency_budget.py)
+                 with alias from latency_budget; both construction
+                 sites construct the core class. Relocate
+                 _apply_breach_response next to it; alias. Move
+                 AlertManager Protocol into feelies.core.alert_manager
+                 (core/alert_manager.py) with alias from alerting;
+                 kernel names only emit. PaperSessionRecorder stays a
+                 concrete in monitoring; kernel annotates a Protocol
+                 in feelies.core.paper_session_recorder
+                 (core/paper_session_recorder.py) with
+                 record_idle_tick and record_timing; no subclassing.
+                 Leave getattr as getattr. Drop ("feelies.kernel",
+                 "feelies.monitoring") from _TIER_RESIDUALS in the
+                 same commit. New core modules: _FILE_OWNERS and
+                 README in this commit (S-21). Do not edit
+                 bootstrap.py. Do not edit harness/.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 4-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/kill_switch.py
+                 src/feelies/core/latency_budget.py
+                 src/feelies/core/alert_manager.py
+                 src/feelies/core/paper_session_recorder.py
+                 src/feelies/monitoring/kill_switch.py
+                 src/feelies/monitoring/latency_budget.py
+                 src/feelies/monitoring/alerting.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 monitoring files are alias / Protocol-move only.
+                 Do not invert InMemoryKillSwitch or
+                 PaperSessionRecorder bodies. Do not retarget
+                 telemetry.py (already a re-export). Do not include
+                 bootstrap.py, harness/, cli/,
+                 tests/conformance/test_fail_quiet.py,
+                 .github/workflows/ci.yml. Do not edit
+                 metric_collector.py, telemetry.py, or
+                 paper_session_recorder.py.
+DELETES:         the kernel → monitoring pair; the alerting,
+                 kill_switch, latency_budget,
+                 paper_session_recorder, and telemetry imports from
+                 orchestrator.
+NET DELTA:       src modules +4, public symbols +1, branch points 0
+                 (PaperSessionRecorder Protocol). KillSwitch and
+                 AlertManager Protocol moves, observe_kill_switch,
+                 _LatencyBudgetMonitor, and _apply_breach_response
+                 are relocations. MetricCollector retarget is not a
+                 new name.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-07 until T-07 lands; orchestrator.py is shared with
+                 T-06a and T-07.
+```
+
