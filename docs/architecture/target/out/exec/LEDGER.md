@@ -16026,4 +16026,446 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-05b.json, this ledger
                  entry.
 
+---
+
+## T-06a  2026-09-11T09:45:21+08:00
+  STEP:          T-06a
+  BASE:          ba7196d4f80f5b873ab5ea45847d40971e22c1d0
+  RESULT SHA:    none (exec/T-06a never cut)
+  VERDICT:       blocked
+  CONFORMANCE:   not started. Pre-flight import contracts
+                 3 passed. S2 KEPT at zero twelve-engine
+                 pairs. test_five_import_tiers equals the
+                 6-pair _TIER_RESIDUALS. lint-imports:
+                 Five import tiers BROKEN, Twelve engine
+                 module sets KEPT.
+                 S12: 2 passed (not started after)
+                 S14: 2 passed (not started after)
+                 S17: 3 passed (not started after)
+  TESTS:         capture pre-T-06a GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 vs post-T-05b RED 4919 passed / 2 failed /
+                 7 skipped / 5 xfailed: skipped 7 -> 19,
+                 failed 2 -> 0, passed 4919 -> 4909.
+                 Environmental IB/g12 skip outside the
+                 paper_rth window, not a regression. No
+                 failure in the accepted set. No failure
+                 outside it. determinism 148 passed.
+                 Cut not begun.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06a vs
+                 baseline_post-T-05b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         8 declared, 0 touched. exec/T-06a not
+                 created. Hand FILES CLEAN.
+                 Named-not-edited: all eight
+                 (orchestrator.py, core/data_health.py,
+                 core/idle_tick.py,
+                 ingestion/data_integrity.py,
+                 ingestion/idle_tick.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md).
+  NET DELTA:     declared src modules +2, public symbols
+                 +1, branch points 0.
+                 actual not measured after a cut (none).
+                 pre-flight evidence: modules 222,
+                 public_symbols 583, sloc 46814,
+                 n_edges 668, n_modules 179, cycles 1,
+                 alphaleak 0. n_cycles 1
+                 (feelies.cli -> feelies.cli.main).
+  DETERMINISM:   148 passed; no hash pin moved (no cut)
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse
+                 T-*. Four checks by hand:
+                 FILES 8 declared / 0 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS capture GREEN, cut not started --
+                 STOP at before-state (plan defect);
+                 NET DELTA not applicable (no commit).
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD ba7196d4f80f5b873ab5ea45847d40971e22c1d0
+                 on arch/exec. tools/exec vs
+                 exec-tools-v1 empty. Pre-flight
+                 porcelain: capture artifact only
+                 after baseline.py wrote
+                 baseline_pre-T-06a.json.
+                 6 pairs verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT (0 twelve-engine pairs).
+                 Keep-rows measured, unmoved:
+                 massive_ingestor.py 73 TypeError,
+                 massive_ws.py 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError.
+                 Twelve names on the kernel import,
+                 all runtime, orchestrator only:
+                 DataHealth :136, _HaltTradeability
+                 :137, _bind_halt_tradeability :138,
+                 _configure_halt_from_config :139,
+                 _require_halt_authority :140,
+                 _reset_halt_state :141,
+                 _update_halt_state :142,
+                 _update_ssr_state :143,
+                 _data_health_blocks_trading :144,
+                 _verify_data_integrity :145,
+                 IdleTick :147, MarketDataNormalizer
+                 :148.
+                 Private callees of the eight:
+                 _bound_trade_feed_health_sm called
+                 by _sync_halt_store_and_health and
+                 _halt_health_xor_store;
+                 _halt_health_xor_store called only
+                 by _data_health_blocks_trading;
+                 _emit_symbol_halted called only by
+                 _update_halt_state.
+                 _sync_halt_store_and_health has a
+                 second caller at
+                 massive_normalizer.py:901. It cannot
+                 travel as an unowned private.
+                 HaltSignal and classify_halt_status
+                 sit under it.
+                 Alias-covered, not in FILES, would
+                 not need a retarget if the bodies
+                 could move: bootstrap.py
+                 (_HaltTradeability, isinstance),
+                 massive_normalizer.py
+                 (DataHealth, _HaltTradeability,
+                 _sync), massive_ingestor.py
+                 (DataHealth, keep-row 73),
+                 massive_ws.py (IdleTick, keep-rows
+                 185/228/344), harness/
+                 backtest_runner.py (DataHealth),
+                 ingestion/normalizer.py (DataHealth;
+                 MarketDataNormalizer Protocol with
+                 on_message stays),
+                 ingestion/__init__.py,
+                 ingest_health.py, tests that import
+                 DataHealth / IdleTick / HaltSignal /
+                 classify_halt_status /
+                 _HaltTradeability /
+                 _require_halt_authority /
+                 _data_health_blocks_trading from
+                 ingestion. No FILES-visible caller
+                 of a relocated name needs a retarget
+                 if the aliases land. Cut not begun.
+  FINDINGS:      PLAN DEFECT / blocker -- two
+                 independently fatal placements, both
+                 outside FILES.
+                 1. G33. tests/conformance/
+                 test_session_halt_authority.py is
+                 not in FILES. Its AST scans require
+                 halt-store writes, transition(
+                 DataHealth.HALTED), and
+                 KernelFault(kind=SESSION_HALT)
+                 constructions to live in
+                 src/feelies/ingestion/
+                 data_integrity.py (_AUTHORITY).
+                 Relocating _HaltTradeability and
+                 _sync_halt_store_and_health into
+                 core/data_health.py moves those
+                 writes, the HALTED transition, and
+                 the SESSION_HALT constructions out
+                 of _AUTHORITY. Three previously-
+                 passing tests would fail
+                 (test_g33_engine_1_is_sole_halt_
+                 tradeability_writer,
+                 test_g33_health_halted_transition_
+                 goes_through_the_store,
+                 test_g33_session_halt_kind_is_
+                 constructed). Runtime tests in that
+                 file import _data_health_blocks_
+                 trading / _require_halt_authority /
+                 _HaltTradeability from data_integrity
+                 and would be alias-covered; the AST
+                 scans would not. Amending G33
+                 _AUTHORITY is a ninth file.
+                 2. Core is the bottom layer
+                 (pyproject.toml: cli / bootstrap /
+                 engines / kernel:bus / core). Core
+                 currently imports nothing from
+                 feelies.kernel. _HaltTradeability.
+                 configure, _require_halt_authority,
+                 _bind_halt_tradeability, and
+                 _data_health_blocks_trading (via
+                 _halt_health_xor_store) all raise
+                 KernelFault from
+                 feelies.kernel.exception_taxonomy.
+                 Bodies unchanged, those names in
+                 core/data_health.py are core ->
+                 kernel, a new layers violation, not
+                 in _TIER_RESIDUALS. Adding
+                 ignore_imports rewrites the contract.
+                 Moving KernelFault is not in FILES.
+                 _sync in core keeps calling
+                 _require_halt_authority and
+                 _bound_trade_feed_health_sm; those
+                 two cannot stay in kernel or
+                 ingestion without core importing
+                 them. Same seam.
+                 The plan does not contain either
+                 decision. Do not invent a G33
+                 retarget or a KernelFault move on
+                 this tree.
+                 Also recorded, not a stop:
+                 perfmeasure.py DIRECT_PROBES still
+                 names four E1 helpers on
+                 feelies.ingestion.data_integrity.
+                 Moving those bodies would add four
+                 dead probes to the three already
+                 unowned. perfmeasure.py is not in
+                 FILES. Same class as T-05a.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          amend T-06a in phase8_tiers.md.
+                 G33 _AUTHORITY and KernelFault vs
+                 the core layer have to be decided
+                 in the block before a retry. Do not
+                 begin T-06b. Do not cut FILES from
+                 this tree. Left uncommitted:
+                 baseline_pre-T-06a.json, this
+                 ledger entry.
+
+---
+
+## T-06z  2026-09-11T14:16:00+08:00
+  STEP:          T-06z
+  BASE:          e7a7e2b8859b2ab45a8514012ab393e6e5628fab
+  RESULT SHA:    bc121d6c0b215f9529ccded361f4743fd9c471ff (exec/T-06z; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 6. Does not drop kernel → ingestion. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 6-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (6 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; ingestion 147 passed /
+                 4 skipped; core 245
+                 mypy src/feelies: Success, 223 source files
+                 (before the gate).
+                 Class identity:
+                 `k.KernelFault is c.KernelFault` printed True.
+  TESTS:         capture pre-T-06z GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-06z GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-05b RED 4919 passed / 2 failed /
+                 7 skipped / 5 xfailed: skipped 7 -> 19,
+                 failed 2 -> 0, passed 4919 -> 4909.
+                 Environmental IB/g12 skip outside the
+                 paper_rth window, not a regression.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06z vs post-T-06z and vs
+                 baseline_post-T-05b.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 6 before and 6
+                 after. This step moves the KernelFault body
+                 into core so T-06a can raise it without
+                 core → kernel. The alias is not a cut. An
+                 unchanged count is the declared outcome.
+  FILES:         4 declared, 4 touched, 4 committed (clean vs
+                 bc121d6c). Hand FILES: 0 extra CLEAN.
+                 Touched: core/exception_taxonomy.py (new),
+                 kernel/exception_taxonomy.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 orchestrator.py, data_integrity.py,
+                 massive_ws.py (keep-rows 185 queue.Empty,
+                 228 asyncio.CancelledError, 344
+                 asyncio.TimeoutError), alpha/registry.py,
+                 sensors/horizon_scheduler.py, the five test
+                 importers, core/errors.py, test_fail_quiet.py,
+                 harness/, cli/, ci.yml.
+                 No keep-row file is touched:
+                 exception_taxonomy.py is not in
+                 FAIL_QUIET_KEEP; massive_ws.py was not
+                 edited.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +1, public symbols 0,
+                 branch points 0
+                 (KernelFault relocates; the kernel alias is
+                 ImportFrom, which measure.py does not count).
+                 actual modules 222 -> 223 (+1 MATCH)
+                 public_symbols 583 -> 583 (+0 MATCH)
+                 sloc 46814 -> 46817 (+3, undeclared)
+                 n_edges 668 -> 669
+                 n_modules 179 -> 180
+                 (import graph: exception_taxonomy entered
+                 core; kernel.exception_taxonomy now imports
+                 it instead of core.errors)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 4 declared / 4 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +1
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 bc121d6c0b215f9529ccded361f4743fd9c471ff.
+                 Not merged.
+  NOTES:         One commit on exec/T-06z,
+                 bc121d6c0b215f9529ccded361f4743fd9c471ff,
+                 "T-06z: move KernelFault into core; pin
+                 stays 6". Parent e7a7e2b8 on arch/exec.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The pin stayed at 6. The alias is a
+                 convenience for the ten importers, not a
+                 cut: kernel still imports ingestion, so
+                 the kernel → ingestion pair is still
+                 there. An unchanged count is the declared
+                 outcome, same shape as T-04a at 8 and
+                 T-05a at 7.
+                 This step exists because T-06a puts
+                 _HaltTradeability and
+                 _sync_halt_store_and_health in
+                 feelies.core.data_health. Those bodies
+                 raise KernelFault. Core is the bottom
+                 layer. Without this move that raise is
+                 core → kernel -- a new layers violation,
+                 not in _TIER_RESIDUALS, and a worse
+                 outcome than the pair T-06a removes.
+                 S-30a pinned the type to kernel by role
+                 rather than by data. KernelFault was
+                 already a FeeliesError subclass whose
+                 Kind names other engines' authorities
+                 (SESSION_HALT, UNIVERSE, HORIZON_GRID,
+                 INGRESS_ADMIT). The kernel was its
+                 container, not its owner. T5 core already
+                 owns FeeliesError and FailureMode.
+                 The body moved; it did not copy.
+                 kernel/exception_taxonomy.py deleted the
+                 class and keeps
+                 `from feelies.core.exception_taxonomy
+                 import KernelFault as KernelFault`.
+                 `import feelies.kernel.exception_taxonomy
+                 as k, feelies.core.exception_taxonomy as
+                 c; print(k.KernelFault is
+                 c.KernelFault)` printed True, so the
+                 alias reaches the same class object. Two
+                 KernelFault classes would mean isinstance
+                 and except catching different types.
+                 core/exception_taxonomy.py imports
+                 FailureMode and FeeliesError from
+                 feelies.core.errors and nothing from
+                 feelies.kernel. Not folded into
+                 core/errors.py: that file is one class
+                 per FailureMode; KernelFault is one type
+                 with a nested Kind ("do not subclass for
+                 each §F item", S-30a).
+                 None of the five raisers
+                 (orchestrator.py TICK_PIPELINE,
+                 data_integrity.py SESSION_HALT,
+                 massive_ws.py INGRESS_ADMIT,
+                 alpha/registry.py UNIVERSE,
+                 sensors/horizon_scheduler.py
+                 HORIZON_GRID) or the five test importers
+                 (test_exception_containment,
+                 test_session_halt_authority,
+                 test_ingress_admit,
+                 test_universe_authority,
+                 test_horizon_grid) was edited. They still
+                 bind the kernel name. massive_ws.py was
+                 not in FILES and was not touched;
+                 keep-rows 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError stayed put. It still
+                 reaches KernelFault through the kernel
+                 alias.
+                 Remaining pairs, verbatim, before and after:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 New module: _FILE_OWNERS row
+                 core/exception_taxonomy.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citation, in this same
+                 commit (S-21).
+                 mypy src/feelies: Success, 223 source
+                 files, before the gate. APP oracle
+                 2 passed; hashes and fill count unmoved.
+                 S2 KEPT at zero twelve-engine pairs.
+                 n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 Declared NET DELTA src modules +1, public
+                 symbols 0, branch points 0 (KernelFault
+                 relocates; the kernel alias is ImportFrom,
+                 which measure.py does not count).
+                 Measured from the two capture artifacts:
+                 modules 222 → 223 MATCH, public_symbols
+                 583 → 583 MATCH, sloc 46814 → 46817
+                 (+3, undeclared), n_edges 668 → 669,
+                 n_modules 179 → 180 (core.exception_taxonomy
+                 entered the import graph), cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+                 T-06a's G33 _AUTHORITY retarget remains
+                 T-06a's; this step only placed
+                 KernelFault.
+  NEXT:          T-06a ingestion; pin 6 to 5
+                 (boundary). Not started. Do not begin
+                 T-06a. Go confirmed on
+                 bc121d6c0b215f9529ccded361f4743fd9c471ff.
+                 Left uncommitted:
+                 baseline_pre-T-06z.json,
+                 baseline_post-T-06z.json, this ledger
+                 entry. Also left from T-06a:
+                 baseline_pre-T-06a.json, that ledger
+                 entry.
+
 
