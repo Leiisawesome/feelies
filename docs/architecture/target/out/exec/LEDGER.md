@@ -15793,3 +15793,237 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-05a.json, this ledger
                  entry.
 
+---
+
+## T-05b  2026-09-11T08:58:00+08:00
+  STEP:          T-05b
+  BASE:          a1f91550bc2e5c2162536c4ebcd4f4851f90eb93
+  RESULT SHA:    6255058c24a2d8613d49775e77cdb37969fd0d44 (exec/T-05b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. Pin drop is
+                 test_five_import_tiers vs the 6-pair
+                 pin. Fail-first before the invert:
+                 unexpected [('feelies.kernel',
+                 'feelies.services')]; missing []. After
+                 the invert: 3 passed. CLOSES nothing.
+                 Drops kernel → services. Five import
+                 tiers stays BROKEN. 7 → 6. G40 stays
+                 CLOSED.
+                 S2 KEPT at zero twelve-engine pairs
+                 before and after. lint-imports:
+                 Five import tiers BROKEN (6 pairs),
+                 Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; services 108; core 245
+                 mypy src/feelies: Success, 222 source files
+                 (before the gate).
+  TESTS:         capture pre-T-05b RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/
+                 test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (IB after-hours EXEMPTION). Accepted.
+                 -> capture post-T-05b RED 4919 passed / 2
+                 failed / 7 skipped / 5 xfailed.
+                 FAILED the IB after-hours test and
+                 tests/integration/test_paper_rth_safety.py::
+                 test_g12_cost_exceeds_disclosure_alert
+                 (G12 EXEMPTION). Both accepted. No
+                 failure outside the accepted set.
+                 vs post-T-05a GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed:
+                 skipped 18 -> 7, passed +9, failed
+                 0 -> 2. Environmental paper_rth /
+                 IB window, not a regression.
+                 not-paper_rth: 4908 passed / 1 failed / 5
+                 skipped / 14 deselected / 5 xfailed
+                 (IB after-hours only).
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-05b vs post-T-05b and vs
+                 baseline_post-T-05a.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 L6 regime stream unmoved
+                 (EXPECTED_LEVEL6_REGIME_STATE_HASH
+                 025d4a228ed4387f89fb6a55c12c7398ed7d1b31edb0ed3e7f4533db107122cb,
+                 COUNT 40). THE PIN MOVED 7 to 6 in
+                 the same commit as the three names
+                 left the services import.
+  FILES:         6 declared, 6 touched, 6 committed (clean vs
+                 6255058c). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/regime_protocol.py (new),
+                 services/regime_engine.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 services/regime_hazard_detector.py,
+                 core/regime_gate.py, bootstrap.py,
+                 test_fail_quiet.py, harness/, cli/,
+                 ci.yml, tests/scripts/services/__init__.py.
+                 No keep-row file is touched:
+                 orchestrator.py and regime_engine.py
+                 are not in FAIL_QUIET_KEEP.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +1, public symbols +3,
+                 branch points 0
+                 (RegimeEngine and RegimeHazardDetector
+                 Protocols, and regime_posterior_entropy_nats).
+                 actual modules 221 -> 222 (+1 MATCH)
+                 public_symbols 581 -> 583 (+2)
+                 sloc 46772 -> 46814 (+42, undeclared)
+                 n_edges 667 -> 668
+                 n_modules 178 -> 179 (regime_protocol
+                 entered the import graph)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+                 Arithmetic: measure.py public_symbols
+                 counts module-body ClassDef and
+                 FunctionDef only. The new module added
+                 two Protocol ClassDefs and one entropy
+                 FunctionDef (+3 on that file).
+                 services lost the entropy FunctionDef
+                 (-1). The services alias is ImportFrom,
+                 which the counter does not see. Net +2.
+                 The entropy name relocated; it is not
+                 a new FunctionDef on the tree. Same
+                 shape as T-04a, where relocated helpers
+                 cancelled and only the new Protocol
+                 counted.
+                 The block's +3 counted three names
+                 landing in the new module. That is a
+                 different count, not a capture error.
+                 Against this campaign's NET DELTA
+                 convention (T-04a: a relocation is not
+                 a net add), +3 is the wrong inventory
+                 figure. Trust measured +2. The two new
+                 Protocols are the additions; entropy
+                 is the relocation.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. L6 regime stream unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 6 declared / 6 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4919 passed, failed 1->2
+                 (IB + g12 EXEMPTIONS only; no failure
+                 outside the accepted set); NET DELTA
+                 MATCH on modules +1; public_symbols
+                 measured +2, trust that figure (see
+                 NET DELTA). CLEAN on FILES/PARITY.
+                 Go confirmed on branch head
+                 6255058c24a2d8613d49775e77cdb37969fd0d44.
+                 Not merged.
+  NOTES:         One commit on exec/T-05b,
+                 6255058c24a2d8613d49775e77cdb37969fd0d44,
+                 "T-05b: invert kernel->services; core
+                 Protocols own engine, detector, and
+                 entropy". Parent a1f91550 on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 7 to 6. All three names left
+                 the services import in that same
+                 commit as the pin drop: RegimeEngine,
+                 RegimeHazardDetector, and
+                 regime_posterior_entropy_nats.
+                 Kernel now names all three from
+                 feelies.core.regime_protocol; no
+                 feelies.services import remains in
+                 kernel. Remaining pairs, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Fail-first: the pin was dropped first
+                 and test_five_import_tiers FAILED on
+                 unexpected [('feelies.kernel',
+                 'feelies.services')]; the invert then
+                 made the 6-pair pin hold.
+                 Two Protocol surfaces, checked against
+                 the named calls after the import block
+                 grew by three lines:
+                 RegimeEngine.restore(data) :3296;
+                 posterior(quote) :377; state_names
+                 :380; checkpoint() :252.
+                 RegimeHazardDetector.reset() :2391;
+                 detect(prev, curr) :428.
+                 Five getattr reaches stayed getattr:
+                 calibrate :279, calibrated :282,
+                 discriminability_for_symbol :387,
+                 discriminability :393, calibrated
+                 :408. Not on either Protocol:
+                 n_states, current_state, services
+                 reset(symbol), or those getattr
+                 names. _maybe_reset does not list
+                 either instance. No public
+                 orchestrator property hands either
+                 out. Optionality is | None = None.
+                 The entropy body moved, it did not
+                 copy. services/regime_engine.py
+                 deleted the def and keeps
+                 `regime_posterior_entropy_nats as
+                 regime_posterior_entropy_nats` from
+                 core. tests/services, tests/core,
+                 tests/determinism, scripts/
+                 regime_diagnostics.py, and
+                 services/__init__.py still bind the
+                 services name and were not
+                 retargeted. One sanitizing
+                 implementation; L6 hashes that copy.
+                 L6 regime stream unmoved: HASH
+                 025d4a228ed4387f89fb6a55c12c7398ed7d1b31edb0ed3e7f4533db107122cb,
+                 COUNT 40.
+                 core/regime_protocol.py imports
+                 NBBOQuote, RegimeState,
+                 RegimeHazardSpike from
+                 feelies.core.events and nothing from
+                 feelies.services. The services
+                 RegimeEngine Protocol and
+                 HMM3StateFractional were not edited.
+                 New module: _FILE_OWNERS row
+                 core/regime_protocol.py ->
+                 audit_core_clock_config, and the
+                 README core_clock_config citation,
+                 in this same commit (S-21).
+                 mypy src/feelies: Success, 222 source
+                 files, before the gate. APP oracle
+                 2 passed; hashes and fill count
+                 unmoved. S2 KEPT at zero
+                 twelve-engine pairs. n_cycles held
+                 at 1 (feelies.cli → feelies.cli.main).
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-06a ingestion: halt helpers and
+                 normalizer; pin 6 to 5 (boundary).
+                 Not started. Do not begin T-06a.
+                 Go confirmed on
+                 6255058c24a2d8613d49775e77cdb37969fd0d44.
+                 Left uncommitted:
+                 baseline_pre-T-05b.json,
+                 baseline_post-T-05b.json, this ledger
+                 entry.
+
+
