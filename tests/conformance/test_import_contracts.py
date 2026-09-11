@@ -37,7 +37,6 @@ _TIER_RESIDUALS = frozenset(
     {
         ("feelies.kernel", "feelies.ingestion"),
         ("feelies.kernel", "feelies.portfolio"),
-        ("feelies.kernel", "feelies.services"),
         ("feelies.kernel", "feelies.risk"),
         ("feelies.kernel", "feelies.monitoring"),
         ("feelies.kernel", "feelies.execution"),

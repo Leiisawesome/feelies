@@ -23,33 +23,9 @@ from typing import Any, Protocol
 logger = logging.getLogger(__name__)
 
 from feelies.core.events import NBBOQuote
-
-
-def regime_posterior_entropy_nats(posteriors: Sequence[float]) -> float:
-    """Shannon entropy (nats) of a categorical posterior ``p``.
-
-    Non-finite and negative components are treated as zero mass, then
-    the vector is renormalized to a simplex before computing ``H``.
-    ``0`` is returned when there is no positive mass (degenerate /
-    empty input).  A peaked distribution has entropy near ``0``; a
-    diffuse distribution has higher entropy.
-    """
-    cleaned: list[float] = []
-    for p in posteriors:
-        x = float(p)
-        if math.isnan(x) or math.isinf(x):
-            cleaned.append(0.0)
-        else:
-            cleaned.append(max(0.0, x))
-    total = sum(cleaned)
-    if total <= 0.0:
-        return 0.0
-    h = 0.0
-    for p in cleaned:
-        q = p / total
-        if q > 0.0:
-            h -= q * math.log(q)
-    return h
+from feelies.core.regime_protocol import (
+    regime_posterior_entropy_nats as regime_posterior_entropy_nats,
+)
 
 
 # ── RegimeEngine protocol ────────────────────────────────────────────
