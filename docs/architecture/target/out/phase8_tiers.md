@@ -109,6 +109,15 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  can replace, and check for a public
                  orchestrator property. A rung whose names
                  mix those kinds splits.
+                 NET DELTA COUNTS RELOCATIONS AS ZERO. A name
+                 that leaves one module and arrives in another
+                 is a relocation, not an addition, and an alias
+                 re-export is an ImportFrom that measure.py does
+                 not count. T-04a and T-05b both declared a
+                 figure that counted names landing in the new
+                 module and measured lower. A block's NET DELTA
+                 states what measure.py will report, not an
+                 inventory of the destination file.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
