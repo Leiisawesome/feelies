@@ -1797,3 +1797,281 @@ ROLLBACK:        revert the commit. Independently revertible from
                  test_import_contracts.py is shared).
 ```
 
+```
+STEP:            T-08a
+CLOSES:          nothing. Pin stays 3. Does not drop kernel →
+                 risk. Five import tiers stays BROKEN. G40
+                 stays CLOSED. T-07c pin stays 14. A placement
+                 invert, same shape as T-07a: an unchanged count
+                 is the declared outcome, not a failed cut.
+PROBLEM:         Kernel still imports 23 risk names from seven
+                 modules, all from orchestrator. Mixed kinds.
+                 A Protocol-only step leaves the helpers, HAZARD_EXIT
+                 constants, BuyingPowerPhase, SizeDivergence, and
+                 _record_size_shadow, and the pair stays. This rung
+                 is the invert that can leave without emptying.
+                 RiskEngine from engine (l.177) is already a
+                 Protocol; required ctor arg. Named: check_signal,
+                 check_order, check_sized_intent. record_fill,
+                 set_buying_power_phase, reset stay getattr. No
+                 public property.
+                 HazardExitController from hazard_exit (l.29)
+                 is TYPE_CHECKING, injected optional, concrete class.
+                 Kernel only _maybe_reset (getattr reset). No public
+                 property.
+                 PositionSizer and BudgetBasedSizer from
+                 position_sizer (l.200). PositionSizer is already a
+                 Protocol; BudgetBasedSizer is default-constructed
+                 in kernel when position_sizer is None (l.1347-1348).
+                 Bootstrap already constructs and passes a sizer.
+                 Named: compute_target_quantity (via the engine
+                 helper, still in risk this step). No public property.
+                 RiskLevel and create_risk_escalation_machine from
+                 escalation (l.184). Factory default-constructed in
+                 kernel (l.1505) and in reset. Public property
+                 risk_level returns RiskLevel. Callers:
+                 tests/kernel/test_orchestrator.py (NORMAL, LOCKED,
+                 FORCED_FLATTEN) and test_orchestrator_bus_signal.py
+                 (LOCKED). Kernel itself compares those three members.
+                 gate_registry bind_markers=("RiskLevel.",) is a
+                 string. The remaining names (engine helpers, clamp
+                 cluster, HAZARD_EXIT_*, BuyingPowerPhase,
+                 EdgeWeightedSizer, SizeDivergence,
+                 _record_size_shadow) stay. This step does not empty
+                 the package.
+WHY THIS OWNER:  T5 core. RiskEngine, PositionSizer, and
+                 HazardExitController are injected types kernel
+                 holds; Protocols belong in core, named for the
+                 thing, not a step. BudgetBasedSizer and the
+                 escalation SM are concretes/factory kernel
+                 constructs; a Protocol cannot replace RiskLevel.
+                 Helpers cannot travel with them: they import
+                 MacroState, kernel.forced_exit_reasons,
+                 kernel.order_states, and HAZARD_EXIT_SOURCE_LAYER.
+                 Leaving them for T-08b is the census, not a
+                 failed cut.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/risk_protocol.py
+                 src/feelies/core/position_sizer.py
+                 src/feelies/core/escalation.py
+                 src/feelies/risk/engine.py
+                 src/feelies/risk/position_sizer.py
+                 src/feelies/risk/escalation.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 risk files are alias only. Do not include
+                 test_import_contracts.py (neither pin moves),
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py, forced_exit_clamp.py,
+                 order_policy.py, edge_weighted_sizer.py,
+                 buying_power.py, hazard_exit.py (concrete),
+                 tests/kernel/test_orchestrator.py (alias covers
+                 RiskLevel), tests/risk/test_escalation.py,
+                 tests/determinism/test_state_transition_replay.py,
+                 core/position.py, ci.yml. No keep-row file is
+                 touched. No alias whose target is kernel or
+                 another engine.
+REFACTOR PATH:   one commit. Mechanism: invert, not a cut.
+                 Move RiskEngine Protocol (check_signal,
+                 check_order, check_sized_intent; reset /
+                 record_fill / set_buying_power_phase stay
+                 getattr) into feelies.core.risk_protocol
+                 (core/risk_protocol.py). Alias from risk.engine.
+                 No subclassing. Move HazardExitController Protocol
+                 (reset) into the same module. No alias on the
+                 concrete. Kernel TYPE_CHECKING import retargets
+                 to core; do not delete it. Move PositionSizer
+                 Protocol (compute_target_quantity) and
+                 BudgetBasedSizer into feelies.core.position_sizer
+                 (core/position_sizer.py) with alias from
+                 risk.position_sizer. Direction: risk → core.
+                 Both construction sites (kernel default and
+                 bootstrap, not in FILES) construct the core
+                 class. Do not make position_sizer required — that
+                 is T-04b's test blast and this default is already
+                 unused on the bootstrap path. Move RiskLevel and
+                 create_risk_escalation_machine into
+                 feelies.core.escalation (core/escalation.py)
+                 with alias from risk.escalation. Direction:
+                 risk → core. Kernel constructs the core factory.
+                 Property risk_level stays; its type is the core
+                 enum. Do not invert helpers. Do not bind
+                 HAZARD_EXIT_*. Do not move BuyingPowerPhase.
+                 Do not Protocol EdgeWeightedSizer. Pin stays 3.
+                 T-07c pin stays 14. New core modules: _FILE_OWNERS
+                 and README in this commit (S-21).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved 3-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 14-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+DELETES:         the RiskEngine, HazardExitController,
+                 PositionSizer, BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine imports from
+                 orchestrator (retargeted to core). Pin stays 3.
+NET DELTA:       src modules +3, public symbols +1, branch points 0.
+                 HazardExitController Protocol is new. RiskEngine,
+                 PositionSizer, BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine are relocations.
+                 Aliases are ImportFrom; measure.py does not count
+                 them.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08b until T-08b lands; orchestrator.py is shared
+                 with T-08b. Not independently revertible from T-07c
+                 (already landed; test_import_contracts.py is not
+                 in this FILES list).
+```
+
+```
+STEP:            T-08b
+CLOSES:          nothing. Drops kernel → risk. Five import
+                 tiers stays BROKEN. 3 → 2. G40 stays CLOSED.
+                 T-07c pin 14 → 11.
+PROBLEM:         After T-08a, kernel still imports risk for the
+                 names no Protocol replaces. _compute_target_quantity,
+                 _emergency_flatten_all, _escalate_risk,
+                 _maybe_flip_buying_power_at_rth_close from engine
+                 (l.177) are functions. Private callee in engine.py:
+                 a second _submit_tracked_order, divergent from
+                 order_lifecycle, live only as callee of engine
+                 flatten. Do not return it. _force_flatten_symbol_on_degrade
+                 and the six other clamp names from
+                 forced_exit_clamp (l.186) are functions. Private
+                 callees _closable_quantity, _is_forced_market_exit.
+                 No test importer of that module. The file imports
+                 kernel.forced_exit_reasons, kernel.order_states, and
+                 HAZARD_EXIT_SOURCE_LAYER from risk.hazard_exit.
+                 Returning the bodies without binding SOURCE_LAYER
+                 to core leaves kernel → risk. HAZARD_EXIT_REASONS
+                 and HAZARD_EXIT_SOURCE_LAYER from hazard_exit (l.185);
+                 REASONS is unused in orchestrator (# noqa: F401);
+                 SOURCE_LAYER is used at l.3885. BuyingPowerPhase from
+                 buying_power is a lazy import in
+                 _reset_buying_power_phase_for_session (l.1746) and
+                 inside _maybe_flip. EdgeWeightedSizer, SizeDivergence,
+                 _record_size_shadow from edge_weighted_sizer (l.195).
+                 Named on the sizer: config.any_enabled, base.compute_target_quantity,
+                 tilt_breakdown. SizeDivergence is the sink dataclass.
+                 _record_size_shadow is a function. Test importer:
+                 tests/kernel/test_orchestrator.py (_compute_target_quantity,
+                 _emergency_flatten_all, _record_size_shadow).
+                 docs/prompts/audit_risk_engine.md:98 and the README
+                 coverage row cite forced_exit_clamp.py. A deleted
+                 module has three consumers: _FILE_OWNERS, README,
+                 the prompt bullet. Returning helpers without the
+                 binds leaves kernel → risk and the pair stays.
+WHY THIS OWNER:  T5 core for the remaining Protocols, the HAZARD_EXIT
+                 bind, BuyingPowerPhase, and SizeDivergence. Empty the
+                 package in one step. A TYPE_CHECKING-only delete is
+                 not a cut. Returning helpers without the binds leaves
+                 the pair. Engine flatten/escalate are the live
+                 orchestrator copies; unifying them onto policy's
+                 copies is T-08d. This step must not return engine
+                 _submit_tracked_order.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/hazard_exit.py
+                 src/feelies/core/buying_power.py
+                 src/feelies/core/edge_weighted_sizer.py
+                 src/feelies/risk/engine.py
+                 src/feelies/risk/forced_exit_clamp.py
+                 src/feelies/risk/hazard_exit.py
+                 src/feelies/risk/buying_power.py
+                 src/feelies/risk/edge_weighted_sizer.py
+                 tests/kernel/test_orchestrator.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 docs/prompts/audit_risk_engine.md
+                 Do not edit core/position.py, bootstrap.py,
+                 harness/, cli/, order_policy.py,
+                 order_lifecycle.py, test_fail_quiet.py, ci.yml.
+                 No keep-row file is touched. No alias whose target
+                 is kernel. Do not include
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (alias covers HAZARD_EXIT_*).
+REFACTOR PATH:   one commit. Mechanism: bind HAZARD_EXIT_SOURCE_LAYER and
+                 HAZARD_EXIT_REASONS into feelies.core.hazard_exit
+                 (core/hazard_exit.py) with alias from
+                 risk.hazard_exit. Direction: risk → core. Kernel
+                 and the returned clamp bodies import from core.
+                 Drop the unused REASONS import from orchestrator.
+                 Move BuyingPowerPhase into feelies.core.buying_power
+                 (core/buying_power.py) with alias from
+                 risk.buying_power. Direction: risk → core.
+                 buying_power_limit stays in risk and imports the
+                 core enum. Move EdgeWeightedSizer Protocol (config,
+                 base, tilt_breakdown) and SizeDivergence into
+                 feelies.core.edge_weighted_sizer
+                 (core/edge_weighted_sizer.py). Alias SizeDivergence
+                 from risk.edge_weighted_sizer. No alias on the
+                 concrete sizer. Return _compute_target_quantity,
+                 _emergency_flatten_all, _escalate_risk,
+                 _maybe_flip_buying_power_at_rth_close to
+                 kernel.orchestrator. Do not return engine
+                 _submit_tracked_order; the returned flatten calls
+                 the order_lifecycle _submit_tracked_order kernel
+                 already imports (equivalent on OrderState).
+                 Return the seven clamp helpers and _closable_quantity,
+                 _is_forced_market_exit. Do not alias them from
+                 forced_exit_clamp.py — that would be risk → kernel.
+                 Return _record_size_shadow. Retarget
+                 tests/kernel/test_orchestrator.py. Delete
+                 forced_exit_clamp.py (emptied; an alias is illegal).
+                 Prune its _FILE_OWNERS row. Retarget the README
+                 coverage row and the audit_risk_engine.md bullet
+                 to kernel.orchestrator for the clamp, keeping the
+                 wording of the monotone veto. Do not whitelist the
+                 stale path in test_internal_links.py. Strip
+                 helpers from risk.engine so it drops
+                 feelies.kernel.macro. Drop
+                 ("feelies.kernel", "feelies.risk") from
+                 _TIER_RESIDUALS and drop
+                 ("feelies.risk.engine", "feelies.kernel.macro"),
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.forced_exit_reasons"),
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.order_states")
+                 from _KERNEL_IMPORT_RESIDUALS in the same commit.
+                 Relocated bodies do not raise KernelFault. Returned
+                 helpers keep importing MacroState from
+                 kernel.macro and forced_exit_reasons /
+                 order_states from kernel (legal; they live in
+                 kernel). New core modules: _FILE_OWNERS and README
+                 in this commit (S-21).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 2-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 11-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 A missing T-07c pair fails as loudly as an
+                 unexpected one.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. Callee retarget of flatten
+                 onto lifecycle submit is equivalent on OrderState,
+                 not a behaviour change, not a re-pin.
+DELETES:         the kernel → risk pair; the engine-helper, clamp,
+                 HAZARD_EXIT, BuyingPowerPhase, EdgeWeightedSizer,
+                 SizeDivergence, and _record_size_shadow imports
+                 from orchestrator; forced_exit_clamp.py;
+                 three T-07c pairs (engine.macro, clamp.forced_exit_reasons,
+                 clamp.order_states).
+NET DELTA:       src modules +2, public symbols +1, branch points 0
+                 (EdgeWeightedSizer Protocol is new; SizeDivergence,
+                 BuyingPowerPhase, HAZARD_EXIT_*, and the helper
+                 cluster are relocations). forced_exit_clamp.py
+                 deleted (−1).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08c until T-08c lands; orchestrator.py and
+                 test_import_contracts.py are shared with T-08c/d.
+                 Not independently revertible from T-08a (already
+                 landed; orchestrator.py is shared).
+```
+
