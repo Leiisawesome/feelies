@@ -65,6 +65,9 @@ _FILE_OWNERS: dict[str, str] = {
     "core/position_book_view.py": "audit_core_clock_config",
     "core/fill_attribution.py": "audit_core_clock_config",
     "core/strategy_position_store.py": "audit_core_clock_config",
+    "core/risk_protocol.py": "audit_core_clock_config",
+    "core/position_sizer.py": "audit_core_clock_config",
+    "core/escalation.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",
