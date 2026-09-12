@@ -1343,26 +1343,30 @@ CLOSES:          nothing. Drops kernel → monitoring. Five import
                  tiers stays BROKEN. 5 → 4. G40 stays CLOSED.
 PROBLEM:         After T-06a, kernel still imports seven names from
                  feelies.monitoring, all from orchestrator, all runtime.
-                 MetricCollector from telemetry (l.164) is already a
+                 MetricCollector from telemetry (l.160) is already a
                  core Protocol re-export; importing telemetry is still
                  kernel → monitoring. Required constructor arg.
                  Named: record, flush. Public property
                  metric_collector; harness getattr/_events and
                  isinstance(InMemoryMetricCollector) stay getattr /
-                 isinstance. KillSwitch from kill_switch (l.158):
+                 isinstance. KillSwitch from kill_switch (l.154):
                  already a Protocol; injected optional. Named:
                  is_active, reset(operator, audit_token). Public
                  property kill_switch — harness reads is_active;
                  test_kill_switch_consumer calls activate and
-                 is_active. observe_kill_switch (l.158) is a
-                 function. _LatencyBudgetMonitor (l.160) is
-                 default-constructed at init :705 and again in
-                 reset() :2793; named observe. _apply_breach_response
-                 (l.161) calls KillSwitch.activate. AlertManager
-                 (l.157) already a Protocol; injected optional; named
-                 emit; no public property. PaperSessionRecorder (l.163)
-                 is a concrete class; public setter only; named
-                 record_idle_tick, record_timing.
+                 is_active. observe_kill_switch (l.154) is a
+                 function. _LatencyBudgetMonitor (l.155) is
+                 default-constructed at init :957 and again in
+                 reset() :3045; named observe. _apply_breach_response
+                 (l.157) calls KillSwitch.activate. AlertManager
+                 (l.153) already a Protocol; injected optional; named
+                 emit; the monitoring Protocol also has
+                 active_alerts and acknowledge; no public property.
+                 PaperSessionRecorder (l.159) is a concrete class;
+                 public setter only; named record_idle_tick,
+                 record_timing. _p99 and _BudgetStatus are private
+                 callees of _LatencyBudgetMonitor with a second
+                 importer in tests/conformance/test_latency_budget.py.
 WHY THIS OWNER:  T5 core. MetricCollector already lives there.
                  Empty the package in one step. Returning
                  _apply_breach_response without a core KillSwitch
@@ -1371,28 +1375,42 @@ WHY THIS OWNER:  T5 core. MetricCollector already lives there.
                  the class leaves the pair.
 REFACTOR PATH:   one commit. Mechanism: retarget MetricCollector to
                  feelies.core.metric_collector (existing module; do
-                 not copy). Move KillSwitch Protocol and
-                 observe_kill_switch into feelies.core.kill_switch
-                 (core/kill_switch.py) with alias from
-                 monitoring.kill_switch; kernel Protocol surface is
-                 is_active, activate, reset — the property's
-                 consumers. Invert _LatencyBudgetMonitor into
+                 not copy). Move the KillSwitch Protocol (is_active,
+                 activate, reset — the property's consumers, already
+                 the monitoring surface) and observe_kill_switch
+                 into feelies.core.kill_switch (core/kill_switch.py).
+                 Alias from monitoring.kill_switch. Direction:
+                 monitoring → core (legal downward). Invert
+                 _LatencyBudgetMonitor into
                  feelies.core.latency_budget (core/latency_budget.py)
                  with alias from latency_budget; both construction
                  sites construct the core class. Relocate
-                 _apply_breach_response next to it; alias. Move
-                 AlertManager Protocol into feelies.core.alert_manager
-                 (core/alert_manager.py) with alias from alerting;
-                 kernel names only emit. PaperSessionRecorder stays a
-                 concrete in monitoring; kernel annotates a Protocol
-                 in feelies.core.paper_session_recorder
+                 _apply_breach_response next to it; alias. _p99
+                 and _BudgetStatus travel with the monitor body;
+                 alias them on latency_budget.py so
+                 test_latency_budget.py needs no retarget.
+                 Direction of every latency_budget alias:
+                 monitoring → core. core/latency_budget.py
+                 imports KillSwitch from feelies.core.kill_switch,
+                 not from feelies.monitoring. Move the AlertManager
+                 Protocol (emit, active_alerts, acknowledge — the
+                 full monitoring surface, so __init__.py and
+                 tests/monitoring stay alias-covered; kernel names
+                 only emit) into feelies.core.alert_manager
+                 (core/alert_manager.py) with alias from alerting.
+                 Direction: monitoring → core. PaperSessionRecorder
+                 stays a concrete in monitoring; kernel annotates a
+                 Protocol in feelies.core.paper_session_recorder
                  (core/paper_session_recorder.py) with
-                 record_idle_tick and record_timing; no subclassing.
-                 Leave getattr as getattr. Drop ("feelies.kernel",
-                 "feelies.monitoring") from _TIER_RESIDUALS in the
-                 same commit. New core modules: _FILE_OWNERS and
-                 README in this commit (S-21). Do not edit
-                 bootstrap.py. Do not edit harness/.
+                 record_idle_tick and record_timing; no subclassing;
+                 no alias on the concrete. Leave getattr as getattr.
+                 No alias whose target is kernel or another engine.
+                 Drop ("feelies.kernel", "feelies.monitoring") from
+                 _TIER_RESIDUALS in the same commit. New core
+                 modules: _FILE_OWNERS and README in this commit
+                 (S-21). Do not edit bootstrap.py. Do not edit
+                 harness/. Relocated bodies do not raise
+                 KernelFault and do not import feelies.kernel.
 BLAST RADIUS:    boundary
 VALIDATED BY:    test_five_import_tiers equals the 4-pair pin;
                  test_twelve_engine_independence KEPT at zero pairs;
@@ -1418,9 +1436,13 @@ FILES:           src/feelies/kernel/orchestrator.py
                  telemetry.py (already a re-export). Do not include
                  bootstrap.py, harness/, cli/,
                  tests/conformance/test_fail_quiet.py,
+                 tests/conformance/test_latency_budget.py
+                 (aliases cover _p99 / _BudgetStatus /
+                 _LatencyBudgetMonitor / _apply_breach_response),
                  .github/workflows/ci.yml. Do not edit
                  metric_collector.py, telemetry.py, or
-                 paper_session_recorder.py.
+                 paper_session_recorder.py. No keep-row file is
+                 touched.
 DELETES:         the kernel → monitoring pair; the alerting,
                  kill_switch, latency_budget,
                  paper_session_recorder, and telemetry imports from
@@ -1428,11 +1450,12 @@ DELETES:         the kernel → monitoring pair; the alerting,
 NET DELTA:       src modules +4, public symbols +1, branch points 0
                  (PaperSessionRecorder Protocol). KillSwitch and
                  AlertManager Protocol moves, observe_kill_switch,
-                 _LatencyBudgetMonitor, and _apply_breach_response
-                 are relocations. MetricCollector retarget is not a
-                 new name.
+                 _LatencyBudgetMonitor, _apply_breach_response,
+                 _p99, and _BudgetStatus are relocations.
+                 MetricCollector retarget is not a new name.
 ROLLBACK:        revert the commit. Independently revertible from
-                 T-07 until T-07 lands; orchestrator.py is shared with
-                 T-06a and T-07.
+                 T-07 until T-07 lands; orchestrator.py is shared
+                 with T-07. Not independently revertible from T-06a
+                 (already landed; orchestrator.py is shared).
 ```
 
