@@ -1647,7 +1647,12 @@ FILES:           src/feelies/kernel/orchestrator.py
 DELETES:         the kernel → portfolio pair; the position_store,
                  fill_attribution, strategy_position_store, and
                  fill_reconciliation imports from orchestrator;
-                 fill_reconciliation.py.
+                 fill_reconciliation.py;
+                 test_fill_reconciliation_does_not_import_orchestrator.
+                 The test cannot survive the module delete: its
+                 subject file is gone, it cannot be retargeted onto
+                 orchestrator without becoming a different claim,
+                 and an alias on the deleted module is forbidden.
 NET DELTA:       src modules +1, public symbols +2, branch points 0
                  (two Protocols). AttributionRecord,
                  AlphaContribution, largest_remainder_split,
@@ -1658,5 +1663,137 @@ ROLLBACK:        revert the commit. Independently revertible from
                  T-08 until T-08 lands; orchestrator.py is shared
                  with T-08. Not independently revertible from T-07a
                  (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-07c
+CLOSES:          nothing. Pin stays 3. Does not drop kernel →
+                 risk. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A placement step, not a cut, same
+                 shape as T-06z: an unchanged count is the
+                 declared outcome, not a failed cut.
+PROBLEM:         T-07b deleted test_fill_reconciliation_does_not_import_orchestrator
+                 with fill_reconciliation.py. That test guarded
+                 portfolio → kernel.orchestrator. Five import
+                 tiers lists portfolio above kernel, so the
+                 reverse edge is legal. S2 is engine-to-engine
+                 only and catches engine → kernel.orchestrator
+                 only because orchestrator imports other engines
+                 (that is T-06a). It does not catch engine →
+                 kernel.macro, kernel.micro,
+                 kernel.forced_exit_reasons, kernel.order_states,
+                 kernel.exception_taxonomy, or
+                 kernel.fill_bindings. Nothing now detects a
+                 kernel import anywhere in portfolio. T-08a and
+                 T-08b still touch engine files that already
+                 import kernel paths while kernel still imports
+                 those packages. A decorative pin of the current
+                 set would pass by construction and protect
+                 nothing.
+WHY THIS OWNER:  Insurance on T-08 and T-09, the rungs still to
+                 touch kernel-importing engines. Not a later
+                 campaign: those rungs are this campaign's
+                 remaining pair-drops. A contract change forbidding
+                 engines → kernel cannot go green (harness must
+                 import Orchestrator; MacroState lives in kernel).
+                 Accepting the gap leaves T-08/T-09 blind on every
+                 kernel module except orchestrator.
+FILES:           tests/conformance/test_import_contracts.py
+                 Do not edit core/position.py, bootstrap.py,
+                 harness/, cli/, orchestrator.py,
+                 fill_attribution.py (portfolio or core),
+                 forced_exit_clamp.py, order_policy.py,
+                 test_fail_quiet.py, ci.yml. No keep-row file is
+                 touched. The probe edits
+                 portfolio/fill_attribution.py only for the
+                 mutation and restores it; that file is not in
+                 the commit.
+REFACTOR PATH:   one commit. Mechanism: equality pin of the
+                 measured engine → kernel import set, same shape
+                 as _TIER_RESIDUALS. Not a subset. A fifteenth
+                 pair fails immediately.
+                 Measured set, fourteen pairs:
+                 ("feelies.ingestion.massive_ws",
+                  "feelies.kernel.exception_taxonomy")
+                 ("feelies.sensors.horizon_scheduler",
+                  "feelies.kernel.exception_taxonomy")
+                 ("feelies.alpha.registry",
+                  "feelies.kernel.exception_taxonomy")
+                 ("feelies.risk.engine",
+                  "feelies.kernel.macro")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.forced_exit_reasons")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.order_states")
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.macro")
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.micro")
+                 ("feelies.forensics.gate_close_attribution",
+                  "feelies.kernel.forced_exit_reasons")
+                 ("feelies.harness.backtest_runner",
+                  "feelies.kernel.orchestrator")
+                 ("feelies.harness.backtest_runner",
+                  "feelies.kernel.signal_order_trace")
+                 ("feelies.harness.backtest_runner",
+                  "feelies.kernel.macro")
+                 ("feelies.harness.backtest_report",
+                  "feelies.kernel.macro")
+                 ("feelies.harness.backtest_report",
+                  "feelies.kernel.orchestrator")
+                 Walk src/feelies engine packages only
+                 (ingestion, storage, sensors, features,
+                 services, signals, alpha, promotion,
+                 composition, portfolio, risk, execution,
+                 broker, monitoring, harness, research,
+                 forensics). Exclude kernel, bus, core, cli,
+                 bootstrap. Record Import and ImportFrom of
+                 feelies.kernel and feelies.kernel.*.
+                 T-08a may shrink the pin if
+                 forced_exit_clamp.py is deleted. Any shrink
+                 lands in that same commit. Returning helpers
+                 to kernel does not add a pair; a new engine
+                 package importing kernel does.
+                 Order: (1) add test_engine_kernel_imports_equal_pin
+                 with _KERNEL_IMPORT_RESIDUALS equal to the
+                 fourteen pairs. On this tree it passes by
+                 construction -- that is not the proof.
+                 (2) probe, S-28a shape. Add a throwaway
+                 `from feelies.kernel.macro import MacroState`
+                 to src/feelies/portfolio/fill_attribution.py
+                 (not in the pin; not a keep-row file; the
+                 package whose reverse-edge detector T-07b
+                 deleted). Run only
+                 test_engine_kernel_imports_equal_pin. It MUST
+                 fail naming
+                 ('feelies.portfolio.fill_attribution',
+                  'feelies.kernel.macro'). Remove the import.
+                 Confirm fill_attribution.py is byte-identical
+                 to HEAD. Re-run the test green. Report the
+                 fail-then-green output and the restore hash
+                 at the gate. Without the probe the pin is
+                 decorative.
+                 (3) commit the test only.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_engine_kernel_imports_equal_pin equals
+                 the 14-pair pin; probe failed-before on the
+                 throwaway pair then passed-after restore;
+                 test_five_import_tiers equals the unmoved
+                 3-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. A test-only change that
+                 moves a hash means the file was not test-only.
+DELETES:         nothing. Pin stays 3. The fourteen-pair set is
+                 a new equality pin, not a dropped five-tier pair.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08 until T-08 lands; test_import_contracts.py
+                 is shared with T-08. Not independently revertible
+                 from T-07b (already landed;
+                 test_import_contracts.py is shared).
 ```
 
