@@ -162,11 +162,12 @@ LADDER:          Pair count is the layers contract, not G40.
                           PaperSessionRecorder;
                           observe_kill_switch,
                           apply_breach_response (monitoring)       4
-                   T-07a  fill helpers; LotLedger invert;
-                          PositionBookView (portfolio)              4
-                   T-07b  PositionStore retarget; Protocol
-                          FillAttributionLedger,
-                          StrategyPositionStore (portfolio)        3
+                   T-07a  LotLedger invert; PositionBookView
+                          (portfolio)                              4
+                   T-07b  fill helpers return to kernel;
+                          attribution names; PositionStore
+                          retarget; Protocol FillAttributionLedger,
+                          StrategyPositionStore (portfolio)      3
                    T-08a  risk helpers, HAZARD_EXIT bind,
                           RiskLevel; invert BudgetBasedSizer
                           and create_risk_escalation_machine;
@@ -1456,6 +1457,189 @@ NET DELTA:       src modules +4, public symbols +1, branch points 0
 ROLLBACK:        revert the commit. Independently revertible from
                  T-07 until T-07 lands; orchestrator.py is shared
                  with T-07. Not independently revertible from T-06a
+                 (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-07a
+CLOSES:          nothing. Does not drop kernel → portfolio. Five import
+                 tiers stays BROKEN. Pin stays 4. G40 stays CLOSED.
+PROBLEM:         After T-06b, kernel still imports six names from
+                 feelies.portfolio, all from orchestrator.
+                 LotLedger from lot_ledger (l.163) is default-constructed
+                 at init :902 and again in reset() :3045. Public property
+                 lot_ledger; tests/kernel/test_orchestrator.py names
+                 apply_fill, net_quantity, lots, Lot.quantity, Lot.intent.
+                 PositionBookView from position_book_view (l.161) is
+                 constructed via from_store on the position_store
+                 property :1118 (returns PositionBookView, not
+                 PositionStore) and at :1181. Named: from_store, get.
+                 Property consumers: harness/backtest_report.py
+                 all_positions + Position.{realized_pnl,unrealized_pnl,
+                 quantity}; test_backtest_app_baseline all_positions +
+                 cumulative_fees; test_orchestrator isinstance + get.
+                 The four remaining names (PositionStore,
+                 FillAttributionLedger, StrategyPositionStore, the two
+                 fill helpers) stay on the import. This step does not
+                 empty the package.
+WHY THIS OWNER:  T5 core. LotLedger and PositionBookView are concretes
+                 kernel constructs; a Protocol cannot replace them.
+                 The fill helpers cannot travel with them: they import
+                 TradeRecord via kernel.fill_bindings and
+                 forced_exit_reasons. Core cannot import kernel. Leaving
+                 them for T-07b is the census, not a failed cut.
+REFACTOR PATH:   one commit. Invert LotLedger (Lot and _same_sign travel)
+                 into feelies.core.lot_ledger (core/lot_ledger.py) with
+                 alias from portfolio.lot_ledger. Direction: portfolio
+                 → core. Both construction sites construct the core class.
+                 Invert PositionBookView (_ReadableBook travels) into
+                 feelies.core.position_book_view
+                 (core/position_book_view.py) with alias from
+                 position_book_view. Direction: portfolio → core.
+                 core/position_book_view.py imports Position from
+                 feelies.core.position, not from feelies.portfolio.
+                 Do not edit core/position.py. Do not edit bootstrap.py
+                 (alias covers from_store / from_quantities). Do not
+                 invert fill helpers. No alias whose target is kernel or
+                 another engine. Pin stays 4. New core modules:
+                 _FILE_OWNERS and README in this commit (S-21).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved 4-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/lot_ledger.py
+                 src/feelies/core/position_book_view.py
+                 src/feelies/portfolio/lot_ledger.py
+                 src/feelies/portfolio/position_book_view.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 portfolio files are alias only. Do not include
+                 test_import_contracts.py (pin does not move),
+                 bootstrap.py, harness/, test_fail_quiet.py,
+                 tests/kernel/test_orchestrator.py,
+                 tests/portfolio/test_lot_ledger.py,
+                 fill_reconciliation.py, fill_attribution.py,
+                 core/position.py, ci.yml. No keep-row file is
+                 touched.
+DELETES:         the lot_ledger and position_book_view imports from
+                 orchestrator.
+NET DELTA:       src modules +2, public symbols 0, branch points 0.
+                 LotLedger, Lot, PositionBookView are relocations.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-07b until T-07b lands; orchestrator.py is shared
+                 with T-07b. Not independently revertible from T-06b
+                 (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-07b
+CLOSES:          nothing. Drops kernel → portfolio. Five import
+                 tiers stays BROKEN. 4 → 3. G40 stays CLOSED.
+PROBLEM:         After T-07a, kernel still imports four portfolio
+                 modules. PositionStore from position_store (l.162) is
+                 already a core Protocol re-export; importing
+                 position_store is still kernel → portfolio. Required
+                 constructor arg. Named: get (.quantity and the Position
+                 object passed to _plan_for_signal), total_exposure,
+                 update_mark. latest_mark and reset stay getattr.
+                 Public property position_store returns
+                 PositionBookView, not this type. FillAttributionLedger
+                 from fill_attribution (l.26) is TYPE_CHECKING, injected
+                 optional. After the helpers return, kernel names record
+                 and allocate_fill; _maybe_reset stays getattr. No
+                 public property. StrategyPositionStore from
+                 strategy_position_store (l.30) is TYPE_CHECKING,
+                 injected optional. Named: update_mark, get (.quantity);
+                 helpers add strategy_ids, update, debit_fees. No
+                 public property. _record_fill_attribution and
+                 _reconcile_fills (l.228) are functions. Private
+                 callees: _regime_label_for, _order_owns_one_slice,
+                 _TradeJournalLeg, _trade_journal_legs,
+                 _distribute_fill_to_strategies. They import TradeRecord
+                 via kernel.fill_bindings and forced_exit_reasons, so
+                 they cannot go to core. They also name
+                 AttributionRecord, AlphaContribution,
+                 largest_remainder_split, split_fees. Returning the
+                 helpers without relocating those four leaves runtime
+                 kernel → fill_attribution and the pair stays.
+WHY THIS OWNER:  T5 core for the Protocols and the attribution types.
+                 Empty the package in one step. A TYPE_CHECKING-only
+                 delete is not a cut. Returning helpers without the
+                 four fill_attribution names leaves the pair.
+REFACTOR PATH:   one commit. Retarget PositionStore to
+                 feelies.core.position (existing module; do not copy,
+                 do not edit). Move AttributionRecord,
+                 AlphaContribution, largest_remainder_split, and
+                 split_fees into feelies.core.fill_attribution
+                 (core/fill_attribution.py) with alias from
+                 portfolio.fill_attribution. Direction: portfolio →
+                 core. Move the FillAttributionLedger Protocol (record,
+                 allocate_fill — kernel's names after the helpers
+                 return; reset stays getattr) into the same module.
+                 No subclassing; no alias on the concrete. Move the
+                 StrategyPositionStore Protocol (get, update,
+                 debit_fees, update_mark, strategy_ids) into
+                 feelies.core.strategy_position_store
+                 (core/strategy_position_store.py). No alias on the
+                 concrete. Return _record_fill_attribution,
+                 _reconcile_fills and the five private callees to
+                 kernel.orchestrator. Do not alias them from
+                 fill_reconciliation.py — that would be portfolio →
+                 kernel. Retarget tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_fill_attribution_seam.py, and
+                 tests/integration/test_paper_rth_safety.py. Delete
+                 fill_reconciliation.py (emptied; an alias is illegal).
+                 Prune its _FILE_OWNERS row. Retarget the two
+                 TYPE_CHECKING imports; do not delete them. Drop
+                 ("feelies.kernel", "feelies.portfolio") from
+                 _TIER_RESIDUALS in the same commit. New core modules:
+                 _FILE_OWNERS and README in this commit (S-21).
+                 Relocated bodies do not raise KernelFault. Returned
+                 helpers keep importing TradeRecord from
+                 kernel.fill_bindings and forced_exit_reasons from
+                 kernel (legal; they live in kernel).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 3-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/fill_attribution.py
+                 src/feelies/core/strategy_position_store.py
+                 src/feelies/portfolio/fill_attribution.py
+                 src/feelies/portfolio/fill_reconciliation.py
+                 tests/kernel/test_orchestrator.py
+                 tests/kernel/test_fill_attribution_seam.py
+                 tests/integration/test_paper_rth_safety.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 Do not edit core/position.py, bootstrap.py, harness/,
+                 cli/, memory_position_store.py,
+                 strategy_position_store.py (concrete),
+                 test_fail_quiet.py, ci.yml. No keep-row file is
+                 touched. No alias whose target is kernel.
+DELETES:         the kernel → portfolio pair; the position_store,
+                 fill_attribution, strategy_position_store, and
+                 fill_reconciliation imports from orchestrator;
+                 fill_reconciliation.py.
+NET DELTA:       src modules +1, public symbols +2, branch points 0
+                 (two Protocols). AttributionRecord,
+                 AlphaContribution, largest_remainder_split,
+                 split_fees, and the helper cluster are relocations
+                 (helpers into kernel). PositionStore retarget is not
+                 a new name. fill_reconciliation.py deleted (−1).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08 until T-08 lands; orchestrator.py is shared
+                 with T-08. Not independently revertible from T-07a
                  (already landed; orchestrator.py is shared).
 ```
 
