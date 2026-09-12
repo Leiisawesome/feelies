@@ -16729,3 +16729,256 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-06a.json, this ledger
                  entry.
 
+---
+
+## T-06b  2026-09-12T11:40:00+08:00
+  STEP:          T-06b
+  BASE:          7cd9c668e31bc0d8c6aea900b303207e8513a2d5
+  RESULT SHA:    6186321cd985f5b4026d2063ef69d6306cb0814b (exec/T-06b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → monitoring. Five import tiers stays
+                 BROKEN. 5 → 4. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED on
+                 unexpected [('feelies.kernel',
+                 'feelies.monitoring')] before the cut; 3
+                 passed after the cut (4-pair pin).
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (4 pairs), Twelve
+                 engine module sets KEPT. test_five_import_tiers
+                 equals the shrunk 4-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel+monitoring+core 677
+                 mypy src/feelies: Success, 229 source files
+                 (before the gate).
+  TESTS:         capture pre-T-06b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-06b GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-06a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06b vs post-T-06b and vs
+                 baseline_post-T-06a.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Kill-switch related replay hashes unmoved:
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015d COUNT 2;
+                 EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_HASH
+                 a18589d8e966170b COUNT 1;
+                 EXPECTED_ALERT_TAXONOMY_HASH
+                 f6b784b275a549e1 COUNT 4;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 THE PIN MOVED 5 to 4 in the same commit
+                 as the seven names left the monitoring
+                 import.
+  FILES:         11 declared, 11 touched, 11 committed (clean vs
+                 6186321c). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/kill_switch.py (new),
+                 core/latency_budget.py (new),
+                 core/alert_manager.py (new),
+                 core/paper_session_recorder.py (new),
+                 monitoring/kill_switch.py,
+                 monitoring/latency_budget.py,
+                 monitoring/alerting.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 metric_collector.py, telemetry.py,
+                 monitoring/paper_session_recorder.py,
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py,
+                 test_latency_budget.py, ci.yml.
+                 No keep-row file is touched.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +4, public symbols +1,
+                 branch points 0
+                 (PaperSessionRecorder Protocol).
+                 KillSwitch and AlertManager Protocol
+                 moves, observe_kill_switch,
+                 _LatencyBudgetMonitor,
+                 _apply_breach_response, _p99, and
+                 _BudgetStatus are relocations.
+                 MetricCollector retarget is not a new
+                 name.
+                 actual modules 225 -> 229 (+4 MATCH)
+                 public_symbols 584 -> 585 (+1 MATCH)
+                 sloc 46848 -> 46912 (+64, undeclared)
+                 n_edges 669 -> 672
+                 n_modules 182 -> 185
+                 (import graph: alert_manager,
+                 kill_switch, latency_budget,
+                 paper_session_recorder entered core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Kill-switch related replay
+                 hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 11 declared / 11 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +4
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 6186321cd985f5b4026d2063ef69d6306cb0814b.
+                 Not merged.
+  NOTES:         One commit on exec/T-06b,
+                 6186321cd985f5b4026d2063ef69d6306cb0814b,
+                 "T-06b: invert kernel->monitoring;
+                 MetricCollector retarget; kill switch
+                 and latency budget to core". Parent
+                 7cd9c668 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 5 to 4. All seven names left
+                 the monitoring import in that same
+                 commit as the pin drop -- AlertManager,
+                 KillSwitch, observe_kill_switch,
+                 _LatencyBudgetMonitor,
+                 _apply_breach_response,
+                 PaperSessionRecorder, MetricCollector
+                 -- and kernel now has no
+                 feelies.monitoring import. Remaining,
+                 verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs after
+                 the cut. No new pair.
+                 Every alias runs monitoring → core, the
+                 legal downward direction, and
+                 same-object printed True for each:
+                 KillSwitch and observe_kill_switch on
+                 monitoring/kill_switch.py;
+                 _LatencyBudgetMonitor,
+                 _apply_breach_response, _p99,
+                 _BudgetStatus on
+                 monitoring/latency_budget.py;
+                 AlertManager on monitoring/alerting.py.
+                 None of them target kernel or another
+                 engine. PaperSessionRecorder has no
+                 alias; the concrete stays in
+                 monitoring. _p99 and _BudgetStatus
+                 travelled with the monitor and were
+                 aliased on latency_budget.py, so
+                 tests/conformance/test_latency_budget.py
+                 needed no retarget and is not in FILES.
+                 Both _LatencyBudgetMonitor construction
+                 sites (__init__ :957 and reset :3045)
+                 construct the core class
+                 (type(...).__module__ ==
+                 feelies.core.latency_budget).
+                 KillSwitch Protocol covers is_active,
+                 activate, and reset, because the
+                 public kill_switch property hands the
+                 instance to harness (is_active) and
+                 to test_kill_switch_consumer (activate
+                 and is_active). AlertManager Protocol
+                 carries emit, active_alerts, and
+                 acknowledge -- the full monitoring
+                 surface -- even though kernel names
+                 only emit, so monitoring/__init__.py
+                 and tests/monitoring stay
+                 alias-covered.
+                 MetricCollector is a retarget to the
+                 existing core Protocol, not a move.
+                 metric_collector.py, telemetry.py, and
+                 monitoring/paper_session_recorder.py
+                 were not edited.
+                 core/latency_budget.py imports KillSwitch
+                 from feelies.core.kill_switch. None of
+                 the four new core modules import
+                 feelies.monitoring or feelies.kernel.
+                 Four new modules, same commit (S-21):
+                 _FILE_OWNERS rows core/kill_switch.py,
+                 core/latency_budget.py,
+                 core/alert_manager.py,
+                 core/paper_session_recorder.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citation.
+                 Four kill-switch related replay hashes
+                 unmoved: EXPECTED_DECOUPLED_RISK_
+                 FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2; EXPECTED_DECOUPLED_SAFETY_
+                 STATE_CHANGE_HASH
+                 a18589d8e966170bedceb2e0156b49d440441eb5999d537605eb2d7c13749a32
+                 COUNT 1; EXPECTED_ALERT_TAXONOMY_HASH
+                 f6b784b275a549e169f7075ca583b9f198966f802216fbf7e8eb835d6f31b557
+                 COUNT 4; _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 fill count 20.
+                 mypy src/feelies: Success, 229 source
+                 files, before the gate. APP oracle 2
+                 passed; hashes and fill count unmoved.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +4,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture artifacts:
+                 modules 225 → 229 MATCH, public_symbols
+                 584 → 585 MATCH, sloc 46848 → 46912
+                 (+64, undeclared), n_edges 669 → 672,
+                 n_modules 182 → 185, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 NOTE: first rung of this campaign to
+                 land on the first attempt with no plan
+                 amendment. The per-name census, the
+                 alias-direction rule, and the private-
+                 callee drag check were all applied
+                 before implementation rather than
+                 discovered at a gate. Per-name census
+                 is T-04a -- a rung sized by package
+                 label left names behind. Alias-direction
+                 is T-06a's first attempt -- one alias
+                 whose target was kernel expanded into
+                 four new twelve-engine pairs. Private-
+                 callee drag is T-05a -- a moved body
+                 takes its private callees, and they
+                 may have test importers
+                 (test_latency_budget.py for _p99 and
+                 _BudgetStatus).
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-07a portfolio helpers and LotLedger;
+                 pin stays 4 (boundary). Not started.
+                 Do not begin T-07a. Go confirmed on
+                 6186321cd985f5b4026d2063ef69d6306cb0814b.
+                 Left uncommitted:
+                 baseline_pre-T-06b.json,
+                 baseline_post-T-06b.json, this ledger
+                 entry.
+
+
