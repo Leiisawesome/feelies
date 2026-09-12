@@ -17998,4 +17998,287 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-08a.json, this ledger
                  entry.
 
+---
+
+## T-08b  2026-09-12T19:35:00+08:00
+  STEP:          T-08b
+  BASE:          2613e6190a414e406c702be80bc9597406f044bd
+  RESULT SHA:    048763dd7f2e3ecc67780d1653977b7cb4730af2 (exec/T-08b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → risk. Five import tiers stays BROKEN.
+                 3 → 2. G40 stays CLOSED. T-07c pin 14 → 11.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the 2-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 11-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (2 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; risk 336
+                 mypy src/feelies: Success, 237 source files
+                 (235 +3 −1; before the gate).
+  TESTS:         capture pre-T-08b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-08b GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-08a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 integration 39 passed / 7 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-08b vs
+                 post-T-08b and vs baseline_post-T-08a.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Risk, forced-exit, flatten, and hazard replay
+                 hashes unmoved:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45e COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 EXPECTED_LEVEL5_HAZARD_HASH
+                 8092e88586a006ff7a COUNT 3;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 BOTH PINS MOVED AS DECLARED. Five-tier 3 to
+                 2. Engine-to-kernel 14 to 11.
+  FILES:         14 declared, 14 touched, 14 committed
+                 (clean vs 048763dd). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/hazard_exit.py (new),
+                 core/buying_power.py (new),
+                 core/edge_weighted_sizer.py (new),
+                 risk/engine.py (helpers stripped; RiskEngine
+                 alias remains),
+                 risk/forced_exit_clamp.py (deleted),
+                 risk/hazard_exit.py (alias),
+                 risk/buying_power.py (alias),
+                 risk/edge_weighted_sizer.py (SizeDivergence
+                 alias; no alias on the concrete sizer),
+                 tests/kernel/test_orchestrator.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 docs/prompts/audit_risk_engine.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py, harness/,
+                 cli/, order_policy.py, order_lifecycle.py,
+                 test_fail_quiet.py, ci.yml,
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (alias covers HAZARD_EXIT_*; REASONS kept
+                 as a core import so the identity assertion
+                 holds),
+                 test_internal_links.py (no whitelist).
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols +1,
+                 branch points 0.
+                 EdgeWeightedSizer Protocol is new.
+                 SizeDivergence, BuyingPowerPhase,
+                 HAZARD_EXIT_*, and the helper cluster are
+                 relocations. forced_exit_clamp.py deleted
+                 (−1). Aliases are ImportFrom; measure.py
+                 does not count them.
+                 actual modules 235 -> 237 (+2 MATCH)
+                 public_symbols 588 -> 589 (+1 MATCH)
+                 sloc 47054 -> 47033 (−21, undeclared)
+                 n_edges 678 -> 672
+                 n_modules 191 -> 192
+                 (import graph: hazard_exit, buying_power,
+                 and edge_weighted_sizer entered core;
+                 forced_exit_clamp left)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Risk, hazard, forced-exit,
+                 flatten, and state-transition replay hashes
+                 unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 14 declared / 14 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 048763dd7f2e3ecc67780d1653977b7cb4730af2.
+                 Not merged.
+  NOTES:         One commit on exec/T-08b,
+                 048763dd7f2e3ecc67780d1653977b7cb4730af2,
+                 "T-08b: return remaining risk helpers to kernel
+                 and drop kernel-risk pin". Parent 2613e619
+                 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Both pins dropped in that same commit as
+                 the code, not in a follow-up. Five-tier
+                 3 to 2; remaining:
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Engine-to-kernel 14 to 11. The three
+                 pairs that left:
+                 ("feelies.risk.engine",
+                  "feelies.kernel.macro")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.forced_exit_reasons")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.order_states")
+                 The eleven that remain equal the pin.
+                 S2 KEPT at zero twelve-engine pairs.
+                 No new pair.
+                 All seventeen names left the kernel
+                 import of risk. orchestrator.py has no
+                 `from feelies.risk`. HAZARD_EXIT_* now
+                 come from core; BuyingPowerPhase is a
+                 lazy core import; EdgeWeightedSizer and
+                 SizeDivergence come from
+                 core.edge_weighted_sizer; the helper
+                 cluster lives in orchestrator.
+                 The returned helpers and the two private
+                 callees (_closable_quantity,
+                 _is_forced_market_exit) sit as
+                 module-level functions in
+                 kernel/orchestrator.py immediately above
+                 class Orchestrator. No test imported
+                 those two callees.
+                 risk.engine._submit_tracked_order was
+                 not returned. It is a divergent second
+                 copy of the order_lifecycle function;
+                 two submit bodies in kernel would have
+                 forced a choice. The returned flatten
+                 calls the order_lifecycle
+                 _submit_tracked_order kernel already
+                 imports (orchestrator.py:110). That is
+                 equivalent on OrderState, so it is a
+                 callee swap, not a body merge, and not
+                 a re-pin. After the strip, risk.engine
+                 exports only the RiskEngine alias.
+                 forced_exit_clamp.py is gone. Its three
+                 consumers were handled in this commit:
+                 the _FILE_OWNERS row is pruned; the
+                 README risk_engine row now cites
+                 `risk/risk_wrapper.py`,
+                 `kernel/orchestrator.py`; the
+                 audit_risk_engine.md bullet is
+                 `src/feelies/kernel/orchestrator.py` —
+                 forced-exit clamp (monotone veto). No
+                 alias on the deleted file. No whitelist
+                 in test_internal_links.py.
+                 Four aliases, all risk → core, none
+                 targeting kernel, same-object True on
+                 each: HAZARD_EXIT_SOURCE_LAYER and
+                 HAZARD_EXIT_REASONS on
+                 risk.hazard_exit; BuyingPowerPhase on
+                 risk.buying_power; SizeDivergence on
+                 risk.edge_weighted_sizer. No alias on
+                 the EdgeWeightedSizer concrete.
+                 Both BuyingPowerPhase lazy sites reach
+                 the core enum:
+                 _reset_buying_power_phase_for_session
+                 and the two imports inside the returned
+                 _maybe_flip_buying_power_at_rth_close.
+                 risk.engine dropped kernel.macro. That
+                 import existed only for MacroState in
+                 _escalate_risk, which returned with the
+                 helper. A grep of src/feelies/core
+                 found no import of feelies.risk or
+                 feelies.kernel.
+                 Three new modules in this commit
+                 (S-21): core/hazard_exit.py,
+                 core/buying_power.py, and
+                 core/edge_weighted_sizer.py. Each has
+                 an _FILE_OWNERS row mapping to
+                 audit_core_clock_config, and the
+                 README core_clock_config row cites all
+                 three.
+                 Four risk and forced-exit hashes
+                 unmoved against
+                 baseline_post-T-08a.json:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45eb8f3c3d041e74831390d29214e0f39d6881ae21e0cae7b
+                 COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5691ae57a2f4fcea1fd57b2a4a9d05726edc7277b339164
+                 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c65f21cfcb39687f1c25206bd2bbf57ab87dd80b7ee065b3
+                 COUNT 3.
+                 mypy src/feelies: Success, 237 source
+                 files, before the gate. tests/docs:
+                 101 passed, before the gate. APP
+                 oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +2,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 235 → 237 MATCH,
+                 public_symbols 588 → 589 MATCH,
+                 sloc 47054 → 47033 (−21,
+                 undeclared), n_edges 678 → 672,
+                 n_modules 191 → 192, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The block said drop HAZARD_EXIT_REASONS
+                 as unused in orchestrator (# noqa:
+                 F401). tests/kernel/
+                 test_orchestrator_hazard_exit_routing.py
+                 -- not in FILES -- asserts
+                 `_orchestrator_mod.HAZARD_EXIT_REASONS
+                 is HAZARD_EXIT_REASONS`. Retargeting
+                 the import to core keeps that identity
+                 holding (risk.hazard_exit aliases the
+                 same object) and still drops the pin.
+                 Dropping the name would have broken a
+                 file the step could not touch. An
+                 unused name can still be a test's
+                 anchor. The census should check
+                 module-global identity assertions, not
+                 just call sites. Not a failed cut.
+                 The test file was not edited.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08c execution invert; pins stay 2
+                 and 11 (boundary).
+                 Not started. Do not begin T-08c.
+                 Go confirmed on
+                 048763dd7f2e3ecc67780d1653977b7cb4730af2.
+                 Left uncommitted:
+                 baseline_pre-T-08b.json,
+                 baseline_post-T-08b.json, this ledger
+                 entry.
+
 
