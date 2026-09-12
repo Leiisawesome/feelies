@@ -16981,4 +16981,226 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-06b.json, this ledger
                  entry.
 
+---
+
+## T-07a  2026-09-12T13:50:00+08:00
+  STEP:          T-07a
+  BASE:          cb81c9f2469dc88d85c35338dfc30b4728b952cb
+  RESULT SHA:    8886c2a3a287fb5c1e1dd8a3da41713153a7b535 (exec/T-07a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 4. Does not drop kernel → portfolio. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 4-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (4 pairs), Twelve
+                 engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; portfolio 52; core 245
+                 mypy src/feelies: Success, 231 source files
+                 (before the gate).
+  TESTS:         capture pre-T-07a GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed.
+                 -> capture post-T-07a GREEN 4899 passed / 0
+                 failed / 29 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-06b GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4898 passed / 0 failed / 16
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-07a vs post-T-07a and vs
+                 baseline_post-T-06b.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Position and fill replay hashes unmoved:
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0 COUNT 6;
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb6801 ACK COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 THE PIN DID NOT MOVE. It is 4 before and 4
+                 after. This step inverts LotLedger and
+                 PositionBookView; T-07b empties the remaining
+                 four names. An unchanged count is the declared
+                 outcome.
+  FILES:         7 declared, 7 touched, 7 committed (clean vs
+                 8886c2a3). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/lot_ledger.py (new),
+                 core/position_book_view.py (new),
+                 portfolio/lot_ledger.py,
+                 portfolio/position_book_view.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 bootstrap.py, harness/,
+                 test_fail_quiet.py,
+                 tests/kernel/test_orchestrator.py,
+                 tests/portfolio/test_lot_ledger.py,
+                 tests/portfolio/test_strategy_position_store.py,
+                 fill_reconciliation.py,
+                 fill_attribution.py,
+                 core/position.py, ci.yml.
+                 No keep-row file is touched.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols 0,
+                 branch points 0.
+                 LotLedger, Lot, PositionBookView are
+                 relocations.
+                 actual modules 229 -> 231 (+2 MATCH)
+                 public_symbols 585 -> 585 (+0 MATCH)
+                 sloc 46912 -> 46944 (+32, undeclared)
+                 n_edges 672 -> 674
+                 n_modules 185 -> 187
+                 (import graph: lot_ledger and
+                 position_book_view entered core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Position and fill replay hashes
+                 unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 7 declared / 7 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4899->4899 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +0. CLEAN. Go confirmed on
+                 branch head
+                 8886c2a3a287fb5c1e1dd8a3da41713153a7b535.
+                 Not merged.
+  NOTES:         One commit on exec/T-07a,
+                 8886c2a3a287fb5c1e1dd8a3da41713153a7b535,
+                 "T-07a: invert LotLedger and PositionBookView
+                 into core; pin stays 4". Parent cb81c9f2
+                 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 THE PIN STAYED AT 4. Kernel still
+                 imports four portfolio names, left
+                 there for T-07b by design:
+                 PositionStore, FillAttributionLedger,
+                 StrategyPositionStore, and the two
+                 fill helpers (_record_fill_attribution,
+                 _reconcile_fills). Dropping the pin
+                 here would have been a failed cut --
+                 the package is not empty.
+                 Remaining pairs, verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. No new pair.
+                 Both aliases run portfolio → core,
+                 the legal downward direction, and
+                 same-object printed True for each:
+                 Lot, LotLedger, _same_sign on
+                 portfolio/lot_ledger.py;
+                 PositionBookView and _ReadableBook
+                 on portfolio/position_book_view.py.
+                 Neither alias targets kernel or
+                 another engine.
+                 Both LotLedger construction sites
+                 (__init__ :902 and reset :3038)
+                 construct the core class
+                 (type(...).__module__ ==
+                 feelies.core.lot_ledger).
+                 Lot and _same_sign travelled with
+                 LotLedger; _ReadableBook travelled
+                 with PositionBookView, so
+                 tests/portfolio/test_lot_ledger.py,
+                 tests/portfolio/test_strategy_position_store.py,
+                 and bootstrap.py needed no edit and
+                 are not in FILES.
+                 core/position_book_view.py takes
+                 Position from feelies.core.position,
+                 never from feelies.portfolio.
+                 core/position.py was not edited.
+                 Two new modules, same commit (S-21):
+                 _FILE_OWNERS rows core/lot_ledger.py
+                 and core/position_book_view.py ->
+                 audit_core_clock_config, and the
+                 README core_clock_config citation.
+                 Five position and fill replay
+                 hashes unmoved:
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0d20d0c4900f3bf192ab20d96738a0d28670ba003afdd6a05
+                 COUNT 6; EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d691162e87d3fddf4866cb2747ffcc7350263ccb88291a6
+                 ACK COUNT 9; EXPECTED_FORCED_EXIT_
+                 ATTRIBUTION_HASH
+                 8a2844e102e94060e5691ae57a2f4fcea1fd57b2a4a9d05726edc7277b339164
+                 COUNT 2; EXPECTED_LEVEL4_PORTFOLIO_
+                 ORDER_HASH
+                 7db2425d84f3313a394a8b7a88ea26f663b6800d435d2fba1dcb4195b2061ad7
+                 COUNT 15; _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 fill count 20.
+                 mypy src/feelies: Success, 231
+                 source files, before the gate. APP
+                 oracle 2 passed. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 Declared NET DELTA src modules +2,
+                 public symbols 0, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 229 → 231 MATCH,
+                 public_symbols 585 → 585 MATCH,
+                 sloc 46912 → 46944 (+32,
+                 undeclared), n_edges 672 → 674,
+                 n_modules 185 → 187, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 NOTE: second consecutive rung to
+                 land first-attempt, after T-06b.
+                 The census before the block named
+                 the two invertibles, the alias
+                 directions, and the private-callee
+                 drag (Lot and _same_sign with
+                 LotLedger; _ReadableBook with
+                 PositionBookView). The block kept
+                 the fill helpers out because core
+                 cannot host a body that imports
+                 kernel.fill_bindings -- which is
+                 T-07b's problem, not a deferral.
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-07b portfolio; pin 4 to 3 (boundary).
+                 Not started. Do not begin T-07b.
+                 Go confirmed on
+                 8886c2a3a287fb5c1e1dd8a3da41713153a7b535.
+                 Left uncommitted:
+                 baseline_pre-T-07a.json,
+                 baseline_post-T-07a.json, this ledger
+                 entry.
+
 
