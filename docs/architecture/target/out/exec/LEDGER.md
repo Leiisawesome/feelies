@@ -17671,4 +17671,331 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-07c.json, this ledger
                  entry.
 
+---
+
+## T-08a  2026-09-12T18:26:29+08:00
+  STEP:          T-08a
+  BASE:          c2e6e4c727d388b85faca00015e985f5696d434a
+  RESULT SHA:    0a64690476471597f31b8752655887aadf4a9c41 (exec/T-08a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 3. Does not drop kernel → risk. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. T-07c pin
+                 stays 14. An unchanged count is the declared
+                 outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 3-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 14-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (3 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; risk 336
+                 mypy src/feelies: Success, 235 source files
+                 (232 +3; before the gate).
+  TESTS:         capture pre-T-08a GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed.
+                 -> capture post-T-08a GREEN 4899 passed / 0
+                 failed / 29 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-07c GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4898 passed / 0 failed / 16
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-08a vs post-T-08a and vs
+                 baseline_post-T-07c.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Risk-related replay hashes unmoved:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45e COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 EXPECTED_LEVEL5_HAZARD_HASH
+                 8092e88586a006ff7a COUNT 3;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 BOTH PINS STAYED. Five-tier is 3 before
+                 and 3 after. Engine-to-kernel is 14
+                 before and 14 after. This step inverts
+                 the six names that can leave without
+                 emptying; T-08b empties the remaining
+                 seventeen. An unchanged count is the
+                 declared outcome.
+  FILES:         9 declared, 9 touched, 9 committed
+                 (clean vs 0a646904). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/risk_protocol.py (new),
+                 core/position_sizer.py (new),
+                 core/escalation.py (new),
+                 risk/engine.py (Protocol alias),
+                 risk/position_sizer.py (alias),
+                 risk/escalation.py (alias),
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (neither pin
+                 moves), bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py, forced_exit_clamp.py,
+                 order_policy.py, edge_weighted_sizer.py,
+                 buying_power.py, hazard_exit.py (concrete),
+                 tests/kernel/test_orchestrator.py,
+                 tests/risk/test_escalation.py,
+                 tests/determinism/test_state_transition_replay.py,
+                 core/position.py, ci.yml,
+                 sized_intent_result.py.
+                 No keep-row file is touched.
+                 No alias whose target is kernel or
+                 another engine.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +3, public symbols
+                 +1, branch points 0.
+                 HazardExitController Protocol is new.
+                 RiskEngine, PositionSizer,
+                 BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine are
+                 relocations. Aliases are ImportFrom;
+                 measure.py does not count them.
+                 actual modules 232 -> 235 (+3 MATCH)
+                 public_symbols 587 -> 588 (+1 MATCH)
+                 sloc 47004 -> 47054 (+50, undeclared)
+                 n_edges 674 -> 678
+                 n_modules 188 -> 191
+                 (import graph: risk_protocol,
+                 position_sizer, and escalation entered
+                 core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Risk, hazard, forced-exit, and
+                 state-transition replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 9 declared / 9 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4899->4899 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +3
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 0a64690476471597f31b8752655887aadf4a9c41.
+                 Not merged.
+  NOTES:         Single commit on exec/T-08a,
+                 0a64690476471597f31b8752655887aadf4a9c41,
+                 "T-08a: invert risk protocols, BudgetBasedSizer,
+                 and RiskLevel into core; pin stays 3".
+                 Parent c2e6e4c7 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 BOTH PINS STAYED. Five-tier stayed at
+                 3 because this rung does not empty
+                 the risk package: kernel still
+                 imports seventeen names that T-08b
+                 owns, so the kernel→risk pair is
+                 still there by design:
+                 _compute_target_quantity,
+                 _emergency_flatten_all, _escalate_risk,
+                 _maybe_flip_buying_power_at_rth_close,
+                 HAZARD_EXIT_REASONS,
+                 HAZARD_EXIT_SOURCE_LAYER,
+                 _emit_forced_exit_resized_alert,
+                 _emit_forced_exit_stood_down_alert,
+                 _emit_forced_exit_supersedes_pending_alert,
+                 _force_flatten_symbol_on_degrade,
+                 _forced_exit_closable_quantity,
+                 _forced_exit_reduces,
+                 _has_pending_forced_exit_for_symbol,
+                 EdgeWeightedSizer, SizeDivergence,
+                 _record_size_shadow, BuyingPowerPhase.
+                 Engine-to-kernel stayed at 14 because
+                 this step did not touch
+                 forced_exit_clamp.py or the
+                 helpers that import kernel.macro;
+                 deleting or moving those is T-08b.
+                 Remaining five-tier pairs,
+                 verbatim:
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. No new pair.
+                 All three aliases run risk → core,
+                 the legal downward direction, and
+                 none targets kernel:
+                 risk.engine → core.risk_protocol
+                 (RiskEngine);
+                 risk.position_sizer →
+                 core.position_sizer (PositionSizer,
+                 BudgetBasedSizer);
+                 risk.escalation → core.escalation
+                 (RiskLevel,
+                 create_risk_escalation_machine).
+                 No alias on the HazardExitController
+                 concrete.
+                 Both BudgetBasedSizer construction
+                 sites build the core class
+                 (type(...).__module__ ==
+                 feelies.core.position_sizer): kernel
+                 default :1348 and bootstrap :479
+                 (alias; bootstrap not in FILES).
+                 The escalation factory at kernel
+                 :1505 builds the core factory
+                 (__module__ ==
+                 feelies.core.escalation). reset
+                 calls StateMachine.reset on that
+                 instance rather than constructing
+                 a second machine; tests construct
+                 via the alias, which is the same
+                 function object.
+                 position_sizer stayed optional
+                 (PositionSizer | None = None)
+                 because making it required is the
+                 T-04b blast -- fifty-odd constructor
+                 sites across nineteen files -- and
+                 the default is already unused on
+                 the bootstrap path, which
+                 constructs and passes a sizer.
+                 RiskLevel identity check printed
+                 True: feelies.risk.escalation.RiskLevel
+                 is feelies.core.escalation.RiskLevel.
+                 That is what the public risk_level
+                 property needed. Per T-03, tests
+                 that compare orch.risk_level
+                 against NORMAL / LOCKED /
+                 FORCED_FLATTEN import the enum from
+                 risk.escalation; they see the same
+                 object through the alias, so
+                 tests/kernel/test_orchestrator.py
+                 and test_orchestrator_bus_signal.py
+                 did not need an edit.
+                 TYPE_CHECKING HazardExitController
+                 was retargeted to
+                 core.risk_protocol, not deleted.
+                 No core module imports feelies.risk
+                 or feelies.kernel. A grep of
+                 src/feelies/core found none.
+                 Three new modules, same commit
+                 (S-21): _FILE_OWNERS rows
+                 core/risk_protocol.py,
+                 core/position_sizer.py, and
+                 core/escalation.py all map to
+                 audit_core_clock_config, and the
+                 README core_clock_config row cites
+                 all three.
+                 Seven risk-related replay hashes
+                 unmoved against
+                 baseline_post-T-07c.json:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45eb8f3c3d041e74831390d29214e0f39d6881ae21e0cae7b
+                 COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5691ae57a2f4fcea1fd57b2a4a9d05726edc7277b339164
+                 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c65f21cfcb39687f1c25206bd2bbf57ab87dd80b7ee065b3
+                 COUNT 3;
+                 EXPECTED_LEVEL5_HAZARD_HASH
+                 8092e88586a006ff7a46ee02dfc8f26c31d62d4cb2db7d1493bb8e8e81e3bf2e
+                 COUNT 3;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855ef3ef1f24e7392bb242f88814c86f09be7ed976d186ba7
+                 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 fill count 20.
+                 mypy src/feelies: Success, 235
+                 source files, before the gate.
+                 tests/docs: 101 passed, before the
+                 gate. APP oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +3,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 232 → 235 MATCH,
+                 public_symbols 587 → 588 MATCH,
+                 sloc 47004 → 47054 (+50,
+                 undeclared), n_edges 674 → 678,
+                 n_modules 188 → 191, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 NOTE: HazardExitController's
+                 Protocol is new. The concrete in
+                 hazard_exit.py had no Protocol
+                 before; this step wrote one in
+                 core/risk_protocol.py (reset only)
+                 and retargeted the kernel
+                 TYPE_CHECKING import. RiskEngine and
+                 PositionSizer were already Protocols
+                 in their engine modules and only
+                 needed retargeting -- they were
+                 re-homed, not invented. Of the
+                 three, the campaign moved
+                 HazardExitController (new public
+                 symbol, the +1) and merely re-homed
+                 RiskEngine and PositionSizer
+                 (relocations, +0). That is the
+                 distinction NET DELTA counts.
+                 BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine are
+                 also relocations.
+  FINDINGS:      Plan PROBLEM said the factory is
+                 default-constructed in kernel (l.1505)
+                 and in reset. reset calls
+                 StateMachine.reset on the existing
+                 machine; it does not reconstruct.
+                 Not a failed cut. Not fixed.
+                 check_sized_intent's return type is
+                 SizedIntentRiskResult in
+                 risk.sized_intent_result, which is
+                 not in FILES and cannot be imported
+                 from core. core/risk_protocol.py
+                 describes the two fields kernel
+                 reads with a private
+                 _SizedIntentRiskResult Protocol
+                 (read-only properties, same shape as
+                 _RegimeStateCache). Not a public
+                 symbol. sized_intent_result.py not
+                 edited.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08b risk; pin 3 to 2, T-07c pin 14
+                 to 11 (boundary).
+                 Not started. Do not begin T-08b.
+                 Go confirmed on
+                 0a64690476471597f31b8752655887aadf4a9c41.
+                 Left uncommitted:
+                 baseline_pre-T-08a.json,
+                 baseline_post-T-08a.json, this ledger
+                 entry.
+
 
