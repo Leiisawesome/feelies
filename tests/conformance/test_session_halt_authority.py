@@ -8,7 +8,7 @@ the G33 scan.
 
 Writes of the halt-tradeability store (halted-symbol set, post-resume
 blackout map, halt on/off codes, blackout duration) may only appear in
-``src/feelies/ingestion/data_integrity.py``. Orchestrator ``@*.setter``
+``src/feelies/core/data_health.py``. Orchestrator ``@*.setter``
 methods that rebind attributes onto that engine-1 object are wiring for
 existing tests, not a second tape writer. ``KernelFault(kind=SESSION_HALT)``
 must be constructed — a taxonomy member with no caller is an unused seam.
@@ -23,14 +23,14 @@ from feelies.core.clock import SimulatedClock
 from feelies.ingestion.data_integrity import (
     DataHealth,
     _HaltTradeability,
-    _data_health_blocks_trading,
 )
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.kernel.exception_taxonomy import KernelFault
+from feelies.kernel.orchestrator import _data_health_blocks_trading
 
 _SRC = Path(__file__).resolve().parents[2] / "src" / "feelies"
 _REPO = _SRC.parents[1]
-_AUTHORITY = "src/feelies/ingestion/data_integrity.py"
+_AUTHORITY = "src/feelies/core/data_health.py"
 
 _STORE_ATTRS = frozenset(
     {

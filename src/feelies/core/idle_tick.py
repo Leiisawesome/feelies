@@ -19,4 +19,17 @@ for idle ticks.
 
 from __future__ import annotations
 
-from feelies.core.idle_tick import IdleTick as IdleTick
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class IdleTick:
+    """Sentinel yielded by live feeds when no data arrives within timeout.
+
+    Not an ``Event`` — never published to bus, never logged.  The
+    timestamp comes from the feed's injected ``Clock`` (Inv-10) and is
+    used only for the correlation id passed to the async fill drain so
+    the resulting acks group cleanly in forensic traces.
+    """
+
+    timestamp_ns: int

@@ -35,7 +35,6 @@ _LAYER_PAIR = re.compile(
 # require this set to change.
 _TIER_RESIDUALS = frozenset(
     {
-        ("feelies.kernel", "feelies.ingestion"),
         ("feelies.kernel", "feelies.portfolio"),
         ("feelies.kernel", "feelies.risk"),
         ("feelies.kernel", "feelies.monitoring"),
