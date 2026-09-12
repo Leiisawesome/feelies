@@ -150,14 +150,14 @@ from feelies.kernel.macro import (
 from feelies.kernel.micro import MicroState, create_micro_state_machine
 from feelies.kernel.order_states import _TERMINAL_ORDER_STATES
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
-from feelies.monitoring.alerting import AlertManager
-from feelies.monitoring.kill_switch import KillSwitch, observe_kill_switch as observe_kill_switch
-from feelies.monitoring.latency_budget import (
+from feelies.core.alert_manager import AlertManager
+from feelies.core.kill_switch import KillSwitch, observe_kill_switch as observe_kill_switch
+from feelies.core.latency_budget import (
     _LatencyBudgetMonitor,
     _apply_breach_response,
 )
-from feelies.monitoring.paper_session_recorder import PaperSessionRecorder
-from feelies.monitoring.telemetry import MetricCollector
+from feelies.core.paper_session_recorder import PaperSessionRecorder
+from feelies.core.metric_collector import MetricCollector
 from feelies.portfolio.position_book_view import PositionBookView
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
