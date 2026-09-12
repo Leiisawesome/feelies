@@ -16468,4 +16468,264 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_pre-T-06a.json, that ledger
                  entry.
 
+---
+
+## T-06a  2026-09-12T10:54:09+08:00
+  STEP:          T-06a
+  BASE:          0094e321c589469153a678a851c1a0c56b0895c1
+  RESULT SHA:    97acf4a514f25ea87038fb1a7530957e03b541f8 (exec/T-06a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → ingestion. Five import tiers stays
+                 BROKEN. 6 → 5. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the 5-pair pin
+                 after the cut. S2 KEPT at zero twelve-engine
+                 pairs before and after. lint-imports after
+                 the cut: Five import tiers BROKEN (5
+                 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; ingestion 147 passed /
+                 4 skipped; core 245
+                 mypy src/feelies: Success, 225 source files
+                 (before the gate).
+                 G33: 7 passed. Scans not vacuous.
+  TESTS:         capture pre-T-06a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-06a GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-06z GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06a vs post-T-06a and vs
+                 baseline_post-T-06z.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Halt replay hashes unmoved:
+                 EXPECTED_SYMBOL_HALTED_HASH
+                 a7b5c52139086e62 COUNT 2;
+                 EXPECTED_HALT_ORDER_HASH
+                 f791d99471276259 COUNT 1;
+                 EXPECTED_HALT_ACK_HASH
+                 ca5015fcf416e669 COUNT 2;
+                 EXPECTED_HALT_POSITION_UPDATE_HASH
+                 ad9e112d08209b38 COUNT 1.
+                 THE PIN MOVED 6 to 5 in the same commit
+                 as the twelve names left the ingestion
+                 import.
+  FILES:         9 declared, 9 touched, 9 committed (clean vs
+                 97acf4a5). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/data_health.py (new),
+                 core/idle_tick.py (new),
+                 ingestion/data_integrity.py,
+                 ingestion/idle_tick.py,
+                 test_import_contracts.py,
+                 test_session_halt_authority.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 massive_normalizer.py, massive_ingestor.py,
+                 massive_ws.py, bootstrap.py,
+                 test_fail_quiet.py,
+                 core/exception_taxonomy.py, harness/,
+                 cli/, ci.yml.
+                 No keep-row file is touched:
+                 massive_ingestor.py 73 TypeError,
+                 massive_ws.py 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols +1,
+                 branch points 0
+                 (core MarketDataNormalizer Protocol).
+                 DataHealth, HaltSignal,
+                 classify_halt_status, _sync,
+                 _HaltTradeability, IdleTick are
+                 relocations.
+                 actual modules 223 -> 225 (+2 MATCH)
+                 public_symbols 583 -> 584 (+1 MATCH)
+                 sloc 46817 -> 46848 (+31, undeclared)
+                 n_edges 669 -> 669
+                 n_modules 180 -> 182
+                 (import graph: data_health and idle_tick
+                 entered core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Halt replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 9 declared / 9 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 97acf4a514f25ea87038fb1a7530957e03b541f8.
+                 Not merged.
+  NOTES:         One commit on exec/T-06a,
+                 97acf4a514f25ea87038fb1a7530957e03b541f8,
+                 "T-06a: invert kernel->ingestion; halt store
+                 and IdleTick to core". Parent 0094e321 on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 6 to 5. The twelve names left
+                 the ingestion import in that same commit
+                 as the pin drop -- DataHealth,
+                 _HaltTradeability, _bind_halt_tradeability,
+                 _configure_halt_from_config,
+                 _require_halt_authority, _reset_halt_state,
+                 _update_halt_state, _update_ssr_state,
+                 _data_health_blocks_trading,
+                 _verify_data_integrity, IdleTick,
+                 MarketDataNormalizer -- and kernel now has
+                 no feelies.ingestion import. Remaining,
+                 verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs after
+                 the cut. No new pair.
+                 Six aliases on data_integrity.py, each
+                 ingestion → core, the legal downward
+                 direction: DataHealth, HaltSignal,
+                 classify_halt_status,
+                 _sync_halt_store_and_health,
+                 _HaltTradeability, _require_halt_authority.
+                 IdleTick is the same direction on
+                 ingestion/idle_tick.py. Same-object True
+                 for all seven. _data_health_blocks_trading
+                 has no alias. That body returned to
+                 kernel; G33 imports it from
+                 feelies.kernel.orchestrator.
+                 _sync_halt_store_and_health, HaltSignal,
+                 classify_halt_status, and
+                 _bound_trade_feed_health_sm landed in
+                 core/data_health.py. massive_normalizer.py
+                 was not edited; line 901 still calls
+                 _sync_halt_store_and_health and reaches
+                 the core body through the data_integrity
+                 alias.
+                 Kernel annotates MarketDataNormalizer
+                 against the core Protocol, whose named
+                 surface is health and all_health. The
+                 ingestion Protocol was not edited and
+                 still names on_message, health, and
+                 all_health.
+                 core/data_health.py imports KernelFault from
+                 feelies.core.exception_taxonomy. It
+                 imports nothing from feelies.ingestion
+                 or feelies.kernel.
+                 Two new modules, same commit (S-21):
+                 _FILE_OWNERS rows core/data_health.py and
+                 core/idle_tick.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citation.
+                 Keep-rows measured unmoved:
+                 massive_ingestor.py 73 TypeError,
+                 massive_ws.py 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError.
+                 Four halt replay hashes unmoved:
+                 EXPECTED_SYMBOL_HALTED_HASH
+                 a7b5c52139086e62 COUNT 2,
+                 EXPECTED_HALT_ORDER_HASH
+                 f791d99471276259 COUNT 1,
+                 EXPECTED_HALT_ACK_HASH
+                 ca5015fcf416e669 COUNT 2,
+                 EXPECTED_HALT_POSITION_UPDATE_HASH
+                 ad9e112d08209b38 COUNT 1.
+                 mypy src/feelies: Success, 225 source
+                 files, before the gate. APP oracle 2
+                 passed; hashes and fill count unmoved.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +2, public
+                 symbols +1, branch points 0. Measured
+                 from the two capture artifacts:
+                 modules 223 → 225 MATCH, public_symbols
+                 583 → 584 MATCH, sloc 46817 → 46848
+                 (+31, undeclared), n_edges 669 → 669,
+                 n_modules 180 → 182, cycles 1 → 1 MATCH,
+                 alphaleak 0 → 0.
+                 G33 retarget: _AUTHORITY is now
+                 src/feelies/core/data_health.py. The
+                 invariant is one producer of halt state,
+                 and the path pin follows the store rather
+                 than the package. All three scans still
+                 bite -- 14 halt-store writes, 4
+                 SESSION_HALT constructions, 1
+                 transition(DataHealth.HALTED). None
+                 vacuous. The 14 writes and the one HALTED
+                 transition are all in
+                 core/data_health.py. SESSION_HALT splits
+                 2 / 2: core raises from
+                 _HaltTradeability.configure (codebook
+                 conflict) and _require_halt_authority
+                 (missing store); orchestrator raises from
+                 returned _bind_halt_tradeability
+                 (two-authority conflict) and
+                 _data_health_blocks_trading (health/store
+                 xor). That split does not weaken G33's
+                 single-producer claim. The orchestrator
+                 sites raise KernelFault; they do not
+                 write halted_symbols, the blackout map,
+                 or the codebook. Halt STATE still has
+                 one producer.
+  FINDINGS:      A relocation alias is an import in the
+                 opposite direction. On an engine file
+                 that can reverse the very edge the step
+                 is cutting, and S2 expands one such import
+                 into every engine the kernel touches --
+                 the first attempt produced four new pairs
+                 from a single alias line
+                 (_data_health_blocks_trading from
+                 feelies.kernel.orchestrator on
+                 data_integrity.py). Every remaining rung
+                 that aliases from an engine file must
+                 state the direction before writing it.
+                 Also recorded, not a stop:
+                 perfmeasure.py DIRECT_PROBES still names
+                 four E1 helpers on
+                 feelies.ingestion.data_integrity.
+                 Returning those bodies adds four dead
+                 probes to the three already unowned.
+                 perfmeasure.py is not in FILES. Same
+                 class as T-05a.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-06b monitoring; pin 5 to 4
+                 (boundary). Not started. Do not begin
+                 T-06b. Go confirmed on
+                 97acf4a514f25ea87038fb1a7530957e03b541f8.
+                 Left uncommitted:
+                 baseline_pre-T-06a.json,
+                 baseline_post-T-06a.json, this ledger
+                 entry.
 
