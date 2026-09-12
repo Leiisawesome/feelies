@@ -130,6 +130,17 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  target is in kernel or another engine is not:
                  retarget the consumer instead, and put that
                  consumer in FILES.
+                 AN UNUSED IMPORT CAN BE A TEST'S IDENTITY
+                 ANCHOR. T-08b's block called
+                 HAZARD_EXIT_REASONS unused in orchestrator and
+                 said to drop it;
+                 test_orchestrator_hazard_exit_routing.py, not in
+                 FILES, asserts identity against the orchestrator
+                 module global. Retargeting kept the `is` holding
+                 and still dropped the pin. A per-name census must
+                 check module-global identity assertions, not only
+                 call sites: grep the name across tests before
+                 declaring it droppable.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
