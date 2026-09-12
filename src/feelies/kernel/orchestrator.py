@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from feelies.core.fill_attribution import FillAttributionLedger
     from feelies.core.alpha_registry import AlphaRegistry
     from feelies.core.composition_protocol import CompositionEngine
-    from feelies.risk.hazard_exit import HazardExitController
+    from feelies.core.risk_protocol import HazardExitController
     from feelies.core.strategy_position_store import StrategyPositionStore
 
 from feelies.core.composition_protocol import (
@@ -174,14 +174,15 @@ from feelies.core.fill_attribution import (
     largest_remainder_split,
     split_fees,
 )
+from feelies.core.risk_protocol import RiskEngine
+from feelies.core.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.core.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.risk.engine import (
-    RiskEngine,
     _compute_target_quantity,
     _emergency_flatten_all,
     _escalate_risk,
     _maybe_flip_buying_power_at_rth_close,
 )
-from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
 from feelies.risk.forced_exit_clamp import (
     _emit_forced_exit_resized_alert,
@@ -197,7 +198,6 @@ from feelies.risk.edge_weighted_sizer import (
     SizeDivergence,
     _record_size_shadow,
 )
-from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.core.horizon_protocol import HorizonScheduler, HorizonSignalEngine
 from feelies.core.sensor_registry import SensorRegistry
 from feelies.core.regime_protocol import (
