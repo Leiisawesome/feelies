@@ -1567,6 +1567,13 @@ PROBLEM:         After T-07a, kernel still imports four portfolio
                  largest_remainder_split, split_fees. Returning the
                  helpers without relocating those four leaves runtime
                  kernel → fill_attribution and the pair stays.
+                 docs/prompts/audit_forensics.md:88 cites the deleted
+                 module. It is the only forensics-scope instruction
+                 naming the slice book, journal legs and PositionUpdate;
+                 audit_kernel.md and audit_position_management.md name
+                 orchestrator for other reasons and do not cover them.
+                 Retarget, do not drop. Two prompts cite the path:
+                 that bullet and the README coverage row, both in FILES.
 WHY THIS OWNER:  T5 core for the Protocols and the attribution types.
                  Empty the package in one step. A TYPE_CHECKING-only
                  delete is not a cut. Returning helpers without the
@@ -1603,6 +1610,15 @@ REFACTOR PATH:   one commit. Retarget PositionStore to
                  helpers keep importing TradeRecord from
                  kernel.fill_bindings and forced_exit_reasons from
                  kernel (legal; they live in kernel).
+                 Retarget the audit_forensics.md forensics-core
+                 bullet from src/feelies/portfolio/fill_reconciliation.py
+                 to src/feelies/kernel/orchestrator.py, keeping the
+                 wording "fill -> slice book, journal legs,
+                 PositionUpdate"; leave the fill-attribution lineage
+                 bullet on portfolio/fill_attribution.py. Do not
+                 whitelist the stale path in test_internal_links.py --
+                 S-26 did that because FILES omitted the prompt, and
+                 it hides the citation rather than fixing it.
 BLAST RADIUS:    boundary
 VALIDATED BY:    test_five_import_tiers equals the 3-pair pin;
                  test_twelve_engine_independence KEPT at zero pairs;
@@ -1622,6 +1638,7 @@ FILES:           src/feelies/kernel/orchestrator.py
                  tests/conformance/test_import_contracts.py
                  tests/docs/test_prompt_coverage_map.py
                  docs/prompts/README.md
+                 docs/prompts/audit_forensics.md
                  Do not edit core/position.py, bootstrap.py, harness/,
                  cli/, memory_position_store.py,
                  strategy_position_store.py (concrete),
