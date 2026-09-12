@@ -118,6 +118,18 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  module and measured lower. A block's NET DELTA
                  states what measure.py will report, not an
                  inventory of the destination file.
+                 STATE AN ALIAS'S DIRECTION BEFORE WRITING IT.
+                 A relocation alias is an import in the
+                 opposite direction. On an engine file it can
+                 reverse the very edge the step is cutting, and
+                 S2 expands one such import into every engine
+                 the kernel touches -- T-06a's first attempt
+                 produced four new twelve-engine pairs from a
+                 single alias line. Engine-to-core aliases are
+                 legal and are the normal case. An alias whose
+                 target is in kernel or another engine is not:
+                 retarget the consumer instead, and put that
+                 consumer in FILES.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
