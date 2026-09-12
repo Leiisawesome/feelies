@@ -66,8 +66,11 @@ from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import (
     Orchestrator,
     _calibrate_regime_engine,
+    _compute_target_quantity,
     _distribute_fill_to_strategies,
+    _emergency_flatten_all,
     _reconcile_fills,
+    _record_size_shadow,
 )
 from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -77,8 +80,6 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
-from feelies.risk.engine import _compute_target_quantity, _emergency_flatten_all
-from feelies.risk.edge_weighted_sizer import _record_size_shadow
 from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
 

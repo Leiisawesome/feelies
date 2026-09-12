@@ -68,6 +68,9 @@ _FILE_OWNERS: dict[str, str] = {
     "core/risk_protocol.py": "audit_core_clock_config",
     "core/position_sizer.py": "audit_core_clock_config",
     "core/escalation.py": "audit_core_clock_config",
+    "core/hazard_exit.py": "audit_core_clock_config",
+    "core/buying_power.py": "audit_core_clock_config",
+    "core/edge_weighted_sizer.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",
@@ -99,7 +102,6 @@ _FILE_OWNERS: dict[str, str] = {
     "risk/position_sizer.py": "audit_position_management",
     "risk/edge_weighted_sizer.py": "audit_position_management",
     "risk/risk_wrapper.py": "audit_risk_engine",
-    "risk/forced_exit_clamp.py": "audit_risk_engine",
     # ── execution/ ──────────────────────────────────────────────────
     "execution/intent.py": "audit_position_management",
     "execution/order_admission.py": "audit_position_management",

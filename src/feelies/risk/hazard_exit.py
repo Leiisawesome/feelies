@@ -22,6 +22,10 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
+from feelies.core.hazard_exit import (
+    HAZARD_EXIT_REASONS as HAZARD_EXIT_REASONS,
+    HAZARD_EXIT_SOURCE_LAYER as HAZARD_EXIT_SOURCE_LAYER,
+)
 from feelies.core.position import PositionStore
 
 _logger = logging.getLogger(__name__)
@@ -32,12 +36,8 @@ _DEFAULT_MIN_AGE_SECONDS: int = 30
 
 # ── Hazard-exit DeRiskRequirement signature (single source of truth) ─────
 # Export the controller signature used by the orchestrator's hazard bridge.
-HAZARD_EXIT_SOURCE_LAYER: str = "RISK"
 HAZARD_EXIT_REASON_SPIKE: str = "HAZARD_SPIKE"
 HAZARD_EXIT_REASON_HARD_AGE: str = "HARD_EXIT_AGE"
-HAZARD_EXIT_REASONS: frozenset[str] = frozenset(
-    {HAZARD_EXIT_REASON_SPIKE, HAZARD_EXIT_REASON_HARD_AGE}
-)
 
 
 @dataclass(frozen=True)
