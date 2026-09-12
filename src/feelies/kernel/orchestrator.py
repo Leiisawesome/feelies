@@ -50,6 +50,7 @@ from feelies.kernel.fill_bindings import TradeRecord
 from feelies.kernel.forced_exit_reasons import (
     _RISK_FORCED_EXIT_REASONS,
     _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
+    _SLICE_SCOPED_FORCED_EXIT_REASONS,
 )
 from feelies.core.events import (
     Alert,
@@ -57,6 +58,7 @@ from feelies.core.events import (
     DeRiskRequirement,
     Event,
     HorizonTick,
+    KillSwitchActivation,
     LatencyBreach,
     MetricEvent,
     NBBOQuote,
@@ -177,27 +179,8 @@ from feelies.core.fill_attribution import (
 from feelies.core.risk_protocol import RiskEngine
 from feelies.core.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.core.position_sizer import BudgetBasedSizer, PositionSizer
-from feelies.risk.engine import (
-    _compute_target_quantity,
-    _emergency_flatten_all,
-    _escalate_risk,
-    _maybe_flip_buying_power_at_rth_close,
-)
-from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
-from feelies.risk.forced_exit_clamp import (
-    _emit_forced_exit_resized_alert,
-    _emit_forced_exit_stood_down_alert,
-    _emit_forced_exit_supersedes_pending_alert,
-    _force_flatten_symbol_on_degrade,
-    _forced_exit_closable_quantity,
-    _forced_exit_reduces,
-    _has_pending_forced_exit_for_symbol,
-)
-from feelies.risk.edge_weighted_sizer import (
-    EdgeWeightedSizer,
-    SizeDivergence,
-    _record_size_shadow,
-)
+from feelies.core.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER  # noqa: F401
+from feelies.core.edge_weighted_sizer import EdgeWeightedSizer, SizeDivergence
 from feelies.core.horizon_protocol import HorizonScheduler, HorizonSignalEngine
 from feelies.core.sensor_registry import SensorRegistry
 from feelies.core.regime_protocol import (
@@ -1273,6 +1256,525 @@ def _emit_symbol_halted(
     )
 
 
+def _compute_target_quantity(
+    self: Any,
+    signal: Signal,
+    quote: NBBOQuote,
+) -> int | None:
+    """Use PositionSizer + AlphaRegistry to compute target quantity.
+
+    Returns None if the registry is not available, letting the
+    IntentTranslator fall back to its default.
+    """
+    if self._alpha_registry is None:
+        return None
+
+    try:
+        alpha = self._alpha_registry.get(signal.strategy_id)
+    except KeyError:
+        return None
+
+    risk_budget = alpha.manifest.risk_budget
+    mid_price = (quote.bid + quote.ask) / Decimal(2)
+    if mid_price <= 0:
+        return 0
+
+    # The alpha's declared risk budget is the sizing authority: this result
+    # is never inflated.  ``platform_min_order_shares`` used to raise any
+    # nonzero target up to the floor, which made the floor the binding
+    # constraint and ``capital_allocation_pct`` inert — at 50k equity and
+    # APP near $396 a 25% budget asks for 15-31 shares and every one of them
+    # was raised to 50, so the platform traded 2.4x what the budget
+    # sanctioned.  A control that autonomously *increases* exposure over a
+    # declared budget is a loosening, and Inv-11 reserves those for a human.
+    # The floor is now a venue lot-size veto only (see platform.yaml).
+    qty: int = self._position_sizer.compute_target_quantity(
+        signal=signal,
+        risk_budget=risk_budget,
+        symbol_price=mid_price,
+        account_equity=self._account_equity,
+    )
+    return qty
+
+
+def _maybe_flip_buying_power_at_rth_close(self: Any, quote: NBBOQuote) -> None:
+    """Switch buying-power phase at each resolved RTH close.
+
+    Multi-day replays re-arm the latch when the session date changes."""
+    bounds = self._trading_session_bounds
+    if bounds is None:
+        return
+    effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+    set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+
+    # New NY session date → reopen on the intraday cap and re-arm the flip.
+    if effective.session_date != self._rth_bp_session_date:
+        self._rth_bp_session_date = effective.session_date
+        if self._rth_close_bp_flipped:
+            self._rth_close_bp_flipped = False
+            if callable(set_phase):
+                from feelies.core.buying_power import BuyingPowerPhase
+
+                set_phase(BuyingPowerPhase.INTRADAY)
+
+    if self._rth_close_bp_flipped:
+        return
+    if quote.exchange_timestamp_ns < effective.rth_close_ns:
+        return
+    if not callable(set_phase):
+        self._rth_close_bp_flipped = True
+        return
+    from feelies.core.buying_power import BuyingPowerPhase
+
+    set_phase(BuyingPowerPhase.OVERNIGHT)
+    self._rth_close_bp_flipped = True
+
+
+def _emergency_flatten_all(
+    self: Any,
+    correlation_id: str,
+) -> tuple[dict[str, str], dict[str, int]]:
+    """Cancel resting orders and submit market exits for every open position."""
+    positions = self._positions.all_positions()
+    failures: dict[str, str] = {}
+    # Iterate in lexicographic symbol order so the emitted
+    # OrderRequest stream is bit-identical across replays even
+    # when the position store's insertion order differs (Inv-5).
+    for symbol in sorted(positions):
+        pos = positions[symbol]
+        if pos.quantity == 0:
+            continue
+        side = Side.SELL if pos.quantity > 0 else Side.BUY
+        qty = abs(pos.quantity)
+        seq = self._seq.next()
+        order_id = derive_order_id(f"emergency_flatten:{correlation_id}:{symbol}:{seq}")
+
+        order = OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=seq,
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=qty,
+            strategy_id="emergency_flatten",
+            # Price lockdown fills with panic slippage and depleted depth.
+            reason="FORCE_FLATTEN",
+        )
+
+        try:
+            self._track_order(order_id, side, order)
+            submit_exc = _submit_tracked_order(
+                self, order, trigger="emergency_flatten"
+            )
+            if submit_exc is not None:
+                failures[symbol] = f"submit_exception: {submit_exc!r}"
+                continue
+
+            self._bus.publish(order)
+            acks = self._settle_router_acks(correlation_id, expected_order_ids={order_id})
+            # A reject / zero-fill ack still leaves the position open.
+            # Surface it as a failure so the residual alert sees it.
+            non_fill_acks = [
+                a
+                for a in acks
+                if a.order_id == order_id
+                and (a.filled_quantity or 0) == 0
+                and a.status in (OrderAckStatus.REJECTED, OrderAckStatus.CANCELLED)
+            ]
+            if non_fill_acks:
+                failures[symbol] = (
+                    f"{non_fill_acks[0].status.name}: {non_fill_acks[0].reason or 'no reason'}"
+                )
+        except Exception as exc:
+            logger.exception(
+                "Emergency flatten failed for %s (qty=%d) -- "
+                "position may remain open at LOCKED",
+                symbol,
+                pos.quantity,
+            )
+            failures[symbol] = f"submit_exception: {exc!r}"
+            if order_id in self._active_orders:
+                self._force_order_terminal_after_pipeline_error(
+                    order,
+                    exc,
+                    context="emergency_flatten",
+                )
+
+    residual: dict[str, int] = {
+        sym: p.quantity
+        for sym, p in self._positions.all_positions().items()
+        if p.quantity != 0
+    }
+    if residual or failures:
+        msg = (
+            f"Emergency flatten incomplete — residual positions: "
+            f"{residual}, total_exposure={self._positions.total_exposure()}, "
+            f"failures={failures}"
+        )
+        logger.critical(msg)
+        self._publish_alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            severity=AlertSeverity.CRITICAL,
+            alert_name="emergency_flatten_incomplete",
+            message=msg,
+        )
+    return failures, residual
+
+
+def _escalate_risk(self: Any, correlation_id: str) -> None:
+    """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
+
+    Monotonically tightens safety (platform inv 11).  Once R1
+    (WARNING) is entered, de-escalation is impossible without
+    completing the full cycle to R4 and human unlock.
+
+    At R3 (FORCED_FLATTEN) we attempt to close all non-zero
+    positions via emergency market orders before transitioning
+    to R4 (LOCKED).
+    """
+    level = self._risk_escalation.state
+
+    if level == RiskLevel.NORMAL:
+        self._risk_escalation.transition(
+            RiskLevel.WARNING,
+            trigger="risk_threshold_approaching",
+            correlation_id=correlation_id,
+        )
+        level = RiskLevel.WARNING
+
+    if level == RiskLevel.WARNING:
+        self._risk_escalation.transition(
+            RiskLevel.BREACH_DETECTED,
+            trigger="risk_breach_confirmed",
+            correlation_id=correlation_id,
+        )
+        level = RiskLevel.BREACH_DETECTED
+
+    if level == RiskLevel.BREACH_DETECTED:
+        self._risk_escalation.transition(
+            RiskLevel.FORCED_FLATTEN,
+            trigger="forced_flatten_initiated",
+            correlation_id=correlation_id,
+        )
+        level = RiskLevel.FORCED_FLATTEN
+
+    if level == RiskLevel.FORCED_FLATTEN:
+        failures, residual = _emergency_flatten_all(self, correlation_id)
+        flatten_clean = not failures and not residual
+        self._risk_escalation.transition(
+            RiskLevel.LOCKED,
+            trigger=(
+                "positions_zero_flatten_complete"
+                if flatten_clean
+                else "emergency_flatten_incomplete_residual_exposure"
+            ),
+            correlation_id=correlation_id,
+        )
+
+    if self._kill_switch is not None:
+        self._kill_switch.activate(
+            reason="risk_escalation_lockdown",
+            activated_by="orchestrator",
+        )
+        self._bus.publish(
+            KillSwitchActivation(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                reason="risk_escalation_lockdown",
+                activated_by="orchestrator",
+            )
+        )
+
+    self._macro.transition(
+        MacroState.RISK_LOCKDOWN,
+        trigger="RISK_BREACH",
+        correlation_id=correlation_id,
+    )
+
+
+def _closable_quantity(position_qty: int, side: Side) -> int:
+    """Return shares that side can close without crossing through zero."""
+    if side is Side.SELL:
+        return max(position_qty, 0)
+    return max(-position_qty, 0)
+
+
+def _is_forced_market_exit(order: OrderRequest) -> bool:
+    """Identify controller-authored aggressive exits routed through the risk bridge."""
+    return (
+        order.source_layer == HAZARD_EXIT_SOURCE_LAYER
+        and order.reason in _RISK_FORCED_EXIT_REASONS
+    )
+
+
+def _forced_exit_reduces(self: Any, order: OrderRequest) -> bool:
+    """Whether *order* shrinks the live book it claims to close.
+
+    A composer or deferral-cap exit is slice-scoped: another strategy holding
+    the opposite side can leave symbol-net flat while the mandated slice is
+    still open.  Treat the order as reducing when it shrinks *either* the
+    symbol-net book or its own strategy slice, so a slice flatten is never
+    stranded at the non-reducing REJECT branch.  Symbol-net is checked first,
+    so a true symbol-net hazard exit (which always reduces net) never needs the
+    slice fallback — this keeps the shared ``HARD_EXIT_AGE`` token correct for
+    both authors without attributing it.
+
+    Re-evaluated after any resting-order cancel, because the cancel reconciles
+    whatever acks were already queued for those orders — including fills — so
+    the book can move between the controller sizing the exit and the exit
+    reaching the router.
+    """
+    return _forced_exit_closable_quantity(self, order) > 0
+
+
+def _has_pending_forced_exit_for_symbol(self: Any, symbol: str) -> bool:
+    """True if a forced MARKET exit is already in flight for *symbol*.
+
+    Distinguishes an aggressive exit already crossing the book from a
+    merely-resting passive cover.  The resting-order guard cancels stale
+    passive orders to let a forced MARKET exit through (Inv-11) but must
+    not stack a second aggressive leg on top of one already pending —
+    that would overshoot the position.
+
+    Covers both mandated-exit authors — the kernel's synthetic stop /
+    session-flat and the RISK-layer controllers routed through
+    :meth:`_on_bus_derisk_requirement` — so neither can stack on the other.
+    """
+    return any(
+        order.symbol == symbol
+        and sm.state not in _TERMINAL_ORDER_STATES
+        and _is_forced_market_exit(order)
+        for sm, _, order in self._active_orders.values()
+    )
+
+
+def _forced_exit_closable_quantity(self: Any, order: OrderRequest) -> int:
+    """Shares *order* can close right now without crossing into new exposure.
+
+    Magnitude shrinkage is **not** the test.  ``abs(current + signed) <
+    abs(current)`` is true for any reduction, including one that crosses zero:
+    a mandated ``SELL 100`` into a book a resting cover has already taken to
+    long 70 shrinks the magnitude while flipping to short 30.  That is a
+    fail-safe control opening exposure, which is exactly what Inv-11 forbids,
+    so the clamp is on the closable side only.
+
+    Slice-scoped authors (composer, deferral cap) may legitimately exceed
+    symbol-net: another strategy holding the opposite side can leave the net
+    flat while the mandated slice is still open, and flattening that slice
+    moves the net through zero on purpose (design §3.3).  So they take the
+    larger of the two bases rather than being clamped to net.
+    """
+    net = self._positions.get(order.symbol).quantity
+    closable = _closable_quantity(net, order.side)
+    if order.reason in _SLICE_SCOPED_FORCED_EXIT_REASONS and (
+        self._strategy_positions is not None
+    ):
+        slice_qty = self._strategy_positions.get(order.strategy_id, order.symbol).quantity
+        closable = max(closable, _closable_quantity(slice_qty, order.side))
+    return min(order.quantity, closable)
+
+
+def _emit_forced_exit_resized_alert(self: Any, order: OrderRequest, closable: int) -> None:
+    """Publish a marker when a mandated exit is clamped to the settled book.
+
+    The resting-order cancel settled a *partial* fill, so the exit's original
+    quantity would now cross zero into opposite exposure.  It is resized to
+    the residual rather than stood down, but an operator needs to see that the
+    submitted size differs from what the controller authored (Inv-13).
+    """
+    self._publish_alert(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=order.correlation_id,
+        severity=AlertSeverity.WARNING,
+        alert_name="forced_exit_resized_after_cancel",
+        message=f"Forced exit {order.reason!r} on {order.symbol!r} resized {order.quantity} -> {closable}: cancelling resting orders settled a partial fill, and the original quantity would have crossed zero into opposite exposure (strategy_id={order.strategy_id!r}).",
+        context={
+            "symbol": order.symbol,
+            "strategy_id": order.strategy_id,
+            "order_id": order.order_id,
+            "reason": order.reason,
+            "original_quantity": order.quantity,
+            "submitted_quantity": closable,
+            "position_quantity": self._positions.get(order.symbol).quantity,
+        },
+    )
+
+
+def _emit_forced_exit_stood_down_alert(self: Any, order: OrderRequest) -> None:
+    """Publish a marker when a mandated exit stands down post-cancel.
+
+    The resting-order cancel settled a fill that already closed the book, so
+    submitting the exit's now-stale quantity would open the opposite side.
+    Standing down is the fail-safe branch (Inv-11), but it is *not* routine —
+    an operator needs to see that a mandated exit did not reach the router,
+    and forensics needs it to explain the missing order (Inv-13).
+    """
+    self._publish_alert(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=order.correlation_id,
+        severity=AlertSeverity.WARNING,
+        alert_name="forced_exit_stood_down_after_cancel",
+        message=f"Forced exit {order.reason!r} on {order.symbol!r} stood down: cancelling resting orders settled a fill that already closed the book, so the exit's quantity ({order.quantity}) no longer reduces exposure (strategy_id={order.strategy_id!r}).",
+        context={
+            "symbol": order.symbol,
+            "strategy_id": order.strategy_id,
+            "order_id": order.order_id,
+            "reason": order.reason,
+            "order_quantity": order.quantity,
+            "position_quantity": self._positions.get(order.symbol).quantity,
+        },
+    )
+
+
+def _emit_forced_exit_supersedes_pending_alert(
+    self: Any,
+    order: OrderRequest,
+    correlation_id: str,
+) -> None:
+    """Publish a forensic marker when a forced MARKET exit supersedes a
+    stale resting order.
+
+    Operator visibility (Inv-11): a hard-stop / session-flat MARKET exit
+    cancelled a pending passive order for the symbol so the aggressive
+    close could cross immediately.  Distinct from a duplicate-exit
+    suppression so post-trade forensics can attribute the cancel-and-cross
+    to the safety control rather than to alpha behaviour.
+    """
+    self._publish_alert(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=correlation_id,
+        severity=AlertSeverity.WARNING,
+        alert_name="forced_exit_supersedes_pending_order",
+        message=f"Forced MARKET exit {order.strategy_id!r} on {order.symbol!r}: cancelling resting order(s) so the aggressive close can cross immediately (Inv-11).",
+        context={
+            "symbol": order.symbol,
+            "strategy_id": order.strategy_id,
+            "order_id": order.order_id,
+        },
+    )
+
+
+def _force_flatten_symbol_on_degrade(
+    self: Any,
+    symbol: str,
+    correlation_id: str,
+    *,
+    reason: str,
+) -> None:
+    """Submit a market exit for one symbol during data-health degradation."""
+    pos = self._positions.get(symbol)
+    if pos.quantity == 0:
+        return
+    side = Side.SELL if pos.quantity > 0 else Side.BUY
+    qty = abs(pos.quantity)
+    seq = self._seq.next()
+    order_id = derive_order_id(f"degrade_flatten:{reason}:{symbol}:{seq}")
+    order = OrderRequest(
+        timestamp_ns=self._clock.now_ns(),
+        correlation_id=correlation_id,
+        sequence=seq,
+        order_id=order_id,
+        symbol=symbol,
+        side=side,
+        order_type=OrderType.MARKET,
+        quantity=qty,
+        strategy_id="degrade_flatten",
+        reason=reason,
+    )
+    try:
+        self._track_order(order_id, side, order)
+        if order_id in self._active_orders:
+            sm = self._active_orders[order_id][0]
+            sm.transition(
+                getattr(type(sm.state), "SUBMITTED"),
+                trigger=f"degrade_flatten:{reason}",
+                correlation_id=correlation_id,
+            )
+        self._submit_to_router(order, triggering_quote=self._in_flight_quote)
+        self._bus.publish(order)
+        self._settle_router_acks(correlation_id, expected_order_ids={order_id})
+    except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
+        logger.exception(
+            "Force-flatten on %s failed for symbol=%s (qty=%d, side=%s); "
+            "position remains open and will require manual intervention.",
+            reason,
+            symbol,
+            qty,
+            side.name,
+        )
+        self._publish_alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            severity=AlertSeverity.CRITICAL,
+            alert_name="degrade_flatten_failed",
+            message=f"Force-flatten on {reason} failed for symbol={symbol!r} (qty={qty}, side={side.name}). Position remains open.",
+            context={"symbol": symbol, "reason": reason, "exception": repr(exc)},
+        )
+
+
+def _record_size_shadow(self: Any, signal: Signal, quote: NBBOQuote) -> None:
+    """Compare the edge/vol/inventory-tilted target with the base.
+
+    For each real sized signal, compute the tilted target and append a
+    :class:`SizeDivergence` when it differs from the live single-factor
+    base target. It runs before the risk engine and has no order, bus,
+    journal, or parity effects. It is a no-op unless a sink is wired and at
+    least one tilt factor is enabled.
+    """
+    sizer = self._size_shadow_sizer
+    sink = self._size_shadow_sink
+    if (
+        sizer is None
+        or sink is None
+        or not sizer.config.any_enabled
+        or self._alpha_registry is None
+        or signal.strategy_id.startswith("__")
+    ):
+        return
+    try:
+        alpha = self._alpha_registry.get(signal.strategy_id)
+    except KeyError:
+        return
+    risk_budget = alpha.manifest.risk_budget
+    mid_price = (quote.bid + quote.ask) / Decimal(2)
+    if mid_price <= 0:
+        return
+
+    base_target = sizer.base.compute_target_quantity(
+        signal=signal,
+        risk_budget=risk_budget,
+        symbol_price=mid_price,
+        account_equity=self._account_equity,
+    )
+    if base_target <= 0:
+        return
+    bd = sizer.tilt_breakdown(signal, risk_budget)
+    tilted = int(Decimal(base_target) * Decimal(str(bd.combined)))  # floor
+    tilted = max(0, min(tilted, risk_budget.max_position_per_symbol))
+    if tilted == base_target:
+        return
+    sink.append(
+        SizeDivergence(
+            symbol=signal.symbol,
+            signal_sequence=signal.sequence,
+            strategy_id=signal.strategy_id,
+            edge_bps=float(signal.edge_estimate_bps),
+            base_target_qty=base_target,
+            tilted_target_qty=tilted,
+            edge_factor=bd.edge,
+            vol_factor=bd.vol,
+            inventory_factor=bd.inventory,
+            combined_tilt=bd.combined,
+            inventory_qty=bd.inventory_qty,
+            timestamp_ns=int(quote.exchange_timestamp_ns),
+        )
+    )
+
+
 class Orchestrator:
     """Coordinate lifecycle state and the deterministic tick pipeline.
 
@@ -1743,7 +2245,7 @@ class Orchestrator:
         self._rth_bp_session_date = None
         set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if callable(set_phase):
-            from feelies.risk.buying_power import BuyingPowerPhase
+            from feelies.core.buying_power import BuyingPowerPhase
 
             set_phase(BuyingPowerPhase.INTRADAY)
 

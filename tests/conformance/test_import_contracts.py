@@ -30,23 +30,19 @@ _LAYER_PAIR = re.compile(
 # require this set to change.
 _TIER_RESIDUALS = frozenset(
     {
-        ("feelies.kernel", "feelies.risk"),
         ("feelies.kernel", "feelies.execution"),
         ("feelies.kernel", "feelies.storage"),
     }
 )
 
 # Residual engine→kernel imports. Equality, not a subset:
-# a fifteenth pair fails immediately. Five-tier and S2 both
+# a twelfth pair fails immediately. Five-tier and S2 both
 # permit this direction; the pin is the remaining detector.
 _KERNEL_IMPORT_RESIDUALS = frozenset(
     {
         ("feelies.ingestion.massive_ws", "feelies.kernel.exception_taxonomy"),
         ("feelies.sensors.horizon_scheduler", "feelies.kernel.exception_taxonomy"),
         ("feelies.alpha.registry", "feelies.kernel.exception_taxonomy"),
-        ("feelies.risk.engine", "feelies.kernel.macro"),
-        ("feelies.risk.forced_exit_clamp", "feelies.kernel.forced_exit_reasons"),
-        ("feelies.risk.forced_exit_clamp", "feelies.kernel.order_states"),
         ("feelies.execution.order_policy", "feelies.kernel.macro"),
         ("feelies.execution.order_policy", "feelies.kernel.micro"),
         (

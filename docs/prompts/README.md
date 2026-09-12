@@ -115,7 +115,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `promotion/evidence.py` | alpha_lifecycle (matrix) · research_validation (CPCV/DSR) · forensics (quarantine) |
 | `alpha/portfolio_layer_module.py` | composition |
 | `portfolio/fill_attribution.py` | forensics |
-| `risk/risk_wrapper.py`, `risk/forced_exit_clamp.py` | risk_engine |
+| `risk/risk_wrapper.py`, `kernel/orchestrator.py` | risk_engine |
 | `composition/`, `portfolio/cross_sectional_tracker.py` | composition |
 | `portfolio/position_store.py`, `memory_position_store.py`, `strategy_position_store.py`, `lot_ledger.py`, `position_book_view.py` | position_management (PnL ledger) |
 | `storage/trade_journal.py`, `memory_trade_journal.py` | position_management (fill journal) |
@@ -129,7 +129,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `forensics/` | forensics |
 | `research/` | research_validation |
 | `kernel/`, `bus/`, `bootstrap.py`, `__main__.py` | kernel |
-| `core/`, `core/position.py`, `core/composition_protocol.py`, `core/metric_collector.py`, `core/cost_arithmetic.py`, `core/horizon_protocol.py`, `core/regime_gate.py`, `core/alpha_risk_budget.py`, `core/alpha_registry.py`, `core/sensor_registry.py`, `core/regime_protocol.py`, `core/exception_taxonomy.py`, `core/data_health.py`, `core/idle_tick.py`, `core/kill_switch.py`, `core/latency_budget.py`, `core/alert_manager.py`, `core/paper_session_recorder.py`, `core/lot_ledger.py`, `core/position_book_view.py`, `core/fill_attribution.py`, `core/strategy_position_store.py`, `core/risk_protocol.py`, `core/position_sizer.py`, `core/escalation.py` | core_clock_config |
+| `core/`, `core/position.py`, `core/composition_protocol.py`, `core/metric_collector.py`, `core/cost_arithmetic.py`, `core/horizon_protocol.py`, `core/regime_gate.py`, `core/alpha_risk_budget.py`, `core/alpha_registry.py`, `core/sensor_registry.py`, `core/regime_protocol.py`, `core/exception_taxonomy.py`, `core/data_health.py`, `core/idle_tick.py`, `core/kill_switch.py`, `core/latency_budget.py`, `core/alert_manager.py`, `core/paper_session_recorder.py`, `core/lot_ledger.py`, `core/position_book_view.py`, `core/fill_attribution.py`, `core/strategy_position_store.py`, `core/risk_protocol.py`, `core/position_sizer.py`, `core/escalation.py`, `core/hazard_exit.py`, `core/buying_power.py`, `core/edge_weighted_sizer.py` | core_clock_config |
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) · forensics (`forensics`) |
