@@ -17495,4 +17495,180 @@ OWNER:       none. No step in this campaign or the last owns it.
                  entry, and the plan DELETES amendment
                  in phase8_tiers.md.
 
+---
+
+## T-07c  2026-09-12T16:22:27+08:00
+  STEP:          T-07c
+  BASE:          1b92a5f5c046670643daf4bbb014844c69c6c346
+  RESULT SHA:    253d6f19637141c2b689707ddc68a76660631432 (exec/T-07c; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no five-tier cut. CLOSES nothing. Pin stays
+                 3. Does not drop kernel → risk. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An
+                 unchanged count is the declared outcome.
+                 import contracts 2 passed before, 3 after
+                 (test_engine_kernel_imports_equal_pin).
+                 test_five_import_tiers equals the unmoved
+                 3-pair pin. S2 KEPT at zero twelve-engine
+                 pairs before and after. lint-imports:
+                 Five import tiers BROKEN (3 pairs),
+                 Twelve engine module sets KEPT.
+                 New pin: test_engine_kernel_imports_equal_pin
+                 equals the measured 14-pair set.
+                 Probe (uncommitted): added
+                 `from feelies.kernel.macro import MacroState`
+                 to portfolio/fill_attribution.py;
+                 test_engine_kernel_imports_equal_pin FAILED
+                 AssertionError: unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Removed the import. Restore SHA256
+                 bf42a674f9a46911885dbc97d6a3f5ef840358d5ca34a712508f999a7df9ad2a
+                 BYTE_IDENTICAL (4925 bytes, same as
+                 pre-probe). Porcelain after restore: only
+                 the capture artifact. Re-run 3 passed.
+                 Without the probe the pin would pass by
+                 construction and protect nothing.
+                 S12/S14/S17 not retargeted (test-only;
+                 conformance 118 passed / 5 xfailed, no
+                 XPASS; +1 vs T-07b's 117 is the new pin).
+                 docs 101; mypy src/feelies: Success, 232
+                 source files (before the gate).
+  TESTS:         capture pre-T-07c GREEN 4898 passed / 0
+                 failed / 29 skipped / 5 xfailed.
+                 -> capture post-T-07c GREEN 4899 passed
+                 / 0 failed / 29 skipped / 5 xfailed.
+                 +1 passed is test_engine_kernel_imports_
+                 equal_pin. No failure in the accepted set.
+                 No failure outside it.
+                 not-paper_rth: 4898 passed / 0 failed /
+                 16 skipped / 14 deselected / 5 xfailed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-07c vs post-T-07c and vs
+                 baseline_post-T-07b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 3 before and
+                 3 after. The fourteen-pair set is a new
+                 equality pin, not a dropped five-tier
+                 pair.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 253d6f19). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_import_contracts.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py,
+                 harness/, cli/, orchestrator.py,
+                 fill_attribution.py (portfolio or core),
+                 forced_exit_clamp.py, order_policy.py,
+                 test_fail_quiet.py, ci.yml.
+                 Probe mutated portfolio/fill_attribution.py
+                 and restored it; that file is not in the
+                 commit. No keep-row file is touched.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 232 -> 232 (+0 MATCH)
+                 public_symbols 587 -> 587 (+0 MATCH)
+                 sloc 47004 -> 47004 (+0 MATCH)
+                 n_edges 674 -> 674
+                 n_modules 188 -> 188
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4898->4899 passed, failed 0->0
+                 (GREEN both sides; +1 is the new pin
+                 test; no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 253d6f19637141c2b689707ddc68a76660631432.
+                 Not merged.
+  NOTES:         Single commit on exec/T-07c,
+                 253d6f19637141c2b689707ddc68a76660631432,
+                 "T-07c: pin the measured engine-to-kernel
+                 import set". Parent 1b92a5f5 on
+                 arch/exec. One file:
+                 tests/conformance/test_import_contracts.py
+                 (+72). Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The walk of engine packages (exclude
+                 kernel, bus, core, cli, bootstrap) found
+                 fourteen ImportFrom pairs and matched
+                 the block's fourteen exactly: no extras,
+                 no missing. The pin is that measured
+                 set, not a guess.
+                 Probe: a throwaway
+                 `from feelies.kernel.macro import MacroState`
+                 on portfolio/fill_attribution.py made
+                 test_engine_kernel_imports_equal_pin
+                 fail with AssertionError: unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 The import was removed. Restore SHA256
+                 bf42a674f9a46911885dbc97d6a3f5ef840358d5ca34a712508f999a7df9ad2a
+                 BYTE_IDENTICAL (4925 bytes). Porcelain
+                 after restore showed only the capture
+                 artifact. Re-run of
+                 test_import_contracts.py: 3 passed.
+                 The five-tier pin stayed at 3. The new
+                 pin sits at 14. S2 KEPT at zero
+                 twelve-engine pairs. mypy src/feelies:
+                 Success, 232 source files. tests/docs:
+                 101 passed. import-contracts 2 -> 3.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main). NET DELTA all zeros
+                 (modules 232, public_symbols 587, sloc
+                 47004, n_edges 674, n_modules 188).
+                 What the new pin catches that neither
+                 existing contract does: an engine
+                 package importing kernel.macro,
+                 kernel.micro, kernel.forced_exit_reasons,
+                 kernel.order_states,
+                 kernel.exception_taxonomy, or
+                 kernel.fill_bindings -- on any engine
+                 package. Five import tiers permits that
+                 direction (engines sit above kernel).
+                 S2 only sees it when the imported kernel
+                 module itself imports other engines.
+                 The probe is what makes the pin
+                 non-decorative. A set asserted equal to
+                 the set it was measured from passes by
+                 construction.
+                 Remaining rungs: T-08a may shrink the
+                 pin if forced_exit_clamp.py is deleted,
+                 and any shrink lands in that same
+                 commit, in lockstep, exactly as
+                 _TIER_RESIDUALS does.
+  FINDINGS:      Walk matched the block's fourteen. No
+                 difference to report as a correction.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08a risk; pin 3 to 2 (boundary).
+                 Not started. Do not begin T-08a.
+                 Left uncommitted:
+                 baseline_pre-T-07c.json,
+                 baseline_post-T-07c.json, this ledger
+                 entry.
+
 
