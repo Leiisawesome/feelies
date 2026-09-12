@@ -61,6 +61,8 @@ _FILE_OWNERS: dict[str, str] = {
     "core/latency_budget.py": "audit_core_clock_config",
     "core/alert_manager.py": "audit_core_clock_config",
     "core/paper_session_recorder.py": "audit_core_clock_config",
+    "core/lot_ledger.py": "audit_core_clock_config",
+    "core/position_book_view.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",

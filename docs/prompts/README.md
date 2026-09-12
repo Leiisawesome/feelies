@@ -129,7 +129,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `forensics/` | forensics |
 | `research/` | research_validation |
 | `kernel/`, `bus/`, `bootstrap.py`, `__main__.py` | kernel |
-| `core/`, `core/position.py`, `core/composition_protocol.py`, `core/metric_collector.py`, `core/cost_arithmetic.py`, `core/horizon_protocol.py`, `core/regime_gate.py`, `core/alpha_risk_budget.py`, `core/alpha_registry.py`, `core/sensor_registry.py`, `core/regime_protocol.py`, `core/exception_taxonomy.py`, `core/data_health.py`, `core/idle_tick.py`, `core/kill_switch.py`, `core/latency_budget.py`, `core/alert_manager.py`, `core/paper_session_recorder.py` | core_clock_config |
+| `core/`, `core/position.py`, `core/composition_protocol.py`, `core/metric_collector.py`, `core/cost_arithmetic.py`, `core/horizon_protocol.py`, `core/regime_gate.py`, `core/alpha_risk_budget.py`, `core/alpha_registry.py`, `core/sensor_registry.py`, `core/regime_protocol.py`, `core/exception_taxonomy.py`, `core/data_health.py`, `core/idle_tick.py`, `core/kill_switch.py`, `core/latency_budget.py`, `core/alert_manager.py`, `core/paper_session_recorder.py`, `core/lot_ledger.py`, `core/position_book_view.py` | core_clock_config |
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) · forensics (`forensics`) |
