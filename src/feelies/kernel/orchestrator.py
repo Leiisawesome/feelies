@@ -158,9 +158,9 @@ from feelies.core.latency_budget import (
 )
 from feelies.core.paper_session_recorder import PaperSessionRecorder
 from feelies.core.metric_collector import MetricCollector
-from feelies.portfolio.position_book_view import PositionBookView
+from feelies.core.position_book_view import PositionBookView
 from feelies.portfolio.position_store import PositionStore
-from feelies.portfolio.lot_ledger import LotLedger
+from feelies.core.lot_ledger import LotLedger
 from feelies.risk.engine import (
     RiskEngine,
     _compute_target_quantity,
