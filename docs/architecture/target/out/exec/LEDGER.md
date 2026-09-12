@@ -17203,4 +17203,296 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-07a.json, this ledger
                  entry.
 
+---
+
+## T-07b  2026-09-12T15:07:32+08:00
+  STEP:          T-07b
+  BASE:          1918dddfb520a27c56f0db834dda35d7f6c81620
+  RESULT SHA:    eff74cf251bc3034adf0a579203498d556e27494 (exec/T-07b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   pin fail-first: test_five_import_tiers
+                 FAILED on unexpected
+                 [('feelies.kernel', 'feelies.portfolio')]
+                 before the cut. After the cut, import
+                 contracts 2 passed (the fill_reconciliation
+                 cycle test was deleted with the module);
+                 test_five_import_tiers equals the 3-pair
+                 pin; S2 KEPT at zero twelve-engine pairs.
+                 lint-imports after the cut: Five import
+                 tiers BROKEN (3 pairs), Twelve engine
+                 module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 117 passed / 5 xfailed (no
+                 XPASS; −1 is the deleted cycle test).
+                 docs 101; kernel 390; portfolio 52;
+                 core 245; mypy src/feelies: Success,
+                 232 source files (231 +2 −1).
+  TESTS:         capture pre-T-07b GREEN 4899 passed / 0
+                 failed / 29 skipped / 5 xfailed.
+                 -> capture post-T-07b GREEN 4898 passed
+                 / 0 failed / 29 skipped / 5 xfailed.
+                 −1 passed is test_fill_reconciliation_
+                 does_not_import_orchestrator, deleted
+                 with the module. No failure in the
+                 accepted set. No failure outside it.
+                 not-paper_rth: 4897 passed / 0 failed /
+                 16 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 integration 39 passed / 7 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-07b vs post-T-07b and vs
+                 baseline_post-T-07a.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Position and fill replay hashes unmoved:
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0 COUNT 6;
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb6801 ACK COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 THE PIN MOVED 4 to 3, as declared.
+  FILES:         12 declared, 12 touched, 12 committed
+                 (clean vs eff74cf2). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/fill_attribution.py (new),
+                 core/strategy_position_store.py (new),
+                 portfolio/fill_attribution.py,
+                 portfolio/fill_reconciliation.py
+                 (deleted),
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_fill_attribution_seam.py,
+                 tests/integration/test_paper_rth_safety.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 docs/prompts/audit_forensics.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py,
+                 harness/, cli/,
+                 memory_position_store.py,
+                 strategy_position_store.py (concrete),
+                 test_fail_quiet.py, ci.yml,
+                 test_internal_links.py (no whitelist).
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +1, public symbols
+                 +2, branch points 0.
+                 AttributionRecord, AlphaContribution,
+                 largest_remainder_split, split_fees,
+                 and the helper cluster are relocations.
+                 PositionStore retarget is not a new
+                 name. fill_reconciliation.py deleted
+                 (−1). Two Protocols are the +2.
+                 actual modules 231 -> 232 (+1 MATCH)
+                 public_symbols 585 -> 587 (+2 MATCH)
+                 sloc 46944 -> 47004 (+60, undeclared)
+                 n_edges 674 -> 674
+                 n_modules 187 -> 188
+                 (import graph: fill_attribution and
+                 strategy_position_store entered core;
+                 fill_reconciliation left)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no
+                 hash pin moved. Position, fill, and
+                 forced-exit replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 12 declared / 12 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4899->4898 passed, failed 0->0
+                 (GREEN both sides; −1 is the deleted
+                 cycle test, now declared in DELETES;
+                 no failure outside the accepted set);
+                 NET DELTA MATCH on modules +1 symbols
+                 +2. CLEAN. Go confirmed on branch head
+                 eff74cf251bc3034adf0a579203498d556e27494.
+                 Not merged.
+  NOTES:         One commit on exec/T-07b,
+                 eff74cf251bc3034adf0a579203498d556e27494,
+                 "T-07b: return fill helpers to kernel
+                 and drop kernel-portfolio pin". Parent
+                 1918dddf on arch/exec (plan: T-07b
+                 declares audit_forensics.md). Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 First deletion of this campaign:
+                 fill_reconciliation.py. Its three
+                 consumers were handled in this commit:
+                 _FILE_OWNERS row pruned; README
+                 forensics coverage row dropped the
+                 path (left portfolio/fill_attribution.py);
+                 audit_forensics.md forensics-core
+                 bullet retargeted to
+                 src/feelies/kernel/orchestrator.py,
+                 wording kept ("fill → slice book,
+                 journal legs, PositionUpdate"). The
+                 fill-attribution lineage bullet stayed
+                 on portfolio/fill_attribution.py. No
+                 whitelist in test_internal_links.py.
+                 A prior attempt (dangling 21a3bc3d,
+                 11 FILES) landed the cut and was
+                 reverted on tests/docs; this commit
+                 is that cut plus the twelfth file.
+                 Remaining pairs before the cut,
+                 verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Remaining pairs after the cut,
+                 verbatim:
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. No new pair.
+                 n_cycles 1 before and after
+                 (feelies.cli → feelies.cli.main).
+                 Four remaining names at pre-cut, with
+                 lines: PositionStore
+                 feelies.portfolio.position_store l.162;
+                 FillAttributionLedger TYPE_CHECKING
+                 feelies.portfolio.fill_attribution l.26;
+                 StrategyPositionStore TYPE_CHECKING
+                 feelies.portfolio.strategy_position_store
+                 l.30; _record_fill_attribution /
+                 _reconcile_fills
+                 feelies.portfolio.fill_reconciliation l.228.
+                 Helper importers (exactly three, all in
+                 FILES): tests/kernel/test_orchestrator.py
+                 (_reconcile_fills,
+                 _distribute_fill_to_strategies);
+                 tests/kernel/test_fill_attribution_seam.py
+                 (_reconcile_fills);
+                 tests/integration/test_paper_rth_safety.py
+                 (_reconcile_fills). No fourth importer.
+                 Private callees had no other importers.
+                 Helpers returned to
+                 kernel.orchestrator with the five
+                 private callees (_regime_label_for the
+                 local copy, _order_owns_one_slice,
+                 _TradeJournalLeg, _trade_journal_legs,
+                 _distribute_fill_to_strategies). They
+                 import TradeRecord via
+                 kernel.fill_bindings and
+                 forced_exit_reasons from kernel. No
+                 alias on fill_reconciliation.py.
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 was deleted with the module (4899 →
+                 4898). That deletion was not in
+                 REFACTOR PATH or DELETES at landing;
+                 DELETES is amended on this tree after
+                 go, uncommitted, to declare it. The
+                 test cannot survive: subject file
+                 gone, retarget onto orchestrator is a
+                 different claim, alias on the deleted
+                 module is forbidden.
+                 Four attribution names relocated to
+                 core/fill_attribution.py; alias
+                 direction portfolio → core (legal
+                 downward). Concrete
+                 FillAttributionLedger stayed in
+                 portfolio; no alias on the concrete;
+                 no subclassing.
+                 Two new Protocols:
+                 FillAttributionLedger (record,
+                 allocate_fill; reset stays getattr)
+                 in core/fill_attribution.py;
+                 StrategyPositionStore (get, update,
+                 debit_fees, update_mark, strategy_ids)
+                 in core/strategy_position_store.py.
+                 Neither type is handed out through a
+                 public property; position_store
+                 returns PositionBookView. Two
+                 TYPE_CHECKING imports retargeted, not
+                 deleted. PositionStore retargeted to
+                 feelies.core.position; core/position.py
+                 unedited. core/fill_attribution.py
+                 imports neither portfolio nor kernel.
+                 New core modules: _FILE_OWNERS and
+                 README in this commit, owner
+                 audit_core_clock_config.
+                 S12 2 / S14 2 / S17 3 passed at
+                 pre-flight and after.
+  FINDINGS:      Deleting a module can delete a test.
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 guarded portfolio → kernel.orchestrator
+                 -- a direction BOTH remaining contracts
+                 permit. Five import tiers lists
+                 portfolio above kernel, so the reverse
+                 edge is legal. S2 is engine-to-engine
+                 only; kernel is not in that set. The
+                 T-06a revert was caused by exactly that
+                 direction appearing on an engine file
+                 (an alias whose target was kernel;
+                 S2 expanded it through orchestrator
+                 into other engines). Nothing now
+                 detects a kernel import anywhere in
+                 portfolio: no AST walk remains, five
+                 tiers allow it, and S2 does not list
+                 kernel. What would: a contract change
+                 (forbid engines → kernel, which would
+                 fail today's risk and execution
+                 imports), a new conformance test
+                 walking remaining engine packages for
+                 kernel.orchestrator or any kernel
+                 import, or an accepted gap.
+                 Remaining rungs are exposed to the
+                 same shape. Kernel still imports
+                 risk, execution, and storage (the
+                 3-pair pin). Reverse kernel-path
+                 imports already exist on the first
+                 two: risk.forced_exit_clamp →
+                 kernel.forced_exit_reasons and
+                 kernel.order_states; risk.engine →
+                 kernel.macro; execution.order_policy →
+                 kernel.macro and kernel.micro. Those
+                 do not currently pull other engines,
+                 which is why they do not break S2.
+                 storage has no kernel import today;
+                 T-09a (TradeRecord / fill_bindings)
+                 is the rung that can add one. T-08a
+                 and T-08b delete or invert modules
+                 kernel still imports; a cycle test on
+                 those files would face the same
+                 undeclared deletion T-07b just did.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+                 A deleted module has three consumers,
+                 not one: its _FILE_OWNERS row, the
+                 README coverage row, and any
+                 docs/prompts bullet citing the path.
+                 First deletion of this campaign.
+  NEXT:          T-08a risk; pin 3 to 2 (boundary).
+                 Not started. Do not begin T-08a.
+                 Left uncommitted:
+                 baseline_pre-T-07b.json,
+                 baseline_post-T-07b.json, this ledger
+                 entry, and the plan DELETES amendment
+                 in phase8_tiers.md.
+
 
