@@ -1217,7 +1217,10 @@ PROBLEM:         After T-05b, kernel still imports twelve names from
                  bodies move, _AUTHORITY follows the store to
                  core/data_health.py. T-06z has already moved
                  KernelFault into core, so data_health.py does not
-                 import feelies.kernel.
+                 import feelies.kernel. A relocation alias is an
+                 import in the opposite direction, and on an engine
+                 file that reverses the tier edge the step is trying
+                 to cut.
 WHY THIS OWNER:  T5 core already owns names kernel may use. Empty the
                  package in one step so the pin moves. A helpers-only
                  return leaves DataHealth, IdleTick,
@@ -1225,34 +1228,57 @@ WHY THIS OWNER:  T5 core already owns names kernel may use. Empty the
                  and the pin stays 6.
 REFACTOR PATH:   one commit. Mechanism: relocate DataHealth,
                  HaltSignal, classify_halt_status,
-                 _sync_halt_store_and_health, and _HaltTradeability
-                 into feelies.core.data_health
-                 (core/data_health.py). Relocate IdleTick into
+                 _sync_halt_store_and_health, _HaltTradeability,
+                 and _require_halt_authority into
+                 feelies.core.data_health (core/data_health.py).
+                 _require_halt_authority travels with _sync; kernel
+                 imports it from core. Relocate IdleTick into
                  feelies.core.idle_tick (core/idle_tick.py).
                  Alias-re-export from data_integrity and idle_tick
                  so bootstrap, massive_normalizer, massive_ingestor,
-                 massive_ws need no retarget. Return the eight kernel
-                 helpers and the private callees that have no other
-                 caller (_bound_trade_feed_health_sm,
-                 _halt_health_xor_store, _emit_symbol_halted). Kernel
-                 annotates MarketDataNormalizer against a core
-                 Protocol in data_health.py whose named surface is
-                 health and all_health; leave the ingestion Protocol
-                 in place for implementations. Keep constructor
-                 optionality. Leave getattr (_halt_tradeability,
-                 _maybe_reset) as getattr. isinstance on
-                 _HaltTradeability stays, against the inverted class.
-                 data_health.py imports KernelFault from
-                 feelies.core.exception_taxonomy (T-06z), not from
-                 feelies.kernel. Drop ("feelies.kernel",
-                 "feelies.ingestion") from _TIER_RESIDUALS in the
-                 same commit. New core modules: _FILE_OWNERS rows and
-                 README citation (S-21). Retarget G33 `_AUTHORITY`
-                 to `src/feelies/core/data_health.py` in the same
-                 commit; leave that file's runtime imports of
-                 _HaltTradeability / _require_halt_authority /
-                 _data_health_blocks_trading on data_integrity
-                 (aliases).
+                 massive_ws need no retarget. Relocated names
+                 aliased on data_integrity: DataHealth, HaltSignal,
+                 classify_halt_status, _sync_halt_store_and_health,
+                 _HaltTradeability, _require_halt_authority. Of the
+                 eight helpers, only _require_halt_authority is
+                 aliased there. The other seven return to kernel as
+                 local defs and have no data_integrity alias:
+                 _bind_halt_tradeability, _configure_halt_from_config,
+                 _reset_halt_state, _update_halt_state,
+                 _update_ssr_state, _data_health_blocks_trading,
+                 _verify_data_integrity. _data_health_blocks_trading
+                 is the exception: G33 currently imports it, and an
+                 alias on data_integrity.py would make ingestion import
+                 feelies.kernel.orchestrator, which S2 expands into
+                 portfolio, execution, risk and monitoring -- four
+                 new twelve-engine pairs. The body cannot go to core
+                 because it names MacroState.DEGRADED, which would be
+                 core to kernel -- the violation T-06z exists to
+                 prevent. Return those seven plus the private callees
+                 that have no other caller (_halt_health_xor_store,
+                 _emit_symbol_halted). _bound_trade_feed_health_sm
+                 travels with _sync into core. Kernel annotates
+                 MarketDataNormalizer against a core Protocol in
+                 data_health.py whose named surface is health and
+                 all_health; leave the ingestion Protocol in place
+                 for implementations. Keep constructor optionality.
+                 Leave getattr (_halt_tradeability, _maybe_reset)
+                 as getattr. isinstance on _HaltTradeability stays,
+                 against the inverted class. data_health.py imports
+                 KernelFault from feelies.core.exception_taxonomy
+                 (T-06z), not from feelies.kernel. Drop
+                 ("feelies.kernel", "feelies.ingestion") from
+                 _TIER_RESIDUALS in the same commit. New core modules:
+                 _FILE_OWNERS rows and README citation (S-21).
+                 Retarget G33 `_AUTHORITY` to
+                 `src/feelies/core/data_health.py` in the same
+                 commit. G33 retargets the
+                 _data_health_blocks_trading import to
+                 feelies.kernel.orchestrator; keep
+                 _HaltTradeability and _require_halt_authority on
+                 the data_integrity aliases. No
+                 _data_health_blocks_trading alias on
+                 data_integrity.py.
 BLAST RADIUS:    boundary
 VALIDATED BY:    test_five_import_tiers equals the 5-pair pin;
                  test_twelve_engine_independence KEPT at zero pairs;
@@ -1272,11 +1298,15 @@ FILES:           src/feelies/kernel/orchestrator.py
                  tests/docs/test_prompt_coverage_map.py
                  docs/prompts/README.md
                  data_integrity.py and idle_tick.py are alias
-                 re-exports only for relocated names. G33 file is
-                 the _AUTHORITY retarget only. Do not invert
-                 MassiveNormalizer. Do not retarget bootstrap,
-                 massive_normalizer.py, massive_ingestor.py,
-                 massive_ws.py. Do not include
+                 re-exports only for relocated names. Do not alias
+                 _data_health_blocks_trading. G33 file is the
+                 _AUTHORITY retarget and the
+                 _data_health_blocks_trading import retarget to
+                 feelies.kernel.orchestrator; _HaltTradeability and
+                 _require_halt_authority stay on data_integrity.
+                 Do not invert MassiveNormalizer. Do not retarget
+                 bootstrap, massive_normalizer.py,
+                 massive_ingestor.py, massive_ws.py. Do not include
                  tests/conformance/test_fail_quiet.py. No keep-row
                  file is touched. Do not include harness/, cli/,
                  .github/workflows/ci.yml. Do not include
