@@ -44,9 +44,8 @@ from feelies.core.events import (
     OrderType,
     Side,
 )
-from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.orchestrator import Orchestrator, _reconcile_fills
 from feelies.portfolio.fill_attribution import FillAttributionLedger
-from feelies.portfolio.fill_reconciliation import _reconcile_fills
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.hazard_exit import HAZARD_EXIT_REASON_SPIKE
