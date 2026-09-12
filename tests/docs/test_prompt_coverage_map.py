@@ -63,6 +63,8 @@ _FILE_OWNERS: dict[str, str] = {
     "core/paper_session_recorder.py": "audit_core_clock_config",
     "core/lot_ledger.py": "audit_core_clock_config",
     "core/position_book_view.py": "audit_core_clock_config",
+    "core/fill_attribution.py": "audit_core_clock_config",
+    "core/strategy_position_store.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",
@@ -82,7 +84,6 @@ _FILE_OWNERS: dict[str, str] = {
     # ── portfolio/ ──────────────────────────────────────────────────
     "portfolio/cross_sectional_tracker.py": "audit_composition",
     "portfolio/fill_attribution.py": "audit_forensics",
-    "portfolio/fill_reconciliation.py": "audit_forensics",
     "portfolio/position_store.py": "audit_position_management",
     "portfolio/memory_position_store.py": "audit_position_management",
     "portfolio/strategy_position_store.py": "audit_position_management",
