@@ -141,6 +141,20 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  check module-global identity assertions, not only
                  call sites: grep the name across tests before
                  declaring it droppable.
+                 A PROTOCOL MOVE IS TRANSITIVE. The closure is
+                 every type the Protocol's signatures name, and
+                 every type those name in turn. T-08c's
+                 PositionManager dragged PositionManagerConfig,
+                 PositionPlan, PlannedOrder, SuppressedLeg,
+                 DesiredPosition and MarketContext -- and
+                 MarketContext names CostModel, which dragged
+                 CostBreakdown, FillType,
+                 estimate_aggressive_taker_cost_bps and
+                 _within_l1_premium. Moving only the Protocol
+                 leaves core importing the engine, which inverts
+                 the edge the step exists to cut. After any
+                 Protocol move, assert that no core module
+                 imports the engine package.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
