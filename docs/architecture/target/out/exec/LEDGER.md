@@ -18281,4 +18281,329 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-08b.json, this ledger
                  entry.
 
+---
+
+## T-08c  2026-09-13T16:32:00+08:00
+  STEP:          T-08c
+  BASE:          f4772ffb64d26d6646223b38069cb33f394213f1
+  RESULT SHA:    3ebdd010d467c39978424f9a458552186d8cd8a0 (exec/T-08c; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 2. Does not drop kernel → execution. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. T-07c pin
+                 stays 11. An unchanged count is the declared
+                 outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 2-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 11-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (2 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; execution 865
+                 mypy src/feelies: Success, 247 source files
+                 (237 +10; before the gate).
+                 CLOSURE OK: no core module ImportFrom of
+                 feelies.execution.
+  TESTS:         capture pre-T-08c GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-08c GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-08b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-08c vs
+                 post-T-08c and vs baseline_post-T-08b.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Order, flatten, and min-cost replay hashes
+                 unmoved:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH unmoved.
+                 BOTH PINS STAYED. Five-tier stays 2:
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Engine-to-kernel stays 11. The eleven
+                 T-08d helper names remain on the kernel
+                 import. Pin 2 stayed because the invert
+                 left those helpers; pin 11 stayed
+                 because order_policy still imports
+                 kernel.macro and kernel.micro.
+  FILES:         23 declared, 23 touched, 23 committed
+                 (clean vs 3ebdd010). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/execution_backend.py (new),
+                 core/intent.py (new),
+                 core/position_manager.py (new),
+                 core/cost_model.py (new),
+                 core/min_cost_policy.py (new),
+                 core/order_state.py (new),
+                 core/portfolio_netter.py (new),
+                 core/trading_session.py (new),
+                 core/borrow_availability.py (new),
+                 core/order_admission.py (new),
+                 execution/intent.py (alias),
+                 execution/position_manager.py (alias),
+                 execution/cost_model.py (alias),
+                 execution/min_cost_policy.py (alias),
+                 execution/order_state.py (alias),
+                 execution/portfolio_netter.py (alias),
+                 execution/trading_session.py (alias),
+                 execution/moc_session.py (retarget),
+                 execution/regulatory/borrow_availability.py (alias),
+                 execution/order_admission.py (alias),
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (neither pin
+                 moves), bootstrap.py, harness/, cli/,
+                 execution/backend.py (no alias on the
+                 concrete), order_policy.py,
+                 order_lifecycle.py, backtest_backend.py,
+                 tests/execution/test_order_state.py,
+                 tests/determinism/test_state_transition_replay.py
+                 (alias covers), tests/kernel/, ci.yml,
+                 test_fail_quiet.py.
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +10, public symbols +1,
+                 branch points 0.
+                 ExecutionBackend Protocol is new.
+                 IntentTranslator, PositionManager,
+                 CostModel, SignalPositionTranslator,
+                 the constructed types, enums, and
+                 functions are relocations. Nested
+                 market_data / order_router Protocols
+                 are private. Aliases are ImportFrom;
+                 measure.py does not count them.
+                 actual modules 237 -> 247 (+10 MATCH)
+                 public_symbols 589 -> 590 (+1 MATCH)
+                 sloc 47033 -> 47217 (+184, undeclared)
+                 n_edges 672 -> 691
+                 n_modules 192 -> 201
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Order, flatten, and min-cost
+                 replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 23 declared / 23 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +10
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 3ebdd010d467c39978424f9a458552186d8cd8a0.
+                 Not merged.
+  NOTES:         One commit on exec/T-08c,
+                 3ebdd010d467c39978424f9a458552186d8cd8a0,
+                 "T-08c: invert execution types into core; pins stay 2 and 11".
+                 Parent f4772ffb on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 23 files, ten of them new core
+                 modules: execution_backend, intent,
+                 position_manager, cost_model,
+                 min_cost_policy, order_state,
+                 portfolio_netter, trading_session,
+                 borrow_availability, order_admission.
+                 The AST walk over src/feelies/core
+                 printed CLOSURE OK. That is the
+                 proof that no core module ImportFrom
+                 starts with feelies.execution, so
+                 the Protocol closures actually
+                 landed in core rather than leaking
+                 the edge the invert exists to cut.
+                 Both pins stayed. Five-tier is still
+                 2: kernel → execution and kernel →
+                 storage. Engine-to-kernel stays 11.
+                 They stayed because this invert left
+                 the eleven helper names on the
+                 kernel's execution import for T-08d:
+                 _emit_ssr_suppression_alert; the six
+                 order_lifecycle names
+                 (_apply_ack_to_order,
+                 _drain_async_fills,
+                 _filter_portfolio_orders_for_pending_conflicts,
+                 _poll_order_router_acks,
+                 _submit_tracked_order,
+                 _transition_order); the four
+                 order_policy names
+                 (_execute_reverse,
+                 _filter_portfolio_orders_for_admission,
+                 _plan_for_signal,
+                 _try_build_order_from_intent).
+                 order_policy still imports
+                 kernel.macro and kernel.micro, which
+                 is why pin 11 did not move.
+                 S2 KEPT at zero twelve-engine pairs.
+                 No new pair.
+                 Nine aliases, all execution → core,
+                 same-object True on each: intent,
+                 position_manager, cost_model,
+                 min_cost_policy, order_state,
+                 portfolio_netter, trading_session,
+                 regulatory.borrow_availability,
+                 order_admission. moc_session.py is
+                 a retarget, not an alias: it
+                 imports et_clock_to_ns and
+                 session_date_from_ns from
+                 core.trading_session so
+                 MocSessionBounds can keep using them.
+                 execution/backend.py is deliberately
+                 unaliased. An alias there would
+                 shadow the concrete class bootstrap
+                 still constructs; kernel types the
+                 ctor against the core Protocol and
+                 the constructible class stays in
+                 execution. Concrete is Proto is
+                 False.
+                 Every default-constructed name
+                 builds the core class at every site:
+                 SignalPositionTranslator() at
+                 orchestrator 1849 and bootstrap 521
+                 (bootstrap via the alias);
+                 DesiredTargetBook() at ctor 1865
+                 and reset 4100;
+                 PortfolioNetter(...) at ctor 1867,
+                 boot 2284, reset 4101;
+                 MarketContext() at ctor 1886, boot
+                 2271, reset 4105;
+                 MinimumCostExecutionPolicy and
+                 MinCostPolicyConfig at boot 2310
+                 when execution_mode ==
+                 "minimum_cost";
+                 create_order_state_machine at
+                 orchestrator 4157, tests via alias.
+                 intent_translator stays optional
+                 (IntentTranslator | None = None).
+                 The TYPE_CHECKING CostModel import
+                 was retargeted to
+                 feelies.core.cost_model, not
+                 deleted. A deleted TYPE_CHECKING
+                 import would have been the fifth
+                 non-cut and would have left
+                 execution.cost_model on the kernel
+                 import, blocking T-08d.
+                 Ten new modules in this commit
+                 (S-21): each has an _FILE_OWNERS row
+                 mapping to audit_core_clock_config,
+                 and the README core_clock_config
+                 row cites all ten.
+                 Four order and flatten hashes
+                 unmoved against
+                 baseline_post-T-08b.json:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d691162e87d3fddf4866cb2747ffcc7350263ccb88291a6
+                 COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855ef3ef1f24e7392bb242f88814c86f09be7ed976d186ba7
+                 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 COUNT 20 fills.
+                 mypy src/feelies: Success, 247 source
+                 files, before the gate. tests/docs:
+                 101 passed, before the gate. APP
+                 oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +10,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 237 → 247 MATCH,
+                 public_symbols 589 → 590 MATCH,
+                 sloc 47033 → 47217 (+184,
+                 undeclared), n_edges 672 → 691,
+                 n_modules 192 → 201, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      Protocol closure is transitive. A
+                 Protocol move drags every type its
+                 signatures name, and every type
+                 those name in turn. PositionManager
+                 dragged PositionManagerConfig,
+                 PositionPlan, PlannedOrder,
+                 SuppressedLeg, DesiredPosition and
+                 MarketContext -- and MarketContext
+                 names CostModel, which dragged
+                 CostBreakdown, FillType,
+                 estimate_aggressive_taker_cost_bps
+                 and _within_l1_premium.
+                 TradingSessionBounds dragged
+                 et_clock_to_ns, session_date_from_ns,
+                 session_flatten_deadline_ns and
+                 _parse_clock_time. PortfolioNetter
+                 dragged StandingTarget.
+                 admission_block_reason dragged
+                 BLOCK_HALT_BLACKOUT,
+                 BLOCK_SESSION_FLATTEN_WINDOW,
+                 BLOCK_BELOW_MIN_ORDER_SHARES and
+                 blocks_for_min_size. Moving only the
+                 Protocol would have left core
+                 importing execution, which inverts
+                 the edge the step exists to cut --
+                 the T-06a shape from the other
+                 direction. The CLOSURE OK walk is
+                 what would have caught that. Not a
+                 failed cut; it is why the ten
+                 modules are this wide.
+                 Pre-existing F401: orchestrator
+                 imports ExposureDelta and does not
+                 use it. Present on HEAD f4772ffb
+                 (feelies.execution.order_admission)
+                 and after the retarget
+                 (feelies.core.order_admission). No
+                 module-global identity assertion.
+                 Not dropped: the invert retargets
+                 the import; dropping it would be
+                 opportunistic cleanup of a name
+                 the census listed. Not this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08d execution; pin 2 to 1, T-07c
+                 pin 11 to 9 (boundary).
+                 Not started. Do not begin T-08d.
+                 Go confirmed on
+                 3ebdd010d467c39978424f9a458552186d8cd8a0.
+                 Left uncommitted:
+                 baseline_pre-T-08c.json,
+                 baseline_post-T-08c.json, this ledger
+                 entry.
+
 
