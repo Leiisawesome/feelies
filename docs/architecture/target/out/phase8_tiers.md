@@ -2431,13 +2431,40 @@ PROBLEM:         After T-08c, kernel still imports execution for
                  owners row and drop/retarget the README row;
                  do not whitelist the stale path in
                  test_internal_links.py.
-                 order_lifecycle.py is not emptied: cancel_order,
-                 _escalate_unfilled_working_exits,
-                 _submit_working_exit_fallback remain and have
-                 test importers; kernel does not import them.
-                 Returning helpers without emptying order_policy.py
-                 leaves the two engine-to-kernel pairs and the
-                 five-tier pair stays.
+                 _drain_async_fills calls
+                 _escalate_unfilled_working_exits, which calls
+                 _submit_working_exit_fallback. Function globals
+                 are the defining module; returning drain alone
+                 NameErrors. All three return together. The prior
+                 block claimed both callees have test importers.
+                 _escalate_unfilled_working_exits has one:
+                 tests/kernel/test_orchestrator.py (already in
+                 FILES). _submit_working_exit_fallback has none;
+                 it travels as a private callee and adds zero
+                 files. cancel_order stays in order_lifecycle.py
+                 with its test importer
+                 (tests/kernel/test_orchestrator.py). That file
+                 is NOT deleted. This is not a module deletion
+                 and the three-consumer rule does not apply to
+                 it. An alias on order_lifecycle targeting kernel
+                 is T-06a-illegal; retarget the six's extra test
+                 importers instead (seven files, listed in
+                 FILES).
+                 BLOCK_EDGE_BELOW_COST and
+                 BLOCK_EDGE_UNPRICEABLE live only in
+                 execution.order_admission. Returned
+                 _portfolio_leg_edge_block needs them. T-08c
+                 left them because they are B4 tokens outside
+                 admission_block_reason's closure (T-08c moved
+                 the tokens that function returns). Move them
+                 into core/order_admission.py with an alias from
+                 execution.order_admission — the T-08c
+                 pattern, execution → core. Importing them
+                 from execution would keep the five-tier pair.
+                 Returning helpers without emptying
+                 order_policy.py leaves the two
+                 engine-to-kernel pairs and the five-tier pair
+                 stays.
 WHY THIS OWNER:  T5 kernel for the helper return. Empty the
                  kernel → execution import in one step. A
                  TYPE_CHECKING-only delete is not a cut.
@@ -2447,11 +2474,21 @@ WHY THIS OWNER:  T5 kernel for the helper return. Empty the
                  copies.
 REFACTOR PATH:   one commit. Mechanism: return the helper
                  clusters to kernel.orchestrator and empty
-                 order_policy.py. Return the six order_lifecycle
-                 helpers kernel imports. Do not return
-                 cancel_order, _escalate_unfilled_working_exits,
-                 or _submit_working_exit_fallback; do not
-                 delete order_lifecycle.py. Return
+                 order_policy.py. Both pins drop in that same
+                 commit. Return the six order_lifecycle helpers
+                 kernel imports. _drain_async_fills calls
+                 _escalate_unfilled_working_exits, which calls
+                 _submit_working_exit_fallback; all three return
+                 together. Returning drain alone NameErrors.
+                 _submit_working_exit_fallback has no test
+                 importer; it travels as a private callee and
+                 adds zero files. Do not return cancel_order;
+                 do not delete order_lifecycle.py. Retarget the
+                 six's extra test importers (the seven files in
+                 FILES). On
+                 test_orchestrator_hazard_exit_routing.py
+                 retarget _transition_order ONLY; leave the
+                 HAZARD_EXIT identity import alone. Return
                  _emit_ssr_suppression_alert. Return
                  _execute_reverse,
                  _filter_portfolio_orders_for_admission,
@@ -2470,10 +2507,18 @@ REFACTOR PATH:   one commit. Mechanism: return the helper
                  deletion of dead duplicates, not a merge.
                  After the return, _try_build_order_from_intent
                  and _execute_reverse call kernel _escalate_risk
-                 already in the module. Do not alias anything
-                 from order_policy.py — that would be execution
-                 → kernel. Retarget the four test importers.
-                 Delete order_policy.py (emptied; an alias is
+                 already in the module. Move
+                 BLOCK_EDGE_BELOW_COST and
+                 BLOCK_EDGE_UNPRICEABLE into
+                 core/order_admission.py with an alias from
+                 execution.order_admission (T-08c pattern;
+                 execution → core). T-08c left them because
+                 they are B4 tokens outside
+                 admission_block_reason's closure. Do not
+                 alias anything from order_policy.py — that
+                 would be execution → kernel. Retarget the
+                 four order_policy test importers. Delete
+                 order_policy.py (emptied; an alias is
                  illegal). Prune its _FILE_OWNERS row.
                  Drop or retarget the README coverage row to
                  kernel.orchestrator for the returned policy
@@ -2496,20 +2541,52 @@ FILES:           src/feelies/kernel/orchestrator.py
                  src/feelies/execution/order_policy.py
                  src/feelies/execution/order_lifecycle.py
                  src/feelies/execution/order_admission.py
+                 src/feelies/core/order_admission.py
                  tests/kernel/test_orchestrator.py
                  tests/kernel/test_orchestrator_order_routing.py
                  tests/kernel/test_orchestrator_edge_calibration.py
+                 tests/kernel/test_orchestrator_idle_tick.py
+                 tests/kernel/test_orchestrator_shutdown_drain.py
+                 tests/kernel/test_orchestrator_async_fill_latency.py
+                 tests/kernel/test_orchestrator_bus_sized_intent.py
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
                  tests/conformance/test_a3_zero_core_edits.py
+                 tests/conformance/test_pathological_refusal.py
                  tests/conformance/test_import_contracts.py
+                 tests/integration/test_paper_rth_safety.py
                  tests/docs/test_prompt_coverage_map.py
                  docs/prompts/README.md
                  docs/prompts/audit_execution_fills.md
-                 Do not edit core/, bootstrap.py, harness/,
-                 cli/, execution/backend.py, intent.py,
+                 Twenty files. Eight additions:
+                 core/order_admission.py — BLOCK_EDGE_BELOW_COST
+                 and BLOCK_EDGE_UNPRICEABLE move here with an
+                 execution.order_admission alias (T-08c
+                 pattern).
+                 test_orchestrator_idle_tick.py — imports
+                 _apply_ack_to_order, _drain_async_fills,
+                 _transition_order from order_lifecycle.
+                 test_orchestrator_shutdown_drain.py — imports
+                 _apply_ack_to_order, _transition_order.
+                 test_orchestrator_async_fill_latency.py —
+                 imports _transition_order.
+                 test_orchestrator_bus_sized_intent.py —
+                 imports _transition_order.
+                 test_orchestrator_hazard_exit_routing.py —
+                 imports _transition_order. Retarget that
+                 import ONLY. Leave the HAZARD_EXIT identity
+                 import alone (T-08b: an unused orchestrator
+                 import can be a test's identity anchor).
+                 test_pathological_refusal.py — imports
+                 _filter_portfolio_orders_for_pending_conflicts,
+                 _transition_order.
+                 test_paper_rth_safety.py — imports
+                 _transition_order.
+                 Do not edit bootstrap.py, harness/, cli/,
+                 execution/backend.py, intent.py,
                  forced_exit_clamp.py, test_fail_quiet.py,
-                 ci.yml. No keep-row file is touched. No alias
-                 whose target is kernel. Do not include
-                 tests/kernel/test_orchestrator_hazard_exit_routing.py.
+                 ci.yml, test_internal_links.py. No keep-row
+                 file is touched. No alias whose target is
+                 kernel. Do not delete order_lifecycle.py.
                  Grep each returned or deleted name across tests
                  for module-global identity assertions before
                  declaring it droppable.
