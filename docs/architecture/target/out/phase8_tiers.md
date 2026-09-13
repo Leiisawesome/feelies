@@ -2086,3 +2086,449 @@ ROLLBACK:        revert the commit. Independently revertible from
                  landed; orchestrator.py is shared).
 ```
 
+```
+STEP:            T-08c
+CLOSES:          nothing. Pin stays 2. Does not drop kernel →
+                 execution. Five import tiers stays BROKEN. G40
+                 stays CLOSED. T-07c pin stays 11. A placement
+                 invert, same shape as T-08a: an unchanged count
+                 is the declared outcome, not a failed cut.
+PROBLEM:         Kernel still imports 43 execution names from
+                 twelve modules, all from orchestrator. Mixed
+                 kinds. A helper-only step leaves the constructed
+                 types, the Protocols, the TYPE_CHECKING
+                 CostModel, and the pair stays. This rung is the
+                 invert that can leave without emptying.
+                 ExecutionBackend from backend (l.85) is a
+                 concrete facade, required ctor arg. Kernel
+                 never subclasses it. Named surface is not one
+                 method: market_data.events() and
+                 order_router.submit, plus getattr(order_router,
+                 "cancel_order") and getattr(order_router,
+                 "on_trade"). No public property.
+                 Bootstrap and backtest_backend construct the
+                 concrete (bootstrap l.65 import;
+                 build_backtest_backend at bootstrap l.978).
+                 IntentTranslator from intent (l.90) is already
+                 a Protocol; optional ctor arg, default
+                 SignalPositionTranslator() at orchestrator
+                 l.1847 AND bootstrap l.521. Named: translate.
+                 No public property. Do not make
+                 intent_translator required — that is T-04b's
+                 test blast and this default is already unused
+                 on the bootstrap path.
+                 PositionManager from position_manager (l.126)
+                 is already a Protocol; optional injected, not
+                 default-constructed. Named: plan. No public
+                 property. No alias on TargetPositionManager or
+                 LegacyPositionManager.
+                 CostModel from cost_model is TYPE_CHECKING
+                 (l.196). import-linter still sees that
+                 ImportFrom. A TYPE_CHECKING-only move is not a
+                 cut; retarget the annotation to core this step
+                 so T-08d is not blocked by a leftover
+                 execution.cost_model import. Named: compute.
+                 Default-constructed (every site):
+                 SignalPositionTranslator() — orchestrator
+                 l.1847 and bootstrap l.521.
+                 DesiredTargetBook() — orchestrator ctor l.1863
+                 and reset l.4098.
+                 PortfolioNetter(...) — ctor l.1865, boot
+                 l.2282, reset l.4099.
+                 MarketContext() — ctor l.1884, boot l.2269
+                 (impact knobs), reset l.4103.
+                 MinimumCostExecutionPolicy(...) and
+                 MinCostPolicyConfig(...) — boot l.2308 only,
+                 when execution_mode == "minimum_cost".
+                 create_order_state_machine(order_id, clock) —
+                 orchestrator l.4155. tests/execution/
+                 test_order_state.py and tests/determinism/
+                 test_state_transition_replay.py construct via
+                 alias.
+                 Remaining invert names: OrderIntent,
+                 TradingIntent, OrderState, NetDivergence,
+                 standing_target_from_desired, DesiredPosition,
+                 ExecStyle, PlanLeg, desired_from_signal,
+                 order_intent_from_plan, TradingSessionBounds
+                 (injected, not constructed in kernel),
+                 in_session_flatten_window, BorrowTier,
+                 build_borrow_table, parse_borrow_tier,
+                 ExposureDelta, BLOCK_LOCATE_UNAVAILABLE,
+                 BLOCK_SSR, admission_block_reason,
+                 exposure_delta_from_intent, side_for_intent.
+                 Helpers stay: _emit_ssr_suppression_alert;
+                 the six order_lifecycle names; the four
+                 order_policy names kernel imports. This step
+                 does not empty the package.
+WHY THIS OWNER:  T5 core. ExecutionBackend, IntentTranslator, and
+                 PositionManager are injected types kernel
+                 holds; Protocols belong in core, named for the
+                 thing, not a step. SignalPositionTranslator,
+                 DesiredTargetBook, PortfolioNetter,
+                 MarketContext, the min-cost policy, and
+                 create_order_state_machine are concretes/factory
+                 kernel constructs; a Protocol cannot replace
+                 OrderState or BorrowTier. Helpers cannot
+                 travel with them: they are self: Any bodies,
+                 and order_policy.py is the only execution
+                 module that imports kernel.macro and
+                 kernel.micro. Leaving them for T-08d is the
+                 census, not a failed cut.
+REFACTOR PATH:   one commit. Mechanism: invert, not a cut.
+                 Move ExecutionBackend Protocol into
+                 feelies.core.execution_backend
+                 (core/execution_backend.py). Surface covers
+                 market_data (events) and order_router
+                 (submit; poll_acks is used by a helper that
+                 stays until T-08d; cancel_order and on_trade
+                 stay getattr). Nested private Protocols for
+                 those two attributes, like
+                 _SizedIntentRiskResult. No subclassing. No
+                 alias on the concrete in execution.backend —
+                 an alias would shadow the constructible class
+                 bootstrap still builds. Kernel retargets to
+                 core; bootstrap.py and backtest_backend.py are
+                 not in FILES.
+                 Move IntentTranslator Protocol (translate),
+                 SignalPositionTranslator, TradingIntent,
+                 OrderIntent into feelies.core.intent
+                 (core/intent.py) with alias from
+                 execution.intent. Direction: execution →
+                 core. Both construction sites (kernel default
+                 and bootstrap, not in FILES) construct the
+                 core class.
+                 Move PositionManager Protocol (plan) into
+                 feelies.core.position_manager
+                 (core/position_manager.py). Alias the Protocol
+                 and the kernel-imported types (DesiredPosition,
+                 ExecStyle, PlanLeg, MarketContext,
+                 desired_from_signal, order_intent_from_plan)
+                 from execution.position_manager. No alias on
+                 TargetPositionManager or LegacyPositionManager.
+                 Protocol closure travels even when not in the
+                 43-name list: PositionManagerConfig,
+                 PositionPlan, PlannedOrder — otherwise core
+                 imports execution. Direction: execution →
+                 core.
+                 Move CostModel Protocol (compute) and
+                 CostBreakdown into feelies.core.cost_model
+                 (core/cost_model.py) with alias from
+                 execution.cost_model. Direction: execution →
+                 core. Kernel TYPE_CHECKING import retargets to
+                 core; do not delete it. DefaultCostModel stays
+                 in execution. MinimumCostExecutionPolicy.decide
+                 calls cost_model.compute and
+                 estimate_aggressive_taker_cost_bps; that
+                 function travels with the Protocol so core
+                 does not import execution.
+                 Move MinCostPolicyConfig and
+                 MinimumCostExecutionPolicy into
+                 feelies.core.min_cost_policy
+                 (core/min_cost_policy.py) with alias from
+                 execution.min_cost_policy. Direction:
+                 execution → core. Kernel boot constructs the
+                 core class.
+                 Move OrderState and
+                 create_order_state_machine into
+                 feelies.core.order_state
+                 (core/order_state.py) with alias from
+                 execution.order_state. Direction: execution →
+                 core. Kernel constructs the core factory.
+                 Move DesiredTargetBook, PortfolioNetter,
+                 NetDivergence, standing_target_from_desired
+                 (and StandingTarget, the netter's private
+                 closure) into feelies.core.portfolio_netter
+                 (core/portfolio_netter.py) with alias from
+                 execution.portfolio_netter. Direction:
+                 execution → core.
+                 Move TradingSessionBounds and
+                 in_session_flatten_window into
+                 feelies.core.trading_session
+                 (core/trading_session.py) with alias from
+                 execution.trading_session. Direction:
+                 execution → core. Bounds methods call
+                 et_clock_to_ns and session_date_from_ns;
+                 in_session_flatten_window calls
+                 session_flatten_deadline_ns. Those helpers
+                 travel into the same core module so core does
+                 not import execution.moc_session.
+                 moc_session.py retargets to core (execution →
+                 core). Do not move MocSessionBounds.
+                 Move BorrowTier, build_borrow_table,
+                 parse_borrow_tier into
+                 feelies.core.borrow_availability
+                 (core/borrow_availability.py) with alias from
+                 execution.regulatory.borrow_availability.
+                 Direction: execution → core.
+                 Move ExposureDelta, BLOCK_LOCATE_UNAVAILABLE,
+                 BLOCK_SSR, admission_block_reason,
+                 exposure_delta_from_intent, side_for_intent
+                 into feelies.core.order_admission
+                 (core/order_admission.py) with alias from
+                 execution.order_admission. Direction:
+                 execution → core. Do not invert
+                 _emit_ssr_suppression_alert.
+                 Do not invert helpers. Do not return
+                 order_policy bodies. Pin stays 2. T-07c pin
+                 stays 11. Grep each moved name across tests
+                 for module-global identity assertions before
+                 treating an orchestrator import as droppable;
+                 none of these names have an orchestrator
+                 module-global `is` pin today. New core
+                 modules: _FILE_OWNERS and README in this
+                 commit (S-21).
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/execution_backend.py
+                 src/feelies/core/intent.py
+                 src/feelies/core/position_manager.py
+                 src/feelies/core/cost_model.py
+                 src/feelies/core/min_cost_policy.py
+                 src/feelies/core/order_state.py
+                 src/feelies/core/portfolio_netter.py
+                 src/feelies/core/trading_session.py
+                 src/feelies/core/borrow_availability.py
+                 src/feelies/core/order_admission.py
+                 src/feelies/execution/intent.py
+                 src/feelies/execution/position_manager.py
+                 src/feelies/execution/cost_model.py
+                 src/feelies/execution/min_cost_policy.py
+                 src/feelies/execution/order_state.py
+                 src/feelies/execution/portfolio_netter.py
+                 src/feelies/execution/trading_session.py
+                 src/feelies/execution/moc_session.py
+                 src/feelies/execution/regulatory/borrow_availability.py
+                 src/feelies/execution/order_admission.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 execution files are alias only except
+                 moc_session.py (retarget of the two calendar
+                 helpers). Do not include
+                 test_import_contracts.py (neither pin moves),
+                 bootstrap.py, harness/, cli/,
+                 execution/backend.py (no alias on the
+                 concrete), order_policy.py,
+                 order_lifecycle.py, backtest_backend.py,
+                 tests/execution/test_order_state.py,
+                 tests/determinism/test_state_transition_replay.py
+                 (alias covers), tests/kernel/, ci.yml.
+                 No keep-row file is touched. No alias whose
+                 target is kernel or another engine.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved 2-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 11-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. These names sit on the
+                 order, session-flatten, and min-cost paths; a
+                 moved hash means an order fired, a flatten
+                 window flipped, or a route chose differently.
+DELETES:         the inverted execution imports from
+                 orchestrator (retargeted to core). Pin stays 2.
+                 The eleven helper imports stay.
+NET DELTA:       src modules +10, public symbols +1, branch points 0.
+                 ExecutionBackend Protocol is new. IntentTranslator,
+                 PositionManager, CostModel, SignalPositionTranslator,
+                 the constructed types, enums, and functions are
+                 relocations. Nested market_data / order_router
+                 Protocols are private. Aliases are ImportFrom;
+                 measure.py does not count them.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08d until T-08d lands; orchestrator.py is shared
+                 with T-08d. Not independently revertible from
+                 T-08b (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-08d
+CLOSES:          nothing. Drops kernel → execution. Five import
+                 tiers stays BROKEN. 2 → 1. G40 stays CLOSED.
+                 T-07c pin 11 → 9.
+PROBLEM:         After T-08c, kernel still imports execution for
+                 the names no Protocol replaces. _apply_ack_to_order,
+                 _drain_async_fills,
+                 _filter_portfolio_orders_for_pending_conflicts,
+                 _poll_order_router_acks, _submit_tracked_order,
+                 _transition_order from order_lifecycle are
+                 functions. _emit_ssr_suppression_alert from
+                 order_admission is a function. _execute_reverse,
+                 _filter_portfolio_orders_for_admission,
+                 _plan_for_signal, _try_build_order_from_intent
+                 from order_policy are functions.
+                 order_policy.py is the only remaining execution
+                 module that imports kernel: kernel.macro and
+                 kernel.micro. Emptying that file is what drops
+                   ("feelies.execution.order_policy",
+                    "feelies.kernel.macro")
+                   ("feelies.execution.order_policy",
+                    "feelies.kernel.micro")
+                 and is why both pins shrink in the same commit.
+                 Duplicate-body problem: order_policy's
+                 _emergency_flatten_all and _escalate_risk are
+                 the second copies of what T-08b already
+                 returned onto orchestrator. Kernel no longer
+                 imports them from order_policy. The kernel
+                 copies are the live call path (orchestrator
+                 flatten/escalate and, after this return, the
+                 callees of _try_build_order_from_intent and
+                 _execute_reverse). Returning the order_policy
+                 copies would land duplicate names in
+                 orchestrator.py. That is a deletion of dead
+                 duplicates, not a merge, not a behaviour
+                 change. Do not merge the bodies. Kernel copies
+                 win because they already run; the policy
+                 copies become unreferenced once their last
+                 callers have been returned, and are deleted
+                 with the file. Callee retarget of the returned
+                 _try_build_order_from_intent / _execute_reverse
+                 onto kernel _escalate_risk is equivalent on the
+                 live RiskLevel SM (policy used type(level);
+                 kernel names RiskLevel), not a re-pin.
+                 Remaining bodies in order_policy.py after the
+                 four kernel imports return:
+                 _round_trip_cost_bps, _edge_clears_round_trip_cost,
+                 _signal_passes_edge_cost_gate,
+                 _reversal_passes_combined_edge_gate,
+                 _resolve_order_route, _portfolio_leg_edge_block,
+                 _PostExitPositionView. They travel as private
+                 callees because the file is emptied. Test
+                 importers of those remaining bodies — census
+                 found four, not three — must be in FILES (no
+                 alias on a deleted module; an alias would be
+                 execution → kernel, T-06a-illegal):
+                 tests/kernel/test_orchestrator.py
+                 (_plan_for_signal, _round_trip_cost_bps,
+                 _try_build_order_from_intent),
+                 tests/kernel/test_orchestrator_order_routing.py
+                 (_resolve_order_route),
+                 tests/kernel/test_orchestrator_edge_calibration.py
+                 (_signal_passes_edge_cost_gate),
+                 tests/conformance/test_a3_zero_core_edits.py
+                 (_resolve_order_route).
+                 A deleted module has three consumers:
+                 _FILE_OWNERS ("execution/order_policy.py":
+                 "audit_execution_fills"), the README coverage
+                 row `execution/order_policy.py` |
+                 execution_fills, and the prompt. audit_execution_fills.md
+                 does not name order_policy.py today; prune the
+                 owners row and drop/retarget the README row;
+                 do not whitelist the stale path in
+                 test_internal_links.py.
+                 order_lifecycle.py is not emptied: cancel_order,
+                 _escalate_unfilled_working_exits,
+                 _submit_working_exit_fallback remain and have
+                 test importers; kernel does not import them.
+                 Returning helpers without emptying order_policy.py
+                 leaves the two engine-to-kernel pairs and the
+                 five-tier pair stays.
+WHY THIS OWNER:  T5 kernel for the helper return. Empty the
+                 kernel → execution import in one step. A
+                 TYPE_CHECKING-only delete is not a cut.
+                 Returning helpers without emptying
+                 order_policy.py leaves engine-to-kernel.
+                 Do not return order_policy's flatten/escalate
+                 copies.
+REFACTOR PATH:   one commit. Mechanism: return the helper
+                 clusters to kernel.orchestrator and empty
+                 order_policy.py. Return the six order_lifecycle
+                 helpers kernel imports. Do not return
+                 cancel_order, _escalate_unfilled_working_exits,
+                 or _submit_working_exit_fallback; do not
+                 delete order_lifecycle.py. Return
+                 _emit_ssr_suppression_alert. Return
+                 _execute_reverse,
+                 _filter_portfolio_orders_for_admission,
+                 _plan_for_signal, _try_build_order_from_intent
+                 and their private callees
+                 (_round_trip_cost_bps,
+                 _edge_clears_round_trip_cost,
+                 _signal_passes_edge_cost_gate,
+                 _reversal_passes_combined_edge_gate,
+                 _resolve_order_route,
+                 _portfolio_leg_edge_block,
+                 _PostExitPositionView). Do not return
+                 order_policy _emergency_flatten_all or
+                 _escalate_risk — those are the second copies;
+                 kernel copies win; deleting them is a
+                 deletion of dead duplicates, not a merge.
+                 After the return, _try_build_order_from_intent
+                 and _execute_reverse call kernel _escalate_risk
+                 already in the module. Do not alias anything
+                 from order_policy.py — that would be execution
+                 → kernel. Retarget the four test importers.
+                 Delete order_policy.py (emptied; an alias is
+                 illegal). Prune its _FILE_OWNERS row.
+                 Drop or retarget the README coverage row to
+                 kernel.orchestrator for the returned policy
+                 helpers. Do not whitelist the stale path in
+                 test_internal_links.py. Drop
+                 ("feelies.kernel", "feelies.execution") from
+                 _TIER_RESIDUALS and drop
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.macro"),
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.micro")
+                 from _KERNEL_IMPORT_RESIDUALS in the same
+                 commit as the code. A five-tier drop that
+                 leaves a stale engine-to-kernel entry fails
+                 the second pin on "missing". Relocated bodies
+                 do not raise KernelFault. Returned helpers keep
+                 importing MacroState and MicroState from
+                 kernel (legal; they live in kernel).
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_policy.py
+                 src/feelies/execution/order_lifecycle.py
+                 src/feelies/execution/order_admission.py
+                 tests/kernel/test_orchestrator.py
+                 tests/kernel/test_orchestrator_order_routing.py
+                 tests/kernel/test_orchestrator_edge_calibration.py
+                 tests/conformance/test_a3_zero_core_edits.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 docs/prompts/audit_execution_fills.md
+                 Do not edit core/, bootstrap.py, harness/,
+                 cli/, execution/backend.py, intent.py,
+                 forced_exit_clamp.py, test_fail_quiet.py,
+                 ci.yml. No keep-row file is touched. No alias
+                 whose target is kernel. Do not include
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py.
+                 Grep each returned or deleted name across tests
+                 for module-global identity assertions before
+                 declaring it droppable.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 1-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 9-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 A missing T-07c pair fails as loudly as an
+                 unexpected one.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. These helpers gate orders,
+                 reverses, admission, and hazard-adjacent
+                 submits; a moved hash means an order fired or
+                 an exit routed differently. Callee retarget
+                 onto kernel escalate is equivalent on
+                 RiskLevel, not a behaviour change, not a
+                 re-pin.
+DELETES:         the kernel → execution pair; the
+                 order_lifecycle, admission-helper, and
+                 order_policy imports from orchestrator;
+                 order_policy.py; two T-07c pairs
+                 (order_policy.macro, order_policy.micro).
+NET DELTA:       src modules −1, public symbols 0, branch points 0.
+                 Helpers relocate into orchestrator (0).
+                 order_policy.py deleted (−1). measure.py reports
+                 the deletion, not an inventory of orchestrator.py.
+ROLLBACK:        revert the commit. Not independently revertible
+                 from T-08c (already landed; orchestrator.py is
+                 shared). Independently revertible from T-09a
+                 until T-09a lands.
+```
+
