@@ -82,25 +82,27 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine, TransitionRecord
-from feelies.execution.backend import ExecutionBackend
-from feelies.execution.min_cost_policy import (
+from feelies.core.execution_backend import ExecutionBackend
+from feelies.core.min_cost_policy import (
     MinCostPolicyConfig,
     MinimumCostExecutionPolicy,
 )
-from feelies.execution.intent import (
+from feelies.core.intent import (
     IntentTranslator,
     OrderIntent,
     SignalPositionTranslator,
     TradingIntent,
 )
-from feelies.execution.order_admission import (
+from feelies.core.order_admission import (
     BLOCK_LOCATE_UNAVAILABLE,
     BLOCK_SSR,
     ExposureDelta,
-    _emit_ssr_suppression_alert,
     admission_block_reason,
     exposure_delta_from_intent,
     side_for_intent,
+)
+from feelies.execution.order_admission import (
+    _emit_ssr_suppression_alert,
 )
 from feelies.execution.order_lifecycle import (
     _apply_ack_to_order,
@@ -116,14 +118,14 @@ from feelies.execution.order_policy import (
     _plan_for_signal,
     _try_build_order_from_intent,
 )
-from feelies.execution.order_state import OrderState, create_order_state_machine
-from feelies.execution.portfolio_netter import (
+from feelies.core.order_state import OrderState, create_order_state_machine
+from feelies.core.portfolio_netter import (
     DesiredTargetBook,
     NetDivergence,
     PortfolioNetter,
     standing_target_from_desired,
 )
-from feelies.execution.position_manager import (
+from feelies.core.position_manager import (
     DesiredPosition,
     ExecStyle,
     MarketContext,
@@ -132,11 +134,11 @@ from feelies.execution.position_manager import (
     desired_from_signal,
     order_intent_from_plan,
 )
-from feelies.execution.trading_session import (
+from feelies.core.trading_session import (
     TradingSessionBounds,
     in_session_flatten_window,
 )
-from feelies.execution.regulatory.borrow_availability import (
+from feelies.core.borrow_availability import (
     BorrowTier,
     build_borrow_table,
     parse_borrow_tier,
@@ -193,7 +195,7 @@ from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapsho
 from feelies.storage.trade_journal import TradeJournal
 
 if TYPE_CHECKING:
-    from feelies.execution.cost_model import CostModel
+    from feelies.core.cost_model import CostModel
 
 # Stable correlation IDs for lifecycle transitions.
 _PLATFORM_BOOT_CORRELATION_ID = "platform_boot"

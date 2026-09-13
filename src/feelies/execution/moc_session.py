@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-_NY_TZ = ZoneInfo("America/New_York")
-_NS_PER_SECOND = 1_000_000_000
+from feelies.core.trading_session import et_clock_to_ns, session_date_from_ns
+
 _CALENDAR_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})\.ya?ml$")
 
 
@@ -36,37 +35,6 @@ class MocSessionBounds:
         only valid anchors for the configured calendar date.
         """
         return session_date_from_ns(ts_ns) == self.session_date
-
-
-def session_date_from_ns(timestamp_ns: int) -> date:
-    """ET calendar date for a UTC nanosecond timestamp."""
-    return datetime.fromtimestamp(
-        timestamp_ns / _NS_PER_SECOND,
-        _NY_TZ,
-    ).date()
-
-
-def _parse_clock_time(spec: str) -> time:
-    parts = spec.split(":")
-    if len(parts) == 2:
-        h, m = parts
-        return time(hour=int(h), minute=int(m))
-    if len(parts) == 3:
-        h, m, s = parts
-        return time(hour=int(h), minute=int(m), second=int(s))
-    raise ValueError(f"clock time {spec!r} must be HH:MM or HH:MM:SS")
-
-
-def et_clock_to_ns(session_date: date, clock_str: str) -> int:
-    """Resolve an ET clock-time on ``session_date`` to UTC nanoseconds."""
-    t = _parse_clock_time(clock_str)
-    local = datetime.combine(session_date, t, tzinfo=_NY_TZ)
-    # int() of the whole-second timestamp first, then multiply by
-    # _NS_PER_SECOND in pure integer arithmetic — float64 can't exactly
-    # represent seconds-since-epoch * 1e9 at nanosecond magnitude, so
-    # multiplying before truncating risked losing precision (mirrors
-    # core/session_clock.py:rth_open_ns's integer-safe pattern).
-    return int(local.timestamp()) * _NS_PER_SECOND
 
 
 def resolve_moc_session_bounds(
