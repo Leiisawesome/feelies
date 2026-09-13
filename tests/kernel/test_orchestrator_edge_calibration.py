@@ -12,7 +12,7 @@ from decimal import Decimal
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, Side, Signal, SignalDirection
 from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
-from feelies.execution.order_policy import _signal_passes_edge_cost_gate
+from feelies.kernel.orchestrator import _signal_passes_edge_cost_gate
 from tests.kernel.test_orchestrator import _build_orchestrator
 
 

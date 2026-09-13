@@ -44,7 +44,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backend import ExecutionBackend
-from feelies.execution.order_lifecycle import _transition_order
+from feelies.kernel.orchestrator import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.composition.selection_policy import Top1SelectionPolicy

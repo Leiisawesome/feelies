@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from feelies.core.borrow_availability import BorrowTier as BorrowTier
 from feelies.core.borrow_availability import build_borrow_table as build_borrow_table
+from feelies.core.borrow_availability import htb_fee_applies as htb_fee_applies
 from feelies.core.borrow_availability import parse_borrow_tier as parse_borrow_tier
 from feelies.execution.intent import OrderIntent
 
@@ -31,8 +32,3 @@ def is_short_sale_intent(intent: OrderIntent) -> bool:
     from feelies.execution.order_admission import exposure_delta_from_intent
 
     return exposure_delta_from_intent(intent).opens_or_increases_short
-
-
-def htb_fee_applies(tier: BorrowTier, short_sale: bool) -> bool:
-    """True when the fill should carry ``OrderRequest.is_short`` for HTB fees."""
-    return short_sale and tier == BorrowTier.HARD

@@ -13,7 +13,7 @@ from pathlib import Path
 from feelies.bootstrap import build_platform
 from feelies.core.events import NBBOQuote, Side
 from feelies.core.platform_config import OperatingMode, PlatformConfig
-from feelies.execution.order_policy import _resolve_order_route
+from feelies.kernel.orchestrator import _resolve_order_route
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog

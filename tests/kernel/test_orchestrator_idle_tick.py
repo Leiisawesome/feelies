@@ -32,7 +32,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.order_lifecycle import (
+from feelies.kernel.orchestrator import (
     _apply_ack_to_order,
     _drain_async_fills,
     _transition_order,

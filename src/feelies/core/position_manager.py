@@ -12,7 +12,7 @@ from decimal import Decimal
 from enum import Enum, auto
 from typing import Protocol
 
-from feelies.core.cost_model import CostModel
+from feelies.core.cost_model import CostModel, estimate_round_trip_cost_bps
 from feelies.core.events import NBBOQuote, Side, Signal, SignalDirection
 from feelies.core.intent import OrderIntent, TradingIntent
 from feelies.core.position import Position
@@ -249,3 +249,69 @@ def order_intent_from_plan(
         # TRIM uses the EXIT path so reductions bypass entry cost gates.
         return _oi(TradingIntent.EXIT, plan.total_quantity)
     return _oi(TradingIntent.NO_ACTION, 0)
+
+
+def round_trip_cost_bps(
+    cost_model: CostModel,
+    *,
+    symbol: str,
+    entry_side: Side,
+    quantity: int,
+    mid_price: Decimal,
+    half_spread: Decimal,
+    is_taker_entry: bool,
+    is_short_entry: bool,
+    bid_size: int | None = None,
+    ask_size: int | None = None,
+    market_impact_factor: Decimal | None = None,
+    max_impact_half_spreads: Decimal | None = None,
+    within_l1_impact_factor: Decimal = Decimal("0"),
+    permanent_impact_coefficient: Decimal = Decimal("0"),
+) -> float:
+    """Model entry plus aggressive-exit cost in basis points."""
+    return estimate_round_trip_cost_bps(
+        cost_model,
+        symbol=symbol,
+        entry_side=entry_side,
+        quantity=quantity,
+        mid_price=mid_price,
+        half_spread=half_spread,
+        is_taker=is_taker_entry,
+        is_taker_exit=True,
+        is_short_entry=is_short_entry,
+        bid_size=bid_size,
+        ask_size=ask_size,
+        market_impact_factor=market_impact_factor,
+        max_impact_half_spreads=max_impact_half_spreads,
+        within_l1_impact_factor=within_l1_impact_factor,
+        permanent_impact_coefficient=permanent_impact_coefficient,
+    )
+
+
+def entry_edge_clears_cost(
+    *,
+    edge_bps: float,
+    rt_cost_bps: float,
+    min_ratio: float,
+    basis: str,
+) -> bool:
+    """Return whether entry edge clears the required round-trip cost."""
+    edge_basis = edge_bps * 2.0 if basis == "round_trip" else edge_bps
+    return edge_basis >= min_ratio * rt_cost_bps
+
+
+def reversal_edge_gate(
+    *,
+    edge_bps: float,
+    exit_cost_bps: float,
+    entry_cost_bps: float,
+    multiplier: float,
+) -> tuple[float, float, bool]:
+    """B5: combined exit+entry edge gate for a flip.
+
+    Returns ``(combined_cost_bps, required_bps, passes)`` where the flip
+    passes iff ``edge_bps > (exit + entry) × multiplier``.
+    """
+    combined = exit_cost_bps + entry_cost_bps
+    required = combined * multiplier
+    return combined, required, edge_bps > required

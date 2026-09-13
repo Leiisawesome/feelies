@@ -57,11 +57,14 @@ separate, argued change.  Recorded in ``configs/bt_multialpha.yaml``.
 
 from __future__ import annotations
 
-from typing import Any
-
-from feelies.core.events import AlertSeverity
 from feelies.core.order_admission import (
     BLOCK_BELOW_MIN_ORDER_SHARES as BLOCK_BELOW_MIN_ORDER_SHARES,
+)
+from feelies.core.order_admission import (
+    BLOCK_EDGE_BELOW_COST as BLOCK_EDGE_BELOW_COST,
+)
+from feelies.core.order_admission import (
+    BLOCK_EDGE_UNPRICEABLE as BLOCK_EDGE_UNPRICEABLE,
 )
 from feelies.core.order_admission import BLOCK_HALT_BLACKOUT as BLOCK_HALT_BLACKOUT
 from feelies.core.order_admission import (
@@ -78,30 +81,10 @@ from feelies.core.order_admission import (
     exposure_delta_from_intent as exposure_delta_from_intent,
 )
 from feelies.core.order_admission import side_for_intent as side_for_intent
-from feelies.execution.intent import OrderIntent
 
 # Inv-12 B4 on a PORTFOLIO leg. Applied by the kernel rather than
 # admission_block_reason: pricing round-trip cost needs the live quote and the
 # cost model, neither of which belongs in this pure module.
-BLOCK_EDGE_BELOW_COST: str = "portfolio_leg_edge_below_min_edge_cost_ratio"
-BLOCK_EDGE_UNPRICEABLE: str = "portfolio_leg_edge_unpriceable_no_quote"
-
-
-def _emit_ssr_suppression_alert(
-    self: Any,
-    intent: OrderIntent,
-    correlation_id: str,
-) -> None:
-    """Publish the forensic marker for a refused SSR short entry."""
-    self._publish_alert(
-        timestamp_ns=self._clock.now_ns(),
-        correlation_id=correlation_id,
-        severity=AlertSeverity.WARNING,
-        alert_name="ssr_short_suppressed",
-        message=f"SSR active for {intent.symbol!r}: refused short entry ({intent.intent.name}); retries next boundary (Reg-SHO 201).",
-        context={"symbol": intent.symbol, "intent": intent.intent.name},
-    )
-
 
 __all__ = [
     "BLOCK_BELOW_MIN_ORDER_SHARES",

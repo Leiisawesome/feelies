@@ -30,7 +30,6 @@ _LAYER_PAIR = re.compile(
 # require this set to change.
 _TIER_RESIDUALS = frozenset(
     {
-        ("feelies.kernel", "feelies.execution"),
         ("feelies.kernel", "feelies.storage"),
     }
 )
@@ -43,8 +42,6 @@ _KERNEL_IMPORT_RESIDUALS = frozenset(
         ("feelies.ingestion.massive_ws", "feelies.kernel.exception_taxonomy"),
         ("feelies.sensors.horizon_scheduler", "feelies.kernel.exception_taxonomy"),
         ("feelies.alpha.registry", "feelies.kernel.exception_taxonomy"),
-        ("feelies.execution.order_policy", "feelies.kernel.macro"),
-        ("feelies.execution.order_policy", "feelies.kernel.micro"),
         (
             "feelies.forensics.gate_close_attribution",
             "feelies.kernel.forced_exit_reasons",

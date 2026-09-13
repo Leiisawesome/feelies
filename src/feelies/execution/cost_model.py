@@ -14,6 +14,9 @@ from feelies.core.cost_model import FillType as FillType
 from feelies.core.cost_model import (
     estimate_aggressive_taker_cost_bps as estimate_aggressive_taker_cost_bps,
 )
+from feelies.core.cost_model import (
+    estimate_round_trip_cost_bps as estimate_round_trip_cost_bps,
+)
 from feelies.core.events import Side
 
 
@@ -234,94 +237,3 @@ class ZeroCostModel:
             cost_bps=Decimal("0"),
             notional=notional,
         )
-
-
-def estimate_round_trip_cost_bps(
-    model: CostModel,
-    *,
-    symbol: str,
-    entry_side: Side,
-    quantity: int,
-    mid_price: Decimal,
-    half_spread: Decimal,
-    is_taker: bool,
-    is_short_entry: bool,
-    is_taker_exit: bool | None = None,
-    bid_size: int | None = None,
-    ask_size: int | None = None,
-    market_impact_factor: Decimal | None = None,
-    max_impact_half_spreads: Decimal | None = None,
-    within_l1_impact_factor: Decimal = Decimal("0"),
-    permanent_impact_coefficient: Decimal = Decimal("0"),
-    is_through_fill_entry: bool = False,
-    is_through_fill_exit: bool = False,
-) -> float:
-    """Estimate entry-plus-exit cost in basis points.
-
-    Entry and exit may use different liquidity and through-fill assumptions.
-    Short-entry HTB and sell fees apply only to the relevant leg. Independent
-    exit settings avoid understating market exits after passive entries.
-    """
-    if is_taker_exit is None:
-        is_taker_exit = is_taker
-    entry_short = bool(is_short_entry and entry_side == Side.SELL)
-    exit_side = Side.SELL if entry_side == Side.BUY else Side.BUY
-
-    # Use depth-aware taker estimates only when depth and impact inputs are complete.
-    use_depth_aware = (
-        bid_size is not None
-        and ask_size is not None
-        and market_impact_factor is not None
-        and max_impact_half_spreads is not None
-    )
-
-    def _leg_bps(
-        side: Side,
-        *,
-        taker: bool,
-        short: bool,
-        through_fill: bool,
-    ) -> float:
-        if taker and use_depth_aware:
-            assert market_impact_factor is not None
-            assert max_impact_half_spreads is not None
-            depth = ask_size if side == Side.BUY else bid_size
-            return estimate_aggressive_taker_cost_bps(
-                model,
-                symbol=symbol,
-                side=side,
-                quantity=quantity,
-                mid_price=mid_price,
-                half_spread=half_spread,
-                available_depth=int(depth or 0),
-                market_impact_factor=market_impact_factor,
-                max_impact_half_spreads=max_impact_half_spreads,
-                within_l1_impact_factor=within_l1_impact_factor,
-                permanent_impact_coefficient=permanent_impact_coefficient,
-                is_short=short,
-            )
-        return float(
-            model.compute(
-                symbol,
-                side,
-                quantity,
-                mid_price,
-                half_spread,
-                is_taker=taker,
-                is_short=short,
-                fill_type="THROUGH" if through_fill else None,
-                is_through_fill=through_fill,
-            ).cost_bps
-        )
-
-    return _leg_bps(
-        entry_side,
-        taker=is_taker,
-        short=entry_short,
-        through_fill=is_through_fill_entry,
-    ) + _leg_bps(
-        exit_side,
-        taker=is_taker_exit,
-        short=False,
-        through_fill=is_through_fill_exit,
-    )
