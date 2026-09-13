@@ -2465,6 +2465,38 @@ PROBLEM:         After T-08c, kernel still imports execution for
                  order_policy.py leaves the two
                  engine-to-kernel pairs and the five-tier pair
                  stays.
+                 The four kernel-imported policy names and the
+                 seven private callees already listed call five
+                 pure functions that still live in execution.
+                 _round_trip_cost_bps calls round_trip_cost_bps
+                 (execution.position_manager :312), which calls
+                 estimate_round_trip_cost_bps
+                 (execution.cost_model :239).
+                 _edge_clears_round_trip_cost calls
+                 entry_edge_clears_cost
+                 (execution.position_manager :349).
+                 _reversal_passes_combined_edge_gate calls
+                 reversal_edge_gate
+                 (execution.position_manager :361).
+                 _try_build_order_from_intent and
+                 _execute_reverse call htb_fee_applies
+                 (execution.regulatory.borrow_availability :36).
+                 None of the five is in core. Importing them
+                 from execution is kernel → execution; the
+                 2-pair pin stays. They are T-04a pure
+                 functions (no orchestrator). Honest owner is
+                 core with an execution alias, T-08c, not
+                 kernel: round_trip_cost_bps and
+                 entry_edge_clears_cost still serve
+                 TargetPositionManager.plan, and a kernel
+                 landing would be execution → kernel
+                 (T-06a). Closure: wrapper → estimator →
+                 estimate_aggressive_taker_cost_bps /
+                 CostModel.compute (already core) →
+                 _within_l1_premium (already core). Four
+                 levels; fixpoint at names T-08c already
+                 moved. is_short_sale_intent is not on the
+                 chain. Do not move it.
 WHY THIS OWNER:  T5 kernel for the helper return. Empty the
                  kernel → execution import in one step. A
                  TYPE_CHECKING-only delete is not a cut.
@@ -2534,9 +2566,38 @@ REFACTOR PATH:   one commit. Mechanism: return the helper
                  commit as the code. A five-tier drop that
                  leaves a stale engine-to-kernel entry fails
                  the second pin on "missing". Relocated bodies
-                 do not raise KernelFault. Returned helpers keep
+                 do not raise KernelFault.                  Returned helpers keep
                  importing MacroState and MicroState from
                  kernel (legal; they live in kernel).
+                 Move estimate_round_trip_cost_bps into
+                 feelies.core.cost_model
+                 (core/cost_model.py) with alias from
+                 execution.cost_model. Direction:
+                 execution → core. It calls
+                 estimate_aggressive_taker_cost_bps and
+                 CostModel.compute, already in that module.
+                 Move round_trip_cost_bps,
+                 entry_edge_clears_cost, and
+                 reversal_edge_gate into
+                 feelies.core.position_manager
+                 (core/position_manager.py) with alias from
+                 execution.position_manager. Direction:
+                 execution → core. The wrapper imports
+                 estimate_round_trip_cost_bps from
+                 core.cost_model. TargetPositionManager.plan
+                 keeps calling the aliases in the same file.
+                 Move htb_fee_applies into
+                 feelies.core.borrow_availability
+                 (core/borrow_availability.py) with alias
+                 from
+                 execution.regulatory.borrow_availability.
+                 Direction: execution → core. Do not move
+                 is_short_sale_intent. Returned
+                 _round_trip_cost_bps / _edge_clears_* /
+                 _reversal_* / _try_build / _execute_reverse
+                 import those five from core, not execution.
+                 No new module. No alias whose target is
+                 kernel.
 FILES:           src/feelies/kernel/orchestrator.py
                  src/feelies/execution/order_policy.py
                  src/feelies/execution/order_lifecycle.py
@@ -2557,6 +2618,27 @@ FILES:           src/feelies/kernel/orchestrator.py
                  tests/docs/test_prompt_coverage_map.py
                  docs/prompts/README.md
                  docs/prompts/audit_execution_fills.md
+                 src/feelies/core/cost_model.py
+                 src/feelies/execution/cost_model.py
+                 src/feelies/core/position_manager.py
+                 src/feelies/execution/position_manager.py
+                 src/feelies/core/borrow_availability.py
+                 src/feelies/execution/regulatory/borrow_availability.py
+                 Twenty-six files. Six additions: the five-name
+                 closure (round_trip_cost_bps,
+                 estimate_round_trip_cost_bps,
+                 entry_edge_clears_cost, reversal_edge_gate,
+                 htb_fee_applies) into existing core modules
+                 with execution aliases. Do not include
+                 execution/regulatory/__init__.py (alias
+                 covers). Do not include
+                 tests/execution/test_position_manager.py,
+                 test_cost_model.py,
+                 test_round_trip_cost_estimate.py,
+                 test_depth_aware_estimate.py,
+                 test_borrow_availability.py, or
+                 test_orchestrator_cost_gate.py (alias
+                 covers). Do not add a module.
                  Twenty files. Eight additions:
                  core/order_admission.py — BLOCK_EDGE_BELOW_COST
                  and BLOCK_EDGE_UNPRICEABLE move here with an
