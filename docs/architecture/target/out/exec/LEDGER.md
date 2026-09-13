@@ -18606,4 +18606,337 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_post-T-08c.json, this ledger
                  entry.
 
+---
 
+## T-08d  2026-09-13T18:56:00+08:00
+  STEP:          T-08d
+  BASE:          8e890b187b04ae42805a4d469aa9184b68adef7b
+  RESULT SHA:    379a95ae6840c9a43516dc80bbcaee54eccdc048 (exec/T-08d; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel -> execution. Five import tiers stays
+                 BROKEN. 2 -> 1. G40 stays CLOSED. T-07c pin
+                 11 -> 9.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the 1-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (1 pair), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; execution 865
+                 mypy src/feelies: Success, 246 source files
+                 (247 -1; before the gate).
+                 CLOSURE OK: no core module ImportFrom of
+                 feelies.execution.
+  TESTS:         capture pre-T-08d GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-08d GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-08c GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 integration 39 passed / 7 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-08d vs
+                 post-T-08d and vs baseline_post-T-08c.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Order, ack, admission and edge-gate replay
+                 hashes unmoved:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH unmoved.
+                 BOTH PINS MOVED AS DECLARED. Five-tier 2 to
+                 1. Engine-to-kernel 11 to 9.
+  FILES:         26 declared, 25 touched, 25 committed
+                 (clean vs 379a95ae). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 execution/order_policy.py (deleted),
+                 execution/order_lifecycle.py
+                 (cancel_order stays),
+                 execution/order_admission.py (alias),
+                 core/order_admission.py (BLOCK_EDGE),
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_orchestrator_order_routing.py,
+                 tests/kernel/test_orchestrator_edge_calibration.py,
+                 tests/kernel/test_orchestrator_idle_tick.py,
+                 tests/kernel/test_orchestrator_shutdown_drain.py,
+                 tests/kernel/test_orchestrator_async_fill_latency.py,
+                 tests/kernel/test_orchestrator_bus_sized_intent.py,
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (_transition_order only; HAZARD_EXIT kept),
+                 tests/conformance/test_a3_zero_core_edits.py,
+                 tests/conformance/test_pathological_refusal.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/integration/test_paper_rth_safety.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 core/cost_model.py,
+                 execution/cost_model.py (alias),
+                 core/position_manager.py,
+                 execution/position_manager.py (alias),
+                 core/borrow_availability.py,
+                 execution/regulatory/borrow_availability.py
+                 (alias; is_short_sale_intent stays).
+                 Named-not-edited:
+                 docs/prompts/audit_execution_fills.md
+                 (does not name order_policy.py).
+                 Forbidden, not touched:
+                 bootstrap.py, harness/, cli/,
+                 execution/backend.py, intent.py,
+                 forced_exit_clamp.py, test_fail_quiet.py,
+                 ci.yml, test_internal_links.py,
+                 tests/execution/test_position_manager.py,
+                 test_cost_model.py,
+                 test_round_trip_cost_estimate.py,
+                 test_depth_aware_estimate.py,
+                 test_borrow_availability.py,
+                 test_orchestrator_cost_gate.py
+                 (alias covers).
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules -1, public symbols 0,
+                 branch points 0.
+                 Helpers relocate into orchestrator (0).
+                 order_policy.py deleted (-1). measure.py
+                 reports the deletion, not an inventory of
+                 orchestrator.py.
+                 actual modules 247 -> 246 (-1 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47217 -> 47015 (-202, undeclared)
+                 n_edges 691 -> 672
+                 n_modules 201 -> 200
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Order, ack, admission and
+                 edge-gate replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 26 declared / 25 touched CLEAN
+                 (audit_execution_fills.md named-not-edited);
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules -1
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 379a95ae6840c9a43516dc80bbcaee54eccdc048.
+                 Not merged.
+  NOTES:         One commit on exec/T-08d,
+                 379a95ae6840c9a43516dc80bbcaee54eccdc048,
+                 "T-08d: return remaining execution helpers to kernel; pins 2 to 1 and 11 to 9".
+                 Parent 8e890b18 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Twenty-five of twenty-six FILES
+                 touched; docs/prompts/audit_execution_fills.md
+                 named-not-edited (it never cited
+                 order_policy.py). Zero extras. The
+                 commit is the cut, the two pins, and
+                 the retargets.
+                 Closure walk before the first edit,
+                 L0 through L5. L0 is the eleven
+                 kernel execution imports. L1 is
+                 _escalate_unfilled_working_exits and
+                 the policy private callees
+                 (_PostExitPositionView,
+                 _reversal_passes_combined_edge_gate,
+                 _signal_passes_edge_cost_gate,
+                 _resolve_order_route,
+                 _portfolio_leg_edge_block,
+                 htb_fee_applies); kernel
+                 _escalate_risk was already live so
+                 the policy copy stayed off the
+                 return. L2 is
+                 _submit_working_exit_fallback,
+                 _round_trip_cost_bps,
+                 _edge_clears_round_trip_cost,
+                 reversal_edge_gate, and the two
+                 BLOCK_EDGE tokens. L3 is
+                 round_trip_cost_bps and
+                 entry_edge_clears_cost. L4 is
+                 estimate_round_trip_cost_bps. L5
+                 is estimate_aggressive_taker_cost_bps
+                 and CostModel.compute, already in
+                 core, which call _within_l1_premium,
+                 already in core. That is the
+                 fixpoint. is_short_sale_intent and
+                 cancel_order are not on the chain.
+                 CLOSURE OK after the move: no core
+                 module ImportFrom of
+                 feelies.execution.
+                 Both pins dropped in that same
+                 commit as the code. Five-tier 2 to
+                 1: dropped
+                 ("feelies.kernel",
+                  "feelies.execution"); remaining
+                 ("feelies.kernel",
+                  "feelies.storage"). Engine-to-kernel
+                 11 to 9: dropped
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.macro") and
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.micro"). S2 KEPT at
+                 zero twelve-engine pairs. No new
+                 pair.
+                 All eleven names left the kernel
+                 execution import. Orchestrator has
+                 zero feelies.execution ImportFrom.
+                 The drain chain returned as a unit:
+                 _drain_async_fills calls
+                 _escalate_unfilled_working_exits
+                 calls _submit_working_exit_fallback.
+                 Returning drain alone would have
+                 NameError'd.
+                 Duplicate flatten and escalate were
+                 DELETED, not returned. One
+                 _emergency_flatten_all and one
+                 _escalate_risk remain, both the
+                 kernel copies that were already the
+                 live path. Two copies in
+                 orchestrator.py would have been a
+                 stop.
+                 The five pure functions landed in
+                 core with execution aliases,
+                 same-object True:
+                 estimate_round_trip_cost_bps in
+                 core.cost_model;
+                 round_trip_cost_bps,
+                 entry_edge_clears_cost,
+                 reversal_edge_gate in
+                 core.position_manager;
+                 htb_fee_applies in
+                 core.borrow_availability.
+                 TargetPositionManager.plan still
+                 calls the aliases in
+                 execution.position_manager.
+                 BLOCK_EDGE_BELOW_COST and
+                 BLOCK_EDGE_UNPRICEABLE landed in
+                 core.order_admission with an
+                 execution.order_admission alias.
+                 order_policy.py deleted. Its three
+                 consumers: _FILE_OWNERS row
+                 pruned; README coverage row
+                 `execution/order_policy.py` |
+                 execution_fills dropped;
+                 audit_execution_fills.md needed no
+                 edit. order_lifecycle.py is alive;
+                 cancel_order stays. No alias on
+                 order_policy.py (that would have
+                 targeted kernel). No alias on
+                 order_lifecycle targeting kernel.
+                 test_orchestrator_hazard_exit_routing.py
+                 retargeted _transition_order only.
+                 The HAZARD_EXIT identity import
+                 stayed: `_orchestrator_mod.HAZARD_EXIT_REASONS
+                 is HAZARD_EXIT_REASONS`.
+                 Replay hashes unmoved against
+                 baseline_post-T-08c.json, including
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH and the
+                 fingerprint unmoved.
+                 mypy src/feelies Success, 246
+                 source files, before the gate.
+                 tests/docs 101 passed, before the
+                 gate. APP oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli ->
+                 feelies.cli.main).
+                 Declared NET DELTA src modules -1,
+                 public symbols 0, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 247 -> 246
+                 MATCH, public_symbols 590 -> 590
+                 MATCH, sloc 47217 -> 47015 (-202,
+                 undeclared), n_edges 691 -> 672,
+                 n_modules 201 -> 200, cycles 1 -> 1
+                 MATCH, alphaleak 0 -> 0.
+  FINDINGS:      This rung stopped twice before
+                 landing, each time on a level of
+                 the call chain found after
+                 starting. First stop was the drain
+                 chain: returning _drain_async_fills
+                 without _escalate_unfilled_working_exits
+                 and _submit_working_exit_fallback
+                 NameErrors. Second stop was the five
+                 pure functions (round_trip_cost_bps
+                 -> estimate_round_trip_cost_bps,
+                 entry_edge_clears_cost,
+                 reversal_edge_gate,
+                 htb_fee_applies): returning the
+                 wrappers without them is kernel ->
+                 execution and the 2-pair pin stays.
+                 The third attempt walked the
+                 closure to fixpoint first, named
+                 every extra file in FILES, and
+                 landed clean. The walk belongs in
+                 the before-state of every remaining
+                 step that returns or moves a body,
+                 not in the block that describes it.
+                 A block written from a partial
+                 walk names a FILES set that cannot
+                 hold, and the first edit is then
+                 already a twenty-seventh file or a
+                 leftover execution import.
+                 Also recorded, not a stop:
+                 perfmeasure.py DIRECT_PROBES still
+                 names
+                 feelies.execution.order_lifecycle:_submit_tracked_order.
+                 The helper returned to kernel; a strip
+                 would add a fourth dead probe to the
+                 three already unowned. perfmeasure.py
+                 is not in FILES. Same class as T-05a.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-09a storage; pin stays 1 (boundary).
+                 Go confirmed on
+                 379a95ae6840c9a43516dc80bbcaee54eccdc048.
+                 Do not begin T-09a.
+                 Left uncommitted:
+                 baseline_pre-T-08d.json,
+                 baseline_post-T-08d.json, this ledger
+                 entry.
