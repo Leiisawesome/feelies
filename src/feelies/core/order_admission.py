@@ -1,8 +1,7 @@
 """Session, regulatory, and minimum-size admission gates — one definition each.
 
 The admission types live in core so kernel can name them without
-importing the execution package. ``_emit_ssr_suppression_alert`` stays
-in execution.
+importing the execution package.
 """
 
 from __future__ import annotations
@@ -21,6 +20,8 @@ BLOCK_SESSION_FLATTEN_WINDOW: str = "session_flatten_window"
 BLOCK_SSR: str = "ssr_suppressed"
 BLOCK_LOCATE_UNAVAILABLE: str = "locate_unavailable"
 BLOCK_BELOW_MIN_ORDER_SHARES: str = "quantity_below_platform_min_order_shares"
+BLOCK_EDGE_BELOW_COST: str = "portfolio_leg_edge_below_min_edge_cost_ratio"
+BLOCK_EDGE_UNPRICEABLE: str = "portfolio_leg_edge_unpriceable_no_quote"
 
 
 @dataclass(frozen=True, kw_only=True)

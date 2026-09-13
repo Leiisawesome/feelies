@@ -45,3 +45,8 @@ def build_borrow_table(raw: Mapping[str, str]) -> dict[str, BorrowTier]:
             raise ValueError("borrow_availability keys must be non-empty symbols")
         out[sym_u] = parse_borrow_tier(str(tier_label))
     return out
+
+
+def htb_fee_applies(tier: BorrowTier, short_sale: bool) -> bool:
+    """True when the fill should carry ``OrderRequest.is_short`` for HTB fees."""
+    return short_sale and tier == BorrowTier.HARD

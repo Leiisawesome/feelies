@@ -46,18 +46,7 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
-from feelies.execution.order_lifecycle import (
-    _apply_ack_to_order,
-    _drain_async_fills,
-    _escalate_unfilled_working_exits,
-    _transition_order,
-    cancel_order,
-)
-from feelies.execution.order_policy import (
-    _plan_for_signal,
-    _round_trip_cost_bps,
-    _try_build_order_from_intent,
-)
+from feelies.execution.order_lifecycle import cancel_order
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
@@ -65,12 +54,19 @@ from feelies.kernel.micro import MicroState
 from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import (
     Orchestrator,
+    _apply_ack_to_order,
     _calibrate_regime_engine,
     _compute_target_quantity,
     _distribute_fill_to_strategies,
+    _drain_async_fills,
     _emergency_flatten_all,
+    _escalate_unfilled_working_exits,
+    _plan_for_signal,
     _reconcile_fills,
     _record_size_shadow,
+    _round_trip_cost_bps,
+    _transition_order,
+    _try_build_order_from_intent,
 )
 from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore

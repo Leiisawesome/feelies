@@ -10,8 +10,7 @@ import pytest
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import Alert, NBBOQuote, OrderRequest, OrderType, Side
-from feelies.execution.order_lifecycle import _submit_tracked_order
-from feelies.execution.order_policy import _resolve_order_route
+from feelies.kernel.orchestrator import _resolve_order_route, _submit_tracked_order
 from feelies.execution.position_manager import ExecStyle
 
 from tests.kernel.test_orchestrator import _build_orchestrator, _make_quote

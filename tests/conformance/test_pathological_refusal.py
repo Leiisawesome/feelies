@@ -247,7 +247,7 @@ def _drive_duplicate_id() -> None:
         Side,
         SizedPositionIntent,
     )
-    from feelies.execution.order_lifecycle import (
+    from feelies.kernel.orchestrator import (
         _filter_portfolio_orders_for_pending_conflicts,
         _transition_order,
     )

@@ -23,7 +23,7 @@ from feelies.core.events import (
     Signal,
 )
 from feelies.kernel.macro import MacroState
-from feelies.execution.order_lifecycle import _transition_order
+from feelies.kernel.orchestrator import _transition_order
 from feelies.execution.order_state import OrderState
 
 from tests.kernel.test_orchestrator import (
