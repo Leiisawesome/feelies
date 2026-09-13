@@ -155,6 +155,19 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  the edge the step exists to cut. After any
                  Protocol move, assert that no core module
                  imports the engine package.
+                 WALK THE CLOSURE TO FIXPOINT IN THE
+                 BEFORE-STATE, NOT IN THE BLOCK. T-08d stopped
+                 twice, each time on a level of the call chain
+                 found after starting -- the drain chain, then
+                 five pure functions -- and landed on the third
+                 attempt after walking L0 through L5 first. Every
+                 step that returns or moves a body lists each
+                 name the body calls that is not already in
+                 kernel or core, then repeats on those names
+                 until nothing new appears. A block written from
+                 a partial walk names a FILES set that cannot
+                 hold, and the step will stop at the gate or
+                 later.
 NON-CUTS:        A re-export without retarget is not a cut.
                  A TYPE_CHECKING-only move is not a cut.
                  A sys.modules lookup (or optional getattr
