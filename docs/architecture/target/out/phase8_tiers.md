@@ -2718,3 +2718,457 @@ ROLLBACK:        revert the commit. Not independently revertible
                  until T-09a lands.
 ```
 
+```
+STEP:            T-09a
+CLOSES:          nothing. Pin stays 1. Does not drop kernel →
+                 storage. Five import tiers stays BROKEN. G40
+                 stays CLOSED. T-07c pin stays 9. A placement
+                 relocate, same shape as T-08c: an unchanged
+                 count is the declared outcome, not a failed
+                 cut.
+PROBLEM:         Kernel still imports storage. Two files.
+                 orchestrator.py runtime: EventLog (l.187),
+                 FeatureSnapshotMeta and FeatureSnapshotStore
+                 (l.188), TradeJournal (l.189). fill_bindings.py
+                 runtime: TradeRecord as TradeRecord (l.5).
+                 No TYPE_CHECKING storage import.
+                 TradeRecord is a frozen dataclass kernel
+                 constructs in _reconcile_fills (l.735-762).
+                 A Protocol cannot replace it. fill_bindings.py
+                 is a kernel re-export of that dataclass; the
+                 sole importer is orchestrator l.49. Retargeting
+                 fill_bindings to core empties that file's
+                 storage import and leaves the package pair:
+                 orchestrator still names EventLog,
+                 FeatureSnapshotMeta, FeatureSnapshotStore,
+                 TradeJournal from storage. Pin stays 1.
+                 FeatureSnapshotMeta does not ride here. It is
+                 named by FeatureSnapshotStore.save/load/
+                 list_snapshots, not by TradeRecord. It travels
+                 with its Store in T-09b (one module per
+                 concern; Protocol move is transitive). Do not
+                 create core/feature_snapshot.py in this step.
+                 Do not move TradeJournal. Do not invert
+                 EventLog or FeatureSnapshotStore.
+WHY THIS OWNER:  T5 core. TradeRecord is a constructed
+                 dataclass; honest owner is core, same shape
+                 as T-04a's collision record. fill_bindings is
+                 kernel; kernel → core is legal. An alias on
+                 fill_bindings targeting storage would leave
+                 that file's storage import and is not a
+                 retarget. Not T-09b: relocating TradeRecord
+                 does not empty kernel → storage.
+FILES:           src/feelies/core/trade_journal.py
+                 src/feelies/storage/trade_journal.py
+                 src/feelies/kernel/fill_bindings.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 Five files. Do not include orchestrator.py
+                 (keeps `from feelies.kernel.fill_bindings
+                 import TradeRecord`). Do not include
+                 test_import_contracts.py (pin does not
+                 move). Do not include memory_trade_journal.py,
+                 storage/__init__.py, harness/, forensics/,
+                 scripts/, tests that import TradeRecord from
+                 storage (alias covers). Do not include
+                 bootstrap.py, ci.yml, test_fail_quiet.py.
+                 No keep-row file is touched. No alias whose
+                 target is kernel or another engine. Do not
+                 delete fill_bindings.py. Do not add
+                 core/feature_snapshot.py. Do not add
+                 core/event_log.py. Grep TradeRecord across
+                 tests for module-global identity assertions
+                 before treating an import as droppable;
+                 none today.
+REFACTOR PATH:   one commit. Mechanism: relocate the
+                 dataclass; retarget the kernel re-export.
+                 Pin stays 1. THE PIN DOES NOT MOVE.
+                 Move TradeRecord (frozen dataclass, including
+                 net_pnl) into feelies.core.trade_journal
+                 (core/trade_journal.py). Closure: Side and
+                 TrendMechanism already core; Decimal; dict.
+                 net_pnl uses only own fields. Fixpoint. Import
+                 nothing from feelies.storage.
+                 storage/trade_journal.py: delete the
+                 TradeRecord body; `from feelies.core.trade_journal
+                 import TradeRecord as TradeRecord`. Leave
+                 the TradeJournal Protocol in this file (T-09b).
+                 Direction: storage → core. Storage is not an
+                 S2 engine; the alias cannot expand S2.
+                 fill_bindings.py: retarget to
+                 `from feelies.core.trade_journal import
+                 TradeRecord as TradeRecord`. Kernel → core.
+                 Do not alias fill_bindings from storage.
+                 New core module: _FILE_OWNERS row
+                 core/trade_journal.py →
+                 audit_core_clock_config and the README
+                 core_clock_config citation, same commit
+                 (S-21). No kernel_ports.py. No Protocol on
+                 TradeRecord. No object/Any, no getattr, no
+                 sys.modules, no TYPE_CHECKING-only move.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved
+                 1-pair pin; test_engine_kernel_imports_equal_pin
+                 equals the unmoved 9-pair pin;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 lint-imports: Five import tiers still BROKEN
+                 (1 pair), Twelve engine module sets KEPT.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. Only which module defines
+                 TradeRecord changes. A moved hash means the
+                 dataclass was not the same type (fields,
+                 net_pnl, or a silent default).
+DELETES:         the TradeRecord body from
+                 storage/trade_journal.py (aliased). The
+                 fill_bindings storage import (retargeted to
+                 core). Does not delete the kernel → storage
+                 pair. Pin stays 1.
+NET DELTA:       src modules +1, public symbols 0, branch
+                 points 0. TradeRecord relocates. The storage
+                 alias and the fill_bindings retarget are
+                 ImportFrom; measure.py does not count them.
+ROLLBACK:        revert the commit. The new module reverts
+                 with it. Independently revertible from T-09b
+                 until T-09b lands; core/trade_journal.py and
+                 fill_bindings.py are shared with T-09b. Not
+                 independently revertible from T-08d once
+                 T-09a lands (campaign sequence); this step
+                 does not edit orchestrator.py.
+```
+
+```
+STEP:            T-09b
+CLOSES:          nothing. Drops kernel → storage. Five import
+                 tiers stays BROKEN. 1 → 0. G40 stays CLOSED.
+                 T-07c pin stays 9. Empty pairs is not a close:
+                 test_five_import_tiers still does not assert
+                 KEPT, and continue-on-error does not flip.
+PROBLEM:         After T-09a, kernel still imports storage from
+                 orchestrator only: EventLog (l.187),
+                 FeatureSnapshotMeta and FeatureSnapshotStore
+                 (l.188), TradeJournal (l.189). fill_bindings
+                 already names TradeRecord from core. All
+                 three remaining types are Protocols already
+                 in storage, injected, not default-constructed.
+                 EventLog is a required ctor arg (l.2960);
+                 kernel calls append (l.3794, 3806, 4203)
+                 and replay (l.844). FeatureSnapshotStore is
+                 optional (l.2966); kernel calls save (l.794)
+                 and load (l.5769). TradeJournal is optional
+                 (l.2965); kernel calls record (l.734).
+                 Public property trade_journal (l.3343-3344)
+                 is the only storage type handed out. T-03:
+                 the Protocol covers every consumer of that
+                 property, not kernel's record call alone.
+                 Consumers of orchestrator.trade_journal:
+                 harness/backtest_runner.py:632 (query;
+                 filled_quantity, fill_price, realized_pnl,
+                 strategy_id via edge calibration);
+                 harness/backtest_report.py:215 (query;
+                 realized_pnl, trading_intent,
+                 correlation_id, order_id), :801 (query;
+                 order_id, symbol, strategy_id, side,
+                 filled_quantity, fill_price, realized_pnl,
+                 fees, cost_bps), :912 (query; len);
+                 scripts/run_paper.py:163 (query; then
+                 trade_records_to_dicts: order_id, symbol,
+                 strategy_id, side, requested_quantity,
+                 filled_quantity, fill_price,
+                 fill_timestamp_ns, cost_bps, realized_pnl,
+                 fees);
+                 scripts/compare_multialpha_runs.py:463
+                 (query; side, filled_quantity, fill_price,
+                 strategy_id, trading_intent, realized_pnl,
+                 fees, fill_timestamp_ns);
+                 tools/arch/perfmeasure.py:595 (query; len);
+                 tests/acceptance/test_backtest_app_baseline.py:370
+                 (query; len);
+                 tests/harness/test_backtest_parity_no_cache.py:56-57
+                 (is not None; query; len);
+                 tests/determinism/test_forced_exit_attribution_replay.py:172,
+                 :310, :425 (query; strategy_id,
+                 filled_quantity, realized_pnl, fees,
+                 metadata).
+                 Surface they need: record(trade: TradeRecord)
+                 and query(symbol, strategy_id, start_ns,
+                 end_ns) -> Iterator[TradeRecord]. Do not shrink
+                 query's keyword args.
+                 Keep the full Protocol surface, not kernel's
+                 call sites. Ingestion and the in-memory stores
+                 implement the rest: EventLog.append_batch,
+                 replace_events, last_sequence;
+                 FeatureSnapshotStore.list_snapshots.
+                 Shrinking those is a consumer change, not a
+                 cut.
+                 FeatureSnapshotMeta is a frozen dataclass
+                 kernel constructs in
+                 _checkpoint_regime_snapshot (l.786-793). It
+                 travels with FeatureSnapshotStore into
+                 core/feature_snapshot.py. Fields are str/int.
+                 Closure walk to fixpoint, before-state:
+                 L0 EventLog, FeatureSnapshotMeta,
+                 FeatureSnapshotStore, TradeJournal
+                 (orchestrator). TradeRecord already core.
+                 L1 EventLog names Event (core), Sequence,
+                 Iterator (stdlib). FeatureSnapshotStore names
+                 FeatureSnapshotMeta, bytes. TradeJournal
+                 names TradeRecord (core), Iterator.
+                 FeatureSnapshotMeta names str, int.
+                 L2 nothing new outside kernel or core.
+                 Terminates in core and stdlib. No helper
+                 body to return.
+WHY THIS OWNER:  T5 core. EventLog, FeatureSnapshotStore, and
+                 TradeJournal are injected Protocols kernel
+                 holds; Protocols belong in core, named for
+                 the thing, never for the step. One module
+                 per concern. Existing core/trade_journal.py
+                 (T-09a) is retargeted, not duplicated. No
+                 kernel_ports.py. Concretes
+                 (InMemoryEventLog, InMemoryFeatureSnapshotStore,
+                 InMemoryTradeJournal) stay in storage. No
+                 subclassing on those concretes. Helpers cannot
+                 travel: there are none.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/event_log.py
+                 src/feelies/core/feature_snapshot.py
+                 src/feelies/core/trade_journal.py
+                 src/feelies/storage/event_log.py
+                 src/feelies/storage/feature_snapshot.py
+                 src/feelies/storage/trade_journal.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 Ten files. storage files are alias only.
+                 Do not include fill_bindings.py (already
+                 core). Do not include bootstrap.py,
+                 memory_event_log.py,
+                 memory_feature_snapshot.py,
+                 memory_trade_journal.py, ingestion/,
+                 harness/, cli/, scripts/,
+                 storage/__init__.py (alias covers). Do not
+                 include ci.yml (T-09z). Do not include
+                 test_fail_quiet.py. No keep-row file is
+                 touched. No alias whose target is kernel or
+                 another engine. Do not delete the storage
+                 modules. Do not add kernel_ports.py. Grep
+                 each moved name across tests for
+                 module-global identity assertions before
+                 treating an orchestrator import as
+                 droppable; none today.
+REFACTOR PATH:   one commit. Mechanism: invert the three
+                 Protocols. Drop the last five-tier pair in
+                 that same commit. T-07c pin stays 9.
+                 Move EventLog Protocol into
+                 feelies.core.event_log (core/event_log.py).
+                 Full surface: append, append_batch,
+                 replace_events, replay, last_sequence.
+                 Import Event from feelies.core.events.
+                 Import nothing from feelies.storage.
+                 Alias from storage/event_log.py.
+                 Direction: storage → core.
+                 Move FeatureSnapshotMeta and
+                 FeatureSnapshotStore Protocol into
+                 feelies.core.feature_snapshot
+                 (core/feature_snapshot.py). Full surface:
+                 save, load, list_snapshots. Meta travels
+                 here, not T-09a. Import nothing from
+                 feelies.storage. Alias both names from
+                 storage/feature_snapshot.py. Direction:
+                 storage → core.
+                 Append TradeJournal Protocol onto existing
+                 feelies.core.trade_journal
+                 (core/trade_journal.py). Full surface:
+                 record(trade: TradeRecord) and query(...) ->
+                 Iterator[TradeRecord]. TradeRecord is already
+                 in this module. storage/trade_journal.py:
+                 delete the Protocol body; alias
+                 TradeJournal from core (TradeRecord alias
+                 already there from T-09a). Direction:
+                 storage → core.
+                 orchestrator: import EventLog from
+                 feelies.core.event_log; FeatureSnapshotMeta and
+                 FeatureSnapshotStore from
+                 feelies.core.feature_snapshot; TradeJournal
+                 from feelies.core.trade_journal. Drop
+                 feelies.storage.event_log,
+                 feelies.storage.feature_snapshot,
+                 feelies.storage.trade_journal. Keep ctor
+                 optionality, call sites, and the
+                 trade_journal property. Keep
+                 `from feelies.kernel.fill_bindings import
+                 TradeRecord`.
+                 After the move, assert that no module under
+                 src/feelies/core ImportFrom-imports
+                 feelies.storage. CLOSURE OK is a gate, not a
+                 note. A core → storage import inverts the
+                 edge this step exists to cut.
+                 Drop ("feelies.kernel", "feelies.storage")
+                 from _TIER_RESIDUALS in the same commit
+                 (equality, empty pin). Do not add
+                 statuses["Five import tiers"] == "KEPT"
+                 (T-09z). Do not flip ci.yml.
+                 New core modules: _FILE_OWNERS rows
+                 core/event_log.py and
+                 core/feature_snapshot.py →
+                 audit_core_clock_config and the README
+                 core_clock_config citations, same commit
+                 (S-21). core/trade_journal.py already has a
+                 row from T-09a.
+                 No object/Any, no getattr fallback, no
+                 sys.modules, no TYPE_CHECKING-only move, no
+                 re-export of the Protocol from the engine
+                 package as the cut. Structural; no
+                 subclassing on the in-memory stores.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the empty pin;
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 S2 re-run after this pair-drop; stays KEPT
+                 at zero. CLOSURE OK: no core module imports
+                 feelies.storage. lint-imports may already
+                 print Five import tiers KEPT when pairs are
+                 empty; that is not a close. Do not assert
+                 KEPT here.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. These types sit on
+                 append, replay, journal record/query, and
+                 regime checkpoint/restore. A moved hash means
+                 a Protocol call was not a transparent
+                 substitute (surface, field, or a silent
+                 default).
+DELETES:         the kernel → storage pair; the EventLog,
+                 FeatureSnapshotMeta, FeatureSnapshotStore,
+                 and TradeJournal imports from orchestrator
+                 (retargeted to core). Does not delete the
+                 storage modules (aliases). Does not delete
+                 the T-07c pin. Does not flip ci.yml.
+NET DELTA:       src modules +2, public symbols 0, branch
+                 points 0. EventLog, FeatureSnapshotStore,
+                 FeatureSnapshotMeta, and TradeJournal
+                 relocate. Aliases are ImportFrom; measure.py
+                 does not count them. TradeJournal appends to
+                 the T-09a module (0).
+ROLLBACK:        revert the commit. The two new modules
+                 revert with it. Not independently revertible
+                 from T-09a (already landed;
+                 core/trade_journal.py is shared).
+                 Independently revertible from T-09z until
+                 T-09z lands; test_import_contracts.py is
+                 shared with T-09z.
+```
+
+```
+STEP:            T-09z
+CLOSES:          Five import tiers KEPT; .github/workflows/ci.yml
+                 Import contracts continue-on-error.
+PROBLEM:         After T-09b, _TIER_RESIDUALS is empty and
+                 test_five_import_tiers asserts only
+                 pairs == _TIER_RESIDUALS. It does not assert
+                 statuses["Five import tiers"] == "KEPT".
+                 Empty pairs with BROKEN status would still
+                 pass and would read as a close without being
+                 one. lint-imports may already print KEPT;
+                 that passes by construction and protects
+                 nothing. ci.yml Import contracts still has
+                 continue-on-error: true. The comment says
+                 do not drop it until both contracts are
+                 kept. Twelve engine module sets is already
+                 KEPT. This rung adds the KEPT assertion and
+                 the flip in one commit. A KEPT assertion
+                 without the flip, or a flip without the
+                 assertion, is not a close.
+WHY THIS OWNER:  Campaign close. Detector vs close: pairs ==
+                 frozenset() is T-09b; KEPT plus the CI flip
+                 is this rung. Not a later campaign. The
+                 engine-to-kernel pin, the gap list, and S-34f
+                 g-o are not this campaign.
+FILES:           tests/conformance/test_import_contracts.py
+                 .github/workflows/ci.yml
+                 Two files. Do not edit pyproject.toml. Do not
+                 rewrite the layers contract. Do not add
+                 ignore_imports. Do not edit orchestrator.py,
+                 fill_bindings.py, storage/, core/,
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py. No keep-row file is
+                 touched. The probe edits
+                 src/feelies/kernel/fill_bindings.py only for
+                 the mutation and restores it; that file is
+                 not in the commit.
+REFACTOR PATH:   one commit. Mechanism: close assertion plus
+                 CI flip. Pin already empty from T-09b.
+                 Order: (1) in test_five_import_tiers, assert
+                 statuses["Five import tiers"] == "KEPT"
+                 first, then pairs == frozenset(). KEPT first
+                 so a BROKEN status fails that line, not
+                 only the pair equality. Keep
+                 test_twelve_engine_independence asserting
+                 KEPT. On this tree both lines pass by
+                 construction -- that is not the proof.
+                 (2) probe, T-07c shape. Add a throwaway
+                 `from feelies.storage.event_log import EventLog`
+                 to src/feelies/kernel/fill_bindings.py (kernel
+                 → storage; not a keep-row file; not in
+                 FILES). Run only test_five_import_tiers.
+                 It MUST fail on the KEPT assertion
+                 (status BROKEN). Remove the import. Confirm
+                 fill_bindings.py is byte-identical to HEAD.
+                 Re-run the test green. Report the
+                 fail-then-green output and the restore hash
+                 at the gate. Without the probe the KEPT
+                 line is decorative.
+                 (3) drop continue-on-error: true from the
+                 Import contracts step in
+                 .github/workflows/ci.yml in the same commit
+                 as the KEPT assertion. Rewrite the comment
+                 so it no longer says the step is allowed to
+                 fail. The flip waits on BOTH contracts KEPT
+                 (Five import tiers and Twelve engine module
+                 sets). Do not flip if the probe did not
+                 fail-then-green. Do not flip if S2 is not
+                 KEPT.
+                 (4) commit the test and ci.yml only.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    test_five_import_tiers asserts KEPT and
+                 pairs == frozenset(); probe failed-before
+                 on the throwaway kernel → storage import
+                 then passed-after restore;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs;
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 lint-imports: both contracts KEPT, no
+                 continue-on-error.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. A test-and-yaml change that
+                 moves a hash means the file was not test-only.
+DELETES:         continue-on-error on Import contracts.
+                 Does not delete the engine-to-kernel pin.
+                 Does not delete G10, G28, G32, G36, G39,
+                 G41, G42, G44, G45, G46; S-34f groups g-o;
+                 perfmeasure.py DIRECT_PROBES; G6 empty
+                 depends_on_sensors; S-04c; serialization.py
+                 fail-open; verify_step frozen bugs; 152
+                 research cache days; R6 14/31; the four
+                 EXEMPTION tests. Those remain open and are
+                 not this campaign.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Independently revertible
+                 from nothing that follows (campaign end).
+                 Not independently revertible from T-09b
+                 (already landed; test_import_contracts.py is
+                 shared).
+```
+
