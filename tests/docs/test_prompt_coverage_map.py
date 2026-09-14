@@ -82,6 +82,8 @@ _FILE_OWNERS: dict[str, str] = {
     "core/borrow_availability.py": "audit_core_clock_config",
     "core/order_admission.py": "audit_core_clock_config",
     "core/trade_journal.py": "audit_core_clock_config",
+    "core/event_log.py": "audit_core_clock_config",
+    "core/feature_snapshot.py": "audit_core_clock_config",
     # ── signals/ ────────────────────────────────────────────────────
     "signals/regime_gate.py": "audit_regime",
     "signals/horizon_engine.py": "audit_signal_alpha",

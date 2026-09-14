@@ -28,11 +28,7 @@ _LAYER_PAIR = re.compile(
 # Equality, not a subset:
 # a twelfth pair fails immediately. G40's close does not
 # require this set to change.
-_TIER_RESIDUALS = frozenset(
-    {
-        ("feelies.kernel", "feelies.storage"),
-    }
-)
+_TIER_RESIDUALS = frozenset()
 
 # Residual engine→kernel imports. Equality, not a subset:
 # a twelfth pair fails immediately. Five-tier and S2 both
