@@ -19492,3 +19492,385 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_pre-T-09b.json,
                  baseline_post-T-09b.json, this ledger
                  entry.
+
+---
+
+## T-09z  2026-09-14T19:10:34+08:00
+  STEP:          T-09z
+  BASE:          0569c69e74493688271ca388d80f75ea69088e07
+  RESULT SHA:    0460553130e32aa8f00c7e1e96f993f44cdcf49e (exec/T-09z; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES Five import tiers KEPT and
+                 .github/workflows/ci.yml Import
+                 contracts continue-on-error. G40 stays
+                 CLOSED. T-07c pin stays 9. Empty pairs
+                 is now a close: test_five_import_tiers
+                 asserts KEPT first, then
+                 pairs == _TIER_RESIDUALS (empty).
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the empty pin
+                 and asserts KEPT.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import
+                 tiers KEPT, Twelve engine module sets
+                 KEPT. continue-on-error dropped.
+                 Probe (uncommitted): added
+                 `from feelies.storage.event_log import EventLog`
+                 to kernel/fill_bindings.py;
+                 test_five_import_tiers FAILED on
+                 assert statuses["Five import tiers"] == "KEPT"
+                 (line 101) with status BROKEN
+                 (assert 'BROKEN' == 'KEPT'). Did not
+                 reach the pair equality. Twelve engine
+                 module sets stayed KEPT in that output.
+                 Broken contract: feelies.kernel is not
+                 allowed to import feelies.storage
+                 (fill_bindings -> storage.event_log l.6).
+                 Removed the import. Restore SHA256
+                 1b67aa873a0b65229d0f138da9168caf2f783efc0965c240d46c3b6145b66ef1
+                 BYTE_IDENTICAL (171 bytes, same as
+                 pre-probe). Porcelain after restore:
+                 M test_import_contracts.py and
+                 ?? baseline_pre-T-09z.json;
+                 fill_bindings.py not listed. Re-run
+                 3 passed. Without the probe the KEPT
+                 line would pass by construction and
+                 protect nothing.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; mypy src/feelies: Success, 249
+                 source files (before the gate).
+  TESTS:         capture pre-T-09z GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 -> capture post-T-09z GREEN 4910 passed /
+                 0 failed / 18 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 vs post-T-09b GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed: failed
+                 held 0; passed held 4910.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 5 skipped / 14 deselected / 5 xfailed.
+                 APP oracle not re-run as a named job;
+                 _BASELINE_TRADE_PARITY_HASH unmoved.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-09z vs post-T-09z and vs
+                 baseline_post-T-09b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs 04605531). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_import_contracts.py (KEPT first),
+                 .github/workflows/ci.yml (comment
+                 rewritten; continue-on-error dropped).
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 pyproject.toml, layers contract,
+                 ignore_imports, orchestrator.py,
+                 fill_bindings.py, storage/, core/,
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py.
+                 Probe mutated kernel/fill_bindings.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. test_twelve_engine_independence
+                 KEPT assertion kept.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47043 -> 47043 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (GREEN both sides; no failure outside the
+                 accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 0460553130e32aa8f00c7e1e96f993f44cdcf49e.
+                 Not merged.
+  NOTES:         Go confirmed on exec/T-09z
+                 0460553130e32aa8f00c7e1e96f993f44cdcf49e.
+                 Parent 0569c69e on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 One commit, two files, nothing else:
+                 tests/conformance/test_import_contracts.py
+                 and .github/workflows/ci.yml. Subject
+                 "T-09z: assert Five import tiers KEPT; drop Import contracts continue-on-error".
+                 fill_bindings.py is not in that commit.
+                 The KEPT line sits above the pair
+                 equality. test_five_import_tiers now
+                 does `assert statuses["Five import
+                 tiers"] == "KEPT"` at line 101, then
+                 `pairs == _TIER_RESIDUALS`. A BROKEN
+                 status dies on 101. It never reaches
+                 the empty-pin comparison.
+                 The probe injected
+                 `from feelies.storage.event_log import EventLog`
+                 into kernel/fill_bindings.py -- a
+                 kernel-to-storage import, not a keep-
+                 row file, not in FILES. That run of
+                 test_five_import_tiers failed on line
+                 101 with assert 'BROKEN' == 'KEPT'.
+                 The pair assertion did not fire.
+                 Twelve engine module sets stayed KEPT
+                 in the same output. The import came
+                 out. Restore SHA256
+                 1b67aa873a0b65229d0f138da9168caf2f783efc0965c240d46c3b6145b66ef1
+                 BYTE_IDENTICAL, 171 bytes, same as
+                 the pre-probe file. Porcelain after
+                 restore listed the test file and the
+                 pre-capture, not fill_bindings.py.
+                 Re-run of test_import_contracts.py:
+                 3 passed.
+                 lint-imports after the restore and
+                 after the commit, quoted:
+                 Five import tiers KEPT
+                 Twelve engine module sets KEPT
+                 Contracts: 2 kept, 0 broken.
+                 The ci.yml flip dropped
+                 continue-on-error: true from Import
+                 contracts. The comment no longer
+                 says the step may fail. It now
+                 reads: "Blocking. Five import tiers
+                 (T-09z) and Twelve engine module
+                 sets (G40) are both KEPT. A broken
+                 contract fails this job." The flip
+                 waited on both contracts KEPT and
+                 on the probe's fail-then-green.
+                 pyproject.toml was not edited. The
+                 layers contract was not rewritten.
+                 ignore_imports was not added.
+                 The engine-to-kernel pin is still 9.
+                 mypy src/feelies: Success, 249 source
+                 files. tests/docs: 101 passed. Both
+                 before the gate. n_cycles held at 1
+                 (feelies.cli -> feelies.cli.main).
+                 NET DELTA all zeros: modules 249,
+                 public_symbols 590, sloc 47043,
+                 n_edges 675, n_modules 203, cycles 1,
+                 alphaleak 0.
+                 What the probe proved: the pin
+                 equality would have passed with a
+                 BROKEN status, so an empty
+                 _TIER_RESIDUALS alone was never a
+                 close. The assertion is what makes
+                 it one, and the probe is what makes
+                 the assertion non-decorative.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          campaign close written below.
+                 Go confirmed on
+                 0460553130e32aa8f00c7e1e96f993f44cdcf49e.
+                 Not merged.
+                 Left uncommitted:
+                 baseline_pre-T-09z.json,
+                 baseline_post-T-09z.json, this ledger
+                 entry.
+
+---
+
+## CAMPAIGN CLOSE  Five import tiers
+DATE:        2026-09-14
+CLOSED AT:   T-09z. Commit 04605531 on exec/T-09z;
+             not merged. Campaign base S-35e
+             0cb0c753; T-09z parent 0569c69e on
+             arch/exec.
+LOCKED:      15 rungs in the campaign LADDER
+             (T-01, T-02, T-03, T-04, T-05a, T-05b,
+             T-06a, T-06b, T-07a, T-07b, T-08a,
+             T-08b, T-09a, T-09b, T-09z). T-05a/b
+             through T-09a/b were lettered in the
+             lock; T-04 was still the numbered
+             fourth rung.
+EXECUTED:    20 unique step ids passed (retries
+             not recounted). 14 locked ids ran as
+             themselves (T-01, T-02, T-03, T-05a,
+             T-05b, T-06a, T-06b, T-07a, T-07b,
+             T-08a, T-08b, T-09a, T-09b, T-09z).
+             T-04 never ran as the bare id. 4 were
+             splits of planned rungs (T-04a, T-04b
+             from T-04; T-08c, T-08d from the
+             execution remainder after T-08b). 2
+             were added mid-campaign (T-06z before
+             the T-06a retry; T-07c the engine-to-
+             kernel pin). T-01 had two failed
+             attempts before the pass; T-06a
+             blocked once, then passed after T-06z.
+             Those retries are not recounted.
+CLOSED:      Five import tiers KEPT (T-09z). The
+             five-tier pin walked 13 to 0:
+             T-01 13→12 harness→cli; T-02 12→11
+             harness→bootstrap; T-03 11→8
+             kernel→alpha/sensors/signals; T-04b
+             8→7 kernel→composition; T-05b 7→6
+             kernel→services; T-06a 6→5
+             kernel→ingestion; T-06b 5→4
+             kernel→monitoring; T-07b 4→3
+             kernel→portfolio; T-08b 3→2
+             kernel→risk; T-08d 2→1
+             kernel→execution; T-09b 1→0
+             kernel→storage. T-04a, T-05a, T-06z,
+             T-07a, T-07c, T-08a, T-08c, T-09a
+             left the count unchanged as declared.
+             ci.yml Import contracts is blocking
+             (T-09z); continue-on-error is gone.
+             Engine-to-kernel pin established at
+             14 (T-07c) and now 9 (T-08b 14→11,
+             T-08d 11→9; unmoved through T-09z).
+             Twelve engine module sets stayed KEPT
+             at zero pairs for every rung. G40
+             stayed CLOSED.
+REMAINS OPEN:
+             G10 S-12/S-31 (S11 xfail)
+             G28 S-12 (S11 xfail)
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN
+             G39 S-12 (S15/S17 xfail)
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed, S9
+             xfail is the unresolved-unit list
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step
+             R6 14/31 resets — S-15/S-30; 17 never
+             invoked
+             keep-row squeezes vs ruff format —
+             T-04b FINDING, unowned
+             Engine-to-kernel residual: 9 pairs
+             under test_engine_kernel_imports_
+             equal_pin. That pin is the detector,
+             not a gap this campaign owned.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. The comment says a
+             broken contract fails this job. Do
+             not restore continue-on-error. Do not
+             put back a comment that says the step
+             may fail.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are only
+             test_after_hours_reject_surfaces_as_rejected,
+             test_g12_cost_exceeds_disclosure_alert,
+             test_multi_symbol_subscribe,
+             test_sustained_quotes_with_idle_ticks.
+             A failure outside that set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals the 9-pair
+             pin. Shrinking either pin happens in
+             lockstep with the cut that drops the
+             pair, in the same commit.
+             Do not rewrite the layers contract by
+             deleting engines or adding
+             ignore_imports. The five-tier contract
+             passes because the imports are gone.
+             Catalogued non-cuts: a re-export
+             without retarget is not a cut; a
+             TYPE_CHECKING-only move is not a cut;
+             a sys.modules lookup or optional
+             getattr fallback is not a cut;
+             widening a type to object or Any is
+             not a cut; deleting a TYPE_CHECKING
+             import while the name still binds the
+             engine is not a cut (T-04a, fifth).
+             Wave D: do not invent suffixes for
+             g–o; Inv-8 beyond S-34f is a new
+             campaign.
+FINDINGS:    A future campaign that inverts an
+             import pays for these again if it
+             skips them.
+             Alias direction (T-06a): a relocation
+             alias is an import the other way. On
+             an engine file it can reverse the
+             edge being cut, and S2 expands one
+             such line into every engine the
+             kernel touches. Engine-to-core is
+             the legal direction. An alias whose
+             target is kernel or another engine
+             is not -- retarget the consumer.
+             Per-name census (T-04): size a rung
+             by every kernel import of that
+             package with line and kind, not by
+             the package label. Mixed kinds
+             (injected, default-constructed,
+             annotation-only, function/enum/
+             dataclass) split the rung.
+             Property exposure (T-03): a Protocol
+             on a type the orchestrator exposes
+             through a public property must cover
+             every consumer of that property, not
+             just the kernel's own calls.
+             Identity anchors (T-08b): an unused
+             import can be a test's `is` identity
+             against a module global. Grep the
+             name across tests before calling it
+             droppable.
+             Transitive Protocol closure (T-08c):
+             the move is every type the Protocol
+             signatures name, and every type
+             those name in turn. Moving only the
+             Protocol leaves core importing the
+             engine and inverts the edge.
+             Walk the closure to fixpoint in the
+             before-state (T-08d): list each name
+             the body calls that is not already
+             in kernel or core, then repeat until
+             nothing new appears. A block written
+             from a partial walk names a FILES
+             set that cannot hold.
