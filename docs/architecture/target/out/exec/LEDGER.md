@@ -19196,3 +19196,299 @@ OWNER:       none. No step in this campaign or the last owns it.
                  baseline_pre-T-09a.json,
                  baseline_post-T-09a.json, this ledger
                  entry.
+
+---
+
+## T-09b  2026-09-14T16:20:00+08:00
+  STEP:          T-09b
+  BASE:          def63fcaa501bab8ee86707ee38a76802be21902
+  RESULT SHA:    f9b1a84a9a46afcaddd9f556ac63ec7201eb4597 (exec/T-09b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel -> storage. Five import tiers stays
+                 BROKEN. 1 -> 0. G40 stays CLOSED. T-07c pin
+                 stays 9. Empty pairs is not a close:
+                 test_five_import_tiers still does not assert
+                 KEPT, and continue-on-error does not flip.
+                 Pin fail-first: test_five_import_tiers FAILED
+                 on unexpected [('feelies.kernel',
+                 'feelies.storage')] before the cut (empty
+                 pin vs the three orchestrator storage
+                 imports at l.187-189); 3 passed after the
+                 cut (empty pin).
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the empty pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers KEPT (pairs empty — detector
+                 print, not a close), Twelve engine module
+                 sets KEPT. Do not assert KEPT here. T-09z
+                 owns that assertion and the CI flip.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; storage 70
+                 mypy src/feelies: Success, 249 source files
+                 (247 +2; before the gate).
+                 CLOSURE OK: no core module ImportFrom of
+                 feelies.storage.
+  TESTS:         capture pre-T-09b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-09b GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-09a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: failed held 0;
+                 passed 4909 -> 4910 and skipped 19 -> 18
+                 is one skip becoming a pass between
+                 captures (same class as the live-Massive
+                 EXEMPTION flip, opposite direction). The
+                 not-paper_rth run on this tree was 4909
+                 passed / 0 failed / 5 skipped / 14
+                 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-09b vs
+                 post-T-09b and vs baseline_post-T-09a.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Fill, journal, and regime-adjacent replay
+                 hashes unmoved:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5 COUNT 2;
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0d2 COUNT 6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH unmoved.
+                 THE PIN MOVED 1 to 0 in the same commit
+                 as the four names left the storage
+                 import. Engine-to-kernel stays 9.
+  FILES:         10 declared, 10 touched, 10 committed
+                 (clean vs f9b1a84a). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py (retarget),
+                 core/event_log.py (new),
+                 core/feature_snapshot.py (new),
+                 core/trade_journal.py (TradeJournal
+                 Protocol appended; TradeRecord not
+                 duplicated),
+                 storage/event_log.py (alias),
+                 storage/feature_snapshot.py (alias),
+                 storage/trade_journal.py (alias),
+                 tests/conformance/test_import_contracts.py
+                 (empty pin),
+                 tests/docs/test_prompt_coverage_map.py
+                 (_FILE_OWNERS rows),
+                 docs/prompts/README.md
+                 (core_clock_config citations).
+                 Forbidden, not touched:
+                 fill_bindings.py, bootstrap.py,
+                 memory_event_log.py,
+                 memory_feature_snapshot.py,
+                 memory_trade_journal.py, ingestion/,
+                 harness/, cli/, scripts/,
+                 storage/__init__.py (alias covers),
+                 ci.yml, test_fail_quiet.py.
+                 No keep-row file is touched.
+                 No alias whose target is kernel or another
+                 engine. No kernel_ports.py. No subclassing
+                 on the in-memory stores. No KEPT assertion
+                 added.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols 0,
+                 branch points 0.
+                 EventLog, FeatureSnapshotStore,
+                 FeatureSnapshotMeta, and TradeJournal
+                 relocate. Aliases are ImportFrom;
+                 measure.py does not count them.
+                 TradeJournal appends to the T-09a module
+                 (0).
+                 actual modules 247 -> 249 (+2 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47021 -> 47043 (+22, undeclared)
+                 n_edges 673 -> 675
+                 n_modules 201 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Fill, journal, and
+                 regime-adjacent replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 10 declared / 10 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4910 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set; one skip became a pass);
+                 NET DELTA MATCH on modules +2
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 f9b1a84a9a46afcaddd9f556ac63ec7201eb4597.
+                 Not merged.
+  NOTES:         One commit on exec/T-09b,
+                 f9b1a84a9a46afcaddd9f556ac63ec7201eb4597,
+                 "T-09b: invert EventLog, FeatureSnapshotStore, TradeJournal into core; pin 1 to 0".
+                 Parent def63fcaa5 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 That commit is the whole cut: ten files
+                 declared, ten touched, zero extras.
+                 orchestrator.py retargeted; core/event_log.py
+                 and core/feature_snapshot.py new;
+                 core/trade_journal.py appended;
+                 the three storage modules aliased;
+                 test_import_contracts.py emptied the pin;
+                 test_prompt_coverage_map.py and
+                 docs/prompts/README.md took the two new
+                 owners. ci.yml is not among them.
+                 The closure walk ran in the before-state
+                 and terminated at L2. L0 is the four
+                 names on orchestrator -- EventLog,
+                 FeatureSnapshotMeta, FeatureSnapshotStore,
+                 TradeJournal -- with TradeRecord already
+                 in core. L1 names Event (core), Sequence
+                 and Iterator (stdlib), FeatureSnapshotMeta
+                 (moving with its Store), bytes, TradeRecord
+                 (already core), str and int. L2 is empty:
+                 nothing new outside kernel or core, and
+                 no helper body to return. That is the
+                 fixpoint. No name arrived mid-edit. After
+                 the move, CLOSURE OK: no module under
+                 src/feelies/core ImportFrom-imports
+                 feelies.storage.
+                 The five-tier pin moved 1 to 0 in that
+                 same commit. The dropped pair is
+                 ("feelies.kernel", "feelies.storage").
+                 Engine-to-kernel stays 9. S2 stayed KEPT
+                 at zero twelve-engine pairs. No new pair.
+                 EventLog, FeatureSnapshotMeta,
+                 FeatureSnapshotStore, and TradeJournal
+                 all left the orchestrator import.
+                 orchestrator.py now takes them from
+                 feelies.core.event_log,
+                 feelies.core.feature_snapshot, and
+                 feelies.core.trade_journal.
+                 feelies.storage no longer appears in that
+                 file. fill_bindings still names
+                 TradeRecord from core.
+                 The three Protocol surfaces stayed full,
+                 not kernel's call sites. EventLog keeps
+                 append, append_batch, replace_events,
+                 replay, last_sequence.
+                 FeatureSnapshotStore keeps save, load,
+                 list_snapshots. TradeJournal keeps
+                 record(trade: TradeRecord) and query(*,
+                 symbol, strategy_id, start_ns, end_ns)
+                 -> Iterator[TradeRecord]. query's
+                 keyword signature was not narrowed.
+                 The trade_journal property's consumers
+                 all call query (and is not None); kernel
+                 calls record.
+                 All three aliases run storage to core:
+                 storage/event_log.py aliases EventLog
+                 from feelies.core.event_log;
+                 storage/feature_snapshot.py aliases
+                 FeatureSnapshotMeta and
+                 FeatureSnapshotStore from
+                 feelies.core.feature_snapshot;
+                 storage/trade_journal.py aliases
+                 TradeJournal from
+                 feelies.core.trade_journal (TradeRecord
+                 already aliased that way from T-09a).
+                 Storage is not an S2 engine, so those
+                 lines cannot expand S2.
+                 FeatureSnapshotMeta travelled with its
+                 Store into core/feature_snapshot.py.
+                 TradeJournal appended onto the T-09a
+                 module core/trade_journal.py. TradeRecord
+                 was not duplicated.
+                 ci.yml was not touched.
+                 continue-on-error: true is still there.
+                 test_five_import_tiers still asserts only
+                 pairs == _TIER_RESIDUALS. No KEPT
+                 assertion was added.
+                 The two new modules got owners in the
+                 same commit (S-21): _FILE_OWNERS rows
+                 core/event_log.py and
+                 core/feature_snapshot.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citations.
+                 core/trade_journal.py already had a row
+                 from T-09a.
+                 Four replay hashes unmoved against
+                 baseline_post-T-09a.json:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5 COUNT 2;
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0d2 COUNT 6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 mypy src/feelies Success, 249 source
+                 files, before the gate. tests/docs 101
+                 passed, before the gate. APP oracle 2
+                 passed. n_cycles held at 1
+                 (feelies.cli -> feelies.cli.main).
+                 Declared NET DELTA src modules +2,
+                 public symbols 0, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 247 -> 249 MATCH,
+                 public_symbols 590 -> 590 MATCH,
+                 sloc 47021 -> 47043 (+22, undeclared),
+                 n_edges 673 -> 675, n_modules 201 ->
+                 203, cycles 1 -> 1 MATCH, alphaleak
+                 0 -> 0. The +2 modules are the two new
+                 core files; the aliases are ImportFrom
+                 and do not add a public symbol.
+                 One skip became a pass between captures
+                 (4909/19 skipped -> 4910/18 skipped).
+                 Failed held at 0. No failure in the
+                 accepted set. No failure outside it.
+                 What the empty pin means: kernel
+                 imports no engine package, and
+                 _TIER_RESIDUALS is frozenset(). What it
+                 does not mean: the campaign is closed.
+                 test_five_import_tiers still asserts only
+                 the equality, so an empty pin with a
+                 BROKEN status would pass. lint-imports
+                 printing KEPT on an empty pair set
+                 protects nothing. T-09z adds the KEPT
+                 assertion, probes that it can fail,
+                 and drops continue-on-error. Until
+                 then the campaign is not closed.
+  FINDINGS:      None for this step. Closure terminated
+                 in the before-state; no name arrived
+                 mid-edit; FILES held at ten.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-09z close the contract and flip CI
+                 (platform-wide). Empty pin is not a
+                 close. Go confirmed on
+                 f9b1a84a9a46afcaddd9f556ac63ec7201eb4597.
+                 Do not begin T-09z.
+                 Left uncommitted:
+                 baseline_pre-T-09b.json,
+                 baseline_post-T-09b.json, this ledger
+                 entry.
