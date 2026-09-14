@@ -184,9 +184,9 @@ from feelies.core.regime_protocol import (
     RegimeHazardDetector,
     regime_posterior_entropy_nats,
 )
-from feelies.storage.event_log import EventLog
-from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
-from feelies.storage.trade_journal import TradeJournal
+from feelies.core.event_log import EventLog
+from feelies.core.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
+from feelies.core.trade_journal import TradeJournal
 
 if TYPE_CHECKING:
     from feelies.core.cost_model import CostModel

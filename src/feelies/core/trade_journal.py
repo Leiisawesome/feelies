@@ -1,13 +1,14 @@
 """TradeRecord — frozen dataclass for a completed trade lifecycle.
 
 Lives in core so kernel can construct it without importing storage.
-The TradeJournal Protocol stays in storage.
+The TradeJournal Protocol lives in this module.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Iterator, Protocol
 
 from feelies.core.events import Side, TrendMechanism
 
@@ -60,3 +61,30 @@ class TradeRecord:
         consumers must not subtract a spread component a second time.
         """
         return self.realized_pnl - self.fees
+
+
+class TradeJournal(Protocol):
+    """Structured, queryable trade lifecycle store.
+
+    Failure mode: degrade.  If journal write fails, the event log
+    still has the raw events — the journal can be rebuilt from it.
+    Journal unavailability does not halt trading.
+    """
+
+    def record(self, trade: TradeRecord) -> None:
+        """Record a completed trade.  Must be durable before returning."""
+        ...
+
+    def query(
+        self,
+        *,
+        symbol: str | None = None,
+        strategy_id: str | None = None,
+        start_ns: int | None = None,
+        end_ns: int | None = None,
+    ) -> Iterator[TradeRecord]:
+        """Query trade records with optional filters.
+
+        Results ordered by fill_timestamp_ns ascending.
+        """
+        ...
