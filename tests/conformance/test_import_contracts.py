@@ -98,6 +98,7 @@ def _broken_layer_pairs(out: str, heading: str, stop: str) -> frozenset[tuple[st
 def test_five_import_tiers() -> None:
     out, _kept, _broken, statuses = run_import_linter()
     assert "Five import tiers" in statuses, out
+    assert statuses["Five import tiers"] == "KEPT", out
     pairs = _broken_layer_pairs(out, "Five import tiers", "Twelve engine module sets")
     assert pairs == _TIER_RESIDUALS, (
         f"unexpected {sorted(pairs - _TIER_RESIDUALS)}; "
