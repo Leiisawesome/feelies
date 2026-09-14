@@ -161,4 +161,148 @@ Step blocks land in the fence below. `verify_step` parses fenced `STEP:`
 blocks (the P7 template).
 
 ```
+STEP:            R-01
+CLOSES:          nothing. Owed count stays 15. Does not move a
+                 name into MUST_INVOKE. A detector landing
+                 green is the declared outcome, same shape as
+                 T-07c: an unchanged count is not a failed
+                 rung. G04 stays CLOSED. This is not G04.
+PROBLEM:         S-15 closed G04: every mutator has a reset
+                 path (S16) and Orchestrator.reset exists (R6).
+                 R6's fingerprint is (event type, sequence) on
+                 FIX-1. Seventeen of the 31 resets are never
+                 entered. S16 does not record invocation. A
+                 second run in the same process can inherit
+                 state the determinism corpus never sees,
+                 because every tape starts from a fresh
+                 process. Nothing today fails when a MUST_INVOKE
+                 class is skipped by the cascade.
+WHY THIS OWNER:  Conformance owns the invocation pin. Production
+                 reset bodies stay with later rungs. Landing the
+                 spy on FIX-1 first is what makes rungs 2–6's
+                 name-moves a fail-before rather than a silent
+                 set edit.
+FILES:           tests/conformance/test_reset_invocation.py
+                 Do not edit src/. Do not edit
+                 tests/conformance/test_reset_paths.py,
+                 tests/conformance/test_recovery_determinism.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No keep-row file is touched. The probe edits
+                 src/feelies/kernel/orchestrator.py only for the
+                 mutation and restores it; that file is not in
+                 the commit.
+REFACTOR PATH:   one commit. Mechanism: a runtime spy wrapping
+                 reset on the named classes, installed after
+                 the first boot+run_backtest and torn down
+                 after orchestrator.reset() returns. The spy
+                 does not wrap run_backtest. Matching is by
+                 MRO name so _BacktestMetricCollector counts
+                 as InMemoryMetricCollector. Assert MUST_INVOKE
+                 ⊆ invoked and invoked ∩ DECLARED_UNINVOKED
+                 == ∅. An AST walk of Orchestrator.reset is
+                 not this detector; it cannot type the getattr
+                 bus walk.
+                 MUST_INVOKE:
+                 frozenset({
+                   "AlphaBudgetRiskWrapper",
+                   "AlphaRegistry",
+                   "BacktestOrderRouter",
+                   "BasicRiskEngine",
+                   "EventBus",
+                   "HorizonAggregator",
+                   "HorizonScheduler",
+                   "HorizonSignalEngine",
+                   "InMemoryMetricCollector",
+                   "MemoryPositionStore",
+                   "Orchestrator",
+                   "RegimeStateCache",
+                   "SensorRegistry",
+                   "SequenceGenerator",
+                   "SimulatedClock",
+                   "StateMachine",
+                   "StopExitController",
+                   "_HaltTradeability",
+                 })
+                 DECLARED_UNINVOKED:
+                 frozenset({
+                   "CompositionEngine",          # owed, PORTFOLIO tape
+                   "CrossSectionalTracker",      # owed, PORTFOLIO tape
+                   "DeferralCapController",      # owed, decouple tape
+                   "ExitComposer",               # owed, decouple tape
+                   "HMM3StateFractional",        # owed, default path; reset(symbol)
+                   "HazardExitController",       # owed, hazard tape
+                   "HorizonMetricsCollector",    # owed, PORTFOLIO tape
+                   "IBOrderRouter",              # never: IB / paper_rth
+                   "InMemoryEventLog",           # never: the tape
+                   "InMemoryKillSwitch",         # never: operator kwargs; Inv-11
+                   "MassiveHistoricalIngestor",  # never: ingest, not replay
+                   "MassiveNormalizer",          # owed, injected-normalizer BACKTEST
+                   "MetricSummary",              # never: parent clear; S16 owns reset
+                   "MocFillController",          # owed, moc_session_date
+                   "PassiveLimitOrderRouter",    # owed, execution_mode=passive_limit
+                   "QuoteReplayObserver",        # never: CLI; reset hits monotonic
+                   "QuoteTraceIndex",            # never: nested in that observer
+                   "RegimeGate",                 # owed, default path; no cascade
+                   "RegimeHazardDetector",       # owed, hazard tape
+                   "RthEntryFillGate",           # never: no-op body; S16 owns reset
+                   "UniverseSynchronizer",       # owed, PORTFOLIO tape
+                   "_WarmTimestampIndex",        # never: parent clear; S16 owns reset
+                 })
+                 StrategyPositionStore and FillAttributionLedger
+                 have no reset() and are in neither set. Do not
+                 wrap them.
+                 Two resets cannot be called with zero args:
+                 HMM3StateFractional.reset(symbol) and
+                 InMemoryKillSwitch.reset(*, operator,
+                 audit_token). The spy wraps the original and
+                 forwards *args, **kwargs. The test never
+                 calls those two. They sit in
+                 DECLARED_UNINVOKED; a zero-arg call from the
+                 cascade TypeErrors the original and the test
+                 fails. Inventing dummy kwargs to "succeed"
+                 those calls is not a detector. Do not special-
+                 case them by skipping the wrap.
+                 Order: (1) add test_reset_invocation.py with
+                 the two frozensets and the spy around
+                 orchestrator.reset() on the FIX-1 / R6
+                 construction. On this tree it passes by
+                 construction — that is not the proof.
+                 (2) probe, T-07c shape. Drop
+                 `_maybe_reset(self._positions)` in
+                 src/feelies/kernel/orchestrator.py (not in
+                 FILES; not in the commit). Run only the new
+                 test. It MUST fail naming
+                 MemoryPositionStore. Restore orchestrator.py.
+                 Confirm it is byte-identical to HEAD. Re-run
+                 the test green. Report the fail-then-green
+                 output and the restore hash at the gate.
+                 Without the probe the pin is decorative.
+                 (3) commit the test only. No production reset
+                 body is written or edited in this step.
+BLAST RADIUS:    local — tests/ only
+VALIDATED BY:    test_reset_invocation spy equals the 18-name
+                 MUST_INVOKE pin on FIX-1; probe failed-before
+                 naming MemoryPositionStore then passed-after
+                 restore; test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at zero
+                 pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. No XPASS. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. A moved
+                 HASH or COUNT is a STOP, do not re-pin. A
+                 test-only change that moves a hash means the
+                 file was not test-only. Do not assert
+                 LOCKED_PARITY_BASELINES.
+DELETES:         nothing. Owed stays 15. The 18-name set is a
+                 new equality pin, not a dropped G04 exemption.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible
+                 until R-02 lands; test_reset_invocation.py is
+                 shared with R-02 through R-06.
 ```
+
