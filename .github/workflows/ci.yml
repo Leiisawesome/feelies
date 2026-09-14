@@ -91,11 +91,8 @@ jobs:
         run: uv run mypy src/feelies
 
       - name: Import contracts
-        # Allowed to fail: the layers contract is G16 (S-04) and independence
-        # is G40 (S-34). S2 is the conformance gate; this step only makes the
-        # CLI output visible in CI. Do not drop continue-on-error until both
-        # contracts are kept.
-        continue-on-error: true
+        # Blocking. Five import tiers (T-09z) and Twelve engine module sets
+        # (G40) are both KEPT. A broken contract fails this job.
         run: uv run lint-imports --no-cache
 
       - name: Tests
