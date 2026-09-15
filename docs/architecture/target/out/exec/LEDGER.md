@@ -20113,3 +20113,337 @@ FINDINGS:    A future campaign that inverts an
                  baseline_pre-R-01.json,
                  baseline_post-R-01.json, this ledger
                  entry.
+
+---
+
+## R-02  2026-09-15T17:27:00+08:00
+  STEP:          R-02
+  BASE:          e476ab14d80a71cf677e758cf4aa0afd933ccd6c
+  RESULT SHA:    b284a5852db17e572479a5673f585cf0cee48567 (exec/R-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 15 to 11. Does not close G04.
+                 Moves four names into MUST_INVOKE:
+                 StrategyPositionStore, FillAttributionLedger,
+                 HMM3StateFractional, RegimeGate. The nine
+                 never-rows stay in DECLARED_UNINVOKED. G04
+                 stays CLOSED. This is not G04.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (names moved, wrap list
+                 updated, no production bodies): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['FillAttributionLedger', 'HMM3StateFractional',
+                 'RegimeGate', 'StrategyPositionStore']
+                 (tests/conformance/test_reset_invocation.py:210).
+                 Spy after bodies: 1 passed. MUST_INVOKE
+                 18 -> 22.
+                 Four probes, uncommitted, one path each,
+                 restore BYTE_IDENTICAL between:
+                 (a) drop _maybe_reset(self._strategy_positions)
+                     MUST_INVOKE not entered:
+                     ['StrategyPositionStore']
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 (b) delete FillAttributionLedger.reset
+                     MUST_INVOKE not entered:
+                     ['FillAttributionLedger']
+                     restore SHA256
+                     c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                     (5030 bytes)
+                 (c) drop _maybe_reset(self._regime_engine)
+                     MUST_INVOKE not entered:
+                     ['HMM3StateFractional']
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 (d) drop the gate.reset() loop
+                     MUST_INVOKE not entered:
+                     ['RegimeGate']
+                     restore SHA256
+                     81500f3ea569664d746f62caf3cc5baa9b1901d1adb17d754ed97374295316b5
+                     (33524 bytes)
+                 Green re-run after last restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101; services 108;
+                 signals 157; portfolio 52; kernel 390.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+                 One-arg callers unmoved and still pass:
+                 tests/services/test_regime_engine.py:98 and
+                 :427 engine.reset("AAPL"); kernel stub
+                 test_orchestrator.py:148 def reset(self,
+                 symbol: str). Those two files are not in
+                 FILES and were not edited.
+  TESTS:         capture pre-R-02 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-02 GREEN 4911 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4910 passed /
+                 0 failed / 5 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. Full-capture +1 passed / -1 skipped is
+                 a skip that ran, not a new test (no test
+                 file added). APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-02 vs post-R-02 and vs
+                 baseline_post-R-01.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 15 to 11.
+  FILES:         6 declared, 6 touched, 6 committed
+                 (clean vs b284a585). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: strategy_position_store.py,
+                 fill_attribution.py, orchestrator.py,
+                 regime_engine.py, horizon_engine.py,
+                 test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 tests/services/test_regime_engine.py,
+                 tests/kernel/test_orchestrator.py.
+                 Probes mutated orchestrator.py,
+                 fill_attribution.py, horizon_engine.py
+                 and restored them; those mutations are
+                 not in the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47043 -> 47059 (+16, undeclared;
+                 the four bodies)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 6 declared / 6 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4911 passed, failed 0->0
+                 (no failure outside the accepted set;
+                 +1 passed is a skip that ran);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 b284a5852db17e572479a5673f585cf0cee48567.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD e476ab14 on arch/exec.
+                 Cut exec/R-02. tools/exec vs exec-tools-v1
+                 empty. Go confirmed branch head
+                 b284a5852db17e572479a5673f585cf0cee48567.
+                 One commit, six files, nothing else:
+                 strategy_position_store.py,
+                 fill_attribution.py, orchestrator.py,
+                 regime_engine.py, horizon_engine.py,
+                 test_reset_invocation.py. Subject
+                 "R-02: clear four default-path reset
+                 leaks on FIX-1".
+                 Closure walked to fixpoint before the
+                 first edit and terminated at RegimeGate.
+                 StrategyPositionStore.reset clears
+                 _stores (get() plants an empty sub-book
+                 via _get_store, so the dict accumulates
+                 on reads as well as writes). Optional
+                 child MemoryPositionStore.reset was not
+                 called; that name is already reachable
+                 via _positions. FillAttributionLedger
+                 and HMM3 bodies name nothing new. The
+                 gate loop names RegimeGate.
+                 RegimeGate.reset(symbol=None) clears
+                 only _state. Stop.
+                 Pin moved first in that commit. With
+                 the four names in MUST_INVOKE and no
+                 bodies yet, the spy FAILED naming all
+                 four: MUST_INVOKE not entered:
+                 ['FillAttributionLedger',
+                 'HMM3StateFractional', 'RegimeGate',
+                 'StrategyPositionStore']. That
+                 fail-before is the pin movement. Bodies
+                 then landed; the spy passed with
+                 MUST_INVOKE 18 to 22.
+                 Four probes, not one: each path is
+                 independent, and a combined drop names
+                 a set without showing which path held.
+                 Uncommitted, one at a time, restore
+                 byte-identical between each.
+                 (a) drop
+                 _maybe_reset(self._strategy_positions)
+                 -> MUST_INVOKE not entered:
+                 ['StrategyPositionStore']; restore
+                 SHA256 162e4298...f6599f, 234440 bytes,
+                 BYTE_IDENTICAL.
+                 (b) delete FillAttributionLedger.reset
+                 -> MUST_INVOKE not entered:
+                 ['FillAttributionLedger']; restore
+                 SHA256 c620060f...d98e28, 5030 bytes,
+                 BYTE_IDENTICAL.
+                 (c) drop
+                 _maybe_reset(self._regime_engine)
+                 -> MUST_INVOKE not entered:
+                 ['HMM3StateFractional']; restore
+                 SHA256 162e4298...f6599f, 234440 bytes,
+                 BYTE_IDENTICAL.
+                 (d) drop the gate.reset() loop
+                 -> MUST_INVOKE not entered:
+                 ['RegimeGate']; restore SHA256
+                 81500f3e...5316b5, 33524 bytes,
+                 BYTE_IDENTICAL.
+                 Green re-run after the last restore:
+                 1 passed. Without the four probes the
+                 pin move plus the bodies pass by
+                 construction and protect nothing.
+                 What each leak would have inherited on
+                 a second run in the same process:
+                 StrategyPositionStore -- leftover
+                 per-strategy qty, avg entry, realized
+                 and unrealized PnL, fees, marks, and
+                 open-episode timestamps.
+                 MemoryPositionStore.reset on
+                 self._positions does not touch these
+                 sub-books.
+                 FillAttributionLedger -- leftover
+                 _records and _cumulative_allocations.
+                 SequenceGenerator reset recycles
+                 order_ids, so a leftover record
+                 attributes run-2 fills to run-1
+                 contributions.
+                 HMM3StateFractional -- leftover
+                 _posteriors, _last_update_seq, and
+                 _last_quote_ts_ns. Tape quote.sequence
+                 is on the event, so posterior()
+                 returns the leftover cache when seq
+                 matches.
+                 RegimeGate -- leftover per-symbol
+                 ON/OFF latches in gate._state.
+                 HorizonSignalEngine.reset previously
+                 cleared its own caches and nested
+                 SequenceGenerators and did not call
+                 gate.reset(). FIX-1's null_alpha gate
+                 is on_condition True / off_condition
+                 False, so leftover ON and cold-start
+                 False both sit ON after the first
+                 evaluate; a P(state) leftover ON
+                 would not.
+                 symbol=None MUST NOT clear
+                 _calibrated, _emission, or
+                 _emission_by_symbol:
+                 _calibrate_regime_engine returns early
+                 when calibrated is True, and wiping
+                 them leaves the second boot on
+                 placeholder emissions. It MUST clear
+                 _scaled_transition_cache -- today's
+                 one-arg body does not touch it. The
+                 committed zero-arg body clears the
+                 three posterior maps and the cache
+                 and leaves the three emission fields
+                 in place. One-arg form keeps today's
+                 three pops.
+                 The one-arg callers stay. They are
+                 not in FILES and were not edited:
+                 tests/services/test_regime_engine.py
+                 at 98 and 427 (engine.reset("AAPL"),
+                 the second preserves MSFT), and the
+                 kernel stub at
+                 test_orchestrator.py:148
+                 (def reset(self, symbol: str)).
+                 The Protocol was widened in
+                 regime_engine.py itself. No src/
+                 production one-arg caller exists.
+                 FillAttributionLedger needed no new
+                 call site. orchestrator already
+                 _maybe_resets self._fill_ledger as a
+                 no-op; adding the method alone
+                 changes behaviour. No second call
+                 was added there.
+                 The gate cascade is a loop over
+                 self._signals calling
+                 registered.gate.reset() with no
+                 arguments. RegimeGate.reset(symbol=None)
+                 already clears every latch.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved. They
+                 are cold-start single-run and never
+                 call Orchestrator.reset(for_new_run=True),
+                 so clearing these leaks cannot move
+                 them. A reset-then-replay payload can
+                 differ while R6's (event type,
+                 sequence) fingerprint stays green.
+                 mypy src/feelies Success, 249 source
+                 files, before the gate. tests/docs
+                 101 passed. APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 Declared NET DELTA src modules 0,
+                 public symbols 0, branch points 0.
+                 Measured: modules 249 -> 249 (+0
+                 MATCH), public_symbols 590 -> 590
+                 (+0 MATCH), sloc 47043 -> 47059
+                 (+16, undeclared; the four bodies),
+                 n_edges 675 -> 675, n_modules 203
+                 -> 203, cycles 1 -> 1 MATCH,
+                 alphaleak 0 -> 0.
+  FINDINGS:      The spy's wrap changed from a direct
+                 attribute read (`original = cls.reset`)
+                 to a callable check with a skip
+                 (`getattr(cls, "reset", None)`;
+                 `continue` if not callable), so that a
+                 MUST_INVOKE class whose reset is
+                 deleted reports as an uninvoked name
+                 rather than crashing the spy install.
+                 The name stays in MUST_INVOKE and
+                 invoked never grows, so the set
+                 difference still fails naming it -- a
+                 crash became a diagnosis, not a silent
+                 pass. A detector's failure mode is
+                 part of the detector, and a guard that
+                 crashes on the regression it exists to
+                 catch tells you less than one that
+                 names it.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-03 PORTFOLIO config; owed 11 to 7
+                 (boundary). Not started. Do not
+                 begin R-03.
+                 Left uncommitted:
+                 baseline_pre-R-02.json,
+                 baseline_post-R-02.json, this ledger
+                 entry.
