@@ -505,3 +505,219 @@ ROLLBACK:        revert the commit. Not independently
                  _maybe_reset on orchestrator.py.
 ```
 
+```
+STEP:            R-03
+CLOSES:          nothing. Owed 11 to 7. Does not close G04.
+                 Moves four names into MUST_INVOKE in the same
+                 commit as the PORTFOLIO config that constructs
+                 them: CompositionEngine, UniverseSynchronizer,
+                 CrossSectionalTracker, HorizonMetricsCollector.
+                 The nine never-rows stay in DECLARED_UNINVOKED.
+                 G04 stays CLOSED. This is not G04.
+PROBLEM:         The four PORTFOLIO objects are absent on FIX-1
+                 because build_platform skips
+                 _create_composition_layer when
+                 registry.portfolio_alphas() is empty. Once a
+                 layer: PORTFOLIO spec is loaded, all four are
+                 constructed inside that function. The function
+                 returns only CompositionEngine (stored as
+                 orchestrator._composition_engine). The other
+                 three are locals that attach() and are dropped.
+                 EventBus.reset() only zeroes cascade depth;
+                 subscriptions stay. The getattr bus walk after
+                 _bus.reset() therefore reaches every attached
+                 owner. All four are reachable by that walk.
+                 CompositionEngine is also reached by the
+                 existing named _maybe_reset(self._composition_engine).
+                 This is a config widen, not a body fix. No new
+                 _maybe_reset is required. No src/ edit is
+                 required. A second run in the same process
+                 currently inherits, on any PORTFOLIO tape:
+                 (1) CompositionEngine — leftover intent
+                 SequenceGenerator state.
+                 (2) UniverseSynchronizer — leftover snapshot
+                 and signal caches and emission dedup.
+                 (3) CrossSectionalTracker — leftover snapshots
+                 and completeness by barrier.
+                 (4) HorizonMetricsCollector — leftover counters
+                 and last-solver-status map.
+WHY THIS OWNER:  The FIX-1 spy is the pin. The four classes
+                 already expose reset() and are already wrapped.
+                 Names move in the same commit as the config
+                 that constructs them. Production reset bodies
+                 for hazard / passive_limit / injected-normalizer
+                 stay with later rungs.
+FILES:           tests/conformance/test_reset_invocation.py
+                 tests/conformance/fixtures/portfolio/upstream_signal.alpha.yaml
+                 tests/conformance/fixtures/portfolio/null_portfolio.alpha.yaml
+                 Do not edit src/. Do not edit
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py.
+                 No keep-row file is touched. Probe mutations
+                 of orchestrator.py are restored; that file is
+                 not in the commit.
+                 Yaml is committed fixtures, not inlined.
+                 _config() today returns PlatformConfig with
+                 Path specs and takes no tmp_path; FIX-1's
+                 null_alpha is already a committed Path.
+                 Inlining would force tempfile writes or a
+                 tmp_path argument, and would bloat the spy
+                 file that R-04 through R-06 also edit.
+                 A fixture makes universe ⊆ {AAPL, MSFT} a
+                 reviewable artifact rather than a string.
+REFACTOR PATH:   one commit.
+                 Helper, landed on this rung and reused by
+                 later ones:
+                 def _config(
+                     tape_id: Literal[
+                         "fix1",
+                         "portfolio",
+                         "hazard_decouple",
+                         "passive_limit",
+                         "injected_normalizer",
+                     ] = "fix1",
+                 ) -> PlatformConfig: ...
+                 _TAPES is the tuple actually booted and
+                 unioned. This rung starts it at ("fix1",)
+                 and appends "portfolio". The other three
+                 ids exist on the signature; their branches
+                 raise until their rung. Do not add a second
+                 helper.
+                 The test boots every id in _TAPES under the
+                 spy, unions invoked, and asserts
+                 MUST_INVOKE ⊆ invoked and
+                 invoked ∩ DECLARED_UNINVOKED == ∅.
+                 That is the campaign close shape (union of
+                 FIX-1 and the configs), not a per-tape
+                 expected set.
+                 PORTFOLIO tape PlatformConfig:
+                 symbols = frozenset({"AAPL", "MSFT"})
+                 (FIX-1's _UNIVERSE, so _synth_events is
+                 reusable). A universe that adds any other
+                 symbol (wiring fixture's GOOG, the template's
+                 ten names) would force a wider synth.
+                 horizons_seconds includes 300.
+                 alpha_specs = [upstream_signal, null_portfolio].
+                 sensor_specs = _SENSOR_SPECS.
+                 regime_engine = hmm_3state_fractional.
+                 enforce_trend_mechanism = False.
+                 factor_loadings_dir stays None (the default)
+                 so _enforce_factor_loadings_freshness returns
+                 immediately.
+                 account_equity and session_open_ns as FIX-1.
+                 Minimal upstream SIGNAL yaml:
+                 schema_version "1.1", layer SIGNAL,
+                 alpha_id upstream_null, version, description,
+                 hypothesis, falsification_criteria, symbols
+                 [AAPL, MSFT], horizon_seconds 300,
+                 depends_on_sensors [ofi_ewma], regime_gate
+                 (on True / off False or the null_alpha
+                 shape), cost_arithmetic with
+                 margin_ratio ≥ 1.5, signal: evaluate
+                 returns None. Same conservation as FIX-1:
+                 no Signal, so the book stays flat.
+                 Minimal PORTFOLIO yaml:
+                 schema_version "1.1", layer PORTFOLIO,
+                 alpha_id null_portfolio, version,
+                 description, hypothesis,
+                 falsification_criteria, horizon_seconds 300,
+                 universe [AAPL, MSFT] (G10; ⊆ FIX-1),
+                 depends_on_signals [upstream_null],
+                 factor_neutralization false (G11 disclosure;
+                 true is legal but unneeded),
+                 cost_arithmetic with margin_ratio ≥ 1.5.
+                 No construct: block — the default pipeline
+                 is enough to construct the four objects.
+                 (1) Pin first. Move the four names from
+                 DECLARED_UNINVOKED into MUST_INVOKE.
+                 _TAPES stays ("fix1",). Helper signature
+                 is in place with only the fix1 branch live.
+                 Run the spy. It MUST fail naming
+                 ['CompositionEngine', 'CrossSectionalTracker',
+                 'HorizonMetricsCollector', 'UniverseSynchronizer'].
+                 That fail-before is the pin movement.
+                 (2) Append "portfolio" to _TAPES and land
+                 the two yaml fixtures plus the portfolio
+                 branch of _config. The spy MUST pass.
+                 MUST_INVOKE 22 to 26.
+                 (3) Closure: CompositionEngine.reset names
+                 SequenceGenerator (_intent_seq).
+                 UniverseSynchronizer.reset names
+                 SequenceGenerator (_ctx_seq).
+                 HorizonMetricsCollector.reset names
+                 SequenceGenerator (_metric_seq).
+                 CrossSectionalTracker.reset names nothing.
+                 SequenceGenerator is already MUST_INVOKE.
+                 Ranker / neutralizer / sector matcher /
+                 optimizer have no reset(). Stop.
+                 (4) Probes, uncommitted, restore
+                 byte-identical between each.
+                 Two reachability paths, not four. The three
+                 locals share the getattr bus walk;
+                 CompositionEngine is on that walk and also
+                 on the named _maybe_reset. A combined drop
+                 of the walk names a set because they share
+                 a path, not because the probe is coarse.
+                 Per-name probes of the same walk would not
+                 show a different cascade.
+                 Pin fail-before already named all four
+                 (not constructed). After the config:
+                 (a) drop
+                 _maybe_reset(self._composition_engine)
+                 → CompositionEngine remains entered via
+                 the walk. The test MUST still pass for
+                 that name. That is the proof the named
+                 call is not the PORTFOLIO path and no new
+                 _maybe_reset is required.
+                 (b) skip the getattr bus walk (the
+                 _bus._handlers loop) → MUST_INVOKE not
+                 entered: ['CrossSectionalTracker',
+                 'HorizonMetricsCollector',
+                 'UniverseSynchronizer'].
+                 CompositionEngine remains entered by name.
+                 Restore each. Re-run green after the last
+                 restore. Do not probe by deleting
+                 CompositionEngine.reset: that is the
+                 FillAttributionLedger shape, and here the
+                 named call plus the walk both exist.
+BLAST RADIUS:    local — tests/ only. Shared spy file with
+                 R-04 through R-06.
+VALIDATED BY:    spy union equals MUST_INVOKE including the
+                 four new names; DECLARED_UNINVOKED no
+                 longer contains them and still equals the
+                 remaining owed-plus-never set; pin
+                 fail-before named all four then passed
+                 after the PORTFOLIO tape; probe (a) kept
+                 CompositionEngine entered; probe (b) named
+                 the three locals; test_five_import_tiers
+                 empty _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. No XPASS. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. Do
+                 not re-pin. The new tape is a synth
+                 conformance fixture and must never assert
+                 LOCKED_PARITY_BASELINES,
+                 _BASELINE_TRADE_PARITY_HASH, or
+                 _BASELINE_FILL_COUNT. A tape that runs the
+                 APP oracle is a declared break, not a
+                 hold. Locked hashes are cold-start
+                 single-run and do not call
+                 Orchestrator.reset(for_new_run=True).
+DELETES:         nothing. Owed 11 to 7 by moving four
+                 names into MUST_INVOKE, not by dropping
+                 a G04 exemption.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Not independently
+                 revertible from a later R-0* that edits
+                 test_reset_invocation.py. Shared with
+                 R-04 through R-06 on the spy file.
+```
+
