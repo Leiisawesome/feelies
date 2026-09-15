@@ -306,3 +306,202 @@ ROLLBACK:        revert the commit. Independently revertible
                  shared with R-02 through R-06.
 ```
 
+```
+STEP:            R-02
+CLOSES:          nothing. Owed 15 to 11. Does not close G04.
+                 Moves four names into MUST_INVOKE in the same
+                 commit as the bodies that make them reachable:
+                 StrategyPositionStore, FillAttributionLedger,
+                 HMM3StateFractional, RegimeGate. The nine
+                 never-rows stay in DECLARED_UNINVOKED. G04
+                 stays CLOSED. This is not G04.
+PROBLEM:         Four default-path leaks are live on every
+                 tape today. Unlike R-03 through R-06 they
+                 need no widened config: build_platform
+                 constructs the two books unconditionally,
+                 PlatformConfig.regime_engine defaults to
+                 hmm_3state_fractional, and every SIGNAL alpha
+                 carries a RegimeGate. A second run in the
+                 same process inherits:
+                 (1) StrategyPositionStore — per-strategy
+                 qty, avg entry, realized/unrealized PnL,
+                 fees, marks, open-episode timestamps. get()
+                 plants an empty sub-book via _get_store, so
+                 _stores accumulates on reads as well as
+                 writes. MemoryPositionStore.reset on
+                 self._positions does not touch these
+                 sub-books. Orchestrator.reset does not name
+                 _strategy_positions.
+                 (2) FillAttributionLedger — _records and
+                 _cumulative_allocations. SequenceGenerator
+                 reset recycles order_ids, so a leftover
+                 record attributes run-2 fills to run-1
+                 contributions.
+                 (3) HMM3StateFractional — _posteriors,
+                 _last_update_seq, _last_quote_ts_ns. Tape
+                 quote.sequence is on the event, so
+                 posterior() returns the leftover cache
+                 when seq matches. reset(symbol) is
+                 required-positional, so _maybe_reset would
+                 TypeError; orchestrator does not name
+                 _regime_engine and the bus walk does not
+                 reach it.
+                 (4) RegimeGate latch — per-symbol ON/OFF
+                 in gate._state. HorizonSignalEngine.reset
+                 clears its own caches and nested
+                 SequenceGenerators and does not call
+                 gate.reset().
+WHY THIS OWNER:  The FIX-1 spy is the pin. Names move in the
+                 same commit as the config that constructs
+                 them (they are already constructed) and the
+                 bodies that reach them. Production reset
+                 bodies for PORTFOLIO / hazard / passive_limit
+                 / injected-normalizer stay with later rungs.
+FILES:           src/feelies/portfolio/strategy_position_store.py
+                 src/feelies/portfolio/fill_attribution.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/services/regime_engine.py
+                 src/feelies/signals/horizon_engine.py
+                 tests/conformance/test_reset_invocation.py
+                 Do not edit test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py.
+                 Do not edit tests/services/test_regime_engine.py
+                 or tests/kernel/test_orchestrator.py: the
+                 one-arg callers stay as they are.
+                 No keep-row file is touched.
+REFACTOR PATH:   one commit.
+                 (1) Pin first. Move StrategyPositionStore
+                 and FillAttributionLedger from neither
+                 frozenset into MUST_INVOKE. Move
+                 HMM3StateFractional and RegimeGate from
+                 DECLARED_UNINVOKED into MUST_INVOKE. Wrap
+                 the two new reset() names; keep wrapping
+                 HMM3 and RegimeGate. Run
+                 test_reset_invocation. It MUST fail naming
+                 those four. That fail-before is the pin
+                 movement, not the proof of each path.
+                 (2) StrategyPositionStore.reset clears
+                 _stores. Optional store.reset() on
+                 children is not a new name
+                 (MemoryPositionStore is already
+                 MUST_INVOKE via _positions). Orchestrator:
+                 _maybe_reset(self._strategy_positions)
+                 immediately after
+                 _maybe_reset(self._positions).
+                 (3) FillAttributionLedger.reset clears
+                 _records and _cumulative_allocations.
+                 No new call site: orchestrator already
+                 _maybe_resets self._fill_ledger as a
+                 no-op. Adding the method alone changes
+                 behaviour.
+                 (4) HMM3StateFractional.reset(self, symbol:
+                 str | None = None). symbol=None clears
+                 _posteriors, _last_update_seq,
+                 _last_quote_ts_ns, and
+                 _scaled_transition_cache. It must NOT
+                 clear _calibrated, _emission, or
+                 _emission_by_symbol:
+                 _calibrate_regime_engine returns early
+                 when calibrated is True, and wiping them
+                 leaves the second boot on placeholder
+                 emissions. One-arg form keeps today's
+                 three pops. Callers that must keep
+                 working: tests/services/test_regime_engine.py:98
+                 engine.reset("AAPL"); :427
+                 engine.reset("AAPL") (preserves MSFT);
+                 tests/kernel/test_orchestrator.py:148
+                 stub def reset(self, symbol: str);
+                 RegimeEngine.reset(self, symbol: str)
+                 at regime_engine.py:75 (widen the
+                 Protocol in the same file). No src/
+                 production caller of the one-arg form
+                 exists today. Orchestrator:
+                 _maybe_reset(self._regime_engine) so the
+                 zero-arg cascade hits the default.
+                 (5) HorizonSignalEngine.reset: for
+                 registered in self._signals:
+                 registered.gate.reset() with no args
+                 (RegimeGate.reset(symbol=None) already
+                 clears every latch). FIX-1's null_alpha
+                 gate is on_condition True / off_condition
+                 False, so leftover ON and cold-start
+                 False both sit ON after the first
+                 evaluate and evaluate returns None; C1
+                 and R6 do not see it. A P(state) gate
+                 leftover ON would.
+                 T-08d closure: StrategyPositionStore.reset
+                 optionally names MemoryPositionStore
+                 (already reachable). FillAttributionLedger
+                 and HMM3 bodies name nothing new. The
+                 gate loop names RegimeGate. RegimeGate.reset
+                 only clears _state. Stop.
+                 (6) Four probes, uncommitted, one per
+                 reachability path. One probe does not
+                 suffice: the four paths are independent,
+                 and a combined drop fails on a set
+                 without showing which path held.
+                 (a) drop _maybe_reset(self._strategy_positions)
+                     → MUST_INVOKE not entered:
+                     ['StrategyPositionStore']
+                 (b) delete FillAttributionLedger.reset
+                     → MUST_INVOKE not entered:
+                     ['FillAttributionLedger']
+                 (c) drop _maybe_reset(self._regime_engine)
+                     → MUST_INVOKE not entered:
+                     ['HMM3StateFractional']
+                 (d) drop the gate.reset() loop
+                     → MUST_INVOKE not entered:
+                     ['RegimeGate']
+                 Restore each byte-identical with a hash
+                 before the next. Re-run green after the
+                 last restore. Without the four probes
+                 the pin move plus the bodies pass by
+                 construction and protect nothing.
+BLAST RADIUS:    platform-wide — kernel + portfolio +
+                 services + signals + the shared spy file
+VALIDATED BY:    test_reset_invocation spy equals MUST_INVOKE
+                 on FIX-1 including the four new names;
+                 DECLARED_UNINVOKED no longer contains HMM3
+                 or RegimeGate and still equals the remaining
+                 owed-plus-never set; four probes
+                 failed-before naming each of the four then
+                 passed-after restore; test_five_import_tiers
+                 empty _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. One-arg
+                 test_regime_engine reset("AAPL") cases
+                 unmoved. No XPASS. A new twelve-engine pair
+                 is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. Do
+                 not re-pin. Locked hashes are cold-start
+                 single-run and do not call
+                 Orchestrator.reset(for_new_run=True). A
+                 reset-then-replay payload can differ
+                 (HMM3 posteriors keyed by tape sequence,
+                 leftover gate latches, leftover slice
+                 books, leftover attribution order_ids)
+                 while R6's (event type, sequence)
+                 fingerprint stays green. Clearing these
+                 is what makes warm equal cold, not a
+                 re-pin. Do not assert
+                 LOCKED_PARITY_BASELINES.
+DELETES:         nothing. Owed 15 to 11 by moving four
+                 names into MUST_INVOKE, not by dropping
+                 a G04 exemption.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Not independently
+                 revertible from a later R-0* that edits
+                 test_reset_invocation.py or
+                 orchestrator.py. Shared with R-03
+                 through R-06 on the spy file; shared with
+                 any later rung that names a new
+                 _maybe_reset on orchestrator.py.
+```
+
