@@ -19874,3 +19874,242 @@ FINDINGS:    A future campaign that inverts an
              nothing new appears. A block written
              from a partial walk names a FILES
              set that cannot hold.
+
+---
+
+## R-01  2026-09-14T21:19:06+08:00
+  STEP:          R-01
+  BASE:          53f586621f4b8e4d62218de312216fa84538e46c
+  RESULT SHA:    3c62fc4920034988cde56152afa902aba69fc068 (exec/R-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed count stays 15.
+                 Does not move a name into MUST_INVOKE.
+                 A detector landing green is the declared
+                 outcome. G04 stays CLOSED. This is not G04.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Probe (uncommitted): dropped
+                 `_maybe_reset(self._positions)` in
+                 src/feelies/kernel/orchestrator.py;
+                 test_reset_invocation FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['MemoryPositionStore']
+                 (tests/conformance/test_reset_invocation.py:204).
+                 Restored. Restore SHA256
+                 de1b38a990a335b539fa45b452d5b96bb07d82bc080e6296976dcea77ed13755
+                 BYTE_IDENTICAL (234351 bytes, same as
+                 pre-probe). Porcelain after restore:
+                 ?? baseline_pre-R-01.json;
+                 orchestrator.py not listed. Re-run
+                 1 passed. Without the probe both
+                 assertions pass by construction and
+                 protect nothing.
+                 What the spy catches that S16 and R6
+                 do not: S16 is reset-path totality
+                 (a mutator has a method). R6 is
+                 (event type, sequence) equality of two
+                 FIX-1 replays. Neither records which
+                 reset() bodies the cascade entered.
+                 The spy does: MUST_INVOKE ⊆ invoked and
+                 invoked ∩ DECLARED_UNINVOKED == ∅. The
+                 probe is what makes it non-decorative.
+                 conformance 118 passed / 5 xfailed
+                 -> 119 passed / 5 xfailed (no XPASS)
+                 docs 101; mypy src/feelies: Success, 249
+                 source files (before the gate).
+  TESTS:         capture pre-R-01 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (accepted IB EXEMPTION).
+                 -> capture post-R-01 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed. Same
+                 IB failure. +1 passed is
+                 test_reset_cascade_on_fix1_matches_must_invoke_pin.
+                 No failure outside the accepted set.
+                 vs post-T-09z GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed: failed
+                 0 -> 1 is the IB after-hours EXEMPTION,
+                 also present in pre-R-01. The new spy
+                 test is the +1 passed (pre 4909 ->
+                 post 4910) on top of that IB fail.
+                 not-paper_rth: 4909 passed / 1 failed /
+                 5 skipped / 14 deselected / 5 xfailed;
+                 failed 1 is the IB after-hours test.
+                 APP oracle not re-run as a named job;
+                 _BASELINE_TRADE_PARITY_HASH unmoved.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-01 vs post-R-01 and vs
+                 baseline_post-T-09z.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 Owed stays 15.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 3c62fc49). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_reset_invocation.py (created).
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47043 -> 47043 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4910 passed, failed 1->1
+                 (IB after-hours EXEMPTION both sides;
+                 no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 3c62fc4920034988cde56152afa902aba69fc068.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 53f58662. Cut exec/R-01.
+                 tools/exec vs exec-tools-v1 empty.
+                 One commit, one file, nothing else:
+                 tests/conformance/test_reset_invocation.py.
+                 Subject "R-01: pin reset-cascade
+                 invocation on FIX-1".
+                 orchestrator.py is not in that commit.
+                 Spy wraps named-class reset after the
+                 first boot+run_backtest, forwards *args
+                 **kwargs, torn down when reset returns.
+                 Does not wrap run_backtest. Matching is
+                 by MRO name. HMM3StateFractional.reset
+                 (symbol) and InMemoryKillSwitch.reset
+                 (*, operator, audit_token) are wrapped
+                 and forwarded; the test never calls
+                 them. StrategyPositionStore and
+                 FillAttributionLedger have no reset()
+                 and were not wrapped.
+                 ibapi is not installed, so
+                 IBOrderRouter cannot be imported and
+                 was not class-wrapped. It is absent
+                 from the FIX-1 construction (BACKTEST
+                 uses BacktestOrderRouter) and sits in
+                 DECLARED_UNINVOKED as never. HMM3 and
+                 KillSwitch imported and wrapped.
+                 Before-state, 18 MUST_INVOKE reachable
+                 on FIX-1:
+                 named _maybe_reset: SimulatedClock
+                 (_clock, twice), AlphaBudgetRiskWrapper
+                 (_risk_engine), MemoryPositionStore
+                 (_positions), InMemoryMetricCollector
+                 (_metrics; live type
+                 _BacktestMetricCollector, MRO match),
+                 SensorRegistry, HorizonScheduler,
+                 HorizonSignalEngine, AlphaRegistry,
+                 BacktestOrderRouter
+                 (backend.order_router).
+                 nested cascade: BasicRiskEngine from
+                 AlphaBudgetRiskWrapper.reset →
+                 inner.reset().
+                 direct call: EventBus (self._bus.reset),
+                 SequenceGenerator (_seq, _hazard_seq),
+                 StateMachine (_macro, _micro,
+                 _risk_escalation), Orchestrator (the
+                 reset under spy), _HaltTradeability
+                 via _reset_halt_state.
+                 getattr bus walk: HorizonAggregator
+                 (attached in _create_sensor_layer; not
+                 stored on Orchestrator),
+                 RegimeStateCache (also nested from
+                 BasicRiskEngine.reset),
+                 StopExitController (session_flatten
+                 default on; bootstrap discards the
+                 local).
+                 Before-state, 22 DECLARED_UNINVOKED:
+                 present unreached — HMM3StateFractional
+                 (constructed; reset(symbol) not called),
+                 InMemoryKillSwitch (constructed;
+                 operator kwargs not supplied),
+                 RegimeGate (on the registered signal;
+                 HorizonSignalEngine.reset does not
+                 cascade), InMemoryEventLog (the tape;
+                 not in the named list, not a
+                 bound-method bus owner),
+                 RthEntryFillGate (nested in
+                 BacktestOrderRouter; parent does not
+                 call child.reset), MetricSummary
+                 (parent _summaries.clear()),
+                 _WarmTimestampIndex (parent
+                 _warm_timestamps.clear()).
+                 absent — CompositionEngine,
+                 UniverseSynchronizer,
+                 CrossSectionalTracker,
+                 HorizonMetricsCollector (no PORTFOLIO
+                 alpha); HazardExitController,
+                 RegimeHazardDetector (no hazard_exit
+                 on null_alpha); ExitComposer,
+                 DeferralCapController (no
+                 decouple_gate_close);
+                 MassiveNormalizer (BACKTEST, not
+                 injected); MassiveHistoricalIngestor
+                 (ingest, not replay);
+                 MocFillController (moc_session_date
+                 None); PassiveLimitOrderRouter
+                 (execution_mode=market);
+                 QuoteReplayObserver, QuoteTraceIndex
+                 (CLI, not build_platform);
+                 IBOrderRouter (BACKTEST router).
+                 n_cycles held at 1
+                 (feelies.cli -> feelies.cli.main).
+                 NET DELTA all zeros: modules 249,
+                 public_symbols 590, sloc 47043,
+                 n_edges 675, n_modules 203, cycles 1,
+                 alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-02 default-path leaks; owed 15 to 11
+                 (platform-wide). Not started. Do not
+                 begin R-02.
+                 Left uncommitted:
+                 baseline_pre-R-01.json,
+                 baseline_post-R-01.json, this ledger
+                 entry.
