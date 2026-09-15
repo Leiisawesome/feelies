@@ -5218,6 +5218,7 @@ class Orchestrator:
         _maybe_reset(self._clock)
         _maybe_reset(self._risk_engine)
         _maybe_reset(self._positions)
+        _maybe_reset(self._strategy_positions)
         _maybe_reset(self._metrics)
         _maybe_reset(self._normalizer)
         _maybe_reset(self._sensor_registry)
@@ -5228,6 +5229,7 @@ class Orchestrator:
         _maybe_reset(self._alpha_registry)
         _maybe_reset(getattr(self._backend, "order_router", None))
         _maybe_reset(self._fill_ledger)
+        _maybe_reset(self._regime_engine)
         self._bus.reset()
 
         self._paper_session_recorder = None
