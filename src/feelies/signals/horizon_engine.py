@@ -149,6 +149,8 @@ class HorizonSignalEngine:
         if self._metrics_seq is not None:
             self._metrics_seq.reset()
         self._safety_seq.reset()
+        for registered in self._signals:
+            registered.gate.reset()
 
     # ── Registration ─────────────────────────────────────────────────
 

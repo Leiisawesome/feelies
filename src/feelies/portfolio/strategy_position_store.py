@@ -31,6 +31,10 @@ class StrategyPositionStore:
         self._stores: dict[str, MemoryPositionStore] = {}
         self._aggregate = _AggregateView(self)
 
+    def reset(self) -> None:
+        """Drop per-strategy books. Sub-stores are cold-start-only across runs."""
+        self._stores.clear()
+
     def _get_store(self, strategy_id: str) -> MemoryPositionStore:
         store = self._stores.get(strategy_id)
         if store is None:

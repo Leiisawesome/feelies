@@ -42,6 +42,10 @@ class FillAttributionLedger:
         # the same result as one fill of the final quantity.
         self._cumulative_allocations: dict[str, list[int]] = {}
 
+    def reset(self) -> None:
+        self._records.clear()
+        self._cumulative_allocations.clear()
+
     def record(self, record: AttributionRecord) -> None:
         """Store an attribution record keyed by order_id."""
         self._records[record.order_id] = record

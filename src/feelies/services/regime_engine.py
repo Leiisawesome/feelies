@@ -72,8 +72,8 @@ class RegimeEngine(Protocol):
         """
         ...
 
-    def reset(self, symbol: str) -> None:
-        """Clear accumulated state for a symbol."""
+    def reset(self, symbol: str | None = None) -> None:
+        """Clear accumulated state for a symbol, or every symbol when None."""
         ...
 
     def checkpoint(self) -> bytes:
@@ -468,7 +468,13 @@ class HMM3StateFractional:
         cached = self._posteriors.get(symbol)
         return list(cached) if cached is not None else None
 
-    def reset(self, symbol: str) -> None:
+    def reset(self, symbol: str | None = None) -> None:
+        if symbol is None:
+            self._posteriors.clear()
+            self._last_update_seq.clear()
+            self._last_quote_ts_ns.clear()
+            self._scaled_transition_cache = None
+            return
         self._posteriors.pop(symbol, None)
         self._last_update_seq.pop(symbol, None)
         self._last_quote_ts_ns.pop(symbol, None)

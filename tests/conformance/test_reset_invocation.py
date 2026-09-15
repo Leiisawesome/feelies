@@ -38,18 +38,22 @@ MUST_INVOKE: frozenset[str] = frozenset(
         "BacktestOrderRouter",
         "BasicRiskEngine",
         "EventBus",
+        "FillAttributionLedger",
+        "HMM3StateFractional",
         "HorizonAggregator",
         "HorizonScheduler",
         "HorizonSignalEngine",
         "InMemoryMetricCollector",
         "MemoryPositionStore",
         "Orchestrator",
+        "RegimeGate",
         "RegimeStateCache",
         "SensorRegistry",
         "SequenceGenerator",
         "SimulatedClock",
         "StateMachine",
         "StopExitController",
+        "StrategyPositionStore",
         "_HaltTradeability",
     }
 )
@@ -60,7 +64,6 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
         "CrossSectionalTracker",  # owed, PORTFOLIO tape
         "DeferralCapController",  # owed, decouple tape
         "ExitComposer",  # owed, decouple tape
-        "HMM3StateFractional",  # owed, default path; reset(symbol)
         "HazardExitController",  # owed, hazard tape
         "HorizonMetricsCollector",  # owed, PORTFOLIO tape
         "IBOrderRouter",  # never: IB / paper_rth
@@ -73,7 +76,6 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
         "PassiveLimitOrderRouter",  # owed, execution_mode=passive_limit
         "QuoteReplayObserver",  # never: CLI; reset hits monotonic
         "QuoteTraceIndex",  # never: nested in that observer
-        "RegimeGate",  # owed, default path; no cascade
         "RegimeHazardDetector",  # owed, hazard tape
         "RthEntryFillGate",  # never: no-op body; S16 owns reset
         "UniverseSynchronizer",  # owed, PORTFOLIO tape
@@ -81,8 +83,8 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
     }
 )
 
-# StrategyPositionStore and FillAttributionLedger have no reset() and are
-# in neither set. Do not wrap them.
+# StrategyPositionStore and FillAttributionLedger expose reset() and are
+# wrapped with the rest of MUST_INVOKE.
 
 _RESET_CLASS_IMPORTS: tuple[tuple[str, str], ...] = (
     ("feelies.alpha.registry", "AlphaRegistry"),
@@ -111,7 +113,9 @@ _RESET_CLASS_IMPORTS: tuple[tuple[str, str], ...] = (
     ("feelies.monitoring.in_memory", "InMemoryMetricCollector"),
     ("feelies.monitoring.in_memory", "MetricSummary"),
     ("feelies.portfolio.cross_sectional_tracker", "CrossSectionalTracker"),
+    ("feelies.portfolio.fill_attribution", "FillAttributionLedger"),
     ("feelies.portfolio.memory_position_store", "MemoryPositionStore"),
+    ("feelies.portfolio.strategy_position_store", "StrategyPositionStore"),
     ("feelies.risk.basic_risk", "BasicRiskEngine"),
     ("feelies.risk.deferral_cap", "DeferralCapController"),
     ("feelies.risk.exit_composer", "ExitComposer"),
@@ -169,7 +173,9 @@ def _spy_named_resets() -> Iterator[set[str]]:
     tracked = MUST_INVOKE | DECLARED_UNINVOKED
     originals: list[tuple[type[Any], Any]] = []
     for cls in _named_reset_classes():
-        original = cls.reset
+        original = getattr(cls, "reset", None)
+        if not callable(original):
+            continue
 
         def _make_spy(orig: Any) -> Any:
             def spy(*args: Any, **kwargs: Any) -> Any:
