@@ -55,7 +55,9 @@ MUST_INVOKE: frozenset[str] = frozenset(
         "HorizonSignalEngine",
         "InMemoryMetricCollector",
         "MemoryPositionStore",
+        "MocFillController",
         "Orchestrator",
+        "PassiveLimitOrderRouter",
         "RegimeGate",
         "RegimeHazardDetector",
         "RegimeStateCache",
@@ -78,8 +80,6 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
         "MassiveHistoricalIngestor",  # never: ingest, not replay
         "MassiveNormalizer",  # owed, injected-normalizer BACKTEST
         "MetricSummary",  # never: parent clear; S16 owns reset
-        "MocFillController",  # owed, moc_session_date
-        "PassiveLimitOrderRouter",  # owed, execution_mode=passive_limit
         "QuoteReplayObserver",  # never: CLI; reset hits monotonic
         "QuoteTraceIndex",  # never: nested in that observer
         "RthEntryFillGate",  # never: no-op body; S16 owns reset
@@ -98,7 +98,7 @@ _TapeId = Literal[
     "injected_normalizer",
 ]
 
-_TAPES: tuple[_TapeId, ...] = ("fix1", "portfolio", "hazard_decouple")
+_TAPES: tuple[_TapeId, ...] = ("fix1", "portfolio", "hazard_decouple", "passive_limit")
 
 _PORTFOLIO_DIR = Path(__file__).resolve().parent / "fixtures" / "portfolio"
 _UPSTREAM_SIGNAL = _PORTFOLIO_DIR / "upstream_signal.alpha.yaml"
@@ -208,7 +208,19 @@ def _config(
             enforce_trend_mechanism=False,
         )
     if tape_id == "passive_limit":
-        raise NotImplementedError("passive_limit tape is not live until R-05")
+        return PlatformConfig(
+            symbols=frozenset(_UNIVERSE),
+            mode=OperatingMode.BACKTEST,
+            alpha_specs=[_NULL_ALPHA],
+            regime_engine="hmm_3state_fractional",
+            sensor_specs=_SENSOR_SPECS,
+            horizons_seconds=frozenset({_HORIZON_SECONDS}),
+            session_open_ns=SESSION_OPEN_NS,
+            account_equity=1_000_000.0,
+            enforce_trend_mechanism=False,
+            execution_mode="passive_limit",
+            moc_session_date="2026-01-01",
+        )
     if tape_id == "injected_normalizer":
         raise NotImplementedError("injected_normalizer tape is not live until R-06")
     raise AssertionError(f"unknown tape_id {tape_id!r}")
