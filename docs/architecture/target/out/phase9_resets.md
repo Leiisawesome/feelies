@@ -1063,3 +1063,190 @@ ROLLBACK:        revert the commit. Not independently
                  while the cascade entered it.
 ```
 
+```
+STEP:            R-05
+CLOSES:          nothing. Owed 3 to 1. Does not close G04.
+                 Moves two names into MUST_INVOKE in the same
+                 commit as the PlatformConfig that constructs
+                 them: PassiveLimitOrderRouter,
+                 MocFillController.
+                 The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This is
+                 not G04.
+PROBLEM:         The two objects are absent on FIX-1, on the
+                 PORTFOLIO tape, and on the hazard_decouple
+                 tape because those configs leave
+                 execution_mode at its default ("market") and
+                 moc_session_date at None. Both switches are
+                 PlatformConfig fields, not alpha-manifest
+                 fields. execution_mode="passive_limit"
+                 constructs PassiveLimitOrderRouter.
+                 moc_session_date constructs moc_bounds,
+                 which is what sets router._moc.
+                 PassiveLimitOrderRouter.__init__ leaves
+                 self._moc = None when moc_bounds is None, so
+                 passive_limit alone does not construct
+                 MocFillController. Both switches are needed
+                 on one tape. (moc_session_date on a market
+                 tape would nest the controller under
+                 BacktestOrderRouter, already MUST_INVOKE,
+                 and would not construct
+                 PassiveLimitOrderRouter.)
+                 The router already calls _moc.reset() in its
+                 own reset() body. The cascade is the named
+                 _maybe_reset(getattr(self._backend,
+                 "order_router", None)) plus that nested
+                 call. This is a config widen, not a body
+                 fix. No new _maybe_reset. No src/ edit.
+                 A submitted MOC order is not the claim:
+                 construction plus cascade is.
+                 moc_session_date can be any ISO date. A date
+                 mismatch only rejects a later submit
+                 (MOC_SESSION_DATE_MISMATCH). No fill is
+                 needed: evaluate returns None, the book
+                 stays flat, a resting LIMIT never has to
+                 trade.
+                 A second run in the same process currently
+                 inherits, on any tape that sets both
+                 switches:
+                 (1) PassiveLimitOrderRouter — leftover
+                 resting book, fill counters, last quotes,
+                 pending acks, submitted ids, deferred
+                 aggressive fills, plus SequenceGenerator
+                 state.
+                 (2) MocFillController — leftover pending
+                 MOC queue (_pending).
+WHY THIS OWNER:  The FIX-1 spy is the pin. Both classes
+                 already expose reset() and are already
+                 wrapped. Names move in the same commit as
+                 the config that constructs them.
+                 MassiveNormalizer stays with R-06.
+FILES:           tests/conformance/test_reset_invocation.py
+                 Do not edit src/. Do not edit
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml, or
+                 null_alpha.alpha.yaml.
+                 No keep-row file is touched. No yaml. Probe
+                 mutations of
+                 src/feelies/execution/passive_limit_router.py
+                 are restored; that file is not in the
+                 commit.
+                 Do not add a second helper — live the
+                 passive_limit branch of the R-03 helper.
+REFACTOR PATH:   one commit.
+                 _TAPES currently ("fix1", "portfolio",
+                 "hazard_decouple"). The helper signature
+                 already has passive_limit; its branch
+                 raises. This rung lives that branch and
+                 appends "passive_limit" to _TAPES. Do not
+                 add a second helper. Do not split into two
+                 tape ids.
+                 The test boots every id in _TAPES under the
+                 spy, unions invoked, and asserts
+                 MUST_INVOKE ⊆ invoked and
+                 invoked ∩ DECLARED_UNINVOKED == ∅.
+                 passive_limit tape PlatformConfig:
+                 symbols = frozenset(_UNIVERSE)
+                 ({AAPL, MSFT}; _synth_events is reusable).
+                 horizons_seconds = frozenset({30})
+                 (FIX-1's _HORIZON_SECONDS).
+                 alpha_specs = [_NULL_ALPHA] (FIX-1's
+                 committed Path; evaluate returns None).
+                 sensor_specs = _SENSOR_SPECS.
+                 regime_engine = hmm_3state_fractional.
+                 enforce_trend_mechanism = False.
+                 factor_loadings_dir stays None.
+                 account_equity and session_open_ns as FIX-1.
+                 execution_mode = "passive_limit".
+                 moc_session_date = any ISO date (a string
+                 is enough to build bounds).
+                 RthEntryFillGate stays a never-row. The
+                 router constructs it and does not call
+                 gate.reset(). This rung must not make that
+                 call. If it does, DECLARED_UNINVOKED
+                 entered.
+                 (1) Pin first. Move
+                 PassiveLimitOrderRouter and
+                 MocFillController from
+                 DECLARED_UNINVOKED into MUST_INVOKE.
+                 _TAPES stays ("fix1", "portfolio",
+                 "hazard_decouple"). Passive_limit branch
+                 still raises. Run the spy. It MUST fail
+                 naming ['MocFillController',
+                 'PassiveLimitOrderRouter']. That
+                 fail-before is the pin movement.
+                 (2) Append "passive_limit" to _TAPES and
+                 live the branch. The spy MUST pass.
+                 MUST_INVOKE 30 to 32.
+                 (3) Closure: PassiveLimitOrderRouter.reset
+                 names SequenceGenerator (_ack_seq) and
+                 MocFillController (_moc.reset).
+                 SequenceGenerator is already MUST_INVOKE.
+                 MocFillController.reset clears _pending
+                 only. Names nothing new. Stop.
+                 (4) Probe, uncommitted, restore
+                 byte-identical. Pin fail-before already
+                 named both (not constructed). After the
+                 config: drop the nested
+                 `if self._moc is not None: self._moc.reset()`
+                 in PassiveLimitOrderRouter.reset.
+                 MUST_INVOKE not entered:
+                 ['MocFillController'].
+                 PassiveLimitOrderRouter remains entered by
+                 name (absent from the missing set).
+                 Restore. Re-run green.
+                 That is the right probe: the controller is
+                 nested in the router body, not a bus
+                 subscriber, so a getattr-walk skip cannot
+                 unreach it. Dropping the named
+                 _maybe_reset on order_router would unreach
+                 both names together and would not show the
+                 nested path. Do not probe by deleting
+                 MocFillController.reset: the body exists
+                 and the missing piece on this rung is
+                 construction, not the call. Do not call
+                 RthEntryFillGate.reset.
+BLAST RADIUS:    local — tests/ only. Shared spy file with
+                 R-06.
+VALIDATED BY:    spy union equals MUST_INVOKE including the
+                 two new names; DECLARED_UNINVOKED no
+                 longer contains them and still equals the
+                 remaining owed-plus-never set
+                 (MassiveNormalizer plus the nine
+                 never-rows, including RthEntryFillGate);
+                 pin fail-before named both then passed
+                 after the passive_limit tape; nested-call
+                 drop named MocFillController with
+                 PassiveLimitOrderRouter still entered by
+                 name; test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. No XPASS. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. Do
+                 not re-pin. The new tape is a synth
+                 conformance fixture and must never assert
+                 LOCKED_PARITY_BASELINES,
+                 _BASELINE_TRADE_PARITY_HASH, or
+                 _BASELINE_FILL_COUNT. A tape that runs the
+                 APP oracle is a declared break, not a
+                 hold. Locked hashes are cold-start
+                 single-run and do not call
+                 Orchestrator.reset(for_new_run=True).
+DELETES:         nothing. Owed 3 to 1 by moving two
+                 names into MUST_INVOKE, not by dropping
+                 a G04 exemption.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Not independently
+                 revertible from R-06 or a later R-0*
+                 that edits test_reset_invocation.py.
+```
+
