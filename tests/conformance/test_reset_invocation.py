@@ -21,8 +21,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from feelies.bootstrap import build_platform
+from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.sensors.impl.quote_replenish_asymmetry import QuoteReplenishAsymmetrySensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -54,6 +56,7 @@ MUST_INVOKE: frozenset[str] = frozenset(
         "HorizonScheduler",
         "HorizonSignalEngine",
         "InMemoryMetricCollector",
+        "MassiveNormalizer",
         "MemoryPositionStore",
         "MocFillController",
         "Orchestrator",
@@ -78,7 +81,6 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
         "InMemoryEventLog",  # never: the tape
         "InMemoryKillSwitch",  # never: operator kwargs; Inv-11
         "MassiveHistoricalIngestor",  # never: ingest, not replay
-        "MassiveNormalizer",  # owed, injected-normalizer BACKTEST
         "MetricSummary",  # never: parent clear; S16 owns reset
         "QuoteReplayObserver",  # never: CLI; reset hits monotonic
         "QuoteTraceIndex",  # never: nested in that observer
@@ -98,7 +100,13 @@ _TapeId = Literal[
     "injected_normalizer",
 ]
 
-_TAPES: tuple[_TapeId, ...] = ("fix1", "portfolio", "hazard_decouple", "passive_limit")
+_TAPES: tuple[_TapeId, ...] = (
+    "fix1",
+    "portfolio",
+    "hazard_decouple",
+    "passive_limit",
+    "injected_normalizer",
+)
 
 _PORTFOLIO_DIR = Path(__file__).resolve().parent / "fixtures" / "portfolio"
 _UPSTREAM_SIGNAL = _PORTFOLIO_DIR / "upstream_signal.alpha.yaml"
@@ -222,7 +230,17 @@ def _config(
             moc_session_date="2026-01-01",
         )
     if tape_id == "injected_normalizer":
-        raise NotImplementedError("injected_normalizer tape is not live until R-06")
+        return PlatformConfig(
+            symbols=frozenset(_UNIVERSE),
+            mode=OperatingMode.BACKTEST,
+            alpha_specs=[_NULL_ALPHA],
+            regime_engine="hmm_3state_fractional",
+            sensor_specs=_SENSOR_SPECS,
+            horizons_seconds=frozenset({_HORIZON_SECONDS}),
+            session_open_ns=SESSION_OPEN_NS,
+            account_equity=1_000_000.0,
+            enforce_trend_mechanism=False,
+        )
     raise AssertionError(f"unknown tape_id {tape_id!r}")
 
 
@@ -282,7 +300,14 @@ def test_reset_cascade_on_fix1_matches_must_invoke_pin() -> None:
         config = _config(tape_id)
         event_log = InMemoryEventLog()
         event_log.append_batch(_synth_events())
-        orchestrator, _ = build_platform(config, event_log=event_log)
+        if tape_id == "injected_normalizer":
+            normalizer = MassiveNormalizer(SimulatedClock(start_ns=SESSION_OPEN_NS))
+            normalizer.register_symbols(frozenset(_UNIVERSE))
+            orchestrator, _ = build_platform(
+                config, event_log=event_log, normalizer=normalizer
+            )
+        else:
+            orchestrator, _ = build_platform(config, event_log=event_log)
         orchestrator.boot(config)
         orchestrator.run_backtest()
         with _spy_named_resets() as invoked:
