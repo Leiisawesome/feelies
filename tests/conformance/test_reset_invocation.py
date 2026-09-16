@@ -17,7 +17,8 @@ from __future__ import annotations
 import importlib
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 from feelies.bootstrap import build_platform
 from feelies.core.platform_config import OperatingMode, PlatformConfig
@@ -37,10 +38,13 @@ MUST_INVOKE: frozenset[str] = frozenset(
         "AlphaRegistry",
         "BacktestOrderRouter",
         "BasicRiskEngine",
+        "CompositionEngine",
+        "CrossSectionalTracker",
         "EventBus",
         "FillAttributionLedger",
         "HMM3StateFractional",
         "HorizonAggregator",
+        "HorizonMetricsCollector",
         "HorizonScheduler",
         "HorizonSignalEngine",
         "InMemoryMetricCollector",
@@ -54,18 +58,16 @@ MUST_INVOKE: frozenset[str] = frozenset(
         "StateMachine",
         "StopExitController",
         "StrategyPositionStore",
+        "UniverseSynchronizer",
         "_HaltTradeability",
     }
 )
 
 DECLARED_UNINVOKED: frozenset[str] = frozenset(
     {
-        "CompositionEngine",  # owed, PORTFOLIO tape
-        "CrossSectionalTracker",  # owed, PORTFOLIO tape
         "DeferralCapController",  # owed, decouple tape
         "ExitComposer",  # owed, decouple tape
         "HazardExitController",  # owed, hazard tape
-        "HorizonMetricsCollector",  # owed, PORTFOLIO tape
         "IBOrderRouter",  # never: IB / paper_rth
         "InMemoryEventLog",  # never: the tape
         "InMemoryKillSwitch",  # never: operator kwargs; Inv-11
@@ -78,13 +80,26 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
         "QuoteTraceIndex",  # never: nested in that observer
         "RegimeHazardDetector",  # owed, hazard tape
         "RthEntryFillGate",  # never: no-op body; S16 owns reset
-        "UniverseSynchronizer",  # owed, PORTFOLIO tape
         "_WarmTimestampIndex",  # never: parent clear; S16 owns reset
     }
 )
 
 # StrategyPositionStore and FillAttributionLedger expose reset() and are
 # wrapped with the rest of MUST_INVOKE.
+
+_TapeId = Literal[
+    "fix1",
+    "portfolio",
+    "hazard_decouple",
+    "passive_limit",
+    "injected_normalizer",
+]
+
+_TAPES: tuple[_TapeId, ...] = ("fix1", "portfolio")
+
+_PORTFOLIO_DIR = Path(__file__).resolve().parent / "fixtures" / "portfolio"
+_UPSTREAM_SIGNAL = _PORTFOLIO_DIR / "upstream_signal.alpha.yaml"
+_NULL_PORTFOLIO = _PORTFOLIO_DIR / "null_portfolio.alpha.yaml"
 
 _RESET_CLASS_IMPORTS: tuple[tuple[str, str], ...] = (
     ("feelies.alpha.registry", "AlphaRegistry"),
@@ -132,18 +147,46 @@ _RESET_CLASS_IMPORTS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _config() -> PlatformConfig:
-    return PlatformConfig(
-        symbols=frozenset(_UNIVERSE),
-        mode=OperatingMode.BACKTEST,
-        alpha_specs=[_NULL_ALPHA],
-        regime_engine="hmm_3state_fractional",
-        sensor_specs=_SENSOR_SPECS,
-        horizons_seconds=frozenset({_HORIZON_SECONDS}),
-        session_open_ns=SESSION_OPEN_NS,
-        account_equity=1_000_000.0,
-        enforce_trend_mechanism=False,
-    )
+def _config(
+    tape_id: Literal[
+        "fix1",
+        "portfolio",
+        "hazard_decouple",
+        "passive_limit",
+        "injected_normalizer",
+    ] = "fix1",
+) -> PlatformConfig:
+    if tape_id == "fix1":
+        return PlatformConfig(
+            symbols=frozenset(_UNIVERSE),
+            mode=OperatingMode.BACKTEST,
+            alpha_specs=[_NULL_ALPHA],
+            regime_engine="hmm_3state_fractional",
+            sensor_specs=_SENSOR_SPECS,
+            horizons_seconds=frozenset({_HORIZON_SECONDS}),
+            session_open_ns=SESSION_OPEN_NS,
+            account_equity=1_000_000.0,
+            enforce_trend_mechanism=False,
+        )
+    if tape_id == "portfolio":
+        return PlatformConfig(
+            symbols=frozenset(_UNIVERSE),
+            mode=OperatingMode.BACKTEST,
+            alpha_specs=[_UPSTREAM_SIGNAL, _NULL_PORTFOLIO],
+            regime_engine="hmm_3state_fractional",
+            sensor_specs=_SENSOR_SPECS,
+            horizons_seconds=frozenset({300}),
+            session_open_ns=SESSION_OPEN_NS,
+            account_equity=1_000_000.0,
+            enforce_trend_mechanism=False,
+        )
+    if tape_id == "hazard_decouple":
+        raise NotImplementedError("hazard_decouple tape is not live until R-04")
+    if tape_id == "passive_limit":
+        raise NotImplementedError("passive_limit tape is not live until R-05")
+    if tape_id == "injected_normalizer":
+        raise NotImplementedError("injected_normalizer tape is not live until R-06")
+    raise AssertionError(f"unknown tape_id {tape_id!r}")
 
 
 def _named_reset_classes() -> list[type[Any]]:
@@ -197,15 +240,18 @@ def _spy_named_resets() -> Iterator[set[str]]:
 
 
 def test_reset_cascade_on_fix1_matches_must_invoke_pin() -> None:
-    config = _config()
-    event_log = InMemoryEventLog()
-    event_log.append_batch(_synth_events())
-    orchestrator, _ = build_platform(config, event_log=event_log)
-    orchestrator.boot(config)
-    orchestrator.run_backtest()
-    with _spy_named_resets() as invoked:
-        orchestrator.reset()
-    missing = MUST_INVOKE - invoked
-    leaked = invoked & DECLARED_UNINVOKED
+    invoked_union: set[str] = set()
+    for tape_id in _TAPES:
+        config = _config(tape_id)
+        event_log = InMemoryEventLog()
+        event_log.append_batch(_synth_events())
+        orchestrator, _ = build_platform(config, event_log=event_log)
+        orchestrator.boot(config)
+        orchestrator.run_backtest()
+        with _spy_named_resets() as invoked:
+            orchestrator.reset()
+        invoked_union |= invoked
+    missing = MUST_INVOKE - invoked_union
+    leaked = invoked_union & DECLARED_UNINVOKED
     assert not missing, f"MUST_INVOKE not entered: {sorted(missing)}"
     assert not leaked, f"DECLARED_UNINVOKED entered: {sorted(leaked)}"
