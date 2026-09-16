@@ -20447,3 +20447,264 @@ FINDINGS:    A future campaign that inverts an
                  baseline_pre-R-02.json,
                  baseline_post-R-02.json, this ledger
                  entry.
+
+---
+
+## R-03  2026-09-16T09:47:00+08:00
+  STEP:          R-03
+  BASE:          a85f0cb6e29eca9a9dcf0066980b1ad5da7e8857
+  RESULT SHA:    56eed8c1fdba89c773695fd94d652bd64b1b7b7f (exec/R-03; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 11 to 7. Does not close G04.
+                 Moves four names into MUST_INVOKE in the same
+                 commit as the PORTFOLIO config that constructs
+                 them: CompositionEngine, UniverseSynchronizer,
+                 CrossSectionalTracker, HorizonMetricsCollector.
+                 The nine never-rows stay in DECLARED_UNINVOKED.
+                 G04 stays CLOSED. This is not G04.
+                 All four were reachable without a src edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (four names in MUST_INVOKE,
+                 _TAPES still ("fix1",), helper signature in
+                 place, later three branches raise, no
+                 PORTFOLIO tape): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['CompositionEngine', 'CrossSectionalTracker',
+                 'HorizonMetricsCollector', 'UniverseSynchronizer']
+                 (tests/conformance/test_reset_invocation.py:241).
+                 Spy after tape: 1 passed. MUST_INVOKE
+                 22 -> 26. _TAPES ("fix1",) ->
+                 ("fix1", "portfolio").
+                 Two probes, uncommitted, restore
+                 BYTE_IDENTICAL between:
+                 (a) drop
+                     _maybe_reset(self._composition_engine)
+                     PASSED (1 passed). CompositionEngine
+                     remained entered via the getattr bus
+                     walk. That is the proof the named call
+                     is not the PORTFOLIO path and no new
+                     _maybe_reset is required.
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 (b) skip the getattr bus walk on the
+                     PORTFOLIO tape
+                     (if self._composition_engine is None:
+                     walk; else skip). MUST_INVOKE not
+                     entered:
+                     ['CrossSectionalTracker',
+                     'HorizonMetricsCollector',
+                     'UniverseSynchronizer']
+                     CompositionEngine remained entered
+                     by name (absent from the missing set).
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 Green re-run after last restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-03 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-03 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4909 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4909 vs capture 4910 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-03 vs post-R-03 and vs
+                 baseline_post-R-02.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 11 to 7.
+  FILES:         3 declared, 3 touched, 3 committed
+                 (clean vs 56eed8c1). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py,
+                 fixtures/portfolio/upstream_signal.alpha.yaml,
+                 fixtures/portfolio/null_portfolio.alpha.yaml.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47059 -> 47059 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 3 declared / 3 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 56eed8c1fdba89c773695fd94d652bd64b1b7b7f.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD a85f0cb6 on arch/exec.
+                 Cut exec/R-03. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 56eed8c1fdba89c773695fd94d652bd64b1b7b7f.
+                 One commit, three files, none in src/:
+                 test_reset_invocation.py,
+                 fixtures/portfolio/upstream_signal.alpha.yaml,
+                 fixtures/portfolio/null_portfolio.alpha.yaml.
+                 Subject "R-03: pin PORTFOLIO composition
+                 objects on the reset spy". Probe
+                 mutations of orchestrator.py were
+                 restored; that file is not in the
+                 commit.
+                 Closure walked to fixpoint before the
+                 first edit and terminated at
+                 SequenceGenerator. The four objects are
+                 constructed in
+                 bootstrap._create_composition_layer
+                 once a PORTFOLIO alpha is registered.
+                 CompositionEngine.reset,
+                 UniverseSynchronizer.reset, and
+                 HorizonMetricsCollector.reset each name
+                 SequenceGenerator. CrossSectionalTracker
+                 names nothing. Ranker, FactorNeutralizer,
+                 SectorMatcher, and TurnoverOptimizer have
+                 no reset(). Stop.
+                 Pin fail-before named all four. Names
+                 moved into MUST_INVOKE with _TAPES still
+                 ("fix1",) and only the fix1 branch live:
+                 MUST_INVOKE not entered:
+                 ['CompositionEngine',
+                 'CrossSectionalTracker',
+                 'HorizonMetricsCollector',
+                 'UniverseSynchronizer']
+                 (test_reset_invocation.py:241). That is
+                 the pin movement. The PORTFOLIO tape then
+                 landed; the spy passed.
+                 Probe (a) dropped
+                 _maybe_reset(self._composition_engine).
+                 The spy PASSED. CompositionEngine was
+                 still entered via the getattr bus walk.
+                 Restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes), BYTE_IDENTICAL to the
+                 pre-probe file.
+                 Probe (a) is the campaign's first probe
+                 designed to pass. It does not prove a
+                 guard bites -- it proves a path is
+                 redundant. The named
+                 _maybe_reset(self._composition_engine) is
+                 not what reaches CompositionEngine on a
+                 PORTFOLIO tape; the getattr bus walk is,
+                 and it carries the other three as well.
+                 That is why the rung needed no src edit.
+                 A probe which must pass is as much
+                 evidence as one which must fail when the
+                 claim is "this path is not required."
+                 Probe (b) skipped the getattr bus walk on
+                 the PORTFOLIO tape. FAILED naming the
+                 three locals: MUST_INVOKE not entered:
+                 ['CrossSectionalTracker',
+                 'HorizonMetricsCollector',
+                 'UniverseSynchronizer'].
+                 CompositionEngine stayed entered by
+                 name. Restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes), BYTE_IDENTICAL. Both
+                 restores match each other and the
+                 pre-probe hash. Green re-run after the
+                 last restore: 1 passed.
+                 MUST_INVOKE 22 to 26. _TAPES went from
+                 ("fix1",) to ("fix1", "portfolio").
+                 Helper signature has all five ids; the
+                 later three branches raise until their
+                 rung. No second helper.
+                 PORTFOLIO universe is inside FIX-1's
+                 symbols: frozenset(_UNIVERSE) =
+                 {AAPL, MSFT}, and the YAML universe list
+                 is the same two names, so _synth_events
+                 was reusable. factor_loadings_dir left
+                 None (the default); the freshness check
+                 is skipped.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved, including
+                 _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 They are cold-start single-run and never
+                 call Orchestrator.reset(for_new_run=True).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 mypy src/feelies Success, 249 source
+                 files, before the gate. tests/docs
+                 101 passed.
+                 NET DELTA all zeros: modules 249 -> 249,
+                 public_symbols 590 -> 590, sloc 47059
+                 -> 47059, n_edges 675, n_modules 203,
+                 cycles 1, alphaleak 0.
+  FINDINGS:      Probe (b) on the union spy cannot be an
+                 unconditional skip of the _bus._handlers
+                 loop: that loop is also how FIX-1 enters
+                 HorizonAggregator and StopExitController.
+                 Skipping only when
+                 self._composition_engine is set names the
+                 three locals the block specified.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-04 hazard and decouple config; owed 7
+                 to 3 (boundary). Not started. Do not
+                 begin R-04.
+                 Left uncommitted:
+                 baseline_pre-R-03.json,
+                 baseline_post-R-03.json, this ledger
+                 entry.
