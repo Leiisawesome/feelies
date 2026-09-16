@@ -89,6 +89,20 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
     }
 )
 
+_NEVER_ROWS: frozenset[str] = frozenset(
+    {
+        "IBOrderRouter",  # never: IB / paper_rth
+        "InMemoryEventLog",  # never: the tape
+        "InMemoryKillSwitch",  # never: operator kwargs; Inv-11
+        "MassiveHistoricalIngestor",  # never: ingest, not replay
+        "MetricSummary",  # never: parent clear; S16 owns reset
+        "QuoteReplayObserver",  # never: CLI; reset hits monotonic
+        "QuoteTraceIndex",  # never: nested in that observer
+        "RthEntryFillGate",  # never: no-op body; S16 owns reset
+        "_WarmTimestampIndex",  # never: parent clear; S16 owns reset
+    }
+)
+
 # StrategyPositionStore and FillAttributionLedger expose reset() and are
 # wrapped with the rest of MUST_INVOKE.
 
@@ -317,3 +331,5 @@ def test_reset_cascade_on_fix1_matches_must_invoke_pin() -> None:
     leaked = invoked_union & DECLARED_UNINVOKED
     assert not missing, f"MUST_INVOKE not entered: {sorted(missing)}"
     assert not leaked, f"DECLARED_UNINVOKED entered: {sorted(leaked)}"
+    assert DECLARED_UNINVOKED == _NEVER_ROWS
+    assert invoked_union == MUST_INVOKE
