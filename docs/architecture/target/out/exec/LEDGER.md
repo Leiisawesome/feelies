@@ -20957,3 +20957,235 @@ FINDINGS:    A future campaign that inverts an
                  baseline_pre-R-04a.json,
                  baseline_post-R-04a.json, this ledger
                  entry.
+
+---
+
+## R-04b  2026-09-16T12:49:47+08:00
+  STEP:          R-04b
+  BASE:          f2214508da02aaa8fb5f31146dea7bd69909611e
+  RESULT SHA:    10c76b9a9618929fc8700ea4505c5027d9564b9e (exec/R-04b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 4 to 3. Does not close G04.
+                 Moves RegimeHazardDetector into MUST_INVOKE in
+                 the same commit as
+                 _maybe_reset(self._regime_hazard_detector).
+                 The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This
+                 is not G04.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (name in MUST_INVOKE, no
+                 new call): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['RegimeHazardDetector']
+                 (tests/conformance/test_reset_invocation.py:281).
+                 Spy after the line: 1 passed. MUST_INVOKE
+                 29 -> 30. _TAPES unmoved
+                 ("fix1", "portfolio", "hazard_decouple").
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 drop
+                 _maybe_reset(self._regime_hazard_detector)
+                 MUST_INVOKE not entered:
+                 ['RegimeHazardDetector']
+                 restore SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 kernel 390; services 108.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-04b GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-04b GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4909 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4909 vs capture 4910 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-04b vs post-R-04b and vs
+                 baseline_post-R-04a.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True), so
+                 they never reach the new line. A hash
+                 move would have meant the line changed
+                 cold-start behaviour.
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 4 to 3.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs 10c76b9a). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: kernel/orchestrator.py,
+                 test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the R-04a yaml.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that mutation is not
+                 in the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47059 -> 47060 (+1, undeclared;
+                 the one line)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 10c76b9a9618929fc8700ea4505c5027d9564b9e.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD f2214508 on arch/exec.
+                 Cut exec/R-04b. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 10c76b9a9618929fc8700ea4505c5027d9564b9e.
+                 One commit, two files, one src line:
+                 orchestrator.py and
+                 test_reset_invocation.py. Subject
+                 "R-04b: invoke RegimeHazardDetector.reset
+                 on for_new_run". The commit is clean of
+                 ledger; LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 This is the campaign's only body fix so
+                 far that is not a missing method. The
+                 detector already exposed reset().
+                 Session start already called it, from
+                 run_backtest and
+                 _run_deployment_session through
+                 _reset_regime_session_state.
+                 Orchestrator.reset(for_new_run=True)
+                 never did. Per-session and per-run are
+                 different lifetimes, and a reset that
+                 covers one is not evidence about the
+                 other. A cold start was always clean
+                 because a new process has an empty
+                 _suppressed. Only an in-process second
+                 run inherited the leftover
+                 (symbol, engine_name, departing_state)
+                 triples. A leftover triple makes
+                 detect() return None for a spike it
+                 should have fired, which is a skipped
+                 hazard exit -- Inv-11 territory. The
+                 named _maybe_reset on for_new_run is
+                 what closes that lifetime.
+                 Closure walked to fixpoint before the
+                 first edit and terminated at
+                 _suppressed. RegimeHazardDetector is
+                 stored on Orchestrator
+                 (orchestrator.py:3065), has no
+                 attach(), and is not a bus subscriber;
+                 detect() is a direct call at line 960.
+                 The getattr walk cannot see it.
+                 reset() clears _suppressed only. Names
+                 nothing new. Stop.
+                 _reset_regime_session_state was not
+                 touched.
+                 Pin first, no src edit. The spy FAILED
+                 naming it: MUST_INVOKE not entered:
+                 ['RegimeHazardDetector']
+                 (test_reset_invocation.py:281). That
+                 fail-before is the pin movement. Then
+                 one line immediately after
+                 _maybe_reset(self._hazard_exit_controller)
+                 at 5228:
+                 _maybe_reset(self._regime_hazard_detector)
+                 at 5229. The spy passed.
+                 _maybe_reset already no-ops on None
+                 (getattr(None, "reset", None) is not
+                 callable), so FIX-1 and PORTFOLIO stay
+                 unchanged.
+                 Probe dropped the new line. FAILED
+                 naming RegimeHazardDetector. Restore
+                 SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes), BYTE_IDENTICAL. Green
+                 re-run: 1 passed. Did not probe by
+                 deleting RegimeHazardDetector.reset:
+                 the body exists; the missing piece is
+                 the named call. Did not probe
+                 _reset_regime_session_state: that path
+                 is session start, not for_new_run.
+                 MUST_INVOKE 29 to 30. _TAPES unmoved
+                 at three ids: ("fix1", "portfolio",
+                 "hazard_decouple"). DECLARED_UNINVOKED
+                 is the nine never-rows plus the three
+                 remaining owed: MassiveNormalizer,
+                 MocFillController,
+                 PassiveLimitOrderRouter.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA zero on modules and symbols:
+                 249 -> 249, 590 -> 590. sloc 47059 ->
+                 47060, the one line. n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-05 passive_limit and MOC; owed 3
+                 to 1 (boundary). Not started. Do not
+                 begin R-05.
+                 Left uncommitted:
+                 baseline_pre-R-04b.json,
+                 baseline_post-R-04b.json, this ledger
+                 entry.
+
