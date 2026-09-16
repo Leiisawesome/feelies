@@ -21427,3 +21427,271 @@ FINDINGS:    A future campaign that inverts an
                  baseline_post-R-05.json, this ledger
                  entry.
 
+---
+
+## R-06  2026-09-16T19:58:30+08:00
+  STEP:          R-06
+  BASE:          46cfa4f268f853753f1f66d5ca8ef64f6ced613c
+  RESULT SHA:    b20fcdd33b243f2b509014d1708bb4ffb6f053a7 (exec/R-06; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 1 to 0. Does not close G04.
+                 Does not close the campaign — that is R-07.
+                 Moves MassiveNormalizer into MUST_INVOKE in
+                 the same commit as the build_platform
+                 injection that constructs it.
+                 DECLARED_UNINVOKED is exactly the nine
+                 never-rows. G04 stays CLOSED. This is not
+                 G04.
+                 Reachable without a src edit. The injection
+                 is the public keyword, not a private
+                 attribute.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (name in MUST_INVOKE,
+                 _TAPES still four ids, injected_normalizer
+                 branch still raises, boot loop still omits
+                 normalizer=): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 (tests/conformance/test_reset_invocation.py:293).
+                 Spy after injection: 1 passed. MUST_INVOKE
+                 32 -> 33. _TAPES ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit") ->
+                 ("fix1", "portfolio", "hazard_decouple",
+                 "passive_limit", "injected_normalizer").
+                 DECLARED_UNINVOKED is the nine never-rows.
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 drop `_maybe_reset(self._normalizer)` in
+                 Orchestrator.reset.
+                 MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 restore SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 ingestion 148 passed / 3 skipped.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-06 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (accepted IB EXEMPTION).
+                 -> capture post-R-06 RED 4909 passed / 2
+                 failed / 18 skipped / 5 xfailed. Same IB
+                 failure plus
+                 tests/ingestion/test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 (live-feed EXEMPTION). Direct re-run of
+                 that file: 3 passed / 2 skipped; no code
+                 change. No failure outside the accepted
+                 set.
+                 not-paper_rth after commit: 4908 passed /
+                 2 failed / 5 skipped / 14 deselected /
+                 5 xfailed. Same two EXEMPTION failures.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-06 vs post-R-06 and vs
+                 baseline_post-R-05.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 1 to 0.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs b20fcdd3). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 null_alpha.alpha.yaml.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. No yaml. S16 unmoved. R6
+                 unmoved. verify_step not runnable
+                 (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4909 passed, failed 1->2
+                 (IB EXEMPTION both sides; extra is the
+                 live-Massive websocket test, which passed
+                 on a direct re-run of that file; no
+                 failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 b20fcdd33b243f2b509014d1708bb4ffb6f053a7.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD 46cfa4f2 on arch/exec.
+                 Cut exec/R-06. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 b20fcdd33b243f2b509014d1708bb4ffb6f053a7.
+                 Single commit, one file, no src:
+                 tests/conformance/test_reset_invocation.py
+                 only. Subject "R-06: pin injected
+                 MassiveNormalizer on the reset spy".
+                 29 insertions, 4 deletions. The probe
+                 mutated kernel/orchestrator.py and was
+                 restored; that path is not in the
+                 commit. LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 Closure walked to fixpoint before the
+                 first edit. MassiveNormalizer.reset
+                 clears _last_seen, the four counters,
+                 and _warn_ambiguous_rest_logged; then
+                 _seq.reset() (SequenceGenerator) and
+                 machine.reset() on each
+                 _health_machines value (StateMachine).
+                 It keeps _registered_symbols and the
+                 _health_machines dict. SequenceGenerator
+                 .reset restores _counter only.
+                 StateMachine.reset returns to the
+                 initial state and names nothing new.
+                 It never calls
+                 _halt_tradeability.reset — that is
+                 _HaltTradeability via
+                 _reset_halt_state, already MUST_INVOKE.
+                 Terminated at SequenceGenerator and
+                 StateMachine.
+                 normalizer is a build_platform keyword
+                 (bootstrap.py:236), not a PlatformConfig
+                 field. No caller in the tree passes
+                 normalizer= into build_platform.
+                 _maybe_reset(self._normalizer) exists
+                 at orchestrator.py:5223.
+                 _verify_data_integrity, when a
+                 normalizer is bound, requires every
+                 universe symbol in all_health() as
+                 HEALTHY or boot goes DEGRADED
+                 (DATA_INTEGRITY_FAIL).
+                 Pin moved first, _TAPES still four
+                 ids, injected_normalizer branch still
+                 raising, boot loop still omitting
+                 normalizer=. Spy FAILED naming it:
+                 MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 (test_reset_invocation.py:293). That
+                 fail-before is the pin movement. The
+                 tape then landed: FIX-1-shaped
+                 PlatformConfig, MassiveNormalizer(
+                 SimulatedClock(start_ns=SESSION_OPEN_NS)),
+                 register_symbols(frozenset(_UNIVERSE))
+                 before build_platform, then
+                 build_platform(config,
+                 event_log=event_log,
+                 normalizer=normalizer) on that tape
+                 only. The other four ids still boot
+                 without a normalizer. The spy passed.
+                 register_symbols is a precondition of
+                 the boot, not a workaround:
+                 all_health() was {} before it and
+                 {AAPL: HEALTHY, MSFT: HEALTHY} after.
+                 Boot macro was MacroState.READY. The
+                 injected object is the one stored
+                 (orchestrator._normalizer is the
+                 argument). No private attribute was
+                 assigned.
+                 Probe dropped
+                 `_maybe_reset(self._normalizer)`.
+                 FAILED naming MassiveNormalizer alone:
+                 MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 (test_reset_invocation.py:318).
+                 Restore SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes), BYTE_IDENTICAL to the
+                 pre-probe file. Green re-run: 1 passed.
+                 The named-call probe is the only one
+                 that isolates it. The object is stored
+                 on Orchestrator and reached by that
+                 call, not by the getattr bus walk. Did
+                 not probe by deleting
+                 MassiveNormalizer.reset: the body
+                 exists; the missing piece on this rung
+                 is construction. Did not probe
+                 _reset_halt_state: that path is
+                 _HaltTradeability.
+                 MUST_INVOKE 32 to 33. _TAPES at five
+                 ids. DECLARED_UNINVOKED is exactly the
+                 nine never-rows: IBOrderRouter,
+                 InMemoryEventLog, InMemoryKillSwitch,
+                 MassiveHistoricalIngestor,
+                 MetricSummary, QuoteReplayObserver,
+                 QuoteTraceIndex, RthEntryFillGate,
+                 _WarmTimestampIndex.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47060 -> 47060, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-07 partition pin; campaign close
+                 (local). Not started. Do not begin
+                 R-07.
+                 Left uncommitted:
+                 baseline_pre-R-06.json,
+                 baseline_post-R-06.json, this ledger
+                 entry.
+
