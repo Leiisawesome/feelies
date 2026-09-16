@@ -1250,3 +1250,213 @@ ROLLBACK:        revert the commit. Not independently
                  that edits test_reset_invocation.py.
 ```
 
+```
+STEP:            R-06
+CLOSES:          nothing. Owed 1 to 0. Does not close G04.
+                 Does not close the campaign — that is R-07,
+                 the partition assertion. Moves
+                 MassiveNormalizer into MUST_INVOKE in the
+                 same commit as the build_platform
+                 injection that constructs it.
+                 DECLARED_UNINVOKED becomes exactly the
+                 nine never-rows (IBOrderRouter,
+                 InMemoryEventLog, InMemoryKillSwitch,
+                 MassiveHistoricalIngestor, MetricSummary,
+                 QuoteReplayObserver, QuoteTraceIndex,
+                 RthEntryFillGate, _WarmTimestampIndex).
+                 G04 stays CLOSED. This is not G04.
+PROBLEM:         MassiveNormalizer is absent on FIX-1, on
+                 PORTFOLIO, on hazard_decouple, and on
+                 passive_limit because those boots call
+                 build_platform(config, event_log=event_log)
+                 with no normalizer. It is not a
+                 PlatformConfig field. BACKTEST never
+                 auto-constructs one. PAPER does, when
+                 normalizer is None; PAPER / paper_rth is
+                 excluded. No caller in the tree passes
+                 normalizer= into build_platform today.
+                 Harness ingest builds a separate instance
+                 for MassiveHistoricalIngestor (a never-row);
+                 that object dies with the fetch. Replay is
+                 already-canonical events.
+                 The injection is the public keyword
+                 build_platform(..., normalizer=),
+                 documented as enabling per-event data-
+                 health gates. That is a supported
+                 injection, not a poke of
+                 orchestrator._normalizer.
+                 A second run in the same process currently
+                 inherits, on any tape that injects one:
+                 leftover _last_seen (dedup / gap cursors),
+                 leftover DataHealth SM states, leftover
+                 SequenceGenerator state, and leftover
+                 parse counters. On a canonical-event tape
+                 on_message is never called, so those maps
+                 stay empty unless a prior injected run
+                 filled them. The production leak is PAPER
+                 (excluded) or ingest (a different object).
+                 This rung still has to construct the
+                 object and enter reset(), or the owed
+                 name stays a silent DECLARED row.
+WHY THIS OWNER:  The FIX-1 spy is the pin. The class
+                 already exposes reset() and is already
+                 wrapped. Orchestrator.reset already names
+                 _maybe_reset(self._normalizer). Names
+                 move in the same commit as the injection
+                 that constructs the object. The campaign
+                 partition pin stays with R-07.
+FILES:           tests/conformance/test_reset_invocation.py
+                 Do not edit src/. Do not edit
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 or null_alpha.alpha.yaml.
+                 No keep-row file is touched. No yaml.
+                 Probe mutations of
+                 src/feelies/kernel/orchestrator.py are
+                 restored; that file is not in the
+                 commit.
+                 Do not add a second helper — live the
+                 injected_normalizer branch of the R-03
+                 helper (FIX-1-shaped PlatformConfig).
+                 The injection is a build_platform kwarg
+                 in the existing boot loop, not a second
+                 config helper.
+REFACTOR PATH:   one commit.
+                 _TAPES currently ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit").
+                 The helper signature already has
+                 injected_normalizer; its branch raises.
+                 This rung lives that branch and appends
+                 "injected_normalizer" to _TAPES. Do not
+                 add a second helper. Do not split into
+                 two tape ids.
+                 The test boots every id in _TAPES under
+                 the spy, unions invoked, and asserts
+                 MUST_INVOKE ⊆ invoked and
+                 invoked ∩ DECLARED_UNINVOKED == ∅.
+                 injected_normalizer tape PlatformConfig:
+                 symbols = frozenset(_UNIVERSE)
+                 ({AAPL, MSFT}; _synth_events is
+                 reusable). horizons_seconds =
+                 frozenset({30}) (FIX-1's
+                 _HORIZON_SECONDS). alpha_specs =
+                 [_NULL_ALPHA]. sensor_specs =
+                 _SENSOR_SPECS. regime_engine =
+                 hmm_3state_fractional.
+                 enforce_trend_mechanism = False.
+                 factor_loadings_dir stays None.
+                 account_equity and session_open_ns as
+                 FIX-1. execution_mode stays default
+                 "market". moc_session_date stays None.
+                 Injection, in the existing boot loop,
+                 only for this tape_id:
+                 MassiveNormalizer(SimulatedClock(
+                 start_ns=SESSION_OPEN_NS));
+                 register_symbols(frozenset(_UNIVERSE));
+                 build_platform(config,
+                 event_log=event_log,
+                 normalizer=normalizer).
+                 register_symbols is a precondition of
+                 the tape, not a workaround:
+                 _verify_data_integrity, at boot, requires
+                 every universe symbol in all_health() as
+                 HEALTHY. Without register_symbols,
+                 all_health() is empty and boot goes
+                 DEGRADED (DATA_INTEGRITY_FAIL).
+                 register_symbols is public on
+                 MassiveNormalizer. Import
+                 MassiveNormalizer and SimulatedClock in
+                 this file; do not construct via a private
+                 orchestrator attribute.
+                 (1) Pin first. Move MassiveNormalizer
+                 from DECLARED_UNINVOKED into
+                 MUST_INVOKE. _TAPES stays four ids.
+                 injected_normalizer branch still raises.
+                 The boot loop still omits normalizer=.
+                 Run the spy. It MUST fail naming
+                 ['MassiveNormalizer']. That fail-before
+                 is the pin movement.
+                 (2) Append "injected_normalizer" to
+                 _TAPES, live the FIX-1-shaped branch,
+                 construct, register_symbols, pass
+                 normalizer= on that tape only. The spy
+                 MUST pass. MUST_INVOKE 32 to 33.
+                 DECLARED_UNINVOKED is exactly the nine
+                 never-rows.
+                 (3) Closure: MassiveNormalizer.reset
+                 clears _last_seen, the four counters,
+                 _warn_ambiguous_rest_logged; then
+                 _seq.reset() (SequenceGenerator) and
+                 machine.reset() on each
+                 _health_machines value (StateMachine).
+                 It keeps _registered_symbols and the
+                 _health_machines dict. It never calls
+                 _halt_tradeability.reset — that is
+                 already covered by
+                 _reset_halt_state on Orchestrator.reset
+                 (R-01; _HaltTradeability is already
+                 MUST_INVOKE). SequenceGenerator and
+                 StateMachine are already MUST_INVOKE.
+                 Stop.
+                 (4) Probe, uncommitted, restore
+                 byte-identical. Pin fail-before already
+                 named MassiveNormalizer (not
+                 constructed). After the injection: drop
+                 `_maybe_reset(self._normalizer)` in
+                 Orchestrator.reset.
+                 MUST_INVOKE not entered:
+                 ['MassiveNormalizer']. Restore. Re-run
+                 green.
+                 That is the right probe: the object is
+                 stored on Orchestrator and reached by
+                 the named call. It is not a bus
+                 subscriber, so a getattr-walk skip
+                 cannot unreach it. Do not probe by
+                 deleting MassiveNormalizer.reset: the
+                 body exists and the missing piece on
+                 this rung is construction, not the
+                 call. Do not probe _reset_halt_state:
+                 that path is _HaltTradeability, already
+                 MUST_INVOKE, and MassiveNormalizer.reset
+                 does not name it.
+BLAST RADIUS:    local — tests/ only. Last shared-file
+                 rung before R-07.
+VALIDATED BY:    spy union equals MUST_INVOKE including
+                 MassiveNormalizer; DECLARED_UNINVOKED
+                 equals the nine never-rows and no
+                 longer contains MassiveNormalizer; pin
+                 fail-before named it then passed after
+                 the injection; named-call drop named
+                 MassiveNormalizer; test_five_import_tiers
+                 empty _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. No XPASS. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. Do
+                 not re-pin. The new tape is a synth
+                 conformance fixture and must never assert
+                 LOCKED_PARITY_BASELINES,
+                 _BASELINE_TRADE_PARITY_HASH, or
+                 _BASELINE_FILL_COUNT. A tape that runs the
+                 APP oracle is a declared break, not a
+                 hold. Locked hashes are cold-start
+                 single-run and do not call
+                 Orchestrator.reset(for_new_run=True).
+DELETES:         nothing. Owed 1 to 0 by moving one name
+                 into MUST_INVOKE, not by dropping a G04
+                 exemption and not by promoting
+                 MassiveNormalizer to a tenth never-row.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Not independently
+                 revertible from R-07 if R-07 edits
+                 test_reset_invocation.py.
+```
+
