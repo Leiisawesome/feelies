@@ -21189,3 +21189,241 @@ FINDINGS:    A future campaign that inverts an
                  baseline_post-R-04b.json, this ledger
                  entry.
 
+---
+
+## R-05  2026-09-16T18:25:09+08:00
+  STEP:          R-05
+  BASE:          cdabfae2f193b8d589f45069ea67d88002836e0b
+  RESULT SHA:    84f0a856e056e707c7a75d306a32939e7ea1ddc3 (exec/R-05; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 3 to 1. Does not close G04.
+                 Moves two names into MUST_INVOKE in the same
+                 commit as the PlatformConfig that constructs
+                 them: PassiveLimitOrderRouter,
+                 MocFillController.
+                 The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This
+                 is not G04.
+                 Both were reachable without a src edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (two names in MUST_INVOKE,
+                 _TAPES still ("fix1", "portfolio",
+                 "hazard_decouple"), passive_limit branch
+                 still raises, no passive_limit tape): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['MocFillController', 'PassiveLimitOrderRouter']
+                 (tests/conformance/test_reset_invocation.py:281).
+                 Spy after tape: 1 passed. MUST_INVOKE
+                 30 -> 32. _TAPES ("fix1", "portfolio",
+                 "hazard_decouple") -> ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit").
+                 RthEntryFillGate was constructed
+                 (router._rth_gate is RthEntryFillGate)
+                 and did NOT appear in invoked;
+                 DECLARED_UNINVOKED entered would have
+                 failed the spy.
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 drop the nested
+                 `if self._moc is not None: self._moc.reset()`
+                 in PassiveLimitOrderRouter.reset.
+                 MUST_INVOKE not entered:
+                 ['MocFillController']
+                 PassiveLimitOrderRouter remained entered
+                 by name (absent from the missing set).
+                 restore SHA256
+                 01c251309ac9322fde87ffc811b7a9000cd054adad5bc533eaa6527bc3dcaca2
+                 (43637 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 execution 865; conformance 119 passed /
+                 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-05 GREEN 4911 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 -> capture post-R-05 GREEN 4911 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4910 passed /
+                 0 failed / 5 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4910 vs capture 4911 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-05 vs post-R-05 and vs
+                 baseline_post-R-04b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 3 to 1.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 84f0a856). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 null_alpha.alpha.yaml.
+                 Probe mutated
+                 execution/passive_limit_router.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4911->4911 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 84f0a856e056e707c7a75d306a32939e7ea1ddc3.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD cdabfae2 on arch/exec.
+                 Cut exec/R-05. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 84f0a856e056e707c7a75d306a32939e7ea1ddc3.
+                 Single commit, one file, no src:
+                 tests/conformance/test_reset_invocation.py
+                 only. Subject "R-05: pin passive_limit
+                 and MOC cascade objects on the reset
+                 spy". 16 insertions, 4 deletions. The
+                 probe mutated
+                 execution/passive_limit_router.py and
+                 was restored; that path is not in the
+                 commit. LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 Closure walked to fixpoint before the
+                 first edit. PassiveLimitOrderRouter.reset
+                 names SequenceGenerator (_ack_seq) and
+                 MocFillController (_moc.reset).
+                 SequenceGenerator.reset restores
+                 _counter only. MocFillController.reset
+                 clears _pending only and names nothing
+                 new. Terminated at SequenceGenerator
+                 and MocFillController._pending.
+                 Pin moved first, _TAPES still three
+                 ids, passive_limit branch still
+                 raising. Spy FAILED naming both:
+                 MUST_INVOKE not entered:
+                 ['MocFillController',
+                 'PassiveLimitOrderRouter']
+                 (test_reset_invocation.py:281). That
+                 fail-before is the pin movement. The
+                 tape then landed; the spy passed.
+                 Probe cut the nested
+                 `if self._moc is not None: self._moc.reset()`
+                 in PassiveLimitOrderRouter.reset.
+                 FAILED naming MocFillController alone:
+                 MUST_INVOKE not entered:
+                 ['MocFillController']
+                 (test_reset_invocation.py:293).
+                 PassiveLimitOrderRouter stayed entered
+                 by name. Restore SHA256
+                 01c251309ac9322fde87ffc811b7a9000cd054adad5bc533eaa6527bc3dcaca2
+                 (43637 bytes), BYTE_IDENTICAL to the
+                 pre-probe file. Green re-run: 1 passed.
+                 The nested-call probe is the only one
+                 that isolates the controller.
+                 MocFillController is constructed inside
+                 the router and reached from the
+                 router's own body, not from the bus, so
+                 a getattr-walk skip cannot unreach it.
+                 Dropping the named _maybe_reset on
+                 order_router would unreach both names
+                 at once and prove nothing about the
+                 nested path. The probe has to cut the
+                 specific edge the rung claims, not any
+                 edge upstream of it.
+                 RthEntryFillGate was constructed on
+                 that tape (router._rth_gate is
+                 RthEntryFillGate) and did NOT enter
+                 the cascade. It stays a never-row.
+                 Adding gate.reset() would have failed
+                 DECLARED_UNINVOKED entered. This rung
+                 did not add that call.
+                 MUST_INVOKE 30 to 32. _TAPES at four
+                 ids: ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit").
+                 Both switches on one tape:
+                 execution_mode="passive_limit" and
+                 moc_session_date="2026-01-01".
+                 passive_limit alone leaves _moc None.
+                 No fill on any path: evaluate returns
+                 None, fills_by_through 0,
+                 fills_by_drain 0, resting 0,
+                 pending_moc 0, book flat.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47060 -> 47060, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-06 injected normalizer; owed 1
+                 to 0 (boundary). Not started. Do not
+                 begin R-06.
+                 Left uncommitted:
+                 baseline_pre-R-05.json,
+                 baseline_post-R-05.json, this ledger
+                 entry.
+
