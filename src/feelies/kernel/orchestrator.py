@@ -5226,6 +5226,7 @@ class Orchestrator:
         _maybe_reset(self._horizon_signal_engine)
         _maybe_reset(self._composition_engine)
         _maybe_reset(self._hazard_exit_controller)
+        _maybe_reset(self._regime_hazard_detector)
         _maybe_reset(self._alpha_registry)
         _maybe_reset(getattr(self._backend, "order_router", None))
         _maybe_reset(self._fill_ledger)
