@@ -721,3 +721,345 @@ ROLLBACK:        revert the commit. Not independently
                  R-04 through R-06 on the spy file.
 ```
 
+```
+STEP:            R-04a
+CLOSES:          nothing. Owed 7 to 4. Does not close G04.
+                 Moves three names into MUST_INVOKE in the same
+                 commit as the hazard-plus-decouple config that
+                 constructs them: HazardExitController,
+                 ExitComposer, DeferralCapController.
+                 RegimeHazardDetector is constructed by the
+                 same yaml and stays in DECLARED_UNINVOKED
+                 until R-04b, so the pin does not lie in
+                 between: MUST_INVOKE does not claim it, and
+                 if the cascade reached it this rung would
+                 fail DECLARED_UNINVOKED entered.
+                 The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This is
+                 not G04.
+PROBLEM:         The three objects are absent on FIX-1 and
+                 on the PORTFOLIO tape because no alpha
+                 declares hazard_exit.enabled or
+                 safety_exit_policy.mode=decouple_caps_only.
+                 Both switches are alpha-manifest fields, not
+                 PlatformConfig. One SIGNAL spec can carry
+                 both. Once loaded:
+                 (1) HazardExitController is stored as
+                 orchestrator._hazard_exit_controller,
+                 attach() to RegimeHazardSpike and Trade, and
+                 is already named
+                 _maybe_reset(self._hazard_exit_controller).
+                 (2) ExitComposer and DeferralCapController
+                 are bootstrap locals that attach()
+                 (SafetyStateChange; the cap also Trade) and
+                 are not stored on Orchestrator. EventBus.reset
+                 only zeroes cascade depth; subscriptions stay.
+                 The getattr bus walk reaches both.
+                 This is a config widen, not a body fix. No
+                 new _maybe_reset. No src/ edit. A fired
+                 hazard or a gate-OFF is not the claim:
+                 construction plus cascade is. A second run
+                 in the same process currently inherits, on
+                 any tape that loads this spec:
+                 (1) HazardExitController — leftover episode
+                 suppression and pending-exit guards, plus
+                 SequenceGenerator state.
+                 (2) ExitComposer — leftover pending-exit
+                 guards and SequenceGenerator state.
+                 (3) DeferralCapController — leftover first-safe-
+                 off anchors, pending-exit guards, and
+                 SequenceGenerator state.
+WHY THIS OWNER:  The FIX-1 spy is the pin. The three classes
+                 already expose reset() and are already wrapped.
+                 Names move in the same commit as the config
+                 that constructs them. The detector body stays
+                 with R-04b.
+FILES:           tests/conformance/test_reset_invocation.py
+                 tests/conformance/fixtures/hazard_decouple/hazard_decouple.alpha.yaml
+                 Do not edit src/. Do not edit
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, or
+                 null_alpha.alpha.yaml.
+                 No keep-row file is touched. Probe mutations
+                 of orchestrator.py are restored; that file is
+                 not in the commit.
+                 Yaml is a committed fixture, not inlined.
+                 Do not add a second helper — live the
+                 hazard_decouple branch of the R-03 helper.
+REFACTOR PATH:   one commit.
+                 _TAPES currently ("fix1", "portfolio").
+                 The helper signature already has
+                 hazard_decouple; its branch raises. This
+                 rung lives that branch and appends
+                 "hazard_decouple" to _TAPES. Do not add a
+                 second helper. Do not split into two tape
+                 ids.
+                 The test boots every id in _TAPES under the
+                 spy, unions invoked, and asserts
+                 MUST_INVOKE ⊆ invoked and
+                 invoked ∩ DECLARED_UNINVOKED == ∅.
+                 hazard_decouple tape PlatformConfig:
+                 symbols = frozenset(_UNIVERSE)
+                 ({AAPL, MSFT}; _synth_events is reusable).
+                 horizons_seconds = frozenset({30})
+                 (FIX-1's _HORIZON_SECONDS).
+                 alpha_specs = [hazard_decouple yaml].
+                 regime_engine = hmm_3state_fractional.
+                 enforce_trend_mechanism = False.
+                 factor_loadings_dir stays None.
+                 account_equity and session_open_ns as FIX-1.
+                 sensor_specs cannot be _SENSOR_SPECS
+                 alone: G17 forces a trend_mechanism block,
+                 and G16 rules 5 and 10 then require the
+                 family's fingerprint sensor in both
+                 l1_signature_sensors and
+                 depends_on_sensors, which
+                 resolve_signal_dependencies will refuse
+                 unless that sensor is in sensor_specs.
+                 Include QuoteReplenishAsymmetrySensor
+                 (sensor_id quote_replenish_asymmetry,
+                 version 1.1.0, subscribes_to NBBOQuote).
+                 ofi_ewma is optional on this tape.
+                 Minimal SIGNAL yaml, both blocks on one
+                 spec:
+                 schema_version "1.1", layer SIGNAL,
+                 alpha_id matching ^[a-z][a-z0-9_]*$,
+                 version, description, hypothesis,
+                 falsification_criteria, symbols
+                 [AAPL, MSFT], horizon_seconds 30,
+                 depends_on_sensors
+                 [quote_replenish_asymmetry],
+                 regime_gate (on True / off False, FIX-1
+                 shape so evaluate actually runs),
+                 cost_arithmetic with margin_ratio ≥ 1.5,
+                 signal: evaluate returns None (no Signal;
+                 book stays flat; a fired hazard is not
+                 needed).
+                 hazard_exit:
+                   enabled: true
+                 (literal True; other keys optional —
+                 hard_exit_age_seconds derives from
+                 2 × expected_half_life_seconds).
+                 safety_exit_policy:
+                   mode: decouple_caps_only
+                   max_hold_after_safe_off: 30
+                   hard_exit_age_seconds: 40
+                 G17 requires trend_mechanism even with
+                 enforce_trend_mechanism False:
+                 family INVENTORY (range 5–60s),
+                 expected_half_life_seconds 30
+                 (horizon/half-life = 1.0 ∈ [0.5, 4.0];
+                 INVENTORY max_hold ceiling is 1 × 30),
+                 l1_signature_sensors
+                 [quote_replenish_asymmetry],
+                 failure_signature a non-empty list.
+                 (1) Pin first. Move HazardExitController,
+                 ExitComposer, DeferralCapController from
+                 DECLARED_UNINVOKED into MUST_INVOKE.
+                 RegimeHazardDetector stays in
+                 DECLARED_UNINVOKED. _TAPES stays
+                 ("fix1", "portfolio"). Hazard branch
+                 still raises. Run the spy. It MUST fail
+                 naming ['DeferralCapController',
+                 'ExitComposer', 'HazardExitController'].
+                 That fail-before is the pin movement.
+                 (2) Append "hazard_decouple" to _TAPES,
+                 live the branch, land the yaml. The spy
+                 MUST pass. MUST_INVOKE 26 to 29.
+                 RegimeHazardDetector is constructed and
+                 must NOT appear in invoked. If it does,
+                 DECLARED_UNINVOKED entered — stop; that
+                 is R-04b leaking into this rung.
+                 (3) Closure: each of the three reset()
+                 bodies names SequenceGenerator (_seq).
+                 SequenceGenerator is already MUST_INVOKE.
+                 Stop.
+                 (4) Probes, uncommitted, restore
+                 byte-identical. R-03 shape, two paths:
+                 named call vs shared walk. Pin
+                 fail-before already named all three (not
+                 constructed). After the config:
+                 skip the getattr bus walk on the
+                 hazard_decouple tape only
+                 (self._hazard_exit_controller is not None;
+                 FIX-1 and PORTFOLIO still walk, or the
+                 missing set also names HorizonAggregator,
+                 StopExitController, and the three
+                 PORTFOLIO locals). MUST_INVOKE not
+                 entered: ['DeferralCapController',
+                 'ExitComposer']. HazardExitController
+                 remains entered by name. Restore.
+                 Re-run green. Do not probe by deleting
+                 HazardExitController.reset: named call
+                 plus walk both exist. Do not drop the
+                 named _maybe_reset on this rung — that
+                 would be R-03 probe (a) for a path this
+                 rung is not claiming is redundant.
+BLAST RADIUS:    local — tests/ only. Shared spy file with
+                 R-04b through R-06.
+VALIDATED BY:    spy union equals MUST_INVOKE including the
+                 three new names and excluding
+                 RegimeHazardDetector; DECLARED_UNINVOKED
+                 still contains RegimeHazardDetector and
+                 the nine never-rows; pin fail-before named
+                 all three then passed after the
+                 hazard_decouple tape; walk-skip named the
+                 two locals with HazardExitController still
+                 entered by name; test_five_import_tiers
+                 empty _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. No XPASS. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. Do
+                 not re-pin. The new tape is a synth
+                 conformance fixture and must never assert
+                 LOCKED_PARITY_BASELINES,
+                 _BASELINE_TRADE_PARITY_HASH, or
+                 _BASELINE_FILL_COUNT. A tape that runs the
+                 APP oracle is a declared break, not a
+                 hold. Locked hashes are cold-start
+                 single-run and do not call
+                 Orchestrator.reset(for_new_run=True).
+DELETES:         nothing. Owed 7 to 4 by moving three
+                 names into MUST_INVOKE, not by dropping
+                 a G04 exemption.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Not independently
+                 revertible from R-04b or a later R-0*
+                 that edits test_reset_invocation.py.
+```
+
+```
+STEP:            R-04b
+CLOSES:          nothing. Owed 4 to 3. Does not close G04.
+                 Moves RegimeHazardDetector into MUST_INVOKE
+                 in the same commit as the
+                 _maybe_reset(self._regime_hazard_detector)
+                 that makes it reachable. The nine never-rows
+                 stay in DECLARED_UNINVOKED. G04 stays
+                 CLOSED. This is not G04.
+PROBLEM:         R-04a constructs RegimeHazardDetector
+                 (hazard_exit.enabled on the same yaml) and
+                 stores it as
+                 orchestrator._regime_hazard_detector. It is
+                 not a bus subscriber. Orchestrator.reset
+                 does not name it. The getattr walk cannot
+                 see it. reset() only clears _suppressed, the
+                 set of (symbol, engine_name, departing_state)
+                 triples that suppress a duplicate spike until
+                 the departing state regains dominance. A
+                 leftover entry means a second run in the
+                 same process skips a hazard exit it should
+                 fire.
+                 run_backtest and _run_deployment_session
+                 already call _reset_regime_session_state,
+                 which does call detector.reset(). That is
+                 per session, at the start of a pipeline in a
+                 process that has not gone through
+                 Orchestrator.reset(for_new_run=True).
+                 for_new_run already clears
+                 _last_regime_state and
+                 _regime_bus_published_symbols inline
+                 (orchestrator.py:5242–5243) and does not
+                 call _reset_regime_session_state. The
+                 detector's _suppressed is the one
+                 session-scoped map that reset() does not
+                 touch. That distinction is the defect: a
+                 cold start is clean; an in-process second
+                 run is not.
+WHY THIS OWNER:  The object is already stored on Orchestrator.
+                 The method already exists. Session code
+                 already calls it. The missing line is in
+                 Orchestrator.reset, next to the named
+                 hazard-exit call that R-04a relied on.
+                 The spy already wraps the class. The
+                 hazard_decouple tape already constructs it.
+FILES:           src/feelies/kernel/orchestrator.py
+                 tests/conformance/test_reset_invocation.py
+                 Do not edit test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py, or the
+                 R-04a yaml. No keep-row file is touched.
+                 Probe mutations of orchestrator.py are
+                 restored except for the committed line.
+REFACTOR PATH:   one commit. Pin first, then the call.
+                 No new tape. _TAPES already includes
+                 "hazard_decouple". Do not add a helper.
+                 (1) Pin first. Move RegimeHazardDetector
+                 from DECLARED_UNINVOKED into MUST_INVOKE.
+                 Do not add the call yet. Run the spy. It
+                 MUST fail naming ['RegimeHazardDetector'].
+                 That fail-before is the pin movement.
+                 (2) In Orchestrator.reset, immediately after
+                 `_maybe_reset(self._hazard_exit_controller)`
+                 (orchestrator.py:5228 today), add
+                 `_maybe_reset(self._regime_hazard_detector)`.
+                 _maybe_reset already no-ops on None, so
+                 FIX-1 and PORTFOLIO stay unchanged. The
+                 spy MUST pass. MUST_INVOKE 29 to 30.
+                 (3) Closure: RegimeHazardDetector.reset
+                 clears _suppressed only. Names nothing new.
+                 Stop.
+                 (4) Probe, uncommitted, restore
+                 byte-identical. Drop the new line
+                 `_maybe_reset(self._regime_hazard_detector)`
+                 → MUST_INVOKE not entered:
+                 ['RegimeHazardDetector']. Restore.
+                 Re-run green. Do not probe by deleting
+                 RegimeHazardDetector.reset: that is the
+                 FillAttributionLedger shape, and here the
+                 missing piece is the named call, not the
+                 body. Do not probe by deleting
+                 _reset_regime_session_state: that path is
+                 session start, not for_new_run, and is
+                 not this defect.
+BLAST RADIUS:    platform-wide — kernel Orchestrator.reset
+                 plus the shared spy file. The new call is
+                 inert when the detector is None.
+VALIDATED BY:    spy union equals MUST_INVOKE including
+                 RegimeHazardDetector; DECLARED_UNINVOKED
+                 no longer contains it and still equals
+                 the remaining owed-plus-never set; pin
+                 fail-before named it then passed after the
+                 call; probe dropping the line named
+                 RegimeHazardDetector; test_five_import_tiers
+                 empty _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. No XPASS. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. Do
+                 not re-pin. Locked hashes are cold-start
+                 single-run. They never call
+                 Orchestrator.reset(for_new_run=True), so
+                 they never reach the new line. Session
+                 start already reset the detector on those
+                 tapes that construct it; this call only
+                 matters for an in-process second run. A
+                 hash move is a STOP — this rung must not
+                 change cold-start behaviour.
+DELETES:         nothing. Owed 4 to 3 by moving one name
+                 into MUST_INVOKE, not by dropping a G04
+                 exemption.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Not independently
+                 revertible from a later R-0* that edits
+                 test_reset_invocation.py. The orchestrator
+                 line without the pin move would leave
+                 RegimeHazardDetector in DECLARED_UNINVOKED
+                 while the cascade entered it.
+```
+
