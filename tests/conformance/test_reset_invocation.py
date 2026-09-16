@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from feelies.bootstrap import build_platform
+from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.sensors.impl.quote_replenish_asymmetry import QuoteReplenishAsymmetrySensor
+from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
 from tests.conformance.test_null_alpha_conservation import (
     _HORIZON_SECONDS,
@@ -40,9 +43,12 @@ MUST_INVOKE: frozenset[str] = frozenset(
         "BasicRiskEngine",
         "CompositionEngine",
         "CrossSectionalTracker",
+        "DeferralCapController",
         "EventBus",
+        "ExitComposer",
         "FillAttributionLedger",
         "HMM3StateFractional",
+        "HazardExitController",
         "HorizonAggregator",
         "HorizonMetricsCollector",
         "HorizonScheduler",
@@ -65,9 +71,6 @@ MUST_INVOKE: frozenset[str] = frozenset(
 
 DECLARED_UNINVOKED: frozenset[str] = frozenset(
     {
-        "DeferralCapController",  # owed, decouple tape
-        "ExitComposer",  # owed, decouple tape
-        "HazardExitController",  # owed, hazard tape
         "IBOrderRouter",  # never: IB / paper_rth
         "InMemoryEventLog",  # never: the tape
         "InMemoryKillSwitch",  # never: operator kwargs; Inv-11
@@ -95,11 +98,23 @@ _TapeId = Literal[
     "injected_normalizer",
 ]
 
-_TAPES: tuple[_TapeId, ...] = ("fix1", "portfolio")
+_TAPES: tuple[_TapeId, ...] = ("fix1", "portfolio", "hazard_decouple")
 
 _PORTFOLIO_DIR = Path(__file__).resolve().parent / "fixtures" / "portfolio"
 _UPSTREAM_SIGNAL = _PORTFOLIO_DIR / "upstream_signal.alpha.yaml"
 _NULL_PORTFOLIO = _PORTFOLIO_DIR / "null_portfolio.alpha.yaml"
+
+_HAZARD_DECOUPLE_DIR = Path(__file__).resolve().parent / "fixtures" / "hazard_decouple"
+_HAZARD_DECOUPLE = _HAZARD_DECOUPLE_DIR / "hazard_decouple.alpha.yaml"
+
+_HAZARD_SENSOR_SPECS: tuple[SensorSpec, ...] = (
+    SensorSpec(
+        sensor_id="quote_replenish_asymmetry",
+        sensor_version="1.1.0",
+        cls=QuoteReplenishAsymmetrySensor,
+        subscribes_to=(NBBOQuote,),
+    ),
+)
 
 _RESET_CLASS_IMPORTS: tuple[tuple[str, str], ...] = (
     ("feelies.alpha.registry", "AlphaRegistry"),
@@ -181,7 +196,17 @@ def _config(
             enforce_trend_mechanism=False,
         )
     if tape_id == "hazard_decouple":
-        raise NotImplementedError("hazard_decouple tape is not live until R-04")
+        return PlatformConfig(
+            symbols=frozenset(_UNIVERSE),
+            mode=OperatingMode.BACKTEST,
+            alpha_specs=[_HAZARD_DECOUPLE],
+            regime_engine="hmm_3state_fractional",
+            sensor_specs=_HAZARD_SENSOR_SPECS,
+            horizons_seconds=frozenset({_HORIZON_SECONDS}),
+            session_open_ns=SESSION_OPEN_NS,
+            account_equity=1_000_000.0,
+            enforce_trend_mechanism=False,
+        )
     if tape_id == "passive_limit":
         raise NotImplementedError("passive_limit tape is not live until R-05")
     if tape_id == "injected_normalizer":
