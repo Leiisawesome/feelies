@@ -20708,3 +20708,252 @@ FINDINGS:    A future campaign that inverts an
                  baseline_pre-R-03.json,
                  baseline_post-R-03.json, this ledger
                  entry.
+
+---
+
+## R-04a  2026-09-16T11:36:00+08:00
+  STEP:          R-04a
+  BASE:          6031754a7b77c209f80d0af2dd4b5601277dbe1a
+  RESULT SHA:    1b79c9622c0b4296ae4900824d7e2769633e4096 (exec/R-04a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 7 to 4. Does not close G04.
+                 Moves three names into MUST_INVOKE in the same
+                 commit as the hazard-plus-decouple config that
+                 constructs them: HazardExitController,
+                 ExitComposer, DeferralCapController.
+                 RegimeHazardDetector is constructed by the
+                 same yaml and stays in DECLARED_UNINVOKED
+                 until R-04b. The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This
+                 is not G04.
+                 All three were reachable without a src edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (three names in MUST_INVOKE,
+                 _TAPES still ("fix1", "portfolio"), hazard
+                 branch still raises, no hazard_decouple
+                 tape): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['DeferralCapController', 'ExitComposer',
+                 'HazardExitController']
+                 (tests/conformance/test_reset_invocation.py:256).
+                 Spy after tape: 1 passed. MUST_INVOKE
+                 26 -> 29. _TAPES ("fix1", "portfolio") ->
+                 ("fix1", "portfolio", "hazard_decouple").
+                 RegimeHazardDetector was constructed
+                 (orchestrator._regime_hazard_detector is
+                 RegimeHazardDetector) and did NOT appear
+                 in invoked; DECLARED_UNINVOKED entered
+                 would have failed the spy.
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 skip the getattr bus walk on the
+                 hazard_decouple tape only
+                 (if self._hazard_exit_controller is None:
+                 walk; else skip). MUST_INVOKE not
+                 entered:
+                 ['DeferralCapController', 'ExitComposer']
+                 HazardExitController remained entered
+                 by name (absent from the missing set).
+                 restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-04a GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-04a GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4909 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4909 vs capture 4910 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-04a vs post-R-04a and vs
+                 baseline_post-R-03.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 7 to 4.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs 1b79c962). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py,
+                 fixtures/hazard_decouple/hazard_decouple.alpha.yaml.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures,
+                 null_alpha.alpha.yaml.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47059 -> 47059 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 1b79c9622c0b4296ae4900824d7e2769633e4096.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD 6031754a on arch/exec.
+                 Cut exec/R-04a. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 1b79c9622c0b4296ae4900824d7e2769633e4096.
+                 One commit, two files, none in src/:
+                 test_reset_invocation.py and
+                 fixtures/hazard_decouple/hazard_decouple.alpha.yaml.
+                 Subject "R-04a: pin hazard and decouple
+                 cascade objects on the reset spy".
+                 The commit is clean of ledger and of
+                 src/; LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 Closure was walked to fixpoint before
+                 the first edit and terminated at
+                 SequenceGenerator. Each of the three
+                 reset() bodies names only its nested
+                 SequenceGenerator; that class was
+                 already MUST_INVOKE. Stop.
+                 Pin first, with _TAPES still
+                 ("fix1", "portfolio") and the hazard
+                 branch still raising. The spy FAILED
+                 naming all three:
+                 MUST_INVOKE not entered:
+                 ['DeferralCapController',
+                 'ExitComposer',
+                 'HazardExitController']
+                 (test_reset_invocation.py:256). That
+                 fail-before is the pin movement. The
+                 tape then landed; the spy passed.
+                 Probe skipped the getattr bus walk on
+                 the hazard_decouple tape only
+                 (self._hazard_exit_controller is not
+                 None). FAILED naming the two locals:
+                 MUST_INVOKE not entered:
+                 ['DeferralCapController',
+                 'ExitComposer'].
+                 HazardExitController stayed entered
+                 by name. Restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes), BYTE_IDENTICAL. Green
+                 re-run: 1 passed. Did not drop the
+                 named _maybe_reset; that is R-03's
+                 redundancy claim and this rung is not
+                 making it.
+                 RegimeHazardDetector was constructed
+                 on that tape
+                 (orchestrator._regime_hazard_detector
+                 is RegimeHazardDetector) and
+                 deliberately did NOT enter the
+                 cascade. It stayed in
+                 DECLARED_UNINVOKED; the spy's empty
+                 intersection is what proves the pin
+                 did not lie between rungs. Had the
+                 walk reached it, this rung would have
+                 failed DECLARED_UNINVOKED entered —
+                 that would have been R-04b leaking
+                 in.
+                 MUST_INVOKE 26 to 29. _TAPES at three
+                 ids: ("fix1", "portfolio",
+                 "hazard_decouple").
+                 Universe stayed inside FIX-1's
+                 symbols: {AAPL, MSFT}, so
+                 _synth_events was reusable.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47059 -> 47059, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      The G17 chain cost the fixture a
+                 registered QuoteReplenishAsymmetrySensor
+                 the alpha never reads.
+                 decouple_caps_only forces a
+                 trend_mechanism block, which forces
+                 the family's fingerprint sensor into
+                 both l1_signature_sensors and
+                 depends_on_sensors, which
+                 resolve_signal_dependencies refuses
+                 unless that sensor is in
+                 sensor_specs. ofi_ewma was optional
+                 and omitted; the fingerprint was not.
+                 Load succeeded and warned that
+                 quote_replenish_asymmetry is unused
+                 by evaluate — the same shape as
+                 FIX-1's ofi_ewma warning. A
+                 config-widen rung can be gated by a
+                 validation chain two hops from the
+                 flag being set. The warning is the
+                 loader telling you the fixture is
+                 minimal rather than wrong.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-04b detector body fix; owed 4 to 3
+                 (platform-wide). Not started. Do not
+                 begin R-04b.
+                 Left uncommitted:
+                 baseline_pre-R-04a.json,
+                 baseline_post-R-04a.json, this ledger
+                 entry.
