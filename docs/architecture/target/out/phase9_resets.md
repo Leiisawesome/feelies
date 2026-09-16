@@ -1460,3 +1460,140 @@ ROLLBACK:        revert the commit. Not independently
                  test_reset_invocation.py.
 ```
 
+```
+STEP:            R-07
+CLOSES:          the campaign. invoked == MUST_INVOKE on the
+                 union of the five tapes (fix1, portfolio,
+                 hazard_decouple, passive_limit,
+                 injected_normalizer), and
+                 DECLARED_UNINVOKED equal to the nine
+                 never-rows as a pinned equality
+                 (IBOrderRouter, InMemoryEventLog,
+                 InMemoryKillSwitch,
+                 MassiveHistoricalIngestor, MetricSummary,
+                 QuoteReplayObserver, QuoteTraceIndex,
+                 RthEntryFillGate, _WarmTimestampIndex).
+                 Owed stays 0. Does not close G04. S-15
+                 closed G04 (S16 totality + R6 existence).
+                 This closes R6's vacuity: the partition
+                 the campaign claimed.
+PROBLEM:         R-01 already proves the cascade half.
+                 The wrap filter is MUST_INVOKE |
+                 DECLARED_UNINVOKED, so MUST_INVOKE ⊆
+                 invoked plus invoked ∩ DECLARED_UNINVOKED
+                 == ∅ implies invoked == MUST_INVOKE.
+                 That implication is live on this tree
+                 (33 ⊆ invoked, intersection empty, wrap
+                 cannot name anything else). What R-01
+                 does not prove is the other wall:
+                 DECLARED_UNINVOKED equal to those nine
+                 names. A tenth could be added, or a
+                 never-row dropped, and both existing
+                 asserts would still pass. The campaign
+                 close is that equality, not another
+                 name-move.
+WHY THIS OWNER:  Conformance owns the invocation pin.
+                 The spy file is the pin. R-02 through
+                 R-06 moved every owed name into
+                 MUST_INVOKE in the same commit as the
+                 config or call that constructed it.
+                 Close is the partition assertion on
+                 that file, not a seventh construction.
+                 No new tape. No src edit.
+FILES:           tests/conformance/test_reset_invocation.py
+                 Do not edit src/. Do not edit
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 or null_alpha.alpha.yaml.
+                 No keep-row file is touched. No yaml.
+                 Do not add a helper. Do not add a tape.
+                 _TAPES stays the five ids. MUST_INVOKE
+                 stays the 33 names on this tree.
+                 DECLARED_UNINVOKED stays the nine.
+REFACTOR PATH:   one commit. Pin the partition against
+                 the tree as it stands.
+                 _NEVER_ROWS, the nine as they stand,
+                 with the R-01 one-line reasons:
+                 frozenset({
+                   "IBOrderRouter",              # never: IB / paper_rth
+                   "InMemoryEventLog",           # never: the tape
+                   "InMemoryKillSwitch",         # never: operator kwargs; Inv-11
+                   "MassiveHistoricalIngestor",  # never: ingest, not replay
+                   "MetricSummary",              # never: parent clear; S16 owns reset
+                   "QuoteReplayObserver",        # never: CLI; reset hits monotonic
+                   "QuoteTraceIndex",            # never: nested in that observer
+                   "RthEntryFillGate",           # never: no-op body; S16 owns reset
+                   "_WarmTimestampIndex",        # never: parent clear; S16 owns reset
+                 })
+                 Assert DECLARED_UNINVOKED == _NEVER_ROWS.
+                 Assert invoked_union == MUST_INVOKE.
+                 The second names the implication R-01
+                 already has. The first is the missing
+                 wall. On this tree both pass by
+                 construction — that is not the proof.
+                 A src drop cannot move a frozenset
+                 literal, so the fail-before is an edit
+                 to the pin itself. Two probes,
+                 uncommitted, restore byte-identical
+                 between. Edit _NEVER_ROWS only; do not
+                 touch DECLARED_UNINVOKED or the wrap
+                 list, or the roster fires first and
+                 the equality is not what failed.
+                 (a) add a tenth name to _NEVER_ROWS
+                     → DECLARED_UNINVOKED == _NEVER_ROWS
+                     fails (extras). Cascade asserts
+                     still pass.
+                 (b) drop one never-row from
+                     _NEVER_ROWS → the equality fails
+                     the other way (omission).
+                 Both directions: (a) is not a subset
+                 check, (b) is not a superset check.
+                 A one-sided pin would let a tenth
+                 sneak in or a never-row vanish.
+                 Restore each with a hash. Re-run green
+                 after the last restore.
+                 Do not re-run R-01's
+                 `_maybe_reset(self._positions)` drop.
+                 That probe still covers the cascade
+                 half (MUST_INVOKE not entered:
+                 ['MemoryPositionStore']). This rung
+                 pins the frozenset partition, not the
+                 named call.
+BLAST RADIUS:    local — tests/ only.
+VALIDATED BY:    spy union equals MUST_INVOKE (33) on
+                 the five tapes; DECLARED_UNINVOKED ==
+                 _NEVER_ROWS (the nine); pin probes (a)
+                 and (b) failed-before on the equality
+                 then passed-after restore; R-01
+                 MemoryPositionStore probe not re-run;
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs (S2); test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 S16 unmoved. R6 unmoved. No XPASS. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. Do
+                 not re-pin. A tests-only change that
+                 moves a hash means the file was not
+                 tests-only. Do not assert
+                 LOCKED_PARITY_BASELINES,
+                 _BASELINE_TRADE_PARITY_HASH, or
+                 _BASELINE_FILL_COUNT.
+DELETES:         nothing. Owed stays 0. The nine-name
+                 equality is a new partition pin, not a
+                 dropped G04 exemption and not a name
+                 moved into MUST_INVOKE.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Last shared-file
+                 rung; independently revertible unless a
+                 later edit retouches
+                 test_reset_invocation.py.
+```
+
