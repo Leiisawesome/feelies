@@ -57,6 +57,7 @@ MUST_INVOKE: frozenset[str] = frozenset(
         "MemoryPositionStore",
         "Orchestrator",
         "RegimeGate",
+        "RegimeHazardDetector",
         "RegimeStateCache",
         "SensorRegistry",
         "SequenceGenerator",
@@ -81,7 +82,6 @@ DECLARED_UNINVOKED: frozenset[str] = frozenset(
         "PassiveLimitOrderRouter",  # owed, execution_mode=passive_limit
         "QuoteReplayObserver",  # never: CLI; reset hits monotonic
         "QuoteTraceIndex",  # never: nested in that observer
-        "RegimeHazardDetector",  # owed, hazard tape
         "RthEntryFillGate",  # never: no-op body; S16 owns reset
         "_WarmTimestampIndex",  # never: parent clear; S16 owns reset
     }
