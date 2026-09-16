@@ -21695,3 +21695,446 @@ FINDINGS:    A future campaign that inverts an
                  baseline_post-R-06.json, this ledger
                  entry.
 
+---
+
+## R-07  2026-09-16T20:44:17+08:00
+  STEP:          R-07
+  BASE:          f234287939f084b65600d4a2f7730e0e92123073
+  RESULT SHA:    316093042e7a965e0b6da9132034dbb1dfbe546d (exec/R-07; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES the campaign. Owed stays 0. Does not
+                 close G04. S-15 closed G04 (S16 totality
+                 + R6 existence). This closes R6's
+                 vacuity: the partition the campaign
+                 claimed. invoked == MUST_INVOKE (33) on
+                 the union of the five tapes.
+                 DECLARED_UNINVOKED == _NEVER_ROWS (the
+                 nine). G04 stays CLOSED. This is not
+                 G04. No name moved. No new tape. No src
+                 edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Two probes, uncommitted, restore
+                 BYTE_IDENTICAL between. Edited
+                 _NEVER_ROWS only; DECLARED_UNINVOKED
+                 and the wrap roster were not touched.
+                 (a) add "TenthNeverRow" to _NEVER_ROWS
+                     FAILED
+                     AssertionError: assert frozenset(...)
+                     == frozenset(...)
+                     Extra items in the right set:
+                     'TenthNeverRow'
+                     (tests/conformance/test_reset_invocation.py:335).
+                     Cascade asserts still passed.
+                     restore SHA256
+                     5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                     (12899 bytes)
+                 (b) drop "IBOrderRouter" from
+                     _NEVER_ROWS
+                     FAILED
+                     AssertionError: assert frozenset(...)
+                     == frozenset(...)
+                     Extra items in the left set:
+                     'IBOrderRouter'
+                     (tests/conformance/test_reset_invocation.py:333).
+                     Cascade asserts still passed.
+                     restore SHA256
+                     5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                     (12899 bytes)
+                 Green re-run after last restore: 1 passed.
+                 Did not re-run R-01's
+                 `_maybe_reset(self._positions)` drop.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-07 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (accepted IB EXEMPTION).
+                 -> capture post-R-07 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed. Same
+                 IB failure. No failure outside the
+                 accepted set.
+                 not-paper_rth after commit: 4909 passed /
+                 1 failed / 5 skipped / 14 deselected /
+                 5 xfailed. Failed 1 is the IB
+                 after-hours test. 4909 vs capture 4910
+                 is one paper_rth test that ran in the
+                 unmarked capture and was deselected
+                 here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-07 vs post-R-07 and vs
+                 baseline_post-R-06.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed stays 0.
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 31609304). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 null_alpha.alpha.yaml.
+                 Probes mutated
+                 test_reset_invocation.py and restored
+                 it; those mutations are not in the
+                 commit. No keep-row file is touched.
+                 No yaml. No src. S16 unmoved. R6
+                 unmoved. verify_step not runnable
+                 (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 1->1
+                 (IB EXEMPTION both sides; no failure
+                 outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 316093042e7a965e0b6da9132034dbb1dfbe546d.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD f2342879 on arch/exec.
+                 Cut exec/R-07. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 316093042e7a965e0b6da9132034dbb1dfbe546d.
+                 Single commit, one file, no src:
+                 tests/conformance/test_reset_invocation.py
+                 only. Subject "R-07: pin
+                 DECLARED_UNINVOKED to the nine
+                 never-rows". 16 insertions. Probes
+                 mutated the same file and were
+                 restored; those edits are not in the
+                 commit. LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 The campaign's claim is the partition.
+                 R-01 already proves the cascade half:
+                 wrap filter is MUST_INVOKE |
+                 DECLARED_UNINVOKED, so MUST_INVOKE ⊆
+                 invoked plus invoked ∩
+                 DECLARED_UNINVOKED == ∅ implies
+                 invoked == MUST_INVOKE. That
+                 implication is live (33 ⊆ invoked,
+                 intersection empty, wrap cannot name
+                 anything else). The missing wall was
+                 DECLARED_UNINVOKED equal to those nine
+                 names. A tenth could be added, or a
+                 never-row dropped, and both existing
+                 asserts would still pass.
+                 Before-state wrap roster is
+                 MUST_INVOKE | DECLARED_UNINVOKED.
+                 Nothing pinned DECLARED_UNINVOKED to
+                 nine names. The nine as they stood:
+                 IBOrderRouter, InMemoryEventLog,
+                 InMemoryKillSwitch,
+                 MassiveHistoricalIngestor,
+                 MetricSummary, QuoteReplayObserver,
+                 QuoteTraceIndex, RthEntryFillGate,
+                 _WarmTimestampIndex.
+                 Added _NEVER_ROWS, the nine as they
+                 stand with the R-01 one-line reasons.
+                 Assert DECLARED_UNINVOKED ==
+                 _NEVER_ROWS. Assert invoked_union ==
+                 MUST_INVOKE. The second names the
+                 implication R-01 already has. The
+                 first is the missing wall. On this
+                 tree both pass by construction — that
+                 is not the proof. A src drop cannot
+                 move a frozenset literal, so the
+                 fail-before is an edit to the pin
+                 itself.
+                 Two probes, both directions, edit
+                 _NEVER_ROWS only.
+                 (a) extras: add "TenthNeverRow".
+                 FAILED Extra items in the right set:
+                 'TenthNeverRow'. Restore SHA256
+                 5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                 (12899 bytes), BYTE_IDENTICAL to the
+                 pre-probe file.
+                 (b) omission: drop "IBOrderRouter".
+                 FAILED Extra items in the left set:
+                 'IBOrderRouter'. Restore SHA256
+                 5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                 (12899 bytes), BYTE_IDENTICAL. Both
+                 restores match each other and the
+                 pre-probe hash. Green re-run after
+                 the last restore: 1 passed.
+                 Both directions were needed. (a) is
+                 not a subset check; (b) is not a
+                 superset check. A one-sided pin would
+                 let a tenth sneak in or a never-row
+                 vanish.
+                 Did not re-run R-01's
+                 `_maybe_reset(self._positions)` drop.
+                 That probe still covers the cascade
+                 half (MUST_INVOKE not entered:
+                 ['MemoryPositionStore']). This rung
+                 pins the frozenset partition, not the
+                 named call.
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays five ids:
+                 ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit",
+                 "injected_normalizer").
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47060 -> 47060, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          campaign close written below.
+                 Go confirmed on
+                 316093042e7a965e0b6da9132034dbb1dfbe546d.
+                 Not merged.
+                 Left uncommitted:
+                 baseline_pre-R-07.json,
+                 baseline_post-R-07.json, this ledger
+                 entry.
+
+---
+
+## CAMPAIGN CLOSE  Reset invocation
+DATE:        2026-09-16
+CLOSED AT:   R-07. Commit 31609304 on exec/R-07;
+             not merged. Campaign base 4e707c17
+             (post-T-09z); R-07 parent f2342879
+             on arch/exec.
+LOCKED:      7 rungs in the campaign LADDER
+             (R-01, R-02, R-03, R-04, R-05, R-06,
+             R-07). R-04 was the numbered fourth
+             owed drop.
+EXECUTED:    8 unique step ids passed (retries
+             not recounted). 6 locked ids ran as
+             themselves (R-01, R-02, R-03, R-05,
+             R-06, R-07). R-04 never ran as the
+             bare id. 2 were splits of planned
+             rungs (R-04a, R-04b from R-04). 0
+             were added mid-campaign beyond that
+             split.
+CLOSED:      invoked == MUST_INVOKE across five
+             tapes (fix1, portfolio,
+             hazard_decouple, passive_limit,
+             injected_normalizer). MUST_INVOKE
+             walked 18 to 33. DECLARED_UNINVOKED
+             pinned at nine. Owed 15 to 0:
+             R-01 pin, owed stays 15, MUST_INVOKE
+             18; R-02 default-path leaks 15→11,
+             18→22; R-03 PORTFOLIO config 11→7,
+             22→26; R-04a hazard/decouple 7→4,
+             26→29; R-04b detector body 4→3,
+             29→30; R-05 passive_limit+MOC 3→1,
+             30→32; R-06 injected normalizer
+             1→0, 32→33; R-07 partition pin,
+             owed stays 0, counts unmoved. This
+             is not G04. S-15 closed G04. This
+             closed R6's vacuity.
+FIXED, NOT
+JUST DETECTED:
+             R-02 four default-path leaks. A
+             second run in the same process would
+             have inherited: StrategyPositionStore
+             leftover per-strategy qty, avg
+             entry, realized and unrealized PnL,
+             fees, marks, and open-episode
+             timestamps (MemoryPositionStore.reset
+             on self._positions does not touch
+             these sub-books); FillAttributionLedger
+             leftover _records and
+             _cumulative_allocations (recycled
+             order_ids attribute run-2 fills to
+             run-1 contributions);
+             HMM3StateFractional leftover
+             _posteriors, _last_update_seq, and
+             _last_quote_ts_ns (posterior()
+             returns the leftover cache when seq
+             matches); RegimeGate leftover
+             per-symbol ON/OFF latches (FIX-1's
+             null_alpha gate is on_condition True
+             / off_condition False, so leftover
+             ON and cold-start False both sit ON
+             after the first evaluate; a P(state)
+             leftover ON would not).
+             R-04b hazard detector. Session start
+             already called
+             RegimeHazardDetector.reset;
+             Orchestrator.reset(for_new_run=True)
+             never did. A leftover
+             (symbol, engine_name, departing_state)
+             triple in _suppressed makes detect()
+             return None for a spike it should
+             have fired — a skipped hazard exit,
+             Inv-11 territory. A cold start was
+             always clean; only an in-process
+             second run inherited it.
+REMAINS OPEN:
+             G10 S-12/S-31 (S11 xfail)
+             G28 S-12 (S11 xfail)
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN
+             G39 S-12 (S15/S17 xfail)
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed, S9
+             xfail is the unresolved-unit list
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step
+             keep-row squeezes vs ruff format —
+             T-04b FINDING, unowned
+             Engine-to-kernel residual: 9 pairs
+             under test_engine_kernel_imports_
+             equal_pin. That pin is the detector,
+             not a gap this campaign owned.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. Do not restore
+             continue-on-error.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are only
+             test_after_hours_reject_surfaces_as_rejected,
+             test_g12_cost_exceeds_disclosure_alert,
+             test_multi_symbol_subscribe,
+             test_sustained_quotes_with_idle_ticks.
+             A failure outside that set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals the 9-pair
+             pin. Shrinking either pin happens in
+             lockstep with the cut that drops the
+             pair, in the same commit.
+             Do not restore continue-on-error.
+             Do not invent suffixes for g–o.
+             Specific to this campaign: synth
+             conformance tapes must never assert
+             LOCKED_PARITY_BASELINES,
+             _BASELINE_TRADE_PARITY_HASH, or
+             _BASELINE_FILL_COUNT. A new tape that
+             runs the APP oracle is a declared
+             break, not a hold. Moving a name into
+             MUST_INVOKE happens in the same
+             commit as the config that constructs
+             the object. The partition is both
+             walls: invoked == MUST_INVOKE and
+             DECLARED_UNINVOKED == the nine
+             never-rows. _TAPES stays the five
+             ids. MUST_INVOKE stays 33.
+             DECLARED_UNINVOKED stays nine. A
+             name does not move between the
+             frozensets in a close rung.
+FINDINGS:    A detector's failure mode is part of
+             the detector (R-02): a wrap that
+             crashes on the regression it exists
+             to catch tells you less than one that
+             names it.
+             A probe which must pass is as much
+             evidence as one which must fail when
+             the claim is "this path is not
+             required" (R-03 CompositionEngine
+             named _maybe_reset vs getattr bus
+             walk).
+             A config-widen rung can be gated by a
+             validation chain two hops from the
+             flag being set (R-04a G17 fingerprint
+             sensor).
+             Per-session and per-run are different
+             lifetimes (R-04b): a reset that
+             covers one is not evidence about the
+             other.
+             A probe must cut the specific edge
+             the rung claims, not any edge
+             upstream of it (R-05 nested
+             _moc.reset vs dropping the router).
+             A guard that cannot be shown to fail
+             is decorative (S-28a, T-07c, and
+             this rung: a frozenset literal
+             cannot be unreached by dropping a
+             call, so both pin-edit directions
+             are the fail-before).
+             R6 14/31 resets is closed. Do not
+             carry it forward as open.
+
+
