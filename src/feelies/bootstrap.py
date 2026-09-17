@@ -132,10 +132,8 @@ from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 from feelies.storage.submitted_order_journal import DurableSubmittedOrderJournal
 
 if TYPE_CHECKING:
-    from feelies.broker.ib import IBGatewayConnection
     from feelies.composition.engine import CompositionEngine
     from feelies.execution.portfolio_netter import NetDivergence
-    from feelies.ingestion.massive_ws import MassiveLiveFeed
 
 logger = logging.getLogger(__name__)
 
