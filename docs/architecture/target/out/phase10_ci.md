@@ -372,4 +372,157 @@ ROLLBACK:        revert the commit. Independently
                  without reverting 0.3 restores line
                  keys that no longer match. 0.2 does
                  not depend on this rung.
+
+STEP:            0.2
+CLOSES:          ruff check src/ tests/ scripts/ green.
+                 Format stays red (57 files). Two F401
+                 gone. No pin moves. Already red.
+PROBLEM:         ruff check is red on two unused
+                 TYPE_CHECKING imports in
+                 src/feelies/bootstrap.py:
+                   line 135  IBGatewayConnection
+                   line 138  MassiveLiveFeed
+                 from __future__ import annotations is
+                 on (bootstrap.py:9). _BackendBundle
+                 types those fields as object | None
+                 (live_feed, ib_connection at 148–149),
+                 so the TYPE_CHECKING names are not
+                 annotation uses. The only live uses
+                 are the runtime imports in the
+                 paper-backend builder _paper_injected
+                 at 2102–2103. A noqa on a genuinely
+                 unused import is a catalogued non-cut.
+                 CompositionEngine (136) and
+                 NetDivergence (137) stay: ruff did
+                 not flag them; they are used in
+                 annotations (CompositionEngine return
+                 at 1546 / construction at 1668;
+                 NetDivergence at 234).
+WHY THIS OWNER:  Lint owns the F401 close. Production
+                 behaviour is unchanged: those names
+                 were never bound at runtime in this
+                 block.
+FILES:           src/feelies/bootstrap.py
+                 Do not edit tests/. Do not format any
+                 file. Do not touch the TYPE_CHECKING
+                 CompositionEngine or NetDivergence
+                 imports. Do not touch _paper_injected
+                 2102–2103. Do not edit uv.lock or
+                 ruff version.
+REFACTOR PATH:   one commit. Delete the two unused
+                 TYPE_CHECKING imports (135
+                 IBGatewayConnection, 138
+                 MassiveLiveFeed). Leave the
+                 TYPE_CHECKING block standing for
+                 CompositionEngine and NetDivergence.
+                 Lands before 0.3 so bootstrap.py is
+                 formatted once, without the dead
+                 imports.
+BLAST RADIUS:    local — bootstrap.py TYPE_CHECKING
+                 only
+VALIDATED BY:    ruff check src/ tests/ scripts/ is
+                 already red (2 F401) and goes green.
+                 No new test. ruff format --check still
+                 57 files. test_five_import_tiers empty
+                 KEPT; test_twelve_engine_independence
+                 KEPT at zero; test_engine_kernel_imports_equal_pin
+                 equals the 9-pair pin; Inv-10 unmoved;
+                 reset partition unmoved; APP oracle
+                 hashes unmoved. No XPASS.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. A
+                 moved HASH or COUNT is a STOP, do not
+                 re-pin.
+DELETES:         TYPE_CHECKING IBGatewayConnection
+                 (bootstrap.py:135) and
+                 MassiveLiveFeed (bootstrap.py:138).
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently
+                 revertible until 0.3 formats
+                 bootstrap.py.
+
+STEP:            0.3
+CLOSES:          ruff format --check src/ tests/ scripts/
+                 green. Lint already green from 0.2.
+                 No pin moves. FAIL_QUIET_KEEP has no
+                 line field (0.1). Already red.
+PROBLEM:         57 files fail ruff format --check.
+                 One commit, all 57, ruff 0.15.12
+                 pinned in uv.lock. A version bump
+                 changes the diff and makes the format
+                 commit non-mechanical. Splitting 53
+                 inherited from 4 lineage-only is a
+                 catalogued non-cut: it leaves the job
+                 red on the four. Do not split 53/4.
+                 Three keep-row pins would have moved
+                 under today's --diff
+                 (layer_validator.py 1190→1191;
+                 bootstrap.py 1607→1609, 1825→1827).
+                 0.1 already removed the line keys, so
+                 nothing retargets. The other fourteen
+                 keep-rows do not move; that is not a
+                 reason to keep line keys.
+WHY THIS OWNER:  Format owns the CI Format step. The
+                 commit is mechanical: ruff 0.15.12
+                 --check red → format → --check green.
+FILES:           the 57 files ruff format --check names.
+                 Do not bump ruff. Do not edit
+                 FAIL_QUIET_KEEP. Do not touch
+                 uv.lock except as ruff 0.15.12 already
+                 pins it. Do not format the six
+                 keep-row files not in the 57
+                 (ib/connection.py, cli/env.py,
+                 cli/promote.py, factor_neutralizer.py,
+                 massive_ingestor.py, massive_ws.py).
+REFACTOR PATH:   one commit. ruff format the 57.
+                 No other edit. A format commit cannot
+                 be probed by cutting a call. The probe
+                 is the existing red → green plus every
+                 pin unmoved.
+BLAST RADIUS:    platform-wide — 57 files including
+                 layer_validator.py, bootstrap.py,
+                 orchestrator.py, backtest_runner.py
+VALIDATED BY:    ruff format --check src/ tests/ scripts/
+                 already red (57) and goes green.
+                 ruff check stays green (from 0.2).
+                 Pins that must hold, named:
+                 FAIL_QUIET_KEEP has no line field;
+                 five-tier empty _TIER_RESIDUALS and
+                 statuses KEPT; twelve-engine KEPT at
+                 zero pairs; engine-to-kernel equals
+                 the 9-pair pin; Inv-10
+                 test_no_raw_wall_clock_outside_allowlist
+                 and
+                 test_wall_clock_allowlist_has_no_stale_entries
+                 unmoved — Inv-10 survives because it
+                 is symbol-keyed with multiplicity on
+                 _process_tick_inner × 6, and the six
+                 perf_counter_ns calls stay in that
+                 function; reset partition unmoved
+                 (_TAPES five ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine, invoked ==
+                 MUST_INVOKE); APP oracle
+                 _BASELINE_TRADE_PARITY_HASH,
+                 _BASELINE_NET_PNL, _BASELINE_FILL_COUNT,
+                 _BASELINE_DATA_VERSION,
+                 _BASELINE_CONFIG_HASH unmoved; all 64
+                 HASH/COUNT constants and fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                 unmoved vs baseline_post-0.1.json.
+                 If a pin moves: STOP, name it, and do
+                 not re-pin — a mechanical commit that
+                 changes a hash was not mechanical.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. A
+                 moved HASH or COUNT is a STOP, do not
+                 re-pin.
+DELETES:         nothing. Reformats 57 files.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. After this lands,
+                 reverting 0.1 without reverting 0.3
+                 restores line keys that no longer
+                 match. 0.2 does not depend on 0.1;
+                 0.3 depends on 0.1 unless the
+                 three-pin retarget is declared here.
 ```
+
