@@ -22137,4 +22137,250 @@ FINDINGS:    A detector's failure mode is part of
              R6 14/31 resets is closed. Do not
              carry it forward as open.
 
+---
 
+## 0.1  2026-09-17T15:57:25+08:00
+  STEP:          0.1
+  BASE:          80a49fd9197ac39e0bab06f029b0a2be6b759be8
+  RESULT SHA:    9c0698c54ac621c7c460a37dd6d64843efb8239d (exec/0.1; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing toward ruff green. Lint
+                 stays red (2 F401). Format stays red
+                 (57 files). FAIL_QUIET_KEEP loses every
+                 line number. S6 still has seventeen
+                 keepers. G36 stays OPEN. A matcher
+                 landing with extra/missing empty is
+                 the declared outcome, not a failed
+                 rung.
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 extra/missing empty under Counter.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs
+                 before and after.
+                 Inv-10 unmoved
+                 (test_no_raw_wall_clock_outside_allowlist
+                 and
+                 test_wall_clock_allowlist_has_no_stale_entries).
+                 Reset partition unmoved: _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-0.1 GREEN 4900 passed / 0
+                 failed / 29 skipped / 5 xfailed.
+                 -> capture post-0.1 GREEN 4900 passed /
+                 0 failed / 29 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it. vs post-R-07 RED 4910
+                 passed / 1 failed / 18 skipped / 5
+                 xfailed: skipped 18 -> 29, passed -10;
+                 failed 1 -> 0. Environmental skip of
+                 the IB after-hours EXEMPTION, not a
+                 regression.
+                 not-paper_rth: 4899 passed / 0 failed /
+                 16 skipped / 14 deselected / 5 xfailed.
+                 4899 vs capture 4900 is one paper_rth
+                 test that ran in the unmarked capture
+                 and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-0.1 vs post-0.1 and vs
+                 baseline_post-R-07.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 9c0698c5). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_fail_quiet.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, tools/arch/gatescan.py,
+                 test_no_walltime_outside_clock.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 .github/workflows/ci.yml, uv.lock,
+                 layer_validator.py, bootstrap.py,
+                 ib/connection.py, cli/env.py,
+                 cli/promote.py, factor_neutralizer.py,
+                 backtest_runner.py, massive_ingestor.py,
+                 massive_ws.py.
+                 Fail-first edited the matcher budget
+                 inside test_fail_quiet.py (1 then 2);
+                 no production except body was written
+                 or edited. No file was formatted.
+                 verify_step not runnable (0.* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse 0.*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4900->4900 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 9c0698c54ac621c7c460a37dd6d64843efb8239d.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 80a49fd9 on arch/exec.
+                 Cut exec/0.1. tools/exec vs
+                 exec-tools-v1 empty. Go confirmed on
+                 this head
+                 9c0698c54ac621c7c460a37dd6d64843efb8239d.
+                 Single commit, one file, no src:
+                 tests/conformance/test_fail_quiet.py
+                 only. Subject "0.1: re-key
+                 FAIL_QUIET_KEEP by enclosing symbol".
+                 63 insertions, 29 deletions. LEDGER.md
+                 dirty at the gate is the uncommitted
+                 append. The two capture artifacts stay
+                 uncommitted.
+                 FailQuietKeep lost its line field. The
+                 matcher is collections.Counter of
+                 (path, enclosing_symbol, exc_type),
+                 exactly-N, not a frozenset. Seventeen
+                 rows in the new key form:
+                 layer_validator.py
+                 _check_g17_safety_exit_policy
+                 (TypeError, ValueError);
+                 bootstrap.py _create_composition_layer
+                 KeyError;
+                 bootstrap.py
+                 _create_hazard_exit_controller
+                 (TypeError, ValueError);
+                 ib/connection.py _drain_writer_queues
+                 queue.Empty;
+                 ib/connection.py orderStatus
+                 (TypeError, ValueError);
+                 cli/env.py load_dotenv_optional
+                 ImportError;
+                 cli/promote.py _read_entries_safely
+                 StopIteration;
+                 cli/promote.py _read_entries_safely
+                 ValueError;
+                 factor_neutralizer.py <module>
+                 ImportError;
+                 factor_neutralizer.py neutralize
+                 np.linalg.LinAlgError;
+                 backtest_runner.py _force_utf8_console
+                 Exception;
+                 backtest_runner.py
+                 _run_backtest_phases_2_7 Exception
+                 (psutil HIGH_PRIORITY_CLASS);
+                 backtest_runner.py
+                 _run_backtest_phases_2_7 Exception
+                 (nice() restore in finally);
+                 massive_ingestor.py
+                 _clone_parallel_clients TypeError;
+                 massive_ws.py _drain_stale_sentinels
+                 queue.Empty;
+                 massive_ws.py _run_loop
+                 asyncio.CancelledError;
+                 massive_ws.py _subscribe
+                 asyncio.TimeoutError.
+                 The numpy ImportError in
+                 factor_neutralizer.py has no enclosing
+                 def. The sentinel is "<module>";
+                 without it that row is an extra.
+                 layer_validator.py:1204 is the second
+                 except (TypeError, ValueError) inside
+                 _check_g17_safety_exit_policy. It
+                 returns, so fail_quiet_handlers omits
+                 it. That omission is what keeps the
+                 1190 row unique. Do not add it.
+                 Budget 1 left a single keep row for
+                 _run_backtest_phases_2_7 / Exception.
+                 The test named the second handler:
+                 AssertionError: 1 fail-quiet handler(s)
+                 not in FAIL_QUIET_KEEP. First:
+                 src/feelies/harness/backtest_runner.py:_run_backtest_phases_2_7
+                 except Exception
+                 Left contains 1 more item:
+                 {('src/feelies/harness/backtest_runner.py',
+                 '_run_backtest_phases_2_7',
+                 'Exception'): 1}.
+                 Budget 2 (second keep row) went green.
+                 ruff check 2 F401 before and after.
+                 ruff format --check 57 files before
+                 and after. Identical counts, so this
+                 rung touched nothing else. Those reds
+                 are 0.2 and 0.3, not this rung
+                 failing.
+                 All pins unmoved: five-tier empty with
+                 statuses KEPT; engine-to-kernel 9; S2
+                 KEPT at zero; Inv-10 unmoved; reset
+                 partition unmoved (_TAPES the five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine). Locked
+                 hashes unmoved: all 64 HASH/COUNT
+                 constants, the fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6,
+                 and _BASELINE_CONFIG_HASH, against
+                 baseline_post-R-07.json. APP oracle 2
+                 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249,
+                 public_symbols 590, sloc 47060,
+                 n_edges 675, n_modules 203, cycles 1,
+                 alphaleak 0.
+  FINDINGS:      The fail-first had to be a matcher
+                 edit. Every prior rung in four
+                 campaigns probed by cutting something
+                 in production and watching a detector
+                 name it. That is impossible here. A
+                 frozenset of the same rows accepts
+                 both Exception handlers in
+                 _run_backtest_phases_2_7 under one key
+                 and passes with one unwatched, so no
+                 production mutation distinguishes the
+                 correct matcher from the broken one.
+                 The only discriminating experiment is
+                 to under-budget the collision and
+                 watch the Counter name it. When a
+                 guard's failure mode is about
+                 multiplicity rather than presence, the
+                 probe has to attack the counting, not
+                 the code.
+                 Carried, not fixed: G36 stays OPEN --
+                 the seventeen keepers stay keepers;
+                 this rung changed keying only.
+                 G44 partial, G32 deferred, G41/G42/G45
+                 open, G39/G10/G28 markers never
+                 dropped, G46's xfail is the
+                 unresolved-unit list.
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned.
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned.
+                 T-04b keep-row squeezes vs ruff format
+                 unowned; this rung is the re-key that
+                 campaign could not land.
+                 verify_step frozen at exec-tools-v1.
+                 Lint and format stay red.
