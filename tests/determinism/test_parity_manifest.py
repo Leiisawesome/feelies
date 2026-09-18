@@ -318,9 +318,7 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
     )
     assert not missing_engine_outputs, (
         "engine outputs neither hashed nor exempt-with-a-reason: "
-        + "; ".join(
-            f"{n} ({_REQUIRED_ENGINE_OUTPUT_KEYS[n]})" for n in missing_engine_outputs
-        )
+        + "; ".join(f"{n} ({_REQUIRED_ENGINE_OUTPUT_KEYS[n]})" for n in missing_engine_outputs)
     )
 
 

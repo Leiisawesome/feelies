@@ -126,6 +126,5 @@ def test_a3_declared_closing_auction_routes_without_core_edits(tmp_path: Path) -
         for path in (_SRC / pkg).rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             assert _PROBE_ID not in text, (
-                f"{path.as_posix()} names the attached alpha — attachment "
-                "required a core edit"
+                f"{path.as_posix()} names the attached alpha — attachment required a core edit"
             )

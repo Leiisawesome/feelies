@@ -729,11 +729,15 @@ class CrossSectionalContext(Event):
     signals_by_strategy_by_symbol: Mapping[str, dict[str, "Signal | None"]] = field(
         default_factory=dict,
     )
-    snapshots_by_symbol: Mapping[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
+    snapshots_by_symbol: Mapping[str, "HorizonFeatureSnapshot | None"] = field(
+        default_factory=dict
+    )
     completeness: float = field(default=0.0, metadata={"unit": "1"})
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "signals_by_symbol", MappingProxyType(dict(self.signals_by_symbol)))
+        object.__setattr__(
+            self, "signals_by_symbol", MappingProxyType(dict(self.signals_by_symbol))
+        )
         object.__setattr__(
             self,
             "signals_by_strategy_by_symbol",
@@ -781,12 +785,8 @@ class SizedPositionIntent(Event):
     solver_status: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "target_positions", MappingProxyType(dict(self.target_positions))
-        )
-        object.__setattr__(
-            self, "factor_exposures", MappingProxyType(dict(self.factor_exposures))
-        )
+        object.__setattr__(self, "target_positions", MappingProxyType(dict(self.target_positions)))
+        object.__setattr__(self, "factor_exposures", MappingProxyType(dict(self.factor_exposures)))
         object.__setattr__(
             self, "mechanism_breakdown", MappingProxyType(dict(self.mechanism_breakdown))
         )

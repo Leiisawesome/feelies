@@ -45,9 +45,7 @@ class EdgeWeightedSizer(Protocol):
     @property
     def base(self) -> PositionSizer: ...
 
-    def tilt_breakdown(
-        self, signal: Signal, risk_budget: AlphaRiskBudget
-    ) -> _TiltBreakdown: ...
+    def tilt_breakdown(self, signal: Signal, risk_budget: AlphaRiskBudget) -> _TiltBreakdown: ...
 
 
 @dataclass(frozen=True)

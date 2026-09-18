@@ -151,7 +151,8 @@ def test_g12_cost_exceeds_disclosure_alert(paper_session) -> None:
         g12_disclosed_cost_total_bps=2.5,
     )
     orchestrator._track_order(order_id, Side.BUY, req)
-    _transition_order(orchestrator,
+    _transition_order(
+        orchestrator,
         order_id,
         OrderState.SUBMITTED,
         "paper_e2e_g12",

@@ -107,8 +107,6 @@ def test_s12_every_contract_has_exactly_one_producer() -> None:
     unregistered = sorted(set(producers) - _declared_contracts())
     assert not unregistered, f"contract has no producer: {unregistered[0]}"
     stream_rows, _producers = _load_authorities()
-    duplicate_streams = [
-        name for name, authority in stream_rows.items() if "|" in authority
-    ]
+    duplicate_streams = [name for name, authority in stream_rows.items() if "|" in authority]
     assert not duplicate_streams, f"contract has no producer: {duplicate_streams[0]}"
     assert stream_rows, "contract has no producer: (empty registry)"

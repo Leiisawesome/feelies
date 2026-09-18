@@ -11,9 +11,7 @@ import ast
 import re
 from pathlib import Path
 
-_REGISTRY = (
-    Path(__file__).resolve().parents[2] / "src" / "feelies" / "sensors" / "registry.py"
-)
+_REGISTRY = Path(__file__).resolve().parents[2] / "src" / "feelies" / "sensors" / "registry.py"
 _WALL_LEAVES = frozenset(
     {
         "time",
@@ -50,16 +48,14 @@ def test_sensor_throttle_uses_event_time() -> None:
             if isinstance(child, ast.Attribute) and child.attr in _WALL_LEAVES:
                 wall_in_throttle.append(text)
     assert throttle_compares, (
-        "no throttle_ns comparison in sensors/registry.py — the event-time "
-        "guard never ran"
+        "no throttle_ns comparison in sensors/registry.py — the event-time guard never ran"
     )
     assert duration_compares, (
         "throttle_ns is only compared to zero — the duration compare never ran"
     )
-    assert not wall_in_throttle, (
-        "throttle comparison is not in event time: " + "; ".join(wall_in_throttle)
+    assert not wall_in_throttle, "throttle comparison is not in event time: " + "; ".join(
+        wall_in_throttle
     )
     assert all("timestamp_ns" in text for text in duration_compares), (
-        "duration compare does not use event.timestamp_ns: "
-        + "; ".join(duration_compares)
+        "duration compare does not use event.timestamp_ns: " + "; ".join(duration_compares)
     )

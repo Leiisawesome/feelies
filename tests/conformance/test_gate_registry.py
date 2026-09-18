@@ -78,8 +78,7 @@ def test_s13_expected_ids_match_registry_rows() -> None:
     missing = sorted(expected - set(GATE_REGISTRY))
     extra = sorted(set(GATE_REGISTRY) - expected)
     assert not missing and not extra, (
-        f"GATE_REGISTRY diverges from the declared identity set: "
-        f"missing {missing}, extra {extra}"
+        f"GATE_REGISTRY diverges from the declared identity set: missing {missing}, extra {extra}"
     )
     gov = {gid for gid, row in GATE_REGISTRY.items() if row.ladder == "governance"}
     rt = {gid for gid, row in GATE_REGISTRY.items() if row.ladder == "runtime"}
@@ -102,10 +101,7 @@ def test_s13_family_templates_are_templates_not_rows() -> None:
     )
     assert frozenset(FAMILY_TEMPLATES) == expected
     leaked = sorted(gid for gid in FAMILY_TEMPLATES if gid in GATE_REGISTRY)
-    assert leaked == [], (
-        "family templates recorded as registry rows "
-        f"(56 instead of 53): {leaked}"
-    )
+    assert leaked == [], f"family templates recorded as registry rows (56 instead of 53): {leaked}"
 
 
 def test_s13_generated_family_instances_match_wiring_manifest() -> None:
@@ -132,13 +128,10 @@ def test_s13_generated_family_instances_match_wiring_manifest() -> None:
         f"missing {missing}, extra {extra}"
     )
     leaked = sorted(gid for gid in FAMILY_TEMPLATES if gid in GATE_REGISTRY)
-    assert leaked == [], (
-        "family templates recorded as hand-written rows: " + ", ".join(leaked)
-    )
+    assert leaked == [], "family templates recorded as hand-written rows: " + ", ".join(leaked)
     overlap = sorted(actual & set(GATE_REGISTRY))
-    assert overlap == [], (
-        "generated instances collided with hand-written rows: "
-        + ", ".join(overlap)
+    assert overlap == [], "generated instances collided with hand-written rows: " + ", ".join(
+        overlap
     )
     from tests.conformance.test_wiring_manifest import _measure_phase4
 
@@ -153,9 +146,7 @@ def test_s13_generated_family_instances_match_wiring_manifest() -> None:
         "generated family instances missing for receiving boundaries: "
         + ", ".join(missing_runtime)
     )
-    handwritten = {
-        gid for gid, row in GATE_REGISTRY.items() if row.family == "none"
-    }
+    handwritten = {gid for gid, row in GATE_REGISTRY.items() if row.family == "none"}
     assert handwritten == set(GATE_REGISTRY)
     assert len(handwritten) == 53
     for inst in generated.values():
@@ -196,13 +187,12 @@ def test_s13_call_sites_bind_to_registry() -> None:
         gate_id = mapping.get(site["marker"])
         if gate_id is None or gate_id not in GATE_REGISTRY:
             unbound.append(
-                f"{site['path']}:{site['line']} marker={site['marker']!r} "
-                f"family={site['family']}"
+                f"{site['path']}:{site['line']} marker={site['marker']!r} family={site['family']}"
             )
         else:
             bound_ids.add(gate_id)
-    assert not unbound, (
-        "unbound gate call sites (no registry row for marker): " + "; ".join(unbound)
+    assert not unbound, "unbound gate call sites (no registry row for marker): " + "; ".join(
+        unbound
     )
     unlocated = sorted(
         gate_id
@@ -210,8 +200,7 @@ def test_s13_call_sites_bind_to_registry() -> None:
         if not row.bind_markers and not row.site_exemption
     )
     assert not unlocated, (
-        "registry rows with neither bind_markers nor site_exemption: "
-        + ", ".join(unlocated)
+        "registry rows with neither bind_markers nor site_exemption: " + ", ".join(unlocated)
     )
     assert bound_ids, "scan found no sites — the binding assertion is vacuous"
 
@@ -224,19 +213,13 @@ def test_s13_g13_is_a_retired_alias_and_binds_to_nothing() -> None:
     mapping = _marker_to_gate()
     assert "G13" not in mapping.values()
     sites = [
-        f"{s['path']}:{s['line']}"
-        for s in _scan_sites()
-        if mapping.get(s["marker"]) == "G13"
+        f"{s['path']}:{s['line']}" for s in _scan_sites() if mapping.get(s["marker"]) == "G13"
     ]
     assert sites == []
 
 
 def test_s13_kill_switch_is_the_sole_monotone_exception() -> None:
-    exceptions = sorted(
-        row.stable_id
-        for row in GATE_REGISTRY.values()
-        if row.monotone != "yes"
-    )
+    exceptions = sorted(row.stable_id for row in GATE_REGISTRY.values() if row.monotone != "yes")
     assert exceptions == ["RT.KILL_SWITCH"]
     assert GATE_REGISTRY["RT.KILL_SWITCH"].monotone == "declared-exception"
 
@@ -249,9 +232,7 @@ def test_s13_governance_is_cold_and_disableable_only_where_declared() -> None:
     ]
     assert hot_gov == []
     disableable = sorted(
-        row.stable_id
-        for row in GATE_REGISTRY.values()
-        if row.disableable != "no"
+        row.stable_id for row in GATE_REGISTRY.values() if row.disableable != "no"
     )
     assert disableable == ["GOV.LAYER_VALIDATE"]
     hits: list[str] = []

@@ -90,9 +90,7 @@ class QuarantineRecommendation:
     def from_decisions(
         cls, decisions: Iterable[CircuitBreakerDecision]
     ) -> tuple[QuarantineRecommendation, ...]:
-        return tuple(
-            cls.from_decision(d) for d in decisions if d.action == ACTION_QUARANTINE
-        )
+        return tuple(cls.from_decision(d) for d in decisions if d.action == ACTION_QUARANTINE)
 
 
 def evaluate_cost_circuit_breaker(

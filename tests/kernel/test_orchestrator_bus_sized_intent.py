@@ -91,9 +91,7 @@ class _ScriptedOrderRouter:
         self._submit_fill_price = submit_fill_price
         self.submitted: list[OrderRequest] = []
 
-    def submit(
-        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
-    ) -> None:
+    def submit(self, request: OrderRequest, triggering_quote: NBBOQuote | None = None) -> None:
         self.submitted.append(request)
         self._pending_acks.append(
             OrderAck(
@@ -628,7 +626,8 @@ class TestFillReconciliation:
             strategy_id="standalone_signal_alpha",
         )
         orch._track_order(resting_order.order_id, resting_order.side, resting_order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             resting_order.order_id,
             OrderState.SUBMITTED,
             "seed_resting_order",

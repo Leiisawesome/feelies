@@ -134,15 +134,11 @@ def _engine_kernel_import_pairs() -> frozenset[tuple[str, str]]:
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         name = alias.name
-                        if name == "feelies.kernel" or name.startswith(
-                            "feelies.kernel."
-                        ):
+                        if name == "feelies.kernel" or name.startswith("feelies.kernel."):
                             pairs.add((mod, name))
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     imported = node.module
-                    if imported == "feelies.kernel" or imported.startswith(
-                        "feelies.kernel."
-                    ):
+                    if imported == "feelies.kernel" or imported.startswith("feelies.kernel."):
                         pairs.add((mod, imported))
     return frozenset(pairs)
 
