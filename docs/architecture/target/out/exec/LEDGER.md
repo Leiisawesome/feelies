@@ -22384,3 +22384,169 @@ FINDINGS:    A detector's failure mode is part of
                  campaign could not land.
                  verify_step frozen at exec-tools-v1.
                  Lint and format stay red.
+
+---
+
+## 0.2  2026-09-17T23:56:41+08:00
+  STEP:          0.2
+  BASE:          5ca077258083a01bf4b22fc178f84b11776bf917
+  RESULT SHA:    18478b4911affb935017c79c592152a9e6238c50 (exec/0.2; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES ruff check src/ tests/ scripts/
+                 green. Format stays red (57 files).
+                 Two F401 gone. No pin moves. Already
+                 red. Lint is now green: the first of
+                 the two CI steps this campaign
+                 restores. Format remains 0.3.
+                 No new conformance test.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs
+                 before and after.
+                 Inv-10 unmoved
+                 (test_no_raw_wall_clock_outside_allowlist
+                 and
+                 test_wall_clock_allowlist_has_no_stale_entries).
+                 Reset partition unmoved: _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 mypy src/feelies: Success, 249 source files
+                 before and after. docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-0.2 GREEN 4903 passed / 0
+                 failed / 26 skipped / 5 xfailed.
+                 -> capture post-0.2 GREEN 4903 passed /
+                 0 failed / 26 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4900 passed / 0 failed /
+                 15 skipped / 14 deselected / 5 xfailed.
+                 4900 vs capture 4903 is three paper_rth
+                 tests that ran in the unmarked capture
+                 and were deselected here (3 passed + 11
+                 skipped of the 26 = 14 deselected).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-0.2 vs post-0.2 and vs
+                 baseline_post-0.1.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 18478b49). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: src/feelies/bootstrap.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: tests/,
+                 _paper_injected 2102-2103 (now
+                 2100-2101 after the two-line delete),
+                 TYPE_CHECKING CompositionEngine and
+                 NetDivergence, uv.lock, ruff version.
+                 No noqa added. No file was formatted.
+                 verify_step not runnable (0.* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47058 (-2; the two deleted
+                 TYPE_CHECKING import lines)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse 0.*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4903->4903 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0
+                 (sloc -2 is the two deleted imports).
+                 CLEAN. Go confirmed on branch head
+                 18478b4911affb935017c79c592152a9e6238c50.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 5ca07725 on arch/exec.
+                 Cut exec/0.2. tools/exec vs
+                 exec-tools-v1 empty. Go confirmed on
+                 this head
+                 18478b4911affb935017c79c592152a9e6238c50.
+                 Single commit, one file:
+                 src/feelies/bootstrap.py only. Subject
+                 "0.2: delete unused TYPE_CHECKING
+                 IBGatewayConnection and MassiveLiveFeed".
+                 2 deletions. LEDGER.md dirty at the gate
+                 is the uncommitted append. The two
+                 capture artifacts stay uncommitted.
+                 Before-state (134-139):
+                   if TYPE_CHECKING:
+                       from feelies.broker.ib import IBGatewayConnection
+                       from feelies.composition.engine import CompositionEngine
+                       from feelies.execution.portfolio_netter import NetDivergence
+                       from feelies.ingestion.massive_ws import MassiveLiveFeed
+                 from __future__ import annotations on
+                 line 9. _BackendBundle.live_feed and
+                 ib_connection typed object | None
+                 (148-149, unmoved). No string annotation
+                 in the file names IBGatewayConnection or
+                 MassiveLiveFeed. CompositionEngine kept:
+                 TYPE_CHECKING import (now 135), return
+                 at 1544, construction at 1666. NetDivergence
+                 kept: TYPE_CHECKING import (now 136),
+                 annotation at 232
+                 ("list[NetDivergence] | None").
+                 Runtime imports in _paper_injected
+                 untouched (now 2100-2101).
+                 ruff check 2 F401 -> 0 (green).
+                 ruff format --check 57 files before
+                 and after. Format stays red; that is
+                 0.3, not this rung failing.
+                 All pins unmoved: five-tier empty with
+                 statuses KEPT; engine-to-kernel 9; S2
+                 KEPT at zero; Inv-10 unmoved; reset
+                 partition unmoved (_TAPES the five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine). FAIL_QUIET_KEEP
+                 unmoved. Locked hashes unmoved: all 64
+                 HASH/COUNT constants, the fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6,
+                 and _BASELINE_CONFIG_HASH, against
+                 baseline_post-0.1.json. APP oracle 2
+                 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+  FINDINGS:      Carried, not fixed: G36 open, G44
+                 partial, G32 deferred, G41/G42/G45
+                 open, G39/G10/G28 markers never
+                 dropped, G46's xfail is the
+                 unresolved-unit list.
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned.
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned.
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse 0.*.
+                 0.1: FAIL_QUIET_KEEP is keyed by
+                 enclosing symbol with a Counter, no
+                 line field.
+                 Lint is now green. Format stays red
+                 at 57 files. This is the first of the
+                 two CI steps restored.
