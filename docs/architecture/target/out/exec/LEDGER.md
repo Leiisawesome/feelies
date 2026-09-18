@@ -22550,3 +22550,823 @@ FINDINGS:    A detector's failure mode is part of
                  Lint is now green. Format stays red
                  at 57 files. This is the first of the
                  two CI steps restored.
+
+---
+
+## 0.3  2026-09-18T11:38:47+08:00
+  STEP:          0.3
+  BASE:          85103cf4166372d0d6f280e68f5a8ad56accdaa0
+  RESULT SHA:    eaa3a1535bbc457b5ff72bd03d92607afa6f29bb (exec/0.3; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES ruff format --check src/ tests/
+                 scripts/ green. Lint already green
+                 from 0.2. No pin moves. FAIL_QUIET_KEEP
+                 has no line field (0.1). Already red.
+                 Format is now green: the second of the
+                 two CI steps this campaign restores.
+                 Both CI steps green locally.
+                 No new conformance test.
+                 import contracts 3 passed, invoked by
+                 name: test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero; test_engine_kernel_imports_
+                 equal_pin equals the unmoved 9-pair
+                 pin.
+                 Inv-10's three tests passed, invoked
+                 by name: test_no_raw_wall_clock_
+                 outside_allowlist,
+                 test_wall_clock_allowlist_has_no_
+                 stale_entries,
+                 test_process_tick_inner_tick_timings_
+                 keys.
+                 Reset partition passed, invoked by
+                 name: test_reset_cascade_on_fix1_
+                 matches_must_invoke_pin. _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP: test_no_unallowlisted_
+                 fail_quiet_exception_handler passed.
+                 Seventeen rows. FailQuietKeep fields
+                 are path, enclosing_symbol, exc_type,
+                 reason — no line.
+                 mypy src/feelies: Success, 249 source
+                 files before and after. docs 101.
+                 conformance 119 passed / 5 xfailed
+                 (no XPASS) before and after.
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-0.3 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-0.3 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-0.3 vs post-0.3 and vs
+                 baseline_post-0.2.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         57 declared, 57 touched, 57 committed
+                 (clean vs eaa3a153). Hand FILES: 0 extra
+                 CLEAN. ruff named the 57; the commit
+                 is those 57 and nothing else.
+                 Named-not-edited: none.
+                 Forbidden, not touched: uv.lock, ruff
+                 version, FAIL_QUIET_KEEP,
+                 test_fail_quiet.py, the six keep-row
+                 files not in the 57
+                 (ib/connection.py, cli/env.py,
+                 cli/promote.py, factor_neutralizer.py,
+                 massive_ingestor.py, massive_ws.py).
+                 No hand edit. No noqa added.
+                 verify_step not runnable (0.* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47058 -> 47026 (-32 wrapping)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse 0.*.
+                 Four checks by hand:
+                 FILES 57 declared / 57 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0
+                 (sloc -32 is wrapping).
+                 CLEAN. Go confirmed on branch head
+                 eaa3a1535bbc457b5ff72bd03d92607afa6f29bb.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 85103cf4 on arch/exec.
+                 Cut exec/0.3. tools/exec vs
+                 exec-tools-v1 empty. ruff 0.15.12.
+                 Go confirmed on this head
+                 eaa3a1535bbc457b5ff72bd03d92607afa6f29bb.
+                 Single mechanical commit, 57 files,
+                 ruff 0.15.12: subject "0.3: ruff format
+                 57 files". 279 insertions, 397
+                 deletions. uv run ruff format src/
+                 tests/ scripts/ produced the whole
+                 diff. No hand edit, no import reorder
+                 beyond the T-04b semicolon split in
+                 bootstrap.py, no lint fix, no uv.lock.
+                 Inspected pin-file hunks: bootstrap
+                 semicolon split; layer_validator blank
+                 line after a docstring; walltime
+                 wrapping of the six-tuple. Every hunk
+                 is whitespace, wrapping, or a
+                 semicolon split.
+                 ruff format --check 57 -> 0 (718 files
+                 already formatted). ruff check stayed
+                 green. mypy 249 Success both sides.
+                 conformance 119 passed / 5 xfailed
+                 both sides. determinism 148 both
+                 sides. docs 101 after.
+                 Every pin named and unmoved: five-tier
+                 empty KEPT; engine-to-kernel 9; S2
+                 KEPT at zero; Inv-10's three tests;
+                 reset partition (_TAPES five,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine); FAIL_QUIET_KEEP's seventeen
+                 rows; the APP oracle's five baselines;
+                 all 64 HASH/COUNT constants and the
+                 fingerprint, against
+                 baseline_post-0.2.json.
+                 The three keep-row pins that would
+                 have moved under line keys
+                 (layer_validator.py 1190→1191,
+                 bootstrap.py 1607→1609 and 1825→1827)
+                 are irrelevant: 0.1 dropped
+                 FailQuietKeep.line. Matcher is Counter
+                 of (path, enclosing_symbol, exc_type).
+                 Inv-10's six string keys
+                 ("_process_tick_inner",
+                 "time.perf_counter_ns()") cannot be
+                 retargeted by whitespace. The type
+                 annotation still says int | str; the
+                 data has no int keys.
+                 The six keep-row-only files stayed in
+                 the already-formatted set. ruff did
+                 not touch them.
+                 sloc 47058 -> 47026 is -32 wrapping
+                 in src, not a pin.
+                 LEDGER.md dirty at the gate is the
+                 uncommitted append. The two capture
+                 artifacts stay uncommitted.
+                 What the unmoved pins prove: nothing
+                 in those 57 files was load-bearing on
+                 its own formatting. A mechanical
+                 reformat that moved a hash would have
+                 been the more interesting result, and
+                 it did not happen.
+  FINDINGS:      Carried, not fixed: G36 open, G44
+                 partial, G32 deferred, G41/G42/G45
+                 open, G39/G10/G28 markers never
+                 dropped, G46's xfail is the
+                 unresolved-unit list.
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned.
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned.
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse 0.*.
+                 0.1: FAIL_QUIET_KEEP has no line
+                 field. Nothing retargets.
+                 0.2: Lint is green. This rung did not
+                 reintroduce an F401.
+                 T-04b keep-row squeezes vs ruff format
+                 is closed for the two allowlists this
+                 campaign owns. Inv-10 was already
+                 symbol-keyed (S-19a). FAIL_QUIET_KEEP
+                 was re-keyed (0.1) then the 57 were
+                 formatted (this rung).
+                 Lint and format are both green
+                 locally. This is the second of the two
+                 CI steps restored.
+
+---
+
+## CAMPAIGN CLOSE  CI restoration
+DATE:        2026-09-18
+CLOSED AT:   0.3. Commit eaa3a153 on exec/0.3;
+             not merged. Campaign base c1c11288
+             (post-R-07); 0.3 parent 85103cf4 on
+             arch/exec.
+LOCKED:      3 rungs in the campaign LADDER
+             (0.1, 0.2, 0.3).
+EXECUTED:    3 unique step ids passed (retries
+             not recounted). 3 locked ids ran as
+             themselves (0.1, 0.2, 0.3). 0 were
+             splits. 0 were added mid-campaign.
+             0.1 was a new matcher on a currently
+             green test (budget-1 fail-first,
+             then budget-2). 0.2 and 0.3 were
+             already-red detectors (ruff check,
+             ruff format --check).
+CLOSED:      ruff check src/ tests/ scripts/
+             green (0.2). ruff format --check
+             src/ tests/ scripts/ green (0.3).
+             FAIL_QUIET_KEEP has no line key
+             (0.1): Counter of (path,
+             enclosing_symbol, exc_type),
+             seventeen keepers, budget 2 on
+             _run_backtest_phases_2_7 /
+             Exception. Both CI steps green
+             locally. G36 stays OPEN — the
+             seventeen keepers remain keepers;
+             only the keying changed.
+FIXED, NOT
+JUST DETECTED:
+             A blocking step that goes red once
+             stops being a detector. Every later
+             violation lands behind it,
+             indistinguishable from the first.
+             Format failed on the S-03 merge on
+             18 August (aa413d96, PR #238 — the
+             last arch/exec Format success) and
+             was skipped for 30 days after.
+             Lint has been red 8 days (G40 close).
+             This branch has had no CI run in 695
+             commits because push is filtered to
+             main and no PR is open. T-04b looked
+             at a red file, concluded the step
+             was not made worse, and that
+             reasoning is only sound while nobody
+             intends to make it green. S-19a and
+             T-04b squeezes, and every later hunk
+             in the 57, sat behind that dead
+             gate. 0.1 re-keyed so 0.3 could be
+             mechanical. 0.2 deleted two unused
+             TYPE_CHECKING imports. 0.3 formatted
+             all 57 in one commit at ruff 0.15.12.
+             Splitting 53/4 was a catalogued
+             non-cut and was not taken.
+NOT CLOSED
+HERE:        the push-filter question. Opening a
+             PR or adding arch/exec to
+             on.push.branches is workflow policy,
+             not a lint or format close. This
+             campaign restored the detectors
+             locally; it did not make Actions
+             run them. Minimal restoration so a
+             future reader does not re-derive
+             it: the Lint and Format jobs already
+             exist in .github/workflows/ci.yml
+             and are green on this tree. They
+             have not executed on this branch
+             because on.push.branches is main
+             and there is no open PR. Open a PR
+             from this branch (pull_request
+             fires) or add arch/exec to
+             on.push.branches. That is a
+             workflow decision, not a fourth
+             rung. Do not restore
+             continue-on-error on Import
+             contracts.
+REMAINS OPEN:
+             G10 S-12/S-31 (S11 xfail)
+             G28 S-12 (S11 xfail)
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN — seventeen
+             keepers remain keepers
+             G39 S-12 (S15/S17 xfail)
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed, S9
+             xfail is the unresolved-unit list
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step
+             Engine-to-kernel residual: 9 pairs
+             under test_engine_kernel_imports_
+             equal_pin. That pin is the detector,
+             not a gap this campaign owned.
+             Nine never-rows: DECLARED_UNINVOKED
+             stays nine. _TAPES stays the five
+             ids. MUST_INVOKE stays 33. invoked
+             == MUST_INVOKE. A name does not
+             move between those frozensets.
+             Reset owed is 0 since R-07; do not
+             reopen R6. The 15 OWED items from
+             the disposition this campaign
+             outranked and did not take are the
+             unowned residuals above, not a
+             fourth lint/format rung.
+             keep-row squeezes vs ruff format —
+             T-04b FINDING — closed for the two
+             allowlists this campaign owns
+             (FAIL_QUIET_KEEP re-keyed; Inv-10
+             already symbol-keyed). The six
+             keep-row-only files were already
+             formatted and were not in the 57.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. Lint and Format are
+             green locally. Do not restore
+             continue-on-error. Do not change
+             on.push.branches in this close.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are only
+             test_after_hours_reject_surfaces_as_rejected,
+             test_g12_cost_exceeds_disclosure_alert,
+             test_multi_symbol_subscribe,
+             test_sustained_quotes_with_idle_ticks.
+             A failure outside that set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals the 9-pair
+             pin. Shrinking either pin happens in
+             lockstep with the cut that drops the
+             pair, in the same commit.
+             Do not restore continue-on-error.
+             Do not invent suffixes for g–o.
+             Reset partition holds: _TAPES the
+             five ids; MUST_INVOKE 33;
+             DECLARED_UNINVOKED nine; invoked ==
+             MUST_INVOKE.
+             Specific to this campaign:
+             FAIL_QUIET_KEEP must never regain a
+             line key after 0.1. ruff stays
+             0.15.12; a version bump would change
+             the diff. The format commit is
+             mechanical by definition — a hash
+             move means it was not. A noqa on a
+             genuinely unused import is not a
+             lint fix. Splitting the format
+             commit 53/4 is not two rungs.
+FINDINGS:    A red gate is a dead gate. A
+             blocking step that goes red once
+             stops being a detector; every later
+             violation lands behind it,
+             indistinguishable from the first.
+             T-04b's "this step did not make a
+             clean file dirty" / "this step did
+             not make it worse" is only valid
+             while nobody intends to make the
+             step green.
+             A guard whose failure mode is
+             multiplicity must be probed by
+             under-budgeting rather than by
+             cutting code. 0.1's fail-first had
+             to be a matcher edit: a frozenset
+             of the same rows accepts both
+             Exception handlers in
+             _run_backtest_phases_2_7 under one
+             key and stays green with one
+             unwatched. The discriminating
+             experiment is budget 1, then 2.
+             Three campaigns (Phase 7, Five
+             import tiers, Reset invocation) ran
+             to completion behind a detector
+             nobody could see. That is the
+             reason to check a gate is alive
+             before trusting it. Format was red
+             on main for 30 days and unevaluated
+             on this branch for 30 more; Lint
+             red 8; 695 commits with no CI run
+             on arch/exec. The restored
+             detectors are local until a PR
+             opens or the push filter changes.
+
+---
+
+## 0.3  2026-09-18T11:38:47+08:00
+  STEP:          0.3
+  BASE:          85103cf4166372d0d6f280e68f5a8ad56accdaa0
+  RESULT SHA:    eaa3a1535bbc457b5ff72bd03d92607afa6f29bb (exec/0.3; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES ruff format --check src/ tests/
+                 scripts/ green. Lint already green
+                 from 0.2. No pin moves. FAIL_QUIET_KEEP
+                 has no line field (0.1). Already red.
+                 Format is now green: the second of the
+                 two CI steps this campaign restores.
+                 Both CI steps green locally.
+                 No new conformance test.
+                 import contracts 3 passed, invoked by
+                 name: test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero; test_engine_kernel_imports_
+                 equal_pin equals the unmoved 9-pair
+                 pin.
+                 Inv-10's three tests passed, invoked
+                 by name: test_no_raw_wall_clock_
+                 outside_allowlist,
+                 test_wall_clock_allowlist_has_no_
+                 stale_entries,
+                 test_process_tick_inner_tick_timings_
+                 keys.
+                 Reset partition passed, invoked by
+                 name: test_reset_cascade_on_fix1_
+                 matches_must_invoke_pin. _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP: test_no_unallowlisted_
+                 fail_quiet_exception_handler passed.
+                 Seventeen rows. FailQuietKeep fields
+                 are path, enclosing_symbol, exc_type,
+                 reason — no line.
+                 mypy src/feelies: Success, 249 source
+                 files before and after. docs 101.
+                 conformance 119 passed / 5 xfailed
+                 (no XPASS) before and after.
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-0.3 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-0.3 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-0.3 vs post-0.3 and vs
+                 baseline_post-0.2.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         57 declared, 57 touched, 57 committed
+                 (clean vs eaa3a153). Hand FILES: 0 extra
+                 CLEAN. ruff named the 57; the commit
+                 is those 57 and nothing else.
+                 Named-not-edited: none.
+                 Forbidden, not touched: uv.lock, ruff
+                 version, FAIL_QUIET_KEEP,
+                 test_fail_quiet.py, the six keep-row
+                 files not in the 57
+                 (ib/connection.py, cli/env.py,
+                 cli/promote.py, factor_neutralizer.py,
+                 massive_ingestor.py, massive_ws.py).
+                 No hand edit. No noqa added.
+                 verify_step not runnable (0.* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47058 -> 47026 (-32 wrapping)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse 0.*.
+                 Four checks by hand:
+                 FILES 57 declared / 57 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0
+                 (sloc -32 is wrapping).
+                 CLEAN. Go confirmed on branch head
+                 eaa3a1535bbc457b5ff72bd03d92607afa6f29bb.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 85103cf4 on arch/exec.
+                 Cut exec/0.3. tools/exec vs
+                 exec-tools-v1 empty. ruff 0.15.12.
+                 Go confirmed on this head
+                 eaa3a1535bbc457b5ff72bd03d92607afa6f29bb.
+                 Single mechanical commit, 57 files,
+                 ruff 0.15.12: subject "0.3: ruff format
+                 57 files". 279 insertions, 397
+                 deletions. uv run ruff format src/
+                 tests/ scripts/ produced the whole
+                 diff. No hand edit, no import reorder
+                 beyond the T-04b semicolon split in
+                 bootstrap.py, no lint fix, no uv.lock.
+                 Inspected pin-file hunks: bootstrap
+                 semicolon split; layer_validator blank
+                 line after a docstring; walltime
+                 wrapping of the six-tuple. Every hunk
+                 is whitespace, wrapping, or a
+                 semicolon split.
+                 ruff format --check 57 -> 0 (718 files
+                 already formatted). ruff check stayed
+                 green. mypy 249 Success both sides.
+                 conformance 119 passed / 5 xfailed
+                 both sides. determinism 148 both
+                 sides. docs 101 after.
+                 Every pin named and unmoved: five-tier
+                 empty KEPT; engine-to-kernel 9; S2
+                 KEPT at zero; Inv-10's three tests;
+                 reset partition (_TAPES five,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine); FAIL_QUIET_KEEP's seventeen
+                 rows; the APP oracle's five baselines;
+                 all 64 HASH/COUNT constants and the
+                 fingerprint, against
+                 baseline_post-0.2.json.
+                 The three keep-row pins that would
+                 have moved under line keys
+                 (layer_validator.py 1190→1191,
+                 bootstrap.py 1607→1609 and 1825→1827)
+                 are irrelevant: 0.1 dropped
+                 FailQuietKeep.line. Matcher is Counter
+                 of (path, enclosing_symbol, exc_type).
+                 Inv-10's six string keys
+                 ("_process_tick_inner",
+                 "time.perf_counter_ns()") cannot be
+                 retargeted by whitespace. The type
+                 annotation still says int | str; the
+                 data has no int keys.
+                 The six keep-row-only files stayed in
+                 the already-formatted set. ruff did
+                 not touch them.
+                 sloc 47058 -> 47026 is -32 wrapping
+                 in src, not a pin.
+                 LEDGER.md dirty at the gate is the
+                 uncommitted append. The two capture
+                 artifacts stay uncommitted.
+                 What the unmoved pins prove: nothing
+                 in those 57 files was load-bearing on
+                 its own formatting. A mechanical
+                 reformat that moved a hash would have
+                 been the more interesting result, and
+                 it did not happen.
+  FINDINGS:      Carried, not fixed: G36 open, G44
+                 partial, G32 deferred, G41/G42/G45
+                 open, G39/G10/G28 markers never
+                 dropped, G46's xfail is the
+                 unresolved-unit list.
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned.
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned.
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse 0.*.
+                 0.1: FAIL_QUIET_KEEP has no line
+                 field. Nothing retargets.
+                 0.2: Lint is green. This rung did not
+                 reintroduce an F401.
+                 T-04b keep-row squeezes vs ruff format
+                 is closed for the two allowlists this
+                 campaign owns. Inv-10 was already
+                 symbol-keyed (S-19a). FAIL_QUIET_KEEP
+                 was re-keyed (0.1) then the 57 were
+                 formatted (this rung).
+                 Lint and format are both green
+                 locally. This is the second of the two
+                 CI steps restored.
+
+---
+
+## CAMPAIGN CLOSE  CI restoration
+DATE:        2026-09-18
+CLOSED AT:   0.3. Commit eaa3a153 on exec/0.3;
+             not merged. Campaign base c1c11288
+             (post-R-07); 0.3 parent 85103cf4 on
+             arch/exec.
+LOCKED:      3 rungs in the campaign LADDER
+             (0.1, 0.2, 0.3).
+EXECUTED:    3 unique step ids passed (retries
+             not recounted). 3 locked ids ran as
+             themselves (0.1, 0.2, 0.3). 0 were
+             splits. 0 were added mid-campaign.
+             0.1 was a new matcher on a currently
+             green test (budget-1 fail-first,
+             then budget-2). 0.2 and 0.3 were
+             already-red detectors (ruff check,
+             ruff format --check).
+CLOSED:      ruff check src/ tests/ scripts/
+             green (0.2). ruff format --check
+             src/ tests/ scripts/ green (0.3).
+             FAIL_QUIET_KEEP has no line key
+             (0.1): Counter of (path,
+             enclosing_symbol, exc_type),
+             seventeen keepers, budget 2 on
+             _run_backtest_phases_2_7 /
+             Exception. Both CI steps green
+             locally. G36 stays OPEN — the
+             seventeen keepers remain keepers;
+             only the keying changed.
+FIXED, NOT
+JUST DETECTED:
+             A blocking step that goes red once
+             stops being a detector. Every later
+             violation lands behind it,
+             indistinguishable from the first.
+             Format failed on the S-03 merge on
+             18 August (aa413d96, PR #238 — the
+             last arch/exec Format success) and
+             was skipped for 30 days after.
+             Lint has been red 8 days (G40 close).
+             This branch has had no CI run in 695
+             commits because push is filtered to
+             main and no PR is open. T-04b looked
+             at a red file, concluded the step
+             was not made worse, and that
+             reasoning is only sound while nobody
+             intends to make it green. S-19a and
+             T-04b squeezes, and every later hunk
+             in the 57, sat behind that dead
+             gate. 0.1 re-keyed so 0.3 could be
+             mechanical. 0.2 deleted two unused
+             TYPE_CHECKING imports. 0.3 formatted
+             all 57 in one commit at ruff 0.15.12.
+             Splitting 53/4 was a catalogued
+             non-cut and was not taken.
+NOT CLOSED
+HERE:        the push-filter question. Opening a
+             PR or adding arch/exec to
+             on.push.branches is workflow policy,
+             not a lint or format close. This
+             campaign restored the detectors
+             locally; it did not make Actions
+             run them. Minimal restoration so a
+             future reader does not re-derive
+             it: the Lint and Format jobs already
+             exist in .github/workflows/ci.yml
+             and are green on this tree. They
+             have not executed on this branch
+             because on.push.branches is main
+             and there is no open PR. Open a PR
+             from this branch (pull_request
+             fires) or add arch/exec to
+             on.push.branches. That is a
+             workflow decision, not a fourth
+             rung. Do not restore
+             continue-on-error on Import
+             contracts.
+REMAINS OPEN:
+             G10 S-12/S-31 (S11 xfail)
+             G28 S-12 (S11 xfail)
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN — seventeen
+             keepers remain keepers
+             G39 S-12 (S15/S17 xfail)
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed, S9
+             xfail is the unresolved-unit list
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step
+             Engine-to-kernel residual: 9 pairs
+             under test_engine_kernel_imports_
+             equal_pin. That pin is the detector,
+             not a gap this campaign owned.
+             Nine never-rows: DECLARED_UNINVOKED
+             stays nine. _TAPES stays the five
+             ids. MUST_INVOKE stays 33. invoked
+             == MUST_INVOKE. A name does not
+             move between those frozensets.
+             Reset owed is 0 since R-07; do not
+             reopen R6. The 15 OWED items from
+             the disposition this campaign
+             outranked and did not take are the
+             unowned residuals above, not a
+             fourth lint/format rung.
+             keep-row squeezes vs ruff format —
+             T-04b FINDING — closed for the two
+             allowlists this campaign owns
+             (FAIL_QUIET_KEEP re-keyed; Inv-10
+             already symbol-keyed). The six
+             keep-row-only files were already
+             formatted and were not in the 57.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. Lint and Format are
+             green locally. Do not restore
+             continue-on-error. Do not change
+             on.push.branches in this close.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are only
+             test_after_hours_reject_surfaces_as_rejected,
+             test_g12_cost_exceeds_disclosure_alert,
+             test_multi_symbol_subscribe,
+             test_sustained_quotes_with_idle_ticks.
+             A failure outside that set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals the 9-pair
+             pin. Shrinking either pin happens in
+             lockstep with the cut that drops the
+             pair, in the same commit.
+             Do not restore continue-on-error.
+             Do not invent suffixes for g–o.
+             Reset partition holds: _TAPES the
+             five ids; MUST_INVOKE 33;
+             DECLARED_UNINVOKED nine; invoked ==
+             MUST_INVOKE.
+             Specific to this campaign:
+             FAIL_QUIET_KEEP must never regain a
+             line key after 0.1. ruff stays
+             0.15.12; a version bump would change
+             the diff. The format commit is
+             mechanical by definition — a hash
+             move means it was not. A noqa on a
+             genuinely unused import is not a
+             lint fix. Splitting the format
+             commit 53/4 is not two rungs.
+FINDINGS:    A red gate is a dead gate. A
+             blocking step that goes red once
+             stops being a detector; every later
+             violation lands behind it,
+             indistinguishable from the first.
+             T-04b's "this step did not make a
+             clean file dirty" / "this step did
+             not make it worse" is only valid
+             while nobody intends to make the
+             step green.
+             A guard whose failure mode is
+             multiplicity must be probed by
+             under-budgeting rather than by
+             cutting code. 0.1's fail-first had
+             to be a matcher edit: a frozenset
+             of the same rows accepts both
+             Exception handlers in
+             _run_backtest_phases_2_7 under one
+             key and stays green with one
+             unwatched. The discriminating
+             experiment is budget 1, then 2.
+             Three campaigns (Phase 7, Five
+             import tiers, Reset invocation) ran
+             to completion behind a detector
+             nobody could see. That is the
+             reason to check a gate is alive
+             before trusting it. Format was red
+             on main for 30 days and unevaluated
+             on this branch for 30 more; Lint
+             red 8; 695 commits with no CI run
+             on arch/exec. The restored
+             detectors are local until a PR
+             opens or the push filter changes.
