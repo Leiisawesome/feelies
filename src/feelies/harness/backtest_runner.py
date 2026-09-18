@@ -1025,6 +1025,4 @@ def main(
 ) -> int:
     _force_utf8_console()
     _configure_logging_for_cli()
-    return run_backtest_api(
-        parse_args(argv), api_key=api_key, platform_factory=platform_factory
-    )
+    return run_backtest_api(parse_args(argv), api_key=api_key, platform_factory=platform_factory)

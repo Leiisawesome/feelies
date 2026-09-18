@@ -61,7 +61,8 @@ def test_order_route_precedence(
         orch._session_by_strategy = {"test_strat": "closing_auction"}
         orch._moc_bounds_configured = True
 
-    order_type, limit_price, is_moc = _resolve_order_route(orch,
+    order_type, limit_price, is_moc = _resolve_order_route(
+        orch,
         strategy_id="test_strat",
         symbol="AAPL",
         side=Side.BUY,

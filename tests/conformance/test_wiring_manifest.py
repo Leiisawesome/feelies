@@ -71,8 +71,7 @@ def test_s15_manifest_matches_runtime_graph() -> None:
     runtime = _measure_phase4()
     undeclared = [row for row in runtime if row not in declared]
     assert not undeclared, (
-        "subscription not in the manifest: "
-        + f"{undeclared[0][0]} {undeclared[0][1]}"
+        "subscription not in the manifest: " + f"{undeclared[0][0]} {undeclared[0][1]}"
     )
     assert hashed, "wiring manifest hash is missing from the run fingerprint"
     assert len(hashed) == 64

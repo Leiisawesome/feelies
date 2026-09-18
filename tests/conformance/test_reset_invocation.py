@@ -317,9 +317,7 @@ def test_reset_cascade_on_fix1_matches_must_invoke_pin() -> None:
         if tape_id == "injected_normalizer":
             normalizer = MassiveNormalizer(SimulatedClock(start_ns=SESSION_OPEN_NS))
             normalizer.register_symbols(frozenset(_UNIVERSE))
-            orchestrator, _ = build_platform(
-                config, event_log=event_log, normalizer=normalizer
-            )
+            orchestrator, _ = build_platform(config, event_log=event_log, normalizer=normalizer)
         else:
             orchestrator, _ = build_platform(config, event_log=event_log)
         orchestrator.boot(config)

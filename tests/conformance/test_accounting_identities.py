@@ -22,9 +22,7 @@ def test_accounting_conservation_identities_per_event() -> None:
     )
     assert probe.samples, "probe recorded no observations — identities would be vacuous"
 
-    violations = [
-        s for s in probe.samples if s.quantity == 0 and s.unrealized_pnl != 0
-    ]
+    violations = [s for s in probe.samples if s.quantity == 0 and s.unrealized_pnl != 0]
     assert not violations, (
         f"flat book carried unrealized PnL at {len(violations)} of "
         f"{len(probe.samples)} observations. First: {violations[0]}"

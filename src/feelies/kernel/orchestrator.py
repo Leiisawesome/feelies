@@ -196,9 +196,7 @@ _PLATFORM_BOOT_CORRELATION_ID = "platform_boot"
 _ORCHESTRATOR_SHUTDOWN_CORRELATION_ID = "orchestrator_shutdown"
 
 # Tick-path timing keys recorded without a bus sequence (Inv-5 metric IDs).
-_ATTRIBUTION_TIMING_KEYS: frozenset[str] = frozenset(
-    {"sensor_fanout_ns", "sm_transition_ns"}
-)
+_ATTRIBUTION_TIMING_KEYS: frozenset[str] = frozenset({"sensor_fanout_ns", "sm_transition_ns"})
 
 
 def _resolve_boot_config(config: Configuration) -> PlatformConfig:
@@ -410,9 +408,7 @@ def _distribute_fill_to_strategies(
 
     applied: list[tuple[str, int, Decimal, Decimal]] = []
     alloc_sign = 1 if signed_qty > 0 else -1
-    for (sid, _q), alloc_qty, alloc_fee in zip(
-        strategy_qtys, alloc_qtys, alloc_fees, strict=True
-    ):
+    for (sid, _q), alloc_qty, alloc_fee in zip(strategy_qtys, alloc_qtys, alloc_fees, strict=True):
         if alloc_qty == 0:
             continue
         prev_slice = self._strategy_positions.get(sid, symbol).realized_pnl
@@ -916,9 +912,7 @@ def _update_regime(self: Any, quote: NBBOQuote, correlation_id: str) -> None:
         else type(self._regime_engine).__name__
     )
     # Prefer per-symbol separation because one symbol can collapse independently.
-    discriminability_for_symbol = getattr(
-        self._regime_engine, "discriminability_for_symbol", None
-    )
+    discriminability_for_symbol = getattr(self._regime_engine, "discriminability_for_symbol", None)
     if callable(discriminability_for_symbol):
         d_value = float(discriminability_for_symbol(quote.symbol))
     else:
@@ -932,9 +926,7 @@ def _update_regime(self: Any, quote: NBBOQuote, correlation_id: str) -> None:
         state_names=state_names,
         posteriors=tuple(posteriors),
         dominant_state=dominant_idx,
-        dominant_name=state_names[dominant_idx]
-        if dominant_idx < len(state_names)
-        else "unknown",
+        dominant_name=state_names[dominant_idx] if dominant_idx < len(state_names) else "unknown",
         posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
         # Engines without a calibration flag opt out of the fail-closed gate.
         calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
@@ -1486,6 +1478,7 @@ def _apply_ack_to_order(self: Any, ack: OrderAck) -> None:
         f"Fail-safe: all enum members must be explicitly handled."
     )
 
+
 def _submit_tracked_order(
     self: Any,
     order: OrderRequest,
@@ -1493,7 +1486,8 @@ def _submit_tracked_order(
     trigger: str = "submitted",
 ) -> Exception | None:
     """Submit a tracked order and terminalize its state if routing fails."""
-    _transition_order(self,
+    _transition_order(
+        self,
         order.order_id,
         OrderState.SUBMITTED,
         trigger,
@@ -1620,7 +1614,9 @@ def _filter_portfolio_orders_for_pending_conflicts(
     """
     filtered: list[OrderRequest] = []
     for order in orders:
-        if self._has_pending_order_for_symbol(order.symbol) and not record_verdict("RT.DUPLICATE_INTENT", "FAIL", order.order_id):
+        if self._has_pending_order_for_symbol(order.symbol) and not record_verdict(
+            "RT.DUPLICATE_INTENT", "FAIL", order.order_id
+        ):
             self._publish_alert(
                 timestamp_ns=self._clock.now_ns(),
                 correlation_id=correlation_id,
@@ -1637,6 +1633,7 @@ def _filter_portfolio_orders_for_pending_conflicts(
         filtered.append(order)
     return filtered
 
+
 def _emit_ssr_suppression_alert(
     self: Any,
     intent: OrderIntent,
@@ -1651,6 +1648,7 @@ def _emit_ssr_suppression_alert(
         message=f"SSR active for {intent.symbol!r}: refused short entry ({intent.intent.name}); retries next boundary (Reg-SHO 201).",
         context={"symbol": intent.symbol, "intent": intent.intent.name},
     )
+
 
 class _PostExitPositionView:
     """Project one pending exit onto a position store without mutating it."""
@@ -1722,6 +1720,7 @@ class _PostExitPositionView:
     def opened_at_ns(self, symbol: str) -> int | None:
         return self._inner.opened_at_ns(symbol)
 
+
 def _round_trip_cost_bps(
     self: Any,
     *,
@@ -1775,7 +1774,8 @@ def _edge_clears_round_trip_cost(
     """
     if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
         return True, edge_estimate_bps, 1.0
-    rt_cost_bps = _round_trip_cost_bps(self,
+    rt_cost_bps = _round_trip_cost_bps(
+        self,
         symbol=symbol,
         entry_side=entry_side,
         quantity=quantity,
@@ -1809,7 +1809,8 @@ def _signal_passes_edge_cost_gate(
     detail: str,
 ) -> bool:
     """Return whether calibrated edge clears modeled round-trip cost."""
-    passes, effective_edge_bps, factor = _edge_clears_round_trip_cost(self,
+    passes, effective_edge_bps, factor = _edge_clears_round_trip_cost(
+        self,
         strategy_id=signal.strategy_id,
         edge_estimate_bps=signal.edge_estimate_bps,
         symbol=symbol,
@@ -1852,7 +1853,8 @@ def _reversal_passes_combined_edge_gate(
     if self._reversal_min_edge_cost_multiplier <= 0 or self._cost_model is None:
         return 0.0, 0.0, True
     # The aggressive close is a taker but never a new short.
-    exit_roundtrip_cost_bps = _round_trip_cost_bps(self,
+    exit_roundtrip_cost_bps = _round_trip_cost_bps(
+        self,
         symbol=symbol,
         entry_side=exit_side,
         quantity=exit_qty,
@@ -1861,7 +1863,8 @@ def _reversal_passes_combined_edge_gate(
         is_short_entry=False,
     )
     # Price the new-direction entry on the same basis as the entry gate.
-    entry_roundtrip_cost_bps = _round_trip_cost_bps(self,
+    entry_roundtrip_cost_bps = _round_trip_cost_bps(
+        self,
         symbol=symbol,
         entry_side=entry_side,
         quantity=entry_qty,
@@ -2015,10 +2018,14 @@ def _portfolio_leg_edge_block(
         # suppress every opening leg on deployments that never enabled B4.
         return None
     if quote is None or quote.symbol != order.symbol:
-        return record_verdict("RT.COST_GATE", "FAIL", BLOCK_EDGE_UNPRICEABLE) or BLOCK_EDGE_UNPRICEABLE
+        return (
+            record_verdict("RT.COST_GATE", "FAIL", BLOCK_EDGE_UNPRICEABLE)
+            or BLOCK_EDGE_UNPRICEABLE
+        )
     target = intent.target_positions.get(order.symbol)
     edge_bps = target.expected_edge_bps if target is not None else 0.0
-    passes, effective_bps, factor = _edge_clears_round_trip_cost(self,
+    passes, effective_bps, factor = _edge_clears_round_trip_cost(
+        self,
         strategy_id=intent.strategy_id,
         edge_estimate_bps=edge_bps,
         symbol=order.symbol,
@@ -2161,15 +2168,14 @@ def _try_build_order_from_intent(
     if (
         not is_exit_or_stop
         and quote is not None
-        and not _signal_passes_edge_cost_gate(self,
+        and not _signal_passes_edge_cost_gate(
+            self,
             intent.signal,
             symbol=intent.symbol,
             entry_side=side,
             quantity=quantity,
             quote=quote,
-            is_taker_entry=(
-                not self._use_passive_entries or self._min_cost_policy is not None
-            ),
+            is_taker_entry=(not self._use_passive_entries or self._min_cost_policy is not None),
             is_short_entry=is_short,
             correlation_id=correlation_id,
             detail="standalone_intent_suppressed",
@@ -2177,7 +2183,8 @@ def _try_build_order_from_intent(
     ):
         return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
-    order_type, limit_price, is_moc = _resolve_order_route(self,
+    order_type, limit_price, is_moc = _resolve_order_route(
+        self,
         strategy_id=intent.strategy_id,
         symbol=intent.symbol,
         side=side,
@@ -2307,7 +2314,8 @@ def _execute_reverse(
             reversal_cost_bps,
             reversal_required_bps,
             reversal_edge_passes,
-        ) = _reversal_passes_combined_edge_gate(self,
+        ) = _reversal_passes_combined_edge_gate(
+            self,
             edge_estimate_bps=effective_edge_bps,
             symbol=intent.symbol,
             exit_side=exit_side,
@@ -2345,15 +2353,14 @@ def _execute_reverse(
 
         # Check entry edge against cost unless the reversal guard already
         # suppressed the flip.
-        entry_passes_edge_gate = reversal_edge_passes and _signal_passes_edge_cost_gate(self,
+        entry_passes_edge_gate = reversal_edge_passes and _signal_passes_edge_cost_gate(
+            self,
             intent.signal,
             symbol=intent.symbol,
             entry_side=entry_side,
             quantity=entry_qty,
             quote=quote,
-            is_taker_entry=(
-                not self._use_passive_entries or self._min_cost_policy is not None
-            ),
+            is_taker_entry=(not self._use_passive_entries or self._min_cost_policy is not None),
             is_short_entry=is_short,
             correlation_id=cid,
             detail="reverse_entry_leg_suppressed",
@@ -2363,7 +2370,8 @@ def _execute_reverse(
             seq_entry = self._seq.next()
             entry_order_id = derive_order_id(f"{cid}:{seq_entry}:entry")
 
-            order_type, limit_price, entry_is_moc = _resolve_order_route(self,
+            order_type, limit_price, entry_is_moc = _resolve_order_route(
+                self,
                 strategy_id=intent.strategy_id,
                 symbol=intent.symbol,
                 side=entry_side,
@@ -2480,11 +2488,7 @@ def _execute_reverse(
     )
 
     if self._signal_order_trace_sink is not None:
-        leg = (
-            "exit_plus_entry"
-            if entry_order is not None and entry_submitted_ok
-            else "exit_only"
-        )
+        leg = "exit_plus_entry" if entry_order is not None and entry_submitted_ok else "exit_only"
         self._append_signal_order_trace(
             quote,
             reverse_signal,
@@ -2535,9 +2539,7 @@ def _emergency_flatten_all(
 
         try:
             self._track_order(order_id, side, order)
-            submit_exc = _submit_tracked_order(
-                self, order, trigger="emergency_flatten"
-            )
+            submit_exc = _submit_tracked_order(self, order, trigger="emergency_flatten")
             if submit_exc is not None:
                 failures[symbol] = f"submit_exception: {submit_exc!r}"
                 continue
@@ -2559,8 +2561,7 @@ def _emergency_flatten_all(
                 )
         except Exception as exc:
             logger.exception(
-                "Emergency flatten failed for %s (qty=%d) -- "
-                "position may remain open at LOCKED",
+                "Emergency flatten failed for %s (qty=%d) -- position may remain open at LOCKED",
                 symbol,
                 pos.quantity,
             )
@@ -2573,9 +2574,7 @@ def _emergency_flatten_all(
                 )
 
     residual: dict[str, int] = {
-        sym: p.quantity
-        for sym, p in self._positions.all_positions().items()
-        if p.quantity != 0
+        sym: p.quantity for sym, p in self._positions.all_positions().items() if p.quantity != 0
     }
     if residual or failures:
         msg = (
@@ -2981,7 +2980,8 @@ class Orchestrator:
         composition_engine: "CompositionEngine | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
         trading_session_bounds: TradingSessionBounds | None = None,
-        moc_bounds_configured: bool = False, *,
+        moc_bounds_configured: bool = False,
+        *,
         selection_policy: SelectionPolicy,
         edge_calibration_factors: Mapping[str, float] | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
@@ -3063,7 +3063,9 @@ class Orchestrator:
         self._horizon_signal_engine = horizon_signal_engine
         # Hazard events use an isolated sequence so exits cannot shift other IDs.
         self._regime_hazard_detector = regime_hazard_detector
-        self._hazard_seq = hazard_sequence_generator or SequenceGenerator(stream="hazard", **_seq_kw)
+        self._hazard_seq = hazard_sequence_generator or SequenceGenerator(
+            stream="hazard", **_seq_kw
+        )
         # Bootstrap wires optional composition components to the bus; these
         # references support orchestration and inspection.
         self._composition_engine = composition_engine
@@ -3071,7 +3073,8 @@ class Orchestrator:
         self._selection_policy: SelectionPolicy = selection_policy
         self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = signal_order_trace_sink
         self._paper_session_recorder: PaperSessionRecorder | None = None
-        self._quote_tick_in_flight: bool = False; self._in_flight_quote: NBBOQuote | None = None
+        self._quote_tick_in_flight: bool = False
+        self._in_flight_quote: NBBOQuote | None = None
         self._tick_quote_for_trace: NBBOQuote | None = None
         # Preserve the last quote so inter-quote signals can produce trace rows.
         self._last_quote_context_for_signal_trace: NBBOQuote | None = None
@@ -3119,9 +3122,7 @@ class Orchestrator:
         # Pre-clamp quantity of a mandated exit the kernel resized, by order id.
         # Only written on that exceptional path; cleared with the order.
         self._forced_exit_announced_quantity: dict[str, int] = {}
-        self._force_flatten_symbol_on_degrade = MethodType(
-            _force_flatten_symbol_on_degrade, self
-        )
+        self._force_flatten_symbol_on_degrade = MethodType(_force_flatten_symbol_on_degrade, self)
         # Latest signal mechanism per strategy and symbol, used only for fills.
         self._last_signal_mechanism: dict[tuple[str, str], tuple[TrendMechanism | None, int]] = {}
         # Passive reductions that require MARKET fallback on unfilled residuals.
@@ -3761,7 +3762,8 @@ class Orchestrator:
             elif isinstance(event, IdleTick):
                 if self._paper_session_recorder is not None:
                     self._paper_session_recorder.record_idle_tick()
-                _drain_async_fills(self,
+                _drain_async_fills(
+                    self,
                     correlation_id=f"idle:{event.timestamp_ns}",
                 )
 
@@ -3954,13 +3956,15 @@ class Orchestrator:
                 )
                 continue
 
-            orders = _filter_portfolio_orders_for_admission(self,
+            orders = _filter_portfolio_orders_for_admission(
+                self,
                 orders,
                 intent=intent,
                 correlation_id=correlation_id,
                 quote=quote,
             )
-            orders = _filter_portfolio_orders_for_pending_conflicts(self,
+            orders = _filter_portfolio_orders_for_pending_conflicts(
+                self,
                 orders,
                 intent=intent,
                 correlation_id=correlation_id,
@@ -3985,7 +3989,8 @@ class Orchestrator:
             )
             for order in orders:
                 self._track_order(order.order_id, order.side, order)
-                _transition_order(self,
+                _transition_order(
+                    self,
                     order.order_id,
                     OrderState.SUBMITTED,
                     "submitted",
@@ -4025,13 +4030,15 @@ class Orchestrator:
         orders: list[OrderRequest] = list(sized.orders)
         if not orders:
             return
-        orders = _filter_portfolio_orders_for_admission(self,
+        orders = _filter_portfolio_orders_for_admission(
+            self,
             orders,
             intent=intent,
             correlation_id=correlation_id,
             quote=quote,
         )
-        orders = _filter_portfolio_orders_for_pending_conflicts(self,
+        orders = _filter_portfolio_orders_for_pending_conflicts(
+            self,
             orders,
             intent=intent,
             correlation_id=correlation_id,
@@ -4040,7 +4047,8 @@ class Orchestrator:
             return
         for order in orders:
             self._track_order(order.order_id, order.side, order)
-            _transition_order(self,
+            _transition_order(
+                self,
                 order.order_id,
                 OrderState.SUBMITTED,
                 "submitted",
@@ -4057,7 +4065,8 @@ class Orchestrator:
 
         Any exception degrades the macro state and restores the micro machine to M0."""
         cid = quote.correlation_id
-        self._quote_tick_in_flight = True; self._in_flight_quote = quote
+        self._quote_tick_in_flight = True
+        self._in_flight_quote = quote
         try:
             try:
                 self._process_tick_inner(quote)
@@ -4069,7 +4078,8 @@ class Orchestrator:
             self._handle_tick_failure(cid, fault)
             return
         finally:
-            self._quote_tick_in_flight = False; self._in_flight_quote = None
+            self._quote_tick_in_flight = False
+            self._in_flight_quote = None
             self._micro.bind_timing_sink(None)
 
     def _handle_tick_failure(self, cid: str, original: Exception) -> None:
@@ -4082,7 +4092,8 @@ class Orchestrator:
         try:
             self.reset(
                 trigger=f"pipeline_abort:{exc_name}",
-                correlation_id=cid, for_new_run=False,
+                correlation_id=cid,
+                for_new_run=False,
             )
             # pending-intent clear lives in reset, not beside it
             self._bus.publish(
@@ -4374,7 +4385,8 @@ class Orchestrator:
                     signal.symbol,
                     int(quote.timestamp_ns),
                 )
-                plan = _plan_for_signal(self,
+                plan = _plan_for_signal(
+                    self,
                     signal,
                     current_position,
                     target_qty,
@@ -4386,7 +4398,8 @@ class Orchestrator:
                     direction=_int_to_direction(net_desired.direction),
                 )
             else:
-                plan = _plan_for_signal(self,
+                plan = _plan_for_signal(
+                    self,
                     signal,
                     current_position,
                     target_qty,
@@ -4543,7 +4556,8 @@ class Orchestrator:
             _execute_reverse(self, intent, verdict, cid, quote, t_wall_start)
             return
 
-        order, order_build_reason = _try_build_order_from_intent(self,
+        order, order_build_reason = _try_build_order_from_intent(
+            self,
             intent,
             verdict,
             cid,
@@ -5691,9 +5705,7 @@ class Orchestrator:
         """True while a symbol is inside its post-resume entry blackout."""
         return _require_halt_authority(self).in_blackout(symbol, now_ns)
 
-
     # ── Reg-SHO / SSR short-sale restriction ────────────────────────
-
 
     # ── Static borrow availability ───────────────────────────────────
 
@@ -5758,12 +5770,10 @@ class Orchestrator:
             context=context,
         )
 
-
     # ── Feature snapshot management ─────────────────────────────────
 
     _REGIME_SNAPSHOT_KEY = "__regime__"
     _REGIME_VERSION_PREFIX = "regime:"
-
 
     def _restore_regime_snapshot(self) -> None:
         if self._feature_snapshots is None or self._regime_engine is None:
@@ -5783,5 +5793,3 @@ class Orchestrator:
                 "Regime snapshot restore failed -- cold-starting regime engine",
                 exc_info=True,
             )
-
-

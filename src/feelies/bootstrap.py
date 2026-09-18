@@ -9,7 +9,8 @@ omitted when their configuration is empty.
 from __future__ import annotations
 
 import logging
-import os; from feelies.composition.selection_policy import Top1SelectionPolicy
+import os
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -464,6 +465,7 @@ def build_platform(
         router,
         (BacktestOrderRouter, PassiveLimitOrderRouter),
     ):
+
         def _on_backtest_quote(event: NBBOQuote) -> None:
             router.on_quote(event)
 
@@ -683,7 +685,8 @@ def build_platform(
         horizon_signal_engine=horizon_signal_engine,
         regime_hazard_detector=regime_hazard_detector,
         hazard_sequence_generator=hazard_seq,
-        composition_engine=composition_engine, selection_policy=Top1SelectionPolicy(),
+        composition_engine=composition_engine,
+        selection_policy=Top1SelectionPolicy(),
         hazard_exit_controller=hazard_exit_controller,
         trading_session_bounds=trading_session_bounds,
         moc_bounds_configured=moc_bounds is not None,
@@ -705,9 +708,7 @@ def build_platform(
         position_manager_urgency_exec=config.position_manager_urgency_exec,
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
     )
-    _attach_notification_observer(
-        bus, _NotificationObserver(alert_manager)
-    )
+    _attach_notification_observer(bus, _NotificationObserver(alert_manager))
 
     # Wire IB connectivity / unknown-status alerts onto the shared bus so
     # operators have programmatic visibility into IB link-state events and
@@ -1003,6 +1004,7 @@ def _create_backend(
             )
         # Keep the optional IB stack out of BACKTEST-only imports.
         from feelies.execution.paper_backend import build_paper_backend
+
         backend, live_feed, ib_conn = build_paper_backend(
             massive_api_key=api_key,
             symbols=sorted(config.symbols),

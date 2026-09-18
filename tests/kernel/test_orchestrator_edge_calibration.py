@@ -44,7 +44,8 @@ def _signal(edge_bps: float, strategy_id: str = "alpha_x") -> Signal:
 
 
 def _gate(orch, signal: Signal) -> bool:
-    return _signal_passes_edge_cost_gate(orch,
+    return _signal_passes_edge_cost_gate(
+        orch,
         signal,
         symbol="AAPL",
         entry_side=Side.BUY,

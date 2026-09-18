@@ -35,10 +35,7 @@ from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import RiskConfig
 
 _FIXTURE = (
-    Path(__file__).resolve().parent
-    / "fixtures"
-    / "pathological"
-    / "unregistered_strategy_id.yaml"
+    Path(__file__).resolve().parent / "fixtures" / "pathological" / "unregistered_strategy_id.yaml"
 )
 _REGISTERED_ID = "registered_alpha"
 _SYMBOL = "AAPL"
@@ -149,7 +146,9 @@ def _order(strategy_id: str, *, quantity: int = 1) -> OrderRequest:
     )
 
 
-def _wrapper(max_position: int = 100) -> tuple[AlphaBudgetRiskWrapper, _RecordingRegistry, _RecordingInner]:
+def _wrapper(
+    max_position: int = 100,
+) -> tuple[AlphaBudgetRiskWrapper, _RecordingRegistry, _RecordingInner]:
     registry = _RecordingRegistry()
     registry.register(_StubAlpha(_REGISTERED_ID, _budget(max_position=max_position)))
     inner = _RecordingInner()
@@ -201,8 +200,7 @@ def test_unregistered_strategy_id_is_refused_and_does_not_reach_inner() -> None:
         "Unknown state resolved to fewer constraints (Inv-11 / G23)."
     )
     assert unregistered in verdict.reason, (
-        f"refusal does not name the unregistered id {unregistered!r}: "
-        f"{verdict.reason!r}"
+        f"refusal does not name the unregistered id {unregistered!r}: {verdict.reason!r}"
     )
 
 

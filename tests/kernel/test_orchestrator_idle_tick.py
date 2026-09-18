@@ -99,12 +99,14 @@ def _track_submitted_order(orch: Orchestrator) -> OrderRequest:
         strategy_id="alpha_x",
     )
     orch._track_order(order.order_id, order.side, order)
-    _transition_order(orch,
+    _transition_order(
+        orch,
         order.order_id,
         OrderState.SUBMITTED,
         "submitted",
     )
-    _apply_ack_to_order(orch,
+    _apply_ack_to_order(
+        orch,
         OrderAck(
             timestamp_ns=orch._clock.now_ns(),
             correlation_id="paper-order",
@@ -112,7 +114,7 @@ def _track_submitted_order(orch: Orchestrator) -> OrderRequest:
             order_id=order.order_id,
             symbol="AAPL",
             status=OrderAckStatus.ACKNOWLEDGED,
-        )
+        ),
     )
     return order
 

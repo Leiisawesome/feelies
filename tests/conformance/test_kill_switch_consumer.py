@@ -30,9 +30,7 @@ def _platform():
 def test_x9_kill_switch_activation_has_a_consumer() -> None:
     orchestrator, _cfg = _platform()
     handlers = orchestrator._bus._handlers.get(KillSwitchActivation, ())
-    assert handlers, (
-        "KillSwitchActivation has no subscriber; G28 is still inert"
-    )
+    assert handlers, "KillSwitchActivation has no subscriber; G28 is still inert"
 
 
 def test_x9_kill_switch_is_fail_closed_without_bus_delivery() -> None:

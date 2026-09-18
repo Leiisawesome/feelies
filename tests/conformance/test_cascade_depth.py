@@ -25,9 +25,7 @@ def _alert(sequence: int = 1) -> Alert:
 
 def test_x8_cascade_depth_is_bounded() -> None:
     bound = getattr(EventBus, "MAX_CASCADE_DEPTH", None)
-    assert bound is not None and int(bound) > 0, (
-        "event bus has no cascade depth bound"
-    )
+    assert bound is not None and int(bound) > 0, "event bus has no cascade depth bound"
 
 
 def test_x8_exceeding_cascade_depth_is_fail_closed() -> None:

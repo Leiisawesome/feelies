@@ -79,7 +79,11 @@ __all__ = [
 
 if __name__ == "__main__":
     from feelies.bootstrap import build_platform
-    from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
+    from feelies.cli.env import (
+        MASSIVE_API_KEY_ERROR,
+        load_dotenv_optional,
+        massive_api_key_from_env,
+    )
 
     load_dotenv_optional()
     api_key = massive_api_key_from_env()

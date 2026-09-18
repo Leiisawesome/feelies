@@ -84,9 +84,7 @@ class _FillingRouter:
         self.submitted: list[OrderRequest] = []
         self._pending: list[OrderAck] = []
 
-    def submit(
-        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
-    ) -> None:
+    def submit(self, request: OrderRequest, triggering_quote: NBBOQuote | None = None) -> None:
         self.submitted.append(request)
         self._pending.append(
             OrderAck(

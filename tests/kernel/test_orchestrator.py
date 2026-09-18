@@ -881,7 +881,8 @@ class TestOrchestratorAckProcessing:
             strategy_id="alpha_1",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -969,7 +970,8 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1016,7 +1018,8 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1061,13 +1064,15 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=1300,
                 correlation_id="c3",
@@ -1075,9 +1080,10 @@ class TestOrchestratorFillReconcileGuards:
                 order_id=order.order_id,
                 symbol="AAPL",
                 status=OrderAckStatus.ACKNOWLEDGED,
-            )
+            ),
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=1310,
                 correlation_id="c3",
@@ -1087,9 +1093,10 @@ class TestOrchestratorFillReconcileGuards:
                 status=OrderAckStatus.FILLED,
                 filled_quantity=10,
                 fill_price=Decimal("150"),
-            )
+            ),
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=1320,
                 correlation_id="c3",
@@ -1099,7 +1106,7 @@ class TestOrchestratorFillReconcileGuards:
                 status=OrderAckStatus.FILLED,
                 filled_quantity=10,
                 fill_price=Decimal("150"),
-            )
+            ),
         )
 
         assert any(a.alert_name == "duplicate_terminal_fill_ack" for a in alerts)
@@ -1166,13 +1173,15 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="cc",
@@ -1180,7 +1189,7 @@ class TestOrchestratorFillReconcileGuards:
                 order_id=order.order_id,
                 symbol="AAPL",
                 status=OrderAckStatus.ACKNOWLEDGED,
-            )
+            ),
         )
 
         assert cancel_order(orch, order.order_id) is True
@@ -1205,13 +1214,15 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="sd",
@@ -1219,7 +1230,7 @@ class TestOrchestratorFillReconcileGuards:
                 order_id=order.order_id,
                 symbol="AAPL",
                 status=OrderAckStatus.ACKNOWLEDGED,
-            )
+            ),
         )
         sm = orch._active_orders[order.order_id][0]
         sm.transition(
@@ -2556,7 +2567,8 @@ class TestExecutionCostContext:
         orch._cost_model = replacement_cost_model
         quote = _make_quote(bid="99.80", ask="100.20")
         signal = _make_signal(quote)
-        _plan_for_signal(orch,
+        _plan_for_signal(
+            orch,
             signal,
             Position(symbol="AAPL"),
             target_qty=100,
@@ -2572,7 +2584,8 @@ class TestExecutionCostContext:
         assert market.within_l1_impact_factor == Decimal("0.21")
         assert market.permanent_impact_coefficient == Decimal("0.04")
 
-        actual_cost_bps = _round_trip_cost_bps(orch,
+        actual_cost_bps = _round_trip_cost_bps(
+            orch,
             symbol="AAPL",
             entry_side=Side.BUY,
             quantity=100,
@@ -3829,8 +3842,8 @@ class TestRestingOrderGuardAfterRisk:
         orch._track_order(cover.order_id, Side.BUY, cover, trading_intent="EXIT")
         # Mirror a real resting passive order: SUBMITTED → ACKNOWLEDGED so a
         # broker CANCELLED ack is a valid (non-terminal → terminal) transition.
-        _transition_order(orch,cover.order_id, OrderState.SUBMITTED, "submitted")
-        _transition_order(orch,cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+        _transition_order(orch, cover.order_id, OrderState.SUBMITTED, "submitted")
+        _transition_order(orch, cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         assert orch._has_pending_order_for_symbol("AAPL")
 
         alerts: list[Alert] = []
@@ -4367,8 +4380,8 @@ class TestHaltModeling:
         for req in (resting, deferred):
             router.submit(req)
             orch._track_order(req.order_id, req.side, req)
-            _transition_order(orch,req.order_id, OrderState.SUBMITTED, "submitted")
-            _transition_order(orch,req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+            _transition_order(orch, req.order_id, OrderState.SUBMITTED, "submitted")
+            _transition_order(orch, req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         router.poll_acks()  # drain the two ACKNOWLEDGED acks
         assert router.resting_order_count == 1
 

@@ -199,8 +199,7 @@ class AlphaRegistry:
         current = self._universe_snapshot
         if current is not None and current.symbols != snapshot.symbols:
             raise KernelFault(
-                "universe authority conflict: registry already bound to a "
-                "different membership",
+                "universe authority conflict: registry already bound to a different membership",
                 kind=KernelFault.Kind.UNIVERSE,
             )
         self._universe_snapshot = snapshot

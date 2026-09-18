@@ -83,9 +83,7 @@ class _RecordingRouter:
         self._pending: list[OrderAck] = []
         self._fill_price = fill_price
 
-    def submit(
-        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
-    ) -> None:
+    def submit(self, request: OrderRequest, triggering_quote: NBBOQuote | None = None) -> None:
         self.submitted.append(request)
         self._pending.append(
             OrderAck(
