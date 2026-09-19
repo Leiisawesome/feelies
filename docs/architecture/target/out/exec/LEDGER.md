@@ -14259,24 +14259,31 @@ CLOSED:      G01 S-03/S-32; G02 S-12; G03 S-08;
              G26 S-28; G27 S-25; G29 S-17;
              G30 S-16/S-27; G31 S-30c; G33 S-30b;
              G34 S-21; G35 S-30e; G37 S-14; G38 S-11;
-             G40 S-35e; G43 S-07.
+             G40 S-35e; G43 S-07; G28 S-12.
 REMAINS OPEN:
-             G10 S-12/S-31 (S11 xfail)
-             G28 S-12 (S11 xfail)
              G32 S-30f deferred; never cut
              G36 S-30g; left OPEN
-             G39 S-12 (S15/S17 xfail)
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
              G41 S-33; left OPEN
              G42 S-33; left OPEN
              G44 S-31c; partial
              G45 S-32/S-32a; left OPEN
-             G46 S-10/S9; substance closed, S9 xfail
-             is the unresolved-unit list
+             G46 S-10/S9; substance closed. S9
+             xfail reason string is stale (names
+             RiskVerdict.constraints, deleted at
+             S-31a). Live list is 10 fields; see
+             CAMPAIGN CLOSE CI restoration.
              Orchestrator residual: 15 engine bodies,
              groups g–o, no step ids — S-34f END
              STATE, deliberate
              Five import tiers BROKEN (13 pairs) —
-             deliberately unowned
+             deliberately unowned at this close.
+             SUPERSEDED by CAMPAIGN CLOSE Five
+             import tiers (T-09z): KEPT, 0 pairs;
+             ci.yml continue-on-error gone. This
+             snapshot is not rewritten.
              perfmeasure.py DIRECT_PROBES — unowned
              G6 empty depends_on_sensors — S-01
              finding, no step
@@ -14288,15 +14295,30 @@ REMAINS OPEN:
              named-constant / letter-suffix — frozen
              at exec-tools-v1, unowned
              152 research cache days stale; APP/
-             2026-03-26 current — no step
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
              R6 14/31 resets — S-15/S-30; 17 never
-             invoked
+             invoked. SUPERSEDED by CAMPAIGN CLOSE
+             Reset invocation (R-07): invoked ==
+             MUST_INVOKE, owed 0. This snapshot
+             is not rewritten.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
 CI.YML:      Import contracts still has
              continue-on-error: true. It waits on
              Five import tiers KEPT. Twelve engine
              module sets is already KEPT. No step
              owns the five-tier close or the CI flip.
              Do not flip it on this merge.
+             SUPERSEDED by CAMPAIGN CLOSE Five
+             import tiers: the job blocks;
+             continue-on-error is gone. This
+             snapshot is not rewritten.
 INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              run scripts/rebaseline_parity_hashes.py.
              Hold all 64 HASH/COUNT constants, the
@@ -14304,12 +14326,17 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
              and _BASELINE_CONFIG_HASH unless a step
              names a re-pin.
-             Accepted baseline failures are only
-             test_after_hours_reject_surfaces_as_rejected,
-             test_g12_cost_exceeds_disclosure_alert,
-             test_multi_symbol_subscribe,
-             test_sustained_quotes_with_idle_ticks.
-             A failure outside that set is a stop.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
              Wave D: extract by FILES-locked census
              group; do not invent suffixes for g–o;
              Inv-8 beyond S-34f is a new campaign.
@@ -19754,17 +19781,20 @@ CLOSED:      Five import tiers KEPT (T-09z). The
              at zero pairs for every rung. G40
              stayed CLOSED.
 REMAINS OPEN:
-             G10 S-12/S-31 (S11 xfail)
-             G28 S-12 (S11 xfail)
              G32 S-30f deferred; never cut
              G36 S-30g; left OPEN
-             G39 S-12 (S15/S17 xfail)
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
              G41 S-33; left OPEN
              G42 S-33; left OPEN
              G44 S-31c; partial
              G45 S-32/S-32a; left OPEN
-             G46 S-10/S9; substance closed, S9
-             xfail is the unresolved-unit list
+             G46 S-10/S9; substance closed. S9
+             xfail reason string is stale (names
+             RiskVerdict.constraints, deleted at
+             S-31a). Live list is 10 fields; see
+             CAMPAIGN CLOSE CI restoration.
              Orchestrator residual: 15 engine
              bodies, groups g–o, no step ids —
              S-34f END STATE, deliberate
@@ -19780,15 +19810,26 @@ REMAINS OPEN:
              named-constant / letter-suffix —
              frozen at exec-tools-v1, unowned
              152 research cache days stale; APP/
-             2026-03-26 current — no step
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
              R6 14/31 resets — S-15/S-30; 17 never
-             invoked
+             invoked. SUPERSEDED by CAMPAIGN CLOSE
+             Reset invocation (R-07): invoked ==
+             MUST_INVOKE, owed 0. This snapshot
+             is not rewritten.
              keep-row squeezes vs ruff format —
              T-04b FINDING, unowned
              Engine-to-kernel residual: 9 pairs
              under test_engine_kernel_imports_
              equal_pin. That pin is the detector,
              not a gap this campaign owned.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
 CI.YML:      Import contracts blocks. Both
              contracts KEPT. The comment says a
              broken contract fails this job. Do
@@ -19802,12 +19843,17 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
              and _BASELINE_CONFIG_HASH unless a step
              names a re-pin.
-             Accepted baseline failures are only
-             test_after_hours_reject_surfaces_as_rejected,
-             test_g12_cost_exceeds_disclosure_alert,
-             test_multi_symbol_subscribe,
-             test_sustained_quotes_with_idle_ticks.
-             A failure outside that set is a stop.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
              Both equality pins hold: Five import
              tiers is empty _TIER_RESIDUALS and
              statuses KEPT; Twelve engine module
@@ -22029,17 +22075,20 @@ JUST DETECTED:
              always clean; only an in-process
              second run inherited it.
 REMAINS OPEN:
-             G10 S-12/S-31 (S11 xfail)
-             G28 S-12 (S11 xfail)
              G32 S-30f deferred; never cut
              G36 S-30g; left OPEN
-             G39 S-12 (S15/S17 xfail)
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
              G41 S-33; left OPEN
              G42 S-33; left OPEN
              G44 S-31c; partial
              G45 S-32/S-32a; left OPEN
-             G46 S-10/S9; substance closed, S9
-             xfail is the unresolved-unit list
+             G46 S-10/S9; substance closed. S9
+             xfail reason string is stale (names
+             RiskVerdict.constraints, deleted at
+             S-31a). Live list is 10 fields; see
+             CAMPAIGN CLOSE CI restoration.
              Orchestrator residual: 15 engine
              bodies, groups g–o, no step ids —
              S-34f END STATE, deliberate
@@ -22055,13 +22104,21 @@ REMAINS OPEN:
              named-constant / letter-suffix —
              frozen at exec-tools-v1, unowned
              152 research cache days stale; APP/
-             2026-03-26 current — no step
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
              keep-row squeezes vs ruff format —
              T-04b FINDING, unowned
              Engine-to-kernel residual: 9 pairs
              under test_engine_kernel_imports_
              equal_pin. That pin is the detector,
              not a gap this campaign owned.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
 CI.YML:      Import contracts blocks. Both
              contracts KEPT. Do not restore
              continue-on-error.
@@ -22072,12 +22129,17 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
              and _BASELINE_CONFIG_HASH unless a step
              names a re-pin.
-             Accepted baseline failures are only
-             test_after_hours_reject_surfaces_as_rejected,
-             test_g12_cost_exceeds_disclosure_alert,
-             test_multi_symbol_subscribe,
-             test_sustained_quotes_with_idle_ticks.
-             A failure outside that set is a stop.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
              Both equality pins hold: Five import
              tiers is empty _TIER_RESIDUALS and
              statuses KEPT; Twelve engine module
@@ -22835,18 +22897,30 @@ HERE:        the push-filter question. Opening a
              continue-on-error on Import
              contracts.
 REMAINS OPEN:
-             G10 S-12/S-31 (S11 xfail)
-             G28 S-12 (S11 xfail)
              G32 S-30f deferred; never cut
              G36 S-30g; left OPEN — seventeen
              keepers remain keepers
-             G39 S-12 (S15/S17 xfail)
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
              G41 S-33; left OPEN
              G42 S-33; left OPEN
              G44 S-31c; partial
              G45 S-32/S-32a; left OPEN
-             G46 S-10/S9; substance closed, S9
-             xfail is the unresolved-unit list
+             G46 S-10/S9; substance closed. Live
+             UNIT_UNDETERMINED fields (10):
+             HorizonFeatureSnapshot.values,
+             MetricEvent.value, NBBOQuote.ask_size,
+             NBBOQuote.bid_size,
+             RegimeHazardSpike.hazard_score,
+             RegimeState.discriminability,
+             SensorReading.value,
+             SizedPositionIntent.disclosed_cost_total_bps_by_symbol,
+             SizedPositionIntent.factor_exposures,
+             SizedPositionIntent.target_positions.
+             The S9 xfail reason string is stale:
+             it still names RiskVerdict.constraints,
+             deleted at S-31a.
              Orchestrator residual: 15 engine
              bodies, groups g–o, no step ids —
              S-34f END STATE, deliberate
@@ -22862,7 +22936,8 @@ REMAINS OPEN:
              named-constant / letter-suffix —
              frozen at exec-tools-v1, unowned
              152 research cache days stale; APP/
-             2026-03-26 current — no step
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
              Engine-to-kernel residual: 9 pairs
              under test_engine_kernel_imports_
              equal_pin. That pin is the detector,
@@ -22885,6 +22960,13 @@ REMAINS OPEN:
              already symbol-keyed). The six
              keep-row-only files were already
              formatted and were not in the 57.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
 CI.YML:      Import contracts blocks. Both
              contracts KEPT. Lint and Format are
              green locally. Do not restore
@@ -22897,12 +22979,17 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
              and _BASELINE_CONFIG_HASH unless a step
              names a re-pin.
-             Accepted baseline failures are only
-             test_after_hours_reject_surfaces_as_rejected,
-             test_g12_cost_exceeds_disclosure_alert,
-             test_multi_symbol_subscribe,
-             test_sustained_quotes_with_idle_ticks.
-             A failure outside that set is a stop.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
              Both equality pins hold: Five import
              tiers is empty _TIER_RESIDUALS and
              statuses KEPT; Twelve engine module
@@ -22919,9 +23006,11 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              MUST_INVOKE.
              Specific to this campaign:
              FAIL_QUIET_KEEP must never regain a
-             line key after 0.1. ruff stays
-             0.15.12; a version bump would change
-             the diff. The format commit is
+             line key after 0.1. ruff locked at
+             0.15.12 in uv.lock; a version bump
+             would change the diff. What matters
+             is the lock, not what a given venv
+             has installed. The format commit is
              mechanical by definition — a hash
              move means it was not. A noqa on a
              genuinely unused import is not a
@@ -22960,6 +23049,36 @@ FINDINGS:    A red gate is a dead gate. A
              on arch/exec. The restored
              detectors are local until a PR
              opens or the push filter changes.
+VERIFIED:    PR #242 (draft), run 35434851568,
+             conclusion success, 2026-09-19.
+             Both jobs green: check
+             (ubuntu-latest) 3m5s, parity oracle
+             1m31s, against a 20 minute cap.
+             The four steps never exercised
+             locally are now green on ubuntu /
+             Python 3.13: lint-imports CLI
+             (2 kept, 0 broken), the
+             not-functional marker, determinism
+             at PYTHONHASHSEED=random, and both
+             oracle replays (seed 0 and random).
+             The same four were run first on
+             Windows / Python 3.12.13 and were
+             green there too, so the 3.13 gap is
+             closed by evidence rather than
+             assumption.
+             Populate cache on miss ran for 32s
+             — the actions/cache entry missed
+             and the Massive fetch path worked,
+             which had never been exercised.
+             Two dated warnings, not failures:
+             Node 20 deprecation on
+             checkout/cache/setup-uv, and
+             ubuntu-latest migrating to Ubuntu
+             26 on 19 October 2026. The
+             migration is the same libm question
+             the workflow header already
+             records; the registered corpus will
+             need re-verifying after it.
 
 ---
 
@@ -23245,18 +23364,30 @@ HERE:        the push-filter question. Opening a
              continue-on-error on Import
              contracts.
 REMAINS OPEN:
-             G10 S-12/S-31 (S11 xfail)
-             G28 S-12 (S11 xfail)
              G32 S-30f deferred; never cut
              G36 S-30g; left OPEN — seventeen
              keepers remain keepers
-             G39 S-12 (S15/S17 xfail)
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
              G41 S-33; left OPEN
              G42 S-33; left OPEN
              G44 S-31c; partial
              G45 S-32/S-32a; left OPEN
-             G46 S-10/S9; substance closed, S9
-             xfail is the unresolved-unit list
+             G46 S-10/S9; substance closed. Live
+             UNIT_UNDETERMINED fields (10):
+             HorizonFeatureSnapshot.values,
+             MetricEvent.value, NBBOQuote.ask_size,
+             NBBOQuote.bid_size,
+             RegimeHazardSpike.hazard_score,
+             RegimeState.discriminability,
+             SensorReading.value,
+             SizedPositionIntent.disclosed_cost_total_bps_by_symbol,
+             SizedPositionIntent.factor_exposures,
+             SizedPositionIntent.target_positions.
+             The S9 xfail reason string is stale:
+             it still names RiskVerdict.constraints,
+             deleted at S-31a.
              Orchestrator residual: 15 engine
              bodies, groups g–o, no step ids —
              S-34f END STATE, deliberate
@@ -23272,7 +23403,8 @@ REMAINS OPEN:
              named-constant / letter-suffix —
              frozen at exec-tools-v1, unowned
              152 research cache days stale; APP/
-             2026-03-26 current — no step
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
              Engine-to-kernel residual: 9 pairs
              under test_engine_kernel_imports_
              equal_pin. That pin is the detector,
@@ -23295,6 +23427,13 @@ REMAINS OPEN:
              already symbol-keyed). The six
              keep-row-only files were already
              formatted and were not in the 57.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
 CI.YML:      Import contracts blocks. Both
              contracts KEPT. Lint and Format are
              green locally. Do not restore
@@ -23307,12 +23446,17 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
              and _BASELINE_CONFIG_HASH unless a step
              names a re-pin.
-             Accepted baseline failures are only
-             test_after_hours_reject_surfaces_as_rejected,
-             test_g12_cost_exceeds_disclosure_alert,
-             test_multi_symbol_subscribe,
-             test_sustained_quotes_with_idle_ticks.
-             A failure outside that set is a stop.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
              Both equality pins hold: Five import
              tiers is empty _TIER_RESIDUALS and
              statuses KEPT; Twelve engine module
@@ -23329,9 +23473,11 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              MUST_INVOKE.
              Specific to this campaign:
              FAIL_QUIET_KEEP must never regain a
-             line key after 0.1. ruff stays
-             0.15.12; a version bump would change
-             the diff. The format commit is
+             line key after 0.1. ruff locked at
+             0.15.12 in uv.lock; a version bump
+             would change the diff. What matters
+             is the lock, not what a given venv
+             has installed. The format commit is
              mechanical by definition — a hash
              move means it was not. A noqa on a
              genuinely unused import is not a
@@ -23370,3 +23516,33 @@ FINDINGS:    A red gate is a dead gate. A
              on arch/exec. The restored
              detectors are local until a PR
              opens or the push filter changes.
+VERIFIED:    PR #242 (draft), run 35434851568,
+             conclusion success, 2026-09-19.
+             Both jobs green: check
+             (ubuntu-latest) 3m5s, parity oracle
+             1m31s, against a 20 minute cap.
+             The four steps never exercised
+             locally are now green on ubuntu /
+             Python 3.13: lint-imports CLI
+             (2 kept, 0 broken), the
+             not-functional marker, determinism
+             at PYTHONHASHSEED=random, and both
+             oracle replays (seed 0 and random).
+             The same four were run first on
+             Windows / Python 3.12.13 and were
+             green there too, so the 3.13 gap is
+             closed by evidence rather than
+             assumption.
+             Populate cache on miss ran for 32s
+             — the actions/cache entry missed
+             and the Massive fetch path worked,
+             which had never been exercised.
+             Two dated warnings, not failures:
+             Node 20 deprecation on
+             checkout/cache/setup-uv, and
+             ubuntu-latest migrating to Ubuntu
+             26 on 19 October 2026. The
+             migration is the same libm question
+             the workflow header already
+             records; the registered corpus will
+             need re-verifying after it.
