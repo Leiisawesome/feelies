@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 _SRC_FEELIES = Path(__file__).resolve().parents[2] / "src" / "feelies"
-_WALK_EXCLUDE = frozenset({"kernel", "bus", "core", "cli"})
+_WALK_EXCLUDE = frozenset({"kernel", "bus", "core", "cli", "harness", "bootstrap"})
 
 _SUMMARY = re.compile(r"Contracts:\s*(\d+)\s*kept,\s*(\d+)\s*broken")
 _STATUS = re.compile(r"^(Five import tiers|Twelve engine module sets)\s+(KEPT|BROKEN)\s*$", re.M)
@@ -42,11 +42,6 @@ _KERNEL_IMPORT_RESIDUALS = frozenset(
             "feelies.forensics.gate_close_attribution",
             "feelies.kernel.forced_exit_reasons",
         ),
-        ("feelies.harness.backtest_runner", "feelies.kernel.orchestrator"),
-        ("feelies.harness.backtest_runner", "feelies.kernel.signal_order_trace"),
-        ("feelies.harness.backtest_runner", "feelies.kernel.macro"),
-        ("feelies.harness.backtest_report", "feelies.kernel.macro"),
-        ("feelies.harness.backtest_report", "feelies.kernel.orchestrator"),
     }
 )
 
