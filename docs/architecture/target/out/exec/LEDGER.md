@@ -23099,3 +23099,291 @@ VERIFIED:    PR #242 (draft), run 35434851568,
              the workflow header already
              records; the registered corpus will
              need re-verifying after it.
+
+---
+
+## A-00  2026-09-19T21:17:28+08:00
+  STEP:          A-00
+  BASE:          fef97bbf9f5689fe291394387df6c4401fa0711b
+  RESULT SHA:    7e5584f43c8d4275bebbcc52a1c3987473947c56 (exec/A-00; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing by moving code. Pin 9 → 4.
+                 Walker scoped to what T-07c meant.
+                 Five import tiers stays KEPT. G40 stays
+                 CLOSED. An unchanged five-tier count is
+                 the declared outcome. The engine-to-
+                 kernel pin moves as declared.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_twelve_engine_independence KEPT
+                 at zero pairs.
+                 test_engine_kernel_imports_equal_pin
+                 equals the 4-pair pin after the commit.
+                 Fail-first (1), uncommitted: added
+                 "harness" to _WALK_EXCLUDE only; pin
+                 stayed 9. test_engine_kernel_imports_
+                 equal_pin FAILED AssertionError:
+                 unexpected []; missing
+                 [('feelies.harness.backtest_report',
+                 'feelies.kernel.macro'),
+                 ('feelies.harness.backtest_report',
+                 'feelies.kernel.orchestrator'),
+                 ('feelies.harness.backtest_runner',
+                 'feelies.kernel.macro'),
+                 ('feelies.harness.backtest_runner',
+                 'feelies.kernel.orchestrator'),
+                 ('feelies.harness.backtest_runner',
+                 'feelies.kernel.signal_order_trace')].
+                 (2) Dropped those five from
+                 _KERNEL_IMPORT_RESIDUALS and added
+                 "bootstrap" in the same working tree.
+                 Re-run green: 4 == 4. One commit.
+                 (3) T-07c probe, uncommitted: added
+                 `from feelies.kernel.macro import MacroState`
+                 to portfolio/fill_attribution.py;
+                 test_engine_kernel_imports_equal_pin
+                 FAILED AssertionError: unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Removed the import. Restore SHA256
+                 c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                 BYTE_IDENTICAL (5030 bytes, same as
+                 pre-probe). Porcelain after restore: only
+                 the capture artifact. Re-run 3 passed.
+                 Inv-10's three tests passed, invoked
+                 by name.
+                 Reset partition passed, invoked by
+                 name: test_reset_cascade_on_fix1_
+                 matches_must_invoke_pin. _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP: test_no_unallowlisted_
+                 fail_quiet_exception_handler passed.
+                 Seventeen rows. FailQuietKeep fields
+                 are path, enclosing_symbol, exc_type,
+                 reason — no line.
+                 mypy src/feelies: Success, 249 source
+                 files. docs 101. conformance 119
+                 passed / 5 xfailed (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-A-00 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-A-00 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-A-00 vs post-A-00 and vs
+                 baseline_post-0.3.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2 KEPT
+                 at zero. Engine-to-kernel 9 → 4 as
+                 declared, lockstep with the walker.
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 7e5584f4). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_import_contracts.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py,
+                 harness/, cli/, orchestrator.py,
+                 fill_attribution.py (portfolio or core),
+                 massive_ws.py, horizon_scheduler.py,
+                 alpha/registry.py,
+                 gate_close_attribution.py,
+                 forced_exit_reasons.py,
+                 test_fail_quiet.py, ci.yml.
+                 Probe mutated portfolio/fill_attribution.py
+                 and restored it; that file is not in the
+                 commit. No keep-row file is touched.
+                 verify_step not runnable (A-* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47026 -> 47026 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse A-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 7e5584f43c8d4275bebbcc52a1c3987473947c56.
+                 Not merged.
+  NOTES:         Single commit on exec/A-00,
+                 7e5584f43c8d4275bebbcc52a1c3987473947c56,
+                 "A-00: scope the walker off harness;
+                 pin engine-to-kernel 9 to 4". Parent
+                 fef97bbf on arch/exec. One file, no
+                 src: tests/conformance/
+                 test_import_contracts.py (+1 / -6).
+                 Clone C:/Users/cheng.lei/OneDrive/
+                 Documents/GitHub/feelies. tools/exec
+                 vs exec-tools-v1 empty.
+                 _WALK_EXCLUDE before:
+                 frozenset({"kernel", "bus", "core",
+                 "cli"}). After: frozenset({"kernel",
+                 "bus", "core", "cli", "harness",
+                 "bootstrap"}).
+                 Probe (1) added "harness" only and
+                 left the pin at 9. The test failed
+                 missing the five harness pairs
+                 (unexpected []). That is the walker
+                 dropping them, not a frozenset
+                 shrink: the pin still named all nine.
+                 Then (2) dropped those five from
+                 _KERNEL_IMPORT_RESIDUALS in the same
+                 tree. Green at 4 == 4. Remaining:
+                 feelies.ingestion.massive_ws →
+                 feelies.kernel.exception_taxonomy;
+                 feelies.sensors.horizon_scheduler →
+                 feelies.kernel.exception_taxonomy;
+                 feelies.alpha.registry →
+                 feelies.kernel.exception_taxonomy;
+                 feelies.forensics.gate_close_attribution
+                 → feelies.kernel.forced_exit_reasons.
+                 Probe (3) still named the T-07c pair
+                 as unexpected: AssertionError:
+                 unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Restore SHA256
+                 c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                 BYTE_IDENTICAL (5030 bytes). Re-run
+                 3 passed. That is what proves T-07c's
+                 detector survived the narrowing: an
+                 exclude that also skipped portfolio
+                 would still have read green at 4.
+                 "bootstrap" changed no count. It is
+                 a file, not a directory, and the
+                 walk is iterdir() if p.is_dir(), so
+                 the new name matches nothing today.
+                 Research stayed in _WALK_EXCLUDE's
+                 complement; it is in T-07c's engine
+                 list and has zero kernel imports.
+                 The five harness imports are
+                 untouched in src
+                 (harness/backtest_runner.py:
+                 orchestrator, signal_order_trace,
+                 macro; harness/backtest_report.py:
+                 macro, orchestrator). harness →
+                 kernel is still legal under Five
+                 import tiers. A-00 stopped counting
+                 them; it did not forbid them.
+                 ruff check: All checks passed. ruff
+                 format --check: 718 files already
+                 formatted. Both stayed green.
+                 Every other pin unmoved: five-tier
+                 empty _TIER_RESIDUALS, statuses
+                 KEPT; S2 KEPT at zero twelve-engine
+                 pairs; Inv-10's three tests; reset
+                 partition (_TAPES five, MUST_INVOKE
+                 33, DECLARED_UNINVOKED nine);
+                 FAIL_QUIET_KEEP's seventeen rows,
+                 no line field.
+                 Locked hashes unmoved vs
+                 baseline_post-0.3.json: all 64
+                 HASH/COUNT constants; fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3;
+                 _BASELINE_NET_PNL 103.93;
+                 _BASELINE_FILL_COUNT 20;
+                 _BASELINE_DATA_VERSION
+                 cache:2364ef7fe41c27d9;
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA zeros: modules 249,
+                 public_symbols 590, sloc 47026,
+                 n_edges 675, n_modules 203,
+                 cycles 1, alphaleak 0.
+                 LEDGER.md dirty at the gate is this
+                 uncommitted append. The two capture
+                 artifacts stay uncommitted.
+  FINDINGS:      T-07c's block said: "Walk src/feelies
+                 engine packages only (ingestion,
+                 storage, sensors, features, services,
+                 signals, alpha, promotion, composition,
+                 portfolio, risk, execution, broker,
+                 monitoring, harness, research,
+                 forensics). Exclude kernel, bus, core,
+                 cli, bootstrap." The code only ever
+                 excluded four: _WALK_EXCLUDE was
+                 frozenset({"kernel", "bus", "core",
+                 "cli"}). Bootstrap stayed out because
+                 the walk is iterdir() if p.is_dir()
+                 — an artifact of file layout, not a
+                 stated rule. bootstrap.py already
+                 imports kernel.orchestrator and
+                 kernel.signal_order_trace; packaging
+                 the composition root would have
+                 turned those into two unexpected
+                 pairs. T-07c WHY THIS OWNER already
+                 recorded that a contract forbidding
+                 engines → kernel cannot go green:
+                 "harness must import Orchestrator;
+                 MacroState lives in kernel." The
+                 walker counted harness anyway. A
+                 detector's scope has to be stated in
+                 the code, not in the block that
+                 describes it, because the block is
+                 not what runs.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39 xfail is
+                 test_construction_integrity (S15
+                 passes), G10 and G28 are decided
+                 keeps, G46's xfail reason names a
+                 deleted field;
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned;
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse A-*.
+                 0.1: FAIL_QUIET_KEEP has no line
+                 field.
+  NEXT:          A-01 retarget three KernelFault
+                 raisers; pin 4 to 1 (boundary).
+                 Not started. Do not begin A-01.
+                 Left uncommitted:
+                 baseline_pre-A-00.json,
+                 baseline_post-A-00.json, this ledger
+                 entry.
