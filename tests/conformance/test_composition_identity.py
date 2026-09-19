@@ -73,8 +73,12 @@ def test_c6_one_reducer_is_the_declared_composition_policy() -> None:
 def test_c6_accounting_identity_on_competing_forecasts() -> None:
     """Two differently-shaped forecasts: one contributor, one reasoned exclusion."""
     policy = Top1SelectionPolicy(dead_zone_bps=0.0)
-    long_high = _sig(SignalDirection.LONG, strategy_id="shape_adv_long", strength=1.0, edge_bps=20.0)
-    short_low = _sig(SignalDirection.SHORT, strategy_id="shape_adv_short", strength=0.4, edge_bps=5.0)
+    long_high = _sig(
+        SignalDirection.LONG, strategy_id="shape_adv_long", strength=1.0, edge_bps=20.0
+    )
+    short_low = _sig(
+        SignalDirection.SHORT, strategy_id="shape_adv_short", strength=0.4, edge_bps=5.0
+    )
     result = policy.select([long_high, short_low])
     _assert_identity(result)
     assert result.contributors == (long_high,)

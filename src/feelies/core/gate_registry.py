@@ -671,12 +671,8 @@ def _index(rows: tuple[GateRecord, ...]) -> dict[str, GateRecord]:
 
 GATE_REGISTRY: dict[str, GateRecord] = _index(_ROWS)
 
-GOV_IDS: frozenset[str] = frozenset(
-    row.stable_id for row in _ROWS if row.ladder == "governance"
-)
-RT_IDS: frozenset[str] = frozenset(
-    row.stable_id for row in _ROWS if row.ladder == "runtime"
-)
+GOV_IDS: frozenset[str] = frozenset(row.stable_id for row in _ROWS if row.ladder == "governance")
+RT_IDS: frozenset[str] = frozenset(row.stable_id for row in _ROWS if row.ladder == "runtime")
 
 FAMILY_TEMPLATES: dict[str, str] = {
     "RT.SCHEMA_SUPPORTED": "schema_version present and supported (per receiving boundary)",
@@ -694,9 +690,7 @@ def _generate_family_instances() -> dict[str, GateRecord]:
     out: dict[str, GateRecord] = {}
     for template_id, predicate in FAMILY_TEMPLATES.items():
         for sub in SUBSCRIPTIONS:
-            stable_id = _family_instance_id(
-                template_id, sub.event_type, sub.subscriber
-            )
+            stable_id = _family_instance_id(template_id, sub.event_type, sub.subscriber)
             out[stable_id] = _rt(
                 stable_id,
                 leg="Q",
@@ -810,14 +804,10 @@ def _check_registry_completeness() -> None:
         )
     overlap = sorted(set(FAMILY_INSTANCES) & set(GATE_REGISTRY))
     if overlap:
-        raise RuntimeError(
-            f"generated instances collided with hand-written rows: {overlap}"
-        )
+        raise RuntimeError(f"generated instances collided with hand-written rows: {overlap}")
     for inst in FAMILY_INSTANCES.values():
         if inst.family not in FAMILY_TEMPLATES:
-            raise RuntimeError(
-                f"{inst.stable_id} family {inst.family!r} is not a template"
-            )
+            raise RuntimeError(f"{inst.stable_id} family {inst.family!r} is not a template")
         if inst.stable_id in FAMILY_TEMPLATES:
             raise RuntimeError(f"template id used as instance id: {inst.stable_id}")
         if inst.family == "none":
@@ -826,33 +816,19 @@ def _check_registry_completeness() -> None:
     for row in GATE_REGISTRY.values():
         unknown_tests = [t for t in row.tested_by if t not in _KNOWN_TESTS]
         if unknown_tests:
-            raise RuntimeError(
-                f"{row.stable_id} tested_by does not resolve: {unknown_tests}"
-            )
+            raise RuntimeError(f"{row.stable_id} tested_by does not resolve: {unknown_tests}")
         if not row.bind_markers and not row.site_exemption:
-            raise RuntimeError(
-                f"{row.stable_id} has neither bind_markers nor site_exemption"
-            )
+            raise RuntimeError(f"{row.stable_id} has neither bind_markers nor site_exemption")
         if row.bind_markers and row.site_exemption:
-            raise RuntimeError(
-                f"{row.stable_id} has both bind_markers and site_exemption"
-            )
+            raise RuntimeError(f"{row.stable_id} has both bind_markers and site_exemption")
         for marker in row.bind_markers:
             prior = seen_markers.get(marker)
             if prior is not None:
-                raise RuntimeError(
-                    f"marker {marker!r} bound to both {prior} and {row.stable_id}"
-                )
+                raise RuntimeError(f"marker {marker!r} bound to both {prior} and {row.stable_id}")
             seen_markers[marker] = row.stable_id
-    exceptions = [
-        row.stable_id
-        for row in GATE_REGISTRY.values()
-        if row.monotone != "yes"
-    ]
+    exceptions = [row.stable_id for row in GATE_REGISTRY.values() if row.monotone != "yes"]
     if exceptions != ["RT.KILL_SWITCH"]:
-        raise RuntimeError(
-            f"monotone exceptions must be exactly RT.KILL_SWITCH: {exceptions}"
-        )
+        raise RuntimeError(f"monotone exceptions must be exactly RT.KILL_SWITCH: {exceptions}")
     if GATE_ALIASES["G13"].kind != "retired" or GATE_ALIASES["G13"].stable_id is not None:
         raise RuntimeError("G13 must be a retired alias with no stable_id")
 

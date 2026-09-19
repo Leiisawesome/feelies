@@ -3020,6 +3020,15 @@ WATCH:       the accepted baseline failure set is now three tests across two
              hours and feed activity. A failure OUTSIDE that set is a stop.
              `uv run pytest -q -m "not paper_rth"` was clean at 4853 passed
              immediately before this capture.
+ALSO:        test_websocket_feed_emits_live_massive_event, same file, same
+             cause. Failed at the T-01 pre-flight capture and passed on a
+             direct re-run minutes later (3 passed, 2 skipped) with no code
+             change. The exemption's list is the file's live-feed class, not
+             three named tests -- any test in
+             tests/ingestion/test_massive_functional.py that requires live
+             quote or trade flow is exposed. The accepted baseline failure
+             set is therefore: the IB after-hours test, g12, and any
+             live-feed test in that file.
 
 ---
 
@@ -14250,24 +14259,31 @@ CLOSED:      G01 S-03/S-32; G02 S-12; G03 S-08;
              G26 S-28; G27 S-25; G29 S-17;
              G30 S-16/S-27; G31 S-30c; G33 S-30b;
              G34 S-21; G35 S-30e; G37 S-14; G38 S-11;
-             G40 S-35e; G43 S-07.
+             G40 S-35e; G43 S-07; G28 S-12.
 REMAINS OPEN:
-             G10 S-12/S-31 (S11 xfail)
-             G28 S-12 (S11 xfail)
              G32 S-30f deferred; never cut
              G36 S-30g; left OPEN
-             G39 S-12 (S15/S17 xfail)
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
              G41 S-33; left OPEN
              G42 S-33; left OPEN
              G44 S-31c; partial
              G45 S-32/S-32a; left OPEN
-             G46 S-10/S9; substance closed, S9 xfail
-             is the unresolved-unit list
+             G46 S-10/S9; substance closed. S9
+             xfail reason string is stale (names
+             RiskVerdict.constraints, deleted at
+             S-31a). Live list is 10 fields; see
+             CAMPAIGN CLOSE CI restoration.
              Orchestrator residual: 15 engine bodies,
              groups g–o, no step ids — S-34f END
              STATE, deliberate
              Five import tiers BROKEN (13 pairs) —
-             deliberately unowned
+             deliberately unowned at this close.
+             SUPERSEDED by CAMPAIGN CLOSE Five
+             import tiers (T-09z): KEPT, 0 pairs;
+             ci.yml continue-on-error gone. This
+             snapshot is not rewritten.
              perfmeasure.py DIRECT_PROBES — unowned
              G6 empty depends_on_sensors — S-01
              finding, no step
@@ -14279,15 +14295,30 @@ REMAINS OPEN:
              named-constant / letter-suffix — frozen
              at exec-tools-v1, unowned
              152 research cache days stale; APP/
-             2026-03-26 current — no step
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
              R6 14/31 resets — S-15/S-30; 17 never
-             invoked
+             invoked. SUPERSEDED by CAMPAIGN CLOSE
+             Reset invocation (R-07): invoked ==
+             MUST_INVOKE, owed 0. This snapshot
+             is not rewritten.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
 CI.YML:      Import contracts still has
              continue-on-error: true. It waits on
              Five import tiers KEPT. Twelve engine
              module sets is already KEPT. No step
              owns the five-tier close or the CI flip.
              Do not flip it on this merge.
+             SUPERSEDED by CAMPAIGN CLOSE Five
+             import tiers: the job blocks;
+             continue-on-error is gone. This
+             snapshot is not rewritten.
 INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              run scripts/rebaseline_parity_hashes.py.
              Hold all 64 HASH/COUNT constants, the
@@ -14295,12 +14326,17 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
              and _BASELINE_CONFIG_HASH unless a step
              names a re-pin.
-             Accepted baseline failures are only
-             test_after_hours_reject_surfaces_as_rejected,
-             test_g12_cost_exceeds_disclosure_alert,
-             test_multi_symbol_subscribe,
-             test_sustained_quotes_with_idle_ticks.
-             A failure outside that set is a stop.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
              Wave D: extract by FILES-locked census
              group; do not invent suffixes for g–o;
              Inv-8 beyond S-34f is a new campaign.
@@ -14311,3 +14347,9043 @@ INVARIANTS:  Oracle frozen at exec-tools-v1. Never
              object or Any is not removing the
              dependency.
 
+---
+
+## T-01  2026-09-09T19:15:00+08:00
+  STEP:          T-01
+  BASE:          63bfbfdb123d51f26f859114896861d99b44542c
+  RESULT SHA:    none (exec/T-01 never cut)
+  VERDICT:       blocked
+  CONFORMANCE:   not started. Pre-flight import contracts
+                 3 passed. S2 KEPT at zero twelve-engine
+                 pairs. test_five_import_tiers equals the
+                 13-pair _TIER_RESIDUALS. lint-imports:
+                 Five import tiers BROKEN, Twelve engine
+                 module sets KEPT.
+                 S12: 2 passed (not started after)
+                 S14: 2 passed (not started after)
+                 S17: 3 passed (not started after)
+  TESTS:         capture pre-T-01 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/ingestion/
+                 test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 That name is outside the four EXEMPTIONS
+                 (test_after_hours_reject_surfaces_as_rejected,
+                 test_g12_cost_exceeds_disclosure_alert,
+                 test_multi_symbol_subscribe,
+                 test_sustained_quotes_with_idle_ticks).
+                 baseline.py printed "BASELINE: RED --
+                 do not start execution". No
+                 implementation. No branch.
+                 vs post-S-35e GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed: skipped
+                 19 -> 18, failed 0 -> 1; passed held.
+                 determinism 148 passed.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-01 vs
+                 baseline_post-S-35e.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         4 declared, 0 touched. exec/T-01 not
+                 created. Hand FILES CLEAN.
+                 Named-not-edited: all four
+                 (backtest_runner.py, cli/backtest.py,
+                 scripts/run_backtest.py,
+                 test_import_contracts.py).
+  NET DELTA:     declared src modules 0, public symbols
+                 0, branch points 0.
+                 actual not measured after a cut (none).
+                 pre-flight evidence: modules 219,
+                 public_symbols 575, sloc 46690,
+                 n_edges 668, n_modules 177, cycles 1,
+                 alphaleak 0. n_cycles 1
+                 (feelies.cli -> feelies.cli.main).
+  DETERMINISM:   148 passed; no hash pin moved (no cut)
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse
+                 T-*. Four checks by hand:
+                 FILES 4 declared / 0 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS capture RED, failure outside the
+                 four EXEMPTIONS -- STOP;
+                 NET DELTA not applicable (no commit).
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 63bfbfdb123d51f26f859114896861d99b44542c
+                 on arch/exec. tools/exec vs
+                 exec-tools-v1 empty. Pre-flight
+                 porcelain: capture artifact only
+                 after baseline.py wrote
+                 baseline_pre-T-01.json.
+                 13 pairs verbatim:
+                 ("feelies.harness", "feelies.bootstrap")
+                 ("feelies.harness", "feelies.cli")
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.signals")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT (0 twelve-engine pairs).
+                 Before-state in FILES only: import
+                 backtest_runner.py:35
+                 MASSIVE_API_KEY_ERROR,
+                 load_dotenv_optional,
+                 massive_api_key_from_env used at
+                 run_backtest_api:929-932. Callers
+                 cli/backtest.py:33,
+                 backtest_runner.main:1026,
+                 scripts/run_backtest.py:81. All three
+                 in FILES. No FILES-visible caller of
+                 run_backtest_api or main outside those
+                 sites. Cut not begun.
+  FINDINGS:      test_websocket_feed_emits_live_massive_event
+                 failed on the pre-T-01 capture. Same
+                 file as the two live-Massive
+                 EXEMPTIONS. S-13 EXEMPTION recorded
+                 this test flipping red then green
+                 during S-11a and did not add it to
+                 the accepted set. Campaign standing
+                 rule: a failure outside the four
+                 named tests is a stop. Not a T-01
+                 defect. Not fixed. Do not start the
+                 cut from a RED capture.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          retry T-01 from arch/exec 63bfbfd
+                 when that websocket test is not red,
+                 or a plan amendment if the accepted
+                 set is to include it. Do not begin
+                 T-02. Do not cut FILES from this
+                 tree.
+
+---
+
+## T-01  2026-09-09T19:36:36+08:00
+  STEP:          T-01
+  BASE:          6610474278a14c1082ea504b15ce911a1582e355
+  RESULT SHA:    none (exec/T-01 cut at dfc8a89 then deleted)
+  VERDICT:       reverted
+  CONFORMANCE:   import contracts 3 passed before and after
+                 the cut. S2 KEPT at zero twelve-engine
+                 pairs before and after. lint-imports
+                 after the cut: Five import tiers BROKEN
+                 (12 pairs), Twelve engine module sets
+                 KEPT. test_five_import_tiers equalled
+                 the shrunk 12-pair pin on the cut.
+                 S12: 2 passed (before)
+                 S14: 2 passed (before)
+                 S17: 3 passed (before)
+                 mypy src/feelies: Success, 219 source
+                 files (before the gate).
+                 Full conformance after the cut:
+                 117 passed / 1 failed / 5 xfailed.
+                 FAILED tests/conformance/
+                 test_fail_quiet.py::
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 AssertionError: 3 fail-quiet handler(s)
+                 not in FAIL_QUIET_KEEP. First:
+                 src/feelies/harness/backtest_runner.py:590
+                 except Exception
+                 That test passed on the GREEN pre-T-01
+                 capture. No XPASS. Stop-the-line:
+                 previously-passing test now failing.
+                 FAIL_QUIET_KEEP is not in FILES.
+  TESTS:         capture pre-T-01 GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 vs post-S-35e GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed:
+                 skipped 19 -> 18, passed +1; failed held
+                 at 0. No failure in the accepted set.
+                 Post-cut capture not taken. Conformance
+                 STOP before tests/cli, tests/harness,
+                 tests/kernel, tests/docs, not-paper_rth.
+                 determinism 148 passed on the cut.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-01 vs
+                 baseline_post-S-35e.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Determinism 148 on the cut; no hash pin
+                 moved.
+  FILES:         4 declared, 4 touched on dfc8a89, 0 extra.
+                 Hand FILES CLEAN vs the declared set.
+                 Revert: git checkout arch/exec; git
+                 branch -D exec/T-01. HEAD
+                 6610474278a14c1082ea504b15ce911a1582e355
+                 on arch/exec; working tree has this
+                 ledger and baseline_pre-T-01.json only.
+                 Named-edited then reverted:
+                 backtest_runner.py, cli/backtest.py,
+                 scripts/run_backtest.py,
+                 test_import_contracts.py.
+  NET DELTA:     declared src modules 0, public symbols
+                 0, branch points 0.
+                 actual not landed (reverted). On the
+                 cut, measure.py imports: 177 modules,
+                 668 edges, 1 cycle (feelies.cli ->
+                 feelies.cli.main) -- same as pre-flight.
+  DETERMINISM:   148 passed on the cut; no hash pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse
+                 T-*. Four checks by hand:
+                 FILES 4 declared / 4 touched on dfc8a89
+                 / 0 extra CLEAN vs FILES; HEAD after
+                 revert has 0 FILES edits;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS previously-passing fail_quiet
+                 failed after the cut -- STOP;
+                 NET DELTA declared 0/0/0, not landed.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 6610474278a14c1082ea504b15ce911a1582e355
+                 on arch/exec. tools/exec vs
+                 exec-tools-v1 empty. Pre-flight
+                 porcelain: untracked
+                 baseline_pre-T-01.json from the prior
+                 attempt, overwritten GREEN.
+                 n_cycles 1 before and after the cut
+                 (feelies.cli -> feelies.cli.main).
+                 13 pairs before, verbatim:
+                 ("feelies.harness", "feelies.bootstrap")
+                 ("feelies.harness", "feelies.cli")
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.signals")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 12 pairs after the cut, verbatim:
+                 ("feelies.harness", "feelies.bootstrap")
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.signals")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Pin and code dropped
+                 ("feelies.harness", "feelies.cli") in
+                 the same commit dfc8a89. S2 KEPT at
+                 zero twelve-engine pairs on the cut.
+                 Before-state in FILES: import
+                 backtest_runner.py:35
+                 MASSIVE_API_KEY_ERROR,
+                 load_dotenv_optional,
+                 massive_api_key_from_env used at
+                 run_backtest_api:929-932. Callers
+                 cli/backtest.py:33,
+                 backtest_runner.main:1026,
+                 scripts/run_backtest.py:81. All three
+                 in FILES. api_key was required
+                 keyword-only on run_backtest_api and
+                 main; no None default, no os.getenv,
+                 no getattr, no sys.modules. Reverted
+                 with the branch.
+  FINDINGS:      FAIL_QUIET_KEEP line-pins three
+                 backtest_runner.py handlers at 591,
+                 796, 833. Dropping the one-line
+                 feelies.cli.env import at :35 shifts
+                 them to 590, 795, 832. The lookup
+                 deletion at :929 sits below all three
+                 and would not have moved them. The
+                 test is not in T-01 FILES; a fifth
+                 file is a STOP. The plan does not
+                 contain this decision. Not fixed.
+                 Do not pad a blank line to keep the
+                 pin.
+                 Plan amendment required: add
+                 tests/conformance/test_fail_quiet.py
+                 to FILES and retarget 591->590,
+                 796->795, 833->832 in lockstep with
+                 the import drop. Do not invent that
+                 retarget on this tree.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          amend T-01 FILES in
+                 phase8_tiers.md. Retry T-01 from
+                 arch/exec 6610474 after that
+                 amendment. Do not begin T-02.
+
+---
+
+## T-01  2026-09-09T20:10:38+08:00
+  STEP:          T-01
+  BASE:          59bda8228fe9336f544f6049fbd9d97bc7b34236
+  RESULT SHA:    ef685b96f189c14523e98233212cd0f2bbacc45a (exec/T-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 harness → cli. Five import tiers stays BROKEN
+                 13 → 12. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (12 pairs), Twelve engine
+                 module sets KEPT. test_five_import_tiers
+                 equals the shrunk 12-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows 591->590,
+                 796->795, 833->832 in the same commit).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 mypy src/feelies: Success, 219 source files
+                 (before the gate).
+  TESTS:         capture pre-T-01 RED 4909 passed / 1 failed /
+                 18 skipped / 5 xfailed. FAILED
+                 tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (IB after-hours EXEMPTION).
+                 -> capture post-T-01 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed. Same
+                 EXEMPTION only. No failure outside the
+                 accepted set.
+                 vs post-S-35e GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: skipped 19 -> 18,
+                 failed 0 -> 1; passed held. The extra
+                 failure is the IB after-hours test running.
+                 not-paper_rth: 4907 passed / 2 failed / 5
+                 skipped / 14 deselected / 5 xfailed. The
+                 second failure is
+                 tests/ingestion/test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 (live-feed class). Direct re-run of that
+                 file: 3 passed / 2 skipped, no code change.
+                 cli 64; harness 55; kernel 390; docs 101.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-01 vs post-T-01 and vs
+                 baseline_post-S-35e.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         5 declared, 5 touched, 5 committed (clean vs
+                 ef685b9). Hand FILES: 0 extra CLEAN.
+                 Touched: backtest_runner.py,
+                 cli/backtest.py, scripts/run_backtest.py,
+                 test_import_contracts.py,
+                 test_fail_quiet.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: cli/env.py,
+                 cli/main.py, harness/__init__.py,
+                 tests/conftest.py, ci.yml.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 219 -> 219 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46690 -> 46691 (+1, undeclared)
+                 n_edges 668 -> 668
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 5 declared / 5 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 1->1 (IB
+                 after-hours EXEMPTION both sides; live-feed
+                 flake on not-paper_rth passed on direct
+                 re-run); NET DELTA MATCH on modules 0
+                 symbols 0. CLEAN. Go confirmed on branch
+                 head
+                 ef685b96f189c14523e98233212cd0f2bbacc45a.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Go confirmed branch head
+                 ef685b96f189c14523e98233212cd0f2bbacc45a
+                 on exec/T-01. Parent 59bda82 on
+                 arch/exec. tools/exec vs exec-tools-v1
+                 empty. One commit, ef685b9, "T-01: invert
+                 harness->cli; entry points supply a
+                 required api_key". Pair count 13 to 12:
+                 ("feelies.harness", "feelies.cli") is
+                 gone; harness→bootstrap and the eleven
+                 kernel→engine dispatch pairs remain. The
+                 pin, the code, and the three keep-rows
+                 moved in that same commit --
+                 _TIER_RESIDUALS dropped the pair,
+                 backtest_runner.py dropped the
+                 feelies.cli.env import, FAIL_QUIET_KEEP
+                 retargeted 591→590, 796→795, 833→832.
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 api_key is required keyword-only on
+                 run_backtest_api and main; the lookup
+                 is in run_backtest_handler and the
+                 script's __main__. No None default, no
+                 os.getenv, no getattr, no sys.modules
+                 anywhere on the inverted path. mypy
+                 (Success, 219 files) and the full
+                 conformance suite (118 passed / 5
+                 xfailed, no XPASS) ran before the gate.
+                 Declared NET DELTA 0 modules, 0 public
+                 symbols, 0 branch points. Measured:
+                 modules 219 → 219 MATCH, public_symbols
+                 575 → 575 MATCH, sloc 46690 → 46691
+                 (+1, undeclared), n_edges 668 → 668,
+                 n_modules 177 → 177, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The first attempt landed the identical
+                 cut and was reverted at the gate
+                 because FAIL_QUIET_KEEP is line-pinned
+                 and three backtest_runner.py rows
+                 shifted by one (591, 796, 833 → 590,
+                 795, 832). The original T-01 block did
+                 not name test_fail_quiet.py because the
+                 mechanism was written before the
+                 line-shift was known -- the S-35c4
+                 shape. The campaign block now carries
+                 the standing invariant (a step that
+                 inserts or deletes lines above a
+                 keep-row must name
+                 tests/conformance/test_fail_quiet.py
+                 in FILES and retarget those rows in
+                 the same commit) and lists the
+                 keep-row files. T-02 hits the same
+                 class twice: backtest_runner.py again,
+                 and bootstrap.py at 1607 and 1825.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-02 harness → bootstrap (boundary).
+                 Not started. Do not begin T-02. Go
+                 confirmed on
+                 ef685b96f189c14523e98233212cd0f2bbacc45a.
+                 Left uncommitted:
+                 baseline_pre-T-01.json,
+                 baseline_post-T-01.json, this ledger
+                 entry.
+
+---
+
+## T-02  2026-09-09T20:57:51+08:00
+  STEP:          T-02
+  BASE:          59d2b37988c970fe6e29a96db12cf14157383c93
+  RESULT SHA:    92d6cccc953c397532e58560121ebedbbd5ad4c6 (exec/T-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 harness → bootstrap. Five import tiers stays BROKEN
+                 12 → 11. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED on
+                 unexpected [('feelies.harness', 'feelies.bootstrap')]
+                 before the cut; 3 passed after.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (11 pairs), Twelve engine
+                 module sets KEPT. test_five_import_tiers
+                 equals the shrunk 11-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows 590->588,
+                 795->794, 832->831 in the same commit).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 mypy src/feelies: Success, 219 source files
+                 (before the gate).
+  TESTS:         capture pre-T-02 RED 4908 passed / 2 failed /
+                 18 skipped / 5 xfailed. FAILED
+                 tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (IB after-hours EXEMPTION) and
+                 tests/ingestion/test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 (live-feed class). Direct re-run of that
+                 file: 3 passed / 2 skipped, no code change.
+                 -> capture post-T-02 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed. IB
+                 after-hours EXEMPTION only. No failure
+                 outside the accepted set.
+                 vs post-T-01 RED 4909 passed / 1 failed /
+                 18 skipped / 5 xfailed: passed held on the
+                 post capture; pre was -1 passed / +1 failed
+                 on the live-feed flake.
+                 not-paper_rth: 4908 passed / 1 failed / 5
+                 skipped / 14 deselected / 5 xfailed. Failed
+                 1 is the IB after-hours EXEMPTION.
+                 APP oracle 2 passed. cli 64; harness 55;
+                 kernel 390; docs 101.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-02 vs post-T-02 and vs
+                 baseline_post-T-01.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         9 declared, 9 touched, 9 committed (clean vs
+                 92d6ccc). Hand FILES: 0 extra CLEAN.
+                 Touched: backtest_runner.py,
+                 cli/backtest.py, scripts/run_backtest.py,
+                 test_backtest_runner.py,
+                 test_backtest_app_baseline.py,
+                 compare_multialpha_runs.py,
+                 perfmeasure.py,
+                 test_import_contracts.py,
+                 test_fail_quiet.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: bootstrap.py,
+                 harness/__init__.py, cli/main.py,
+                 cli/env.py, ci.yml, DIRECT_PROBES.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 219 -> 219 (+0 MATCH)
+                 public_symbols 575 -> 575 (+0 MATCH)
+                 sloc 46691 -> 46705 (+14, undeclared)
+                 n_edges 668 -> 668
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 9 declared / 9 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4908->4909 passed, failed 2->1 (IB
+                 after-hours EXEMPTION both sides; live-feed
+                 flake on pre-capture passed on direct
+                 re-run and on post-capture); NET DELTA
+                 MATCH on modules 0 symbols 0. CLEAN.
+                 Go confirmed on branch head
+                 92d6cccc953c397532e58560121ebedbbd5ad4c6.
+                 Not merged.
+  NOTES:         One commit on exec/T-02,
+                 92d6cccc953c397532e58560121ebedbbd5ad4c6,
+                 "T-02: invert harness->bootstrap; entry
+                 points supply a required platform_factory".
+                 Parent 59d2b37 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 12 to 11:
+                 ("feelies.harness", "feelies.bootstrap")
+                 dropped; the eleven kernel→engine
+                 dispatch pairs remain. The pin, the
+                 code, and the keep-rows moved together
+                 in that commit -- _TIER_RESIDUALS lost
+                 the pair, backtest_runner.py lost the
+                 feelies.bootstrap import, FAIL_QUIET_KEEP
+                 retargeted the three backtest_runner
+                 rows. Measured keep-row shift
+                 590/795/832 → 588/794/831. That is not
+                 the block's 589/794/831 sketch. The
+                 import plus its following blank were
+                 two lines above the first keep-row, so
+                 590 moved two, not one. One signature
+                 line then landed between the first row
+                 and the other two, which put 795 and
+                 832 back by one and left 588/794/831.
+                 APP oracle passed (2 passed; hashes and
+                 fill count unmoved). S2 KEPT at zero
+                 twelve-engine pairs. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 platform_factory is required
+                 keyword-only on
+                 _run_backtest_phases_2_7,
+                 run_backtest_api, and main. No default
+                 anywhere on those three, not even
+                 build_platform. bootstrap.py and
+                 DIRECT_PROBES were not touched.
+                 Declared NET DELTA 0 src modules, 0
+                 public symbols, 0 branch points.
+                 Measured: modules 219 → 219 MATCH,
+                 public_symbols 575 → 575 MATCH,
+                 sloc 46691 → 46705 (+14, undeclared),
+                 n_edges 668 → 668, n_modules 177 → 177,
+                 cycles 1 → 1 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The block instructed measuring the
+                 keep-rows rather than assuming them,
+                 and the measured result differed from
+                 the 589/794/831 sketch by one row
+                 (588, not 589, on the first handler).
+                 A line-pinned allowlist is (path, line,
+                 exc_type) with no enclosing-symbol key.
+                 Counting only the named deletion, or
+                 trusting a sketch that does, is how a
+                 previously-passing fail_quiet test
+                 goes red after an otherwise correct
+                 cut -- T-01's first landing. Remaining
+                 steps that touch keep-row files
+                 (alpha/layer_validator.py,
+                 composition/factor_neutralizer.py,
+                 ingestion/massive_ingestor.py,
+                 ingestion/massive_ws.py) should all
+                 carry the same measure-do-not-assume
+                 instruction. Retarget what the scanner
+                 names after the cut, in the same
+                 commit. Do not pad a blank to match a
+                 sketch.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-03 bind injected types: alpha, sensors,
+                 signals (boundary). Not started. Do not
+                 begin T-03. Go confirmed on
+                 92d6cccc953c397532e58560121ebedbbd5ad4c6.
+                 Left uncommitted:
+                 baseline_pre-T-02.json,
+                 baseline_post-T-02.json, this ledger
+                 entry.
+
+---
+
+## T-03  2026-09-10T09:47:22+08:00
+  STEP:          T-03
+  BASE:          781feafe033bf01ffcefdebc0fefdd7ede444b08
+  RESULT SHA:    ca3de3917ceee55771557e9fa13eaff9e86e1c83 (exec/T-03; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → alpha, kernel → sensors,
+                 kernel → signals. Five import tiers stays
+                 BROKEN. 11 → 8. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED
+                 on unexpected [('feelies.kernel',
+                 'feelies.alpha'), ('feelies.kernel',
+                 'feelies.sensors'), ('feelies.kernel',
+                 'feelies.signals')] before the cut; 3
+                 passed after the cut (8-pair pin).
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (8 pairs), Twelve
+                 engine module sets KEPT. test_five_import_tiers
+                 equals the shrunk 8-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; determinism 148
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate). harness/backtest_runner.py,
+                 harness/backtest_report.py, cli/forensics.py
+                 unedited.
+  TESTS:         capture pre-T-03 GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-03 GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-02 RED 4909 passed / 1 failed /
+                 18 skipped / 5 xfailed: the IB after-hours
+                 EXEMPTION skipped this capture (skipped
+                 19 vs 18).
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed. kernel 390; harness+cli
+                 119; sensors+signals+alpha 883 passed / 1
+                 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-03 vs post-T-03 and vs
+                 baseline_post-T-02.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         7 declared, 7 touched, 7 committed (clean vs
+                 ca3de391). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 alpha_registry.py, sensor_registry.py,
+                 horizon_protocol.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched: bootstrap.py,
+                 alpha/layer_validator.py,
+                 harness/backtest_runner.py,
+                 harness/backtest_report.py,
+                 cli/forensics.py, harness/__init__.py,
+                 cli/, ci.yml, test_fail_quiet.py,
+                 concretes.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols +4,
+                 branch points 0.
+                 actual modules 219 -> 221 (+2 MATCH)
+                 public_symbols 575 -> 579 (+4 MATCH)
+                 sloc 46705 -> 46756 (+51, undeclared)
+                 n_edges 668 -> 667 (-1)
+                 n_modules 177 -> 177
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 7 declared / 7 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +4. CLEAN. Go confirmed on
+                 branch head
+                 ca3de3917ceee55771557e9fa13eaff9e86e1c83.
+                 Not merged.
+  NOTES:         One commit on exec/T-03,
+                 ca3de3917ceee55771557e9fa13eaff9e86e1c83,
+                 "T-03: bind injected types via core
+                 Protocols; drop kernel->alpha, sensors,
+                 signals". Parent 781feafe on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 11 to 8. The pin and the
+                 code dropped all three together in
+                 that commit:
+                 ("feelies.kernel", "feelies.alpha")
+                 ("feelies.kernel", "feelies.sensors")
+                 ("feelies.kernel", "feelies.signals").
+                 Remaining, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Four Protocol surfaces, all
+                 structural, no subclassing on the
+                 concrete: AlphaRegistry
+                 (has_portfolio_alphas, alpha_ids, get
+                 returning a nested Protocol with
+                 only manifest.version: str,
+                 get_lifecycle -> object | None);
+                 SensorRegistry (is_empty);
+                 HorizonScheduler (on_event -> tuple
+                 of HorizonTick); HorizonSignalEngine
+                 (is_empty property). The four
+                 concretes already match that surface;
+                 none inherit the Protocol.
+                 Line 25 was retargeted from
+                 feelies.alpha.registry to
+                 feelies.core.alpha_registry, not
+                 deleted. Deleting a TYPE_CHECKING-
+                 only import is the fifth catalogued
+                 non-cut; the pair would have dropped
+                 without a real cut.
+                 reset and portfolio_alphas stayed
+                 getattr (orchestrator.py:2507,
+                 :2773). They are not Protocol members.
+                 Two new core modules,
+                 alpha_registry.py and
+                 sensor_registry.py, gained
+                 _FILE_OWNERS rows
+                 (audit_core_clock_config) and the
+                 README core_clock_config citation in
+                 this same commit (S-21).
+                 mypy src/feelies: Success, 221 source
+                 files. The three property-consumer
+                 files -- harness/backtest_runner.py,
+                 harness/backtest_report.py,
+                 cli/forensics.py -- were not edited.
+                 APP oracle 2 passed; hashes and fill
+                 count unmoved. S2 KEPT at zero
+                 twelve-engine pairs. n_cycles held at
+                 1 (feelies.cli → feelies.cli.main).
+                 bootstrap.py was not touched.
+                 Declared NET DELTA +2 src modules, +4
+                 public symbols, 0 branch points.
+                 Measured: modules 219 → 221 MATCH,
+                 public_symbols 575 → 579 MATCH,
+                 sloc 46705 → 46756 (+51, undeclared),
+                 n_edges 668 → 667, n_modules 177 →
+                 177, cycles 1 → 1 MATCH, alphaleak
+                 0 → 0.
+  FINDINGS:      The first attempt scoped
+                 AlphaRegistry to has_portfolio_alphas
+                 and mypy failed on seven attribute
+                 errors in
+                 harness/backtest_runner.py,
+                 harness/backtest_report.py and
+                 cli/forensics.py -- none of them in
+                 FILES. The cause is that
+                 orchestrator exposes the instance
+                 through a public alpha_registry
+                 property, so the Protocol has to
+                 cover every consumer of that
+                 property, not just kernel's own
+                 calls. For the remaining groups:
+                 before writing a Protocol surface,
+                 check whether the orchestrator hands
+                 the instance out, and if so
+                 enumerate the property's callers
+                 first. sensor_registry,
+                 horizon_scheduler and
+                 horizon_signal_engine had no such
+                 property and were unaffected.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-04 bind selection_policy required:
+                 composition (boundary). Not started.
+                 Do not begin T-04. Go confirmed on
+                 ca3de3917ceee55771557e9fa13eaff9e86e1c83.
+                 Left uncommitted:
+                 baseline_pre-T-03.json,
+                 baseline_post-T-03.json, this ledger
+                 entry.
+
+---
+
+## T-04a  2026-09-10T10:55:00+08:00
+  STEP:          T-04a
+  BASE:          4a4328be2d9a7add134384f15e0e1eccb869f99b
+  RESULT SHA:    04e52fa05a6814d327a3d904b4d40d5b78546bff (exec/T-04a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 8. Does not drop kernel → composition. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 8-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (8 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; composition 61
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate).
+  TESTS:         capture pre-T-04a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-04a GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-04a vs post-T-04a and vs
+                 baseline_post-T-03.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 8 before and 8
+                 after. This step moves names; T-04b inverts
+                 the policy. An unchanged count is the declared
+                 outcome.
+  FILES:         3 declared, 3 touched, 3 committed (clean vs
+                 04e52fa0). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 composition_protocol.py,
+                 selection_policy.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 compare_multialpha_runs.py, bootstrap.py,
+                 test_fail_quiet.py, factor_neutralizer.py
+                 (keep-rows 28 ImportError, 139
+                 LinAlgError), test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 test_standalone_signal_ownership.py
+                 (re-export covers it), composition/engine.py,
+                 composition/protocol.py, harness/__init__.py,
+                 cli/, ci.yml.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols +1,
+                 branch points 0
+                 (CompositionEngine Protocol is new; the three
+                 helpers and collision relocate).
+                 actual modules 221 -> 221 (+0 MATCH)
+                 public_symbols 579 -> 580 (+1 MATCH)
+                 sloc 46756 -> 46767 (+11, undeclared)
+                 n_edges 667 -> 669
+                 n_modules 177 -> 178
+                 (import graph: composition_protocol is now
+                 imported; not a new src file)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 3 declared / 3 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules 0
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 04e52fa05a6814d327a3d904b4d40d5b78546bff.
+                 Not merged.
+  NOTES:         One commit on exec/T-04a,
+                 04e52fa05a6814d327a3d904b4d40d5b78546bff,
+                 "T-04a: move collision record and Signal
+                 predicates into core; retarget
+                 CompositionEngine". Parent 4a4328be on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The pin stayed at 8. That is the declared
+                 outcome: T-04a only moves names into core so
+                 kernel can stop importing them from Engine 6.
+                 Kernel still imports SelectionPolicy and
+                 Top1SelectionPolicy from composition, so the
+                 kernel → composition pair is still there. The
+                 invert that drops the pair is T-04b. An
+                 unchanged count here is not a failed cut.
+                 Remaining pairs, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.composition")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Four names moved into
+                 core/composition_protocol.py:
+                 StandaloneArbitrationCollision,
+                 collision_is_harmless_flat_gate_close,
+                 is_redundant_gate_close_flat,
+                 standalone_signal_actionable_for_strategy
+                 (plus private _signal_reduces_book). That
+                 file imports Signal and SignalDirection from
+                 feelies.core.events and nothing from
+                 feelies.composition. Line 26 was retargeted
+                 from composition.engine to
+                 feelies.core.composition_protocol; it was not
+                 deleted. CompositionEngine is an empty
+                 Protocol; reset stays getattr
+                 (orchestrator.py:2507). Orchestrator still
+                 binds StandaloneArbitrationCollision at
+                 module level, so
+                 scripts/compare_multialpha_runs.py keeps
+                 importing it from kernel and needed no edit.
+                 Proved:
+                 uv run python -c "from feelies.kernel.orchestrator import StandaloneArbitrationCollision; print('ok')"
+                 printed ok. The re-export of those four
+                 names from composition.selection_policy is
+                 a convenience for consumers
+                 (tests/kernel/test_standalone_signal_ownership.py
+                 among them); it is not the cut. Top1 stays
+                 defined there. factor_neutralizer.py rows 28
+                 (ImportError) and 139 (LinAlgError) were not
+                 in FILES and were not touched. mypy
+                 src/feelies: Success, 221 source files,
+                 before the gate. APP oracle 2 passed;
+                 hashes and fill count unmoved. S2 KEPT at
+                 zero twelve-engine pairs. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main). Declared
+                 NET DELTA 0 src modules, +1 public symbol, 0
+                 branch points. Measured from the two capture
+                 artifacts: modules 221 → 221 MATCH,
+                 public_symbols 579 → 580 MATCH, sloc 46756
+                 → 46767 (+11, undeclared), n_edges 667 →
+                 669, n_modules 177 → 178 (composition_protocol
+                 entered the import graph; not a new src
+                 file), cycles 1 → 1 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The ladder's original T-04 sketch would not
+                 have dropped the pair. Rung 4 is "bind:
+                 selection_policy required (composition)" 8→7.
+                 It named only selection_policy. Kernel
+                 imported seven names from three composition
+                 modules -- CompositionEngine from
+                 composition.engine, SelectionPolicy from
+                 composition.protocol, and
+                 StandaloneArbitrationCollision,
+                 Top1SelectionPolicy, and the three helpers
+                 from composition.selection_policy.
+                 Inverting Top1 / SelectionPolicy alone would
+                 have left CompositionEngine, the collision
+                 record, and the three helpers, and the
+                 kernel → composition pair would have
+                 remained. T-05 through T-09 were sized the
+                 same way, from the campaign's opening analysis
+                 rather than from a per-name read of what
+                 kernel actually imports. Each of those
+                 rungs should be checked for the same
+                 shortfall before its block is written.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-04b required selection_policy; pin 8 to 7
+                 (boundary). Not started. Do not begin T-04b.
+                 Go confirmed on
+                 04e52fa05a6814d327a3d904b4d40d5b78546bff.
+                 Left uncommitted:
+                 baseline_pre-T-04a.json,
+                 baseline_post-T-04a.json, this ledger
+                 entry.
+
+---
+
+## T-04b  2026-09-10T14:01:00+08:00
+  STEP:          T-04b
+  BASE:          b5eaa5f2110cd7fec8d3366537bc10be428721f1
+  RESULT SHA:    2e6606598c0f6423eb87bb3f539f181495890d95 (exec/T-04b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → composition. Five import tiers stays
+                 BROKEN. 8 → 7. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED on
+                 unexpected [('feelies.kernel',
+                 'feelies.composition')] before the cut; 3
+                 passed after the cut (7-pair pin).
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (7 pairs), Twelve
+                 engine module sets KEPT. test_five_import_tiers
+                 equals the shrunk 7-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (bootstrap keep-rows
+                 1607 KeyError and 1825 TypeError/ValueError
+                 unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; composition 61
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate).
+  TESTS:         capture pre-T-04b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-04b GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-04b vs post-T-04b and vs
+                 baseline_post-T-04a.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         23 declared, 23 touched, 23 committed (clean vs
+                 2e660659). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 composition_protocol.py, bootstrap.py,
+                 test_orchestrator.py (28: 1 factory + 27
+                 raw),
+                 test_orchestrator_bus_sized_intent.py (4),
+                 test_forced_exit_attribution_replay.py (3),
+                 test_anti_lookahead.py (2),
+                 test_trade_path_regime_gate_cold_start.py (1),
+                 test_position_pnl_replay.py (1),
+                 test_reducing_signal_survives_risk_gate.py (1),
+                 test_orchestrator_hazard_exit_routing.py (1),
+                 test_data_integrity_runtime.py (1),
+                 test_symbol_halted_replay.py (1),
+                 test_orchestrator_shutdown_drain.py (1),
+                 test_orchestrator_async_fill_latency.py (1),
+                 test_orchestrator_bus_signal.py (1),
+                 test_registration_order.py (1),
+                 test_orchestrator_exit_composer_routing.py (1),
+                 test_orchestrator_idle_tick.py (1),
+                 test_standalone_signal_ownership.py (1),
+                 test_regime_hazard_engine_wiring.py (1),
+                 test_dual_scale_down_e2e.py (1),
+                 test_import_contracts.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: the five funnel files
+                 (test_fill_attribution_seam.py,
+                 test_pathological_refusal.py,
+                 test_reverse_edge_calibration.py,
+                 test_orchestrator_order_routing.py,
+                 test_orchestrator_edge_calibration.py),
+                 test_fail_quiet.py, factor_neutralizer.py
+                 (keep-rows 28, 139),
+                 composition/selection_policy.py,
+                 composition/protocol.py,
+                 compare_multialpha_runs.py,
+                 harness/__init__.py, cli/, ci.yml,
+                 test_emit_edge_calibration.py,
+                 test_backtest_report.py.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols +1,
+                 branch points 0
+                 (SelectionPolicy Protocol; nested winner type
+                 is underscored).
+                 actual modules 221 -> 221 (+0 MATCH)
+                 public_symbols 580 -> 581 (+1 MATCH)
+                 sloc 46767 -> 46771 (+4, undeclared)
+                 n_edges 669 -> 668
+                 n_modules 178 -> 178
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 23 declared / 23 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules 0
+                 symbols +1. CLEAN. Go confirmed on branch
+                 head
+                 2e6606598c0f6423eb87bb3f539f181495890d95.
+                 Not merged.
+  NOTES:         One commit on exec/T-04b,
+                 2e6606598c0f6423eb87bb3f539f181495890d95,
+                 "T-04b: invert kernel->composition; composition
+                 root supplies a required SelectionPolicy".
+                 Parent b5eaa5f2 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 8 to 7. The pin and the code
+                 dropped ("feelies.kernel",
+                 "feelies.composition") in that same commit.
+                 Fail-first: with the 7-pair pin in place and
+                 kernel still importing composition,
+                 test_five_import_tiers FAILED on unexpected
+                 [('feelies.kernel', 'feelies.composition')];
+                 after the cut it passed against the shrunk
+                 pin. Remaining, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 52 test constructor sites plus bootstrap,
+                 matching the block per file:
+                 test_orchestrator.py 28 (1 factory + 27
+                 raw),
+                 test_orchestrator_bus_sized_intent.py 4,
+                 test_forced_exit_attribution_replay.py 3,
+                 test_anti_lookahead.py 2, then 1 each in
+                 the other 15 FILES test files, and the
+                 one _RootOrchestrator site. Updating
+                 _build_orchestrator alone would have left
+                 the 27 raw sites. No default remains: no
+                 selection_policy: SelectionPolicy | None, no
+                 else Top1SelectionPolicy(), no
+                 Top1SelectionPolicy() default anywhere.
+                 core/composition_protocol.py imports Signal
+                 and SignalDirection from feelies.core.events
+                 and nothing from feelies.composition. The
+                 five funnel files were not touched
+                 (test_fill_attribution_seam.py,
+                 test_pathological_refusal.py,
+                 test_reverse_edge_calibration.py,
+                 test_orchestrator_order_routing.py,
+                 test_orchestrator_edge_calibration.py).
+                 Bootstrap keep-rows measured after the
+                 cut, unmoved: 1607 except KeyError, 1825
+                 except (TypeError, ValueError). mypy
+                 src/feelies: Success, 221 source files,
+                 before the gate. APP oracle 2 passed;
+                 hashes and fill count unmoved. S2 KEPT at
+                 zero twelve-engine pairs. n_cycles held at
+                 1 (feelies.cli → feelies.cli.main).
+                 Declared NET DELTA 0 src modules, +1 public
+                 symbol, 0 branch points. Measured from the
+                 two capture artifacts: modules 221 → 221
+                 MATCH, public_symbols 580 → 581 MATCH,
+                 sloc 46767 → 46771 (+4, undeclared),
+                 n_edges 669 → 668, n_modules 178 → 178,
+                 cycles 1 → 1 MATCH, alphaleak 0 → 0.
+                 selection_policy sits after defaults, so
+                 required-no-default at that slot is
+                 keyword-only (`*,` on the preceding line).
+  FINDINGS:      The bootstrap squeeze is a semicolon-joined
+                 import, the only zero-line spelling that
+                 binds Top1SelectionPolicy in that file,
+                 chosen because test_fail_quiet.py is not in
+                 FILES and any added line would move keep-rows
+                 1607 and 1825. ruff check does not flag it --
+                 select is DTZ, F401, F841, and neither E401
+                 nor E702 is enabled. ruff format WOULD split
+                 it, but bootstrap.py already failed ruff
+                 format --check at the parent commit on a
+                 pre-existing blank-line hunk, so this step
+                 did not make a clean file dirty. S-19a's
+                 accepted orchestrator semicolon joins are
+                 in the same position. If ruff format ever
+                 becomes a gate, every keep-row squeeze in
+                 this codebase becomes a conflict between two
+                 guards, and no step owns that.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-05a four regime helpers; pin stays 7
+                 (boundary). Not started. Do not begin T-05a.
+                 Go confirmed on
+                 2e6606598c0f6423eb87bb3f539f181495890d95.
+                 Left uncommitted:
+                 baseline_pre-T-04b.json,
+                 baseline_post-T-04b.json, this ledger
+                 entry.
+
+---
+
+## FINDING  keep-row squeezes conflict with ruff format
+DATE:        2026-09-10
+CAUSE:       FAIL_QUIET_KEEP and the Inv-10 allowlist are
+             line-pinned, so a step that must not move a keep-row
+             squeezes new code onto an existing line. S-19a did it
+             with semicolon-joined statements in orchestrator.py at
+             455, 1474 and 1480; T-04b did it with a
+             semicolon-joined import in bootstrap.py and a
+             two-kwarg call line.
+STATE:       ruff check does not flag any of them -- select is DTZ,
+             F401, F841, and neither E401 nor E702 is enabled. CI
+             runs ruff format --check, and it WOULD split every one
+             of them. bootstrap.py and orchestrator.py already fail
+             that check on pre-existing hunks, so no step made a
+             clean file dirty.
+RISK:        if ruff format ever becomes enforcing, every keep-row
+             squeeze becomes a conflict between two guards: the
+             formatter wants the line split, the allowlist wants
+             the line numbers still. Resolving it means re-keying
+             the allowlists by enclosing symbol -- which S-19a
+             costed as a consumer change and left undone -- or
+             exempting those files from the formatter.
+OWNER:       none. No step in this campaign or the last owns it.
+
+---
+
+## T-05a  2026-09-10T16:45:00+08:00
+  STEP:          T-05a
+  BASE:          794995437e85c649efc368c33fa1fed22b1ae6de
+  RESULT SHA:    e80bb2f712e3d4da359a55e9966bd02d528c00b3 (exec/T-05a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 7. Does not drop kernel → services. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 7-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (7 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; services 108
+                 mypy src/feelies: Success, 221 source files
+                 (before the gate).
+  TESTS:         capture pre-T-05a GREEN 4910 passed / 0 failed /
+                 18 skipped / 5 xfailed.
+                 -> capture post-T-05a GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-04b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: skipped 19 -> 18,
+                 passed +1; failed held at 0. Environmental
+                 skip-to-pass, not a regression.
+                 not-paper_rth: 4909 passed / 0 failed / 5
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-05a vs post-T-05a and vs
+                 baseline_post-T-04b.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 7 before and 7
+                 after. This step moves helpers; T-05b
+                 Protocols the two injected types. An unchanged
+                 count is the declared outcome.
+  FILES:         3 declared, 3 touched, 3 committed (clean vs
+                 e80bb2f7). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 regime_engine.py,
+                 test_orchestrator.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 bootstrap.py, test_fail_quiet.py,
+                 perfmeasure.py (DIRECT_PROBES unowned;
+                 still names
+                 feelies.services.regime_engine:_update_regime),
+                 fill_reconciliation.py, regime_hazard_detector.py,
+                 core/regime_gate.py, harness/, cli/, ci.yml.
+                 No keep-row file is touched: orchestrator.py
+                 and regime_engine.py are not in FAIL_QUIET_KEEP.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 (underscored helpers relocate; not public).
+                 actual modules 221 -> 221 (+0 MATCH)
+                 public_symbols 581 -> 581 (+0 MATCH)
+                 sloc 46771 -> 46772 (+1, undeclared)
+                 n_edges 668 -> 667
+                 n_modules 178 -> 178
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 3 declared / 3 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules 0
+                 symbols 0. CLEAN. Go confirmed on branch
+                 head
+                 e80bb2f712e3d4da359a55e9966bd02d528c00b3.
+                 Not merged.
+  NOTES:         One commit on exec/T-05a,
+                 e80bb2f712e3d4da359a55e9966bd02d528c00b3,
+                 "T-05a: return regime helpers to kernel; pin
+                 stays 7". Parent 79499543 on arch/exec.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The pin stayed at 7. That is the declared
+                 outcome, not a failed cut. This step only
+                 returned the four helpers. Kernel still
+                 imports RegimeEngine and
+                 RegimeHazardDetector from services, so the
+                 kernel → services pair is still there. T-05b
+                 is the invert that drops it.
+                 Remaining pairs, verbatim, before and after:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.services")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 The four helpers
+                 (_calibrate_regime_engine,
+                 _checkpoint_feature_snapshots,
+                 _restore_feature_snapshots, _update_regime)
+                 and the two private callees
+                 (_checkpoint_regime_snapshot,
+                 _maybe_publish_hazard_spike) moved with
+                 bodies unchanged. The callees had no other
+                 caller in services; they existed only for
+                 those four, so they travelled with them.
+                 Call sites in orchestrator were kept.
+                 Import adjustments that travelled with the
+                 bodies: hashlib, itertools,
+                 RegimeHazardSpike, and FeatureSnapshotMeta
+                 came into kernel. The same names that
+                 services no longer needed after the move
+                 dropped out of it -- itertools,
+                 RegimeHazardSpike, FeatureSnapshotMeta
+                 (and AlertSeverity, used only by the
+                 calibration alerts). hashlib stayed in
+                 services because HMM3 still hashes
+                 checkpoints. Kernel also imports
+                 regime_posterior_entropy_nats from
+                 services so the unchanged _update_regime
+                 body still binds; that name was not moved.
+                 _regime_label_for stayed in services.
+                 Kernel does not import it.
+                 fill_reconciliation.py has its own copy
+                 and was not in FILES; it was not touched.
+                 The one retargeted importer is
+                 tests/kernel/test_orchestrator.py:
+                 `_calibrate_regime_engine` now comes from
+                 feelies.kernel.orchestrator, not
+                 feelies.services.regime_engine.
+                 mypy src/feelies: Success, 221 source files,
+                 before the gate. APP oracle 2 passed;
+                 hashes and fill count unmoved. S2 KEPT at
+                 zero twelve-engine pairs. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main). Declared
+                 NET DELTA 0 src modules, 0 public symbols, 0
+                 branch points. Measured from the two capture
+                 artifacts: modules 221 → 221 MATCH,
+                 public_symbols 581 → 581 MATCH, sloc 46771
+                 → 46772 (+1, undeclared), n_edges 668 →
+                 667 (services dropped FeatureSnapshotMeta),
+                 n_modules 178 → 178, cycles 1 → 1 MATCH,
+                 alphaleak 0 → 0.
+  FINDINGS:      perfmeasure.py DIRECT_PROBES entry
+                 E3.update_regime
+                 (feelies.services.regime_engine:_update_regime)
+                 now resolves to nothing. It joins
+                 X.size_shadow
+                 (Orchestrator._record_size_shadow, S-34f)
+                 and E9.build_order
+                 (Orchestrator._try_build_order_from_intent,
+                 stale since S-24). Engine 3 loses the
+                 exclusive time of the M2 path -- posterior,
+                 the RegimeState publish, the hazard spike --
+                 and the console table still prints only
+                 STATS keys, so the remaining shares sum to
+                 100% of a smaller set without saying so.
+                 Three dead probes, still unowned.
+                 perfmeasure.py is not in FILES. Reported,
+                 not fixed. Every remaining rung which moves
+                 a probed function will add another, and the
+                 tool's console output is now materially
+                 incomplete rather than marginally so.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-05b Protocols on RegimeEngine and
+                 RegimeHazardDetector; pin 7 to 6
+                 (boundary). Not started. Do not begin T-05b.
+                 Go confirmed on
+                 e80bb2f712e3d4da359a55e9966bd02d528c00b3.
+                 Left uncommitted:
+                 baseline_pre-T-05a.json,
+                 baseline_post-T-05a.json, this ledger
+                 entry.
+
+---
+
+## T-05b  2026-09-11T08:58:00+08:00
+  STEP:          T-05b
+  BASE:          a1f91550bc2e5c2162536c4ebcd4f4851f90eb93
+  RESULT SHA:    6255058c24a2d8613d49775e77cdb37969fd0d44 (exec/T-05b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. Pin drop is
+                 test_five_import_tiers vs the 6-pair
+                 pin. Fail-first before the invert:
+                 unexpected [('feelies.kernel',
+                 'feelies.services')]; missing []. After
+                 the invert: 3 passed. CLOSES nothing.
+                 Drops kernel → services. Five import
+                 tiers stays BROKEN. 7 → 6. G40 stays
+                 CLOSED.
+                 S2 KEPT at zero twelve-engine pairs
+                 before and after. lint-imports:
+                 Five import tiers BROKEN (6 pairs),
+                 Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; services 108; core 245
+                 mypy src/feelies: Success, 222 source files
+                 (before the gate).
+  TESTS:         capture pre-T-05b RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/
+                 test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (IB after-hours EXEMPTION). Accepted.
+                 -> capture post-T-05b RED 4919 passed / 2
+                 failed / 7 skipped / 5 xfailed.
+                 FAILED the IB after-hours test and
+                 tests/integration/test_paper_rth_safety.py::
+                 test_g12_cost_exceeds_disclosure_alert
+                 (G12 EXEMPTION). Both accepted. No
+                 failure outside the accepted set.
+                 vs post-T-05a GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed:
+                 skipped 18 -> 7, passed +9, failed
+                 0 -> 2. Environmental paper_rth /
+                 IB window, not a regression.
+                 not-paper_rth: 4908 passed / 1 failed / 5
+                 skipped / 14 deselected / 5 xfailed
+                 (IB after-hours only).
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-05b vs post-T-05b and vs
+                 baseline_post-T-05a.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 L6 regime stream unmoved
+                 (EXPECTED_LEVEL6_REGIME_STATE_HASH
+                 025d4a228ed4387f89fb6a55c12c7398ed7d1b31edb0ed3e7f4533db107122cb,
+                 COUNT 40). THE PIN MOVED 7 to 6 in
+                 the same commit as the three names
+                 left the services import.
+  FILES:         6 declared, 6 touched, 6 committed (clean vs
+                 6255058c). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/regime_protocol.py (new),
+                 services/regime_engine.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 services/regime_hazard_detector.py,
+                 core/regime_gate.py, bootstrap.py,
+                 test_fail_quiet.py, harness/, cli/,
+                 ci.yml, tests/scripts/services/__init__.py.
+                 No keep-row file is touched:
+                 orchestrator.py and regime_engine.py
+                 are not in FAIL_QUIET_KEEP.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +1, public symbols +3,
+                 branch points 0
+                 (RegimeEngine and RegimeHazardDetector
+                 Protocols, and regime_posterior_entropy_nats).
+                 actual modules 221 -> 222 (+1 MATCH)
+                 public_symbols 581 -> 583 (+2)
+                 sloc 46772 -> 46814 (+42, undeclared)
+                 n_edges 667 -> 668
+                 n_modules 178 -> 179 (regime_protocol
+                 entered the import graph)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+                 Arithmetic: measure.py public_symbols
+                 counts module-body ClassDef and
+                 FunctionDef only. The new module added
+                 two Protocol ClassDefs and one entropy
+                 FunctionDef (+3 on that file).
+                 services lost the entropy FunctionDef
+                 (-1). The services alias is ImportFrom,
+                 which the counter does not see. Net +2.
+                 The entropy name relocated; it is not
+                 a new FunctionDef on the tree. Same
+                 shape as T-04a, where relocated helpers
+                 cancelled and only the new Protocol
+                 counted.
+                 The block's +3 counted three names
+                 landing in the new module. That is a
+                 different count, not a capture error.
+                 Against this campaign's NET DELTA
+                 convention (T-04a: a relocation is not
+                 a net add), +3 is the wrong inventory
+                 figure. Trust measured +2. The two new
+                 Protocols are the additions; entropy
+                 is the relocation.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. L6 regime stream unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 6 declared / 6 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4919 passed, failed 1->2
+                 (IB + g12 EXEMPTIONS only; no failure
+                 outside the accepted set); NET DELTA
+                 MATCH on modules +1; public_symbols
+                 measured +2, trust that figure (see
+                 NET DELTA). CLEAN on FILES/PARITY.
+                 Go confirmed on branch head
+                 6255058c24a2d8613d49775e77cdb37969fd0d44.
+                 Not merged.
+  NOTES:         One commit on exec/T-05b,
+                 6255058c24a2d8613d49775e77cdb37969fd0d44,
+                 "T-05b: invert kernel->services; core
+                 Protocols own engine, detector, and
+                 entropy". Parent a1f91550 on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 7 to 6. All three names left
+                 the services import in that same
+                 commit as the pin drop: RegimeEngine,
+                 RegimeHazardDetector, and
+                 regime_posterior_entropy_nats.
+                 Kernel now names all three from
+                 feelies.core.regime_protocol; no
+                 feelies.services import remains in
+                 kernel. Remaining pairs, verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Fail-first: the pin was dropped first
+                 and test_five_import_tiers FAILED on
+                 unexpected [('feelies.kernel',
+                 'feelies.services')]; the invert then
+                 made the 6-pair pin hold.
+                 Two Protocol surfaces, checked against
+                 the named calls after the import block
+                 grew by three lines:
+                 RegimeEngine.restore(data) :3296;
+                 posterior(quote) :377; state_names
+                 :380; checkpoint() :252.
+                 RegimeHazardDetector.reset() :2391;
+                 detect(prev, curr) :428.
+                 Five getattr reaches stayed getattr:
+                 calibrate :279, calibrated :282,
+                 discriminability_for_symbol :387,
+                 discriminability :393, calibrated
+                 :408. Not on either Protocol:
+                 n_states, current_state, services
+                 reset(symbol), or those getattr
+                 names. _maybe_reset does not list
+                 either instance. No public
+                 orchestrator property hands either
+                 out. Optionality is | None = None.
+                 The entropy body moved, it did not
+                 copy. services/regime_engine.py
+                 deleted the def and keeps
+                 `regime_posterior_entropy_nats as
+                 regime_posterior_entropy_nats` from
+                 core. tests/services, tests/core,
+                 tests/determinism, scripts/
+                 regime_diagnostics.py, and
+                 services/__init__.py still bind the
+                 services name and were not
+                 retargeted. One sanitizing
+                 implementation; L6 hashes that copy.
+                 L6 regime stream unmoved: HASH
+                 025d4a228ed4387f89fb6a55c12c7398ed7d1b31edb0ed3e7f4533db107122cb,
+                 COUNT 40.
+                 core/regime_protocol.py imports
+                 NBBOQuote, RegimeState,
+                 RegimeHazardSpike from
+                 feelies.core.events and nothing from
+                 feelies.services. The services
+                 RegimeEngine Protocol and
+                 HMM3StateFractional were not edited.
+                 New module: _FILE_OWNERS row
+                 core/regime_protocol.py ->
+                 audit_core_clock_config, and the
+                 README core_clock_config citation,
+                 in this same commit (S-21).
+                 mypy src/feelies: Success, 222 source
+                 files, before the gate. APP oracle
+                 2 passed; hashes and fill count
+                 unmoved. S2 KEPT at zero
+                 twelve-engine pairs. n_cycles held
+                 at 1 (feelies.cli → feelies.cli.main).
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-06a ingestion: halt helpers and
+                 normalizer; pin 6 to 5 (boundary).
+                 Not started. Do not begin T-06a.
+                 Go confirmed on
+                 6255058c24a2d8613d49775e77cdb37969fd0d44.
+                 Left uncommitted:
+                 baseline_pre-T-05b.json,
+                 baseline_post-T-05b.json, this ledger
+                 entry.
+
+---
+
+## T-06a  2026-09-11T09:45:21+08:00
+  STEP:          T-06a
+  BASE:          ba7196d4f80f5b873ab5ea45847d40971e22c1d0
+  RESULT SHA:    none (exec/T-06a never cut)
+  VERDICT:       blocked
+  CONFORMANCE:   not started. Pre-flight import contracts
+                 3 passed. S2 KEPT at zero twelve-engine
+                 pairs. test_five_import_tiers equals the
+                 6-pair _TIER_RESIDUALS. lint-imports:
+                 Five import tiers BROKEN, Twelve engine
+                 module sets KEPT.
+                 S12: 2 passed (not started after)
+                 S14: 2 passed (not started after)
+                 S17: 3 passed (not started after)
+  TESTS:         capture pre-T-06a GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 vs post-T-05b RED 4919 passed / 2 failed /
+                 7 skipped / 5 xfailed: skipped 7 -> 19,
+                 failed 2 -> 0, passed 4919 -> 4909.
+                 Environmental IB/g12 skip outside the
+                 paper_rth window, not a regression. No
+                 failure in the accepted set. No failure
+                 outside it. determinism 148 passed.
+                 Cut not begun.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06a vs
+                 baseline_post-T-05b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+  FILES:         8 declared, 0 touched. exec/T-06a not
+                 created. Hand FILES CLEAN.
+                 Named-not-edited: all eight
+                 (orchestrator.py, core/data_health.py,
+                 core/idle_tick.py,
+                 ingestion/data_integrity.py,
+                 ingestion/idle_tick.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md).
+  NET DELTA:     declared src modules +2, public symbols
+                 +1, branch points 0.
+                 actual not measured after a cut (none).
+                 pre-flight evidence: modules 222,
+                 public_symbols 583, sloc 46814,
+                 n_edges 668, n_modules 179, cycles 1,
+                 alphaleak 0. n_cycles 1
+                 (feelies.cli -> feelies.cli.main).
+  DETERMINISM:   148 passed; no hash pin moved (no cut)
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse
+                 T-*. Four checks by hand:
+                 FILES 8 declared / 0 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS capture GREEN, cut not started --
+                 STOP at before-state (plan defect);
+                 NET DELTA not applicable (no commit).
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD ba7196d4f80f5b873ab5ea45847d40971e22c1d0
+                 on arch/exec. tools/exec vs
+                 exec-tools-v1 empty. Pre-flight
+                 porcelain: capture artifact only
+                 after baseline.py wrote
+                 baseline_pre-T-06a.json.
+                 6 pairs verbatim:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT (0 twelve-engine pairs).
+                 Keep-rows measured, unmoved:
+                 massive_ingestor.py 73 TypeError,
+                 massive_ws.py 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError.
+                 Twelve names on the kernel import,
+                 all runtime, orchestrator only:
+                 DataHealth :136, _HaltTradeability
+                 :137, _bind_halt_tradeability :138,
+                 _configure_halt_from_config :139,
+                 _require_halt_authority :140,
+                 _reset_halt_state :141,
+                 _update_halt_state :142,
+                 _update_ssr_state :143,
+                 _data_health_blocks_trading :144,
+                 _verify_data_integrity :145,
+                 IdleTick :147, MarketDataNormalizer
+                 :148.
+                 Private callees of the eight:
+                 _bound_trade_feed_health_sm called
+                 by _sync_halt_store_and_health and
+                 _halt_health_xor_store;
+                 _halt_health_xor_store called only
+                 by _data_health_blocks_trading;
+                 _emit_symbol_halted called only by
+                 _update_halt_state.
+                 _sync_halt_store_and_health has a
+                 second caller at
+                 massive_normalizer.py:901. It cannot
+                 travel as an unowned private.
+                 HaltSignal and classify_halt_status
+                 sit under it.
+                 Alias-covered, not in FILES, would
+                 not need a retarget if the bodies
+                 could move: bootstrap.py
+                 (_HaltTradeability, isinstance),
+                 massive_normalizer.py
+                 (DataHealth, _HaltTradeability,
+                 _sync), massive_ingestor.py
+                 (DataHealth, keep-row 73),
+                 massive_ws.py (IdleTick, keep-rows
+                 185/228/344), harness/
+                 backtest_runner.py (DataHealth),
+                 ingestion/normalizer.py (DataHealth;
+                 MarketDataNormalizer Protocol with
+                 on_message stays),
+                 ingestion/__init__.py,
+                 ingest_health.py, tests that import
+                 DataHealth / IdleTick / HaltSignal /
+                 classify_halt_status /
+                 _HaltTradeability /
+                 _require_halt_authority /
+                 _data_health_blocks_trading from
+                 ingestion. No FILES-visible caller
+                 of a relocated name needs a retarget
+                 if the aliases land. Cut not begun.
+  FINDINGS:      PLAN DEFECT / blocker -- two
+                 independently fatal placements, both
+                 outside FILES.
+                 1. G33. tests/conformance/
+                 test_session_halt_authority.py is
+                 not in FILES. Its AST scans require
+                 halt-store writes, transition(
+                 DataHealth.HALTED), and
+                 KernelFault(kind=SESSION_HALT)
+                 constructions to live in
+                 src/feelies/ingestion/
+                 data_integrity.py (_AUTHORITY).
+                 Relocating _HaltTradeability and
+                 _sync_halt_store_and_health into
+                 core/data_health.py moves those
+                 writes, the HALTED transition, and
+                 the SESSION_HALT constructions out
+                 of _AUTHORITY. Three previously-
+                 passing tests would fail
+                 (test_g33_engine_1_is_sole_halt_
+                 tradeability_writer,
+                 test_g33_health_halted_transition_
+                 goes_through_the_store,
+                 test_g33_session_halt_kind_is_
+                 constructed). Runtime tests in that
+                 file import _data_health_blocks_
+                 trading / _require_halt_authority /
+                 _HaltTradeability from data_integrity
+                 and would be alias-covered; the AST
+                 scans would not. Amending G33
+                 _AUTHORITY is a ninth file.
+                 2. Core is the bottom layer
+                 (pyproject.toml: cli / bootstrap /
+                 engines / kernel:bus / core). Core
+                 currently imports nothing from
+                 feelies.kernel. _HaltTradeability.
+                 configure, _require_halt_authority,
+                 _bind_halt_tradeability, and
+                 _data_health_blocks_trading (via
+                 _halt_health_xor_store) all raise
+                 KernelFault from
+                 feelies.kernel.exception_taxonomy.
+                 Bodies unchanged, those names in
+                 core/data_health.py are core ->
+                 kernel, a new layers violation, not
+                 in _TIER_RESIDUALS. Adding
+                 ignore_imports rewrites the contract.
+                 Moving KernelFault is not in FILES.
+                 _sync in core keeps calling
+                 _require_halt_authority and
+                 _bound_trade_feed_health_sm; those
+                 two cannot stay in kernel or
+                 ingestion without core importing
+                 them. Same seam.
+                 The plan does not contain either
+                 decision. Do not invent a G33
+                 retarget or a KernelFault move on
+                 this tree.
+                 Also recorded, not a stop:
+                 perfmeasure.py DIRECT_PROBES still
+                 names four E1 helpers on
+                 feelies.ingestion.data_integrity.
+                 Moving those bodies would add four
+                 dead probes to the three already
+                 unowned. perfmeasure.py is not in
+                 FILES. Same class as T-05a.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          amend T-06a in phase8_tiers.md.
+                 G33 _AUTHORITY and KernelFault vs
+                 the core layer have to be decided
+                 in the block before a retry. Do not
+                 begin T-06b. Do not cut FILES from
+                 this tree. Left uncommitted:
+                 baseline_pre-T-06a.json, this
+                 ledger entry.
+
+---
+
+## T-06z  2026-09-11T14:16:00+08:00
+  STEP:          T-06z
+  BASE:          e7a7e2b8859b2ab45a8514012ab393e6e5628fab
+  RESULT SHA:    bc121d6c0b215f9529ccded361f4743fd9c471ff (exec/T-06z; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 6. Does not drop kernel → ingestion. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 6-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (6 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; ingestion 147 passed /
+                 4 skipped; core 245
+                 mypy src/feelies: Success, 223 source files
+                 (before the gate).
+                 Class identity:
+                 `k.KernelFault is c.KernelFault` printed True.
+  TESTS:         capture pre-T-06z GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-06z GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-05b RED 4919 passed / 2 failed /
+                 7 skipped / 5 xfailed: skipped 7 -> 19,
+                 failed 2 -> 0, passed 4919 -> 4909.
+                 Environmental IB/g12 skip outside the
+                 paper_rth window, not a regression.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06z vs post-T-06z and vs
+                 baseline_post-T-05b.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 6 before and 6
+                 after. This step moves the KernelFault body
+                 into core so T-06a can raise it without
+                 core → kernel. The alias is not a cut. An
+                 unchanged count is the declared outcome.
+  FILES:         4 declared, 4 touched, 4 committed (clean vs
+                 bc121d6c). Hand FILES: 0 extra CLEAN.
+                 Touched: core/exception_taxonomy.py (new),
+                 kernel/exception_taxonomy.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 orchestrator.py, data_integrity.py,
+                 massive_ws.py (keep-rows 185 queue.Empty,
+                 228 asyncio.CancelledError, 344
+                 asyncio.TimeoutError), alpha/registry.py,
+                 sensors/horizon_scheduler.py, the five test
+                 importers, core/errors.py, test_fail_quiet.py,
+                 harness/, cli/, ci.yml.
+                 No keep-row file is touched:
+                 exception_taxonomy.py is not in
+                 FAIL_QUIET_KEEP; massive_ws.py was not
+                 edited.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +1, public symbols 0,
+                 branch points 0
+                 (KernelFault relocates; the kernel alias is
+                 ImportFrom, which measure.py does not count).
+                 actual modules 222 -> 223 (+1 MATCH)
+                 public_symbols 583 -> 583 (+0 MATCH)
+                 sloc 46814 -> 46817 (+3, undeclared)
+                 n_edges 668 -> 669
+                 n_modules 179 -> 180
+                 (import graph: exception_taxonomy entered
+                 core; kernel.exception_taxonomy now imports
+                 it instead of core.errors)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 4 declared / 4 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +1
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 bc121d6c0b215f9529ccded361f4743fd9c471ff.
+                 Not merged.
+  NOTES:         One commit on exec/T-06z,
+                 bc121d6c0b215f9529ccded361f4743fd9c471ff,
+                 "T-06z: move KernelFault into core; pin
+                 stays 6". Parent e7a7e2b8 on arch/exec.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The pin stayed at 6. The alias is a
+                 convenience for the ten importers, not a
+                 cut: kernel still imports ingestion, so
+                 the kernel → ingestion pair is still
+                 there. An unchanged count is the declared
+                 outcome, same shape as T-04a at 8 and
+                 T-05a at 7.
+                 This step exists because T-06a puts
+                 _HaltTradeability and
+                 _sync_halt_store_and_health in
+                 feelies.core.data_health. Those bodies
+                 raise KernelFault. Core is the bottom
+                 layer. Without this move that raise is
+                 core → kernel -- a new layers violation,
+                 not in _TIER_RESIDUALS, and a worse
+                 outcome than the pair T-06a removes.
+                 S-30a pinned the type to kernel by role
+                 rather than by data. KernelFault was
+                 already a FeeliesError subclass whose
+                 Kind names other engines' authorities
+                 (SESSION_HALT, UNIVERSE, HORIZON_GRID,
+                 INGRESS_ADMIT). The kernel was its
+                 container, not its owner. T5 core already
+                 owns FeeliesError and FailureMode.
+                 The body moved; it did not copy.
+                 kernel/exception_taxonomy.py deleted the
+                 class and keeps
+                 `from feelies.core.exception_taxonomy
+                 import KernelFault as KernelFault`.
+                 `import feelies.kernel.exception_taxonomy
+                 as k, feelies.core.exception_taxonomy as
+                 c; print(k.KernelFault is
+                 c.KernelFault)` printed True, so the
+                 alias reaches the same class object. Two
+                 KernelFault classes would mean isinstance
+                 and except catching different types.
+                 core/exception_taxonomy.py imports
+                 FailureMode and FeeliesError from
+                 feelies.core.errors and nothing from
+                 feelies.kernel. Not folded into
+                 core/errors.py: that file is one class
+                 per FailureMode; KernelFault is one type
+                 with a nested Kind ("do not subclass for
+                 each §F item", S-30a).
+                 None of the five raisers
+                 (orchestrator.py TICK_PIPELINE,
+                 data_integrity.py SESSION_HALT,
+                 massive_ws.py INGRESS_ADMIT,
+                 alpha/registry.py UNIVERSE,
+                 sensors/horizon_scheduler.py
+                 HORIZON_GRID) or the five test importers
+                 (test_exception_containment,
+                 test_session_halt_authority,
+                 test_ingress_admit,
+                 test_universe_authority,
+                 test_horizon_grid) was edited. They still
+                 bind the kernel name. massive_ws.py was
+                 not in FILES and was not touched;
+                 keep-rows 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError stayed put. It still
+                 reaches KernelFault through the kernel
+                 alias.
+                 Remaining pairs, verbatim, before and after:
+                 ("feelies.kernel", "feelies.ingestion")
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 New module: _FILE_OWNERS row
+                 core/exception_taxonomy.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citation, in this same
+                 commit (S-21).
+                 mypy src/feelies: Success, 223 source
+                 files, before the gate. APP oracle
+                 2 passed; hashes and fill count unmoved.
+                 S2 KEPT at zero twelve-engine pairs.
+                 n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 Declared NET DELTA src modules +1, public
+                 symbols 0, branch points 0 (KernelFault
+                 relocates; the kernel alias is ImportFrom,
+                 which measure.py does not count).
+                 Measured from the two capture artifacts:
+                 modules 222 → 223 MATCH, public_symbols
+                 583 → 583 MATCH, sloc 46814 → 46817
+                 (+3, undeclared), n_edges 668 → 669,
+                 n_modules 179 → 180 (core.exception_taxonomy
+                 entered the import graph), cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+                 T-06a's G33 _AUTHORITY retarget remains
+                 T-06a's; this step only placed
+                 KernelFault.
+  NEXT:          T-06a ingestion; pin 6 to 5
+                 (boundary). Not started. Do not begin
+                 T-06a. Go confirmed on
+                 bc121d6c0b215f9529ccded361f4743fd9c471ff.
+                 Left uncommitted:
+                 baseline_pre-T-06z.json,
+                 baseline_post-T-06z.json, this ledger
+                 entry. Also left from T-06a:
+                 baseline_pre-T-06a.json, that ledger
+                 entry.
+
+---
+
+## T-06a  2026-09-12T10:54:09+08:00
+  STEP:          T-06a
+  BASE:          0094e321c589469153a678a851c1a0c56b0895c1
+  RESULT SHA:    97acf4a514f25ea87038fb1a7530957e03b541f8 (exec/T-06a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → ingestion. Five import tiers stays
+                 BROKEN. 6 → 5. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the 5-pair pin
+                 after the cut. S2 KEPT at zero twelve-engine
+                 pairs before and after. lint-imports after
+                 the cut: Five import tiers BROKEN (5
+                 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; ingestion 147 passed /
+                 4 skipped; core 245
+                 mypy src/feelies: Success, 225 source files
+                 (before the gate).
+                 G33: 7 passed. Scans not vacuous.
+  TESTS:         capture pre-T-06a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-06a GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-06z GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06a vs post-T-06a and vs
+                 baseline_post-T-06z.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Halt replay hashes unmoved:
+                 EXPECTED_SYMBOL_HALTED_HASH
+                 a7b5c52139086e62 COUNT 2;
+                 EXPECTED_HALT_ORDER_HASH
+                 f791d99471276259 COUNT 1;
+                 EXPECTED_HALT_ACK_HASH
+                 ca5015fcf416e669 COUNT 2;
+                 EXPECTED_HALT_POSITION_UPDATE_HASH
+                 ad9e112d08209b38 COUNT 1.
+                 THE PIN MOVED 6 to 5 in the same commit
+                 as the twelve names left the ingestion
+                 import.
+  FILES:         9 declared, 9 touched, 9 committed (clean vs
+                 97acf4a5). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/data_health.py (new),
+                 core/idle_tick.py (new),
+                 ingestion/data_integrity.py,
+                 ingestion/idle_tick.py,
+                 test_import_contracts.py,
+                 test_session_halt_authority.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 massive_normalizer.py, massive_ingestor.py,
+                 massive_ws.py, bootstrap.py,
+                 test_fail_quiet.py,
+                 core/exception_taxonomy.py, harness/,
+                 cli/, ci.yml.
+                 No keep-row file is touched:
+                 massive_ingestor.py 73 TypeError,
+                 massive_ws.py 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols +1,
+                 branch points 0
+                 (core MarketDataNormalizer Protocol).
+                 DataHealth, HaltSignal,
+                 classify_halt_status, _sync,
+                 _HaltTradeability, IdleTick are
+                 relocations.
+                 actual modules 223 -> 225 (+2 MATCH)
+                 public_symbols 583 -> 584 (+1 MATCH)
+                 sloc 46817 -> 46848 (+31, undeclared)
+                 n_edges 669 -> 669
+                 n_modules 180 -> 182
+                 (import graph: data_health and idle_tick
+                 entered core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Halt replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 9 declared / 9 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 97acf4a514f25ea87038fb1a7530957e03b541f8.
+                 Not merged.
+  NOTES:         One commit on exec/T-06a,
+                 97acf4a514f25ea87038fb1a7530957e03b541f8,
+                 "T-06a: invert kernel->ingestion; halt store
+                 and IdleTick to core". Parent 0094e321 on
+                 arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 6 to 5. The twelve names left
+                 the ingestion import in that same commit
+                 as the pin drop -- DataHealth,
+                 _HaltTradeability, _bind_halt_tradeability,
+                 _configure_halt_from_config,
+                 _require_halt_authority, _reset_halt_state,
+                 _update_halt_state, _update_ssr_state,
+                 _data_health_blocks_trading,
+                 _verify_data_integrity, IdleTick,
+                 MarketDataNormalizer -- and kernel now has
+                 no feelies.ingestion import. Remaining,
+                 verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.monitoring")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs after
+                 the cut. No new pair.
+                 Six aliases on data_integrity.py, each
+                 ingestion → core, the legal downward
+                 direction: DataHealth, HaltSignal,
+                 classify_halt_status,
+                 _sync_halt_store_and_health,
+                 _HaltTradeability, _require_halt_authority.
+                 IdleTick is the same direction on
+                 ingestion/idle_tick.py. Same-object True
+                 for all seven. _data_health_blocks_trading
+                 has no alias. That body returned to
+                 kernel; G33 imports it from
+                 feelies.kernel.orchestrator.
+                 _sync_halt_store_and_health, HaltSignal,
+                 classify_halt_status, and
+                 _bound_trade_feed_health_sm landed in
+                 core/data_health.py. massive_normalizer.py
+                 was not edited; line 901 still calls
+                 _sync_halt_store_and_health and reaches
+                 the core body through the data_integrity
+                 alias.
+                 Kernel annotates MarketDataNormalizer
+                 against the core Protocol, whose named
+                 surface is health and all_health. The
+                 ingestion Protocol was not edited and
+                 still names on_message, health, and
+                 all_health.
+                 core/data_health.py imports KernelFault from
+                 feelies.core.exception_taxonomy. It
+                 imports nothing from feelies.ingestion
+                 or feelies.kernel.
+                 Two new modules, same commit (S-21):
+                 _FILE_OWNERS rows core/data_health.py and
+                 core/idle_tick.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citation.
+                 Keep-rows measured unmoved:
+                 massive_ingestor.py 73 TypeError,
+                 massive_ws.py 185 queue.Empty, 228
+                 asyncio.CancelledError, 344
+                 asyncio.TimeoutError.
+                 Four halt replay hashes unmoved:
+                 EXPECTED_SYMBOL_HALTED_HASH
+                 a7b5c52139086e62 COUNT 2,
+                 EXPECTED_HALT_ORDER_HASH
+                 f791d99471276259 COUNT 1,
+                 EXPECTED_HALT_ACK_HASH
+                 ca5015fcf416e669 COUNT 2,
+                 EXPECTED_HALT_POSITION_UPDATE_HASH
+                 ad9e112d08209b38 COUNT 1.
+                 mypy src/feelies: Success, 225 source
+                 files, before the gate. APP oracle 2
+                 passed; hashes and fill count unmoved.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +2, public
+                 symbols +1, branch points 0. Measured
+                 from the two capture artifacts:
+                 modules 223 → 225 MATCH, public_symbols
+                 583 → 584 MATCH, sloc 46817 → 46848
+                 (+31, undeclared), n_edges 669 → 669,
+                 n_modules 180 → 182, cycles 1 → 1 MATCH,
+                 alphaleak 0 → 0.
+                 G33 retarget: _AUTHORITY is now
+                 src/feelies/core/data_health.py. The
+                 invariant is one producer of halt state,
+                 and the path pin follows the store rather
+                 than the package. All three scans still
+                 bite -- 14 halt-store writes, 4
+                 SESSION_HALT constructions, 1
+                 transition(DataHealth.HALTED). None
+                 vacuous. The 14 writes and the one HALTED
+                 transition are all in
+                 core/data_health.py. SESSION_HALT splits
+                 2 / 2: core raises from
+                 _HaltTradeability.configure (codebook
+                 conflict) and _require_halt_authority
+                 (missing store); orchestrator raises from
+                 returned _bind_halt_tradeability
+                 (two-authority conflict) and
+                 _data_health_blocks_trading (health/store
+                 xor). That split does not weaken G33's
+                 single-producer claim. The orchestrator
+                 sites raise KernelFault; they do not
+                 write halted_symbols, the blackout map,
+                 or the codebook. Halt STATE still has
+                 one producer.
+  FINDINGS:      A relocation alias is an import in the
+                 opposite direction. On an engine file
+                 that can reverse the very edge the step
+                 is cutting, and S2 expands one such import
+                 into every engine the kernel touches --
+                 the first attempt produced four new pairs
+                 from a single alias line
+                 (_data_health_blocks_trading from
+                 feelies.kernel.orchestrator on
+                 data_integrity.py). Every remaining rung
+                 that aliases from an engine file must
+                 state the direction before writing it.
+                 Also recorded, not a stop:
+                 perfmeasure.py DIRECT_PROBES still names
+                 four E1 helpers on
+                 feelies.ingestion.data_integrity.
+                 Returning those bodies adds four dead
+                 probes to the three already unowned.
+                 perfmeasure.py is not in FILES. Same
+                 class as T-05a.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-06b monitoring; pin 5 to 4
+                 (boundary). Not started. Do not begin
+                 T-06b. Go confirmed on
+                 97acf4a514f25ea87038fb1a7530957e03b541f8.
+                 Left uncommitted:
+                 baseline_pre-T-06a.json,
+                 baseline_post-T-06a.json, this ledger
+                 entry.
+
+---
+
+## T-06b  2026-09-12T11:40:00+08:00
+  STEP:          T-06b
+  BASE:          7cd9c668e31bc0d8c6aea900b303207e8513a2d5
+  RESULT SHA:    6186321cd985f5b4026d2063ef69d6306cb0814b (exec/T-06b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → monitoring. Five import tiers stays
+                 BROKEN. 5 → 4. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 Pin fail-first: test_five_import_tiers FAILED on
+                 unexpected [('feelies.kernel',
+                 'feelies.monitoring')] before the cut; 3
+                 passed after the cut (4-pair pin).
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (4 pairs), Twelve
+                 engine module sets KEPT. test_five_import_tiers
+                 equals the shrunk 4-pair pin.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel+monitoring+core 677
+                 mypy src/feelies: Success, 229 source files
+                 (before the gate).
+  TESTS:         capture pre-T-06b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-06b GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-06a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-06b vs post-T-06b and vs
+                 baseline_post-T-06a.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Kill-switch related replay hashes unmoved:
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015d COUNT 2;
+                 EXPECTED_DECOUPLED_SAFETY_STATE_CHANGE_HASH
+                 a18589d8e966170b COUNT 1;
+                 EXPECTED_ALERT_TAXONOMY_HASH
+                 f6b784b275a549e1 COUNT 4;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 THE PIN MOVED 5 to 4 in the same commit
+                 as the seven names left the monitoring
+                 import.
+  FILES:         11 declared, 11 touched, 11 committed (clean vs
+                 6186321c). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/kill_switch.py (new),
+                 core/latency_budget.py (new),
+                 core/alert_manager.py (new),
+                 core/paper_session_recorder.py (new),
+                 monitoring/kill_switch.py,
+                 monitoring/latency_budget.py,
+                 monitoring/alerting.py,
+                 test_import_contracts.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 metric_collector.py, telemetry.py,
+                 monitoring/paper_session_recorder.py,
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py,
+                 test_latency_budget.py, ci.yml.
+                 No keep-row file is touched.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +4, public symbols +1,
+                 branch points 0
+                 (PaperSessionRecorder Protocol).
+                 KillSwitch and AlertManager Protocol
+                 moves, observe_kill_switch,
+                 _LatencyBudgetMonitor,
+                 _apply_breach_response, _p99, and
+                 _BudgetStatus are relocations.
+                 MetricCollector retarget is not a new
+                 name.
+                 actual modules 225 -> 229 (+4 MATCH)
+                 public_symbols 584 -> 585 (+1 MATCH)
+                 sloc 46848 -> 46912 (+64, undeclared)
+                 n_edges 669 -> 672
+                 n_modules 182 -> 185
+                 (import graph: alert_manager,
+                 kill_switch, latency_budget,
+                 paper_session_recorder entered core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Kill-switch related replay
+                 hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 11 declared / 11 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +4
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 6186321cd985f5b4026d2063ef69d6306cb0814b.
+                 Not merged.
+  NOTES:         One commit on exec/T-06b,
+                 6186321cd985f5b4026d2063ef69d6306cb0814b,
+                 "T-06b: invert kernel->monitoring;
+                 MetricCollector retarget; kill switch
+                 and latency budget to core". Parent
+                 7cd9c668 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Pair count 5 to 4. All seven names left
+                 the monitoring import in that same
+                 commit as the pin drop -- AlertManager,
+                 KillSwitch, observe_kill_switch,
+                 _LatencyBudgetMonitor,
+                 _apply_breach_response,
+                 PaperSessionRecorder, MetricCollector
+                 -- and kernel now has no
+                 feelies.monitoring import. Remaining,
+                 verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs after
+                 the cut. No new pair.
+                 Every alias runs monitoring → core, the
+                 legal downward direction, and
+                 same-object printed True for each:
+                 KillSwitch and observe_kill_switch on
+                 monitoring/kill_switch.py;
+                 _LatencyBudgetMonitor,
+                 _apply_breach_response, _p99,
+                 _BudgetStatus on
+                 monitoring/latency_budget.py;
+                 AlertManager on monitoring/alerting.py.
+                 None of them target kernel or another
+                 engine. PaperSessionRecorder has no
+                 alias; the concrete stays in
+                 monitoring. _p99 and _BudgetStatus
+                 travelled with the monitor and were
+                 aliased on latency_budget.py, so
+                 tests/conformance/test_latency_budget.py
+                 needed no retarget and is not in FILES.
+                 Both _LatencyBudgetMonitor construction
+                 sites (__init__ :957 and reset :3045)
+                 construct the core class
+                 (type(...).__module__ ==
+                 feelies.core.latency_budget).
+                 KillSwitch Protocol covers is_active,
+                 activate, and reset, because the
+                 public kill_switch property hands the
+                 instance to harness (is_active) and
+                 to test_kill_switch_consumer (activate
+                 and is_active). AlertManager Protocol
+                 carries emit, active_alerts, and
+                 acknowledge -- the full monitoring
+                 surface -- even though kernel names
+                 only emit, so monitoring/__init__.py
+                 and tests/monitoring stay
+                 alias-covered.
+                 MetricCollector is a retarget to the
+                 existing core Protocol, not a move.
+                 metric_collector.py, telemetry.py, and
+                 monitoring/paper_session_recorder.py
+                 were not edited.
+                 core/latency_budget.py imports KillSwitch
+                 from feelies.core.kill_switch. None of
+                 the four new core modules import
+                 feelies.monitoring or feelies.kernel.
+                 Four new modules, same commit (S-21):
+                 _FILE_OWNERS rows core/kill_switch.py,
+                 core/latency_budget.py,
+                 core/alert_manager.py,
+                 core/paper_session_recorder.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citation.
+                 Four kill-switch related replay hashes
+                 unmoved: EXPECTED_DECOUPLED_RISK_
+                 FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2; EXPECTED_DECOUPLED_SAFETY_
+                 STATE_CHANGE_HASH
+                 a18589d8e966170bedceb2e0156b49d440441eb5999d537605eb2d7c13749a32
+                 COUNT 1; EXPECTED_ALERT_TAXONOMY_HASH
+                 f6b784b275a549e169f7075ca583b9f198966f802216fbf7e8eb835d6f31b557
+                 COUNT 4; _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 fill count 20.
+                 mypy src/feelies: Success, 229 source
+                 files, before the gate. APP oracle 2
+                 passed; hashes and fill count unmoved.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +4,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture artifacts:
+                 modules 225 → 229 MATCH, public_symbols
+                 584 → 585 MATCH, sloc 46848 → 46912
+                 (+64, undeclared), n_edges 669 → 672,
+                 n_modules 182 → 185, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 NOTE: first rung of this campaign to
+                 land on the first attempt with no plan
+                 amendment. The per-name census, the
+                 alias-direction rule, and the private-
+                 callee drag check were all applied
+                 before implementation rather than
+                 discovered at a gate. Per-name census
+                 is T-04a -- a rung sized by package
+                 label left names behind. Alias-direction
+                 is T-06a's first attempt -- one alias
+                 whose target was kernel expanded into
+                 four new twelve-engine pairs. Private-
+                 callee drag is T-05a -- a moved body
+                 takes its private callees, and they
+                 may have test importers
+                 (test_latency_budget.py for _p99 and
+                 _BudgetStatus).
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-07a portfolio helpers and LotLedger;
+                 pin stays 4 (boundary). Not started.
+                 Do not begin T-07a. Go confirmed on
+                 6186321cd985f5b4026d2063ef69d6306cb0814b.
+                 Left uncommitted:
+                 baseline_pre-T-06b.json,
+                 baseline_post-T-06b.json, this ledger
+                 entry.
+
+---
+
+## T-07a  2026-09-12T13:50:00+08:00
+  STEP:          T-07a
+  BASE:          cb81c9f2469dc88d85c35338dfc30b4728b952cb
+  RESULT SHA:    8886c2a3a287fb5c1e1dd8a3da41713153a7b535 (exec/T-07a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 4. Does not drop kernel → portfolio. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An unchanged
+                 count is the declared outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 4-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers BROKEN (4 pairs), Twelve
+                 engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 fail_quiet: 1 passed (keep-rows unmoved).
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; portfolio 52; core 245
+                 mypy src/feelies: Success, 231 source files
+                 (before the gate).
+  TESTS:         capture pre-T-07a GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed.
+                 -> capture post-T-07a GREEN 4899 passed / 0
+                 failed / 29 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-06b GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4898 passed / 0 failed / 16
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-07a vs post-T-07a and vs
+                 baseline_post-T-06b.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Position and fill replay hashes unmoved:
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0 COUNT 6;
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb6801 ACK COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 THE PIN DID NOT MOVE. It is 4 before and 4
+                 after. This step inverts LotLedger and
+                 PositionBookView; T-07b empties the remaining
+                 four names. An unchanged count is the declared
+                 outcome.
+  FILES:         7 declared, 7 touched, 7 committed (clean vs
+                 8886c2a3). Hand FILES: 0 extra CLEAN.
+                 Touched: orchestrator.py,
+                 core/lot_ledger.py (new),
+                 core/position_book_view.py (new),
+                 portfolio/lot_ledger.py,
+                 portfolio/position_book_view.py,
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (pin does not move),
+                 bootstrap.py, harness/,
+                 test_fail_quiet.py,
+                 tests/kernel/test_orchestrator.py,
+                 tests/portfolio/test_lot_ledger.py,
+                 tests/portfolio/test_strategy_position_store.py,
+                 fill_reconciliation.py,
+                 fill_attribution.py,
+                 core/position.py, ci.yml.
+                 No keep-row file is touched.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols 0,
+                 branch points 0.
+                 LotLedger, Lot, PositionBookView are
+                 relocations.
+                 actual modules 229 -> 231 (+2 MATCH)
+                 public_symbols 585 -> 585 (+0 MATCH)
+                 sloc 46912 -> 46944 (+32, undeclared)
+                 n_edges 672 -> 674
+                 n_modules 185 -> 187
+                 (import graph: lot_ledger and
+                 position_book_view entered core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Position and fill replay hashes
+                 unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 7 declared / 7 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4899->4899 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +0. CLEAN. Go confirmed on
+                 branch head
+                 8886c2a3a287fb5c1e1dd8a3da41713153a7b535.
+                 Not merged.
+  NOTES:         One commit on exec/T-07a,
+                 8886c2a3a287fb5c1e1dd8a3da41713153a7b535,
+                 "T-07a: invert LotLedger and PositionBookView
+                 into core; pin stays 4". Parent cb81c9f2
+                 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 THE PIN STAYED AT 4. Kernel still
+                 imports four portfolio names, left
+                 there for T-07b by design:
+                 PositionStore, FillAttributionLedger,
+                 StrategyPositionStore, and the two
+                 fill helpers (_record_fill_attribution,
+                 _reconcile_fills). Dropping the pin
+                 here would have been a failed cut --
+                 the package is not empty.
+                 Remaining pairs, verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. No new pair.
+                 Both aliases run portfolio → core,
+                 the legal downward direction, and
+                 same-object printed True for each:
+                 Lot, LotLedger, _same_sign on
+                 portfolio/lot_ledger.py;
+                 PositionBookView and _ReadableBook
+                 on portfolio/position_book_view.py.
+                 Neither alias targets kernel or
+                 another engine.
+                 Both LotLedger construction sites
+                 (__init__ :902 and reset :3038)
+                 construct the core class
+                 (type(...).__module__ ==
+                 feelies.core.lot_ledger).
+                 Lot and _same_sign travelled with
+                 LotLedger; _ReadableBook travelled
+                 with PositionBookView, so
+                 tests/portfolio/test_lot_ledger.py,
+                 tests/portfolio/test_strategy_position_store.py,
+                 and bootstrap.py needed no edit and
+                 are not in FILES.
+                 core/position_book_view.py takes
+                 Position from feelies.core.position,
+                 never from feelies.portfolio.
+                 core/position.py was not edited.
+                 Two new modules, same commit (S-21):
+                 _FILE_OWNERS rows core/lot_ledger.py
+                 and core/position_book_view.py ->
+                 audit_core_clock_config, and the
+                 README core_clock_config citation.
+                 Five position and fill replay
+                 hashes unmoved:
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0d20d0c4900f3bf192ab20d96738a0d28670ba003afdd6a05
+                 COUNT 6; EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d691162e87d3fddf4866cb2747ffcc7350263ccb88291a6
+                 ACK COUNT 9; EXPECTED_FORCED_EXIT_
+                 ATTRIBUTION_HASH
+                 8a2844e102e94060e5691ae57a2f4fcea1fd57b2a4a9d05726edc7277b339164
+                 COUNT 2; EXPECTED_LEVEL4_PORTFOLIO_
+                 ORDER_HASH
+                 7db2425d84f3313a394a8b7a88ea26f663b6800d435d2fba1dcb4195b2061ad7
+                 COUNT 15; _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 fill count 20.
+                 mypy src/feelies: Success, 231
+                 source files, before the gate. APP
+                 oracle 2 passed. n_cycles held at 1
+                 (feelies.cli → feelies.cli.main).
+                 Declared NET DELTA src modules +2,
+                 public symbols 0, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 229 → 231 MATCH,
+                 public_symbols 585 → 585 MATCH,
+                 sloc 46912 → 46944 (+32,
+                 undeclared), n_edges 672 → 674,
+                 n_modules 185 → 187, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 NOTE: second consecutive rung to
+                 land first-attempt, after T-06b.
+                 The census before the block named
+                 the two invertibles, the alias
+                 directions, and the private-callee
+                 drag (Lot and _same_sign with
+                 LotLedger; _ReadableBook with
+                 PositionBookView). The block kept
+                 the fill helpers out because core
+                 cannot host a body that imports
+                 kernel.fill_bindings -- which is
+                 T-07b's problem, not a deferral.
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-07b portfolio; pin 4 to 3 (boundary).
+                 Not started. Do not begin T-07b.
+                 Go confirmed on
+                 8886c2a3a287fb5c1e1dd8a3da41713153a7b535.
+                 Left uncommitted:
+                 baseline_pre-T-07a.json,
+                 baseline_post-T-07a.json, this ledger
+                 entry.
+
+---
+
+## T-07b  2026-09-12T15:07:32+08:00
+  STEP:          T-07b
+  BASE:          1918dddfb520a27c56f0db834dda35d7f6c81620
+  RESULT SHA:    eff74cf251bc3034adf0a579203498d556e27494 (exec/T-07b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   pin fail-first: test_five_import_tiers
+                 FAILED on unexpected
+                 [('feelies.kernel', 'feelies.portfolio')]
+                 before the cut. After the cut, import
+                 contracts 2 passed (the fill_reconciliation
+                 cycle test was deleted with the module);
+                 test_five_import_tiers equals the 3-pair
+                 pin; S2 KEPT at zero twelve-engine pairs.
+                 lint-imports after the cut: Five import
+                 tiers BROKEN (3 pairs), Twelve engine
+                 module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 117 passed / 5 xfailed (no
+                 XPASS; −1 is the deleted cycle test).
+                 docs 101; kernel 390; portfolio 52;
+                 core 245; mypy src/feelies: Success,
+                 232 source files (231 +2 −1).
+  TESTS:         capture pre-T-07b GREEN 4899 passed / 0
+                 failed / 29 skipped / 5 xfailed.
+                 -> capture post-T-07b GREEN 4898 passed
+                 / 0 failed / 29 skipped / 5 xfailed.
+                 −1 passed is test_fill_reconciliation_
+                 does_not_import_orchestrator, deleted
+                 with the module. No failure in the
+                 accepted set. No failure outside it.
+                 not-paper_rth: 4897 passed / 0 failed /
+                 16 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 integration 39 passed / 7 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-07b vs post-T-07b and vs
+                 baseline_post-T-07a.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Position and fill replay hashes unmoved:
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0 COUNT 6;
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb6801 ACK COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 THE PIN MOVED 4 to 3, as declared.
+  FILES:         12 declared, 12 touched, 12 committed
+                 (clean vs eff74cf2). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/fill_attribution.py (new),
+                 core/strategy_position_store.py (new),
+                 portfolio/fill_attribution.py,
+                 portfolio/fill_reconciliation.py
+                 (deleted),
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_fill_attribution_seam.py,
+                 tests/integration/test_paper_rth_safety.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 docs/prompts/audit_forensics.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py,
+                 harness/, cli/,
+                 memory_position_store.py,
+                 strategy_position_store.py (concrete),
+                 test_fail_quiet.py, ci.yml,
+                 test_internal_links.py (no whitelist).
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +1, public symbols
+                 +2, branch points 0.
+                 AttributionRecord, AlphaContribution,
+                 largest_remainder_split, split_fees,
+                 and the helper cluster are relocations.
+                 PositionStore retarget is not a new
+                 name. fill_reconciliation.py deleted
+                 (−1). Two Protocols are the +2.
+                 actual modules 231 -> 232 (+1 MATCH)
+                 public_symbols 585 -> 587 (+2 MATCH)
+                 sloc 46944 -> 47004 (+60, undeclared)
+                 n_edges 674 -> 674
+                 n_modules 187 -> 188
+                 (import graph: fill_attribution and
+                 strategy_position_store entered core;
+                 fill_reconciliation left)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no
+                 hash pin moved. Position, fill, and
+                 forced-exit replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 12 declared / 12 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4899->4898 passed, failed 0->0
+                 (GREEN both sides; −1 is the deleted
+                 cycle test, now declared in DELETES;
+                 no failure outside the accepted set);
+                 NET DELTA MATCH on modules +1 symbols
+                 +2. CLEAN. Go confirmed on branch head
+                 eff74cf251bc3034adf0a579203498d556e27494.
+                 Not merged.
+  NOTES:         One commit on exec/T-07b,
+                 eff74cf251bc3034adf0a579203498d556e27494,
+                 "T-07b: return fill helpers to kernel
+                 and drop kernel-portfolio pin". Parent
+                 1918dddf on arch/exec (plan: T-07b
+                 declares audit_forensics.md). Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 First deletion of this campaign:
+                 fill_reconciliation.py. Its three
+                 consumers were handled in this commit:
+                 _FILE_OWNERS row pruned; README
+                 forensics coverage row dropped the
+                 path (left portfolio/fill_attribution.py);
+                 audit_forensics.md forensics-core
+                 bullet retargeted to
+                 src/feelies/kernel/orchestrator.py,
+                 wording kept ("fill → slice book,
+                 journal legs, PositionUpdate"). The
+                 fill-attribution lineage bullet stayed
+                 on portfolio/fill_attribution.py. No
+                 whitelist in test_internal_links.py.
+                 A prior attempt (dangling 21a3bc3d,
+                 11 FILES) landed the cut and was
+                 reverted on tests/docs; this commit
+                 is that cut plus the twelfth file.
+                 Remaining pairs before the cut,
+                 verbatim:
+                 ("feelies.kernel", "feelies.portfolio")
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Remaining pairs after the cut,
+                 verbatim:
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. No new pair.
+                 n_cycles 1 before and after
+                 (feelies.cli → feelies.cli.main).
+                 Four remaining names at pre-cut, with
+                 lines: PositionStore
+                 feelies.portfolio.position_store l.162;
+                 FillAttributionLedger TYPE_CHECKING
+                 feelies.portfolio.fill_attribution l.26;
+                 StrategyPositionStore TYPE_CHECKING
+                 feelies.portfolio.strategy_position_store
+                 l.30; _record_fill_attribution /
+                 _reconcile_fills
+                 feelies.portfolio.fill_reconciliation l.228.
+                 Helper importers (exactly three, all in
+                 FILES): tests/kernel/test_orchestrator.py
+                 (_reconcile_fills,
+                 _distribute_fill_to_strategies);
+                 tests/kernel/test_fill_attribution_seam.py
+                 (_reconcile_fills);
+                 tests/integration/test_paper_rth_safety.py
+                 (_reconcile_fills). No fourth importer.
+                 Private callees had no other importers.
+                 Helpers returned to
+                 kernel.orchestrator with the five
+                 private callees (_regime_label_for the
+                 local copy, _order_owns_one_slice,
+                 _TradeJournalLeg, _trade_journal_legs,
+                 _distribute_fill_to_strategies). They
+                 import TradeRecord via
+                 kernel.fill_bindings and
+                 forced_exit_reasons from kernel. No
+                 alias on fill_reconciliation.py.
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 was deleted with the module (4899 →
+                 4898). That deletion was not in
+                 REFACTOR PATH or DELETES at landing;
+                 DELETES is amended on this tree after
+                 go, uncommitted, to declare it. The
+                 test cannot survive: subject file
+                 gone, retarget onto orchestrator is a
+                 different claim, alias on the deleted
+                 module is forbidden.
+                 Four attribution names relocated to
+                 core/fill_attribution.py; alias
+                 direction portfolio → core (legal
+                 downward). Concrete
+                 FillAttributionLedger stayed in
+                 portfolio; no alias on the concrete;
+                 no subclassing.
+                 Two new Protocols:
+                 FillAttributionLedger (record,
+                 allocate_fill; reset stays getattr)
+                 in core/fill_attribution.py;
+                 StrategyPositionStore (get, update,
+                 debit_fees, update_mark, strategy_ids)
+                 in core/strategy_position_store.py.
+                 Neither type is handed out through a
+                 public property; position_store
+                 returns PositionBookView. Two
+                 TYPE_CHECKING imports retargeted, not
+                 deleted. PositionStore retargeted to
+                 feelies.core.position; core/position.py
+                 unedited. core/fill_attribution.py
+                 imports neither portfolio nor kernel.
+                 New core modules: _FILE_OWNERS and
+                 README in this commit, owner
+                 audit_core_clock_config.
+                 S12 2 / S14 2 / S17 3 passed at
+                 pre-flight and after.
+  FINDINGS:      Deleting a module can delete a test.
+                 test_fill_reconciliation_does_not_import_orchestrator
+                 guarded portfolio → kernel.orchestrator
+                 -- a direction BOTH remaining contracts
+                 permit. Five import tiers lists
+                 portfolio above kernel, so the reverse
+                 edge is legal. S2 is engine-to-engine
+                 only; kernel is not in that set. The
+                 T-06a revert was caused by exactly that
+                 direction appearing on an engine file
+                 (an alias whose target was kernel;
+                 S2 expanded it through orchestrator
+                 into other engines). Nothing now
+                 detects a kernel import anywhere in
+                 portfolio: no AST walk remains, five
+                 tiers allow it, and S2 does not list
+                 kernel. What would: a contract change
+                 (forbid engines → kernel, which would
+                 fail today's risk and execution
+                 imports), a new conformance test
+                 walking remaining engine packages for
+                 kernel.orchestrator or any kernel
+                 import, or an accepted gap.
+                 Remaining rungs are exposed to the
+                 same shape. Kernel still imports
+                 risk, execution, and storage (the
+                 3-pair pin). Reverse kernel-path
+                 imports already exist on the first
+                 two: risk.forced_exit_clamp →
+                 kernel.forced_exit_reasons and
+                 kernel.order_states; risk.engine →
+                 kernel.macro; execution.order_policy →
+                 kernel.macro and kernel.micro. Those
+                 do not currently pull other engines,
+                 which is why they do not break S2.
+                 storage has no kernel import today;
+                 T-09a (TradeRecord / fill_bindings)
+                 is the rung that can add one. T-08a
+                 and T-08b delete or invert modules
+                 kernel still imports; a cycle test on
+                 those files would face the same
+                 undeclared deletion T-07b just did.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+                 A deleted module has three consumers,
+                 not one: its _FILE_OWNERS row, the
+                 README coverage row, and any
+                 docs/prompts bullet citing the path.
+                 First deletion of this campaign.
+  NEXT:          T-08a risk; pin 3 to 2 (boundary).
+                 Not started. Do not begin T-08a.
+                 Left uncommitted:
+                 baseline_pre-T-07b.json,
+                 baseline_post-T-07b.json, this ledger
+                 entry, and the plan DELETES amendment
+                 in phase8_tiers.md.
+
+---
+
+## T-07c  2026-09-12T16:22:27+08:00
+  STEP:          T-07c
+  BASE:          1b92a5f5c046670643daf4bbb014844c69c6c346
+  RESULT SHA:    253d6f19637141c2b689707ddc68a76660631432 (exec/T-07c; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no five-tier cut. CLOSES nothing. Pin stays
+                 3. Does not drop kernel → risk. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. An
+                 unchanged count is the declared outcome.
+                 import contracts 2 passed before, 3 after
+                 (test_engine_kernel_imports_equal_pin).
+                 test_five_import_tiers equals the unmoved
+                 3-pair pin. S2 KEPT at zero twelve-engine
+                 pairs before and after. lint-imports:
+                 Five import tiers BROKEN (3 pairs),
+                 Twelve engine module sets KEPT.
+                 New pin: test_engine_kernel_imports_equal_pin
+                 equals the measured 14-pair set.
+                 Probe (uncommitted): added
+                 `from feelies.kernel.macro import MacroState`
+                 to portfolio/fill_attribution.py;
+                 test_engine_kernel_imports_equal_pin FAILED
+                 AssertionError: unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Removed the import. Restore SHA256
+                 bf42a674f9a46911885dbc97d6a3f5ef840358d5ca34a712508f999a7df9ad2a
+                 BYTE_IDENTICAL (4925 bytes, same as
+                 pre-probe). Porcelain after restore: only
+                 the capture artifact. Re-run 3 passed.
+                 Without the probe the pin would pass by
+                 construction and protect nothing.
+                 S12/S14/S17 not retargeted (test-only;
+                 conformance 118 passed / 5 xfailed, no
+                 XPASS; +1 vs T-07b's 117 is the new pin).
+                 docs 101; mypy src/feelies: Success, 232
+                 source files (before the gate).
+  TESTS:         capture pre-T-07c GREEN 4898 passed / 0
+                 failed / 29 skipped / 5 xfailed.
+                 -> capture post-T-07c GREEN 4899 passed
+                 / 0 failed / 29 skipped / 5 xfailed.
+                 +1 passed is test_engine_kernel_imports_
+                 equal_pin. No failure in the accepted set.
+                 No failure outside it.
+                 not-paper_rth: 4898 passed / 0 failed /
+                 16 skipped / 14 deselected / 5 xfailed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-07c vs post-T-07c and vs
+                 baseline_post-T-07b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. It is 3 before and
+                 3 after. The fourteen-pair set is a new
+                 equality pin, not a dropped five-tier
+                 pair.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 253d6f19). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_import_contracts.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py,
+                 harness/, cli/, orchestrator.py,
+                 fill_attribution.py (portfolio or core),
+                 forced_exit_clamp.py, order_policy.py,
+                 test_fail_quiet.py, ci.yml.
+                 Probe mutated portfolio/fill_attribution.py
+                 and restored it; that file is not in the
+                 commit. No keep-row file is touched.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 232 -> 232 (+0 MATCH)
+                 public_symbols 587 -> 587 (+0 MATCH)
+                 sloc 47004 -> 47004 (+0 MATCH)
+                 n_edges 674 -> 674
+                 n_modules 188 -> 188
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4898->4899 passed, failed 0->0
+                 (GREEN both sides; +1 is the new pin
+                 test; no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 253d6f19637141c2b689707ddc68a76660631432.
+                 Not merged.
+  NOTES:         Single commit on exec/T-07c,
+                 253d6f19637141c2b689707ddc68a76660631432,
+                 "T-07c: pin the measured engine-to-kernel
+                 import set". Parent 1b92a5f5 on
+                 arch/exec. One file:
+                 tests/conformance/test_import_contracts.py
+                 (+72). Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 The walk of engine packages (exclude
+                 kernel, bus, core, cli, bootstrap) found
+                 fourteen ImportFrom pairs and matched
+                 the block's fourteen exactly: no extras,
+                 no missing. The pin is that measured
+                 set, not a guess.
+                 Probe: a throwaway
+                 `from feelies.kernel.macro import MacroState`
+                 on portfolio/fill_attribution.py made
+                 test_engine_kernel_imports_equal_pin
+                 fail with AssertionError: unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 The import was removed. Restore SHA256
+                 bf42a674f9a46911885dbc97d6a3f5ef840358d5ca34a712508f999a7df9ad2a
+                 BYTE_IDENTICAL (4925 bytes). Porcelain
+                 after restore showed only the capture
+                 artifact. Re-run of
+                 test_import_contracts.py: 3 passed.
+                 The five-tier pin stayed at 3. The new
+                 pin sits at 14. S2 KEPT at zero
+                 twelve-engine pairs. mypy src/feelies:
+                 Success, 232 source files. tests/docs:
+                 101 passed. import-contracts 2 -> 3.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main). NET DELTA all zeros
+                 (modules 232, public_symbols 587, sloc
+                 47004, n_edges 674, n_modules 188).
+                 What the new pin catches that neither
+                 existing contract does: an engine
+                 package importing kernel.macro,
+                 kernel.micro, kernel.forced_exit_reasons,
+                 kernel.order_states,
+                 kernel.exception_taxonomy, or
+                 kernel.fill_bindings -- on any engine
+                 package. Five import tiers permits that
+                 direction (engines sit above kernel).
+                 S2 only sees it when the imported kernel
+                 module itself imports other engines.
+                 The probe is what makes the pin
+                 non-decorative. A set asserted equal to
+                 the set it was measured from passes by
+                 construction.
+                 Remaining rungs: T-08a may shrink the
+                 pin if forced_exit_clamp.py is deleted,
+                 and any shrink lands in that same
+                 commit, in lockstep, exactly as
+                 _TIER_RESIDUALS does.
+  FINDINGS:      Walk matched the block's fourteen. No
+                 difference to report as a correction.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08a risk; pin 3 to 2 (boundary).
+                 Not started. Do not begin T-08a.
+                 Left uncommitted:
+                 baseline_pre-T-07c.json,
+                 baseline_post-T-07c.json, this ledger
+                 entry.
+
+---
+
+## T-08a  2026-09-12T18:26:29+08:00
+  STEP:          T-08a
+  BASE:          c2e6e4c727d388b85faca00015e985f5696d434a
+  RESULT SHA:    0a64690476471597f31b8752655887aadf4a9c41 (exec/T-08a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 3. Does not drop kernel → risk. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. T-07c pin
+                 stays 14. An unchanged count is the declared
+                 outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 3-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 14-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (3 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; risk 336
+                 mypy src/feelies: Success, 235 source files
+                 (232 +3; before the gate).
+  TESTS:         capture pre-T-08a GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed.
+                 -> capture post-T-08a GREEN 4899 passed / 0
+                 failed / 29 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-07c GREEN 4899 passed / 0 failed /
+                 29 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4898 passed / 0 failed / 16
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-08a vs post-T-08a and vs
+                 baseline_post-T-07c.json; 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Risk-related replay hashes unmoved:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45e COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 EXPECTED_LEVEL5_HAZARD_HASH
+                 8092e88586a006ff7a COUNT 3;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 BOTH PINS STAYED. Five-tier is 3 before
+                 and 3 after. Engine-to-kernel is 14
+                 before and 14 after. This step inverts
+                 the six names that can leave without
+                 emptying; T-08b empties the remaining
+                 seventeen. An unchanged count is the
+                 declared outcome.
+  FILES:         9 declared, 9 touched, 9 committed
+                 (clean vs 0a646904). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/risk_protocol.py (new),
+                 core/position_sizer.py (new),
+                 core/escalation.py (new),
+                 risk/engine.py (Protocol alias),
+                 risk/position_sizer.py (alias),
+                 risk/escalation.py (alias),
+                 test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (neither pin
+                 moves), bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py, forced_exit_clamp.py,
+                 order_policy.py, edge_weighted_sizer.py,
+                 buying_power.py, hazard_exit.py (concrete),
+                 tests/kernel/test_orchestrator.py,
+                 tests/risk/test_escalation.py,
+                 tests/determinism/test_state_transition_replay.py,
+                 core/position.py, ci.yml,
+                 sized_intent_result.py.
+                 No keep-row file is touched.
+                 No alias whose target is kernel or
+                 another engine.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +3, public symbols
+                 +1, branch points 0.
+                 HazardExitController Protocol is new.
+                 RiskEngine, PositionSizer,
+                 BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine are
+                 relocations. Aliases are ImportFrom;
+                 measure.py does not count them.
+                 actual modules 232 -> 235 (+3 MATCH)
+                 public_symbols 587 -> 588 (+1 MATCH)
+                 sloc 47004 -> 47054 (+50, undeclared)
+                 n_edges 674 -> 678
+                 n_modules 188 -> 191
+                 (import graph: risk_protocol,
+                 position_sizer, and escalation entered
+                 core)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Risk, hazard, forced-exit, and
+                 state-transition replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 9 declared / 9 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4899->4899 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +3
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 0a64690476471597f31b8752655887aadf4a9c41.
+                 Not merged.
+  NOTES:         Single commit on exec/T-08a,
+                 0a64690476471597f31b8752655887aadf4a9c41,
+                 "T-08a: invert risk protocols, BudgetBasedSizer,
+                 and RiskLevel into core; pin stays 3".
+                 Parent c2e6e4c7 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 BOTH PINS STAYED. Five-tier stayed at
+                 3 because this rung does not empty
+                 the risk package: kernel still
+                 imports seventeen names that T-08b
+                 owns, so the kernel→risk pair is
+                 still there by design:
+                 _compute_target_quantity,
+                 _emergency_flatten_all, _escalate_risk,
+                 _maybe_flip_buying_power_at_rth_close,
+                 HAZARD_EXIT_REASONS,
+                 HAZARD_EXIT_SOURCE_LAYER,
+                 _emit_forced_exit_resized_alert,
+                 _emit_forced_exit_stood_down_alert,
+                 _emit_forced_exit_supersedes_pending_alert,
+                 _force_flatten_symbol_on_degrade,
+                 _forced_exit_closable_quantity,
+                 _forced_exit_reduces,
+                 _has_pending_forced_exit_for_symbol,
+                 EdgeWeightedSizer, SizeDivergence,
+                 _record_size_shadow, BuyingPowerPhase.
+                 Engine-to-kernel stayed at 14 because
+                 this step did not touch
+                 forced_exit_clamp.py or the
+                 helpers that import kernel.macro;
+                 deleting or moving those is T-08b.
+                 Remaining five-tier pairs,
+                 verbatim:
+                 ("feelies.kernel", "feelies.risk")
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 S2 KEPT at zero twelve-engine pairs
+                 after the cut. No new pair.
+                 All three aliases run risk → core,
+                 the legal downward direction, and
+                 none targets kernel:
+                 risk.engine → core.risk_protocol
+                 (RiskEngine);
+                 risk.position_sizer →
+                 core.position_sizer (PositionSizer,
+                 BudgetBasedSizer);
+                 risk.escalation → core.escalation
+                 (RiskLevel,
+                 create_risk_escalation_machine).
+                 No alias on the HazardExitController
+                 concrete.
+                 Both BudgetBasedSizer construction
+                 sites build the core class
+                 (type(...).__module__ ==
+                 feelies.core.position_sizer): kernel
+                 default :1348 and bootstrap :479
+                 (alias; bootstrap not in FILES).
+                 The escalation factory at kernel
+                 :1505 builds the core factory
+                 (__module__ ==
+                 feelies.core.escalation). reset
+                 calls StateMachine.reset on that
+                 instance rather than constructing
+                 a second machine; tests construct
+                 via the alias, which is the same
+                 function object.
+                 position_sizer stayed optional
+                 (PositionSizer | None = None)
+                 because making it required is the
+                 T-04b blast -- fifty-odd constructor
+                 sites across nineteen files -- and
+                 the default is already unused on
+                 the bootstrap path, which
+                 constructs and passes a sizer.
+                 RiskLevel identity check printed
+                 True: feelies.risk.escalation.RiskLevel
+                 is feelies.core.escalation.RiskLevel.
+                 That is what the public risk_level
+                 property needed. Per T-03, tests
+                 that compare orch.risk_level
+                 against NORMAL / LOCKED /
+                 FORCED_FLATTEN import the enum from
+                 risk.escalation; they see the same
+                 object through the alias, so
+                 tests/kernel/test_orchestrator.py
+                 and test_orchestrator_bus_signal.py
+                 did not need an edit.
+                 TYPE_CHECKING HazardExitController
+                 was retargeted to
+                 core.risk_protocol, not deleted.
+                 No core module imports feelies.risk
+                 or feelies.kernel. A grep of
+                 src/feelies/core found none.
+                 Three new modules, same commit
+                 (S-21): _FILE_OWNERS rows
+                 core/risk_protocol.py,
+                 core/position_sizer.py, and
+                 core/escalation.py all map to
+                 audit_core_clock_config, and the
+                 README core_clock_config row cites
+                 all three.
+                 Seven risk-related replay hashes
+                 unmoved against
+                 baseline_post-T-07c.json:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45eb8f3c3d041e74831390d29214e0f39d6881ae21e0cae7b
+                 COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5691ae57a2f4fcea1fd57b2a4a9d05726edc7277b339164
+                 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c65f21cfcb39687f1c25206bd2bbf57ab87dd80b7ee065b3
+                 COUNT 3;
+                 EXPECTED_LEVEL5_HAZARD_HASH
+                 8092e88586a006ff7a46ee02dfc8f26c31d62d4cb2db7d1493bb8e8e81e3bf2e
+                 COUNT 3;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855ef3ef1f24e7392bb242f88814c86f09be7ed976d186ba7
+                 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 fill count 20.
+                 mypy src/feelies: Success, 235
+                 source files, before the gate.
+                 tests/docs: 101 passed, before the
+                 gate. APP oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +3,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 232 → 235 MATCH,
+                 public_symbols 587 → 588 MATCH,
+                 sloc 47004 → 47054 (+50,
+                 undeclared), n_edges 674 → 678,
+                 n_modules 188 → 191, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+                 NOTE: HazardExitController's
+                 Protocol is new. The concrete in
+                 hazard_exit.py had no Protocol
+                 before; this step wrote one in
+                 core/risk_protocol.py (reset only)
+                 and retargeted the kernel
+                 TYPE_CHECKING import. RiskEngine and
+                 PositionSizer were already Protocols
+                 in their engine modules and only
+                 needed retargeting -- they were
+                 re-homed, not invented. Of the
+                 three, the campaign moved
+                 HazardExitController (new public
+                 symbol, the +1) and merely re-homed
+                 RiskEngine and PositionSizer
+                 (relocations, +0). That is the
+                 distinction NET DELTA counts.
+                 BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine are
+                 also relocations.
+  FINDINGS:      Plan PROBLEM said the factory is
+                 default-constructed in kernel (l.1505)
+                 and in reset. reset calls
+                 StateMachine.reset on the existing
+                 machine; it does not reconstruct.
+                 Not a failed cut. Not fixed.
+                 check_sized_intent's return type is
+                 SizedIntentRiskResult in
+                 risk.sized_intent_result, which is
+                 not in FILES and cannot be imported
+                 from core. core/risk_protocol.py
+                 describes the two fields kernel
+                 reads with a private
+                 _SizedIntentRiskResult Protocol
+                 (read-only properties, same shape as
+                 _RegimeStateCache). Not a public
+                 symbol. sized_intent_result.py not
+                 edited.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08b risk; pin 3 to 2, T-07c pin 14
+                 to 11 (boundary).
+                 Not started. Do not begin T-08b.
+                 Go confirmed on
+                 0a64690476471597f31b8752655887aadf4a9c41.
+                 Left uncommitted:
+                 baseline_pre-T-08a.json,
+                 baseline_post-T-08a.json, this ledger
+                 entry.
+
+---
+
+## T-08b  2026-09-12T19:35:00+08:00
+  STEP:          T-08b
+  BASE:          2613e6190a414e406c702be80bc9597406f044bd
+  RESULT SHA:    048763dd7f2e3ecc67780d1653977b7cb4730af2 (exec/T-08b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel → risk. Five import tiers stays BROKEN.
+                 3 → 2. G40 stays CLOSED. T-07c pin 14 → 11.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the 2-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 11-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (2 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; risk 336
+                 mypy src/feelies: Success, 237 source files
+                 (235 +3 −1; before the gate).
+  TESTS:         capture pre-T-08b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-08b GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-08a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 integration 39 passed / 7 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-08b vs
+                 post-T-08b and vs baseline_post-T-08a.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Risk, forced-exit, flatten, and hazard replay
+                 hashes unmoved:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45e COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 EXPECTED_LEVEL5_HAZARD_HASH
+                 8092e88586a006ff7a COUNT 3;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 BOTH PINS MOVED AS DECLARED. Five-tier 3 to
+                 2. Engine-to-kernel 14 to 11.
+  FILES:         14 declared, 14 touched, 14 committed
+                 (clean vs 048763dd). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/hazard_exit.py (new),
+                 core/buying_power.py (new),
+                 core/edge_weighted_sizer.py (new),
+                 risk/engine.py (helpers stripped; RiskEngine
+                 alias remains),
+                 risk/forced_exit_clamp.py (deleted),
+                 risk/hazard_exit.py (alias),
+                 risk/buying_power.py (alias),
+                 risk/edge_weighted_sizer.py (SizeDivergence
+                 alias; no alias on the concrete sizer),
+                 tests/kernel/test_orchestrator.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 docs/prompts/audit_risk_engine.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py, harness/,
+                 cli/, order_policy.py, order_lifecycle.py,
+                 test_fail_quiet.py, ci.yml,
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (alias covers HAZARD_EXIT_*; REASONS kept
+                 as a core import so the identity assertion
+                 holds),
+                 test_internal_links.py (no whitelist).
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols +1,
+                 branch points 0.
+                 EdgeWeightedSizer Protocol is new.
+                 SizeDivergence, BuyingPowerPhase,
+                 HAZARD_EXIT_*, and the helper cluster are
+                 relocations. forced_exit_clamp.py deleted
+                 (−1). Aliases are ImportFrom; measure.py
+                 does not count them.
+                 actual modules 235 -> 237 (+2 MATCH)
+                 public_symbols 588 -> 589 (+1 MATCH)
+                 sloc 47054 -> 47033 (−21, undeclared)
+                 n_edges 678 -> 672
+                 n_modules 191 -> 192
+                 (import graph: hazard_exit, buying_power,
+                 and edge_weighted_sizer entered core;
+                 forced_exit_clamp left)
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Risk, hazard, forced-exit,
+                 flatten, and state-transition replay hashes
+                 unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 14 declared / 14 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +2
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 048763dd7f2e3ecc67780d1653977b7cb4730af2.
+                 Not merged.
+  NOTES:         One commit on exec/T-08b,
+                 048763dd7f2e3ecc67780d1653977b7cb4730af2,
+                 "T-08b: return remaining risk helpers to kernel
+                 and drop kernel-risk pin". Parent 2613e619
+                 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Both pins dropped in that same commit as
+                 the code, not in a follow-up. Five-tier
+                 3 to 2; remaining:
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Engine-to-kernel 14 to 11. The three
+                 pairs that left:
+                 ("feelies.risk.engine",
+                  "feelies.kernel.macro")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.forced_exit_reasons")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.order_states")
+                 The eleven that remain equal the pin.
+                 S2 KEPT at zero twelve-engine pairs.
+                 No new pair.
+                 All seventeen names left the kernel
+                 import of risk. orchestrator.py has no
+                 `from feelies.risk`. HAZARD_EXIT_* now
+                 come from core; BuyingPowerPhase is a
+                 lazy core import; EdgeWeightedSizer and
+                 SizeDivergence come from
+                 core.edge_weighted_sizer; the helper
+                 cluster lives in orchestrator.
+                 The returned helpers and the two private
+                 callees (_closable_quantity,
+                 _is_forced_market_exit) sit as
+                 module-level functions in
+                 kernel/orchestrator.py immediately above
+                 class Orchestrator. No test imported
+                 those two callees.
+                 risk.engine._submit_tracked_order was
+                 not returned. It is a divergent second
+                 copy of the order_lifecycle function;
+                 two submit bodies in kernel would have
+                 forced a choice. The returned flatten
+                 calls the order_lifecycle
+                 _submit_tracked_order kernel already
+                 imports (orchestrator.py:110). That is
+                 equivalent on OrderState, so it is a
+                 callee swap, not a body merge, and not
+                 a re-pin. After the strip, risk.engine
+                 exports only the RiskEngine alias.
+                 forced_exit_clamp.py is gone. Its three
+                 consumers were handled in this commit:
+                 the _FILE_OWNERS row is pruned; the
+                 README risk_engine row now cites
+                 `risk/risk_wrapper.py`,
+                 `kernel/orchestrator.py`; the
+                 audit_risk_engine.md bullet is
+                 `src/feelies/kernel/orchestrator.py` —
+                 forced-exit clamp (monotone veto). No
+                 alias on the deleted file. No whitelist
+                 in test_internal_links.py.
+                 Four aliases, all risk → core, none
+                 targeting kernel, same-object True on
+                 each: HAZARD_EXIT_SOURCE_LAYER and
+                 HAZARD_EXIT_REASONS on
+                 risk.hazard_exit; BuyingPowerPhase on
+                 risk.buying_power; SizeDivergence on
+                 risk.edge_weighted_sizer. No alias on
+                 the EdgeWeightedSizer concrete.
+                 Both BuyingPowerPhase lazy sites reach
+                 the core enum:
+                 _reset_buying_power_phase_for_session
+                 and the two imports inside the returned
+                 _maybe_flip_buying_power_at_rth_close.
+                 risk.engine dropped kernel.macro. That
+                 import existed only for MacroState in
+                 _escalate_risk, which returned with the
+                 helper. A grep of src/feelies/core
+                 found no import of feelies.risk or
+                 feelies.kernel.
+                 Three new modules in this commit
+                 (S-21): core/hazard_exit.py,
+                 core/buying_power.py, and
+                 core/edge_weighted_sizer.py. Each has
+                 an _FILE_OWNERS row mapping to
+                 audit_core_clock_config, and the
+                 README core_clock_config row cites all
+                 three.
+                 Four risk and forced-exit hashes
+                 unmoved against
+                 baseline_post-T-08a.json:
+                 EXPECTED_RISK_VERDICT_HASH
+                 b388a2c57da691c45eb8f3c3d041e74831390d29214e0f39d6881ae21e0cae7b
+                 COUNT 4;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5691ae57a2f4fcea1fd57b2a4a9d05726edc7277b339164
+                 COUNT 2;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c65f21cfcb39687f1c25206bd2bbf57ab87dd80b7ee065b3
+                 COUNT 3.
+                 mypy src/feelies: Success, 237 source
+                 files, before the gate. tests/docs:
+                 101 passed, before the gate. APP
+                 oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +2,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 235 → 237 MATCH,
+                 public_symbols 588 → 589 MATCH,
+                 sloc 47054 → 47033 (−21,
+                 undeclared), n_edges 678 → 672,
+                 n_modules 191 → 192, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      The block said drop HAZARD_EXIT_REASONS
+                 as unused in orchestrator (# noqa:
+                 F401). tests/kernel/
+                 test_orchestrator_hazard_exit_routing.py
+                 -- not in FILES -- asserts
+                 `_orchestrator_mod.HAZARD_EXIT_REASONS
+                 is HAZARD_EXIT_REASONS`. Retargeting
+                 the import to core keeps that identity
+                 holding (risk.hazard_exit aliases the
+                 same object) and still drops the pin.
+                 Dropping the name would have broken a
+                 file the step could not touch. An
+                 unused name can still be a test's
+                 anchor. The census should check
+                 module-global identity assertions, not
+                 just call sites. Not a failed cut.
+                 The test file was not edited.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08c execution invert; pins stay 2
+                 and 11 (boundary).
+                 Not started. Do not begin T-08c.
+                 Go confirmed on
+                 048763dd7f2e3ecc67780d1653977b7cb4730af2.
+                 Left uncommitted:
+                 baseline_pre-T-08b.json,
+                 baseline_post-T-08b.json, this ledger
+                 entry.
+
+---
+
+## T-08c  2026-09-13T16:32:00+08:00
+  STEP:          T-08c
+  BASE:          f4772ffb64d26d6646223b38069cb33f394213f1
+  RESULT SHA:    3ebdd010d467c39978424f9a458552186d8cd8a0 (exec/T-08c; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 2. Does not drop kernel → execution. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. T-07c pin
+                 stays 11. An unchanged count is the declared
+                 outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 2-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 11-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (2 pairs), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; execution 865
+                 mypy src/feelies: Success, 247 source files
+                 (237 +10; before the gate).
+                 CLOSURE OK: no core module ImportFrom of
+                 feelies.execution.
+  TESTS:         capture pre-T-08c GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-08c GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-08b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-08c vs
+                 post-T-08c and vs baseline_post-T-08b.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Order, flatten, and min-cost replay hashes
+                 unmoved:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH unmoved.
+                 BOTH PINS STAYED. Five-tier stays 2:
+                 ("feelies.kernel", "feelies.execution")
+                 ("feelies.kernel", "feelies.storage")
+                 Engine-to-kernel stays 11. The eleven
+                 T-08d helper names remain on the kernel
+                 import. Pin 2 stayed because the invert
+                 left those helpers; pin 11 stayed
+                 because order_policy still imports
+                 kernel.macro and kernel.micro.
+  FILES:         23 declared, 23 touched, 23 committed
+                 (clean vs 3ebdd010). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 core/execution_backend.py (new),
+                 core/intent.py (new),
+                 core/position_manager.py (new),
+                 core/cost_model.py (new),
+                 core/min_cost_policy.py (new),
+                 core/order_state.py (new),
+                 core/portfolio_netter.py (new),
+                 core/trading_session.py (new),
+                 core/borrow_availability.py (new),
+                 core/order_admission.py (new),
+                 execution/intent.py (alias),
+                 execution/position_manager.py (alias),
+                 execution/cost_model.py (alias),
+                 execution/min_cost_policy.py (alias),
+                 execution/order_state.py (alias),
+                 execution/portfolio_netter.py (alias),
+                 execution/trading_session.py (alias),
+                 execution/moc_session.py (retarget),
+                 execution/regulatory/borrow_availability.py (alias),
+                 execution/order_admission.py (alias),
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_import_contracts.py (neither pin
+                 moves), bootstrap.py, harness/, cli/,
+                 execution/backend.py (no alias on the
+                 concrete), order_policy.py,
+                 order_lifecycle.py, backtest_backend.py,
+                 tests/execution/test_order_state.py,
+                 tests/determinism/test_state_transition_replay.py
+                 (alias covers), tests/kernel/, ci.yml,
+                 test_fail_quiet.py.
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +10, public symbols +1,
+                 branch points 0.
+                 ExecutionBackend Protocol is new.
+                 IntentTranslator, PositionManager,
+                 CostModel, SignalPositionTranslator,
+                 the constructed types, enums, and
+                 functions are relocations. Nested
+                 market_data / order_router Protocols
+                 are private. Aliases are ImportFrom;
+                 measure.py does not count them.
+                 actual modules 237 -> 247 (+10 MATCH)
+                 public_symbols 589 -> 590 (+1 MATCH)
+                 sloc 47033 -> 47217 (+184, undeclared)
+                 n_edges 672 -> 691
+                 n_modules 192 -> 201
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Order, flatten, and min-cost
+                 replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 23 declared / 23 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +10
+                 symbols +1. CLEAN. Go confirmed on
+                 branch head
+                 3ebdd010d467c39978424f9a458552186d8cd8a0.
+                 Not merged.
+  NOTES:         One commit on exec/T-08c,
+                 3ebdd010d467c39978424f9a458552186d8cd8a0,
+                 "T-08c: invert execution types into core; pins stay 2 and 11".
+                 Parent f4772ffb on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 23 files, ten of them new core
+                 modules: execution_backend, intent,
+                 position_manager, cost_model,
+                 min_cost_policy, order_state,
+                 portfolio_netter, trading_session,
+                 borrow_availability, order_admission.
+                 The AST walk over src/feelies/core
+                 printed CLOSURE OK. That is the
+                 proof that no core module ImportFrom
+                 starts with feelies.execution, so
+                 the Protocol closures actually
+                 landed in core rather than leaking
+                 the edge the invert exists to cut.
+                 Both pins stayed. Five-tier is still
+                 2: kernel → execution and kernel →
+                 storage. Engine-to-kernel stays 11.
+                 They stayed because this invert left
+                 the eleven helper names on the
+                 kernel's execution import for T-08d:
+                 _emit_ssr_suppression_alert; the six
+                 order_lifecycle names
+                 (_apply_ack_to_order,
+                 _drain_async_fills,
+                 _filter_portfolio_orders_for_pending_conflicts,
+                 _poll_order_router_acks,
+                 _submit_tracked_order,
+                 _transition_order); the four
+                 order_policy names
+                 (_execute_reverse,
+                 _filter_portfolio_orders_for_admission,
+                 _plan_for_signal,
+                 _try_build_order_from_intent).
+                 order_policy still imports
+                 kernel.macro and kernel.micro, which
+                 is why pin 11 did not move.
+                 S2 KEPT at zero twelve-engine pairs.
+                 No new pair.
+                 Nine aliases, all execution → core,
+                 same-object True on each: intent,
+                 position_manager, cost_model,
+                 min_cost_policy, order_state,
+                 portfolio_netter, trading_session,
+                 regulatory.borrow_availability,
+                 order_admission. moc_session.py is
+                 a retarget, not an alias: it
+                 imports et_clock_to_ns and
+                 session_date_from_ns from
+                 core.trading_session so
+                 MocSessionBounds can keep using them.
+                 execution/backend.py is deliberately
+                 unaliased. An alias there would
+                 shadow the concrete class bootstrap
+                 still constructs; kernel types the
+                 ctor against the core Protocol and
+                 the constructible class stays in
+                 execution. Concrete is Proto is
+                 False.
+                 Every default-constructed name
+                 builds the core class at every site:
+                 SignalPositionTranslator() at
+                 orchestrator 1849 and bootstrap 521
+                 (bootstrap via the alias);
+                 DesiredTargetBook() at ctor 1865
+                 and reset 4100;
+                 PortfolioNetter(...) at ctor 1867,
+                 boot 2284, reset 4101;
+                 MarketContext() at ctor 1886, boot
+                 2271, reset 4105;
+                 MinimumCostExecutionPolicy and
+                 MinCostPolicyConfig at boot 2310
+                 when execution_mode ==
+                 "minimum_cost";
+                 create_order_state_machine at
+                 orchestrator 4157, tests via alias.
+                 intent_translator stays optional
+                 (IntentTranslator | None = None).
+                 The TYPE_CHECKING CostModel import
+                 was retargeted to
+                 feelies.core.cost_model, not
+                 deleted. A deleted TYPE_CHECKING
+                 import would have been the fifth
+                 non-cut and would have left
+                 execution.cost_model on the kernel
+                 import, blocking T-08d.
+                 Ten new modules in this commit
+                 (S-21): each has an _FILE_OWNERS row
+                 mapping to audit_core_clock_config,
+                 and the README core_clock_config
+                 row cites all ten.
+                 Four order and flatten hashes
+                 unmoved against
+                 baseline_post-T-08b.json:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d691162e87d3fddf4866cb2747ffcc7350263ccb88291a6
+                 COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db561a3cf9da3a987f767c981d1aa8943bd9f550d3b8cc8f8
+                 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855ef3ef1f24e7392bb242f88814c86f09be7ed976d186ba7
+                 COUNT 40;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 COUNT 20 fills.
+                 mypy src/feelies: Success, 247 source
+                 files, before the gate. tests/docs:
+                 101 passed, before the gate. APP
+                 oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli →
+                 feelies.cli.main).
+                 Declared NET DELTA src modules +10,
+                 public symbols +1, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 237 → 247 MATCH,
+                 public_symbols 589 → 590 MATCH,
+                 sloc 47033 → 47217 (+184,
+                 undeclared), n_edges 672 → 691,
+                 n_modules 192 → 201, cycles 1 → 1
+                 MATCH, alphaleak 0 → 0.
+  FINDINGS:      Protocol closure is transitive. A
+                 Protocol move drags every type its
+                 signatures name, and every type
+                 those name in turn. PositionManager
+                 dragged PositionManagerConfig,
+                 PositionPlan, PlannedOrder,
+                 SuppressedLeg, DesiredPosition and
+                 MarketContext -- and MarketContext
+                 names CostModel, which dragged
+                 CostBreakdown, FillType,
+                 estimate_aggressive_taker_cost_bps
+                 and _within_l1_premium.
+                 TradingSessionBounds dragged
+                 et_clock_to_ns, session_date_from_ns,
+                 session_flatten_deadline_ns and
+                 _parse_clock_time. PortfolioNetter
+                 dragged StandingTarget.
+                 admission_block_reason dragged
+                 BLOCK_HALT_BLACKOUT,
+                 BLOCK_SESSION_FLATTEN_WINDOW,
+                 BLOCK_BELOW_MIN_ORDER_SHARES and
+                 blocks_for_min_size. Moving only the
+                 Protocol would have left core
+                 importing execution, which inverts
+                 the edge the step exists to cut --
+                 the T-06a shape from the other
+                 direction. The CLOSURE OK walk is
+                 what would have caught that. Not a
+                 failed cut; it is why the ten
+                 modules are this wide.
+                 Pre-existing F401: orchestrator
+                 imports ExposureDelta and does not
+                 use it. Present on HEAD f4772ffb
+                 (feelies.execution.order_admission)
+                 and after the retarget
+                 (feelies.core.order_admission). No
+                 module-global identity assertion.
+                 Not dropped: the invert retargets
+                 the import; dropping it would be
+                 opportunistic cleanup of a name
+                 the census listed. Not this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-08d execution; pin 2 to 1, T-07c
+                 pin 11 to 9 (boundary).
+                 Not started. Do not begin T-08d.
+                 Go confirmed on
+                 3ebdd010d467c39978424f9a458552186d8cd8a0.
+                 Left uncommitted:
+                 baseline_pre-T-08c.json,
+                 baseline_post-T-08c.json, this ledger
+                 entry.
+
+---
+
+## T-08d  2026-09-13T18:56:00+08:00
+  STEP:          T-08d
+  BASE:          8e890b187b04ae42805a4d469aa9184b68adef7b
+  RESULT SHA:    379a95ae6840c9a43516dc80bbcaee54eccdc048 (exec/T-08d; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel -> execution. Five import tiers stays
+                 BROKEN. 2 -> 1. G40 stays CLOSED. T-07c pin
+                 11 -> 9.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the 1-pair pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (1 pair), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; execution 865
+                 mypy src/feelies: Success, 246 source files
+                 (247 -1; before the gate).
+                 CLOSURE OK: no core module ImportFrom of
+                 feelies.execution.
+  TESTS:         capture pre-T-08d GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-08d GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-08c GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 integration 39 passed / 7 skipped.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-08d vs
+                 post-T-08d and vs baseline_post-T-08c.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Order, ack, admission and edge-gate replay
+                 hashes unmoved:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH unmoved.
+                 BOTH PINS MOVED AS DECLARED. Five-tier 2 to
+                 1. Engine-to-kernel 11 to 9.
+  FILES:         26 declared, 25 touched, 25 committed
+                 (clean vs 379a95ae). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py,
+                 execution/order_policy.py (deleted),
+                 execution/order_lifecycle.py
+                 (cancel_order stays),
+                 execution/order_admission.py (alias),
+                 core/order_admission.py (BLOCK_EDGE),
+                 tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_orchestrator_order_routing.py,
+                 tests/kernel/test_orchestrator_edge_calibration.py,
+                 tests/kernel/test_orchestrator_idle_tick.py,
+                 tests/kernel/test_orchestrator_shutdown_drain.py,
+                 tests/kernel/test_orchestrator_async_fill_latency.py,
+                 tests/kernel/test_orchestrator_bus_sized_intent.py,
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (_transition_order only; HAZARD_EXIT kept),
+                 tests/conformance/test_a3_zero_core_edits.py,
+                 tests/conformance/test_pathological_refusal.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/integration/test_paper_rth_safety.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md,
+                 core/cost_model.py,
+                 execution/cost_model.py (alias),
+                 core/position_manager.py,
+                 execution/position_manager.py (alias),
+                 core/borrow_availability.py,
+                 execution/regulatory/borrow_availability.py
+                 (alias; is_short_sale_intent stays).
+                 Named-not-edited:
+                 docs/prompts/audit_execution_fills.md
+                 (does not name order_policy.py).
+                 Forbidden, not touched:
+                 bootstrap.py, harness/, cli/,
+                 execution/backend.py, intent.py,
+                 forced_exit_clamp.py, test_fail_quiet.py,
+                 ci.yml, test_internal_links.py,
+                 tests/execution/test_position_manager.py,
+                 test_cost_model.py,
+                 test_round_trip_cost_estimate.py,
+                 test_depth_aware_estimate.py,
+                 test_borrow_availability.py,
+                 test_orchestrator_cost_gate.py
+                 (alias covers).
+                 No keep-row file is touched.
+                 No alias whose target is kernel.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules -1, public symbols 0,
+                 branch points 0.
+                 Helpers relocate into orchestrator (0).
+                 order_policy.py deleted (-1). measure.py
+                 reports the deletion, not an inventory of
+                 orchestrator.py.
+                 actual modules 247 -> 246 (-1 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47217 -> 47015 (-202, undeclared)
+                 n_edges 691 -> 672
+                 n_modules 201 -> 200
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Order, ack, admission and
+                 edge-gate replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 26 declared / 25 touched CLEAN
+                 (audit_execution_fills.md named-not-edited);
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules -1
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 379a95ae6840c9a43516dc80bbcaee54eccdc048.
+                 Not merged.
+  NOTES:         One commit on exec/T-08d,
+                 379a95ae6840c9a43516dc80bbcaee54eccdc048,
+                 "T-08d: return remaining execution helpers to kernel; pins 2 to 1 and 11 to 9".
+                 Parent 8e890b18 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Twenty-five of twenty-six FILES
+                 touched; docs/prompts/audit_execution_fills.md
+                 named-not-edited (it never cited
+                 order_policy.py). Zero extras. The
+                 commit is the cut, the two pins, and
+                 the retargets.
+                 Closure walk before the first edit,
+                 L0 through L5. L0 is the eleven
+                 kernel execution imports. L1 is
+                 _escalate_unfilled_working_exits and
+                 the policy private callees
+                 (_PostExitPositionView,
+                 _reversal_passes_combined_edge_gate,
+                 _signal_passes_edge_cost_gate,
+                 _resolve_order_route,
+                 _portfolio_leg_edge_block,
+                 htb_fee_applies); kernel
+                 _escalate_risk was already live so
+                 the policy copy stayed off the
+                 return. L2 is
+                 _submit_working_exit_fallback,
+                 _round_trip_cost_bps,
+                 _edge_clears_round_trip_cost,
+                 reversal_edge_gate, and the two
+                 BLOCK_EDGE tokens. L3 is
+                 round_trip_cost_bps and
+                 entry_edge_clears_cost. L4 is
+                 estimate_round_trip_cost_bps. L5
+                 is estimate_aggressive_taker_cost_bps
+                 and CostModel.compute, already in
+                 core, which call _within_l1_premium,
+                 already in core. That is the
+                 fixpoint. is_short_sale_intent and
+                 cancel_order are not on the chain.
+                 CLOSURE OK after the move: no core
+                 module ImportFrom of
+                 feelies.execution.
+                 Both pins dropped in that same
+                 commit as the code. Five-tier 2 to
+                 1: dropped
+                 ("feelies.kernel",
+                  "feelies.execution"); remaining
+                 ("feelies.kernel",
+                  "feelies.storage"). Engine-to-kernel
+                 11 to 9: dropped
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.macro") and
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.micro"). S2 KEPT at
+                 zero twelve-engine pairs. No new
+                 pair.
+                 All eleven names left the kernel
+                 execution import. Orchestrator has
+                 zero feelies.execution ImportFrom.
+                 The drain chain returned as a unit:
+                 _drain_async_fills calls
+                 _escalate_unfilled_working_exits
+                 calls _submit_working_exit_fallback.
+                 Returning drain alone would have
+                 NameError'd.
+                 Duplicate flatten and escalate were
+                 DELETED, not returned. One
+                 _emergency_flatten_all and one
+                 _escalate_risk remain, both the
+                 kernel copies that were already the
+                 live path. Two copies in
+                 orchestrator.py would have been a
+                 stop.
+                 The five pure functions landed in
+                 core with execution aliases,
+                 same-object True:
+                 estimate_round_trip_cost_bps in
+                 core.cost_model;
+                 round_trip_cost_bps,
+                 entry_edge_clears_cost,
+                 reversal_edge_gate in
+                 core.position_manager;
+                 htb_fee_applies in
+                 core.borrow_availability.
+                 TargetPositionManager.plan still
+                 calls the aliases in
+                 execution.position_manager.
+                 BLOCK_EDGE_BELOW_COST and
+                 BLOCK_EDGE_UNPRICEABLE landed in
+                 core.order_admission with an
+                 execution.order_admission alias.
+                 order_policy.py deleted. Its three
+                 consumers: _FILE_OWNERS row
+                 pruned; README coverage row
+                 `execution/order_policy.py` |
+                 execution_fills dropped;
+                 audit_execution_fills.md needed no
+                 edit. order_lifecycle.py is alive;
+                 cancel_order stays. No alias on
+                 order_policy.py (that would have
+                 targeted kernel). No alias on
+                 order_lifecycle targeting kernel.
+                 test_orchestrator_hazard_exit_routing.py
+                 retargeted _transition_order only.
+                 The HAZARD_EXIT identity import
+                 stayed: `_orchestrator_mod.HAZARD_EXIT_REASONS
+                 is HAZARD_EXIT_REASONS`.
+                 Replay hashes unmoved against
+                 baseline_post-T-08c.json, including
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_DECOUPLED_RISK_FLATTEN_ORDER_HASH
+                 3ff6fab7232a015db5 COUNT 2;
+                 EXPECTED_STATE_TRANSITION_HASH
+                 3faaec4824e41ed855 COUNT 40;
+                 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH
+                 7db2425d84f3313a COUNT 15;
+                 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH
+                 a7cc224630daf399c6 COUNT 3;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH and the
+                 fingerprint unmoved.
+                 mypy src/feelies Success, 246
+                 source files, before the gate.
+                 tests/docs 101 passed, before the
+                 gate. APP oracle 2 passed.
+                 n_cycles held at 1 (feelies.cli ->
+                 feelies.cli.main).
+                 Declared NET DELTA src modules -1,
+                 public symbols 0, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 247 -> 246
+                 MATCH, public_symbols 590 -> 590
+                 MATCH, sloc 47217 -> 47015 (-202,
+                 undeclared), n_edges 691 -> 672,
+                 n_modules 201 -> 200, cycles 1 -> 1
+                 MATCH, alphaleak 0 -> 0.
+  FINDINGS:      This rung stopped twice before
+                 landing, each time on a level of
+                 the call chain found after
+                 starting. First stop was the drain
+                 chain: returning _drain_async_fills
+                 without _escalate_unfilled_working_exits
+                 and _submit_working_exit_fallback
+                 NameErrors. Second stop was the five
+                 pure functions (round_trip_cost_bps
+                 -> estimate_round_trip_cost_bps,
+                 entry_edge_clears_cost,
+                 reversal_edge_gate,
+                 htb_fee_applies): returning the
+                 wrappers without them is kernel ->
+                 execution and the 2-pair pin stays.
+                 The third attempt walked the
+                 closure to fixpoint first, named
+                 every extra file in FILES, and
+                 landed clean. The walk belongs in
+                 the before-state of every remaining
+                 step that returns or moves a body,
+                 not in the block that describes it.
+                 A block written from a partial
+                 walk names a FILES set that cannot
+                 hold, and the first edit is then
+                 already a twenty-seventh file or a
+                 leftover execution import.
+                 Also recorded, not a stop:
+                 perfmeasure.py DIRECT_PROBES still
+                 names
+                 feelies.execution.order_lifecycle:_submit_tracked_order.
+                 The helper returned to kernel; a strip
+                 would add a fourth dead probe to the
+                 three already unowned. perfmeasure.py
+                 is not in FILES. Same class as T-05a.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-09a storage; pin stays 1 (boundary).
+                 Go confirmed on
+                 379a95ae6840c9a43516dc80bbcaee54eccdc048.
+                 Do not begin T-09a.
+                 Left uncommitted:
+                 baseline_pre-T-08d.json,
+                 baseline_post-T-08d.json, this ledger
+                 entry.
+
+---
+
+## T-09a  2026-09-14T13:30:00+08:00
+  STEP:          T-09a
+  BASE:          f1bc16b696cbd6d7acd573061dc96bc4e2c320de
+  RESULT SHA:    ec907c41f09afc9bb9a9b475a23db0732861dc3a (exec/T-09a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Pin stays
+                 1. Does not drop kernel -> storage. Five import
+                 tiers stays BROKEN. G40 stays CLOSED. T-07c pin
+                 stays 9. An unchanged count is the declared
+                 outcome, not a failed cut.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the unmoved 1-pair
+                 pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import tiers
+                 BROKEN (1 pair), Twelve engine module sets KEPT.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; storage 70
+                 mypy src/feelies: Success, 247 source files
+                 (246 +1; before the gate).
+                 CLOSURE OK: no core module ImportFrom of
+                 feelies.storage.
+  TESTS:         capture pre-T-09a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-09a GREEN 4909 passed / 0
+                 failed / 19 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-08d GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: identical.
+                 not-paper_rth: 4908 passed / 0 failed / 6
+                 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-09a vs
+                 post-T-09a and vs baseline_post-T-08d.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Fill and journal-adjacent replay hashes
+                 unmoved:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5 COUNT 2;
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0d2 COUNT 6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH unmoved.
+                 BOTH PINS UNMOVED. Five-tier stays 1
+                 (feelies.kernel, feelies.storage).
+                 Engine-to-kernel stays 9. The pin did not
+                 move because TradeRecord left storage via
+                 alias and fill_bindings retargeted to core,
+                 while orchestrator still names EventLog,
+                 FeatureSnapshotMeta, FeatureSnapshotStore,
+                 and TradeJournal from storage. Relocating
+                 the dataclass does not empty the package
+                 pair. Declared.
+  FILES:         5 declared, 5 touched, 5 committed
+                 (clean vs ec907c41). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: core/trade_journal.py (new),
+                 storage/trade_journal.py (alias),
+                 kernel/fill_bindings.py (retarget to
+                 core), tests/docs/test_prompt_coverage_map.py
+                 (_FILE_OWNERS row), docs/prompts/README.md
+                 (core_clock_config citation).
+                 Forbidden, not touched:
+                 orchestrator.py (keeps fill_bindings
+                 TradeRecord and the four storage names),
+                 test_import_contracts.py (pin does not
+                 move), memory_trade_journal.py,
+                 storage/__init__.py, harness/, forensics/,
+                 scripts/, tests that import TradeRecord
+                 from storage (alias covers), bootstrap.py,
+                 ci.yml, test_fail_quiet.py.
+                 No keep-row file is touched.
+                 No alias whose target is kernel or another
+                 engine.
+                 FeatureSnapshotMeta was not moved.
+                 core/feature_snapshot.py does not exist.
+                 TradeJournal Protocol remains in
+                 storage/trade_journal.py.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +1, public symbols 0,
+                 branch points 0.
+                 TradeRecord relocates. The storage alias
+                 and the fill_bindings retarget are
+                 ImportFrom; measure.py does not count them.
+                 actual modules 246 -> 247 (+1 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47015 -> 47021 (+6, undeclared)
+                 n_edges 672 -> 673
+                 n_modules 200 -> 201
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Fill and journal-adjacent replay
+                 hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 5 declared / 5 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4909 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set); NET DELTA MATCH on modules +1
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 ec907c41f09afc9bb9a9b475a23db0732861dc3a.
+                 Not merged.
+  NOTES:         One commit on exec/T-09a,
+                 ec907c41f09afc9bb9a9b475a23db0732861dc3a,
+                 "T-09a: relocate TradeRecord into core; pin stays 1".
+                 Parent f1bc16b6 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Five files in that commit, five declared,
+                 zero extras: core/trade_journal.py (new
+                 body), storage/trade_journal.py (alias),
+                 kernel/fill_bindings.py (retarget),
+                 tests/docs/test_prompt_coverage_map.py
+                 (_FILE_OWNERS), docs/prompts/README.md
+                 (citation). orchestrator.py and
+                 test_import_contracts.py were not in
+                 FILES and were not touched.
+                 Closure walk before the first edit, L0
+                 to L2. L0 is the TradeRecord dataclass
+                 in storage/trade_journal.py. L1 is Side
+                 and TrendMechanism already in
+                 feelies.core.events, plus Decimal, dict,
+                 and dataclasses.field; net_pnl subtracts
+                 fees from realized_pnl, both own
+                 fields. L2 is empty -- nothing new
+                 outside kernel or core. That is the
+                 fixpoint. The walk terminates in core
+                 and stdlib. CLOSURE OK after the move:
+                 no module under src/feelies/core
+                 ImportFrom-imports feelies.storage.
+                 The pin stayed at 1. Relocating
+                 TradeRecord does not empty kernel ->
+                 storage. orchestrator.py still names
+                 four storage types at runtime --
+                 EventLog, FeatureSnapshotMeta,
+                 FeatureSnapshotStore, TradeJournal --
+                 and still takes TradeRecord from
+                 fill_bindings. Remaining five-tier pair
+                 ("feelies.kernel", "feelies.storage").
+                 Engine-to-kernel stays 9. S2 KEPT at
+                 zero twelve-engine pairs. No new pair.
+                 The storage alias runs storage -> core
+                 (`from feelies.core.trade_journal import
+                 TradeRecord as TradeRecord` in
+                 storage/trade_journal.py). Storage is
+                 not one of the twelve engines, so that
+                 line cannot expand S2. fill_bindings
+                 retargets kernel -> core (`from
+                 feelies.core.trade_journal import
+                 TradeRecord as TradeRecord`). A
+                 storage-sourced alias on fill_bindings
+                 would have been kernel -> storage: the
+                 file would still import the storage
+                 package, which is the edge this rung
+                 was emptying from that one file, and
+                 T-09b would inherit a kernel re-export
+                 that still pointed at storage.
+                 FeatureSnapshotMeta did not ride. It is
+                 named by FeatureSnapshotStore, not by
+                 TradeRecord, and travels with its
+                 Protocol in T-09b. core/feature_snapshot.py
+                 does not exist on this tree. The
+                 TradeJournal Protocol stayed in
+                 storage/trade_journal.py; that surface
+                 is T-09b's.
+                 New module owner, same commit (S-21):
+                 _FILE_OWNERS row
+                 core/trade_journal.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citation.
+                 Three fill and journal hashes unmoved
+                 against baseline_post-T-08d.json:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5 COUNT 2;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 TradeRecord carries every fill's
+                 realized pnl and fees; those hashes
+                 holding means the dataclass that landed
+                 in core is the same type.
+                 mypy src/feelies Success, 247 source
+                 files, before the gate. tests/docs 101
+                 passed, before the gate. APP oracle 2
+                 passed. n_cycles held at 1 (feelies.cli
+                 -> feelies.cli.main).
+                 Declared NET DELTA src modules +1,
+                 public symbols 0, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 246 -> 247 MATCH,
+                 public_symbols 590 -> 590 MATCH,
+                 sloc 47015 -> 47021 (+6, undeclared),
+                 n_edges 672 -> 673, n_modules 200 ->
+                 201, cycles 1 -> 1 MATCH, alphaleak
+                 0 -> 0. The +1 module is the new core
+                 file; the aliases are ImportFrom and
+                 do not add a public symbol.
+                 NOTE: T-09a is the campaign's smallest
+                 cut and the second rung to land
+                 first-attempt. The closure terminated
+                 at L2 because TradeRecord names only
+                 core types and stdlib -- no Protocol,
+                 no helper body, no private callee. A
+                 rung that lands clean is one whose
+                 moved thing has no call graph. A rung
+                 that stops is one that does: T-08d
+                 walked L0 through L5 and still missed
+                 levels until the walk ran in the
+                 before-state, because each returned
+                 body called another body. TradeRecord
+                 constructs; it does not call. That is
+                 why five FILES held on the first
+                 edit.
+  FINDINGS:      None for this step. Closure terminated
+                 in the before-state; no name arrived
+                 mid-edit; FILES held at five.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-09b storage; pin 1 to 0 (boundary).
+                 Go confirmed on
+                 ec907c41f09afc9bb9a9b475a23db0732861dc3a.
+                 Do not begin T-09b.
+                 Left uncommitted:
+                 baseline_pre-T-09a.json,
+                 baseline_post-T-09a.json, this ledger
+                 entry.
+
+---
+
+## T-09b  2026-09-14T16:20:00+08:00
+  STEP:          T-09b
+  BASE:          def63fcaa501bab8ee86707ee38a76802be21902
+  RESULT SHA:    f9b1a84a9a46afcaddd9f556ac63ec7201eb4597 (exec/T-09b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   no new conformance test. CLOSES nothing. Drops
+                 kernel -> storage. Five import tiers stays
+                 BROKEN. 1 -> 0. G40 stays CLOSED. T-07c pin
+                 stays 9. Empty pairs is not a close:
+                 test_five_import_tiers still does not assert
+                 KEPT, and continue-on-error does not flip.
+                 Pin fail-first: test_five_import_tiers FAILED
+                 on unexpected [('feelies.kernel',
+                 'feelies.storage')] before the cut (empty
+                 pin vs the three orchestrator storage
+                 imports at l.187-189); 3 passed after the
+                 cut (empty pin).
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the empty pin.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports after the cut: Five
+                 import tiers KEPT (pairs empty — detector
+                 print, not a close), Twelve engine module
+                 sets KEPT. Do not assert KEPT here. T-09z
+                 owns that assertion and the CI flip.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; kernel 390; core 245; storage 70
+                 mypy src/feelies: Success, 249 source files
+                 (247 +2; before the gate).
+                 CLOSURE OK: no core module ImportFrom of
+                 feelies.storage.
+  TESTS:         capture pre-T-09b GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed.
+                 -> capture post-T-09b GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed. No failure
+                 in the accepted set. No failure outside it.
+                 vs post-T-09a GREEN 4909 passed / 0 failed /
+                 19 skipped / 5 xfailed: failed held 0;
+                 passed 4909 -> 4910 and skipped 19 -> 18
+                 is one skip becoming a pass between
+                 captures (same class as the live-Massive
+                 EXEMPTION flip, opposite direction). The
+                 not-paper_rth run on this tree was 4909
+                 passed / 0 failed / 5 skipped / 14
+                 deselected / 5 xfailed.
+                 APP oracle 2 passed.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH |
+                 actual 64/64 identical pre-T-09b vs
+                 post-T-09b and vs baseline_post-T-09a.json;
+                 0 moved | MATCH.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Fill, journal, and regime-adjacent replay
+                 hashes unmoved:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5 COUNT 2;
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0d2 COUNT 6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills;
+                 _BASELINE_CONFIG_HASH unmoved.
+                 THE PIN MOVED 1 to 0 in the same commit
+                 as the four names left the storage
+                 import. Engine-to-kernel stays 9.
+  FILES:         10 declared, 10 touched, 10 committed
+                 (clean vs f9b1a84a). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: orchestrator.py (retarget),
+                 core/event_log.py (new),
+                 core/feature_snapshot.py (new),
+                 core/trade_journal.py (TradeJournal
+                 Protocol appended; TradeRecord not
+                 duplicated),
+                 storage/event_log.py (alias),
+                 storage/feature_snapshot.py (alias),
+                 storage/trade_journal.py (alias),
+                 tests/conformance/test_import_contracts.py
+                 (empty pin),
+                 tests/docs/test_prompt_coverage_map.py
+                 (_FILE_OWNERS rows),
+                 docs/prompts/README.md
+                 (core_clock_config citations).
+                 Forbidden, not touched:
+                 fill_bindings.py, bootstrap.py,
+                 memory_event_log.py,
+                 memory_feature_snapshot.py,
+                 memory_trade_journal.py, ingestion/,
+                 harness/, cli/, scripts/,
+                 storage/__init__.py (alias covers),
+                 ci.yml, test_fail_quiet.py.
+                 No keep-row file is touched.
+                 No alias whose target is kernel or another
+                 engine. No kernel_ports.py. No subclassing
+                 on the in-memory stores. No KEPT assertion
+                 added.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules +2, public symbols 0,
+                 branch points 0.
+                 EventLog, FeatureSnapshotStore,
+                 FeatureSnapshotMeta, and TradeJournal
+                 relocate. Aliases are ImportFrom;
+                 measure.py does not count them.
+                 TradeJournal appends to the T-09a module
+                 (0).
+                 actual modules 247 -> 249 (+2 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47021 -> 47043 (+22, undeclared)
+                 n_edges 673 -> 675
+                 n_modules 201 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved. Fill, journal, and
+                 regime-adjacent replay hashes unmoved.
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 10 declared / 10 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4910 passed, failed 0->0 (GREEN
+                 both sides; no failure outside the accepted
+                 set; one skip became a pass);
+                 NET DELTA MATCH on modules +2
+                 symbols 0. CLEAN. Go confirmed on
+                 branch head
+                 f9b1a84a9a46afcaddd9f556ac63ec7201eb4597.
+                 Not merged.
+  NOTES:         One commit on exec/T-09b,
+                 f9b1a84a9a46afcaddd9f556ac63ec7201eb4597,
+                 "T-09b: invert EventLog, FeatureSnapshotStore, TradeJournal into core; pin 1 to 0".
+                 Parent def63fcaa5 on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 That commit is the whole cut: ten files
+                 declared, ten touched, zero extras.
+                 orchestrator.py retargeted; core/event_log.py
+                 and core/feature_snapshot.py new;
+                 core/trade_journal.py appended;
+                 the three storage modules aliased;
+                 test_import_contracts.py emptied the pin;
+                 test_prompt_coverage_map.py and
+                 docs/prompts/README.md took the two new
+                 owners. ci.yml is not among them.
+                 The closure walk ran in the before-state
+                 and terminated at L2. L0 is the four
+                 names on orchestrator -- EventLog,
+                 FeatureSnapshotMeta, FeatureSnapshotStore,
+                 TradeJournal -- with TradeRecord already
+                 in core. L1 names Event (core), Sequence
+                 and Iterator (stdlib), FeatureSnapshotMeta
+                 (moving with its Store), bytes, TradeRecord
+                 (already core), str and int. L2 is empty:
+                 nothing new outside kernel or core, and
+                 no helper body to return. That is the
+                 fixpoint. No name arrived mid-edit. After
+                 the move, CLOSURE OK: no module under
+                 src/feelies/core ImportFrom-imports
+                 feelies.storage.
+                 The five-tier pin moved 1 to 0 in that
+                 same commit. The dropped pair is
+                 ("feelies.kernel", "feelies.storage").
+                 Engine-to-kernel stays 9. S2 stayed KEPT
+                 at zero twelve-engine pairs. No new pair.
+                 EventLog, FeatureSnapshotMeta,
+                 FeatureSnapshotStore, and TradeJournal
+                 all left the orchestrator import.
+                 orchestrator.py now takes them from
+                 feelies.core.event_log,
+                 feelies.core.feature_snapshot, and
+                 feelies.core.trade_journal.
+                 feelies.storage no longer appears in that
+                 file. fill_bindings still names
+                 TradeRecord from core.
+                 The three Protocol surfaces stayed full,
+                 not kernel's call sites. EventLog keeps
+                 append, append_batch, replace_events,
+                 replay, last_sequence.
+                 FeatureSnapshotStore keeps save, load,
+                 list_snapshots. TradeJournal keeps
+                 record(trade: TradeRecord) and query(*,
+                 symbol, strategy_id, start_ns, end_ns)
+                 -> Iterator[TradeRecord]. query's
+                 keyword signature was not narrowed.
+                 The trade_journal property's consumers
+                 all call query (and is not None); kernel
+                 calls record.
+                 All three aliases run storage to core:
+                 storage/event_log.py aliases EventLog
+                 from feelies.core.event_log;
+                 storage/feature_snapshot.py aliases
+                 FeatureSnapshotMeta and
+                 FeatureSnapshotStore from
+                 feelies.core.feature_snapshot;
+                 storage/trade_journal.py aliases
+                 TradeJournal from
+                 feelies.core.trade_journal (TradeRecord
+                 already aliased that way from T-09a).
+                 Storage is not an S2 engine, so those
+                 lines cannot expand S2.
+                 FeatureSnapshotMeta travelled with its
+                 Store into core/feature_snapshot.py.
+                 TradeJournal appended onto the T-09a
+                 module core/trade_journal.py. TradeRecord
+                 was not duplicated.
+                 ci.yml was not touched.
+                 continue-on-error: true is still there.
+                 test_five_import_tiers still asserts only
+                 pairs == _TIER_RESIDUALS. No KEPT
+                 assertion was added.
+                 The two new modules got owners in the
+                 same commit (S-21): _FILE_OWNERS rows
+                 core/event_log.py and
+                 core/feature_snapshot.py ->
+                 audit_core_clock_config, and the README
+                 core_clock_config citations.
+                 core/trade_journal.py already had a row
+                 from T-09a.
+                 Four replay hashes unmoved against
+                 baseline_post-T-09a.json:
+                 EXPECTED_MARKET_FILL_HASH
+                 da66dd36e8bb68017d COUNT 9;
+                 EXPECTED_FORCED_EXIT_ATTRIBUTION_HASH
+                 8a2844e102e94060e5 COUNT 2;
+                 EXPECTED_POSITION_PNL_HASH
+                 7add366c6db014c0d2 COUNT 6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea COUNT 20 fills.
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 mypy src/feelies Success, 249 source
+                 files, before the gate. tests/docs 101
+                 passed, before the gate. APP oracle 2
+                 passed. n_cycles held at 1
+                 (feelies.cli -> feelies.cli.main).
+                 Declared NET DELTA src modules +2,
+                 public symbols 0, branch points 0.
+                 Measured from the two capture
+                 artifacts: modules 247 -> 249 MATCH,
+                 public_symbols 590 -> 590 MATCH,
+                 sloc 47021 -> 47043 (+22, undeclared),
+                 n_edges 673 -> 675, n_modules 201 ->
+                 203, cycles 1 -> 1 MATCH, alphaleak
+                 0 -> 0. The +2 modules are the two new
+                 core files; the aliases are ImportFrom
+                 and do not add a public symbol.
+                 One skip became a pass between captures
+                 (4909/19 skipped -> 4910/18 skipped).
+                 Failed held at 0. No failure in the
+                 accepted set. No failure outside it.
+                 What the empty pin means: kernel
+                 imports no engine package, and
+                 _TIER_RESIDUALS is frozenset(). What it
+                 does not mean: the campaign is closed.
+                 test_five_import_tiers still asserts only
+                 the equality, so an empty pin with a
+                 BROKEN status would pass. lint-imports
+                 printing KEPT on an empty pair set
+                 protects nothing. T-09z adds the KEPT
+                 assertion, probes that it can fail,
+                 and drops continue-on-error. Until
+                 then the campaign is not closed.
+  FINDINGS:      None for this step. Closure terminated
+                 in the before-state; no name arrived
+                 mid-edit; FILES held at ten.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          T-09z close the contract and flip CI
+                 (platform-wide). Empty pin is not a
+                 close. Go confirmed on
+                 f9b1a84a9a46afcaddd9f556ac63ec7201eb4597.
+                 Do not begin T-09z.
+                 Left uncommitted:
+                 baseline_pre-T-09b.json,
+                 baseline_post-T-09b.json, this ledger
+                 entry.
+
+---
+
+## T-09z  2026-09-14T19:10:34+08:00
+  STEP:          T-09z
+  BASE:          0569c69e74493688271ca388d80f75ea69088e07
+  RESULT SHA:    0460553130e32aa8f00c7e1e96f993f44cdcf49e (exec/T-09z; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES Five import tiers KEPT and
+                 .github/workflows/ci.yml Import
+                 contracts continue-on-error. G40 stays
+                 CLOSED. T-07c pin stays 9. Empty pairs
+                 is now a close: test_five_import_tiers
+                 asserts KEPT first, then
+                 pairs == _TIER_RESIDUALS (empty).
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers equals the empty pin
+                 and asserts KEPT.
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after. lint-imports: Five import
+                 tiers KEPT, Twelve engine module sets
+                 KEPT. continue-on-error dropped.
+                 Probe (uncommitted): added
+                 `from feelies.storage.event_log import EventLog`
+                 to kernel/fill_bindings.py;
+                 test_five_import_tiers FAILED on
+                 assert statuses["Five import tiers"] == "KEPT"
+                 (line 101) with status BROKEN
+                 (assert 'BROKEN' == 'KEPT'). Did not
+                 reach the pair equality. Twelve engine
+                 module sets stayed KEPT in that output.
+                 Broken contract: feelies.kernel is not
+                 allowed to import feelies.storage
+                 (fill_bindings -> storage.event_log l.6).
+                 Removed the import. Restore SHA256
+                 1b67aa873a0b65229d0f138da9168caf2f783efc0965c240d46c3b6145b66ef1
+                 BYTE_IDENTICAL (171 bytes, same as
+                 pre-probe). Porcelain after restore:
+                 M test_import_contracts.py and
+                 ?? baseline_pre-T-09z.json;
+                 fill_bindings.py not listed. Re-run
+                 3 passed. Without the probe the KEPT
+                 line would pass by construction and
+                 protect nothing.
+                 S12: 2 passed -> 2 passed
+                 S14: 2 passed -> 2 passed
+                 S17: 3 passed -> 3 passed
+                 conformance 118 passed / 5 xfailed (no XPASS)
+                 docs 101; mypy src/feelies: Success, 249
+                 source files (before the gate).
+  TESTS:         capture pre-T-09z GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 -> capture post-T-09z GREEN 4910 passed /
+                 0 failed / 18 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 vs post-T-09b GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed: failed
+                 held 0; passed held 4910.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 5 skipped / 14 deselected / 5 xfailed.
+                 APP oracle not re-run as a named job;
+                 _BASELINE_TRADE_PARITY_HASH unmoved.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-T-09z vs post-T-09z and vs
+                 baseline_post-T-09b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs 04605531). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_import_contracts.py (KEPT first),
+                 .github/workflows/ci.yml (comment
+                 rewritten; continue-on-error dropped).
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 pyproject.toml, layers contract,
+                 ignore_imports, orchestrator.py,
+                 fill_bindings.py, storage/, core/,
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py.
+                 Probe mutated kernel/fill_bindings.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. test_twelve_engine_independence
+                 KEPT assertion kept.
+                 verify_step not runnable (T-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47043 -> 47043 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse T-*.
+                 Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (GREEN both sides; no failure outside the
+                 accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 0460553130e32aa8f00c7e1e96f993f44cdcf49e.
+                 Not merged.
+  NOTES:         Go confirmed on exec/T-09z
+                 0460553130e32aa8f00c7e1e96f993f44cdcf49e.
+                 Parent 0569c69e on arch/exec. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 One commit, two files, nothing else:
+                 tests/conformance/test_import_contracts.py
+                 and .github/workflows/ci.yml. Subject
+                 "T-09z: assert Five import tiers KEPT; drop Import contracts continue-on-error".
+                 fill_bindings.py is not in that commit.
+                 The KEPT line sits above the pair
+                 equality. test_five_import_tiers now
+                 does `assert statuses["Five import
+                 tiers"] == "KEPT"` at line 101, then
+                 `pairs == _TIER_RESIDUALS`. A BROKEN
+                 status dies on 101. It never reaches
+                 the empty-pin comparison.
+                 The probe injected
+                 `from feelies.storage.event_log import EventLog`
+                 into kernel/fill_bindings.py -- a
+                 kernel-to-storage import, not a keep-
+                 row file, not in FILES. That run of
+                 test_five_import_tiers failed on line
+                 101 with assert 'BROKEN' == 'KEPT'.
+                 The pair assertion did not fire.
+                 Twelve engine module sets stayed KEPT
+                 in the same output. The import came
+                 out. Restore SHA256
+                 1b67aa873a0b65229d0f138da9168caf2f783efc0965c240d46c3b6145b66ef1
+                 BYTE_IDENTICAL, 171 bytes, same as
+                 the pre-probe file. Porcelain after
+                 restore listed the test file and the
+                 pre-capture, not fill_bindings.py.
+                 Re-run of test_import_contracts.py:
+                 3 passed.
+                 lint-imports after the restore and
+                 after the commit, quoted:
+                 Five import tiers KEPT
+                 Twelve engine module sets KEPT
+                 Contracts: 2 kept, 0 broken.
+                 The ci.yml flip dropped
+                 continue-on-error: true from Import
+                 contracts. The comment no longer
+                 says the step may fail. It now
+                 reads: "Blocking. Five import tiers
+                 (T-09z) and Twelve engine module
+                 sets (G40) are both KEPT. A broken
+                 contract fails this job." The flip
+                 waited on both contracts KEPT and
+                 on the probe's fail-then-green.
+                 pyproject.toml was not edited. The
+                 layers contract was not rewritten.
+                 ignore_imports was not added.
+                 The engine-to-kernel pin is still 9.
+                 mypy src/feelies: Success, 249 source
+                 files. tests/docs: 101 passed. Both
+                 before the gate. n_cycles held at 1
+                 (feelies.cli -> feelies.cli.main).
+                 NET DELTA all zeros: modules 249,
+                 public_symbols 590, sloc 47043,
+                 n_edges 675, n_modules 203, cycles 1,
+                 alphaleak 0.
+                 What the probe proved: the pin
+                 equality would have passed with a
+                 BROKEN status, so an empty
+                 _TIER_RESIDUALS alone was never a
+                 close. The assertion is what makes
+                 it one, and the probe is what makes
+                 the assertion non-decorative.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; R6 14/31; four
+                 EXEMPTION tests.
+  NEXT:          campaign close written below.
+                 Go confirmed on
+                 0460553130e32aa8f00c7e1e96f993f44cdcf49e.
+                 Not merged.
+                 Left uncommitted:
+                 baseline_pre-T-09z.json,
+                 baseline_post-T-09z.json, this ledger
+                 entry.
+
+---
+
+## CAMPAIGN CLOSE  Five import tiers
+DATE:        2026-09-14
+CLOSED AT:   T-09z. Commit 04605531 on exec/T-09z;
+             not merged. Campaign base S-35e
+             0cb0c753; T-09z parent 0569c69e on
+             arch/exec.
+LOCKED:      15 rungs in the campaign LADDER
+             (T-01, T-02, T-03, T-04, T-05a, T-05b,
+             T-06a, T-06b, T-07a, T-07b, T-08a,
+             T-08b, T-09a, T-09b, T-09z). T-05a/b
+             through T-09a/b were lettered in the
+             lock; T-04 was still the numbered
+             fourth rung.
+EXECUTED:    20 unique step ids passed (retries
+             not recounted). 14 locked ids ran as
+             themselves (T-01, T-02, T-03, T-05a,
+             T-05b, T-06a, T-06b, T-07a, T-07b,
+             T-08a, T-08b, T-09a, T-09b, T-09z).
+             T-04 never ran as the bare id. 4 were
+             splits of planned rungs (T-04a, T-04b
+             from T-04; T-08c, T-08d from the
+             execution remainder after T-08b). 2
+             were added mid-campaign (T-06z before
+             the T-06a retry; T-07c the engine-to-
+             kernel pin). T-01 had two failed
+             attempts before the pass; T-06a
+             blocked once, then passed after T-06z.
+             Those retries are not recounted.
+CLOSED:      Five import tiers KEPT (T-09z). The
+             five-tier pin walked 13 to 0:
+             T-01 13→12 harness→cli; T-02 12→11
+             harness→bootstrap; T-03 11→8
+             kernel→alpha/sensors/signals; T-04b
+             8→7 kernel→composition; T-05b 7→6
+             kernel→services; T-06a 6→5
+             kernel→ingestion; T-06b 5→4
+             kernel→monitoring; T-07b 4→3
+             kernel→portfolio; T-08b 3→2
+             kernel→risk; T-08d 2→1
+             kernel→execution; T-09b 1→0
+             kernel→storage. T-04a, T-05a, T-06z,
+             T-07a, T-07c, T-08a, T-08c, T-09a
+             left the count unchanged as declared.
+             ci.yml Import contracts is blocking
+             (T-09z); continue-on-error is gone.
+             Engine-to-kernel pin established at
+             14 (T-07c) and now 9 (T-08b 14→11,
+             T-08d 11→9; unmoved through T-09z).
+             Twelve engine module sets stayed KEPT
+             at zero pairs for every rung. G40
+             stayed CLOSED.
+REMAINS OPEN:
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed. S9
+             xfail reason string is stale (names
+             RiskVerdict.constraints, deleted at
+             S-31a). Live list is 10 fields; see
+             CAMPAIGN CLOSE CI restoration.
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
+             R6 14/31 resets — S-15/S-30; 17 never
+             invoked. SUPERSEDED by CAMPAIGN CLOSE
+             Reset invocation (R-07): invoked ==
+             MUST_INVOKE, owed 0. This snapshot
+             is not rewritten.
+             keep-row squeezes vs ruff format —
+             T-04b FINDING, unowned
+             Engine-to-kernel residual: 9 pairs
+             under test_engine_kernel_imports_
+             equal_pin. That pin is the detector,
+             not a gap this campaign owned.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. The comment says a
+             broken contract fails this job. Do
+             not restore continue-on-error. Do not
+             put back a comment that says the step
+             may fail.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals the 9-pair
+             pin. Shrinking either pin happens in
+             lockstep with the cut that drops the
+             pair, in the same commit.
+             Do not rewrite the layers contract by
+             deleting engines or adding
+             ignore_imports. The five-tier contract
+             passes because the imports are gone.
+             Catalogued non-cuts: a re-export
+             without retarget is not a cut; a
+             TYPE_CHECKING-only move is not a cut;
+             a sys.modules lookup or optional
+             getattr fallback is not a cut;
+             widening a type to object or Any is
+             not a cut; deleting a TYPE_CHECKING
+             import while the name still binds the
+             engine is not a cut (T-04a, fifth).
+             Wave D: do not invent suffixes for
+             g–o; Inv-8 beyond S-34f is a new
+             campaign.
+FINDINGS:    A future campaign that inverts an
+             import pays for these again if it
+             skips them.
+             Alias direction (T-06a): a relocation
+             alias is an import the other way. On
+             an engine file it can reverse the
+             edge being cut, and S2 expands one
+             such line into every engine the
+             kernel touches. Engine-to-core is
+             the legal direction. An alias whose
+             target is kernel or another engine
+             is not -- retarget the consumer.
+             Per-name census (T-04): size a rung
+             by every kernel import of that
+             package with line and kind, not by
+             the package label. Mixed kinds
+             (injected, default-constructed,
+             annotation-only, function/enum/
+             dataclass) split the rung.
+             Property exposure (T-03): a Protocol
+             on a type the orchestrator exposes
+             through a public property must cover
+             every consumer of that property, not
+             just the kernel's own calls.
+             Identity anchors (T-08b): an unused
+             import can be a test's `is` identity
+             against a module global. Grep the
+             name across tests before calling it
+             droppable.
+             Transitive Protocol closure (T-08c):
+             the move is every type the Protocol
+             signatures name, and every type
+             those name in turn. Moving only the
+             Protocol leaves core importing the
+             engine and inverts the edge.
+             Walk the closure to fixpoint in the
+             before-state (T-08d): list each name
+             the body calls that is not already
+             in kernel or core, then repeat until
+             nothing new appears. A block written
+             from a partial walk names a FILES
+             set that cannot hold.
+
+---
+
+## R-01  2026-09-14T21:19:06+08:00
+  STEP:          R-01
+  BASE:          53f586621f4b8e4d62218de312216fa84538e46c
+  RESULT SHA:    3c62fc4920034988cde56152afa902aba69fc068 (exec/R-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed count stays 15.
+                 Does not move a name into MUST_INVOKE.
+                 A detector landing green is the declared
+                 outcome. G04 stays CLOSED. This is not G04.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Probe (uncommitted): dropped
+                 `_maybe_reset(self._positions)` in
+                 src/feelies/kernel/orchestrator.py;
+                 test_reset_invocation FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['MemoryPositionStore']
+                 (tests/conformance/test_reset_invocation.py:204).
+                 Restored. Restore SHA256
+                 de1b38a990a335b539fa45b452d5b96bb07d82bc080e6296976dcea77ed13755
+                 BYTE_IDENTICAL (234351 bytes, same as
+                 pre-probe). Porcelain after restore:
+                 ?? baseline_pre-R-01.json;
+                 orchestrator.py not listed. Re-run
+                 1 passed. Without the probe both
+                 assertions pass by construction and
+                 protect nothing.
+                 What the spy catches that S16 and R6
+                 do not: S16 is reset-path totality
+                 (a mutator has a method). R6 is
+                 (event type, sequence) equality of two
+                 FIX-1 replays. Neither records which
+                 reset() bodies the cascade entered.
+                 The spy does: MUST_INVOKE ⊆ invoked and
+                 invoked ∩ DECLARED_UNINVOKED == ∅. The
+                 probe is what makes it non-decorative.
+                 conformance 118 passed / 5 xfailed
+                 -> 119 passed / 5 xfailed (no XPASS)
+                 docs 101; mypy src/feelies: Success, 249
+                 source files (before the gate).
+  TESTS:         capture pre-R-01 RED 4909 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (accepted IB EXEMPTION).
+                 -> capture post-R-01 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed. Same
+                 IB failure. +1 passed is
+                 test_reset_cascade_on_fix1_matches_must_invoke_pin.
+                 No failure outside the accepted set.
+                 vs post-T-09z GREEN 4910 passed / 0
+                 failed / 18 skipped / 5 xfailed: failed
+                 0 -> 1 is the IB after-hours EXEMPTION,
+                 also present in pre-R-01. The new spy
+                 test is the +1 passed (pre 4909 ->
+                 post 4910) on top of that IB fail.
+                 not-paper_rth: 4909 passed / 1 failed /
+                 5 skipped / 14 deselected / 5 xfailed;
+                 failed 1 is the IB after-hours test.
+                 APP oracle not re-run as a named job;
+                 _BASELINE_TRADE_PARITY_HASH unmoved.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-01 vs post-R-01 and vs
+                 baseline_post-T-09z.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 Owed stays 15.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 3c62fc49). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_reset_invocation.py (created).
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47043 -> 47043 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4909->4910 passed, failed 1->1
+                 (IB after-hours EXEMPTION both sides;
+                 no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 3c62fc4920034988cde56152afa902aba69fc068.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 HEAD 53f58662. Cut exec/R-01.
+                 tools/exec vs exec-tools-v1 empty.
+                 One commit, one file, nothing else:
+                 tests/conformance/test_reset_invocation.py.
+                 Subject "R-01: pin reset-cascade
+                 invocation on FIX-1".
+                 orchestrator.py is not in that commit.
+                 Spy wraps named-class reset after the
+                 first boot+run_backtest, forwards *args
+                 **kwargs, torn down when reset returns.
+                 Does not wrap run_backtest. Matching is
+                 by MRO name. HMM3StateFractional.reset
+                 (symbol) and InMemoryKillSwitch.reset
+                 (*, operator, audit_token) are wrapped
+                 and forwarded; the test never calls
+                 them. StrategyPositionStore and
+                 FillAttributionLedger have no reset()
+                 and were not wrapped.
+                 ibapi is not installed, so
+                 IBOrderRouter cannot be imported and
+                 was not class-wrapped. It is absent
+                 from the FIX-1 construction (BACKTEST
+                 uses BacktestOrderRouter) and sits in
+                 DECLARED_UNINVOKED as never. HMM3 and
+                 KillSwitch imported and wrapped.
+                 Before-state, 18 MUST_INVOKE reachable
+                 on FIX-1:
+                 named _maybe_reset: SimulatedClock
+                 (_clock, twice), AlphaBudgetRiskWrapper
+                 (_risk_engine), MemoryPositionStore
+                 (_positions), InMemoryMetricCollector
+                 (_metrics; live type
+                 _BacktestMetricCollector, MRO match),
+                 SensorRegistry, HorizonScheduler,
+                 HorizonSignalEngine, AlphaRegistry,
+                 BacktestOrderRouter
+                 (backend.order_router).
+                 nested cascade: BasicRiskEngine from
+                 AlphaBudgetRiskWrapper.reset →
+                 inner.reset().
+                 direct call: EventBus (self._bus.reset),
+                 SequenceGenerator (_seq, _hazard_seq),
+                 StateMachine (_macro, _micro,
+                 _risk_escalation), Orchestrator (the
+                 reset under spy), _HaltTradeability
+                 via _reset_halt_state.
+                 getattr bus walk: HorizonAggregator
+                 (attached in _create_sensor_layer; not
+                 stored on Orchestrator),
+                 RegimeStateCache (also nested from
+                 BasicRiskEngine.reset),
+                 StopExitController (session_flatten
+                 default on; bootstrap discards the
+                 local).
+                 Before-state, 22 DECLARED_UNINVOKED:
+                 present unreached — HMM3StateFractional
+                 (constructed; reset(symbol) not called),
+                 InMemoryKillSwitch (constructed;
+                 operator kwargs not supplied),
+                 RegimeGate (on the registered signal;
+                 HorizonSignalEngine.reset does not
+                 cascade), InMemoryEventLog (the tape;
+                 not in the named list, not a
+                 bound-method bus owner),
+                 RthEntryFillGate (nested in
+                 BacktestOrderRouter; parent does not
+                 call child.reset), MetricSummary
+                 (parent _summaries.clear()),
+                 _WarmTimestampIndex (parent
+                 _warm_timestamps.clear()).
+                 absent — CompositionEngine,
+                 UniverseSynchronizer,
+                 CrossSectionalTracker,
+                 HorizonMetricsCollector (no PORTFOLIO
+                 alpha); HazardExitController,
+                 RegimeHazardDetector (no hazard_exit
+                 on null_alpha); ExitComposer,
+                 DeferralCapController (no
+                 decouple_gate_close);
+                 MassiveNormalizer (BACKTEST, not
+                 injected); MassiveHistoricalIngestor
+                 (ingest, not replay);
+                 MocFillController (moc_session_date
+                 None); PassiveLimitOrderRouter
+                 (execution_mode=market);
+                 QuoteReplayObserver, QuoteTraceIndex
+                 (CLI, not build_platform);
+                 IBOrderRouter (BACKTEST router).
+                 n_cycles held at 1
+                 (feelies.cli -> feelies.cli.main).
+                 NET DELTA all zeros: modules 249,
+                 public_symbols 590, sloc 47043,
+                 n_edges 675, n_modules 203, cycles 1,
+                 alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-02 default-path leaks; owed 15 to 11
+                 (platform-wide). Not started. Do not
+                 begin R-02.
+                 Left uncommitted:
+                 baseline_pre-R-01.json,
+                 baseline_post-R-01.json, this ledger
+                 entry.
+
+---
+
+## R-02  2026-09-15T17:27:00+08:00
+  STEP:          R-02
+  BASE:          e476ab14d80a71cf677e758cf4aa0afd933ccd6c
+  RESULT SHA:    b284a5852db17e572479a5673f585cf0cee48567 (exec/R-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 15 to 11. Does not close G04.
+                 Moves four names into MUST_INVOKE:
+                 StrategyPositionStore, FillAttributionLedger,
+                 HMM3StateFractional, RegimeGate. The nine
+                 never-rows stay in DECLARED_UNINVOKED. G04
+                 stays CLOSED. This is not G04.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (names moved, wrap list
+                 updated, no production bodies): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['FillAttributionLedger', 'HMM3StateFractional',
+                 'RegimeGate', 'StrategyPositionStore']
+                 (tests/conformance/test_reset_invocation.py:210).
+                 Spy after bodies: 1 passed. MUST_INVOKE
+                 18 -> 22.
+                 Four probes, uncommitted, one path each,
+                 restore BYTE_IDENTICAL between:
+                 (a) drop _maybe_reset(self._strategy_positions)
+                     MUST_INVOKE not entered:
+                     ['StrategyPositionStore']
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 (b) delete FillAttributionLedger.reset
+                     MUST_INVOKE not entered:
+                     ['FillAttributionLedger']
+                     restore SHA256
+                     c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                     (5030 bytes)
+                 (c) drop _maybe_reset(self._regime_engine)
+                     MUST_INVOKE not entered:
+                     ['HMM3StateFractional']
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 (d) drop the gate.reset() loop
+                     MUST_INVOKE not entered:
+                     ['RegimeGate']
+                     restore SHA256
+                     81500f3ea569664d746f62caf3cc5baa9b1901d1adb17d754ed97374295316b5
+                     (33524 bytes)
+                 Green re-run after last restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101; services 108;
+                 signals 157; portfolio 52; kernel 390.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+                 One-arg callers unmoved and still pass:
+                 tests/services/test_regime_engine.py:98 and
+                 :427 engine.reset("AAPL"); kernel stub
+                 test_orchestrator.py:148 def reset(self,
+                 symbol: str). Those two files are not in
+                 FILES and were not edited.
+  TESTS:         capture pre-R-02 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-02 GREEN 4911 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4910 passed /
+                 0 failed / 5 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. Full-capture +1 passed / -1 skipped is
+                 a skip that ran, not a new test (no test
+                 file added). APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-02 vs post-R-02 and vs
+                 baseline_post-R-01.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 15 to 11.
+  FILES:         6 declared, 6 touched, 6 committed
+                 (clean vs b284a585). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: strategy_position_store.py,
+                 fill_attribution.py, orchestrator.py,
+                 regime_engine.py, horizon_engine.py,
+                 test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 tests/services/test_regime_engine.py,
+                 tests/kernel/test_orchestrator.py.
+                 Probes mutated orchestrator.py,
+                 fill_attribution.py, horizon_engine.py
+                 and restored them; those mutations are
+                 not in the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47043 -> 47059 (+16, undeclared;
+                 the four bodies)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 6 declared / 6 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4911 passed, failed 0->0
+                 (no failure outside the accepted set;
+                 +1 passed is a skip that ran);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 b284a5852db17e572479a5673f585cf0cee48567.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD e476ab14 on arch/exec.
+                 Cut exec/R-02. tools/exec vs exec-tools-v1
+                 empty. Go confirmed branch head
+                 b284a5852db17e572479a5673f585cf0cee48567.
+                 One commit, six files, nothing else:
+                 strategy_position_store.py,
+                 fill_attribution.py, orchestrator.py,
+                 regime_engine.py, horizon_engine.py,
+                 test_reset_invocation.py. Subject
+                 "R-02: clear four default-path reset
+                 leaks on FIX-1".
+                 Closure walked to fixpoint before the
+                 first edit and terminated at RegimeGate.
+                 StrategyPositionStore.reset clears
+                 _stores (get() plants an empty sub-book
+                 via _get_store, so the dict accumulates
+                 on reads as well as writes). Optional
+                 child MemoryPositionStore.reset was not
+                 called; that name is already reachable
+                 via _positions. FillAttributionLedger
+                 and HMM3 bodies name nothing new. The
+                 gate loop names RegimeGate.
+                 RegimeGate.reset(symbol=None) clears
+                 only _state. Stop.
+                 Pin moved first in that commit. With
+                 the four names in MUST_INVOKE and no
+                 bodies yet, the spy FAILED naming all
+                 four: MUST_INVOKE not entered:
+                 ['FillAttributionLedger',
+                 'HMM3StateFractional', 'RegimeGate',
+                 'StrategyPositionStore']. That
+                 fail-before is the pin movement. Bodies
+                 then landed; the spy passed with
+                 MUST_INVOKE 18 to 22.
+                 Four probes, not one: each path is
+                 independent, and a combined drop names
+                 a set without showing which path held.
+                 Uncommitted, one at a time, restore
+                 byte-identical between each.
+                 (a) drop
+                 _maybe_reset(self._strategy_positions)
+                 -> MUST_INVOKE not entered:
+                 ['StrategyPositionStore']; restore
+                 SHA256 162e4298...f6599f, 234440 bytes,
+                 BYTE_IDENTICAL.
+                 (b) delete FillAttributionLedger.reset
+                 -> MUST_INVOKE not entered:
+                 ['FillAttributionLedger']; restore
+                 SHA256 c620060f...d98e28, 5030 bytes,
+                 BYTE_IDENTICAL.
+                 (c) drop
+                 _maybe_reset(self._regime_engine)
+                 -> MUST_INVOKE not entered:
+                 ['HMM3StateFractional']; restore
+                 SHA256 162e4298...f6599f, 234440 bytes,
+                 BYTE_IDENTICAL.
+                 (d) drop the gate.reset() loop
+                 -> MUST_INVOKE not entered:
+                 ['RegimeGate']; restore SHA256
+                 81500f3e...5316b5, 33524 bytes,
+                 BYTE_IDENTICAL.
+                 Green re-run after the last restore:
+                 1 passed. Without the four probes the
+                 pin move plus the bodies pass by
+                 construction and protect nothing.
+                 What each leak would have inherited on
+                 a second run in the same process:
+                 StrategyPositionStore -- leftover
+                 per-strategy qty, avg entry, realized
+                 and unrealized PnL, fees, marks, and
+                 open-episode timestamps.
+                 MemoryPositionStore.reset on
+                 self._positions does not touch these
+                 sub-books.
+                 FillAttributionLedger -- leftover
+                 _records and _cumulative_allocations.
+                 SequenceGenerator reset recycles
+                 order_ids, so a leftover record
+                 attributes run-2 fills to run-1
+                 contributions.
+                 HMM3StateFractional -- leftover
+                 _posteriors, _last_update_seq, and
+                 _last_quote_ts_ns. Tape quote.sequence
+                 is on the event, so posterior()
+                 returns the leftover cache when seq
+                 matches.
+                 RegimeGate -- leftover per-symbol
+                 ON/OFF latches in gate._state.
+                 HorizonSignalEngine.reset previously
+                 cleared its own caches and nested
+                 SequenceGenerators and did not call
+                 gate.reset(). FIX-1's null_alpha gate
+                 is on_condition True / off_condition
+                 False, so leftover ON and cold-start
+                 False both sit ON after the first
+                 evaluate; a P(state) leftover ON
+                 would not.
+                 symbol=None MUST NOT clear
+                 _calibrated, _emission, or
+                 _emission_by_symbol:
+                 _calibrate_regime_engine returns early
+                 when calibrated is True, and wiping
+                 them leaves the second boot on
+                 placeholder emissions. It MUST clear
+                 _scaled_transition_cache -- today's
+                 one-arg body does not touch it. The
+                 committed zero-arg body clears the
+                 three posterior maps and the cache
+                 and leaves the three emission fields
+                 in place. One-arg form keeps today's
+                 three pops.
+                 The one-arg callers stay. They are
+                 not in FILES and were not edited:
+                 tests/services/test_regime_engine.py
+                 at 98 and 427 (engine.reset("AAPL"),
+                 the second preserves MSFT), and the
+                 kernel stub at
+                 test_orchestrator.py:148
+                 (def reset(self, symbol: str)).
+                 The Protocol was widened in
+                 regime_engine.py itself. No src/
+                 production one-arg caller exists.
+                 FillAttributionLedger needed no new
+                 call site. orchestrator already
+                 _maybe_resets self._fill_ledger as a
+                 no-op; adding the method alone
+                 changes behaviour. No second call
+                 was added there.
+                 The gate cascade is a loop over
+                 self._signals calling
+                 registered.gate.reset() with no
+                 arguments. RegimeGate.reset(symbol=None)
+                 already clears every latch.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved. They
+                 are cold-start single-run and never
+                 call Orchestrator.reset(for_new_run=True),
+                 so clearing these leaks cannot move
+                 them. A reset-then-replay payload can
+                 differ while R6's (event type,
+                 sequence) fingerprint stays green.
+                 mypy src/feelies Success, 249 source
+                 files, before the gate. tests/docs
+                 101 passed. APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 Declared NET DELTA src modules 0,
+                 public symbols 0, branch points 0.
+                 Measured: modules 249 -> 249 (+0
+                 MATCH), public_symbols 590 -> 590
+                 (+0 MATCH), sloc 47043 -> 47059
+                 (+16, undeclared; the four bodies),
+                 n_edges 675 -> 675, n_modules 203
+                 -> 203, cycles 1 -> 1 MATCH,
+                 alphaleak 0 -> 0.
+  FINDINGS:      The spy's wrap changed from a direct
+                 attribute read (`original = cls.reset`)
+                 to a callable check with a skip
+                 (`getattr(cls, "reset", None)`;
+                 `continue` if not callable), so that a
+                 MUST_INVOKE class whose reset is
+                 deleted reports as an uninvoked name
+                 rather than crashing the spy install.
+                 The name stays in MUST_INVOKE and
+                 invoked never grows, so the set
+                 difference still fails naming it -- a
+                 crash became a diagnosis, not a silent
+                 pass. A detector's failure mode is
+                 part of the detector, and a guard that
+                 crashes on the regression it exists to
+                 catch tells you less than one that
+                 names it.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-03 PORTFOLIO config; owed 11 to 7
+                 (boundary). Not started. Do not
+                 begin R-03.
+                 Left uncommitted:
+                 baseline_pre-R-02.json,
+                 baseline_post-R-02.json, this ledger
+                 entry.
+
+---
+
+## R-03  2026-09-16T09:47:00+08:00
+  STEP:          R-03
+  BASE:          a85f0cb6e29eca9a9dcf0066980b1ad5da7e8857
+  RESULT SHA:    56eed8c1fdba89c773695fd94d652bd64b1b7b7f (exec/R-03; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 11 to 7. Does not close G04.
+                 Moves four names into MUST_INVOKE in the same
+                 commit as the PORTFOLIO config that constructs
+                 them: CompositionEngine, UniverseSynchronizer,
+                 CrossSectionalTracker, HorizonMetricsCollector.
+                 The nine never-rows stay in DECLARED_UNINVOKED.
+                 G04 stays CLOSED. This is not G04.
+                 All four were reachable without a src edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (four names in MUST_INVOKE,
+                 _TAPES still ("fix1",), helper signature in
+                 place, later three branches raise, no
+                 PORTFOLIO tape): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['CompositionEngine', 'CrossSectionalTracker',
+                 'HorizonMetricsCollector', 'UniverseSynchronizer']
+                 (tests/conformance/test_reset_invocation.py:241).
+                 Spy after tape: 1 passed. MUST_INVOKE
+                 22 -> 26. _TAPES ("fix1",) ->
+                 ("fix1", "portfolio").
+                 Two probes, uncommitted, restore
+                 BYTE_IDENTICAL between:
+                 (a) drop
+                     _maybe_reset(self._composition_engine)
+                     PASSED (1 passed). CompositionEngine
+                     remained entered via the getattr bus
+                     walk. That is the proof the named call
+                     is not the PORTFOLIO path and no new
+                     _maybe_reset is required.
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 (b) skip the getattr bus walk on the
+                     PORTFOLIO tape
+                     (if self._composition_engine is None:
+                     walk; else skip). MUST_INVOKE not
+                     entered:
+                     ['CrossSectionalTracker',
+                     'HorizonMetricsCollector',
+                     'UniverseSynchronizer']
+                     CompositionEngine remained entered
+                     by name (absent from the missing set).
+                     restore SHA256
+                     162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                     (234440 bytes)
+                 Green re-run after last restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-03 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-03 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4909 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4909 vs capture 4910 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-03 vs post-R-03 and vs
+                 baseline_post-R-02.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 11 to 7.
+  FILES:         3 declared, 3 touched, 3 committed
+                 (clean vs 56eed8c1). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py,
+                 fixtures/portfolio/upstream_signal.alpha.yaml,
+                 fixtures/portfolio/null_portfolio.alpha.yaml.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47059 -> 47059 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 3 declared / 3 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 56eed8c1fdba89c773695fd94d652bd64b1b7b7f.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD a85f0cb6 on arch/exec.
+                 Cut exec/R-03. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 56eed8c1fdba89c773695fd94d652bd64b1b7b7f.
+                 One commit, three files, none in src/:
+                 test_reset_invocation.py,
+                 fixtures/portfolio/upstream_signal.alpha.yaml,
+                 fixtures/portfolio/null_portfolio.alpha.yaml.
+                 Subject "R-03: pin PORTFOLIO composition
+                 objects on the reset spy". Probe
+                 mutations of orchestrator.py were
+                 restored; that file is not in the
+                 commit.
+                 Closure walked to fixpoint before the
+                 first edit and terminated at
+                 SequenceGenerator. The four objects are
+                 constructed in
+                 bootstrap._create_composition_layer
+                 once a PORTFOLIO alpha is registered.
+                 CompositionEngine.reset,
+                 UniverseSynchronizer.reset, and
+                 HorizonMetricsCollector.reset each name
+                 SequenceGenerator. CrossSectionalTracker
+                 names nothing. Ranker, FactorNeutralizer,
+                 SectorMatcher, and TurnoverOptimizer have
+                 no reset(). Stop.
+                 Pin fail-before named all four. Names
+                 moved into MUST_INVOKE with _TAPES still
+                 ("fix1",) and only the fix1 branch live:
+                 MUST_INVOKE not entered:
+                 ['CompositionEngine',
+                 'CrossSectionalTracker',
+                 'HorizonMetricsCollector',
+                 'UniverseSynchronizer']
+                 (test_reset_invocation.py:241). That is
+                 the pin movement. The PORTFOLIO tape then
+                 landed; the spy passed.
+                 Probe (a) dropped
+                 _maybe_reset(self._composition_engine).
+                 The spy PASSED. CompositionEngine was
+                 still entered via the getattr bus walk.
+                 Restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes), BYTE_IDENTICAL to the
+                 pre-probe file.
+                 Probe (a) is the campaign's first probe
+                 designed to pass. It does not prove a
+                 guard bites -- it proves a path is
+                 redundant. The named
+                 _maybe_reset(self._composition_engine) is
+                 not what reaches CompositionEngine on a
+                 PORTFOLIO tape; the getattr bus walk is,
+                 and it carries the other three as well.
+                 That is why the rung needed no src edit.
+                 A probe which must pass is as much
+                 evidence as one which must fail when the
+                 claim is "this path is not required."
+                 Probe (b) skipped the getattr bus walk on
+                 the PORTFOLIO tape. FAILED naming the
+                 three locals: MUST_INVOKE not entered:
+                 ['CrossSectionalTracker',
+                 'HorizonMetricsCollector',
+                 'UniverseSynchronizer'].
+                 CompositionEngine stayed entered by
+                 name. Restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes), BYTE_IDENTICAL. Both
+                 restores match each other and the
+                 pre-probe hash. Green re-run after the
+                 last restore: 1 passed.
+                 MUST_INVOKE 22 to 26. _TAPES went from
+                 ("fix1",) to ("fix1", "portfolio").
+                 Helper signature has all five ids; the
+                 later three branches raise until their
+                 rung. No second helper.
+                 PORTFOLIO universe is inside FIX-1's
+                 symbols: frozenset(_UNIVERSE) =
+                 {AAPL, MSFT}, and the YAML universe list
+                 is the same two names, so _synth_events
+                 was reusable. factor_loadings_dir left
+                 None (the default); the freshness check
+                 is skipped.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved, including
+                 _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 They are cold-start single-run and never
+                 call Orchestrator.reset(for_new_run=True).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 mypy src/feelies Success, 249 source
+                 files, before the gate. tests/docs
+                 101 passed.
+                 NET DELTA all zeros: modules 249 -> 249,
+                 public_symbols 590 -> 590, sloc 47059
+                 -> 47059, n_edges 675, n_modules 203,
+                 cycles 1, alphaleak 0.
+  FINDINGS:      Probe (b) on the union spy cannot be an
+                 unconditional skip of the _bus._handlers
+                 loop: that loop is also how FIX-1 enters
+                 HorizonAggregator and StopExitController.
+                 Skipping only when
+                 self._composition_engine is set names the
+                 three locals the block specified.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-04 hazard and decouple config; owed 7
+                 to 3 (boundary). Not started. Do not
+                 begin R-04.
+                 Left uncommitted:
+                 baseline_pre-R-03.json,
+                 baseline_post-R-03.json, this ledger
+                 entry.
+
+---
+
+## R-04a  2026-09-16T11:36:00+08:00
+  STEP:          R-04a
+  BASE:          6031754a7b77c209f80d0af2dd4b5601277dbe1a
+  RESULT SHA:    1b79c9622c0b4296ae4900824d7e2769633e4096 (exec/R-04a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 7 to 4. Does not close G04.
+                 Moves three names into MUST_INVOKE in the same
+                 commit as the hazard-plus-decouple config that
+                 constructs them: HazardExitController,
+                 ExitComposer, DeferralCapController.
+                 RegimeHazardDetector is constructed by the
+                 same yaml and stays in DECLARED_UNINVOKED
+                 until R-04b. The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This
+                 is not G04.
+                 All three were reachable without a src edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (three names in MUST_INVOKE,
+                 _TAPES still ("fix1", "portfolio"), hazard
+                 branch still raises, no hazard_decouple
+                 tape): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['DeferralCapController', 'ExitComposer',
+                 'HazardExitController']
+                 (tests/conformance/test_reset_invocation.py:256).
+                 Spy after tape: 1 passed. MUST_INVOKE
+                 26 -> 29. _TAPES ("fix1", "portfolio") ->
+                 ("fix1", "portfolio", "hazard_decouple").
+                 RegimeHazardDetector was constructed
+                 (orchestrator._regime_hazard_detector is
+                 RegimeHazardDetector) and did NOT appear
+                 in invoked; DECLARED_UNINVOKED entered
+                 would have failed the spy.
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 skip the getattr bus walk on the
+                 hazard_decouple tape only
+                 (if self._hazard_exit_controller is None:
+                 walk; else skip). MUST_INVOKE not
+                 entered:
+                 ['DeferralCapController', 'ExitComposer']
+                 HazardExitController remained entered
+                 by name (absent from the missing set).
+                 restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-04a GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-04a GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4909 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4909 vs capture 4910 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-04a vs post-R-04a and vs
+                 baseline_post-R-03.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 7 to 4.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs 1b79c962). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py,
+                 fixtures/hazard_decouple/hazard_decouple.alpha.yaml.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures,
+                 null_alpha.alpha.yaml.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47059 -> 47059 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 1b79c9622c0b4296ae4900824d7e2769633e4096.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD 6031754a on arch/exec.
+                 Cut exec/R-04a. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 1b79c9622c0b4296ae4900824d7e2769633e4096.
+                 One commit, two files, none in src/:
+                 test_reset_invocation.py and
+                 fixtures/hazard_decouple/hazard_decouple.alpha.yaml.
+                 Subject "R-04a: pin hazard and decouple
+                 cascade objects on the reset spy".
+                 The commit is clean of ledger and of
+                 src/; LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 Closure was walked to fixpoint before
+                 the first edit and terminated at
+                 SequenceGenerator. Each of the three
+                 reset() bodies names only its nested
+                 SequenceGenerator; that class was
+                 already MUST_INVOKE. Stop.
+                 Pin first, with _TAPES still
+                 ("fix1", "portfolio") and the hazard
+                 branch still raising. The spy FAILED
+                 naming all three:
+                 MUST_INVOKE not entered:
+                 ['DeferralCapController',
+                 'ExitComposer',
+                 'HazardExitController']
+                 (test_reset_invocation.py:256). That
+                 fail-before is the pin movement. The
+                 tape then landed; the spy passed.
+                 Probe skipped the getattr bus walk on
+                 the hazard_decouple tape only
+                 (self._hazard_exit_controller is not
+                 None). FAILED naming the two locals:
+                 MUST_INVOKE not entered:
+                 ['DeferralCapController',
+                 'ExitComposer'].
+                 HazardExitController stayed entered
+                 by name. Restore SHA256
+                 162e429887b30920dd9a5808fd972d85dd84b9d2db2b1ae4c415a7022cf6599f
+                 (234440 bytes), BYTE_IDENTICAL. Green
+                 re-run: 1 passed. Did not drop the
+                 named _maybe_reset; that is R-03's
+                 redundancy claim and this rung is not
+                 making it.
+                 RegimeHazardDetector was constructed
+                 on that tape
+                 (orchestrator._regime_hazard_detector
+                 is RegimeHazardDetector) and
+                 deliberately did NOT enter the
+                 cascade. It stayed in
+                 DECLARED_UNINVOKED; the spy's empty
+                 intersection is what proves the pin
+                 did not lie between rungs. Had the
+                 walk reached it, this rung would have
+                 failed DECLARED_UNINVOKED entered —
+                 that would have been R-04b leaking
+                 in.
+                 MUST_INVOKE 26 to 29. _TAPES at three
+                 ids: ("fix1", "portfolio",
+                 "hazard_decouple").
+                 Universe stayed inside FIX-1's
+                 symbols: {AAPL, MSFT}, so
+                 _synth_events was reusable.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47059 -> 47059, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      The G17 chain cost the fixture a
+                 registered QuoteReplenishAsymmetrySensor
+                 the alpha never reads.
+                 decouple_caps_only forces a
+                 trend_mechanism block, which forces
+                 the family's fingerprint sensor into
+                 both l1_signature_sensors and
+                 depends_on_sensors, which
+                 resolve_signal_dependencies refuses
+                 unless that sensor is in
+                 sensor_specs. ofi_ewma was optional
+                 and omitted; the fingerprint was not.
+                 Load succeeded and warned that
+                 quote_replenish_asymmetry is unused
+                 by evaluate — the same shape as
+                 FIX-1's ofi_ewma warning. A
+                 config-widen rung can be gated by a
+                 validation chain two hops from the
+                 flag being set. The warning is the
+                 loader telling you the fixture is
+                 minimal rather than wrong.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-04b detector body fix; owed 4 to 3
+                 (platform-wide). Not started. Do not
+                 begin R-04b.
+                 Left uncommitted:
+                 baseline_pre-R-04a.json,
+                 baseline_post-R-04a.json, this ledger
+                 entry.
+
+---
+
+## R-04b  2026-09-16T12:49:47+08:00
+  STEP:          R-04b
+  BASE:          f2214508da02aaa8fb5f31146dea7bd69909611e
+  RESULT SHA:    10c76b9a9618929fc8700ea4505c5027d9564b9e (exec/R-04b; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 4 to 3. Does not close G04.
+                 Moves RegimeHazardDetector into MUST_INVOKE in
+                 the same commit as
+                 _maybe_reset(self._regime_hazard_detector).
+                 The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This
+                 is not G04.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (name in MUST_INVOKE, no
+                 new call): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['RegimeHazardDetector']
+                 (tests/conformance/test_reset_invocation.py:281).
+                 Spy after the line: 1 passed. MUST_INVOKE
+                 29 -> 30. _TAPES unmoved
+                 ("fix1", "portfolio", "hazard_decouple").
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 drop
+                 _maybe_reset(self._regime_hazard_detector)
+                 MUST_INVOKE not entered:
+                 ['RegimeHazardDetector']
+                 restore SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 kernel 390; services 108.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-04b GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-R-04b GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4909 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4909 vs capture 4910 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-04b vs post-R-04b and vs
+                 baseline_post-R-04a.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True), so
+                 they never reach the new line. A hash
+                 move would have meant the line changed
+                 cold-start behaviour.
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 4 to 3.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs 10c76b9a). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: kernel/orchestrator.py,
+                 test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the R-04a yaml.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that mutation is not
+                 in the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47059 -> 47060 (+1, undeclared;
+                 the one line)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 10c76b9a9618929fc8700ea4505c5027d9564b9e.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD f2214508 on arch/exec.
+                 Cut exec/R-04b. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 10c76b9a9618929fc8700ea4505c5027d9564b9e.
+                 One commit, two files, one src line:
+                 orchestrator.py and
+                 test_reset_invocation.py. Subject
+                 "R-04b: invoke RegimeHazardDetector.reset
+                 on for_new_run". The commit is clean of
+                 ledger; LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 This is the campaign's only body fix so
+                 far that is not a missing method. The
+                 detector already exposed reset().
+                 Session start already called it, from
+                 run_backtest and
+                 _run_deployment_session through
+                 _reset_regime_session_state.
+                 Orchestrator.reset(for_new_run=True)
+                 never did. Per-session and per-run are
+                 different lifetimes, and a reset that
+                 covers one is not evidence about the
+                 other. A cold start was always clean
+                 because a new process has an empty
+                 _suppressed. Only an in-process second
+                 run inherited the leftover
+                 (symbol, engine_name, departing_state)
+                 triples. A leftover triple makes
+                 detect() return None for a spike it
+                 should have fired, which is a skipped
+                 hazard exit -- Inv-11 territory. The
+                 named _maybe_reset on for_new_run is
+                 what closes that lifetime.
+                 Closure walked to fixpoint before the
+                 first edit and terminated at
+                 _suppressed. RegimeHazardDetector is
+                 stored on Orchestrator
+                 (orchestrator.py:3065), has no
+                 attach(), and is not a bus subscriber;
+                 detect() is a direct call at line 960.
+                 The getattr walk cannot see it.
+                 reset() clears _suppressed only. Names
+                 nothing new. Stop.
+                 _reset_regime_session_state was not
+                 touched.
+                 Pin first, no src edit. The spy FAILED
+                 naming it: MUST_INVOKE not entered:
+                 ['RegimeHazardDetector']
+                 (test_reset_invocation.py:281). That
+                 fail-before is the pin movement. Then
+                 one line immediately after
+                 _maybe_reset(self._hazard_exit_controller)
+                 at 5228:
+                 _maybe_reset(self._regime_hazard_detector)
+                 at 5229. The spy passed.
+                 _maybe_reset already no-ops on None
+                 (getattr(None, "reset", None) is not
+                 callable), so FIX-1 and PORTFOLIO stay
+                 unchanged.
+                 Probe dropped the new line. FAILED
+                 naming RegimeHazardDetector. Restore
+                 SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes), BYTE_IDENTICAL. Green
+                 re-run: 1 passed. Did not probe by
+                 deleting RegimeHazardDetector.reset:
+                 the body exists; the missing piece is
+                 the named call. Did not probe
+                 _reset_regime_session_state: that path
+                 is session start, not for_new_run.
+                 MUST_INVOKE 29 to 30. _TAPES unmoved
+                 at three ids: ("fix1", "portfolio",
+                 "hazard_decouple"). DECLARED_UNINVOKED
+                 is the nine never-rows plus the three
+                 remaining owed: MassiveNormalizer,
+                 MocFillController,
+                 PassiveLimitOrderRouter.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA zero on modules and symbols:
+                 249 -> 249, 590 -> 590. sloc 47059 ->
+                 47060, the one line. n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-05 passive_limit and MOC; owed 3
+                 to 1 (boundary). Not started. Do not
+                 begin R-05.
+                 Left uncommitted:
+                 baseline_pre-R-04b.json,
+                 baseline_post-R-04b.json, this ledger
+                 entry.
+
+---
+
+## R-05  2026-09-16T18:25:09+08:00
+  STEP:          R-05
+  BASE:          cdabfae2f193b8d589f45069ea67d88002836e0b
+  RESULT SHA:    84f0a856e056e707c7a75d306a32939e7ea1ddc3 (exec/R-05; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 3 to 1. Does not close G04.
+                 Moves two names into MUST_INVOKE in the same
+                 commit as the PlatformConfig that constructs
+                 them: PassiveLimitOrderRouter,
+                 MocFillController.
+                 The nine never-rows stay in
+                 DECLARED_UNINVOKED. G04 stays CLOSED. This
+                 is not G04.
+                 Both were reachable without a src edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (two names in MUST_INVOKE,
+                 _TAPES still ("fix1", "portfolio",
+                 "hazard_decouple"), passive_limit branch
+                 still raises, no passive_limit tape): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['MocFillController', 'PassiveLimitOrderRouter']
+                 (tests/conformance/test_reset_invocation.py:281).
+                 Spy after tape: 1 passed. MUST_INVOKE
+                 30 -> 32. _TAPES ("fix1", "portfolio",
+                 "hazard_decouple") -> ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit").
+                 RthEntryFillGate was constructed
+                 (router._rth_gate is RthEntryFillGate)
+                 and did NOT appear in invoked;
+                 DECLARED_UNINVOKED entered would have
+                 failed the spy.
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 drop the nested
+                 `if self._moc is not None: self._moc.reset()`
+                 in PassiveLimitOrderRouter.reset.
+                 MUST_INVOKE not entered:
+                 ['MocFillController']
+                 PassiveLimitOrderRouter remained entered
+                 by name (absent from the missing set).
+                 restore SHA256
+                 01c251309ac9322fde87ffc811b7a9000cd054adad5bc533eaa6527bc3dcaca2
+                 (43637 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 execution 865; conformance 119 passed /
+                 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-05 GREEN 4911 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 -> capture post-R-05 GREEN 4911 passed / 0
+                 failed / 18 skipped / 5 xfailed.
+                 not-paper_rth after commit: 4910 passed /
+                 0 failed / 5 skipped / 14 deselected /
+                 5 xfailed. No failure outside the accepted
+                 set. 4910 vs capture 4911 is one
+                 paper_rth test that ran in the unmarked
+                 capture and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-05 vs post-R-05 and vs
+                 baseline_post-R-04b.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 3 to 1.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 84f0a856). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 null_alpha.alpha.yaml.
+                 Probe mutated
+                 execution/passive_limit_router.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. S16 unmoved. R6 unmoved.
+                 verify_step not runnable (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4911->4911 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 84f0a856e056e707c7a75d306a32939e7ea1ddc3.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD cdabfae2 on arch/exec.
+                 Cut exec/R-05. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 84f0a856e056e707c7a75d306a32939e7ea1ddc3.
+                 Single commit, one file, no src:
+                 tests/conformance/test_reset_invocation.py
+                 only. Subject "R-05: pin passive_limit
+                 and MOC cascade objects on the reset
+                 spy". 16 insertions, 4 deletions. The
+                 probe mutated
+                 execution/passive_limit_router.py and
+                 was restored; that path is not in the
+                 commit. LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 Closure walked to fixpoint before the
+                 first edit. PassiveLimitOrderRouter.reset
+                 names SequenceGenerator (_ack_seq) and
+                 MocFillController (_moc.reset).
+                 SequenceGenerator.reset restores
+                 _counter only. MocFillController.reset
+                 clears _pending only and names nothing
+                 new. Terminated at SequenceGenerator
+                 and MocFillController._pending.
+                 Pin moved first, _TAPES still three
+                 ids, passive_limit branch still
+                 raising. Spy FAILED naming both:
+                 MUST_INVOKE not entered:
+                 ['MocFillController',
+                 'PassiveLimitOrderRouter']
+                 (test_reset_invocation.py:281). That
+                 fail-before is the pin movement. The
+                 tape then landed; the spy passed.
+                 Probe cut the nested
+                 `if self._moc is not None: self._moc.reset()`
+                 in PassiveLimitOrderRouter.reset.
+                 FAILED naming MocFillController alone:
+                 MUST_INVOKE not entered:
+                 ['MocFillController']
+                 (test_reset_invocation.py:293).
+                 PassiveLimitOrderRouter stayed entered
+                 by name. Restore SHA256
+                 01c251309ac9322fde87ffc811b7a9000cd054adad5bc533eaa6527bc3dcaca2
+                 (43637 bytes), BYTE_IDENTICAL to the
+                 pre-probe file. Green re-run: 1 passed.
+                 The nested-call probe is the only one
+                 that isolates the controller.
+                 MocFillController is constructed inside
+                 the router and reached from the
+                 router's own body, not from the bus, so
+                 a getattr-walk skip cannot unreach it.
+                 Dropping the named _maybe_reset on
+                 order_router would unreach both names
+                 at once and prove nothing about the
+                 nested path. The probe has to cut the
+                 specific edge the rung claims, not any
+                 edge upstream of it.
+                 RthEntryFillGate was constructed on
+                 that tape (router._rth_gate is
+                 RthEntryFillGate) and did NOT enter
+                 the cascade. It stays a never-row.
+                 Adding gate.reset() would have failed
+                 DECLARED_UNINVOKED entered. This rung
+                 did not add that call.
+                 MUST_INVOKE 30 to 32. _TAPES at four
+                 ids: ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit").
+                 Both switches on one tape:
+                 execution_mode="passive_limit" and
+                 moc_session_date="2026-01-01".
+                 passive_limit alone leaves _moc None.
+                 No fill on any path: evaluate returns
+                 None, fills_by_through 0,
+                 fills_by_drain 0, resting 0,
+                 pending_moc 0, book flat.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47060 -> 47060, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-06 injected normalizer; owed 1
+                 to 0 (boundary). Not started. Do not
+                 begin R-06.
+                 Left uncommitted:
+                 baseline_pre-R-05.json,
+                 baseline_post-R-05.json, this ledger
+                 entry.
+
+---
+
+## R-06  2026-09-16T19:58:30+08:00
+  STEP:          R-06
+  BASE:          46cfa4f268f853753f1f66d5ca8ef64f6ced613c
+  RESULT SHA:    b20fcdd33b243f2b509014d1708bb4ffb6f053a7 (exec/R-06; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing. Owed 1 to 0. Does not close G04.
+                 Does not close the campaign — that is R-07.
+                 Moves MassiveNormalizer into MUST_INVOKE in
+                 the same commit as the build_platform
+                 injection that constructs it.
+                 DECLARED_UNINVOKED is exactly the nine
+                 never-rows. G04 stays CLOSED. This is not
+                 G04.
+                 Reachable without a src edit. The injection
+                 is the public keyword, not a private
+                 attribute.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Pin fail-before (name in MUST_INVOKE,
+                 _TAPES still four ids, injected_normalizer
+                 branch still raises, boot loop still omits
+                 normalizer=): FAILED
+                 AssertionError: MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 (tests/conformance/test_reset_invocation.py:293).
+                 Spy after injection: 1 passed. MUST_INVOKE
+                 32 -> 33. _TAPES ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit") ->
+                 ("fix1", "portfolio", "hazard_decouple",
+                 "passive_limit", "injected_normalizer").
+                 DECLARED_UNINVOKED is the nine never-rows.
+                 One probe, uncommitted, restore
+                 BYTE_IDENTICAL:
+                 drop `_maybe_reset(self._normalizer)` in
+                 Orchestrator.reset.
+                 MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 restore SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes)
+                 Green re-run after restore: 1 passed.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 ingestion 148 passed / 3 skipped.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-06 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (accepted IB EXEMPTION).
+                 -> capture post-R-06 RED 4909 passed / 2
+                 failed / 18 skipped / 5 xfailed. Same IB
+                 failure plus
+                 tests/ingestion/test_massive_functional.py::
+                 test_websocket_feed_emits_live_massive_event
+                 (live-feed EXEMPTION). Direct re-run of
+                 that file: 3 passed / 2 skipped; no code
+                 change. No failure outside the accepted
+                 set.
+                 not-paper_rth after commit: 4908 passed /
+                 2 failed / 5 skipped / 14 deselected /
+                 5 xfailed. Same two EXEMPTION failures.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-06 vs post-R-06 and vs
+                 baseline_post-R-05.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Locked hashes held because they are
+                 cold-start single-run and never call
+                 Orchestrator.reset(for_new_run=True).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed 1 to 0.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs b20fcdd3). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 null_alpha.alpha.yaml.
+                 Probe mutated kernel/orchestrator.py
+                 and restored it; that file is not in
+                 the commit. No keep-row file is
+                 touched. No yaml. S16 unmoved. R6
+                 unmoved. verify_step not runnable
+                 (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4909 passed, failed 1->2
+                 (IB EXEMPTION both sides; extra is the
+                 live-Massive websocket test, which passed
+                 on a direct re-run of that file; no
+                 failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 b20fcdd33b243f2b509014d1708bb4ffb6f053a7.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD 46cfa4f2 on arch/exec.
+                 Cut exec/R-06. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 b20fcdd33b243f2b509014d1708bb4ffb6f053a7.
+                 Single commit, one file, no src:
+                 tests/conformance/test_reset_invocation.py
+                 only. Subject "R-06: pin injected
+                 MassiveNormalizer on the reset spy".
+                 29 insertions, 4 deletions. The probe
+                 mutated kernel/orchestrator.py and was
+                 restored; that path is not in the
+                 commit. LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 Closure walked to fixpoint before the
+                 first edit. MassiveNormalizer.reset
+                 clears _last_seen, the four counters,
+                 and _warn_ambiguous_rest_logged; then
+                 _seq.reset() (SequenceGenerator) and
+                 machine.reset() on each
+                 _health_machines value (StateMachine).
+                 It keeps _registered_symbols and the
+                 _health_machines dict. SequenceGenerator
+                 .reset restores _counter only.
+                 StateMachine.reset returns to the
+                 initial state and names nothing new.
+                 It never calls
+                 _halt_tradeability.reset — that is
+                 _HaltTradeability via
+                 _reset_halt_state, already MUST_INVOKE.
+                 Terminated at SequenceGenerator and
+                 StateMachine.
+                 normalizer is a build_platform keyword
+                 (bootstrap.py:236), not a PlatformConfig
+                 field. No caller in the tree passes
+                 normalizer= into build_platform.
+                 _maybe_reset(self._normalizer) exists
+                 at orchestrator.py:5223.
+                 _verify_data_integrity, when a
+                 normalizer is bound, requires every
+                 universe symbol in all_health() as
+                 HEALTHY or boot goes DEGRADED
+                 (DATA_INTEGRITY_FAIL).
+                 Pin moved first, _TAPES still four
+                 ids, injected_normalizer branch still
+                 raising, boot loop still omitting
+                 normalizer=. Spy FAILED naming it:
+                 MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 (test_reset_invocation.py:293). That
+                 fail-before is the pin movement. The
+                 tape then landed: FIX-1-shaped
+                 PlatformConfig, MassiveNormalizer(
+                 SimulatedClock(start_ns=SESSION_OPEN_NS)),
+                 register_symbols(frozenset(_UNIVERSE))
+                 before build_platform, then
+                 build_platform(config,
+                 event_log=event_log,
+                 normalizer=normalizer) on that tape
+                 only. The other four ids still boot
+                 without a normalizer. The spy passed.
+                 register_symbols is a precondition of
+                 the boot, not a workaround:
+                 all_health() was {} before it and
+                 {AAPL: HEALTHY, MSFT: HEALTHY} after.
+                 Boot macro was MacroState.READY. The
+                 injected object is the one stored
+                 (orchestrator._normalizer is the
+                 argument). No private attribute was
+                 assigned.
+                 Probe dropped
+                 `_maybe_reset(self._normalizer)`.
+                 FAILED naming MassiveNormalizer alone:
+                 MUST_INVOKE not entered:
+                 ['MassiveNormalizer']
+                 (test_reset_invocation.py:318).
+                 Restore SHA256
+                 0d0d5047fb517334fb40ebfe8d986e70f80037f90ff244f6e2840f124036c63c
+                 (234491 bytes), BYTE_IDENTICAL to the
+                 pre-probe file. Green re-run: 1 passed.
+                 The named-call probe is the only one
+                 that isolates it. The object is stored
+                 on Orchestrator and reached by that
+                 call, not by the getattr bus walk. Did
+                 not probe by deleting
+                 MassiveNormalizer.reset: the body
+                 exists; the missing piece on this rung
+                 is construction. Did not probe
+                 _reset_halt_state: that path is
+                 _HaltTradeability.
+                 MUST_INVOKE 32 to 33. _TAPES at five
+                 ids. DECLARED_UNINVOKED is exactly the
+                 nine never-rows: IBOrderRouter,
+                 InMemoryEventLog, InMemoryKillSwitch,
+                 MassiveHistoricalIngestor,
+                 MetricSummary, QuoteReplayObserver,
+                 QuoteTraceIndex, RthEntryFillGate,
+                 _WarmTimestampIndex.
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47060 -> 47060, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          R-07 partition pin; campaign close
+                 (local). Not started. Do not begin
+                 R-07.
+                 Left uncommitted:
+                 baseline_pre-R-06.json,
+                 baseline_post-R-06.json, this ledger
+                 entry.
+
+---
+
+## R-07  2026-09-16T20:44:17+08:00
+  STEP:          R-07
+  BASE:          f234287939f084b65600d4a2f7730e0e92123073
+  RESULT SHA:    316093042e7a965e0b6da9132034dbb1dfbe546d (exec/R-07; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES the campaign. Owed stays 0. Does not
+                 close G04. S-15 closed G04 (S16 totality
+                 + R6 existence). This closes R6's
+                 vacuity: the partition the campaign
+                 claimed. invoked == MUST_INVOKE (33) on
+                 the union of the five tapes.
+                 DECLARED_UNINVOKED == _NEVER_ROWS (the
+                 nine). G04 stays CLOSED. This is not
+                 G04. No name moved. No new tape. No src
+                 edit.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs before
+                 and after.
+                 S16 (test_reset_paths.py) 2 passed,
+                 unmoved. R6 (test_recovery_determinism.py)
+                 1 passed, unmoved.
+                 test_reset_invocation.py 1 passed.
+                 Two probes, uncommitted, restore
+                 BYTE_IDENTICAL between. Edited
+                 _NEVER_ROWS only; DECLARED_UNINVOKED
+                 and the wrap roster were not touched.
+                 (a) add "TenthNeverRow" to _NEVER_ROWS
+                     FAILED
+                     AssertionError: assert frozenset(...)
+                     == frozenset(...)
+                     Extra items in the right set:
+                     'TenthNeverRow'
+                     (tests/conformance/test_reset_invocation.py:335).
+                     Cascade asserts still passed.
+                     restore SHA256
+                     5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                     (12899 bytes)
+                 (b) drop "IBOrderRouter" from
+                     _NEVER_ROWS
+                     FAILED
+                     AssertionError: assert frozenset(...)
+                     == frozenset(...)
+                     Extra items in the left set:
+                     'IBOrderRouter'
+                     (tests/conformance/test_reset_invocation.py:333).
+                     Cascade asserts still passed.
+                     restore SHA256
+                     5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                     (12899 bytes)
+                 Green re-run after last restore: 1 passed.
+                 Did not re-run R-01's
+                 `_maybe_reset(self._positions)` drop.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+  TESTS:         capture pre-R-07 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed.
+                 FAILED tests/broker/ib/test_ib_functional.py::
+                 TestIBGatewayFunctional::
+                 test_after_hours_reject_surfaces_as_rejected
+                 (accepted IB EXEMPTION).
+                 -> capture post-R-07 RED 4910 passed / 1
+                 failed / 18 skipped / 5 xfailed. Same
+                 IB failure. No failure outside the
+                 accepted set.
+                 not-paper_rth after commit: 4909 passed /
+                 1 failed / 5 skipped / 14 deselected /
+                 5 xfailed. Failed 1 is the IB
+                 after-hours test. 4909 vs capture 4910
+                 is one paper_rth test that ran in the
+                 unmarked capture and was deselected
+                 here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-R-07 vs post-R-07 and vs
+                 baseline_post-R-06.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. Owed stays 0.
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 31609304). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_reset_invocation.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, test_reset_paths.py,
+                 test_recovery_determinism.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 the PORTFOLIO fixtures, the R-04a yaml,
+                 null_alpha.alpha.yaml.
+                 Probes mutated
+                 test_reset_invocation.py and restored
+                 it; those mutations are not in the
+                 commit. No keep-row file is touched.
+                 No yaml. No src. S16 unmoved. R6
+                 unmoved. verify_step not runnable
+                 (R-* ; frozen).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse R-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 1->1
+                 (IB EXEMPTION both sides; no failure
+                 outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 316093042e7a965e0b6da9132034dbb1dfbe546d.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies
+                 Pre-flight HEAD f2342879 on arch/exec.
+                 Cut exec/R-07. tools/exec vs exec-tools-v1
+                 empty. Go confirmed on this head
+                 316093042e7a965e0b6da9132034dbb1dfbe546d.
+                 Single commit, one file, no src:
+                 tests/conformance/test_reset_invocation.py
+                 only. Subject "R-07: pin
+                 DECLARED_UNINVOKED to the nine
+                 never-rows". 16 insertions. Probes
+                 mutated the same file and were
+                 restored; those edits are not in the
+                 commit. LEDGER.md dirty at the gate is
+                 the uncommitted append, as on every
+                 prior rung.
+                 The campaign's claim is the partition.
+                 R-01 already proves the cascade half:
+                 wrap filter is MUST_INVOKE |
+                 DECLARED_UNINVOKED, so MUST_INVOKE ⊆
+                 invoked plus invoked ∩
+                 DECLARED_UNINVOKED == ∅ implies
+                 invoked == MUST_INVOKE. That
+                 implication is live (33 ⊆ invoked,
+                 intersection empty, wrap cannot name
+                 anything else). The missing wall was
+                 DECLARED_UNINVOKED equal to those nine
+                 names. A tenth could be added, or a
+                 never-row dropped, and both existing
+                 asserts would still pass.
+                 Before-state wrap roster is
+                 MUST_INVOKE | DECLARED_UNINVOKED.
+                 Nothing pinned DECLARED_UNINVOKED to
+                 nine names. The nine as they stood:
+                 IBOrderRouter, InMemoryEventLog,
+                 InMemoryKillSwitch,
+                 MassiveHistoricalIngestor,
+                 MetricSummary, QuoteReplayObserver,
+                 QuoteTraceIndex, RthEntryFillGate,
+                 _WarmTimestampIndex.
+                 Added _NEVER_ROWS, the nine as they
+                 stand with the R-01 one-line reasons.
+                 Assert DECLARED_UNINVOKED ==
+                 _NEVER_ROWS. Assert invoked_union ==
+                 MUST_INVOKE. The second names the
+                 implication R-01 already has. The
+                 first is the missing wall. On this
+                 tree both pass by construction — that
+                 is not the proof. A src drop cannot
+                 move a frozenset literal, so the
+                 fail-before is an edit to the pin
+                 itself.
+                 Two probes, both directions, edit
+                 _NEVER_ROWS only.
+                 (a) extras: add "TenthNeverRow".
+                 FAILED Extra items in the right set:
+                 'TenthNeverRow'. Restore SHA256
+                 5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                 (12899 bytes), BYTE_IDENTICAL to the
+                 pre-probe file.
+                 (b) omission: drop "IBOrderRouter".
+                 FAILED Extra items in the left set:
+                 'IBOrderRouter'. Restore SHA256
+                 5846dea351fc5183a52e2384312854e6dcd8f39c6b2b9604f75bfb66e946a9b1
+                 (12899 bytes), BYTE_IDENTICAL. Both
+                 restores match each other and the
+                 pre-probe hash. Green re-run after
+                 the last restore: 1 passed.
+                 Both directions were needed. (a) is
+                 not a subset check; (b) is not a
+                 superset check. A one-sided pin would
+                 let a tenth sneak in or a never-row
+                 vanish.
+                 Did not re-run R-01's
+                 `_maybe_reset(self._positions)` drop.
+                 That probe still covers the cascade
+                 half (MUST_INVOKE not entered:
+                 ['MemoryPositionStore']). This rung
+                 pins the frozenset partition, not the
+                 named call.
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays five ids:
+                 ("fix1", "portfolio",
+                 "hazard_decouple", "passive_limit",
+                 "injected_normalizer").
+                 Both import pins unmoved: five-tier
+                 empty with statuses KEPT;
+                 engine-to-kernel at 9. S2 KEPT at
+                 zero. S16 and R6 unmoved.
+                 Locked replay hashes unmoved,
+                 including _BASELINE_TRADE_PARITY_HASH
+                 (0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3).
+                 Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249 ->
+                 249, public_symbols 590 -> 590, sloc
+                 47060 -> 47060, n_edges 675,
+                 n_modules 203, cycles 1, alphaleak 0.
+  FINDINGS:      None for this step.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39/G10/G28 markers,
+                 G46 xfail unresolved-unit list;
+                 S-34f 15 engine bodies g-o;
+                 perfmeasure.py DIRECT_PROBES (three
+                 dead entries);
+                 G6 empty depends_on_sensors; S-04c;
+                 serialization.py fail-open;
+                 verify_step frozen; 152 research
+                 cache days; four EXEMPTION tests;
+                 keep-row squeezes vs ruff format.
+  NEXT:          campaign close written below.
+                 Go confirmed on
+                 316093042e7a965e0b6da9132034dbb1dfbe546d.
+                 Not merged.
+                 Left uncommitted:
+                 baseline_pre-R-07.json,
+                 baseline_post-R-07.json, this ledger
+                 entry.
+
+---
+
+## CAMPAIGN CLOSE  Reset invocation
+DATE:        2026-09-16
+CLOSED AT:   R-07. Commit 31609304 on exec/R-07;
+             not merged. Campaign base 4e707c17
+             (post-T-09z); R-07 parent f2342879
+             on arch/exec.
+LOCKED:      7 rungs in the campaign LADDER
+             (R-01, R-02, R-03, R-04, R-05, R-06,
+             R-07). R-04 was the numbered fourth
+             owed drop.
+EXECUTED:    8 unique step ids passed (retries
+             not recounted). 6 locked ids ran as
+             themselves (R-01, R-02, R-03, R-05,
+             R-06, R-07). R-04 never ran as the
+             bare id. 2 were splits of planned
+             rungs (R-04a, R-04b from R-04). 0
+             were added mid-campaign beyond that
+             split.
+CLOSED:      invoked == MUST_INVOKE across five
+             tapes (fix1, portfolio,
+             hazard_decouple, passive_limit,
+             injected_normalizer). MUST_INVOKE
+             walked 18 to 33. DECLARED_UNINVOKED
+             pinned at nine. Owed 15 to 0:
+             R-01 pin, owed stays 15, MUST_INVOKE
+             18; R-02 default-path leaks 15→11,
+             18→22; R-03 PORTFOLIO config 11→7,
+             22→26; R-04a hazard/decouple 7→4,
+             26→29; R-04b detector body 4→3,
+             29→30; R-05 passive_limit+MOC 3→1,
+             30→32; R-06 injected normalizer
+             1→0, 32→33; R-07 partition pin,
+             owed stays 0, counts unmoved. This
+             is not G04. S-15 closed G04. This
+             closed R6's vacuity.
+FIXED, NOT
+JUST DETECTED:
+             R-02 four default-path leaks. A
+             second run in the same process would
+             have inherited: StrategyPositionStore
+             leftover per-strategy qty, avg
+             entry, realized and unrealized PnL,
+             fees, marks, and open-episode
+             timestamps (MemoryPositionStore.reset
+             on self._positions does not touch
+             these sub-books); FillAttributionLedger
+             leftover _records and
+             _cumulative_allocations (recycled
+             order_ids attribute run-2 fills to
+             run-1 contributions);
+             HMM3StateFractional leftover
+             _posteriors, _last_update_seq, and
+             _last_quote_ts_ns (posterior()
+             returns the leftover cache when seq
+             matches); RegimeGate leftover
+             per-symbol ON/OFF latches (FIX-1's
+             null_alpha gate is on_condition True
+             / off_condition False, so leftover
+             ON and cold-start False both sit ON
+             after the first evaluate; a P(state)
+             leftover ON would not).
+             R-04b hazard detector. Session start
+             already called
+             RegimeHazardDetector.reset;
+             Orchestrator.reset(for_new_run=True)
+             never did. A leftover
+             (symbol, engine_name, departing_state)
+             triple in _suppressed makes detect()
+             return None for a spike it should
+             have fired — a skipped hazard exit,
+             Inv-11 territory. A cold start was
+             always clean; only an in-process
+             second run inherited it.
+REMAINS OPEN:
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed. S9
+             xfail reason string is stale (names
+             RiskVerdict.constraints, deleted at
+             S-31a). Live list is 10 fields; see
+             CAMPAIGN CLOSE CI restoration.
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
+             keep-row squeezes vs ruff format —
+             T-04b FINDING, unowned
+             Engine-to-kernel residual: 9 pairs
+             under test_engine_kernel_imports_
+             equal_pin. That pin is the detector,
+             not a gap this campaign owned.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. Do not restore
+             continue-on-error.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals the 9-pair
+             pin. Shrinking either pin happens in
+             lockstep with the cut that drops the
+             pair, in the same commit.
+             Do not restore continue-on-error.
+             Do not invent suffixes for g–o.
+             Specific to this campaign: synth
+             conformance tapes must never assert
+             LOCKED_PARITY_BASELINES,
+             _BASELINE_TRADE_PARITY_HASH, or
+             _BASELINE_FILL_COUNT. A new tape that
+             runs the APP oracle is a declared
+             break, not a hold. Moving a name into
+             MUST_INVOKE happens in the same
+             commit as the config that constructs
+             the object. The partition is both
+             walls: invoked == MUST_INVOKE and
+             DECLARED_UNINVOKED == the nine
+             never-rows. _TAPES stays the five
+             ids. MUST_INVOKE stays 33.
+             DECLARED_UNINVOKED stays nine. A
+             name does not move between the
+             frozensets in a close rung.
+FINDINGS:    A detector's failure mode is part of
+             the detector (R-02): a wrap that
+             crashes on the regression it exists
+             to catch tells you less than one that
+             names it.
+             A probe which must pass is as much
+             evidence as one which must fail when
+             the claim is "this path is not
+             required" (R-03 CompositionEngine
+             named _maybe_reset vs getattr bus
+             walk).
+             A config-widen rung can be gated by a
+             validation chain two hops from the
+             flag being set (R-04a G17 fingerprint
+             sensor).
+             Per-session and per-run are different
+             lifetimes (R-04b): a reset that
+             covers one is not evidence about the
+             other.
+             A probe must cut the specific edge
+             the rung claims, not any edge
+             upstream of it (R-05 nested
+             _moc.reset vs dropping the router).
+             A guard that cannot be shown to fail
+             is decorative (S-28a, T-07c, and
+             this rung: a frozenset literal
+             cannot be unreached by dropping a
+             call, so both pin-edit directions
+             are the fail-before).
+             R6 14/31 resets is closed. Do not
+             carry it forward as open.
+
+---
+
+## 0.1  2026-09-17T15:57:25+08:00
+  STEP:          0.1
+  BASE:          80a49fd9197ac39e0bab06f029b0a2be6b759be8
+  RESULT SHA:    9c0698c54ac621c7c460a37dd6d64843efb8239d (exec/0.1; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing toward ruff green. Lint
+                 stays red (2 F401). Format stays red
+                 (57 files). FAIL_QUIET_KEEP loses every
+                 line number. S6 still has seventeen
+                 keepers. G36 stays OPEN. A matcher
+                 landing with extra/missing empty is
+                 the declared outcome, not a failed
+                 rung.
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 extra/missing empty under Counter.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs
+                 before and after.
+                 Inv-10 unmoved
+                 (test_no_raw_wall_clock_outside_allowlist
+                 and
+                 test_wall_clock_allowlist_has_no_stale_entries).
+                 Reset partition unmoved: _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 mypy src/feelies: Success, 249 source files
+                 (before the gate). docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-0.1 GREEN 4900 passed / 0
+                 failed / 29 skipped / 5 xfailed.
+                 -> capture post-0.1 GREEN 4900 passed /
+                 0 failed / 29 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it. vs post-R-07 RED 4910
+                 passed / 1 failed / 18 skipped / 5
+                 xfailed: skipped 18 -> 29, passed -10;
+                 failed 1 -> 0. Environmental skip of
+                 the IB after-hours EXEMPTION, not a
+                 regression.
+                 not-paper_rth: 4899 passed / 0 failed /
+                 16 skipped / 14 deselected / 5 xfailed.
+                 4899 vs capture 4900 is one paper_rth
+                 test that ran in the unmarked capture
+                 and was deselected here.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-0.1 vs post-0.1 and vs
+                 baseline_post-R-07.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 9c0698c5). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: test_fail_quiet.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 src/, tools/arch/gatescan.py,
+                 test_no_walltime_outside_clock.py,
+                 test_import_contracts.py,
+                 test_backtest_app_baseline.py,
+                 .github/workflows/ci.yml, uv.lock,
+                 layer_validator.py, bootstrap.py,
+                 ib/connection.py, cli/env.py,
+                 cli/promote.py, factor_neutralizer.py,
+                 backtest_runner.py, massive_ingestor.py,
+                 massive_ws.py.
+                 Fail-first edited the matcher budget
+                 inside test_fail_quiet.py (1 then 2);
+                 no production except body was written
+                 or edited. No file was formatted.
+                 verify_step not runnable (0.* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47060 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse 0.*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4900->4900 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 9c0698c54ac621c7c460a37dd6d64843efb8239d.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 80a49fd9 on arch/exec.
+                 Cut exec/0.1. tools/exec vs
+                 exec-tools-v1 empty. Go confirmed on
+                 this head
+                 9c0698c54ac621c7c460a37dd6d64843efb8239d.
+                 Single commit, one file, no src:
+                 tests/conformance/test_fail_quiet.py
+                 only. Subject "0.1: re-key
+                 FAIL_QUIET_KEEP by enclosing symbol".
+                 63 insertions, 29 deletions. LEDGER.md
+                 dirty at the gate is the uncommitted
+                 append. The two capture artifacts stay
+                 uncommitted.
+                 FailQuietKeep lost its line field. The
+                 matcher is collections.Counter of
+                 (path, enclosing_symbol, exc_type),
+                 exactly-N, not a frozenset. Seventeen
+                 rows in the new key form:
+                 layer_validator.py
+                 _check_g17_safety_exit_policy
+                 (TypeError, ValueError);
+                 bootstrap.py _create_composition_layer
+                 KeyError;
+                 bootstrap.py
+                 _create_hazard_exit_controller
+                 (TypeError, ValueError);
+                 ib/connection.py _drain_writer_queues
+                 queue.Empty;
+                 ib/connection.py orderStatus
+                 (TypeError, ValueError);
+                 cli/env.py load_dotenv_optional
+                 ImportError;
+                 cli/promote.py _read_entries_safely
+                 StopIteration;
+                 cli/promote.py _read_entries_safely
+                 ValueError;
+                 factor_neutralizer.py <module>
+                 ImportError;
+                 factor_neutralizer.py neutralize
+                 np.linalg.LinAlgError;
+                 backtest_runner.py _force_utf8_console
+                 Exception;
+                 backtest_runner.py
+                 _run_backtest_phases_2_7 Exception
+                 (psutil HIGH_PRIORITY_CLASS);
+                 backtest_runner.py
+                 _run_backtest_phases_2_7 Exception
+                 (nice() restore in finally);
+                 massive_ingestor.py
+                 _clone_parallel_clients TypeError;
+                 massive_ws.py _drain_stale_sentinels
+                 queue.Empty;
+                 massive_ws.py _run_loop
+                 asyncio.CancelledError;
+                 massive_ws.py _subscribe
+                 asyncio.TimeoutError.
+                 The numpy ImportError in
+                 factor_neutralizer.py has no enclosing
+                 def. The sentinel is "<module>";
+                 without it that row is an extra.
+                 layer_validator.py:1204 is the second
+                 except (TypeError, ValueError) inside
+                 _check_g17_safety_exit_policy. It
+                 returns, so fail_quiet_handlers omits
+                 it. That omission is what keeps the
+                 1190 row unique. Do not add it.
+                 Budget 1 left a single keep row for
+                 _run_backtest_phases_2_7 / Exception.
+                 The test named the second handler:
+                 AssertionError: 1 fail-quiet handler(s)
+                 not in FAIL_QUIET_KEEP. First:
+                 src/feelies/harness/backtest_runner.py:_run_backtest_phases_2_7
+                 except Exception
+                 Left contains 1 more item:
+                 {('src/feelies/harness/backtest_runner.py',
+                 '_run_backtest_phases_2_7',
+                 'Exception'): 1}.
+                 Budget 2 (second keep row) went green.
+                 ruff check 2 F401 before and after.
+                 ruff format --check 57 files before
+                 and after. Identical counts, so this
+                 rung touched nothing else. Those reds
+                 are 0.2 and 0.3, not this rung
+                 failing.
+                 All pins unmoved: five-tier empty with
+                 statuses KEPT; engine-to-kernel 9; S2
+                 KEPT at zero; Inv-10 unmoved; reset
+                 partition unmoved (_TAPES the five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine). Locked
+                 hashes unmoved: all 64 HASH/COUNT
+                 constants, the fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6,
+                 and _BASELINE_CONFIG_HASH, against
+                 baseline_post-R-07.json. APP oracle 2
+                 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA all zeros: modules 249,
+                 public_symbols 590, sloc 47060,
+                 n_edges 675, n_modules 203, cycles 1,
+                 alphaleak 0.
+  FINDINGS:      The fail-first had to be a matcher
+                 edit. Every prior rung in four
+                 campaigns probed by cutting something
+                 in production and watching a detector
+                 name it. That is impossible here. A
+                 frozenset of the same rows accepts
+                 both Exception handlers in
+                 _run_backtest_phases_2_7 under one key
+                 and passes with one unwatched, so no
+                 production mutation distinguishes the
+                 correct matcher from the broken one.
+                 The only discriminating experiment is
+                 to under-budget the collision and
+                 watch the Counter name it. When a
+                 guard's failure mode is about
+                 multiplicity rather than presence, the
+                 probe has to attack the counting, not
+                 the code.
+                 Carried, not fixed: G36 stays OPEN --
+                 the seventeen keepers stay keepers;
+                 this rung changed keying only.
+                 G44 partial, G32 deferred, G41/G42/G45
+                 open, G39/G10/G28 markers never
+                 dropped, G46's xfail is the
+                 unresolved-unit list.
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned.
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned.
+                 T-04b keep-row squeezes vs ruff format
+                 unowned; this rung is the re-key that
+                 campaign could not land.
+                 verify_step frozen at exec-tools-v1.
+                 Lint and format stay red.
+
+---
+
+## 0.2  2026-09-17T23:56:41+08:00
+  STEP:          0.2
+  BASE:          5ca077258083a01bf4b22fc178f84b11776bf917
+  RESULT SHA:    18478b4911affb935017c79c592152a9e6238c50 (exec/0.2; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES ruff check src/ tests/ scripts/
+                 green. Format stays red (57 files).
+                 Two F401 gone. No pin moves. Already
+                 red. Lint is now green: the first of
+                 the two CI steps this campaign
+                 restores. Format remains 0.3.
+                 No new conformance test.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin.
+                 S2 KEPT at zero twelve-engine pairs
+                 before and after.
+                 Inv-10 unmoved
+                 (test_no_raw_wall_clock_outside_allowlist
+                 and
+                 test_wall_clock_allowlist_has_no_stale_entries).
+                 Reset partition unmoved: _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 mypy src/feelies: Success, 249 source files
+                 before and after. docs 101.
+                 conformance 119 passed / 5 xfailed (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-0.2 GREEN 4903 passed / 0
+                 failed / 26 skipped / 5 xfailed.
+                 -> capture post-0.2 GREEN 4903 passed /
+                 0 failed / 26 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4900 passed / 0 failed /
+                 15 skipped / 14 deselected / 5 xfailed.
+                 4900 vs capture 4903 is three paper_rth
+                 tests that ran in the unmarked capture
+                 and were deselected here (3 passed + 11
+                 skipped of the 26 = 14 deselected).
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-0.2 vs post-0.2 and vs
+                 baseline_post-0.1.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 18478b49). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: src/feelies/bootstrap.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched: tests/,
+                 _paper_injected 2102-2103 (now
+                 2100-2101 after the two-line delete),
+                 TYPE_CHECKING CompositionEngine and
+                 NetDivergence, uv.lock, ruff version.
+                 No noqa added. No file was formatted.
+                 verify_step not runnable (0.* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47060 -> 47058 (-2; the two deleted
+                 TYPE_CHECKING import lines)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse 0.*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4903->4903 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0
+                 (sloc -2 is the two deleted imports).
+                 CLEAN. Go confirmed on branch head
+                 18478b4911affb935017c79c592152a9e6238c50.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 5ca07725 on arch/exec.
+                 Cut exec/0.2. tools/exec vs
+                 exec-tools-v1 empty. Go confirmed on
+                 this head
+                 18478b4911affb935017c79c592152a9e6238c50.
+                 Single commit, one file:
+                 src/feelies/bootstrap.py only. Subject
+                 "0.2: delete unused TYPE_CHECKING
+                 IBGatewayConnection and MassiveLiveFeed".
+                 2 deletions. LEDGER.md dirty at the gate
+                 is the uncommitted append. The two
+                 capture artifacts stay uncommitted.
+                 Before-state (134-139):
+                   if TYPE_CHECKING:
+                       from feelies.broker.ib import IBGatewayConnection
+                       from feelies.composition.engine import CompositionEngine
+                       from feelies.execution.portfolio_netter import NetDivergence
+                       from feelies.ingestion.massive_ws import MassiveLiveFeed
+                 from __future__ import annotations on
+                 line 9. _BackendBundle.live_feed and
+                 ib_connection typed object | None
+                 (148-149, unmoved). No string annotation
+                 in the file names IBGatewayConnection or
+                 MassiveLiveFeed. CompositionEngine kept:
+                 TYPE_CHECKING import (now 135), return
+                 at 1544, construction at 1666. NetDivergence
+                 kept: TYPE_CHECKING import (now 136),
+                 annotation at 232
+                 ("list[NetDivergence] | None").
+                 Runtime imports in _paper_injected
+                 untouched (now 2100-2101).
+                 ruff check 2 F401 -> 0 (green).
+                 ruff format --check 57 files before
+                 and after. Format stays red; that is
+                 0.3, not this rung failing.
+                 All pins unmoved: five-tier empty with
+                 statuses KEPT; engine-to-kernel 9; S2
+                 KEPT at zero; Inv-10 unmoved; reset
+                 partition unmoved (_TAPES the five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine). FAIL_QUIET_KEEP
+                 unmoved. Locked hashes unmoved: all 64
+                 HASH/COUNT constants, the fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6,
+                 and _BASELINE_CONFIG_HASH, against
+                 baseline_post-0.1.json. APP oracle 2
+                 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+  FINDINGS:      Carried, not fixed: G36 open, G44
+                 partial, G32 deferred, G41/G42/G45
+                 open, G39/G10/G28 markers never
+                 dropped, G46's xfail is the
+                 unresolved-unit list.
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned.
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned.
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse 0.*.
+                 0.1: FAIL_QUIET_KEEP is keyed by
+                 enclosing symbol with a Counter, no
+                 line field.
+                 Lint is now green. Format stays red
+                 at 57 files. This is the first of the
+                 two CI steps restored.
+
+---
+
+## 0.3  2026-09-18T11:38:47+08:00
+  STEP:          0.3
+  BASE:          85103cf4166372d0d6f280e68f5a8ad56accdaa0
+  RESULT SHA:    eaa3a1535bbc457b5ff72bd03d92607afa6f29bb (exec/0.3; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES ruff format --check src/ tests/
+                 scripts/ green. Lint already green
+                 from 0.2. No pin moves. FAIL_QUIET_KEEP
+                 has no line field (0.1). Already red.
+                 Format is now green: the second of the
+                 two CI steps this campaign restores.
+                 Both CI steps green locally.
+                 No new conformance test.
+                 import contracts 3 passed, invoked by
+                 name: test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero; test_engine_kernel_imports_
+                 equal_pin equals the unmoved 9-pair
+                 pin.
+                 Inv-10's three tests passed, invoked
+                 by name: test_no_raw_wall_clock_
+                 outside_allowlist,
+                 test_wall_clock_allowlist_has_no_
+                 stale_entries,
+                 test_process_tick_inner_tick_timings_
+                 keys.
+                 Reset partition passed, invoked by
+                 name: test_reset_cascade_on_fix1_
+                 matches_must_invoke_pin. _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP: test_no_unallowlisted_
+                 fail_quiet_exception_handler passed.
+                 Seventeen rows. FailQuietKeep fields
+                 are path, enclosing_symbol, exc_type,
+                 reason — no line.
+                 mypy src/feelies: Success, 249 source
+                 files before and after. docs 101.
+                 conformance 119 passed / 5 xfailed
+                 (no XPASS) before and after.
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-0.3 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-0.3 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-0.3 vs post-0.3 and vs
+                 baseline_post-0.2.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE PIN DID NOT MOVE. Five-tier pin
+                 stays empty. Engine-to-kernel stays 9.
+                 S2 KEPT at zero. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         57 declared, 57 touched, 57 committed
+                 (clean vs eaa3a153). Hand FILES: 0 extra
+                 CLEAN. ruff named the 57; the commit
+                 is those 57 and nothing else.
+                 Named-not-edited: none.
+                 Forbidden, not touched: uv.lock, ruff
+                 version, FAIL_QUIET_KEEP,
+                 test_fail_quiet.py, the six keep-row
+                 files not in the 57
+                 (ib/connection.py, cli/env.py,
+                 cli/promote.py, factor_neutralizer.py,
+                 massive_ingestor.py, massive_ws.py).
+                 No hand edit. No noqa added.
+                 verify_step not runnable (0.* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47058 -> 47026 (-32 wrapping)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse 0.*.
+                 Four checks by hand:
+                 FILES 57 declared / 57 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (no failure outside the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0
+                 (sloc -32 is wrapping).
+                 CLEAN. Go confirmed on branch head
+                 eaa3a1535bbc457b5ff72bd03d92607afa6f29bb.
+                 Not merged.
+  NOTES:         Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Pre-flight HEAD 85103cf4 on arch/exec.
+                 Cut exec/0.3. tools/exec vs
+                 exec-tools-v1 empty. ruff 0.15.12.
+                 Go confirmed on this head
+                 eaa3a1535bbc457b5ff72bd03d92607afa6f29bb.
+                 Single mechanical commit, 57 files,
+                 ruff 0.15.12: subject "0.3: ruff format
+                 57 files". 279 insertions, 397
+                 deletions. uv run ruff format src/
+                 tests/ scripts/ produced the whole
+                 diff. No hand edit, no import reorder
+                 beyond the T-04b semicolon split in
+                 bootstrap.py, no lint fix, no uv.lock.
+                 Inspected pin-file hunks: bootstrap
+                 semicolon split; layer_validator blank
+                 line after a docstring; walltime
+                 wrapping of the six-tuple. Every hunk
+                 is whitespace, wrapping, or a
+                 semicolon split.
+                 ruff format --check 57 -> 0 (718 files
+                 already formatted). ruff check stayed
+                 green. mypy 249 Success both sides.
+                 conformance 119 passed / 5 xfailed
+                 both sides. determinism 148 both
+                 sides. docs 101 after.
+                 Every pin named and unmoved: five-tier
+                 empty KEPT; engine-to-kernel 9; S2
+                 KEPT at zero; Inv-10's three tests;
+                 reset partition (_TAPES five,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine); FAIL_QUIET_KEEP's seventeen
+                 rows; the APP oracle's five baselines;
+                 all 64 HASH/COUNT constants and the
+                 fingerprint, against
+                 baseline_post-0.2.json.
+                 The three keep-row pins that would
+                 have moved under line keys
+                 (layer_validator.py 1190→1191,
+                 bootstrap.py 1607→1609 and 1825→1827)
+                 are irrelevant: 0.1 dropped
+                 FailQuietKeep.line. Matcher is Counter
+                 of (path, enclosing_symbol, exc_type).
+                 Inv-10's six string keys
+                 ("_process_tick_inner",
+                 "time.perf_counter_ns()") cannot be
+                 retargeted by whitespace. The type
+                 annotation still says int | str; the
+                 data has no int keys.
+                 The six keep-row-only files stayed in
+                 the already-formatted set. ruff did
+                 not touch them.
+                 sloc 47058 -> 47026 is -32 wrapping
+                 in src, not a pin.
+                 LEDGER.md dirty at the gate is the
+                 uncommitted append. The two capture
+                 artifacts stay uncommitted.
+                 What the unmoved pins prove: nothing
+                 in those 57 files was load-bearing on
+                 its own formatting. A mechanical
+                 reformat that moved a hash would have
+                 been the more interesting result, and
+                 it did not happen.
+  FINDINGS:      Carried, not fixed: G36 open, G44
+                 partial, G32 deferred, G41/G42/G45
+                 open, G39/G10/G28 markers never
+                 dropped, G46's xfail is the
+                 unresolved-unit list.
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned.
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned.
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse 0.*.
+                 0.1: FAIL_QUIET_KEEP has no line
+                 field. Nothing retargets.
+                 0.2: Lint is green. This rung did not
+                 reintroduce an F401.
+                 T-04b keep-row squeezes vs ruff format
+                 is closed for the two allowlists this
+                 campaign owns. Inv-10 was already
+                 symbol-keyed (S-19a). FAIL_QUIET_KEEP
+                 was re-keyed (0.1) then the 57 were
+                 formatted (this rung).
+                 Lint and format are both green
+                 locally. This is the second of the two
+                 CI steps restored.
+
+---
+
+## CAMPAIGN CLOSE  CI restoration
+DATE:        2026-09-18
+CLOSED AT:   0.3. Commit eaa3a153 on exec/0.3;
+             not merged. Campaign base c1c11288
+             (post-R-07); 0.3 parent 85103cf4 on
+             arch/exec.
+LOCKED:      3 rungs in the campaign LADDER
+             (0.1, 0.2, 0.3).
+EXECUTED:    3 unique step ids passed (retries
+             not recounted). 3 locked ids ran as
+             themselves (0.1, 0.2, 0.3). 0 were
+             splits. 0 were added mid-campaign.
+             0.1 was a new matcher on a currently
+             green test (budget-1 fail-first,
+             then budget-2). 0.2 and 0.3 were
+             already-red detectors (ruff check,
+             ruff format --check).
+CLOSED:      ruff check src/ tests/ scripts/
+             green (0.2). ruff format --check
+             src/ tests/ scripts/ green (0.3).
+             FAIL_QUIET_KEEP has no line key
+             (0.1): Counter of (path,
+             enclosing_symbol, exc_type),
+             seventeen keepers, budget 2 on
+             _run_backtest_phases_2_7 /
+             Exception. Both CI steps green
+             locally. G36 stays OPEN — the
+             seventeen keepers remain keepers;
+             only the keying changed.
+FIXED, NOT
+JUST DETECTED:
+             A blocking step that goes red once
+             stops being a detector. Every later
+             violation lands behind it,
+             indistinguishable from the first.
+             Format failed on the S-03 merge on
+             18 August (aa413d96, PR #238 — the
+             last arch/exec Format success) and
+             was skipped for 30 days after.
+             Lint has been red 8 days (G40 close).
+             This branch has had no CI run in 695
+             commits because push is filtered to
+             main and no PR is open. T-04b looked
+             at a red file, concluded the step
+             was not made worse, and that
+             reasoning is only sound while nobody
+             intends to make it green. S-19a and
+             T-04b squeezes, and every later hunk
+             in the 57, sat behind that dead
+             gate. 0.1 re-keyed so 0.3 could be
+             mechanical. 0.2 deleted two unused
+             TYPE_CHECKING imports. 0.3 formatted
+             all 57 in one commit at ruff 0.15.12.
+             Splitting 53/4 was a catalogued
+             non-cut and was not taken.
+NOT CLOSED
+HERE:        the push-filter question. Opening a
+             PR or adding arch/exec to
+             on.push.branches is workflow policy,
+             not a lint or format close. This
+             campaign restored the detectors
+             locally; it did not make Actions
+             run them. Minimal restoration so a
+             future reader does not re-derive
+             it: the Lint and Format jobs already
+             exist in .github/workflows/ci.yml
+             and are green on this tree. They
+             have not executed on this branch
+             because on.push.branches is main
+             and there is no open PR. Open a PR
+             from this branch (pull_request
+             fires) or add arch/exec to
+             on.push.branches. That is a
+             workflow decision, not a fourth
+             rung. Do not restore
+             continue-on-error on Import
+             contracts.
+REMAINS OPEN:
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN — seventeen
+             keepers remain keepers
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed. Live
+             UNIT_UNDETERMINED fields (10):
+             HorizonFeatureSnapshot.values,
+             MetricEvent.value, NBBOQuote.ask_size,
+             NBBOQuote.bid_size,
+             RegimeHazardSpike.hazard_score,
+             RegimeState.discriminability,
+             SensorReading.value,
+             SizedPositionIntent.disclosed_cost_total_bps_by_symbol,
+             SizedPositionIntent.factor_exposures,
+             SizedPositionIntent.target_positions.
+             The S9 xfail reason string is stale:
+             it still names RiskVerdict.constraints,
+             deleted at S-31a.
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
+             Engine-to-kernel residual: 9 pairs
+             under test_engine_kernel_imports_
+             equal_pin. That pin is the detector,
+             not a gap this campaign owned.
+             Nine never-rows: DECLARED_UNINVOKED
+             stays nine. _TAPES stays the five
+             ids. MUST_INVOKE stays 33. invoked
+             == MUST_INVOKE. A name does not
+             move between those frozensets.
+             Reset owed is 0 since R-07; do not
+             reopen R6. The 15 OWED items from
+             the disposition this campaign
+             outranked and did not take are the
+             unowned residuals above, not a
+             fourth lint/format rung.
+             keep-row squeezes vs ruff format —
+             T-04b FINDING — closed for the two
+             allowlists this campaign owns
+             (FAIL_QUIET_KEEP re-keyed; Inv-10
+             already symbol-keyed). The six
+             keep-row-only files were already
+             formatted and were not in the 57.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. Lint and Format are
+             green locally. Do not restore
+             continue-on-error. Do not change
+             on.push.branches in this close.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals the 9-pair
+             pin. Shrinking either pin happens in
+             lockstep with the cut that drops the
+             pair, in the same commit.
+             Do not restore continue-on-error.
+             Do not invent suffixes for g–o.
+             Reset partition holds: _TAPES the
+             five ids; MUST_INVOKE 33;
+             DECLARED_UNINVOKED nine; invoked ==
+             MUST_INVOKE.
+             Specific to this campaign:
+             FAIL_QUIET_KEEP must never regain a
+             line key after 0.1. ruff locked at
+             0.15.12 in uv.lock; a version bump
+             would change the diff. What matters
+             is the lock, not what a given venv
+             has installed. The format commit is
+             mechanical by definition — a hash
+             move means it was not. A noqa on a
+             genuinely unused import is not a
+             lint fix. Splitting the format
+             commit 53/4 is not two rungs.
+FINDINGS:    A red gate is a dead gate. A
+             blocking step that goes red once
+             stops being a detector; every later
+             violation lands behind it,
+             indistinguishable from the first.
+             T-04b's "this step did not make a
+             clean file dirty" / "this step did
+             not make it worse" is only valid
+             while nobody intends to make the
+             step green.
+             A guard whose failure mode is
+             multiplicity must be probed by
+             under-budgeting rather than by
+             cutting code. 0.1's fail-first had
+             to be a matcher edit: a frozenset
+             of the same rows accepts both
+             Exception handlers in
+             _run_backtest_phases_2_7 under one
+             key and stays green with one
+             unwatched. The discriminating
+             experiment is budget 1, then 2.
+             Three campaigns (Phase 7, Five
+             import tiers, Reset invocation) ran
+             to completion behind a detector
+             nobody could see. That is the
+             reason to check a gate is alive
+             before trusting it. Format was red
+             on main for 30 days and unevaluated
+             on this branch for 30 more; Lint
+             red 8; 695 commits with no CI run
+             on arch/exec. The restored
+             detectors are local until a PR
+             opens or the push filter changes.
+             The 0.3 exec commit 89d3ac28
+             appended the 0.3 step block and
+             the CAMPAIGN CLOSE block twice,
+             820 lines, undetected until a
+             grep for an unrelated correction
+             exposed the line pairs. The
+             copies stayed identical only
+             because the correction commit
+             used replace_all; a targeted
+             edit would have fixed one and
+             left the other stale, and a
+             future reader greping the ledger
+             would have got two different
+             answers. Removed at 05c4469e,
+             467 lines. Nothing in the ledger
+             asserts one CLOSE block per
+             campaign. A grep of
+             '^## CAMPAIGN CLOSE' is the
+             cheap check before trusting a
+             close.
+VERIFIED:    PR #242 (draft), run 35434851568,
+             conclusion success, 2026-09-19.
+             Both jobs green: check
+             (ubuntu-latest) 3m5s, parity oracle
+             1m31s, against a 20 minute cap.
+             The four steps never exercised
+             locally are now green on ubuntu /
+             Python 3.13: lint-imports CLI
+             (2 kept, 0 broken), the
+             not-functional marker, determinism
+             at PYTHONHASHSEED=random, and both
+             oracle replays (seed 0 and random).
+             The same four were run first on
+             Windows / Python 3.12.13 and were
+             green there too, so the 3.13 gap is
+             closed by evidence rather than
+             assumption.
+             Populate cache on miss ran for 32s
+             — the actions/cache entry missed
+             and the Massive fetch path worked,
+             which had never been exercised.
+             Two dated warnings, not failures:
+             Node 20 deprecation on
+             checkout/cache/setup-uv, and
+             ubuntu-latest migrating to Ubuntu
+             26 on 19 October 2026. The
+             migration is the same libm question
+             the workflow header already
+             records; the registered corpus will
+             need re-verifying after it.
+
+---
+
+## A-00  2026-09-19T21:17:28+08:00
+  STEP:          A-00
+  BASE:          fef97bbf9f5689fe291394387df6c4401fa0711b
+  RESULT SHA:    7e5584f43c8d4275bebbcc52a1c3987473947c56 (exec/A-00; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing by moving code. Pin 9 → 4.
+                 Walker scoped to what T-07c meant.
+                 Five import tiers stays KEPT. G40 stays
+                 CLOSED. An unchanged five-tier count is
+                 the declared outcome. The engine-to-
+                 kernel pin moves as declared.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_twelve_engine_independence KEPT
+                 at zero pairs.
+                 test_engine_kernel_imports_equal_pin
+                 equals the 4-pair pin after the commit.
+                 Fail-first (1), uncommitted: added
+                 "harness" to _WALK_EXCLUDE only; pin
+                 stayed 9. test_engine_kernel_imports_
+                 equal_pin FAILED AssertionError:
+                 unexpected []; missing
+                 [('feelies.harness.backtest_report',
+                 'feelies.kernel.macro'),
+                 ('feelies.harness.backtest_report',
+                 'feelies.kernel.orchestrator'),
+                 ('feelies.harness.backtest_runner',
+                 'feelies.kernel.macro'),
+                 ('feelies.harness.backtest_runner',
+                 'feelies.kernel.orchestrator'),
+                 ('feelies.harness.backtest_runner',
+                 'feelies.kernel.signal_order_trace')].
+                 (2) Dropped those five from
+                 _KERNEL_IMPORT_RESIDUALS and added
+                 "bootstrap" in the same working tree.
+                 Re-run green: 4 == 4. One commit.
+                 (3) T-07c probe, uncommitted: added
+                 `from feelies.kernel.macro import MacroState`
+                 to portfolio/fill_attribution.py;
+                 test_engine_kernel_imports_equal_pin
+                 FAILED AssertionError: unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Removed the import. Restore SHA256
+                 c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                 BYTE_IDENTICAL (5030 bytes, same as
+                 pre-probe). Porcelain after restore: only
+                 the capture artifact. Re-run 3 passed.
+                 Inv-10's three tests passed, invoked
+                 by name.
+                 Reset partition passed, invoked by
+                 name: test_reset_cascade_on_fix1_
+                 matches_must_invoke_pin. _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP: test_no_unallowlisted_
+                 fail_quiet_exception_handler passed.
+                 Seventeen rows. FailQuietKeep fields
+                 are path, enclosing_symbol, exc_type,
+                 reason — no line.
+                 mypy src/feelies: Success, 249 source
+                 files. docs 101. conformance 119
+                 passed / 5 xfailed (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-A-00 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-A-00 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-A-00 vs post-A-00 and vs
+                 baseline_post-0.3.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2 KEPT
+                 at zero. Engine-to-kernel 9 → 4 as
+                 declared, lockstep with the walker.
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 7e5584f4). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/
+                 test_import_contracts.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 core/position.py, bootstrap.py,
+                 harness/, cli/, orchestrator.py,
+                 fill_attribution.py (portfolio or core),
+                 massive_ws.py, horizon_scheduler.py,
+                 alpha/registry.py,
+                 gate_close_attribution.py,
+                 forced_exit_reasons.py,
+                 test_fail_quiet.py, ci.yml.
+                 Probe mutated portfolio/fill_attribution.py
+                 and restored it; that file is not in the
+                 commit. No keep-row file is touched.
+                 verify_step not runnable (A-* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47026 -> 47026 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse A-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 7e5584f43c8d4275bebbcc52a1c3987473947c56.
+                 Not merged.
+  NOTES:         Single commit on exec/A-00,
+                 7e5584f43c8d4275bebbcc52a1c3987473947c56,
+                 "A-00: scope the walker off harness;
+                 pin engine-to-kernel 9 to 4". Parent
+                 fef97bbf on arch/exec. One file, no
+                 src: tests/conformance/
+                 test_import_contracts.py (+1 / -6).
+                 Clone C:/Users/cheng.lei/OneDrive/
+                 Documents/GitHub/feelies. tools/exec
+                 vs exec-tools-v1 empty.
+                 _WALK_EXCLUDE before:
+                 frozenset({"kernel", "bus", "core",
+                 "cli"}). After: frozenset({"kernel",
+                 "bus", "core", "cli", "harness",
+                 "bootstrap"}).
+                 Probe (1) added "harness" only and
+                 left the pin at 9. The test failed
+                 missing the five harness pairs
+                 (unexpected []). That is the walker
+                 dropping them, not a frozenset
+                 shrink: the pin still named all nine.
+                 Then (2) dropped those five from
+                 _KERNEL_IMPORT_RESIDUALS in the same
+                 tree. Green at 4 == 4. Remaining:
+                 feelies.ingestion.massive_ws →
+                 feelies.kernel.exception_taxonomy;
+                 feelies.sensors.horizon_scheduler →
+                 feelies.kernel.exception_taxonomy;
+                 feelies.alpha.registry →
+                 feelies.kernel.exception_taxonomy;
+                 feelies.forensics.gate_close_attribution
+                 → feelies.kernel.forced_exit_reasons.
+                 Probe (3) still named the T-07c pair
+                 as unexpected: AssertionError:
+                 unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Restore SHA256
+                 c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                 BYTE_IDENTICAL (5030 bytes). Re-run
+                 3 passed. That is what proves T-07c's
+                 detector survived the narrowing: an
+                 exclude that also skipped portfolio
+                 would still have read green at 4.
+                 "bootstrap" changed no count. It is
+                 a file, not a directory, and the
+                 walk is iterdir() if p.is_dir(), so
+                 the new name matches nothing today.
+                 Research stayed in _WALK_EXCLUDE's
+                 complement; it is in T-07c's engine
+                 list and has zero kernel imports.
+                 The five harness imports are
+                 untouched in src
+                 (harness/backtest_runner.py:
+                 orchestrator, signal_order_trace,
+                 macro; harness/backtest_report.py:
+                 macro, orchestrator). harness →
+                 kernel is still legal under Five
+                 import tiers. A-00 stopped counting
+                 them; it did not forbid them.
+                 ruff check: All checks passed. ruff
+                 format --check: 718 files already
+                 formatted. Both stayed green.
+                 Every other pin unmoved: five-tier
+                 empty _TIER_RESIDUALS, statuses
+                 KEPT; S2 KEPT at zero twelve-engine
+                 pairs; Inv-10's three tests; reset
+                 partition (_TAPES five, MUST_INVOKE
+                 33, DECLARED_UNINVOKED nine);
+                 FAIL_QUIET_KEEP's seventeen rows,
+                 no line field.
+                 Locked hashes unmoved vs
+                 baseline_post-0.3.json: all 64
+                 HASH/COUNT constants; fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3;
+                 _BASELINE_NET_PNL 103.93;
+                 _BASELINE_FILL_COUNT 20;
+                 _BASELINE_DATA_VERSION
+                 cache:2364ef7fe41c27d9;
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA zeros: modules 249,
+                 public_symbols 590, sloc 47026,
+                 n_edges 675, n_modules 203,
+                 cycles 1, alphaleak 0.
+                 LEDGER.md dirty at the gate is this
+                 uncommitted append. The two capture
+                 artifacts stay uncommitted.
+  FINDINGS:      T-07c's block said: "Walk src/feelies
+                 engine packages only (ingestion,
+                 storage, sensors, features, services,
+                 signals, alpha, promotion, composition,
+                 portfolio, risk, execution, broker,
+                 monitoring, harness, research,
+                 forensics). Exclude kernel, bus, core,
+                 cli, bootstrap." The code only ever
+                 excluded four: _WALK_EXCLUDE was
+                 frozenset({"kernel", "bus", "core",
+                 "cli"}). Bootstrap stayed out because
+                 the walk is iterdir() if p.is_dir()
+                 — an artifact of file layout, not a
+                 stated rule. bootstrap.py already
+                 imports kernel.orchestrator and
+                 kernel.signal_order_trace; packaging
+                 the composition root would have
+                 turned those into two unexpected
+                 pairs. T-07c WHY THIS OWNER already
+                 recorded that a contract forbidding
+                 engines → kernel cannot go green:
+                 "harness must import Orchestrator;
+                 MacroState lives in kernel." The
+                 walker counted harness anyway. A
+                 detector's scope has to be stated in
+                 the code, not in the block that
+                 describes it, because the block is
+                 not what runs.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39 xfail is
+                 test_construction_integrity (S15
+                 passes), G10 and G28 are decided
+                 keeps, G46's xfail reason names a
+                 deleted field;
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned;
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse A-*.
+                 0.1: FAIL_QUIET_KEEP has no line
+                 field.
+  NEXT:          A-01 retarget three KernelFault
+                 raisers; pin 4 to 1 (boundary).
+                 Not started. Do not begin A-01.
+                 Left uncommitted:
+                 baseline_pre-A-00.json,
+                 baseline_post-A-00.json, this ledger
+                 entry.

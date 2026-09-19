@@ -25,14 +25,11 @@ from zoneinfo import ZoneInfo
 
 _TZ_ET = ZoneInfo("America/New_York")
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence, TypeVar
-
-from feelies.bootstrap import build_platform
+from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 
 if TYPE_CHECKING:
     from feelies.execution.portfolio_netter import NetDivergence
     from feelies.risk.edge_weighted_sizer import SizeDivergence
-from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
 from feelies.harness.backtest_cli import (
     ConfigNotFoundError,
     add_backtest_api_arguments,
@@ -669,6 +666,7 @@ def _run_backtest_phases_2_7(
     date_range: str,
     run_t0: float,
     *,
+    platform_factory: Callable[..., tuple[Orchestrator, PlatformConfig]],
     prep: BacktestEventLogPrep | None = None,
 ) -> BacktestRunOutcome:
     """Bootstrap → replay → report → verification (shared by API and cache harness)."""
@@ -712,7 +710,7 @@ def _run_backtest_phases_2_7(
             f"({len(_edge_factors)} alpha factor(s))",
             flush=True,
         )
-    orchestrator, config_out = build_platform(
+    orchestrator, config_out = platform_factory(
         config,
         event_log=event_log,
         signal_order_trace_sink=signal_trace_sink,
@@ -913,7 +911,12 @@ def _run_backtest_phases_2_7(
     )
 
 
-def run_backtest_api(args: argparse.Namespace) -> int:
+def run_backtest_api(
+    args: argparse.Namespace,
+    *,
+    api_key: str,
+    platform_factory: Callable[..., tuple[Orchestrator, PlatformConfig]],
+) -> int:
     """Run the Massive API backtest path (shared by script and ``feelies backtest``)."""
     _warn_if_unpinned_hash_seed()
     if not args.date:
@@ -923,13 +926,6 @@ def run_backtest_api(args: argparse.Namespace) -> int:
             "for no-API-key smoke tests)",
             file=sys.stderr,
         )
-        return 1
-
-    # 1. Load .env and API key
-    load_dotenv_optional()
-    api_key = massive_api_key_from_env()
-    if api_key is None:
-        print(MASSIVE_API_KEY_ERROR, file=sys.stderr)
         return 1
 
     config = _load_backtest_config(args)
@@ -1016,11 +1012,17 @@ def run_backtest_api(args: argparse.Namespace) -> int:
         symbol_str,
         date_range,
         run_t0,
+        platform_factory=platform_factory,
         prep=prep,
     ).exit_code
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    api_key: str,
+    platform_factory: Callable[..., tuple[Orchestrator, PlatformConfig]],
+) -> int:
     _force_utf8_console()
     _configure_logging_for_cli()
-    return run_backtest_api(parse_args(argv))
+    return run_backtest_api(parse_args(argv), api_key=api_key, platform_factory=platform_factory)

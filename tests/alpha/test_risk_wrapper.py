@@ -113,9 +113,7 @@ class _RecordingInner:
         additional_exposure: Decimal = Decimal("0"),
     ) -> object:
         self.orders.append(order)
-        return self._inner.check_order(
-            order, positions, additional_exposure=additional_exposure
-        )
+        return self._inner.check_order(order, positions, additional_exposure=additional_exposure)
 
     def _emit_dropped_legs_alert(
         self,
@@ -359,8 +357,7 @@ class TestCheckOrderDelegatesToInner:
 
         verdict = wrapper.check_order(order, agg)
         assert recorder.orders == [], (
-            "unregistered strategy_id reached the inner engine; "
-            "the order proceeded unbudgeted"
+            "unregistered strategy_id reached the inner engine; the order proceeded unbudgeted"
         )
         assert verdict.action is RiskAction.REJECT
         assert "unknown_alpha" in verdict.reason

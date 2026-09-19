@@ -103,9 +103,7 @@ class EngineProbe:
                 return engine
         return None
 
-    def _wrap_handler(
-        self, event_type: type[Event], handler: EventHandler
-    ) -> EventHandler:
+    def _wrap_handler(self, event_type: type[Event], handler: EventHandler) -> EventHandler:
         engine = self._engine_for(handler)
         fact = event_type.__name__
 

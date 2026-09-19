@@ -51,9 +51,7 @@ def _handles(
 def test_build_paper_backend_returns_composed_bundle() -> None:
     clock = SimulatedClock(start_ns=0)
     normalizer = MassiveNormalizer(clock=clock)
-    live_feed, ib_conn, router = _handles(
-        clock, normalizer, symbols=("AAPL", "MSFT")
-    )
+    live_feed, ib_conn, router = _handles(clock, normalizer, symbols=("AAPL", "MSFT"))
     backend, out_feed, out_ib = build_paper_backend(
         massive_api_key="dummy",
         symbols=("AAPL", "MSFT"),

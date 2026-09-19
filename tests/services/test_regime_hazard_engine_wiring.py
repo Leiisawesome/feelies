@@ -194,6 +194,7 @@ class TestSessionBoundaryReset:
         from feelies.execution.backtest_router import BacktestOrderRouter
         from feelies.execution.cost_model import ZeroCostModel
         from feelies.kernel.orchestrator import Orchestrator
+        from feelies.composition.selection_policy import Top1SelectionPolicy
         from feelies.portfolio.memory_position_store import MemoryPositionStore
         from feelies.portfolio.position_store import PositionStore
         from feelies.storage.memory_event_log import InMemoryEventLog
@@ -243,6 +244,7 @@ class TestSessionBoundaryReset:
             mode="BACKTEST",
         )
         return Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,

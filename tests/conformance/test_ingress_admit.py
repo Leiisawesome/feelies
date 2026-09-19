@@ -109,8 +109,7 @@ def test_g35_market_data_full_writers_are_in_massive_ws() -> None:
     assert sites, "G35 scan found no queue.Full handlers — the guard would be vacuous"
     illegal = [f"{path}:{line} {name}" for path, line, name, _ in sites if path != _AUTHORITY]
     assert not illegal, (
-        "market-data queue.Full has a writer outside engine 1 "
-        f"({_AUTHORITY}). First: {illegal[0]}"
+        f"market-data queue.Full has a writer outside engine 1 ({_AUTHORITY}). First: {illegal[0]}"
     )
     names = {name for _, _, name, _ in sites}
     assert _POLICY_DROP in names, "_consume drop policy is missing"
@@ -124,9 +123,7 @@ def test_g35_drain_full_fails_into_ingress_admit() -> None:
         for path, line, name, raises in _full_handler_sites()
         if name == _DRAIN
     ]
-    assert drain, (
-        f"{_DRAIN} has no except queue.Full; G35 cannot see the silent restore drop"
-    )
+    assert drain, f"{_DRAIN} has no except queue.Full; G35 cannot see the silent restore drop"
     silent = [f"{path}:{line}" for path, line, raises in drain if not raises]
     assert not silent, (
         f"{_DRAIN} still drops on queue.Full without KernelFault. First: {silent[0]}"
@@ -149,8 +146,7 @@ def test_g35_replay_feed_has_no_queue() -> None:
     """A replayed tape cannot hit Full — ReplayFeed has no queue."""
     hits = _replay_queue_tokens()
     assert not hits, (
-        "ReplayFeed carries a queue token; shedding could engage in BACKTEST. "
-        f"First: {hits[0]}"
+        f"ReplayFeed carries a queue token; shedding could engage in BACKTEST. First: {hits[0]}"
     )
 
 

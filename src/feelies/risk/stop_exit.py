@@ -59,6 +59,7 @@ class _ResolvedSessionBounds(Protocol):
 class _SessionBounds(Protocol):
     def resolve_for_timestamp(self, ts_ns: int) -> _ResolvedSessionBounds: ...
 
+
 # ── Stop-exit DeRiskRequirement signature (single source of truth) ───────
 # The kernel converts this requirement to an outbound OrderRequest. Any
 # requirement carrying this source layer and one of these reasons

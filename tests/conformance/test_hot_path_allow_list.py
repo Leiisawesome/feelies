@@ -35,6 +35,5 @@ def test_hot_path_allow_list() -> None:
     n_anywhere = int(methods["n_zero_call_anywhere"])
     assert methods["n_public_methods"] > 0, "dead-compute scanned no public methods"
     assert n_anywhere == 0, (
-        f"{n_anywhere} public methods have zero call sites in src/ and tests/; "
-        "G44 residue"
+        f"{n_anywhere} public methods have zero call sites in src/ and tests/; G44 residue"
     )

@@ -305,6 +305,7 @@ class LayerValidator:
             Filesystem path or sentinel (``<dict>``) for the spec.
             Threaded into all error messages for operator triage.
         """
+
         # Gate order makes error reporting deterministic.  Each call is
         # bound to a registry row via GATE_ALIASES; G13 is retired and
         # has no check.  Predicates are unchanged.

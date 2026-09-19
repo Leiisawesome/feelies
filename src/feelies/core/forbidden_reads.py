@@ -116,9 +116,7 @@ def _allowed_pairs(
     for rec in GATE_REGISTRY.values():
         owner = rec.owner_engine
         if not 1 <= owner <= n:
-            raise RuntimeError(
-                f"cannot attribute gate {rec.stable_id} owner_engine={owner}"
-            )
+            raise RuntimeError(f"cannot attribute gate {rec.stable_id} owner_engine={owner}")
         allowed.add((engines[owner - 1], "gate", rec.stable_id))
     return allowed
 

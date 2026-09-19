@@ -54,8 +54,10 @@ def _quarantine_call_lines(path: Path) -> list[int]:
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else (
-            func.id if isinstance(func, ast.Name) else ""
+        name = (
+            func.attr
+            if isinstance(func, ast.Attribute)
+            else (func.id if isinstance(func, ast.Name) else "")
         )
         if name == "quarantine":
             lines.append(node.lineno)
@@ -165,6 +167,5 @@ def test_governance_and_forensics_zero_reads_on_tick_path() -> None:
         f"from forensics at cost_circuit_breaker.py:{q_calls[0]}"
     )
     assert "apply_cost_circuit_breaker" not in _function_names(_BREAKER), (
-        "apply_cost_circuit_breaker still defined — engine 12 still writes "
-        "lifecycle state"
+        "apply_cost_circuit_breaker still defined — engine 12 still writes lifecycle state"
     )

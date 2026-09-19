@@ -23,14 +23,14 @@ from feelies.core.events import (
     Signal,
 )
 from feelies.kernel.macro import MacroState
-from feelies.execution.order_lifecycle import _transition_order
+from feelies.kernel.orchestrator import _transition_order
 from feelies.execution.order_state import OrderState
 
 from tests.kernel.test_orchestrator import (
     _make_signal,
     _publish_signal_on_quote,
 )
-from feelies.portfolio.fill_reconciliation import _reconcile_fills  # noqa: E402, I001
+from feelies.kernel.orchestrator import _reconcile_fills  # noqa: E402, I001
 from tests.paper.conftest import require_ib_gateway, require_massive_api_key, require_rth_window
 
 pytestmark = [
@@ -151,7 +151,8 @@ def test_g12_cost_exceeds_disclosure_alert(paper_session) -> None:
         g12_disclosed_cost_total_bps=2.5,
     )
     orchestrator._track_order(order_id, Side.BUY, req)
-    _transition_order(orchestrator,
+    _transition_order(
+        orchestrator,
         order_id,
         OrderState.SUBMITTED,
         "paper_e2e_g12",

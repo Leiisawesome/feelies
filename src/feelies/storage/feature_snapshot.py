@@ -16,57 +16,5 @@ that produced it, so the storage layer should not interpret it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
-
-
-@dataclass(frozen=True, kw_only=True)
-class FeatureSnapshotMeta:
-    """Metadata for a feature engine state checkpoint.
-
-    Tied to a specific feature version so that snapshots from
-    incompatible feature definitions are never silently loaded
-    (invariant 13: every feature traceable to a version).
-    """
-
-    symbol: str
-    feature_version: str
-    event_count: int
-    last_sequence: int
-    last_timestamp_ns: int
-    checksum: str
-
-
-class FeatureSnapshotStore(Protocol):
-    """Persists and restores feature engine state checkpoints.
-
-    Failure mode: degrade.  If snapshot save fails, the system
-    continues without the checkpoint (next warm-start replays
-    from an earlier point).  If snapshot load fails, the feature
-    engine cold-starts.
-    """
-
-    def save(self, meta: FeatureSnapshotMeta, state: bytes) -> None:
-        """Persist a feature engine snapshot.
-
-        Must be durable before returning.  Implementations must
-        verify checksum on write.
-        """
-        ...
-
-    def load(
-        self,
-        symbol: str,
-        feature_version: str,
-    ) -> tuple[FeatureSnapshotMeta, bytes] | None:
-        """Restore the most recent snapshot for a symbol and version.
-
-        Returns ``None`` if no snapshot exists.  Implementations must
-        verify checksum on read — corrupt snapshots are equivalent
-        to missing snapshots (cold-start), never silently loaded.
-        """
-        ...
-
-    def list_snapshots(self, symbol: str) -> list[FeatureSnapshotMeta]:
-        """Available snapshots for a symbol, most recent first."""
-        ...
+from feelies.core.feature_snapshot import FeatureSnapshotMeta as FeatureSnapshotMeta
+from feelies.core.feature_snapshot import FeatureSnapshotStore as FeatureSnapshotStore

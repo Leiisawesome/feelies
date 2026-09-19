@@ -49,10 +49,11 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import DefaultCostModel, ZeroCostModel
-from feelies.execution.order_lifecycle import _transition_order
+from feelies.kernel.orchestrator import _transition_order
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
@@ -90,9 +91,7 @@ class _ScriptedOrderRouter:
         self._submit_fill_price = submit_fill_price
         self.submitted: list[OrderRequest] = []
 
-    def submit(
-        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
-    ) -> None:
+    def submit(self, request: OrderRequest, triggering_quote: NBBOQuote | None = None) -> None:
         self.submitted.append(request)
         self._pending_acks.append(
             OrderAck(
@@ -253,6 +252,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,
@@ -626,7 +626,8 @@ class TestFillReconciliation:
             strategy_id="standalone_signal_alpha",
         )
         orch._track_order(resting_order.order_id, resting_order.side, resting_order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             resting_order.order_id,
             OrderState.SUBMITTED,
             "seed_resting_order",
@@ -803,6 +804,7 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         engine.attach()
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -1005,6 +1007,7 @@ class TestPortfolioLegEdgeCostGate:
             market_data=_StubMarketData(), order_router=bt_router, mode="BACKTEST"
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -1068,6 +1071,7 @@ class TestPortfolioLegEdgeCostGate:
         _seed_position(positions, "AAPL", 200, "150.00")
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(

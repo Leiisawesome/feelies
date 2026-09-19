@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+from feelies.bootstrap import build_platform
 from feelies.core.events import (
     CrossSectionalContext,
     HorizonFeatureSnapshot,
@@ -144,6 +145,7 @@ def test_run_backtest_phases_prints_clean_message_and_exits_nonzero_on_integrity
         ", ".join(symbols),
         "test-date",
         time.monotonic(),
+        platform_factory=build_platform,
     )
 
     assert outcome.exit_code == 1
@@ -189,6 +191,7 @@ def test_run_backtest_phases_prints_partial_diagnostics_when_degraded_without_ex
         ", ".join(symbols),
         "test-date",
         time.monotonic(),
+        platform_factory=build_platform,
     )
 
     assert outcome.exit_code == 1

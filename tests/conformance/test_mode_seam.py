@@ -91,10 +91,7 @@ def _innermost_function(path: str, line: int) -> str | None:
 def _allowed(path: str, line: int) -> bool:
     if path.startswith(_SEAM_PREFIXES):
         return True
-    return (
-        path == _COMPOSITION_ROOT
-        and _innermost_function(path, line) == _COMPOSITION_ROOT_FN
-    )
+    return path == _COMPOSITION_ROOT and _innermost_function(path, line) == _COMPOSITION_ROOT_FN
 
 
 def _text_is_mode_dependent(text: str) -> bool:
@@ -182,7 +179,6 @@ def test_mode_branches_only_at_composition_root() -> None:
         f"{_COMPOSITION_ROOT}::{_COMPOSITION_ROOT_FN} and the eight "
         f"declared legal composition decisions: "
         + "; ".join(
-            f"{_COMPOSITION_ROOT}:{h['line']} {h['function']} {h['test']}"
-            for h in illegal
+            f"{_COMPOSITION_ROOT}:{h['line']} {h['function']} {h['test']}" for h in illegal
         )
     )
