@@ -23049,6 +23049,26 @@ FINDINGS:    A red gate is a dead gate. A
              on arch/exec. The restored
              detectors are local until a PR
              opens or the push filter changes.
+             The 0.3 exec commit 89d3ac28
+             appended the 0.3 step block and
+             the CAMPAIGN CLOSE block twice,
+             820 lines, undetected until a
+             grep for an unrelated correction
+             exposed the line pairs. The
+             copies stayed identical only
+             because the correction commit
+             used replace_all; a targeted
+             edit would have fixed one and
+             left the other stale, and a
+             future reader greping the ledger
+             would have got two different
+             answers. Removed at 05c4469e,
+             467 lines. Nothing in the ledger
+             asserts one CLOSE block per
+             campaign. A grep of
+             '^## CAMPAIGN CLOSE' is the
+             cheap check before trusting a
+             close.
 VERIFIED:    PR #242 (draft), run 35434851568,
              conclusion success, 2026-09-19.
              Both jobs green: check
