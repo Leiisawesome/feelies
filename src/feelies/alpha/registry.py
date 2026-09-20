@@ -46,7 +46,7 @@ from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
 from feelies.core.gate_registry import record_verdict
 from feelies.features.definition import FeatureDefinition
-from feelies.kernel.exception_taxonomy import KernelFault
+from feelies.core.exception_taxonomy import KernelFault
 
 _logger = logging.getLogger(__name__)
 

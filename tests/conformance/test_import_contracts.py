@@ -35,9 +35,6 @@ _TIER_RESIDUALS = frozenset()
 # permit this direction; the pin is the remaining detector.
 _KERNEL_IMPORT_RESIDUALS = frozenset(
     {
-        ("feelies.ingestion.massive_ws", "feelies.kernel.exception_taxonomy"),
-        ("feelies.sensors.horizon_scheduler", "feelies.kernel.exception_taxonomy"),
-        ("feelies.alpha.registry", "feelies.kernel.exception_taxonomy"),
         (
             "feelies.forensics.gate_close_attribution",
             "feelies.kernel.forced_exit_reasons",
