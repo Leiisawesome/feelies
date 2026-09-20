@@ -28,7 +28,7 @@ from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
-from feelies.kernel.exception_taxonomy import KernelFault
+from feelies.core.exception_taxonomy import KernelFault
 
 logger = logging.getLogger(__name__)
 
