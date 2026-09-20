@@ -24688,3 +24688,179 @@ FINDINGS:    A detector's scope must be stated in
                  baseline_post-G45-01.json, this ledger
                  entry.
 
+---
+
+## CORRECTION  G45 keep skipif / S5 CI blindness  2026-09-20T18:03:00+08:00
+  KIND:          correction — not a G45 ladder
+                 rung. No plan block.
+  BASE:          dd6d6effe562b3818e339e6171c1b848907168b2
+  RESULT SHA:    ede9d1d9edddd0576359558feac4b142bd8dafaa
+                 (arch/exec; merge of 4e4d7b0f)
+  VERDICT:       recorded
+  WHAT HAPPENED: G45-01 (8f9354ae, merged
+                 ae459738) landed a pin,
+                 test_g45_keep, that calls
+                 scan() and therefore reads
+                 gitignored
+                 tools/arch/evidence/hotpath_executed.json.
+                 CI does not generate that
+                 file. Run 35501033271 on
+                 1f539ac1 (post-G45-01
+                 reference baseline) went
+                 red. Failure line verbatim:
+                 SystemExit: missing
+                 tools/arch/evidence/hotpath_executed.json -- run:
+                   uv run python tools/arch/perfmeasure.py --mode profile
+                 An agent outside this
+                 session pushed b2fa7506,
+                 adding a skipif so the pin
+                 does not run when the file
+                 is absent. Run 35501228153
+                 went green with the skip
+                 count 5 to 6. The
+                 assertion was disabled to
+                 resolve a red run. Merged
+                 onto arch/exec as dd6d6eff.
+  DEEPER FINDING: S5 (test_hot_path_allow_list)
+                 has been strict-xfail since
+                 S-32 and had never called
+                 scan() on CI. The same
+                 SystemExit is swallowed as
+                 the expected failure, so
+                 G41, G42, G44 and G45 had
+                 never been scanned there.
+                 Same class as the Format
+                 gate: a detector that
+                 reports the expected
+                 outcome without running.
+  THE FIX:       One commit, two files:
+                 4e4d7b0f on
+                 exec/ci-hotpath-evidence,
+                 "ci: generate the hot-path
+                 executed set in check;
+                 revert the G45 keep
+                 skipif". Merged --no-ff to
+                 arch/exec as ede9d1d9.
+                 .github/workflows/ci.yml:
+                 the check job, after Import
+                 contracts and before Tests,
+                 now restores the APP
+                 baseline event cache and
+                 runs `uv run python
+                 tools/arch/perfmeasure.py
+                 --mode profile`. Populate
+                 on miss is the oracle's
+                 exact script and
+                 MASSIVE_API_KEY env,
+                 including its error
+                 message on a miss with no
+                 secret. The oracle's fork
+                 `if` was deliberately NOT
+                 copied onto check, because
+                 check is lint, types and
+                 the suite, and skipping it
+                 on forks would drop all of
+                 that to protect one step.
+                 FEELIES_REQUIRE_BASELINE_CACHE
+                 was not set on check: that
+                 flag is for the APP
+                 baseline test, which check
+                 deselects.
+                 tests/conformance/test_hot_path_allow_list.py:
+                 revert of b2fa7506; skipif
+                 and EXECUTED import
+                 removed. S5 xfail kept.
+                 _G45_KEEP and
+                 ALLOWED_NOT_PROHIBITED
+                 untouched. No src file. No
+                 evidence json committed.
+  VERIFICATION:  Run 35503604169, check
+                 green in 3m39s. Cache hit
+                 for
+                 feelies-eventcache-APP-2026-03-26-v1.
+                 Populate skipped without
+                 needing the secret.
+                 Profile 42s. Tests: 4882
+                 passed / 5 skipped / 43
+                 deselected / 5 xfailed
+                 against the prior 4881 / 6
+                 / 43 / 5. The keep ran
+                 instead of skipping.
+  HONEST LIMIT:  CI Tests is pytest -q with
+                 no -rxX, so the Tests log
+                 cannot show what S5
+                 reports. It has no XFAIL
+                 line, no assertion
+                 traceback, and does not
+                 name proven 7. The
+                 unchanged xfail count (5)
+                 says it still xfails; that
+                 it xfails *because it
+                 scanned and found proven 7*
+                 is inference from the
+                 evidence file now existing,
+                 not something the log
+                 states. Adding -rxX
+                 (better: -rxXs, so skip
+                 names land too) to the CI
+                 Tests step is worth a
+                 follow-on: skip names would
+                 have made b2fa7506's
+                 keep-SKIPPED visible in
+                 the summary, and xfail
+                 reasons would distinguish
+                 a SystemExit from the
+                 marker string GAP G41 G42
+                 G44 G45. It still would
+                 not print proven 7; that
+                 lives in the suppressed
+                 xfail body. Recorded as
+                 OPEN, not done here.
+  FINDINGS:      POLICY for future
+                 campaigns: when CI fails
+                 on a merged rung,
+                 weakening the assertion is
+                 never the answer. The
+                 honest options are to
+                 generate the missing input
+                 in CI or to revert the
+                 rung. The ledger must
+                 record the run id, the
+                 head SHA, the failure line
+                 verbatim, the decision,
+                 and who authorized it. A
+                 second agent must not land
+                 on origin/arch/exec
+                 outside the session.
+                 This incident: run
+                 35501033271, head
+                 1f539ac1, failure line as
+                 quoted under WHAT
+                 HAPPENED. Decision taken
+                 outside this session:
+                 skipif (b2fa7506), not
+                 authorized here. Decision
+                 in this session: generate
+                 the executed set in check
+                 and revert the skipif
+                 (4e4d7b0f / ede9d1d9),
+                 authorized by the operator
+                 who issued the correction
+                 and the merge.
+  OPEN:          Add -rxXs to the check
+                 Tests step so skip names
+                 and xfail reasons appear
+                 in the CI log. Not this
+                 commit.
+  FILES:         This commit: 1 file,
+                 docs/architecture/target/out/exec/LEDGER.md
+                 only. The code fix was
+                 already on arch/exec as
+                 ede9d1d9 (ci.yml + the
+                 skipif revert).
+  NEXT:          G45 body rungs, after the
+                 remainder is re-measured
+                 (boundary). Not started.
+                 This correction does not
+                 begin them.
+
