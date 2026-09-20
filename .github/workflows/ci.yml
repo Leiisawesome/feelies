@@ -113,8 +113,9 @@ jobs:
         # cannot fail the lint/type/test job for external contributors; the
         # hot-path pin below self-skips when the evidence file is absent.
         if: >-
+          success() && (
           github.event_name == 'push' ||
-          github.event.pull_request.head.repo.full_name == github.repository
+          github.event.pull_request.head.repo.full_name == github.repository )
         run: |
           if [ -f "$HOME/.feelies/cache/APP/2026-03-26.jsonl.gz" ]; then
             echo "cache hit — skipping fetch"
@@ -135,8 +136,9 @@ jobs:
         # cannot obtain, so skip on forks — the pin self-skips when the file is
         # absent rather than raising SystemExit and reddening the job.
         if: >-
+          success() && (
           github.event_name == 'push' ||
-          github.event.pull_request.head.repo.full_name == github.repository
+          github.event.pull_request.head.repo.full_name == github.repository )
         run: uv run python tools/arch/perfmeasure.py --mode profile
 
       - name: Tests
