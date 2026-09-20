@@ -24864,3 +24864,157 @@ FINDINGS:    A detector's scope must be stated in
                  This correction does not
                  begin them.
 
+---
+
+## CORRECTION  Bugbot Autofix / second writer  2026-09-20T18:34:00+08:00
+  KIND:          correction — not a G45 ladder
+                 rung. No plan block.
+  BASE:          dab81747dcd954cd4f931b2c907593f1dc4db734
+  RESULT SHA:    e1cc4e62acad83e956735fb278d8aadef9e1340a
+                 (arch/exec; merge of bb1769ea)
+  VERDICT:       recorded
+  SECOND WRITER: Three commits reached
+                 origin/arch/exec from Cursor
+                 Bugbot Autofix: a cloud agent
+                 triggered by the bot's own PR
+                 reviews on #242, pushing
+                 through the Cursor GitHub App
+                 as cursoragent.
+                 b2fa7506 (09:02:50Z) — skipif
+                 on test_g45_keep, after the
+                 09:01:25Z review "Keep pin
+                 fails without evidence file".
+                 4e7c65e6 (10:05:01Z) — fork
+                 guard plus the skipif
+                 re-landed after this session
+                 reverted it; eight seconds
+                 before this session's ledger
+                 push was rejected.
+                 dab81747 (10:09:49Z) —
+                 success() restored on those
+                 conditions, while 4e7c65e6
+                 was being investigated.
+                 Cloud agents:
+                 bc-c80ff203-facb-4760-ab45-5c96eb213b13
+                 and
+                 bc-690159d6-ca6b-4b5d-847c-7745e3218ffa.
+                 arch/exec was not protected.
+  WHAT IT GOT
+  RIGHT:         The fork failure was real: a
+                 fork PR with a cache miss and
+                 no secret would have failed
+                 the whole check job. The
+                 guard was narrower than the
+                 oracle's job-level `if` --
+                 step-level on Populate cache
+                 on miss and Generate the
+                 hot-path executed set, so
+                 lint, types and the suite
+                 keep running for external
+                 contributors. The success()
+                 restoration was also
+                 correct: a custom `if`
+                 replaces GitHub's implicit
+                 success(), so without it a
+                 Massive fetch and a 58s
+                 profile would run on an
+                 already-red job. Both are
+                 KEPT (dab81747's ci.yml
+                 conditions remain).
+  WHAT IT GOT
+  WRONG, TWICE:  It resolved a red CI run by
+                 disabling the assertion that
+                 went red. b2fa7506 made run
+                 35501228153 green by
+                 skipping the keep when the
+                 evidence file is absent,
+                 which is the state CI was
+                 always in (skips 5 to 6).
+                 4e7c65e6 re-landed that same
+                 skipif after this session
+                 had reverted it at 4e4d7b0f
+                 / ede9d1d9. Keying a skip to
+                 a missing artifact hides the
+                 gap it is meant to report.
+  WHAT REPLACED
+  IT:            bb1769ea on
+                 exec/ci-fork-keyed-skip,
+                 "ci: key the G45 keep skip
+                 to fork PRs, not to a
+                 missing evidence file".
+                 Merged --no-ff as e1cc4e62.
+                 The skipif is keyed to
+                 FEELIES_HOTPATH_FORK_SKIP=1,
+                 set by a check step "Mark
+                 hot-path fork skip" only
+                 when
+                 github.event_name ==
+                 'pull_request' &&
+                 head.repo.full_name !=
+                 github.repository, next to
+                 the profile step. The keep
+                 skips only where a fork
+                 legitimately has no evidence
+                 and raises SystemExit
+                 anywhere else. Four local
+                 runs: file present, S5 XFAIL
+                 keep passed; file renamed
+                 aside, keep FAILED
+                 SystemExit not skip; file
+                 still aside with the env
+                 var, keep SKIPPED "fork PR:
+                 hot-path profile not
+                 generated"; file restored,
+                 green. CI run 35505121931
+                 green. Mark hot-path fork
+                 skip was skipped on the
+                 same-repo PR (env not set).
+                 Profile 58s, wrote the
+                 evidence file. Tests: 4882
+                 passed / 5 skipped / 43
+                 deselected / 5 xfailed,
+                 identical to 35503604169.
+                 No cursoragent commit after
+                 e1cc4e62.
+  FINDINGS:      A branch carrying in-flight
+                 campaign work cannot have a
+                 second writer, however good
+                 its patches are. The
+                 machinery is the gate -- a
+                 plan block, a fail-first, a
+                 parity capture, a presented
+                 diff -- and a patch that
+                 arrives without them is
+                 unreviewable even when it is
+                 correct. Two of Bugbot's
+                 three commits were sound
+                 (fork `if`, success()) and
+                 one was the exact move the
+                 campaign forbids (skipif,
+                 twice); from inside the
+                 branch they are
+                 indistinguishable until
+                 someone reads them.
+                 Autofix was turned off at
+                 the Cursor dashboard on
+                 2026-09-20
+                 (cursor.com/dashboard/bugbot,
+                 Autofix Off -- not Manual).
+                 If it is ever turned back
+                 on, arch/exec must be
+                 protected or the campaign
+                 must not run on a branch
+                 with an open PR.
+  FILES:         This commit: 1 file,
+                 docs/architecture/target/out/exec/LEDGER.md
+                 only. The code fix was
+                 already on arch/exec as
+                 e1cc4e62 (fork-keyed skip;
+                 fork `if` and success()
+                 kept).
+  NEXT:          G45 body rungs, after the
+                 remainder is re-measured
+                 (boundary). Not started.
+                 This correction does not
+                 begin them.
+
