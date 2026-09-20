@@ -379,6 +379,8 @@ class PositionUpdate(Event):
 
 # ── System Events ───────────────────────────────────────────────────────
 
+_EMPTY_METADATA: Mapping[str, Any] = MappingProxyType({})
+
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class StateTransition(Event):
@@ -391,7 +393,10 @@ class StateTransition(Event):
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        if self.metadata:
+            object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        else:
+            object.__setattr__(self, "metadata", _EMPTY_METADATA)
 
 
 # ── Metric Events ───────────────────────────────────────────────────────
