@@ -394,6 +394,15 @@ class FnScan(ast.NodeVisitor):
             self._hit("string_formatting", node)
         self.generic_visit(node)
 
+    def _string_add_operand(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return True
+        if isinstance(node, ast.JoinedStr):
+            return True
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return self._string_add_operand(node.left) or self._string_add_operand(node.right)
+        return False
+
     def visit_BinOp(self, node: ast.BinOp) -> None:
         if (
             isinstance(node.op, ast.Mod)
@@ -402,6 +411,19 @@ class FnScan(ast.NodeVisitor):
         ):
             if not self._in_logging_call:
                 self._hit("string_formatting", node)
+        if isinstance(node.op, ast.Add) and (
+            self._string_add_operand(node.left) or self._string_add_operand(node.right)
+        ):
+            if not self._in_logging_call:
+                self._hit("string_formatting", node)
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        value = node.value
+        if (isinstance(value, ast.Attribute) and value.attr == "__dict__") or (
+            isinstance(value, ast.Name) and value.id == "__dict__"
+        ):
+            self._hit("dynamic_dispatch", node)
         self.generic_visit(node)
 
     # -- deferred imports ------------------------------------------------
