@@ -25018,3 +25018,299 @@ FINDINGS:    A detector's scope must be stated in
                  This correction does not
                  begin them.
 
+---
+
+## G45-02  2026-09-20T18:59:59+08:00
+  STEP:          G45-02
+  BASE:          39930b7e4efca6705359c5a0d0f66e053ac6f74d
+  RESULT SHA:    eefb0dc6cf3fe20d7720cb287b410c1b7e7421d8 (exec/G45-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES three proven sites by one
+                 hoist-once decision. Live proven
+                 7 → 4. Keep unmoved. S5 xfail
+                 intact (G41 G42 G44 G45). No XPASS.
+                 test_g45_keep passed: keep-hits ==
+                 _G45_KEEP.
+                 Five import tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 G40 CLOSED. Engine-to-kernel equals
+                 frozenset(). S2 KEPT at zero
+                 twelve-engine pairs.
+                 import contracts 3 passed.
+                 conformance 120 passed / 5 xfailed.
+                 Inv-10's three tests passed inside
+                 that run. Reset partition passed
+                 inside that run: _TAPES five ids,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine, invoked == MUST_INVOKE.
+                 FAIL_QUIET_KEEP: seventeen rows,
+                 symbol-keyed, no line field.
+                 mypy src/feelies: Success, 250 source
+                 files. docs 101. ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check src/ tests/ scripts/ 719
+                 files already formatted.
+  TESTS:         capture pre-G45-02 GREEN 4911 passed /
+                 0 failed / 19 skipped / 5 xfailed.
+                 -> capture post-G45-02 GREEN 4911
+                 passed / 0 failed / 19 skipped / 5
+                 xfailed. No failure in the accepted
+                 set. No failure outside it.
+                 not-paper_rth: 4910 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G45-02 vs post-G45-02;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved (seventeen rows). APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         3 declared, 3 touched, 3 committed
+                 (clean vs eefb0dc6). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: src/feelies/core/state_machine.py,
+                 src/feelies/sensors/registry.py,
+                 src/feelies/core/events.py.
+                 Named-not-edited: identifiers.py,
+                 data_health.py, risk_wrapper.py,
+                 memory_position_store.py,
+                 test_hot_path_allow_list.py. S5 xfail
+                 not dropped. string_formatting not
+                 added to ALLOWED_NOT_PROHIBITED
+                 (untouched {transcendental,
+                 decimal_arithmetic}). verify_step not
+                 runnable (G45-*; frozen at
+                 exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47028 -> 47035 (+7)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse G45-*.
+                 Four checks by hand:
+                 FILES 3 declared / 3 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4911->4911 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/G45-02,
+                 eefb0dc6cf3fe20d7720cb287b410c1b7e7421d8,
+                 "G45-02: intern empty frozenset, empty
+                 metadata, and sensor stamp at bind".
+                 Parent 39930b7e on arch/exec. Three
+                 files, no tests, +12 / -3:
+                 src/feelies/core/state_machine.py,
+                 src/feelies/sensors/registry.py,
+                 src/feelies/core/events.py. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Live proven 7 → 4.
+                 Before:
+                 dynamic_dispatch
+                 src/feelies/core/data_health.py:119
+                 _require_halt_authority
+                 dynamic_dispatch
+                 src/feelies/risk/risk_wrapper.py:379
+                 refresh_high_water_mark
+                 per_event_dict_construction
+                 src/feelies/core/events.py:394
+                 __post_init__
+                 per_event_dict_construction
+                 src/feelies/portfolio/memory_position_store.py:168
+                 all_positions
+                 per_event_set_construction
+                 src/feelies/core/state_machine.py:159
+                 can_transition
+                 string_formatting
+                 src/feelies/core/identifiers.py:15
+                 make_correlation_id
+                 string_formatting
+                 src/feelies/sensors/registry.py:342
+                 _stamp
+                 After:
+                 dynamic_dispatch
+                 src/feelies/core/data_health.py:119
+                 _require_halt_authority
+                 dynamic_dispatch
+                 src/feelies/risk/risk_wrapper.py:379
+                 refresh_high_water_mark
+                 per_event_dict_construction
+                 src/feelies/portfolio/memory_position_store.py:168
+                 all_positions
+                 string_formatting
+                 src/feelies/core/identifiers.py:15
+                 make_correlation_id
+                 Three membership probes, G45-00
+                 shape (unconditional true, band
+                 per_event). Each named by file,
+                 func, kind. True before the cut,
+                 False after.
+                 (1) file
+                 src/feelies/core/state_machine.py
+                 func can_transition kind
+                 per_event_set_construction
+                 PROBE1_can_transition True ->
+                 PROBE1_can_transition False
+                 (2) file
+                 src/feelies/sensors/registry.py
+                 func _stamp kind
+                 string_formatting
+                 PROBE2__stamp True ->
+                 PROBE2__stamp False
+                 (3) file
+                 src/feelies/core/events.py
+                 func __post_init__ kind
+                 per_event_dict_construction
+                 PROBE3__post_init__ True ->
+                 PROBE3__post_init__ False
+                 can_transition was already proven
+                 under per_event_set_construction,
+                 not string_formatting. The same
+                 dumps listed string_formatting
+                 proven as make_correlation_id and
+                 _stamp before, make_correlation_id
+                 only after. can_transition did not
+                 appear under string_formatting on
+                 either side.
+                 _stamp interns "sensor:{id}" onto
+                 _SensorBinding at register()
+                 (stamp_symbol=f"sensor:{spec.sensor_id}").
+                 The _stamp body reads
+                 binding.stamp_symbol. No f-string
+                 and no concatenation on that path.
+                 That distinction is the cut:
+                 G45-00 taught the scanner Add on
+                 strings, so rewriting
+                 f"sensor:{id}" as "sensor:" + id
+                 would still be a proven
+                 string_formatting site. A
+                 concatenation rewrite is a
+                 catalogued non-cut and was not
+                 taken. The f-string that remains
+                 is bind-time and cold:
+                 string_formatting cold_sites
+                 1255 -> 1256; proven 2 -> 1.
+                 StateTransition.__post_init__:
+                 non-empty metadata still
+                 MappingProxyType(dict(self.metadata));
+                 only the empty path takes
+                 _EMPTY_METADATA. Guarded, not
+                 proven. Guarded dict sites
+                 33 -> 34.
+                 Why the empty-metadata intern was
+                 safe to make: 661,993 of 661,994
+                 StateTransition constructions on
+                 this tape carry empty metadata;
+                 the one exception is
+                 StateMachine.reset's
+                 {"type": "reset"}. That count was
+                 measured before the rung was
+                 written, not assumed from reading
+                 the code. A fix that depends on a
+                 distribution should carry the
+                 measurement, because the same
+                 edit would be worthless if most
+                 constructions were non-empty.
+                 keep-hits == _G45_KEEP unchanged.
+                 None of the six added to the keep.
+                 test_hot_path_allow_list.py not
+                 edited. S5 xfail stayed. No XPASS.
+                 Executed set regenerated both
+                 sides, not committed (gitignored
+                 tools/arch/evidence/*.json):
+                 `uv run python tools\arch\perfmeasure.py
+                 --mode profile` then
+                 `uv run python tools\arch\hotpath.py`
+                 (APP / 2026-03-26 /
+                 configs/bt_app.yaml). n_quotes
+                 82678 and parity_hash
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 identical across both profile
+                 runs (the APP trade parity hash).
+                 ruff check src/ tests/ scripts/
+                 green both sides. ruff format
+                 --check src/ tests/ scripts/ 719
+                 files already formatted both
+                 sides. mypy src/feelies: Success,
+                 250 source files.
+                 Every pin unmoved: five-tier
+                 empty _TIER_RESIDUALS statuses
+                 KEPT; S2 KEPT at zero twelve-
+                 engine pairs; engine-to-kernel
+                 frozenset(); Inv-10's three tests
+                 passed inside conformance; reset
+                 partition _TAPES five,
+                 MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine; FAIL_QUIET_KEEP
+                 seventeen rows.
+                 Locked replay: 64/64 HASH/COUNT
+                 identical pre-G45-02 vs
+                 post-G45-02, 0 moved. Fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 Five baselines unmoved as under
+                 PARITY. NET DELTA declared zeros
+                 MATCH (modules 0, public symbols
+                 0, branch points 0). sloc
+                 47028 -> 47035 (+7) is outside
+                 the declared triple.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G44 partial (103 public methods with
+                 zero in-src call sites, tree-wide);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot
+                 resolve); G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps; G46 is the
+                 orphan matcher recorded 2026-09-20;
+                 S-34f END STATE 15 engine bodies
+                 g–o, deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse G45-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 serialization.py fail-open; 152
+                 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+                 G45-00: the scanner now sees Add on
+                 strings and __dict__ subscript, so a
+                 concatenation rewrite is not a cut.
+  NEXT:          G45-03 _require_halt_authority;
+                 proven 4 → 3 (local). Not started.
+                 Do not begin G45-03.
+                 Left uncommitted: baseline_pre-G45-02.json,
+                 baseline_post-G45-02.json, this ledger
+                 entry.
+
