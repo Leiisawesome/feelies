@@ -123,10 +123,9 @@ LADDER:          Shared-file steps are sequential, not
                  depends on G45-00: the keep is named
                  against the detector that can see Add
                  and __dict__, not against the scanner
-                 that could not. Body rungs are not
-                 locked in this print; they come after
-                 G45-00 lands and the remainder is
-                 re-measured.
+                 that could not. Body rungs G45-02–
+                 G45-05 are sequential on the six live
+                 sites; G45-05 is boundary (protocol).
                    G45-00  detector: visit_BinOp Add on
                            strings; __dict__ subscript
                            as dynamic_dispatch. Proven
@@ -137,9 +136,23 @@ LADDER:          Shared-file steps are sequential, not
                            proven stays 7; the keep is
                            the named remainder, not yet
                            the campaign close.
-                   (body)  four rungs after the
-                           remainder is measured;
-                           not printed here.
+                   G45-02  hoist-once: can_transition
+                           empty frozenset, _stamp
+                           intern-at-bind, empty
+                           MappingProxyType metadata.
+                           Proven 7 → 4.
+                   G45-03  _require_halt_authority
+                           typed attribute plus the
+                           existing KernelFault.
+                           Proven 4 → 3.
+                   G45-04  refresh_high_water_mark
+                           bind-time callable cache.
+                           Proven 3 → 2.
+                   G45-05  all_positions
+                           MappingProxyType over live
+                           _positions; protocol widens
+                           to Mapping. Proven 2 → 1,
+                           equal to the keep.
 ```
 
 ---
@@ -147,9 +160,7 @@ LADDER:          Shared-file steps are sequential, not
 ## G. Migration plan
 
 Step blocks land in the fence below. `verify_step` parses fenced `STEP:`
-blocks (the P7 template). Only G45-00 and G45-01 are locked here. The
-four body rungs come after G45-00 re-measures the remainder against the
-new detector.
+blocks (the P7 template). G45-00 through G45-05 are locked here.
 
 ```
 STEP:            G45-00
@@ -427,4 +438,315 @@ ROLLBACK:        revert the commit. Not independently
                  rungs are not independently
                  revertible from this pin once they
                  shrink live proven against it.
+
+STEP:            G45-02
+CLOSES:          three proven sites by one hoist-once
+                 decision. Live proven 7 → 4. Keep
+                 unmoved. S5 xfail stays. Five import
+                 tiers KEPT. Engine-to-kernel empty.
+PROBLEM:         Three per-event allocations are the
+                 same internable empty: can_transition
+                 builds frozenset() on every miss;
+                 StateTransition.__post_init__ does
+                 MappingProxyType(dict(self.metadata))
+                 on every publish; _stamp formats
+                 f"sensor:{spec.sensor_id}" on every
+                 reading. 661,993 of 661,994 metadata
+                 constructions are empty; the one
+                 exception is StateMachine.reset's
+                 {"type": "reset"}. Concatenation of
+                 _stamp is not a cut: the scanner now
+                 sees Add.
+WHY THIS OWNER:  One intern decision, three sites.
+                 Not three rungs. Not G45-05: that
+                 snapshot is live book state, not an
+                 internable empty.
+FILES:           src/feelies/core/state_machine.py
+                 src/feelies/sensors/registry.py
+                 src/feelies/core/events.py
+                 Do not edit identifiers.py,
+                 data_health.py, risk_wrapper.py,
+                 memory_position_store.py,
+                 test_hot_path_allow_list.py. Do not
+                 add string_formatting to
+                 ALLOWED_NOT_PROHIBITED. Do not drop
+                 S5's xfail.
+REFACTOR PATH:   one commit. Hoist
+                 _EMPTY_FROZENSET = frozenset() and
+                 use it as the .get default in
+                 can_transition. Intern
+                 "sensor:{id}" onto _SensorBinding at
+                 register() bind time; _stamp reads
+                 that field. That is intern-at-bind,
+                 NOT "sensor:" + id (Add is now
+                 proven). Intern
+                 _EMPTY_METADATA = MappingProxyType({})
+                 for StateTransition; __post_init__
+                 uses it when metadata is empty and
+                 only dict()-copies the reset row
+                 (guarded, not proven).
+                 Fail-first, membership shape from
+                 G45-00, three probes, all required.
+                 Before the cut each is True; after,
+                 each is False. Not a count delta.
+                 (1) can_transition:
+                 sites = report["prohibitions"]
+                          ["per_event_set_construction"]
+                          ["proven_sites"]
+                 any(s["func"] == "can_transition"
+                     and s["site"].startswith(
+                       "src/feelies/core/state_machine.py:")
+                     and s["unconditional"]
+                     and s["band"] == "per_event"
+                     for s in sites)
+                 (2) _stamp:
+                 sites = report["prohibitions"]
+                          ["string_formatting"]
+                          ["proven_sites"]
+                 any(s["func"] == "_stamp"
+                     and s["site"].startswith(
+                       "src/feelies/sensors/registry.py:")
+                     and s["unconditional"]
+                     and s["band"] == "per_event"
+                     for s in sites)
+                 (3) __post_init__:
+                 sites = report["prohibitions"]
+                          ["per_event_dict_construction"]
+                          ["proven_sites"]
+                 any(s["func"] == "__post_init__"
+                     and s["site"].startswith(
+                       "src/feelies/core/events.py:")
+                     and s["unconditional"]
+                     and s["band"] == "per_event"
+                     for s in sites)
+                 After all three False: proven 4.
+                 keep-hits == _G45_KEEP. Do not cut
+                 identifiers.py.
+BLAST RADIUS:    local
+VALIDATED BY:    three memberships False; proven 4;
+                 keep-hits == _G45_KEEP; S5 still
+                 xfail (G41 G42 G44 G45), no XPASS;
+                 test_five_import_tiers KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. A
+                 moved HASH or COUNT is a STOP, do not
+                 re-pin. A test-only change that moves
+                 a hash means the file was not
+                 test-only.
+DELETES:         three proven sites. Keep stays.
+NET DELTA:       src modules 0, public symbols 0,
+                 branch points 0
+ROLLBACK:        revert the commit. Not independently
+                 revertible from G45-01. Body rungs
+                 after this re-measure against 4.
+
+STEP:            G45-03
+CLOSES:          _require_halt_authority proven
+                 dynamic_dispatch. Live proven 4 → 3.
+                 Keep unmoved. S5 xfail stays.
+PROBLEM:         getattr(self, "_halt_tradeability", None)
+                 on the tick path. The store is already
+                 bound on Orchestrator (and the
+                 normalizer). A rewrite to
+                 self.__dict__["_halt_tradeability"]
+                 is not a cut: the scanner now sees
+                 Subscript on __dict__.
+WHY THIS OWNER:  The getattr that is live proven.
+                 Not G45-04: that getattr is a
+                 different object (_inner hook).
+FILES:           src/feelies/core/data_health.py
+                 Do not edit orchestrator.py for a
+                 typed read of an attribute it already
+                 assigns. Do not edit
+                 test_hot_path_allow_list.py. Do not
+                 drop S5's xfail.
+REFACTOR PATH:   one commit. Typed attribute read
+                 plus the existing KernelFault:
+                 try: authority = self._halt_tradeability
+                 except AttributeError: raise
+                 KernelFault(SESSION_HALT) as today.
+                 Keep the isinstance(_HaltTradeability)
+                 check. Never self.__dict__.
+                 Fail-first, membership shape from
+                 G45-00. Before True; after False:
+                 sites = report["prohibitions"]
+                          ["dynamic_dispatch"]
+                          ["proven_sites"]
+                 any(s["func"] ==
+                       "_require_halt_authority"
+                     and s["site"].startswith(
+                       "src/feelies/core/data_health.py:")
+                     and s["unconditional"]
+                     and s["band"] == "per_event"
+                     for s in sites)
+                 After False: proven 3.
+                 keep-hits == _G45_KEEP.
+BLAST RADIUS:    local
+VALIDATED BY:    membership False; proven 3;
+                 keep-hits == _G45_KEEP; S5 still
+                 xfail, no XPASS;
+                 test_five_import_tiers KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. A
+                 moved HASH or COUNT is a STOP, do not
+                 re-pin.
+DELETES:         one proven getattr. KernelFault stays.
+NET DELTA:       src modules 0, public symbols 0,
+                 branch points 0
+ROLLBACK:        revert the commit. Depends on
+                 G45-02's proven 4.
+
+STEP:            G45-04
+CLOSES:          refresh_high_water_mark proven
+                 dynamic_dispatch. Live proven 3 → 2.
+                 Keep unmoved. S5 xfail stays.
+PROBLEM:         getattr(self._inner,
+                 "refresh_high_water_mark", None) then
+                 callable() on every mark. Capability
+                 is known at wrap time. A rewrite to
+                 self._inner.__dict__[…] is not a cut.
+WHY THIS OWNER:  The remaining proven getattr. Do not
+                 touch reset or record_fill getattr
+                 in the same file (not proven).
+FILES:           src/feelies/risk/risk_wrapper.py
+                 Do not edit basic_risk.py,
+                 test_hot_path_allow_list.py. Do not
+                 drop S5's xfail.
+REFACTOR PATH:   one commit. Bind-time callable cache
+                 in AlphaBudgetRiskWrapper.__init__:
+                 resolve the hook once, store
+                 Optional[Callable]. The per-event
+                 method calls the cache or returns.
+                 Fail-first, membership shape from
+                 G45-00. Before True; after False:
+                 sites = report["prohibitions"]
+                          ["dynamic_dispatch"]
+                          ["proven_sites"]
+                 any(s["func"] ==
+                       "refresh_high_water_mark"
+                     and s["site"].startswith(
+                       "src/feelies/risk/risk_wrapper.py:")
+                     and s["unconditional"]
+                     and s["band"] == "per_event"
+                     for s in sites)
+                 After False: proven 2
+                 (keep + all_positions).
+                 keep-hits == _G45_KEEP.
+BLAST RADIUS:    local
+VALIDATED BY:    membership False; proven 2;
+                 keep-hits == _G45_KEEP; S5 still
+                 xfail, no XPASS;
+                 test_five_import_tiers KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. A
+                 moved HASH or COUNT is a STOP, do not
+                 re-pin.
+DELETES:         one proven getattr. Optional skip stays.
+NET DELTA:       src modules 0, public symbols 0,
+                 branch points 0
+ROLLBACK:        revert the commit. Depends on
+                 G45-03's proven 3.
+
+STEP:            G45-05
+CLOSES:          all_positions proven dict copy.
+                 Live proven 2 → 1, equal to the keep.
+                 keep-hits == _G45_KEEP with live
+                 proven equal to the keep. That is
+                 the campaign close of the six, not
+                 "no per-event allocation": the keep
+                 still allocates. S5 xfail stays
+                 (G44 103 methods; G41/G42 BLOCKED).
+PROBLEM:         return dict(self._positions) on every
+                 call. A reused snapshot buffer is not
+                 a cut: _emergency_flatten_all binds
+                 the result, lets fills mutate the
+                 book, then calls all_positions()
+                 again. That is safe today only
+                 because the first name is dead after
+                 the loop, which nothing enforces. A
+                 held buffer would be retargeted. The
+                 protocol says Snapshot; a buffer is
+                 not one.
+WHY THIS OWNER:  The last live site besides the keep.
+                 The honest cut is a live read-only
+                 view, which is a protocol change, so
+                 this rung owns core/position.py. Not
+                 a buffer: flatten already holds
+                 across a second call.
+FILES:           src/feelies/portfolio/memory_position_store.py
+                 src/feelies/core/position.py
+                 Do not edit identifiers.py,
+                 test_hot_path_allow_list.py. Do not
+                 drop S5's xfail. Do not add the six
+                 to _G45_KEEP. Do not edit
+                 .cursor/skills/system-architect/SKILL.md
+                 (same dict annotation; follow-on).
+REFACTOR PATH:   one commit. Return
+                 MappingProxyType(self._positions).
+                 No copy. No buffer. PositionStore
+                 all_positions return type
+                 dict[str, Position] →
+                 Mapping[str, Position]. Docstring
+                 changes from "Snapshot of all current
+                 positions." to a live read-only view:
+                 a proxy is not a snapshot either.
+                 Must widen: the protocol and
+                 MemoryPositionStore (it returns the
+                 proxy). dict is a Mapping, so these
+                 still return dict copies and do not
+                 have to widen unless mypy rejects
+                 them: _AggregateView.all_positions,
+                 orchestrator _PostExitPositionView,
+                 risk PostExitPositionView.
+                 PositionBookView is already Mapping.
+                 A held proxy now sees later key
+                 inserts that a dict copy did not. No
+                 test pins that today.
+                 Fail-first, membership shape from
+                 G45-00. Before True; after False:
+                 sites = report["prohibitions"]
+                          ["per_event_dict_construction"]
+                          ["proven_sites"]
+                 any(s["func"] == "all_positions"
+                     and s["site"].startswith(
+                       "src/feelies/portfolio/memory_position_store.py:")
+                     and s["unconditional"]
+                     and s["band"] == "per_event"
+                     for s in sites)
+                 After False: proven 1, equal to
+                 _G45_KEEP. Close assertion:
+                 keep-hits == _G45_KEEP and live
+                 proven keys == _G45_KEEP.
+BLAST RADIUS:    boundary
+VALIDATED BY:    membership False; proven 1;
+                 keep-hits == _G45_KEEP; live proven
+                 == keep; S5 still xfail, no XPASS;
+                 test_five_import_tiers KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. A
+                 moved HASH or COUNT is a STOP, do not
+                 re-pin. A protocol annotation change
+                 that moves a hash means the file was
+                 not annotation-only.
+DELETES:         one proven dict() copy. Protocol
+                 widens to Mapping. Keep stays.
+NET DELTA:       src modules 0, public symbols 0,
+                 branch points 0
+ROLLBACK:        revert the commit. Last body rung;
+                 not independently revertible from
+                 G45-01 once live proven equals the
+                 keep. Boundary: present the diff.
 ```
+
