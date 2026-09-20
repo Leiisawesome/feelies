@@ -24477,3 +24477,214 @@ FINDINGS:    A detector's scope must be stated in
                  baseline_post-G45-00.json, this ledger
                  entry.
 
+---
+
+## G45-01  2026-09-20T16:25:00+08:00
+  STEP:          G45-01
+  BASE:          60f9268af18cc40cea00216538d3d1a1262a0808
+  RESULT SHA:    8f9354ae84172b071878c189435b7d8f59ece6a2 (exec/G45-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing by cutting. Installs
+                 the site keep. Live proven stays 7.
+                 The keep is the named remainder, not
+                 the campaign close. S5 xfail intact
+                 (G41 G42 G44 G45). No XPASS.
+                 test_g45_keep passed: keep-hits ==
+                 _G45_KEEP.
+                 Five import tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 G40 CLOSED. Engine-to-kernel equals
+                 frozenset(). S2 KEPT at zero
+                 twelve-engine pairs.
+                 import contracts 3 passed.
+                 conformance 119 passed / 5 xfailed
+                 -> 120 passed / 5 xfailed.
+                 Inv-10's three tests passed inside
+                 that run. Reset partition passed
+                 inside that run: _TAPES five ids,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine, invoked == MUST_INVOKE.
+                 FAIL_QUIET_KEEP: seventeen rows,
+                 symbol-keyed, no line field.
+                 mypy src/feelies: Success, 250 source
+                 files. docs 101. ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check src/ tests/ scripts/ 719
+                 files already formatted.
+  TESTS:         capture pre-G45-01 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed.
+                 -> capture post-G45-01 GREEN 4911
+                 passed / 0 failed / 19 skipped / 5
+                 xfailed. +1 passed is test_g45_keep.
+                 No failure in the accepted set. No
+                 failure outside it.
+                 not-paper_rth: 4910 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G45-01 vs post-G45-01
+                 and vs baseline_post-G45-00.json;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved (seventeen rows). APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 8f9354ae). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/test_hot_path_allow_list.py.
+                 Named-not-edited: hotpath.py,
+                 identifiers.py, or any of the six
+                 body files. S5 xfail not dropped.
+                 string_formatting not added to
+                 ALLOWED_NOT_PROHIBITED (untouched
+                 {transcendental, decimal_arithmetic}).
+                 test_fail_quiet.py, ci.yml not edited.
+                 verify_step not runnable (G45-*;
+                 frozen at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47028 -> 47028 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse G45-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4911 passed, failed 0->0
+                 (GREEN both sides; +1 is test_g45_keep;
+                 no failure outside the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/G45-01,
+                 8f9354ae84172b071878c189435b7d8f59ece6a2,
+                 "G45-01: pin the G45 remainder to
+                 make_correlation_id". Parent 60f9268a
+                 on arch/exec. One file, +31 / -0:
+                 tests/conformance/test_hot_path_allow_list.py
+                 only. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Executed set regenerated, not
+                 committed (gitignored
+                 tools/arch/evidence/*.json):
+                 `uv run python tools\arch\perfmeasure.py
+                 --mode profile` then
+                 `uv run python tools\arch\hotpath.py`
+                 (APP / 2026-03-26 /
+                 configs/bt_app.yaml). n_quotes 82678.
+                 Profile parity_hash
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 (the APP trade parity hash).
+                 Proven stayed 7, unchanged:
+                 dynamic_dispatch
+                 src/feelies/core/data_health.py:119
+                 _require_halt_authority
+                 dynamic_dispatch
+                 src/feelies/risk/risk_wrapper.py:379
+                 refresh_high_water_mark
+                 per_event_dict_construction
+                 src/feelies/core/events.py:394
+                 __post_init__
+                 per_event_dict_construction
+                 src/feelies/portfolio/memory_position_store.py:168
+                 all_positions
+                 per_event_set_construction
+                 src/feelies/core/state_machine.py:159
+                 can_transition
+                 string_formatting
+                 src/feelies/core/identifiers.py:15
+                 make_correlation_id
+                 string_formatting
+                 src/feelies/sensors/registry.py:342
+                 _stamp
+                 The keep names only
+                 (src/feelies/core/identifiers.py,
+                 make_correlation_id,
+                 string_formatting). Reason: Inv-13
+                 unique per-event stamp; built from a
+                 timestamp and a sequence; cannot be
+                 interned. Every replacement still
+                 allocates. The six other proven sites
+                 are not in the keep. They stay live
+                 until the body rungs. Absorbing them
+                 now would make the pin a deferral.
+                 The keep is not
+                 ALLOWED_NOT_PROHIBITED: that set is
+                 {transcendental, decimal_arithmetic}
+                 with no per-entry reason, and adding
+                 string_formatting would exempt _stamp
+                 as well. Key is (path, func, kind);
+                 no line number. Assertion is equality
+                 on keep-hits, not a subset. The
+                 campaign close will mean six cut and
+                 one named remainder rather than no
+                 per-event allocation: the id cannot
+                 be interned, so every replacement
+                 still allocates once per stamp.
+                 Fail-first, uncommitted: added a
+                 second triple that is not live
+                 (src/feelies/core/identifiers.py,
+                 not_a_live_proven_site,
+                 string_formatting). test_g45_keep
+                 FAILED missing that member:
+                 AssertionError: unexpected []; missing
+                 [('src/feelies/core/identifiers.py',
+                 'not_a_live_proven_site',
+                 'string_formatting')]. Removed the
+                 extra triple. Re-run green: 1 passed.
+                 Did not cut identifiers.py. S5 xfail
+                 stayed. No XPASS.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G44 partial (103 public methods with
+                 zero in-src call sites, tree-wide);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot
+                 resolve); G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps; G46 is the
+                 orphan matcher recorded 2026-09-20;
+                 S-34f END STATE 15 engine bodies
+                 g–o, deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse G45-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 serialization.py fail-open; 152
+                 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          body rungs, after the remainder is
+                 re-measured (boundary). Not started.
+                 Do not begin the next step.
+                 Left uncommitted: baseline_pre-G45-01.json,
+                 baseline_post-G45-01.json, this ledger
+                 entry.
+
