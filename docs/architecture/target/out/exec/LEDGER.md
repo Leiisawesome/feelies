@@ -24038,7 +24038,7 @@ A-00 FOUND:  The walker's boundary came from
              engine even though T-07c's own WHY
              THIS OWNER recorded that harness must
              import Orchestrator and MacroState
-             lives in kernel. A-00 added
+             lives in kernel.              A-00 added
              "harness" and "bootstrap" to
              _WALK_EXCLUDE by name.
 REMAINS OPEN:
@@ -24052,20 +24052,74 @@ REMAINS OPEN:
              G42 S-33; left OPEN
              G44 S-31c; partial
              G45 S-32/S-32a; left OPEN
-             G46 S-10/S9; substance closed. Live
-             UNIT_UNDETERMINED fields (10):
-             HorizonFeatureSnapshot.values,
-             MetricEvent.value, NBBOQuote.ask_size,
-             NBBOQuote.bid_size,
-             RegimeHazardSpike.hazard_score,
-             RegimeState.discriminability,
-             SensorReading.value,
-             SizedPositionIntent.disclosed_cost_total_bps_by_symbol,
-             SizedPositionIntent.factor_exposures,
-             SizedPositionIntent.target_positions.
-             The S9 xfail reason string is stale:
-             it still names RiskVerdict.constraints,
-             deleted at S-31a.
+             G46 S-10/S9; substance closed on
+             "undeclared". UNIT_UNDETERMINED
+             remains. Orphan matcher, not the
+             next campaign. Do not open a
+             campaign for it.
+             NOTE (2026-09-20, sized for later;
+             no blocks):
+             Contract question: does S9's
+             "every numeric field declares one
+             unit" apply to a name-tagged or
+             sensor-tagged payload.
+             Honest encoding: an S9 exemption,
+             not a keep of the UNDETERMINED
+             token. Pin
+             _S9_HETEROGENEOUS =
+             frozenset({
+             "MetricEvent.value",
+             "SensorReading.value",
+             "HorizonFeatureSnapshot.values"}).
+             Those fields are excluded from
+             the one-unit walk and must not
+             carry UNIT_UNDETERMINED. After
+             the fills below,
+             _undetermined_fields() ==
+             frozenset() and the xfail drops.
+             The exemption set is an equality
+             pin: a new field cannot join
+             without an edit; a filled
+             member cannot leave without
+             shrinking the pin.
+             Documentation edits that follow:
+             NBBOQuote.bid_size / ask_size
+             -> "share", citing FQ-5B
+             (2026-07-10; prompt_pack_03c
+             §8; data_contract §8 OQ-1
+             RESOLVED SHARES; AXIS-2
+             size-units RESOLVED). S-10
+             (2026-08-20) left those two
+             UNIT_UNDETERMINED a month after
+             FQ-5B closed them as SHARES —
+             a schema census that did not
+             ingest a closed research
+             finding. hazard_score and
+             discriminability -> "1".
+             disclosed_cost_total_bps_by_symbol
+             -> "bps". factor_exposures ->
+             "1" (one producer; residual
+             factor loading; L2 consumers).
+             target_positions: strip the
+             token; Mapping[str,
+             TargetPosition] is not a
+             numeric leaf, and nested
+             target_usd / urgency /
+             expected_edge_bps are not
+             Event fields.
+             The S9 xfail reason string is
+             stale (still names
+             RiskVerdict.constraints,
+             deleted at S-31a) and must be
+             rewritten or replaced in the
+             same commit as whatever lands.
+             Why this is not a campaign: no
+             body rung; Field.metadata sits
+             outside every hashed surface
+             (schema hash is name:type;
+             parity hashes omit metadata);
+             declared_unit is unread in
+             src/.
              Orchestrator residual: 15 engine
              bodies, groups g–o, no step ids —
              S-34f END STATE, deliberate
