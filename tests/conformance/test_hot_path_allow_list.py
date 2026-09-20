@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from tools.arch.hotpath import ALLOWED_NOT_PROHIBITED, dead_compute, scan
+from tools.arch.hotpath import ALLOWED_NOT_PROHIBITED, EXECUTED, dead_compute, scan
 
 # Inv-13 unique per-event stamp; built from a timestamp and a sequence;
 # cannot be interned. Every replacement still allocates. The six other
@@ -52,6 +52,10 @@ def test_hot_path_allow_list() -> None:
     )
 
 
+@pytest.mark.skipif(
+    not EXECUTED.exists(),
+    reason="requires evidence/hotpath_executed.json from perfmeasure.py --mode profile",
+)
 def test_g45_keep() -> None:
     report = scan()
     keep_hits: set[tuple[str, str, str]] = set()
