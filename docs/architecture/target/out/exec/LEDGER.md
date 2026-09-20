@@ -23668,3 +23668,512 @@ VERIFIED:    PR #242 (draft), run 35434851568,
                  baseline_pre-A-01.json,
                  baseline_post-A-01.json, this ledger
                  entry.
+
+---
+
+## A-02  2026-09-20T11:03:42+08:00
+  STEP:          A-02
+  BASE:          1a41c97ba64b3c85807c504dc3cf842397c9f0bb
+  RESULT SHA:    042c680fb9258394bfb0bb133caa35b8602c0b72 (exec/A-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES the engine-to-kernel pin.
+                 _engine_kernel_import_pairs() ==
+                 frozenset(). Pin 1 → 0. Five import
+                 tiers stays KEPT. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_twelve_engine_independence KEPT
+                 at zero pairs.
+                 test_engine_kernel_imports_equal_pin
+                 equals frozenset() after the commit.
+                 Closure walk after the cut, before the
+                 pin shrink was trusted: EMPTY.
+                 Probe (1), uncommitted: restored
+                 gate_close_attribution.py to
+                 `from feelies.kernel.forced_exit_reasons
+                 import _SELF_ATTRIBUTED_FORCED_EXIT_REASONS`.
+                 test_engine_kernel_imports_equal_pin
+                 FAILED AssertionError: unexpected
+                 [('feelies.forensics.gate_close_attribution',
+                 'feelies.kernel.forced_exit_reasons')];
+                 missing []. Restored the core retarget.
+                 Restore SHA256
+                 7a1ab021c20d72eface830b4bc35c04042fc5dff3c5088264dcb5c05beecf243
+                 BYTE_IDENTICAL (11719 bytes, same as
+                 pre-probe). Porcelain after restore: only
+                 the capture artifact.
+                 Probe (2), uncommitted: T-07c throwaway
+                 `from feelies.kernel.macro import MacroState`
+                 on portfolio/fill_attribution.py.
+                 test_engine_kernel_imports_equal_pin
+                 FAILED AssertionError: unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Removed the import. Restore SHA256
+                 c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                 BYTE_IDENTICAL (5030 bytes, same as
+                 pre-probe and as A-00). Porcelain after
+                 restore: only the capture artifact.
+                 Re-run 3 passed.
+                 Inv-10's three tests passed, invoked
+                 by name: test_no_raw_wall_clock_
+                 outside_allowlist,
+                 test_wall_clock_allowlist_has_no_
+                 stale_entries,
+                 test_process_tick_inner_tick_timings_
+                 keys.
+                 Reset partition passed, invoked by
+                 name: test_reset_cascade_on_fix1_
+                 matches_must_invoke_pin. _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP: test_no_unallowlisted_
+                 fail_quiet_exception_handler passed.
+                 Seventeen rows. FailQuietKeep fields
+                 are path, enclosing_symbol, exc_type,
+                 reason — no line.
+                 mypy src/feelies: Success, 250 source
+                 files. docs 101. forensics 55. kernel
+                 390. conformance 119 passed / 5 xfailed
+                 (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+  TESTS:         capture pre-A-02 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-A-02 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-A-02 vs post-A-02 and vs
+                 baseline_post-A-01.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2 KEPT
+                 at zero. Engine-to-kernel 1 → 0 as
+                 declared, lockstep with the move.
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         7 declared, 7 touched, 7 committed
+                 (clean vs 042c680f). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: core/forced_exit_reasons.py
+                 (new), kernel/forced_exit_reasons.py,
+                 kernel/orchestrator.py,
+                 forensics/gate_close_attribution.py,
+                 tests/conformance/test_import_contracts.py,
+                 tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 harness/, bootstrap.py, cli/,
+                 massive_ws.py, test_fail_quiet.py,
+                 ci.yml.
+                 Do not move
+                 _RISK_FORCED_EXIT_REASONS or
+                 _SLICE_SCOPED_FORCED_EXIT_REASONS:
+                 they stay on
+                 kernel/forced_exit_reasons.py.
+                 tests/kernel still import
+                 _RISK_FORCED_EXIT_REASONS from there
+                 (test_orchestrator_exit_composer_routing.py,
+                 test_stage0_decouple_wiring.py).
+                 Probe (1) mutated
+                 gate_close_attribution.py and restored
+                 it; probe (2) mutated
+                 portfolio/fill_attribution.py and
+                 restored it; neither restore is in the
+                 commit. No alias on
+                 kernel/forced_exit_reasons.py for the
+                 moved name.
+                 verify_step not runnable (A-* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules +1, public symbols +1
+                 (the frozenset relocates; core is the
+                 new owner), branch points 0.
+                 actual modules 249 -> 250 (+1)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47026 -> 47028 (+2)
+                 n_edges 675 -> 676
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 Modules match the declaration.
+                 Public symbols do not: the block
+                 declared +1, measure.py recorded +0,
+                 because _SELF_ATTRIBUTED_FORCED_EXIT_
+                 REASONS is underscore-prefixed and
+                 measure.py does not count it. That is
+                 a declaration error in the block, not
+                 a code defect. The four strings did
+                 not change membership or identity
+                 (parity unmoved).
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse A-*.
+                 Four checks by hand:
+                 FILES 7 declared / 7 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA modules +1 as declared;
+                 public symbols declared +1 actual +0
+                 -- declaration error in the block,
+                 not a code defect. Do not call this
+                 a match.
+                 Go confirmed on branch head
+                 042c680fb9258394bfb0bb133caa35b8602c0b72.
+                 Not merged.
+  NOTES:         One commit on exec/A-02,
+                 042c680fb9258394bfb0bb133caa35b8602c0b72,
+                 "A-02: move self-attributed forced-exit
+                 reasons to core; pin engine-to-kernel
+                 1 to 0". Parent 1a41c97b on arch/exec.
+                 Seven files, +18 / -21: the new
+                 core/forced_exit_reasons.py, the
+                 deletion from
+                 kernel/forced_exit_reasons.py, the
+                 two retargets
+                 (forensics/gate_close_attribution.py
+                 and kernel/orchestrator.py), the pin
+                 shrink in
+                 tests/conformance/test_import_contracts.py,
+                 and the S-21 pair
+                 (tests/docs/test_prompt_coverage_map.py,
+                 docs/prompts/README.md). Clone
+                 C:/Users/cheng.lei/OneDrive/
+                 Documents/GitHub/feelies. tools/exec
+                 vs exec-tools-v1 empty.
+                 The closure walk ran after the cut
+                 and before the pin shrink was trusted:
+                 `uv run python -c` on
+                 _engine_kernel_import_pairs() printed
+                 EMPTY. That is the check that would
+                 have caught a leaked alias -- if
+                 forensics still showed
+                 kernel.forced_exit_reasons, the pin
+                 would not have been shrunk. Then
+                 _KERNEL_IMPORT_RESIDUALS became
+                 frozenset() in the same commit. The
+                 pin moved from the one remaining pair
+                 [('feelies.forensics.gate_close_attribution',
+                 'feelies.kernel.forced_exit_reasons')]
+                 to frozenset(). Equality to
+                 frozenset() is the close; no KEPT
+                 status line was added.
+                 Probe (1) restored
+                 `from feelies.kernel.forced_exit_reasons
+                 import _SELF_ATTRIBUTED_FORCED_EXIT_REASONS`
+                 on gate_close_attribution.py.
+                 test_engine_kernel_imports_equal_pin
+                 FAILED AssertionError: unexpected
+                 [('feelies.forensics.gate_close_attribution',
+                 'feelies.kernel.forced_exit_reasons')];
+                 missing []. Restore SHA256
+                 7a1ab021c20d72eface830b4bc35c04042fc5dff3c5088264dcb5c05beecf243
+                 BYTE_IDENTICAL (11719 bytes). Without
+                 that failure the empty pin would have
+                 been decorative.
+                 Probe (2) put a throwaway
+                 `from feelies.kernel.macro import MacroState`
+                 on portfolio/fill_attribution.py.
+                 The same test FAILED AssertionError:
+                 unexpected
+                 [('feelies.portfolio.fill_attribution',
+                 'feelies.kernel.macro')]; missing [].
+                 Restore SHA256
+                 c620060feb0f4893d0bf0d33a024940bb208f0f431fac669016309da09898e28
+                 BYTE_IDENTICAL (5030 bytes, same as
+                 A-00). Re-run 3 passed. That is what
+                 proves T-07c's detector survived the
+                 pin reaching empty: an exclude that
+                 also skipped portfolio would still
+                 have read green at zero.
+                 No alias was left on
+                 kernel/forced_exit_reasons.py. An
+                 alias there is T-06z repeating
+                 itself: forensics could keep importing
+                 kernel and the walker would still see
+                 the pair, so the pin would never
+                 empty. The name was deleted. The
+                 other two frozensets stay in kernel.
+                 Orchestrator still imports
+                 _RISK_FORCED_EXIT_REASONS and
+                 _SLICE_SCOPED_FORCED_EXIT_REASONS from
+                 that sibling, and tests/kernel still
+                 import _RISK_FORCED_EXIT_REASONS from
+                 there
+                 (test_orchestrator_exit_composer_routing.py,
+                 test_stage0_decouple_wiring.py). Those
+                 importers were not retargeted.
+                 The new module has an _FILE_OWNERS
+                 row "core/forced_exit_reasons.py":
+                 "audit_core_clock_config" and a
+                 README citation after
+                 core/exception_taxonomy.py, same
+                 commit, per S-21.
+                 ruff check: All checks passed. ruff
+                 format --check: 719 files already
+                 formatted. Both stayed green.
+                 mypy src/feelies: Success, 250 source
+                 files.
+                 Every other pin unmoved: five-tier
+                 empty _TIER_RESIDUALS, statuses
+                 KEPT; S2 KEPT at zero twelve-engine
+                 pairs; Inv-10's three tests; reset
+                 partition (_TAPES five, MUST_INVOKE
+                 33, DECLARED_UNINVOKED nine);
+                 FAIL_QUIET_KEEP's seventeen rows,
+                 no line field.
+                 Locked hashes unmoved vs
+                 baseline_post-A-01.json: all 64
+                 HASH/COUNT constants; fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3;
+                 _BASELINE_NET_PNL 103.93;
+                 _BASELINE_FILL_COUNT 20;
+                 _BASELINE_DATA_VERSION
+                 cache:2364ef7fe41c27d9;
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 LEDGER.md dirty at the gate is this
+                 uncommitted append. The two capture
+                 artifacts stay uncommitted.
+  FINDINGS:      The block declared public symbols +1.
+                 measure.py recorded +0, because
+                 _SELF_ATTRIBUTED_FORCED_EXIT_REASONS
+                 is underscore-prefixed. That is a
+                 declaration error in the block, not a
+                 code defect.
+                 Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39 xfail is
+                 test_construction_integrity (S15
+                 passes), G10 and G28 are decided
+                 keeps, G46's xfail reason names a
+                 deleted field;
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned;
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse A-*.
+                 T-06z: a re-export without retarget
+                 is not a cut, and an alias hands the
+                 consumer to a later step;
+                 T-08d: walk the closure to fixpoint
+                 in the before-state;
+                 A-00: the walker is scoped; harness
+                 and bootstrap are excluded by name.
+  NEXT:          campaign close written on this tree.
+                 Not merged. Left uncommitted:
+                 baseline_pre-A-02.json,
+                 baseline_post-A-02.json, this ledger
+                 entry.
+
+---
+
+## CAMPAIGN CLOSE  Engine-to-kernel pin
+DATE:        2026-09-20
+CLOSED AT:   A-02. Commit 042c680f on exec/A-02;
+             not merged. Campaign base b2d91c38
+             (CI restoration closed); A-02 parent
+             1a41c97b on arch/exec.
+LOCKED:      3 rungs in the campaign LADDER
+             (A-00, A-01, A-02).
+EXECUTED:    3 unique step ids passed (retries
+             not recounted). 3 locked ids ran as
+             themselves (A-00, A-01, A-02). 0 were
+             splits. 0 were added mid-campaign.
+CLOSED:      _engine_kernel_import_pairs() ==
+             frozenset(). The pin walked 9 to 0:
+             A-00 9→4 walker scoped off harness
+             and bootstrap; A-01 4→1 retarget
+             three KernelFault raisers; A-02 1→0
+             move _SELF_ATTRIBUTED_FORCED_EXIT_
+             REASONS to core. The campaign was
+             one contract decision and two cuts,
+             not the six cuts the first census
+             proposed. Five import tiers stayed
+             KEPT. G40 stayed CLOSED. Twelve
+             engine module sets stayed KEPT at
+             zero pairs for every rung.
+             harness → kernel remains legal under
+             Five import tiers and was never cut.
+             A-00 stopped counting it; it did not
+             forbid it.
+A-00 FOUND:  The walker's boundary came from
+             iterdir() if p.is_dir() rather than
+             from a rule. T-07c's block named
+             bootstrap as excluded while the code
+             never did: _WALK_EXCLUDE was
+             frozenset({"kernel", "bus", "core",
+             "cli"}). Bootstrap is a file, not a
+             directory, so the loop skipped it by
+             layout. harness was counted as an
+             engine even though T-07c's own WHY
+             THIS OWNER recorded that harness must
+             import Orchestrator and MacroState
+             lives in kernel. A-00 added
+             "harness" and "bootstrap" to
+             _WALK_EXCLUDE by name.
+REMAINS OPEN:
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN — seventeen
+             keepers remain keepers
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             G44 S-31c; partial
+             G45 S-32/S-32a; left OPEN
+             G46 S-10/S9; substance closed. Live
+             UNIT_UNDETERMINED fields (10):
+             HorizonFeatureSnapshot.values,
+             MetricEvent.value, NBBOQuote.ask_size,
+             NBBOQuote.bid_size,
+             RegimeHazardSpike.hazard_score,
+             RegimeState.discriminability,
+             SensorReading.value,
+             SizedPositionIntent.disclosed_cost_total_bps_by_symbol,
+             SizedPositionIntent.factor_exposures,
+             SizedPositionIntent.target_positions.
+             The S9 xfail reason string is stale:
+             it still names RiskVerdict.constraints,
+             deleted at S-31a.
+             Orchestrator residual: 15 engine
+             bodies, groups g–o, no step ids —
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES — three
+             dead entries, unowned
+             G6 empty depends_on_sensors — S-01
+             finding, no step
+             config-path / loader alpha_id — S-04c,
+             never written
+             serialization.py fail-open — own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix —
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current — no step. S-17a
+             ran; drop "until after S-17a".
+             Nine never-rows: DECLARED_UNINVOKED
+             stays nine. _TAPES stays the five
+             ids. MUST_INVOKE stays 33. invoked
+             == MUST_INVOKE. Reset owed is 0
+             since R-07.
+             keep-row squeezes vs ruff format —
+             T-04b FINDING — closed for the two
+             allowlists the CI-restoration
+             campaign owns.
+DECIDED:     G10 S-12/S-31a — StateTransition is
+             a notification record; publish kept.
+             Not a remaining gap.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             S11's reason string still names G10
+             and G28 only because they are lumped.
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. Do not restore
+             continue-on-error.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted; the
+             two named Massive tests are not the
+             closed set. A failure outside that
+             set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals frozenset().
+             Do not restore continue-on-error.
+             Do not invent suffixes for g–o.
+             Reset partition holds: _TAPES the
+             five ids; MUST_INVOKE 33;
+             DECLARED_UNINVOKED nine; invoked ==
+             MUST_INVOKE.
+             FAIL_QUIET_KEEP must never regain a
+             line key after 0.1. ruff locked at
+             0.15.12 in uv.lock.
+             Catalogued non-cuts: a re-export
+             without retarget is not a cut; a
+             TYPE_CHECKING-only move is not a cut;
+             a sys.modules lookup or optional
+             getattr fallback is not a cut;
+             widening a type to object or Any is
+             not a cut; inlining the four
+             self-attributed reason strings in
+             forensics is not a cut; excluding
+             harness from the walker is not a cut
+             of harness → kernel.
+FINDINGS:    A detector's scope must be stated in
+             the code, not in the block that
+             describes it, because the block is
+             not what runs. T-07c's block named
+             bootstrap as excluded; the code never
+             did; iterdir() if p.is_dir() was the
+             real boundary.
+             An alias hands its consumer to a
+             later step, which should be named
+             when the alias is written rather than
+             discovered two campaigns on. T-06z
+             left KernelFault re-exported from
+             kernel so the raisers would need no
+             retarget; three of them survived a
+             full campaign and became A-01. A
+             leftover alias on
+             kernel/forced_exit_reasons.py for
+             _SELF_ATTRIBUTED_FORCED_EXIT_REASONS
+             would have been the same shape:
+             forensics could keep importing kernel
+             and the pin would never empty. A-02
+             deleted the name.
+             A closure walk run before the pin
+             shrink is what separates a real cut
+             from a leaked re-export. After the
+             A-02 cut, _engine_kernel_import_pairs()
+             printed EMPTY before
+             _KERNEL_IMPORT_RESIDUALS became
+             frozenset(). If forensics had still
+             shown kernel.forced_exit_reasons, the
+             pin would not have been shrunk.
+
