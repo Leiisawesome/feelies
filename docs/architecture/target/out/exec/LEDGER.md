@@ -23387,3 +23387,284 @@ VERIFIED:    PR #242 (draft), run 35434851568,
                  baseline_pre-A-00.json,
                  baseline_post-A-00.json, this ledger
                  entry.
+
+---
+
+## A-01  2026-09-20T10:20:55+08:00
+  STEP:          A-01
+  BASE:          ccfa7ca1eb52ba6a16bbb53d4982c630753f1c62
+  RESULT SHA:    937b7a23dcea6af8603edbb8c3f4003e2d029b4a (exec/A-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing on five-tier. Pin 4 → 1.
+                 Drops the three KernelFault leftover
+                 paths. Leaves forensics →
+                 kernel.forced_exit_reasons. Five import
+                 tiers stays KEPT. G40 stays CLOSED.
+                 import contracts 3 passed before and after.
+                 test_five_import_tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 test_twelve_engine_independence KEPT
+                 at zero pairs.
+                 test_engine_kernel_imports_equal_pin
+                 equals the 1-pair pin after the commit.
+                 Probe, uncommitted: restored
+                 massive_ws.py to
+                 `from feelies.kernel.exception_taxonomy
+                 import KernelFault`.
+                 test_engine_kernel_imports_equal_pin
+                 FAILED AssertionError: unexpected
+                 [('feelies.ingestion.massive_ws',
+                 'feelies.kernel.exception_taxonomy')];
+                 missing []. Restored the core retarget.
+                 Restore SHA256
+                 5e45e57c190c36222710cb872c779db5c94437ecfbf0549bc935afaae27e64f2
+                 BYTE_IDENTICAL (17426 bytes, same as
+                 pre-probe). Porcelain after restore: only
+                 the capture artifact. Re-run 3 passed.
+                 Inv-10's three tests passed, invoked
+                 by name.
+                 Reset partition passed, invoked by
+                 name: test_reset_cascade_on_fix1_
+                 matches_must_invoke_pin. _TAPES five
+                 ids, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP: test_no_unallowlisted_
+                 fail_quiet_exception_handler passed.
+                 Seventeen rows. FailQuietKeep fields
+                 are path, enclosing_symbol, exc_type,
+                 reason — no line. massive_ws keep-rows
+                 still match after the import retarget:
+                 _drain_stale_sentinels / queue.Empty,
+                 _run_loop / asyncio.CancelledError,
+                 _subscribe / asyncio.TimeoutError.
+                 mypy src/feelies: Success, 249 source
+                 files. docs 101. ingestion 147 passed /
+                 4 skipped; sensors 285 passed / 1
+                 skipped; alpha 441; conformance 119
+                 passed / 5 xfailed (no XPASS).
+                 G36 xfail remains
+                 (test_no_fail_quiet_exception_handler).
+                 test_ingress_admit.py,
+                 test_horizon_grid.py,
+                 test_universe_authority.py: no XPASS.
+  TESTS:         capture pre-A-01 GREEN 4910 passed / 0
+                 failed / 19 skipped / 5 xfailed.
+                 -> capture post-A-01 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed. No
+                 failure in the accepted set. No failure
+                 outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-A-01 vs post-A-01 and vs
+                 baseline_post-A-00.json; 0 moved |
+                 MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2 KEPT
+                 at zero. Engine-to-kernel 4 → 1 as
+                 declared, lockstep with the three
+                 retargets. MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9.
+                 _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (symbol-keyed
+                 Counter from 0.1; no line field).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         4 declared, 4 touched, 4 committed
+                 (clean vs 937b7a23). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: ingestion/massive_ws.py,
+                 sensors/horizon_scheduler.py,
+                 alpha/registry.py,
+                 tests/conformance/test_import_contracts.py.
+                 Named-not-edited: none.
+                 Forbidden, not touched:
+                 kernel/exception_taxonomy.py (alias
+                 stays), kernel/orchestrator.py
+                 (still `from feelies.kernel.
+                 exception_taxonomy import KernelFault`),
+                 bootstrap.py, harness/, cli/,
+                 gate_close_attribution.py,
+                 forced_exit_reasons.py,
+                 test_fail_quiet.py, ci.yml.
+                 Probe mutated massive_ws.py and
+                 restored it; that file's committed
+                 bytes are the core retarget. No keep-row
+                 enclosing_symbol or exc_type changed.
+                 verify_step not runnable (A-* ; frozen
+                 at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0.
+                 actual modules 249 -> 249 (+0 MATCH)
+                 public_symbols 590 -> 590 (+0 MATCH)
+                 sloc 47026 -> 47026 (+0 MATCH)
+                 n_edges 675 -> 675
+                 n_modules 203 -> 203
+                 cycles 1 -> 1 MATCH
+                 alphaleak 0 -> 0
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse A-*.
+                 Four checks by hand:
+                 FILES 4 declared / 4 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH on modules 0 symbols 0.
+                 CLEAN. Go confirmed on branch head
+                 937b7a23dcea6af8603edbb8c3f4003e2d029b4a.
+                 Not merged.
+  NOTES:         Single commit on exec/A-01,
+                 937b7a23dcea6af8603edbb8c3f4003e2d029b4a,
+                 "A-01: retarget three KernelFault
+                 raisers to core; pin engine-to-kernel
+                 4 to 1". Parent ccfa7ca1 on arch/exec.
+                 Four files, +3 / -6:
+                 ingestion/massive_ws.py,
+                 sensors/horizon_scheduler.py,
+                 alpha/registry.py,
+                 tests/conformance/test_import_contracts.py.
+                 Clone C:/Users/cheng.lei/OneDrive/
+                 Documents/GitHub/feelies. tools/exec
+                 vs exec-tools-v1 empty.
+                 Three ImportFrom lines retargeted
+                 kernel.exception_taxonomy →
+                 core.exception_taxonomy. massive_ws.py
+                 still raises INGRESS_ADMIT,
+                 horizon_scheduler.py still raises
+                 HORIZON_GRID, registry.py still
+                 raises UNIVERSE. Kind members
+                 unchanged. No object/Any, no getattr,
+                 no sys.modules, no TYPE_CHECKING-only
+                 move.
+                 Pin 4 → 1 in the same commit. The one
+                 remaining pair is
+                 feelies.forensics.gate_close_attribution
+                 → feelies.kernel.forced_exit_reasons.
+                 Probe restored massive_ws to
+                 `from feelies.kernel.exception_taxonomy
+                 import KernelFault`.
+                 test_engine_kernel_imports_equal_pin
+                 FAILED AssertionError: unexpected
+                 [('feelies.ingestion.massive_ws',
+                 'feelies.kernel.exception_taxonomy')];
+                 missing []. Restore SHA256
+                 5e45e57c190c36222710cb872c779db5c94437ecfbf0549bc935afaae27e64f2
+                 BYTE_IDENTICAL (17426 bytes). Re-run
+                 3 passed. A pin shrink without a src
+                 retarget would have passed by
+                 construction.
+                 kernel/exception_taxonomy.py is
+                 untouched: it still re-exports
+                 `from feelies.core.exception_taxonomy
+                 import KernelFault as KernelFault`.
+                 orchestrator.py:48 still imports
+                 KernelFault through that alias.
+                 massive_ws.py is a keep-row file.
+                 The three FAIL_QUIET_KEEP rows were
+                 measured after the retarget and still
+                 match: _drain_stale_sentinels /
+                 queue.Empty, _run_loop /
+                 asyncio.CancelledError, _subscribe /
+                 asyncio.TimeoutError. They match
+                 because 0.1 keyed FAIL_QUIET_KEEP by
+                 enclosing symbol, not by line; swapping
+                 the import at the top of the file
+                 moved no symbol and no exception type.
+                 ruff check: All checks passed. ruff
+                 format --check: 718 files already
+                 formatted. Both stayed green.
+                 mypy src/feelies: Success, 249 source
+                 files.
+                 Every other pin unmoved: five-tier
+                 empty _TIER_RESIDUALS, statuses
+                 KEPT; S2 KEPT at zero twelve-engine
+                 pairs; Inv-10's three tests; reset
+                 partition (_TAPES five, MUST_INVOKE
+                 33, DECLARED_UNINVOKED nine);
+                 FAIL_QUIET_KEEP's seventeen rows,
+                 no line field.
+                 Locked hashes unmoved vs
+                 baseline_post-A-00.json: all 64
+                 HASH/COUNT constants; fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6;
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3;
+                 _BASELINE_NET_PNL 103.93;
+                 _BASELINE_FILL_COUNT 20;
+                 _BASELINE_DATA_VERSION
+                 cache:2364ef7fe41c27d9;
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 NET DELTA zeros: modules 249,
+                 public_symbols 590, sloc 47026,
+                 n_edges 675, n_modules 203,
+                 cycles 1, alphaleak 0.
+                 This is the retarget T-06z deferred.
+                 The alias on
+                 kernel/exception_taxonomy.py was left
+                 deliberately so the five raisers
+                 (orchestrator TICK_PIPELINE,
+                 data_integrity SESSION_HALT,
+                 massive_ws INGRESS_ADMIT,
+                 horizon_scheduler HORIZON_GRID,
+                 registry UNIVERSE) would not need
+                 touching mid-campaign. That choice is
+                 exactly why three of them survived a
+                 full campaign and showed up in
+                 T-07c's pin a rung later: orchestrator
+                 is kernel, data_integrity is core, and
+                 the walker only sees the three engine
+                 files. A re-export buys a step its
+                 scope and hands the consumer to a
+                 later one; the ledger should be able
+                 to name which step that is when the
+                 alias is written, not discover it two
+                 campaigns on. T-06z named no consumer
+                 step. A-01 is that step.
+                 LEDGER.md dirty at the gate is this
+                 uncommitted append. The two capture
+                 artifacts stay uncommitted.
+  FINDINGS:      Carried, not this step: G36 OPEN,
+                 G44 partial, G32 deferred, G41/G42/
+                 G45 OPEN, G39 xfail is
+                 test_construction_integrity (S15
+                 passes), G10 and G28 are decided
+                 keeps, G46's xfail reason names a
+                 deleted field;
+                 S-34f END STATE: 15 engine bodies,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES has three
+                 dead entries. Unowned;
+                 verify_step frozen at exec-tools-v1
+                 and cannot parse A-*.
+                 T-06z: a re-export without retarget
+                 is not a cut, which is why these
+                 three survived;
+                 0.1: FAIL_QUIET_KEEP is keyed by
+                 enclosing symbol with no line field;
+                 A-00: the walker is scoped to engine
+                 packages; harness and bootstrap are
+                 excluded by name.
+  NEXT:          A-02 move the self-attributed reason
+                 set to core; pin 1 to 0 (boundary).
+                 Not started. Do not begin A-02.
+                 Left uncommitted:
+                 baseline_pre-A-01.json,
+                 baseline_post-A-01.json, this ledger
+                 entry.
