@@ -107,6 +107,15 @@ jobs:
         # Fetching needs the Massive key. If the cache missed and no key is
         # configured, fail here with the reason rather than letting the next
         # step report a confusing replay error.
+        #
+        # Fork PRs get no secrets, so on a cache miss they can neither fetch nor
+        # prime this entry. Skip on forks — as parity-oracle does — so a miss
+        # cannot fail the lint/type/test job for external contributors; the
+        # hot-path pin below self-skips when the evidence file is absent.
+        if: >-
+          success() && (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository )
         run: |
           if [ -f "$HOME/.feelies/cache/APP/2026-03-26.jsonl.gz" ]; then
             echo "cache hit — skipping fetch"
@@ -123,8 +132,13 @@ jobs:
 
       - name: Generate the hot-path executed set
         # test_g45_keep reads tools/arch/evidence/hotpath_executed.json, which is
-        # gitignored. Without this step the pin raises SystemExit and the check
-        # job is red; skipping the pin when the file is absent disables it.
+        # gitignored. This replay needs the APP event cache, which fork PRs
+        # cannot obtain, so skip on forks — the pin self-skips when the file is
+        # absent rather than raising SystemExit and reddening the job.
+        if: >-
+          success() && (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository )
         run: uv run python tools/arch/perfmeasure.py --mode profile
 
       - name: Tests
