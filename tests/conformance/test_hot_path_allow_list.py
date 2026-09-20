@@ -11,6 +11,19 @@ import pytest
 
 from tools.arch.hotpath import ALLOWED_NOT_PROHIBITED, dead_compute, scan
 
+# Inv-13 unique per-event stamp; built from a timestamp and a sequence;
+# cannot be interned. Every replacement still allocates. The six other
+# proven sites are not in this keep.
+_G45_KEEP: frozenset[tuple[str, str, str]] = frozenset(
+    {
+        (
+            "src/feelies/core/identifiers.py",
+            "make_correlation_id",
+            "string_formatting",
+        ),
+    }
+)
+
 
 @pytest.mark.xfail(strict=True, reason="GAP G41 G42 G44 G45")
 def test_hot_path_allow_list() -> None:
@@ -36,4 +49,22 @@ def test_hot_path_allow_list() -> None:
     assert methods["n_public_methods"] > 0, "dead-compute scanned no public methods"
     assert n_anywhere == 0, (
         f"{n_anywhere} public methods have zero call sites in src/ and tests/; G44 residue"
+    )
+
+
+def test_g45_keep() -> None:
+    report = scan()
+    keep_hits: set[tuple[str, str, str]] = set()
+    for kind, row in report["prohibitions"].items():
+        for site_row in row["proven_sites"]:
+            site = str(site_row["site"]).replace("\\", "/")
+            key = (site.rsplit(":", 1)[0], str(site_row["func"]), str(kind))
+            if key == (
+                "src/feelies/core/identifiers.py",
+                "make_correlation_id",
+                "string_formatting",
+            ):
+                keep_hits.add(key)
+    assert keep_hits == _G45_KEEP, (
+        f"unexpected {sorted(keep_hits - _G45_KEEP)}; missing {sorted(_G45_KEEP - keep_hits)}"
     )
