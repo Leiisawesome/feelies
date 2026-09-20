@@ -116,7 +116,13 @@ class _HaltTradeability:
 
 def _require_halt_authority(self: Any) -> _HaltTradeability:
     """Return the engine-1 halt store, or raise ``KernelFault(SESSION_HALT)``."""
-    authority = getattr(self, "_halt_tradeability", None)
+    try:
+        authority = self._halt_tradeability
+    except AttributeError:
+        raise KernelFault(
+            "session/halt tradeability authority is missing",
+            kind=KernelFault.Kind.SESSION_HALT,
+        )
     if not isinstance(authority, _HaltTradeability):
         raise KernelFault(
             "session/halt tradeability authority is missing",
