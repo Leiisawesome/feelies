@@ -43,7 +43,7 @@ from feelies.core.events import (
     SignalDirection,
     TrendMechanism,
 )
-from feelies.kernel.forced_exit_reasons import _SELF_ATTRIBUTED_FORCED_EXIT_REASONS
+from feelies.core.forced_exit_reasons import _SELF_ATTRIBUTED_FORCED_EXIT_REASONS
 
 # Every RISK-layer reason token that represents a gate-close-derived flatten,
 # i.e. an unwind that (pre-decoupling) would have ridden the SIGNAL-layer FLAT.
