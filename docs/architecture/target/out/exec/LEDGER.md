@@ -24231,3 +24231,249 @@ FINDINGS:    A detector's scope must be stated in
              shown kernel.forced_exit_reasons, the
              pin would not have been shrunk.
 
+---
+
+## G45-00  2026-09-20T13:53:33+08:00
+  STEP:          G45-00
+  BASE:          a25032dca7337fe27217a413c3977294a81fffd3
+  RESULT SHA:    367f937057f28b9bd634180bb33aa2793c920905 (exec/G45-00; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing by cutting. Teaches the
+                 scanner. Proven per-event prohibited
+                 sites 7 → 7 on this tape. G45 pin
+                 does not exist yet. S5 xfail intact
+                 (G41 G42 G44 G45). No XPASS.
+                 Five import tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 G40 CLOSED. Engine-to-kernel equals
+                 frozenset(). S2 KEPT at zero
+                 twelve-engine pairs.
+                 import contracts 3 passed.
+                 conformance 119 passed / 5 xfailed.
+                 Inv-10's three tests passed inside
+                 that run. Reset partition passed
+                 inside that run: _TAPES five ids,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine, invoked == MUST_INVOKE.
+                 FAIL_QUIET_KEEP: seventeen rows,
+                 symbol-keyed, no line field.
+                 mypy src/feelies: Success, 250 source
+                 files. docs 101. ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check src/ tests/ scripts/ 719
+                 files already formatted. ruff check
+                 and format --check on
+                 tools/arch/hotpath.py green.
+  TESTS:         capture pre-G45-00 GREEN 4910 passed /
+                 0 failed / 19 skipped / 5 xfailed.
+                 -> capture post-G45-00 GREEN 4910
+                 passed / 0 failed / 19 skipped / 5
+                 xfailed. No failure in the accepted
+                 set. No failure outside it.
+                 not-paper_rth: 4909 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G45-00 vs post-G45-00;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved (seventeen rows). APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 367f9370). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tools/arch/hotpath.py.
+                 Named-not-edited: identifiers.py,
+                 sensors/registry.py, events.py,
+                 state_machine.py,
+                 memory_position_store.py,
+                 data_health.py, risk_wrapper.py,
+                 test_hot_path_allow_list.py (S5 xfail
+                 stays; G45 pin is G45-01),
+                 test_fail_quiet.py, ci.yml.
+                 Probe (1) mutated
+                 src/feelies/core/state_machine.py and
+                 restored it; probe (2) mutated
+                 src/feelies/portfolio/memory_position_store.py
+                 and restored it; neither restore is
+                 in the commit. ALLOWED_NOT_PROHIBITED
+                 is untouched
+                 {transcendental, decimal_arithmetic}.
+                 string_formatting was not added to
+                 that set. verify_step not runnable
+                 (G45-*; frozen at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47028 -> 47028 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse G45-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4910->4910 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/G45-00,
+                 367f937057f28b9bd634180bb33aa2793c920905,
+                 "G45-00: teach the hot-path scanner
+                 string Add and __dict__ subscript".
+                 Parent a25032dc on arch/exec. One
+                 file, +22 / -0: tools/arch/hotpath.py
+                 only. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Executed set regenerated, not
+                 committed (gitignored
+                 tools/arch/evidence/*.json):
+                 `uv run python tools\arch\perfmeasure.py
+                 --mode profile` then
+                 `uv run python tools\arch\hotpath.py`
+                 (APP / 2026-03-26 /
+                 configs/bt_app.yaml). n_quotes 82678.
+                 Profile parity_hash
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 (the APP trade parity hash).
+                 Before-state visit_BinOp caught only
+                 `%` on a string constant (ast.Mod);
+                 there was no visit_Subscript.
+                 dynamic_dispatch was getattr /
+                 hasattr / setattr / vars / deferred
+                 import in visit_Call plus
+                 visit_Import / visit_ImportFrom.
+                 A blindness probe on this rung runs
+                 by insertion, not by removal. Both
+                 holes were demonstrated against the
+                 unpatched scanner before the
+                 detector landed, then named after.
+                 The inserted statement went before
+                 the existing return so it was
+                 unconditional and the walker saw it.
+                 The assertion is membership of
+                 (file, func, kind) with
+                 unconditional true and band
+                 per_event, not a count delta.
+                 Seven proven sites before and after,
+                 unchanged:
+                 dynamic_dispatch
+                 src/feelies/core/data_health.py:119
+                 _require_halt_authority
+                 dynamic_dispatch
+                 src/feelies/risk/risk_wrapper.py:379
+                 refresh_high_water_mark
+                 per_event_dict_construction
+                 src/feelies/core/events.py:394
+                 __post_init__
+                 per_event_dict_construction
+                 src/feelies/portfolio/memory_position_store.py:168
+                 all_positions
+                 per_event_set_construction
+                 src/feelies/core/state_machine.py:159
+                 can_transition
+                 string_formatting
+                 src/feelies/core/identifiers.py:15
+                 make_correlation_id
+                 string_formatting
+                 src/feelies/sensors/registry.py:342
+                 _stamp
+                 can_transition had zero
+                 string_formatting hits.
+                 all_positions had zero
+                 dynamic_dispatch hits.
+                 Probe (1) concatenation. Inserted
+                 `_ = "x" + "y"` as a statement
+                 before the existing return in
+                 can_transition. Unpatched scan:
+                 PROBE1_MEMBERSHIP False --
+                 string_formatting proven_sites did
+                 not name can_transition. Patched
+                 scan: PROBE1_MEMBERSHIP True --
+                 {'band': 'per_event',
+                 'func': 'can_transition',
+                 'site': 'src/feelies/core/state_machine.py:159',
+                 'unconditional': True}. Restore
+                 SHA256
+                 2c5b3dd9644a449b9247086be100d19d7ea763c3f275dad13774bede499eb34d
+                 BYTE_IDENTICAL (8725 bytes, same as
+                 pre-probe). Re-scan after restore:
+                 proven still 7.
+                 Probe (2) __dict__. Inserted
+                 `_ = self.__dict__["…"]` as a
+                 statement before the existing
+                 return in all_positions. Unpatched
+                 scan: PROBE2_MEMBERSHIP False --
+                 dynamic_dispatch proven_sites did
+                 not name all_positions. Patched
+                 scan: PROBE2_MEMBERSHIP True --
+                 {'band': 'per_event',
+                 'func': 'all_positions',
+                 'site': 'src/feelies/portfolio/memory_position_store.py:168',
+                 'unconditional': True}. Restore
+                 SHA256
+                 b61079ff215cf1a2d23c5b9afc1c5e92502ae03ffc42cbdfb455c90f8faf8b67
+                 BYTE_IDENTICAL (7731 bytes, same as
+                 pre-probe). Re-scan after restore:
+                 proven still 7.
+                 string_formatting cold_sites 1197 ->
+                 1255 after the detector (+58 cold
+                 Adds the old walker missed). Proven
+                 stayed 7, so the hole was not
+                 already in use on this tape.
+                 dynamic_dispatch cold_sites stayed
+                 105.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G44 partial (103 public methods with
+                 zero in-src call sites, tree-wide);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot
+                 resolve); G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps; G46 is the
+                 orphan matcher recorded 2026-09-20;
+                 S-34f END STATE 15 engine bodies
+                 g–o, deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse G45-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 serialization.py fail-open; 152
+                 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          G45-01 the site keep; proven stays 7
+                 (local). Not started. Do not begin
+                 G45-01.
+                 Left uncommitted: baseline_pre-G45-00.json,
+                 baseline_post-G45-00.json, this ledger
+                 entry.
+
