@@ -23,6 +23,8 @@ from feelies.core.clock import Clock
 
 S = TypeVar("S", bound=Enum)
 
+_EMPTY_FROZENSET: frozenset[Any] = frozenset()
+
 
 @dataclass(frozen=True, slots=True)
 class TransitionRecord:
@@ -156,7 +158,7 @@ class StateMachine(Generic[S]):
 
     def can_transition(self, target: S) -> bool:
         """Check whether a transition to *target* is valid from current state."""
-        return target in self._transitions.get(self._state, frozenset())
+        return target in self._transitions.get(self._state, _EMPTY_FROZENSET)
 
     def transition(
         self,
