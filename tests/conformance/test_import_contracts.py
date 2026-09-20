@@ -33,14 +33,7 @@ _TIER_RESIDUALS = frozenset()
 # Residual engine→kernel imports. Equality, not a subset:
 # a twelfth pair fails immediately. Five-tier and S2 both
 # permit this direction; the pin is the remaining detector.
-_KERNEL_IMPORT_RESIDUALS = frozenset(
-    {
-        (
-            "feelies.forensics.gate_close_attribution",
-            "feelies.kernel.forced_exit_reasons",
-        ),
-    }
-)
+_KERNEL_IMPORT_RESIDUALS = frozenset()
 
 
 def _lint_imports_cmd() -> list[str]:

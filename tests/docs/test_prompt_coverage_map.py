@@ -55,6 +55,7 @@ _FILE_OWNERS: dict[str, str] = {
     "core/sensor_registry.py": "audit_core_clock_config",
     "core/regime_protocol.py": "audit_core_clock_config",
     "core/exception_taxonomy.py": "audit_core_clock_config",
+    "core/forced_exit_reasons.py": "audit_core_clock_config",
     "core/data_health.py": "audit_core_clock_config",
     "core/idle_tick.py": "audit_core_clock_config",
     "core/kill_switch.py": "audit_core_clock_config",

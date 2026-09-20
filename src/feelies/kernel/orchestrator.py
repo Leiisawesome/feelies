@@ -47,9 +47,9 @@ from feelies.core.errors import (
 )
 from feelies.kernel.exception_taxonomy import KernelFault
 from feelies.kernel.fill_bindings import TradeRecord
+from feelies.core.forced_exit_reasons import _SELF_ATTRIBUTED_FORCED_EXIT_REASONS
 from feelies.kernel.forced_exit_reasons import (
     _RISK_FORCED_EXIT_REASONS,
-    _SELF_ATTRIBUTED_FORCED_EXIT_REASONS,
     _SLICE_SCOPED_FORCED_EXIT_REASONS,
 )
 from feelies.core.events import (
