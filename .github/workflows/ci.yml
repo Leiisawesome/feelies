@@ -95,6 +95,38 @@ jobs:
         # (G40) are both KEPT. A broken contract fails this job.
         run: uv run lint-imports --no-cache
 
+      - name: Restore APP baseline event cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.feelies/cache
+          # A historical session never changes, so the key is static. Bump the
+          # suffix to force a refetch if the normalizer's on-disk format moves.
+          key: feelies-eventcache-APP-2026-03-26-v1
+
+      - name: Populate cache on miss
+        # Fetching needs the Massive key. If the cache missed and no key is
+        # configured, fail here with the reason rather than letting the next
+        # step report a confusing replay error.
+        run: |
+          if [ -f "$HOME/.feelies/cache/APP/2026-03-26.jsonl.gz" ]; then
+            echo "cache hit — skipping fetch"
+            exit 0
+          fi
+          if [ -z "${MASSIVE_API_KEY}" ]; then
+            echo "::error::APP/2026-03-26 event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
+            exit 1
+          fi
+          uv run feelies backtest --config configs/bt_app.yaml \
+            --symbol APP --date 2026-03-26 >/dev/null
+        env:
+          MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
+
+      - name: Generate the hot-path executed set
+        # test_g45_keep reads tools/arch/evidence/hotpath_executed.json, which is
+        # gitignored. Without this step the pin raises SystemExit and the check
+        # job is red; skipping the pin when the file is absent disables it.
+        run: uv run python tools/arch/perfmeasure.py --mode profile
+
       - name: Tests
         # `functional` needs a live Massive key; `paper_rth` needs IB Gateway and
         # an open US market. Both self-skip, but deselecting is explicit and keeps
