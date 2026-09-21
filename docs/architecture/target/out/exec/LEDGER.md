@@ -27271,3 +27271,205 @@ OWNER:       G44-01a deletes the property
              the six against a remainder of 6 on
              arrival.
 
+
+---
+
+## G44-01a  2026-09-21T19:05:00+08:00
+  STEP:          G44-01a
+  BASE:          14e4354aa2301d698930c25c1c33e80340b3742d
+  RESULT SHA:    f33b02852aa3489e078d6dd14e567d3c03ff0ac7 (exec/G44-01a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES n_zero_call_anywhere 7 to 6. The
+                 six remaining equal the S-31c keeps.
+                 CompositionEngine.alphas deleted.
+                 S5 xfail intact (GAP G41 G42 G44 G45).
+                 No XPASS. First assert is still the
+                 proven-non-empty failure
+                 (make_correlation_id). G44 pin does
+                 not exist yet. Five import tiers
+                 empty _TIER_RESIDUALS and statuses
+                 KEPT. G40 CLOSED. Engine-to-kernel
+                 equals frozenset(). S2 KEPT at zero
+                 twelve-engine pairs. conformance 122
+                 passed / 4 xfailed. Inv-10's three
+                 tests passed inside that run. mypy
+                 src/feelies: Success, 250 source
+                 files. composition 61 passed. docs
+                 103. ruff check src/ tests/ scripts/
+                 green. ruff format --check src/
+                 tests/ scripts/ 720 files already
+                 formatted.
+  TESTS:         capture pre-G44-01a GREEN 4916 passed /
+                 0 failed / 18 skipped / 4 xfailed.
+                 -> capture post-G44-01a GREEN 4916
+                 passed / 0 failed / 18 skipped / 4
+                 xfailed. No failure in the accepted
+                 set. No failure outside it.
+                 not-paper_rth: 4915 passed / 0 failed /
+                 5 skipped / 14 deselected / 4 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G44-01a vs post-G44-01a;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved (seventeen rows). APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs f33b0285). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: src/feelies/composition/engine.py.
+                 Named-not-edited: hotpath.py (detector
+                 already landed),
+                 test_hot_path_allow_list.py (S5
+                 xfail stays; G44 pin is G44-01),
+                 cost_arithmetic.py, risk_wrapper.py,
+                 regime_state_cache.py,
+                 horizon_engine.py,
+                 composition_protocol.py,
+                 cli/promote.py, identifiers.py,
+                 test_fail_quiet.py, ci.yml. The six
+                 keeps were not deleted. verify_step
+                 not runnable (G44-*; frozen at
+                 exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols -1,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47045 -> 47042 (-3)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / branch points 0.
+                 Public symbols: declared -1 is
+                 CompositionEngine.alphas. measure.py
+                 counts only module-level ClassDef /
+                 FunctionDef, so 590 -> 590. The census
+                 that sees class members is
+                 dead_compute: n_public_methods 561 ->
+                 560, n_properties 118 -> 117,
+                 n_zero_call 74 -> 73. Finding on the
+                 inventory, not a stop.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse G44-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4916->4916 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH modules 0 / branch
+                 points 0; public symbols -1 is the
+                 deleted property (dead_compute
+                 membership), not measure.py's 590.
+  NOTES:         One commit on exec/G44-01a,
+                 f33b02852aa3489e078d6dd14e567d3c03ff0ac7,
+                 "G44-01a: delete CompositionEngine.alphas; no reach since Phase-4".
+                 Parent 14e4354a on arch/exec. One
+                 file, 4 deletions:
+                 src/feelies/composition/engine.py
+                 only -- the @property, the def, its
+                 body. self._alphas, register(),
+                 attach and _on_context untouched.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Reach check before delete, quoted:
+                 RESULT: no .alphas, no getattr(...,
+                 "alphas") across src, tests, scripts,
+                 tools, configs, docs/prompts.
+                 COUNT 0 / COUNT 0. Nothing appeared
+                 since the census.
+                 Membership probe, G45-00 shape:
+                 before, (src/feelies/composition/engine.py,
+                 CompositionEngine, alphas) in
+                 n_zero_call_anywhere (True);
+                 after, absent because the property
+                 no longer exists (False), not because
+                 a count moved.
+                 n_zero_call_anywhere 7 -> 6.
+                 Before (7):
+                 CompositionEngine.alphas
+                 src/feelies/composition/engine.py:193
+                 CostArithmetic.declared_round_trip_cost_bps
+                 src/feelies/core/cost_arithmetic.py:81
+                 AlphaBudgetRiskWrapper.checkpoint_risk_state
+                 src/feelies/risk/risk_wrapper.py:353
+                 AlphaBudgetRiskWrapper.restore_risk_state
+                 src/feelies/risk/risk_wrapper.py:362
+                 RegimeStateCache.for_engine
+                 src/feelies/services/regime_state_cache.py:68
+                 RegimeStateCache.forget
+                 src/feelies/services/regime_state_cache.py:113
+                 HorizonSignalEngine.forget
+                 src/feelies/signals/horizon_engine.py:640.
+                 After (6), the S-31c keeps, each named:
+                 CostArithmetic.declared_round_trip_cost_bps
+                 src/feelies/core/cost_arithmetic.py:81
+                 AlphaBudgetRiskWrapper.checkpoint_risk_state
+                 src/feelies/risk/risk_wrapper.py:353
+                 AlphaBudgetRiskWrapper.restore_risk_state
+                 src/feelies/risk/risk_wrapper.py:362
+                 RegimeStateCache.for_engine
+                 src/feelies/services/regime_state_cache.py:68
+                 RegimeStateCache.forget
+                 src/feelies/services/regime_state_cache.py:113
+                 HorizonSignalEngine.forget
+                 src/feelies/signals/horizon_engine.py:640.
+                 Not a different six.
+                 An unread property did not move a
+                 hash.
+  FINDINGS:      measure.py public_symbols 590 -> 590
+                 against a declared -1. Inventory
+                 counts only module-level ClassDef /
+                 FunctionDef; a class @property is
+                 invisible to it. dead_compute saw
+                 the drop. Finding on the inventory,
+                 not a stop; not absorbed into a
+                 re-pin.
+                 Carried, not fixed: G36 OPEN
+                 (seventeen keepers); G32 S-30f
+                 deferred; G41/G42 BLOCKED (S-33;
+                 per-quote timer cannot resolve);
+                 G39 xfail is
+                 test_construction_integrity; G10
+                 and G28 are decided keeps; S-34f
+                 END STATE 15 engine bodies g-o,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse G44-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 serialization.py fail-open; 152
+                 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          G44-01 the keep; S5 narrows to GAP
+                 G41 G42 (local). Do not begin
+                 G44-01. Live anywhere is 6, equal
+                 to the locked _G44_KEEP. S5 stays
+                 "GAP G41 G42 G44 G45" until that
+                 pin names the remainder.
+                 Left uncommitted: baseline_pre-G44-01a.json,
+                 baseline_post-G44-01a.json, this ledger
+                 entry.
