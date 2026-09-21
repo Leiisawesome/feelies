@@ -26666,3 +26666,71 @@ FINDINGS:    A blindness probe runs by insertion
                  commit. Not started here.
                  Left uncommitted: baseline_post-L-02.json,
                  this ledger entry.
+
+---
+
+## RECORD  #242 merged to main  2026-09-21T12:00:55+08:00
+  KIND:          record — not a step. No plan
+                 block. Closes no gap id.
+  BASE:          fb8441813ac4ad1c66d4e5671962e48d6c514515
+                 (origin/main after the merge;
+                 arch/exec fast-forwarded to
+                 equal it)
+  VERDICT:       recorded
+  WHAT HAPPENED: PR #242 merged to main as merge
+                 commit fb844181 on 2026-09-21,
+                 with a merge commit rather than
+                 squash or rebase because the
+                 ledger cites arch/exec SHAs
+                 throughout and either
+                 alternative orphans them.
+                 origin/arch/exec..origin/main
+                 count 1 (the merge commit);
+                 origin/main..origin/arch/exec
+                 count 0. arch/exec was not
+                 deleted.
+  CI:            First push-triggered CI on
+                 main since 18 August, run
+                 35559024385. check 5m43s and
+                 parity oracle 1m56s. Lint and
+                 Format green after being red
+                 since the G40 close and S-03
+                 respectively. Tests 4884
+                 passed / 5 skipped / 43
+                 deselected / 5 xfailed.
+                 Determinism 148 under an
+                 unpinned seed. APP oracle 2
+                 passed at seed 0 and at a
+                 random seed. This run is the
+                 evidence that closes the
+                 dead-gate episode.
+  THREADS:       Four review threads on #242,
+                 all Bugbot. Three fixed by
+                 code: keep pin fails without
+                 evidence file
+                 (test_hot_path_allow_list.py);
+                 check job fails on fork PRs
+                 (ci.yml); step conditions drop
+                 success() guard (ci.yml). One,
+                 the L-01 trailing-duplicate
+                 hole
+                 (test_exec_ledger_structure.py),
+                 fixed by L-02 after a comment
+                 rather than a push -- the
+                 intended shape: a reviewer
+                 finds, the gate lands.
+  RULE:          Push CI runs only on main, so
+                 every campaign on arch/exec
+                 opens a PR with its first
+                 commit, and the PR stays open
+                 until the campaign closes. A
+                 branch without an open PR has
+                 no CI. arch/exec is not added
+                 to on.push.branches.
+  FILES:         This commit: 1 file,
+                 docs/architecture/target/out/exec/LEDGER.md
+                 only.
+  NEXT:          This PR can carry the next
+                 campaign's first rung, or
+                 merge on its own once green.
+                 Not started here.
