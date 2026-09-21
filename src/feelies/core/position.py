@@ -10,6 +10,7 @@ Capital allocation and risk budgets: risk-engine (portfolio governor).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
@@ -83,8 +84,8 @@ class PositionStore(Protocol):
         """
         ...
 
-    def all_positions(self) -> dict[str, Position]:
-        """Snapshot of all current positions."""
+    def all_positions(self) -> Mapping[str, Position]:
+        """Live read-only view of all current positions."""
         ...
 
     def total_exposure(self) -> Decimal:

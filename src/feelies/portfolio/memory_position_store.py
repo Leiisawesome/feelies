@@ -6,7 +6,9 @@ per-symbol with FIFO cost-basis for PnL calculation.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
+from types import MappingProxyType
 
 from feelies.portfolio.position_store import Position
 
@@ -153,7 +155,7 @@ class MemoryPositionStore:
             self._positions[symbol] = pos
         pos.cumulative_fees += fees
 
-    def all_positions(self) -> dict[str, Position]:
+    def all_positions(self) -> Mapping[str, Position]:
         """Return all tracked positions, including fully-closed ones.
 
         Closed positions (qty=0) are included so that realized PnL and
@@ -165,7 +167,7 @@ class MemoryPositionStore:
         fees on never-filled orders remain visible to equity and report
         consumers.
         """
-        return dict(self._positions)
+        return MappingProxyType(self._positions)
 
     def opened_at_ns(self, symbol: str) -> int | None:
         """Return the timestamp (ns) of the most recent open episode start.
