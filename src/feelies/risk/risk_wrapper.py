@@ -21,7 +21,7 @@ Invariants preserved:
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Protocol
+from typing import Callable, Protocol
 
 from feelies.core.alpha_risk_budget import AlphaRiskBudget
 from feelies.core.events import (
@@ -85,6 +85,10 @@ class AlphaBudgetRiskWrapper:
         self._platform_config = platform_config
         self._account_equity = account_equity
         self._alpha_hwm: dict[str, Decimal] = {}
+        refresh = getattr(inner, "refresh_high_water_mark", None)
+        self._refresh_high_water_mark_hook: Callable[[PositionStore], None] | None = (
+            refresh if callable(refresh) else None
+        )
 
     def reset(self) -> None:
         """Clear per-alpha high-water marks; the inner engine is reset separately."""
@@ -374,11 +378,12 @@ class AlphaBudgetRiskWrapper:
 
         Capability is optional on the inner ``RiskEngine`` — if it does
         not implement a callable hook (e.g. a test stub), the call is
-        silently skipped.
+        silently skipped. The hook is resolved once at wrap time.
         """
-        refresh = getattr(self._inner, "refresh_high_water_mark", None)
-        if callable(refresh):
-            refresh(positions)
+        refresh = self._refresh_high_water_mark_hook
+        if refresh is None:
+            return
+        refresh(positions)
 
     def record_fill(
         self,
