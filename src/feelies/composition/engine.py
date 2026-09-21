@@ -189,10 +189,6 @@ class CompositionEngine:
     def is_empty(self) -> bool:
         return not self._alphas
 
-    @property
-    def alphas(self) -> tuple[RegisteredPortfolioAlpha, ...]:
-        return tuple(self._alphas)
-
     # ── Bus wiring ───────────────────────────────────────────────────
 
     def attach(self) -> None:
