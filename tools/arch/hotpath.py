@@ -621,6 +621,46 @@ def scan() -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
+def _class_is_protocol(cls: ast.ClassDef) -> bool:
+    """True when ``cls`` itself is a ``Protocol``, not an implementation of one.
+
+    A method on a Protocol class is an interface stub, not compute.  Only that
+    class is excluded; a concrete class that implements the same method is
+    still counted.  Skipping every method whose name appears on some Protocol
+    would be a blanket exemption.
+    """
+    for base in cls.bases:
+        node: ast.AST = base
+        if isinstance(node, ast.Subscript):
+            node = node.value
+        if isinstance(node, ast.Name) and node.id == "Protocol":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "Protocol":
+            return True
+    return False
+
+
+def _getattr_literal_counts(tree: ast.AST) -> dict[str, int]:
+    """Count ``getattr(x, "name")`` whose name is a string-literal argument.
+
+    A JSON/YAML/dict key with the same spelling is not a call.  Only the
+    second positional argument of a bare ``getattr`` counts.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Name) and func.id == "getattr"):
+            continue
+        if len(node.args) < 2:
+            continue
+        name_arg = node.args[1]
+        if isinstance(name_arg, ast.Constant) and isinstance(name_arg.value, str):
+            counts[name_arg.value] += 1
+    return counts
+
+
 def dead_compute() -> dict[str, Any]:
     """Find computed-but-unread surface.
 
@@ -634,9 +674,13 @@ def dead_compute() -> dict[str, Any]:
         ``name=name`` and no AST scan can resolve them), cross-referenced
         against readers in ``src/`` and in ``tests/`` separately.  A name read
         only by a test is computed on the tick path for nobody.
-    3.  public methods on ``src/feelies`` classes with zero call sites by name
-        anywhere in ``src/feelies``.  False positive: protocol methods invoked
-        through an interface, and anything called from ``tests/`` or ``scripts/``.
+    3.  public methods on concrete ``src/feelies`` classes with zero call
+        sites by name anywhere in ``src/feelies``.  Protocol stubs are not
+        compute.  A ``@property`` counts real ``x.name`` reads, not
+        ``count(".name")-1``.  ``getattr(x, "name")`` with a string literal
+        is a call; a JSON/YAML key of the same spelling is not.  ``scripts/``
+        is a caller, distinct from ``tests/``.  False positive: a same-named
+        attribute on a different class.
     4.  the inverse of 2: names the reporting layer *reads* that the replay
         never recorded -- a permanently-``None`` read.
     """
@@ -644,13 +688,16 @@ def dead_compute() -> dict[str, Any]:
     for path in sorted(SRC.rglob("*.py")):
         texts[path.relative_to(ROOT).as_posix()] = path.read_text(encoding="utf-8")
     all_text = "\n".join(texts.values())
-    # ``scripts/`` is a first-class caller -- run_paper.py drives the whole
-    # PaperSessionRecorder API -- so it belongs in the non-src corpus, not in the
-    # deletion list.
+    # ``scripts/`` is a first-class caller, not a test.  Folding it into
+    # tests_text made entry points look TEST-ONLY.  n_zero_call_anywhere is
+    # unreached in src/, tests/, and scripts/.
     tests_text = "\n".join(
         p.read_text(encoding="utf-8", errors="replace")
-        for root in (ROOT / "tests", ROOT / "scripts")
-        for p in sorted(root.rglob("*.py"))
+        for p in sorted((ROOT / "tests").rglob("*.py"))
+    )
+    scripts_text = "\n".join(
+        p.read_text(encoding="utf-8", errors="replace")
+        for p in sorted((ROOT / "scripts").rglob("*.py"))
     )
 
     # -- 1. unread event fields -------------------------------------------
@@ -716,7 +763,9 @@ def dead_compute() -> dict[str, Any]:
                     "name_sites_in_src": src_reads,
                     "literal_record_sites_in_src": recorded_here,
                     "read_by_src": src_reads - recorded_here > 0,
-                    "read_by_tests": bool(re.search(rf'"{re.escape(bare)}"', tests_text)),
+                    "read_by_tests": bool(
+                        re.search(rf'"{re.escape(bare)}"', tests_text + scripts_text)
+                    ),
                 }
             )
         read_pairs = set(re.findall(r'get_summary\(\s*"([^"]+)",\s*"([^"]+)"', all_text))
@@ -730,12 +779,20 @@ def dead_compute() -> dict[str, Any]:
     zero_call_methods: list[dict[str, Any]] = []
     n_public_methods = 0
     n_properties = 0
+    getattr_calls: dict[str, int] = defaultdict(int)
+    parsed: list[tuple[str, ast.AST]] = []
     for rel, text in texts.items():
         try:
             t = ast.parse(text)
         except SyntaxError:
             continue
+        parsed.append((rel, t))
+        for name, n in _getattr_literal_counts(t).items():
+            getattr_calls[name] += n
+    for rel, t in parsed:
         for cls in [n for n in ast.walk(t) if isinstance(n, ast.ClassDef)]:
+            if _class_is_protocol(cls):
+                continue
             for fn in cls.body:
                 if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
@@ -753,19 +810,22 @@ def dead_compute() -> dict[str, Any]:
                 )
                 if is_property:
                     n_properties += 1
-                    calls = all_text.count(f".{fn.name}") - 1  # minus the def itself
+                    # The def is ``def name``, not ``.name``.  Subtracting one
+                    # treated the def as a read it is not, so one real read
+                    # looked like zero.
+                    calls = all_text.count(f".{fn.name}")
                 else:
                     calls = all_text.count(f".{fn.name}(")
+                # getattr(x, "name") is a call when the name is a string
+                # literal argument.  A JSON/YAML key of the same spelling
+                # is not: ``"alphas"`` in cli/promote.py and ``"factor_model"``
+                # as a config key do not invoke those properties.
+                calls += getattr_calls.get(fn.name, 0)
                 if calls <= 0:
-                    # Called nowhere in src.  Splitting on whether tests call it
-                    # separates "reached only through a protocol, exercised by a
-                    # test" from "nothing anywhere refers to this at all" -- only
-                    # the second is a deletion candidate worth an operator's time.
+                    # Called nowhere in src.  Splitting tests/ from scripts/
+                    # separates TEST-ONLY from entry points.  Only unreached
+                    # in src, tests, and scripts is n_zero_call_anywhere.
                     probe = f".{fn.name}" if is_property else f".{fn.name}("
-                    # Reached by name instead of by syntax: getattr(engine,
-                    # "refresh_high_water_mark", None).  These are live code that
-                    # no static tool can see -- the reason the dynamic-dispatch
-                    # prohibition is about analyzability, not nanoseconds.
                     by_name = f'"{fn.name}"' in all_text
                     zero_call_methods.append(
                         {
@@ -774,6 +834,7 @@ def dead_compute() -> dict[str, Any]:
                             "site": f"{rel}:{fn.lineno}",
                             "kind": "property" if is_property else "method",
                             "called_by_tests": probe in tests_text,
+                            "called_by_scripts": probe in scripts_text,
                             "reached_by_name_literal": by_name,
                         }
                     )
@@ -797,7 +858,11 @@ def dead_compute() -> dict[str, Any]:
             "n_public_methods": n_public_methods,
             "n_properties": n_properties,
             "n_zero_call": len(zero_call_methods),
-            "n_zero_call_anywhere": sum(1 for m in zero_call_methods if not m["called_by_tests"]),
+            "n_zero_call_anywhere": sum(
+                1
+                for m in zero_call_methods
+                if not m["called_by_tests"] and not m["called_by_scripts"]
+            ),
             "methods": zero_call_methods,
         },
     }
