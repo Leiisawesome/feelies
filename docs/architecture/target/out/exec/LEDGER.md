@@ -25571,3 +25571,253 @@ FINDINGS:    A detector's scope must be stated in
                  baseline_post-G45-03.json, this ledger
                  entry.
 
+---
+
+## G45-04  2026-09-20T20:39:55+08:00
+  STEP:          G45-04
+  BASE:          59ae300c7e962dce68ab733145dcff3b548ba2ac
+  RESULT SHA:    da128e3bb9b7ebff5c0510ec435c0974f2ac5d4d (exec/G45-04; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES refresh_high_water_mark proven
+                 dynamic_dispatch. Live proven 3 → 2.
+                 Keep unmoved. S5 xfail intact
+                 (G41 G42 G44 G45). No XPASS.
+                 test_g45_keep passed: keep-hits ==
+                 _G45_KEEP.
+                 Five import tiers empty
+                 _TIER_RESIDUALS and statuses KEPT.
+                 G40 CLOSED. Engine-to-kernel equals
+                 frozenset(). S2 KEPT at zero
+                 twelve-engine pairs.
+                 import contracts 3 passed.
+                 conformance 120 passed / 5 xfailed.
+                 Inv-10's three tests passed inside
+                 that run. Reset partition passed
+                 inside that run: _TAPES five ids,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine, invoked == MUST_INVOKE.
+                 FAIL_QUIET_KEEP: seventeen rows,
+                 symbol-keyed, no line field.
+                 mypy src/feelies: Success, 250 source
+                 files. docs 101. ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check src/ tests/ scripts/ 719
+                 files already formatted.
+  TESTS:         capture pre-G45-04 GREEN 4911 passed /
+                 0 failed / 19 skipped / 5 xfailed.
+                 -> capture post-G45-04 GREEN 4911
+                 passed / 0 failed / 19 skipped / 5
+                 xfailed. No failure in the accepted
+                 set. No failure outside it.
+                 not-paper_rth: 4910 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G45-04 vs post-G45-04
+                 and vs baseline_post-G45-03.json;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved (seventeen rows). APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs da128e3b). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: src/feelies/risk/risk_wrapper.py.
+                 Named-not-edited: basic_risk.py,
+                 test_hot_path_allow_list.py. S5 xfail
+                 not dropped. reset and record_fill
+                 getattr left in place (not proven).
+                 RiskEngine protocol not widened.
+                 verify_step not runnable (G45-*;
+                 frozen at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47041 -> 47046 (+5)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse G45-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4911->4911 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/G45-04,
+                 da128e3bb9b7ebff5c0510ec435c0974f2ac5d4d,
+                 "G45-04: bind optional inner HWM refresh
+                 once at wrap time". Parent 59ae300c
+                 on arch/exec. One file, +10 / -5:
+                 src/feelies/risk/risk_wrapper.py
+                 only. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Live proven 3 → 2. Before: the
+                 getattr in
+                 refresh_high_water_mark
+                 (dynamic_dispatch,
+                 src/feelies/risk/risk_wrapper.py:379),
+                 the dict copy in all_positions
+                 (per_event_dict_construction,
+                 src/feelies/portfolio/memory_position_store.py:168),
+                 and the keep
+                 (string_formatting,
+                 src/feelies/core/identifiers.py:15
+                 make_correlation_id). After: the
+                 keep and all_positions. Kind
+                 dynamic_dispatch has
+                 proven_sites [] — empty, not a
+                 leftover getattr row.
+                 Probe, G45-00 membership (file,
+                 func, kind; unconditional; band
+                 per_event): True before at
+                 ncalls 82678 / 1.0 per quote
+                 {'band': 'per_event',
+                 'calls_per_quote': 1.0,
+                 'func': 'refresh_high_water_mark',
+                 'ncalls': 82678,
+                 'site': 'src/feelies/risk/risk_wrapper.py:379',
+                 'unconditional': True}; False
+                 after.
+                 The per-event getattr is gone.
+                 AlphaBudgetRiskWrapper.__init__
+                 resolves the inner hook once into
+                 Optional[Callable] and the method
+                 calls that cache or returns. The
+                 hook stays optional. It was not
+                 added to the RiskEngine protocol
+                 — that would be a core edit and a
+                 different blast radius.
+                 Four construction sites. src
+                 bootstrap and
+                 tests/alpha/test_risk_wrapper.py
+                 _build_wrapper wrap
+                 BasicRiskEngine, which implements
+                 the hook. The other two wrap
+                 types that do not:
+                 tests/alpha/test_risk_wrapper.py
+                 _RecordingInner, and
+                 tests/conformance/test_per_alpha_budget.py
+                 _RecordingInner. Those two make
+                 the None cache a live test path,
+                 and the skip is still silent.
+                 reset and record_fill still use
+                 getattr. They are not proven and
+                 were not this rung. No __dict__
+                 in the file.
+                 keep-hits == _G45_KEEP
+                 unchanged. test_hot_path_allow_list.py
+                 not edited. S5 xfail stayed. No
+                 XPASS.
+                 Executed set regenerated both
+                 sides, not committed (gitignored
+                 tools/arch/evidence/*.json):
+                 `uv run python tools\arch\perfmeasure.py
+                 --mode profile` then
+                 `uv run python tools\arch\hotpath.py`
+                 (APP / 2026-03-26 /
+                 configs/bt_app.yaml). n_quotes
+                 82678 and parity_hash
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3
+                 identical across both profile
+                 runs. ruff check src/ tests/
+                 scripts/ green both sides. ruff
+                 format --check src/ tests/ scripts/
+                 719 files already formatted both
+                 sides. mypy src/feelies: Success,
+                 250 source files.
+                 Every pin unmoved: five-tier empty
+                 _TIER_RESIDUALS statuses KEPT; S2
+                 KEPT at zero twelve-engine pairs;
+                 engine-to-kernel frozenset();
+                 Inv-10's three tests passed inside
+                 conformance; reset partition
+                 _TAPES five, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine;
+                 FAIL_QUIET_KEEP seventeen rows.
+                 Locked replay: 64/64 HASH/COUNT
+                 identical pre-G45-04 vs
+                 post-G45-04 and vs
+                 baseline_post-G45-03.json, 0 moved.
+                 Fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 Five baselines unmoved as under
+                 PARITY. NET DELTA declared zeros
+                 MATCH (modules 0, public symbols 0,
+                 branch points 0). sloc
+                 47041 -> 47046 (+5) is outside
+                 the declared triple.
+                 NOTE: wrap-time resolve is only
+                 safe because nothing assigns
+                 wrapper._inner after
+                 construction. That was grepped
+                 across src and tests before the
+                 edit, not inferred from
+                 bootstrap looking like a
+                 once-per-run factory. Caching a
+                 capability is a bet that the
+                 object graph does not change
+                 after boot; the rung that makes
+                 the bet has to show the graph is
+                 static. This one did.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G44 partial (103 public methods with
+                 zero in-src call sites, tree-wide);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot
+                 resolve); G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps; G46 is the
+                 orphan matcher recorded 2026-09-20;
+                 S-34f END STATE 15 engine bodies
+                 g–o, deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse G45-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 serialization.py fail-open; 152
+                 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+                 G45-00: the scanner now sees
+                 __dict__ subscript, so rewriting a
+                 getattr as self.__dict__ is a
+                 catalogued non-cut.
+  NEXT:          G45-05 all_positions; proven 2 → 1,
+                 equal to the keep (boundary). Not
+                 started. Do not begin G45-05.
+                 Left uncommitted: baseline_pre-G45-04.json,
+                 baseline_post-G45-04.json, this ledger
+                 entry.
+
