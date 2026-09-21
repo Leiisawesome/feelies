@@ -39,6 +39,14 @@ def scan(text: str) -> tuple[list[str], list[tuple[str, str]]]:
     return close_names, blocks
 
 
+def _normalise_body(body: str) -> str:
+    """Strip trailing whitespace and trailing ``---`` / blank separator lines."""
+    lines = body.splitlines()
+    while lines and lines[-1].strip() in {"", "---"}:
+        lines.pop()
+    return "\n".join(lines).rstrip()
+
+
 def test_campaign_close_names_are_unique() -> None:
     names, _blocks = scan(_LEDGER.read_text(encoding="utf-8"))
     duplicated = sorted({name for name, n in Counter(names).items() if n > 1})
@@ -47,5 +55,6 @@ def test_campaign_close_names_are_unique() -> None:
 
 def test_no_duplicated_ledger_blocks() -> None:
     _names, blocks = scan(_LEDGER.read_text(encoding="utf-8"))
-    duplicated = sorted({heading for (heading, _body), n in Counter(blocks).items() if n > 1})
+    normalised = [(heading, _normalise_body(body)) for heading, body in blocks]
+    duplicated = sorted({heading for (heading, _body), n in Counter(normalised).items() if n > 1})
     assert not duplicated, f"duplicated ledger block heading(s): {duplicated}"
