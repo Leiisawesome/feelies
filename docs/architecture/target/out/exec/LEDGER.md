@@ -27235,3 +27235,39 @@ FINDINGS:    A blindness probe runs by insertion
                  Left uncommitted: baseline_pre-G44-00.json,
                  baseline_post-G44-00.json, this ledger
                  entry.
+
+---
+
+## FINDING  G44-00 census inherited the scanner's blind spots
+DATE:        2026-09-21
+UNDER:       G44-00 (7eb0c2fe / merge ea20f6d8 /
+             captures a43e0ed4)
+CAUSE:       The G44 census said zero dead (103
+             n_zero_call / 17 n_zero_call_anywhere /
+             0 DEAD). That census was run by the
+             scanner G44-00 was about to fix. A
+             census run by the same scanner that was
+             about to be fixed inherits that
+             scanner's blind spots -- the census is
+             only as good as the detector, which is
+             why the detector rung went first.
+STATE:       G44-00's getattr fix exposed
+             CompositionEngine.alphas as having no
+             reach at all. Its only apparent one was
+             the "alphas" JSON key in
+             cli/promote.py:466, which reads the
+             promotion ledger, not this property.
+             n_zero_call_anywhere after the detector
+             is 7, not the expected 6: the six
+             S-31c keeps plus this property.
+RISK:        Naming _G44_KEEP against the old "0
+             DEAD / expected 6" tape would pin six
+             while a seventh live zero-call sat
+             unnamed, the UNIT_UNDETERMINED shape.
+             Counting the JSON key as a call is the
+             catalogued non-cut.
+OWNER:       G44-01a deletes the property
+             (engine.py only). G44-01 then names
+             the six against a remainder of 6 on
+             arrival.
+

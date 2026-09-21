@@ -28,11 +28,17 @@ CLOSES:          dead_compute n_zero_call_anywhere
                  owning its own pin
                  (test_g44_dead_compute) and S5's
                  reason narrowed to "GAP G41 G42".
-                 Zero methods are deleted. The
-                 census found none dead: 103
-                 n_zero_call / 17
+                 The census found none dead by the
+                 old scanner: 103 n_zero_call / 17
                  n_zero_call_anywhere / 0 DEAD.
-                 The six are keep, not residue:
+                 G44-00's getattr fix exposed
+                 CompositionEngine.alphas as having
+                 no reach at all -- its only
+                 apparent one was the "alphas" JSON
+                 key in cli/promote.py:466, which
+                 reads the promotion ledger, not
+                 this property. One method is
+                 deleted. Six are kept:
                  CostArithmetic.declared_round_trip_cost_bps
                  (Inv-12 declaration-time
                  disclosure, not runtime B4);
@@ -137,21 +143,28 @@ NON-CUTS:        Deleting any of the six is not a cut.
                  Emptying n_zero_call_anywhere by
                  shrinking the walker is not a keep.
 LADDER:          Shared-file steps are sequential, not
-                 independently revertible. G44-01
-                 depends on G44-00: the keep is named
-                 against the detector that can see
-                 real property reads, Protocol stubs,
-                 getattr literals, and scripts/, not
-                 against the scanner that could not.
+                 independently revertible. G44-01a
+                 depends on G44-00: the property was
+                 invisible as dead until getattr
+                 stopped counting a JSON key as a
+                 call. G44-01 depends on G44-01a:
+                 the keep is named against a
+                 remainder of 6 after the deletion,
+                 not against the 7 the detector
+                 left, and not against the scanner
+                 that could not see the construct.
                    G44-00  detector: property minus-one;
                            Protocol stubs; getattr
                            literal vs JSON/YAML;
-                           scripts/ vs tests/. Proven
-                           expected n_zero_call_anywhere
-                           6 on this tape.
+                           scripts/ vs tests/. Expected
+                           6; actual 7 (finding:
+                           CompositionEngine.alphas).
+                   G44-01a delete CompositionEngine.alphas.
+                           n_zero_call_anywhere 7 to 6;
+                           the six equal the S-31c keeps.
                    G44-01  contract: site keep of the
-                           six. n_zero_call_anywhere
-                           stays 6, equal to
+                           six. n_zero_call_anywhere is
+                           6 on arrival, equal to
                            _G44_KEEP. S5 reason
                            narrowed same commit.
 ```
@@ -161,7 +174,7 @@ LADDER:          Shared-file steps are sequential, not
 ## G. Migration plan
 
 Step blocks land in the fence below. `verify_step` parses fenced `STEP:`
-blocks (the P7 template). G44-00 through G44-01 are locked here.
+blocks (the P7 template). G44-00, G44-01a, and G44-01 are locked here.
 
 ```
 STEP:            G44-00
@@ -321,6 +334,109 @@ ROLLBACK:        revert the commit. Independently
                  rung: the keep is named against this
                  detector.
 
+STEP:            G44-01a
+CLOSES:          n_zero_call_anywhere 7 to 6. The six
+                 remaining equal the S-31c keeps.
+                 CompositionEngine.alphas is deleted.
+                 S5 xfail stays (GAP G41 G42 G44 G45).
+                 G44 pin does not exist yet. Five
+                 import tiers KEPT. G40 CLOSED.
+                 Engine-to-kernel stays empty.
+PROBLEM:         G44-00 left n_zero_call_anywhere at
+                 7, not 6. The seventh is
+                 CompositionEngine.alphas
+                 (src/feelies/composition/engine.py:193),
+                 a @property that returns
+                 tuple(self._alphas) -- an immutable
+                 snapshot of registered PORTFOLIO
+                 alphas. It is not a Protocol member:
+                 core/composition_protocol.py
+                 CompositionEngine is an empty body
+                 ("Kernel never calls methods by
+                 name"). No .alphas read and no
+                 getattr(..., "alphas") anywhere in
+                 src/, tests/, scripts/, tools/,
+                 configs/, or docs/prompts. The only
+                 apparent reach was the "alphas" JSON
+                 key in cli/promote.py:466, which
+                 reads the promotion ledger, not this
+                 property. git log -S "def alphas"
+                 on engine.py is one commit,
+                 1be467b8 (Phase-4, 2026-04-24);
+                 git log -S ".alphas" on src/feelies,
+                 tests, scripts is empty -- no caller
+                 was ever added. "Public snapshot of
+                 the registry" without a consumer is
+                 not a keep reason.
+WHY THIS OWNER:  The deletion that has to land before
+                 the keep is named. Not G44-00: the
+                 detector does not delete. Not G44-01:
+                 a frozenset cannot absorb a dead
+                 member by omitting it, and FILES of
+                 G44-01 is the pin test, not engine.py.
+FILES:           src/feelies/composition/engine.py
+                 only. Delete the alphas property.
+                 Leave self._alphas, register(),
+                 attach and _on_context untouched --
+                 they are the live list.
+                 Do not edit hotpath.py (detector
+                 already landed),
+                 test_hot_path_allow_list.py (S5
+                 xfail stays; G44 pin is G44-01),
+                 cost_arithmetic.py, risk_wrapper.py,
+                 regime_state_cache.py,
+                 horizon_engine.py,
+                 composition_protocol.py,
+                 cli/promote.py, identifiers.py,
+                 test_fail_quiet.py, ci.yml.
+                 Do not delete any of the six.
+REFACTOR PATH:   one commit. Mechanism: delete the
+                 property. The field and the
+                 registration/dispatch path stay.
+                 Probe, G45-00 membership (file,
+                 class, method), not a count delta:
+                 before, (src/feelies/composition/engine.py,
+                 CompositionEngine, alphas) in
+                 n_zero_call_anywhere; after, absent
+                 because it no longer exists, and
+                 n_zero_call_anywhere is exactly the
+                 six S-31c keeps. Also confirm mypy
+                 src/feelies: a deleted public member
+                 that something typed against would
+                 show there.
+BLAST RADIUS:    local
+VALIDATED BY:    dead_compute() n_zero_call_anywhere
+                 == 6, equal to the six S-31c keeps;
+                 (engine.py, CompositionEngine,
+                 alphas) in n_zero_call_anywhere
+                 before, absent after because the
+                 property is gone, not because a
+                 count moved;
+                 mypy src/feelies Success;
+                 test_hot_path_allow_list still
+                 xfail (G41 G42 G44 G45), no XPASS;
+                 test_five_import_tiers KEPT;
+                 test_twelve_engine_independence KEPT
+                 at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. An
+                 unread property cannot move a hash; if
+                 one moves, something did read it. A
+                 moved HASH or COUNT is a STOP, do not
+                 re-pin.
+DELETES:         CompositionEngine.alphas. One
+                 property. self._alphas stays.
+NET DELTA:       src modules 0, public symbols -1,
+                 branch points 0
+ROLLBACK:        revert the commit. Independently
+                 revertible from G44-00 until G44-01
+                 lands (different files). G44-01 is
+                 not independently revertible from
+                 this rung: the keep is named against
+                 the remainder of 6 this deletion
+                 leaves.
+
 STEP:            G44-01
 CLOSES:          nothing by deleting. Installs the
                  keep. n_zero_call_anywhere stays 6,
@@ -343,15 +459,18 @@ PROBLEM:         S5 asserts n_anywhere == 0 under a
                  already split its pin out;
                  G44 has not.
 WHY THIS OWNER:  The contract that names the remainder
-                 after the detector can see it. Not
-                 G44-00: the detector does not decide
-                 which of the six stays. Not a
-                 deletion rung: a src drop cannot
-                 move a frozenset, and there is
-                 nothing to drop.
+                 after the detector can see it and
+                 after G44-01a deleted the seventh.
+                 Not G44-00: the detector does not
+                 decide which of the six stays. Not
+                 G44-01a: a src drop cannot move a
+                 frozenset. Do not delete any of the
+                 six.
 FILES:           tests/conformance/test_hot_path_allow_list.py
                  Do not edit hotpath.py (detector
-                 already landed), cost_arithmetic.py,
+                 already landed), engine.py
+                 (deletion already landed),
+                 cost_arithmetic.py,
                  risk_wrapper.py,
                  regime_state_cache.py,
                  horizon_engine.py, identifiers.py.
@@ -420,7 +539,8 @@ BLAST RADIUS:    local
 VALIDATED BY:    keep-hits == _G44_KEEP;
                  fail-first (1) missing, then green;
                  dead_compute() n_zero_call_anywhere
-                 still 6 on this tape;
+                 is 6 on arrival from G44-01a,
+                 not by construction of this pin;
                  test_hot_path_allow_list still
                  xfail, reason "GAP G41 G42", first
                  assert still the proven-non-empty
@@ -436,12 +556,12 @@ PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
                  re-pin. A test-only change that moves
                  a hash means the file was not
                  test-only.
-DELETES:         nothing in src. Zero methods. The
-                 census found none dead. Six of them
-                 are now named.
+DELETES:         nothing in src. Zero methods on this
+                 rung. Six of them are now named.
 NET DELTA:       src modules 0, public symbols 0,
                  branch points 0
 ROLLBACK:        revert the commit. Not independently
-                 revertible from G44-00: the keep is
-                 named against that detector.
+                 revertible from G44-01a: the keep is
+                 named against the remainder that
+                 rung left.
 ```
