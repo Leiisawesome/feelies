@@ -98,8 +98,8 @@ class NBBOQuote(Event):
     symbol: str
     bid: Decimal = field(metadata={"unit": "USD"})
     ask: Decimal = field(metadata={"unit": "USD"})
-    bid_size: int = field(metadata={"unit": UNIT_UNDETERMINED})
-    ask_size: int = field(metadata={"unit": UNIT_UNDETERMINED})
+    bid_size: int = field(metadata={"unit": "share"})
+    ask_size: int = field(metadata={"unit": "share"})
     bid_exchange: int = field(default=0, metadata={"unit": "1"})
     ask_exchange: int = field(default=0, metadata={"unit": "1"})
     exchange_timestamp_ns: int = field(metadata={"unit": "ns"})
@@ -183,7 +183,7 @@ class RegimeState(Event):
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
     posterior_entropy_nats: float = field(default=0.0, metadata={"unit": "nat"})
     calibrated: bool = True
-    discriminability: float = field(default=float("inf"), metadata={"unit": UNIT_UNDETERMINED})
+    discriminability: float = field(default=float("inf"), metadata={"unit": "1"})
 
 
 # ── Signal Events ───────────────────────────────────────────────────────
@@ -414,7 +414,7 @@ class MetricEvent(Event):
 
     layer: str
     name: str
-    value: float = field(metadata={"unit": UNIT_UNDETERMINED})
+    value: float
 
 
 # ── Alert Events ────────────────────────────────────────────────────
@@ -583,7 +583,7 @@ class RegimeHazardSpike(Event):
     departing_posterior_prev: float = field(metadata={"unit": "1"})
     departing_posterior_now: float = field(metadata={"unit": "1"})
     incoming_state: str | None
-    hazard_score: float = field(metadata={"unit": UNIT_UNDETERMINED})
+    hazard_score: float = field(metadata={"unit": "1"})
 
 
 # ── Supporting types for new events ─────────────────────────────────────
@@ -680,7 +680,7 @@ class SensorReading(Event):
     symbol: str
     sensor_id: str
     sensor_version: str
-    value: float | tuple[float, ...] = field(metadata={"unit": UNIT_UNDETERMINED})
+    value: float | tuple[float, ...]
     confidence: float = field(default=1.0, metadata={"unit": "1"})
     warm: bool = True
     provenance: SensorProvenance = field(default_factory=SensorProvenance)
@@ -701,7 +701,7 @@ class HorizonFeatureSnapshot(Event):
     # ``HorizonTick.boundary_ts_ns``.  ``timestamp_ns`` remains the trigger
     # time; this is the regular-grid anchor for IC labels / forensics.
     boundary_ts_ns: int = field(default=0, metadata={"unit": "ns"})
-    values: Mapping[str, float] = field(default_factory=dict, metadata={"unit": UNIT_UNDETERMINED})
+    values: Mapping[str, float] = field(default_factory=dict)
     warm: Mapping[str, bool] = field(default_factory=dict)
     stale: Mapping[str, bool] = field(default_factory=dict)
 
@@ -769,12 +769,8 @@ class SizedPositionIntent(Event):
     strategy_id: str
     layer: Literal["PORTFOLIO"] = "PORTFOLIO"
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
-    target_positions: Mapping[str, TargetPosition] = field(
-        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
-    )
-    factor_exposures: Mapping[str, float] = field(
-        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
-    )
+    target_positions: Mapping[str, TargetPosition] = field(default_factory=dict)
+    factor_exposures: Mapping[str, float] = field(default_factory=dict, metadata={"unit": "1"})
     expected_turnover_usd: float = field(default=0.0, metadata={"unit": "USD"})
     expected_gross_exposure_usd: float = field(default=0.0, metadata={"unit": "USD"})
     mechanism_breakdown: Mapping[TrendMechanism, float] = field(
@@ -782,7 +778,7 @@ class SizedPositionIntent(Event):
     )
     # Per-symbol one-way cost disclosed by the consumed signals.
     disclosed_cost_total_bps_by_symbol: Mapping[str, float] = field(
-        default_factory=dict, metadata={"unit": UNIT_UNDETERMINED}
+        default_factory=dict, metadata={"unit": "bps"}
     )
     # Digest of the signals, positions, and parameters that produced the targets.
     decision_basis_hash: str = ""
