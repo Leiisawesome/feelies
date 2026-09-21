@@ -26374,3 +26374,149 @@ FINDINGS:    A blindness probe runs by insertion
              names, and no step id appears
              twice. OPEN — not done here.
 
+---
+
+## L-01  2026-09-21T10:52:22+08:00
+  STEP:          L-01
+  BASE:          234a4636167ecbf3d820db5ac8b620da683417f6
+  RESULT SHA:    0a9e0830a71b7ef90df0b4028db4fea5864aa46a (exec/L-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Closes no gap id.
+                 test_campaign_close_names_are_unique
+                 and test_no_duplicated_ledger_blocks
+                 pass against the real LEDGER.md.
+                 Six CLOSE names distinct: Phase 7
+                 execution, Five import tiers, Reset
+                 invocation, CI restoration,
+                 Engine-to-kernel pin, G45
+                 proven-site keep. Unique step ids
+                 not asserted. S5 xfail intact. No
+                 XPASS. Five import tiers KEPT. S2
+                 KEPT at zero. Engine-to-kernel
+                 frozenset(). import contracts 3
+                 passed. conformance 120 passed / 5
+                 xfailed. Inv-10's three tests passed
+                 inside that run. Reset partition
+                 passed: _TAPES five, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine. FAIL_QUIET_KEEP
+                 seventeen rows. mypy src/feelies:
+                 Success, 250 source files. docs 101
+                 -> 103. ruff check green. ruff format
+                 --check 720 files already formatted.
+  TESTS:         capture pre-L-01 GREEN 4911 passed /
+                 0 failed / 19 skipped / 5 xfailed.
+                 -> capture post-L-01 GREEN 4913
+                 passed / 0 failed / 19 skipped / 5
+                 xfailed. +2 is the two new tests.
+                 No failure in the accepted set. No
+                 failure outside it.
+                 not-paper_rth: 4912 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-L-01 vs post-L-01;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved. APP oracle five baselines
+                 unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 0a9e0830). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/docs/test_exec_ledger_structure.py.
+                 Named-not-edited: LEDGER.md (this
+                 entry uncommitted), any plan file,
+                 tests/conformance/.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47049 -> 47049 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. Four checks
+                 by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4911->4913 passed, failed 0->0
+                 (+2 the new tests; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/L-01,
+                 0a9e0830a71b7ef90df0b4028db4fea5864aa46a,
+                 "tests/docs: assert one CLOSE per
+                 campaign and no duplicated ledger
+                 block". Parent 234a4636 on arch/exec.
+                 One file, +51 / -0. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 scan(text) returns close_names and
+                 (heading, body) blocks. Standing
+                 tests read the real LEDGER.md. A
+                 fixture would have been green through
+                 both incidents.
+                 Fail-first, in-memory, disk unchanged:
+                 duplicated the G45 proven-site keep
+                 CLOSE heading and body, then the
+                 G45-05 step block. Failures verbatim:
+                 duplicated CAMPAIGN CLOSE name(s):
+                 ['G45 proven-site keep']
+                 duplicated ledger block heading(s):
+                 ['## G45-05  2026-09-21T09:52:48+08:00']
+                 Unique step ids not asserted. S-07
+                 has three headings: two identical
+                 titles, both VERDICT: blocked,
+                 distinguished only by DATE, then a
+                 timestamped passed. Twelve-odd
+                 same-id retries are all passed.
+                 This test would have blocked
+                 c62903ce: tests/docs already runs in
+                 the not-paper_rth suite, which ran
+                 on the dirty duplicated ledger before
+                 that exec commit. The G45 CLOSE
+                 FINDING that called a conformance
+                 test OPEN is the thing this rung
+                 installed, minus unique step ids.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN; G44 partial;
+                 G32 deferred; G41/G42 BLOCKED; G39
+                 xfail is test_construction_integrity;
+                 G10 and G28 decided keeps; G46 orphan
+                 matcher; S-34f 15 engine bodies;
+                 perfmeasure.py DIRECT_PROBES; verify_step
+                 frozen; G6 empty depends_on_sensors;
+                 S-04c; serialization.py fail-open;
+                 152 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          decide PR #242: merge to main, or
+                 declare arch/exec the integration
+                 branch. Not started.
+                 Left uncommitted: baseline_pre-L-01.json,
+                 baseline_post-L-01.json, this ledger
+                 entry.
+
