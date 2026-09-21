@@ -26520,3 +26520,149 @@ FINDINGS:    A blindness probe runs by insertion
                  baseline_post-L-01.json, this ledger
                  entry.
 
+---
+
+## L-02  2026-09-21T11:34:39+08:00
+  STEP:          L-02
+  BASE:          9548d030e8e45c368362545b13f1a7a25e9df3d0
+  RESULT SHA:    66e140a4c3454f97315f62513c9a11f8e24371ad (exec/L-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Closes no gap id. Fixes the
+                 L-01 hole found by Bugbot review on
+                 PR #242 (comment on
+                 tests/docs/test_exec_ledger_structure.py:51,
+                 not a push). Intended shape: a reviewer
+                 finds, the gate lands. Thread not
+                 replied to or resolved here.
+                 scan() still takes a block body as
+                 everything up to the next '## '
+                 heading. Comparison now normalises
+                 each body: strip trailing whitespace
+                 and trailing separator lines ('---',
+                 blank). Heading detection unchanged.
+                 Assertion (1) unchanged. Unique step
+                 ids not asserted. S5 xfail intact. No
+                 XPASS. Five import tiers KEPT. S2
+                 KEPT at zero. Engine-to-kernel
+                 frozenset(). import contracts 3
+                 passed. conformance 120 passed / 5
+                 xfailed. Inv-10's three tests passed
+                 inside that run. Reset partition
+                 passed: _TAPES five, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine. FAIL_QUIET_KEEP
+                 seventeen rows. mypy src/feelies:
+                 Success, 250 source files. docs 103
+                 -> 103. ruff check green. ruff format
+                 --check 720 files already formatted.
+  TESTS:         no pre-L-02 capture (not requested).
+                 capture post-L-01 GREEN 4913 passed /
+                 0 failed / 19 skipped / 5 xfailed
+                 -> capture post-L-02 GREEN 4913
+                 passed / 0 failed / 19 skipped / 5
+                 xfailed. 0 new tests. No failure in
+                 the accepted set. No failure outside
+                 it.
+                 not-paper_rth: 4912 passed / 0 failed /
+                 6 skipped / 14 deselected / 5 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical post-L-01 vs post-L-02;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved. APP oracle five baselines
+                 unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 66e140a4). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/docs/test_exec_ledger_structure.py.
+                 Named-not-edited-in-commit: LEDGER.md
+                 (this entry uncommitted), any plan
+                 file, tests/conformance/.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47049 -> 47049 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. Four checks
+                 by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4913->4913 passed, failed 0->0
+                 (0 new tests; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/L-02,
+                 66e140a4c3454f97315f62513c9a11f8e24371ad,
+                 "tests/docs: normalise block bodies
+                 so a trailing duplicate is caught".
+                 Parent 9548d030 on arch/exec. One
+                 file, +10 / -1. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 Fail-first, in-memory, disk unchanged
+                 except the one test file. (1) Read
+                 the real ledger, took the last block
+                 (L-01), appended it again with '---'
+                 only between the copies, passed to
+                 scan(). Assertion (2) silent:
+                 duplicated: []
+                 fires: False
+                 LAST HEADING: ## L-01  2026-09-21T10:52:22+08:00
+                 copies: 2; bodies equal: False;
+                 first extra vs second: '---\n'
+                 That is the hole. (3) Same input
+                 after the fix, assertion (2) fires
+                 naming the L-01 heading:
+                 duplicated ledger block heading(s):
+                 ['## L-01  2026-09-21T10:52:22+08:00']
+                 (4) L-01 originals still fire:
+                 duplicated CAMPAIGN CLOSE name(s):
+                 ['G45 proven-site keep']
+                 duplicated ledger block heading(s):
+                 ['## G45-05  2026-09-21T09:52:48+08:00']
+                 (5) real file green: 2 passed.
+                 Unique step ids not asserted.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN; G44 partial;
+                 G32 deferred; G41/G42 BLOCKED; G39
+                 xfail is test_construction_integrity;
+                 G10 and G28 decided keeps; G46 orphan
+                 matcher; S-34f 15 engine bodies;
+                 perfmeasure.py DIRECT_PROBES; verify_step
+                 frozen; G6 empty depends_on_sensors;
+                 S-04c; serialization.py fail-open;
+                 152 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          resolve the PR #242 review thread
+                 citing L-02, mark #242 ready, merge
+                 commit. Not started here.
+                 Left uncommitted: baseline_post-L-02.json,
+                 this ledger entry.
