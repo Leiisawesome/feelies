@@ -26927,6 +26927,12 @@ FINDINGS:    A blindness probe runs by insertion
                  AssertionError: assert frozenset({'H...ading.value'}) == frozenset({'H...ading.value'})
                  Extra items in the left set:
                  'Probe.field'
+                 L-01/L-02 caught four identical
+                 G46-01 blocks in the working tree
+                 before the exec commit -- the
+                 third occurrence of the same
+                 append bug, the first caught by
+                 the test instead of a grep.
   FINDINGS:      None of this step. Carried, not
                  fixed: G36 OPEN; G44 partial
                  (103 public methods with zero
