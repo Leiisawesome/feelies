@@ -26968,3 +26968,270 @@ FINDINGS:    A blindness probe runs by insertion
                  Left uncommitted: baseline_pre-G46-01.json,
                  baseline_post-G46-01.json, this ledger
                  entry.
+
+---
+
+## G44-00  2026-09-21T16:39:30+08:00
+  STEP:          G44-00
+  BASE:          b782caa1e9192348c95fe6f223a64c9711acd24b
+  RESULT SHA:    7eb0c2fe72217d65debcbe61a314b25167ef935d (exec/G44-00; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing by cutting. Teaches the
+                 scanner. Zero methods deleted. G44
+                 pin does not exist yet. S5 xfail
+                 intact (GAP G41 G42 G44 G45). No
+                 XPASS. First assert is still the
+                 proven-non-empty failure
+                 (make_correlation_id). Five import
+                 tiers empty _TIER_RESIDUALS and
+                 statuses KEPT. G40 CLOSED.
+                 Engine-to-kernel equals frozenset().
+                 S2 KEPT at zero twelve-engine pairs.
+                 import contracts 3 passed.
+                 conformance 122 passed / 4 xfailed.
+                 Inv-10's three tests passed inside
+                 that run. Reset partition passed
+                 inside that run: _TAPES five ids,
+                 MUST_INVOKE 33, DECLARED_UNINVOKED
+                 nine, invoked == MUST_INVOKE.
+                 FAIL_QUIET_KEEP: seventeen rows,
+                 symbol-keyed, no line field.
+                 mypy src/feelies: Success, 250 source
+                 files. docs 103. ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check src/ tests/ scripts/ 720
+                 files already formatted. ruff check
+                 and format --check on
+                 tools/arch/hotpath.py green.
+  TESTS:         capture pre-G44-00 GREEN 4916 passed /
+                 0 failed / 18 skipped / 4 xfailed.
+                 -> capture post-G44-00 GREEN 4916
+                 passed / 0 failed / 18 skipped / 4
+                 xfailed. No failure in the accepted
+                 set. No failure outside it.
+                 not-paper_rth: 4915 passed / 0 failed /
+                 5 skipped / 14 deselected / 4 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G44-00 vs post-G44-00;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved (seventeen rows). APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 7eb0c2fe). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tools/arch/hotpath.py.
+                 Named-not-edited: test_hot_path_allow_list.py
+                 (S5 xfail stays; G44 pin is G44-01),
+                 cost_arithmetic.py, risk_wrapper.py,
+                 regime_state_cache.py,
+                 horizon_engine.py, registry.py,
+                 synchronizer.py, backtest_router.py,
+                 identifiers.py, test_fail_quiet.py,
+                 ci.yml. No src probe insertion; the
+                 three named sites already occupied
+                 the holes. verify_step not runnable
+                 (G44-*; frozen at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47045 -> 47045 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse G44-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4916->4916 passed, failed 0->0
+                 (GREEN both sides; no failure outside
+                 the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/G44-00,
+                 7eb0c2fe72217d65debcbe61a314b25167ef935d,
+                 "G44-00: teach dead_compute property
+                 reads, Protocol stubs, getattr
+                 literals, and scripts/".
+                 Parent b782caa1 on arch/exec. One
+                 file, +84 / -19: tools/arch/hotpath.py
+                 only. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 The original one-liner dumps nested
+                 dicts (every top-level value is a
+                 dict, not a list); adapted to print
+                 scalars plus the anywhere list.
+                 n_zero_call 103 -> 74.
+                 n_zero_call_anywhere 17 -> 7.
+                 n_public_methods 710 -> 561
+                 (Protocol stubs removed from the
+                 census, not from src).
+                 n_properties 148 -> 118.
+                 Before-state: property count was
+                 all_text.count(f".{fn.name}") - 1;
+                 name-literal check was
+                 f'"{fn.name}"' in all_text;
+                 tests_text joined tests/ and
+                 scripts/.
+                 Unpatched anywhere (17):
+                 UniverseSnapshot.members (property);
+                 CompositionEngine.alphas (property,
+                 reached_by_name_literal true);
+                 FactorNeutralizer.factor_model
+                 (property, reached_by_name_literal
+                 true);
+                 _UniverseAuthority.members (property
+                 on Protocol);
+                 CostArithmetic.declared_round_trip_cost_bps;
+                 BacktestOrderRouter.expire_pending_moc
+                 (method, reached_by_name_literal
+                 true);
+                 PassiveLimitOrderRouter.expire_pending_moc;
+                 FeatureComputation.update_trade
+                 (Protocol stub);
+                 BasicRiskEngine.refresh_high_water_mark;
+                 AlphaBudgetRiskWrapper.checkpoint_risk_state;
+                 AlphaBudgetRiskWrapper.restore_risk_state;
+                 AlphaBudgetRiskWrapper.refresh_high_water_mark;
+                 HorizonGrid.members (property);
+                 HMM3StateFractional.discriminability_for_symbol;
+                 RegimeStateCache.for_engine;
+                 RegimeStateCache.forget;
+                 HorizonSignalEngine.forget.
+                 Membership probes, G45-00 shape,
+                 existing miscounts, no insertion.
+                 (1) Property.
+                 (src/feelies/alpha/registry.py,
+                 UniverseSnapshot, members).
+                 Unpatched: in the zero-call set and
+                 in n_zero_call_anywhere.
+                 Patched: absent from both. One
+                 real read (authority.members at
+                 synchronizer.py:133); minus-one
+                 had made that one look like zero.
+                 (2) Protocol.
+                 (src/feelies/composition/synchronizer.py,
+                 _UniverseAuthority, members).
+                 Unpatched: in the zero-call set.
+                 Patched: absent from the census
+                 (Protocol stub is not compute).
+                 Implementations of members remain
+                 counted; this is not a blanket skip
+                 of the name.
+                 (3) getattr.
+                 (src/feelies/execution/backtest_router.py,
+                 BacktestOrderRouter,
+                 expire_pending_moc).
+                 Unpatched: in n_zero_call_anywhere
+                 (call is getattr(order_router,
+                 "expire_pending_moc", None) in
+                 orchestrator.shutdown).
+                 Patched: absent from the zero-call
+                 set. getattr literal is a call.
+                 Scripts split: Orchestrator.run_paper
+                 is also called from
+                 tests/kernel/test_orchestrator.py
+                 (orch.run_paper()), so it stays
+                 TEST-ONLY. The hole is shown on
+                 Orchestrator.set_paper_session_recorder
+                 (and PaperSessionRecorder.write_metadata
+                 / write_fills): unpatched
+                 called_by_tests true because
+                 scripts/ was folded into tests_text;
+                 patched called_by_tests false,
+                 called_by_scripts true, not in
+                 n_zero_call_anywhere.
+                 Negative, getattr not too broad:
+                 CompositionEngine.alphas still in
+                 the zero-call set,
+                 reached_by_name_literal true.
+                 "alphas" is the JSON key at
+                 cli/promote.py:466, not a getattr
+                 argument. FactorNeutralizer.factor_model
+                 left the zero-call set via the
+                 property-read count
+                 (config.factor_model at
+                 bootstrap.py:1625), not via
+                 getattr -- "factor_model" is not a
+                 getattr argument; the YAML key at
+                 platform_config.py:1151 still does
+                 not count as a call.
+                 Patched anywhere (7), every member:
+                 CompositionEngine.alphas
+                 src/feelies/composition/engine.py:193
+                 CostArithmetic.declared_round_trip_cost_bps
+                 src/feelies/core/cost_arithmetic.py:81
+                 AlphaBudgetRiskWrapper.checkpoint_risk_state
+                 src/feelies/risk/risk_wrapper.py:353
+                 AlphaBudgetRiskWrapper.restore_risk_state
+                 src/feelies/risk/risk_wrapper.py:362
+                 RegimeStateCache.for_engine
+                 src/feelies/services/regime_state_cache.py:68
+                 RegimeStateCache.forget
+                 src/feelies/services/regime_state_cache.py:113
+                 HorizonSignalEngine.forget
+                 src/feelies/signals/horizon_engine.py:640.
+  FINDINGS:      n_zero_call_anywhere is 7, not the
+                 expected 6, and not a different six
+                 -- the six S-31c keeps are present
+                 plus CompositionEngine.alphas.
+                 Finding, not a failure: a keep was
+                 a scanner artifact of the old
+                 expected-6 tape, or a hole already
+                 in use as a JSON key that must not
+                 count as a call. Not absorbed.
+                 Counting "alphas" as a call is the
+                 catalogued non-cut. Do not shrink
+                 a keep that does not exist yet.
+                 Carried, not fixed: G36 OPEN
+                 (seventeen keepers); G32 S-30f
+                 deferred; G41/G42 BLOCKED (S-33;
+                 per-quote timer cannot resolve);
+                 G39 xfail is
+                 test_construction_integrity; G10
+                 and G28 are decided keeps; S-34f
+                 END STATE 15 engine bodies g-o,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse G44-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 serialization.py fail-open; 152
+                 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          G44-01 the keep is not started. Do
+                 not begin G44-01. Live anywhere is
+                 7; the locked _G44_KEEP is the six.
+                 S5 stays "GAP G41 G42 G44 G45"
+                 until that pin can name the
+                 remainder the detector now sees.
+                 Left uncommitted: baseline_pre-G44-00.json,
+                 baseline_post-G44-00.json, this ledger
+                 entry.
