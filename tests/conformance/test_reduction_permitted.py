@@ -303,6 +303,4 @@ class TestGrossExposureCap:
             self._engine().check_order(_order(Side.BUY, 50), book),
             "gross exposure limit",
         )
-        _assert_reduction_permitted(
-            self._engine().check_order(_order(Side.SELL, 50), book)
-        )
+        _assert_reduction_permitted(self._engine().check_order(_order(Side.SELL, 50), book))

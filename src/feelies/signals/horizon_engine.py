@@ -126,9 +126,7 @@ class HorizonSignalEngine:
         # Isolate SafetyStateChange on its own sequence stream so publishing it
         # on every gate-close path can never perturb the locked Signal stream
         # (Inv-5) — mirrors the metrics-seq isolation above.
-        self._safety_seq: SequenceGenerator = SequenceGenerator(
-            stream="safety", thread_safe=True
-        )
+        self._safety_seq: SequenceGenerator = SequenceGenerator(stream="safety", thread_safe=True)
         # Fail regime gates closed when calibrated states are not distinct.
         self._regime_min_discriminability = float(regime_min_discriminability)
         self._signals: list[RegisteredSignal] = []
@@ -149,6 +147,8 @@ class HorizonSignalEngine:
         if self._metrics_seq is not None:
             self._metrics_seq.reset()
         self._safety_seq.reset()
+        for registered in self._signals:
+            registered.gate.reset()
 
     # ── Registration ─────────────────────────────────────────────────
 

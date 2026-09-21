@@ -35,11 +35,7 @@ FIX3_RUNTIME: tuple[tuple[str, str], ...] = (
 )
 
 _REGISTRY_SRC = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "feelies"
-    / "core"
-    / "gate_registry.py"
+    Path(__file__).resolve().parents[2] / "src" / "feelies" / "core" / "gate_registry.py"
 )
 
 
@@ -71,8 +67,7 @@ def test_unregistered_strategy_id_fixture_is_refused() -> None:
     verdict = wrapper.check_order(_order(unregistered), positions)
 
     assert unregistered in registry.lookups, (
-        "fixture strategy_id never reached registry.get; "
-        f"lookups={registry.lookups!r}"
+        f"fixture strategy_id never reached registry.get; lookups={registry.lookups!r}"
     )
     assert unregistered in registry.key_errors, (
         "fixture strategy_id did not raise KeyError in the wrapper; "
@@ -91,9 +86,7 @@ def test_unregistered_strategy_id_fixture_is_refused() -> None:
 
 
 @pytest.mark.parametrize("class_id,gate_id", FIX3_RUNTIME)
-def test_pathological_class_refused_by_named_registered_gate(
-    class_id: str, gate_id: str
-) -> None:
+def test_pathological_class_refused_by_named_registered_gate(class_id: str, gate_id: str) -> None:
     """FIX-3 remaining runtime classes: named gate plus an emitted record."""
     from feelies.core.gate_registry import (
         FAMILY_TEMPLATES,
@@ -114,9 +107,7 @@ def test_pathological_class_refused_by_named_registered_gate(
 
 
 @pytest.mark.parametrize("class_id,gate_id", FIX3_FAMILY)
-def test_pathological_family_class_awaits_s12_instances(
-    class_id: str, gate_id: str
-) -> None:
+def test_pathological_family_class_awaits_s12_instances(class_id: str, gate_id: str) -> None:
     """FIX-3 classes bound to family templates refuse via generated instances."""
     from feelies.core.gate_registry import (
         FAMILY_INSTANCES,
@@ -128,12 +119,8 @@ def test_pathological_family_class_awaits_s12_instances(
         f"{class_id!r} must bind to a family template, not a spine row"
     )
     assert gate_id not in GATE_REGISTRY
-    instances = [
-        inst for inst in FAMILY_INSTANCES.values() if inst.family == gate_id
-    ]
-    assert instances, (
-        f"family instance for {gate_id} (class {class_id}) has not landed"
-    )
+    instances = [inst for inst in FAMILY_INSTANCES.values() if inst.family == gate_id]
+    assert instances, f"family instance for {gate_id} (class {class_id}) has not landed"
     for inst in instances:
         assert "X6" in inst.tested_by
         assert inst.stable_id not in GATE_REGISTRY
@@ -161,9 +148,7 @@ def test_x6_runtime_gates_emit_records_not_api_probe() -> None:
     clear_verdicts()
     _drive_runtime_sites()
     emitted = {r.gate_id for r in iter_verdicts()}
-    assert emitted, (
-        "no notification records: runtime gates stayed silent"
-    )
+    assert emitted, "no notification records: runtime gates stayed silent"
     # The test body must not have called record_verdict itself.
     assert record_verdict.__module__ == "feelies.core.gate_registry"
     missing = sorted(
@@ -180,9 +165,7 @@ def test_x6_runtime_gates_emit_records_not_api_probe() -> None:
         )
         if gid not in emitted
     )
-    assert not missing, (
-        "runtime gates evaluated without an emitted record: " + ", ".join(missing)
-    )
+    assert not missing, "runtime gates evaluated without an emitted record: " + ", ".join(missing)
     # Totality is not an API loop filling the registry.
     assert emitted != probe_ids, (
         "totality looks like an API probe over GATE_REGISTRY "
@@ -247,7 +230,7 @@ def _drive_duplicate_id() -> None:
         Side,
         SizedPositionIntent,
     )
-    from feelies.execution.order_lifecycle import (
+    from feelies.kernel.orchestrator import (
         _filter_portfolio_orders_for_pending_conflicts,
         _transition_order,
     )

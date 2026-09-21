@@ -49,6 +49,7 @@ class _SensorBinding:
     provenance: SensorProvenance
     throttle_ns: int
     state_by_symbol: dict[str, dict[str, Any]]
+    stamp_symbol: str
 
 
 def _is_finite_value(value: Any) -> bool:
@@ -190,6 +191,7 @@ class SensorRegistry:
             provenance=provenance,
             throttle_ns=(spec.throttled_ms or 0) * 1_000_000,
             state_by_symbol={symbol: sensor.initial_state() for symbol in self._symbols},
+            stamp_symbol=f"sensor:{spec.sensor_id}",
         )
         self._bindings_by_key[key] = binding
         self._specs.append(spec)
@@ -339,7 +341,7 @@ class SensorRegistry:
             )
         seq = self._sequence_generator.next()
         correlation_id = make_correlation_id(
-            symbol=f"sensor:{spec.sensor_id}",
+            symbol=binding.stamp_symbol,
             exchange_timestamp_ns=event.timestamp_ns,
             sequence=seq,
         )

@@ -379,6 +379,8 @@ class PositionUpdate(Event):
 
 # ── System Events ───────────────────────────────────────────────────────
 
+_EMPTY_METADATA: Mapping[str, Any] = MappingProxyType({})
+
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class StateTransition(Event):
@@ -391,7 +393,10 @@ class StateTransition(Event):
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        if self.metadata:
+            object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        else:
+            object.__setattr__(self, "metadata", _EMPTY_METADATA)
 
 
 # ── Metric Events ───────────────────────────────────────────────────────
@@ -729,11 +734,15 @@ class CrossSectionalContext(Event):
     signals_by_strategy_by_symbol: Mapping[str, dict[str, "Signal | None"]] = field(
         default_factory=dict,
     )
-    snapshots_by_symbol: Mapping[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
+    snapshots_by_symbol: Mapping[str, "HorizonFeatureSnapshot | None"] = field(
+        default_factory=dict
+    )
     completeness: float = field(default=0.0, metadata={"unit": "1"})
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "signals_by_symbol", MappingProxyType(dict(self.signals_by_symbol)))
+        object.__setattr__(
+            self, "signals_by_symbol", MappingProxyType(dict(self.signals_by_symbol))
+        )
         object.__setattr__(
             self,
             "signals_by_strategy_by_symbol",
@@ -781,12 +790,8 @@ class SizedPositionIntent(Event):
     solver_status: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "target_positions", MappingProxyType(dict(self.target_positions))
-        )
-        object.__setattr__(
-            self, "factor_exposures", MappingProxyType(dict(self.factor_exposures))
-        )
+        object.__setattr__(self, "target_positions", MappingProxyType(dict(self.target_positions)))
+        object.__setattr__(self, "factor_exposures", MappingProxyType(dict(self.factor_exposures)))
         object.__setattr__(
             self, "mechanism_breakdown", MappingProxyType(dict(self.mechanism_breakdown))
         )

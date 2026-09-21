@@ -68,6 +68,7 @@ class _RegimeEngine(Protocol):
 
     def current_state(self, symbol: str) -> list[float] | None: ...
 
+
 # At most three parameters may declare an optimization range. Validation bounds
 # do not count toward this limit.
 _MAX_FREE_OPTIMIZATION_PARAMS: int = 3
@@ -647,9 +648,7 @@ class AlphaLoader:
         if raw is None:
             return _SESSION_CONTINUOUS
         if not isinstance(raw, str):
-            raise AlphaLoadError(
-                f"{source}: 'session' must be a string, got {type(raw).__name__}"
-            )
+            raise AlphaLoadError(f"{source}: 'session' must be a string, got {type(raw).__name__}")
         session = raw.strip()
         if session not in _ALLOWED_SESSIONS:
             raise AlphaLoadError(

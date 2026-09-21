@@ -1,0 +1,3174 @@
+# PHASE 8 — Five import tiers
+
+**Basis.** Phase 7 execution closed at S-35e on `arch/exec` (`0cb0c753`).
+G40 is CLOSED. Twelve-engine independence is KEPT. Five import tiers stays
+BROKEN on the thirteen-pair `_TIER_RESIDUALS` pin. Current-state claims
+carry their original label; new material is `specified`.
+
+**Status vocabulary (arch guardrail).** `specified` / `implemented` /
+`conformance-tested` / `open defect`.
+
+---
+
+```
+CAMPAIGN:        Five import tiers
+BASE:            arch/exec 0cb0c753 (S-35e closed; G40 CLOSED)
+CLOSES:          Five import tiers KEPT; .github/workflows/ci.yml
+                 Import contracts continue-on-error.
+DOES NOT CLOSE:  G10, G28, G32, G36, G39, G41, G42, G44, G45, G46;
+                 S-34f groups g–o (15 engine bodies; Inv-8 is a
+                 different campaign); perfmeasure.py DIRECT_PROBES;
+                 G6 empty depends_on_sensors; S-04c; serialization.py
+                 fail-open; verify_step frozen bugs; 152 research
+                 cache days; R6 14/31; the four EXEMPTION tests.
+                 Twelve-engine independence stays KEPT; a
+                 regression there is a STOP, not this campaign.
+                 A five-tier cut must not reintroduce an
+                 engine-to-engine edge. Binding through bootstrap
+                 moves imports; S2 must be re-run after every
+                 pair-dropping step and stay KEPT at zero
+                 twelve-engine pairs. A new twelve-engine pair
+                 is a STOP, not a trade.
+STANDING
+INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
+                 scripts/rebaseline_parity_hashes.py.
+                 Hold all 64 HASH/COUNT constants, the fingerprint
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+                 and _BASELINE_CONFIG_HASH unless a step names a
+                 re-pin.
+                 Accepted baseline failures are only
+                 test_after_hours_reject_surfaces_as_rejected,
+                 test_g12_cost_exceeds_disclosure_alert,
+                 test_multi_symbol_subscribe,
+                 test_sustained_quotes_with_idle_ticks.
+                 A failure outside that set is a STOP.
+                 Mechanism before FILES (S-35c4). Do not invent
+                 S-35 suffixes. Do not extract g–o. Do not
+                 shrink _TIER_RESIDUALS except in lockstep with a
+                 dropped pair. Do not flip ci.yml until both
+                 contracts are KEPT. Do not rewrite the layers
+                 contract by deleting engines or adding
+                 ignore_imports.
+                 FAIL_QUIET_KEEP is line-pinned (path, line, exc_type)
+                 with no enclosing-symbol key. A step that inserts or
+                 deletes lines above a keep-row must name
+                 tests/conformance/test_fail_quiet.py in FILES and
+                 retarget those rows in the same commit. Keep-row files
+                 in this campaign: harness/backtest_runner.py (591, 796,
+                 833), bootstrap.py (1607, 1825),
+                 alpha/layer_validator.py (1190),
+                 composition/factor_neutralizer.py (28, 139),
+                 ingestion/massive_ingestor.py (73),
+                 ingestion/massive_ws.py (185, 228, 344). Re-keying by
+                 enclosing symbol would be a consumer change, not a row
+                 edit -- out of scope here.
+                 MEASURE KEEP-ROWS, DO NOT ASSUME THEM. T-02's block
+                 sketched 589/794/831; the measured result was
+                 588/794/831, because the deleted import carried a
+                 blank line with it and a new signature line landed
+                 between the first row and the other two. Every step
+                 that edits a keep-row file states the shift as
+                 measured after the cut, in the same commit, never as
+                 predicted before it.
+                 PROTOCOL MODULES ARE PER ENGINE CONCERN.
+                 One Protocol module per engine concern in
+                 core, named for the thing, never for the
+                 step. Existing modules are retargeted
+                 rather than duplicated -- position.py,
+                 metric_collector.py, horizon_protocol.py,
+                 composition_protocol.py. No shared
+                 kernel_ports.py: a step that appends to a
+                 shared module is not independently
+                 revertible from the steps that append
+                 after it, and later groups carry helper
+                 functions as well as constructor types;
+                 a ports file invites that category error.
+                 CHECK FOR A PUBLIC PROPERTY BEFORE WRITING A
+                 PROTOCOL SURFACE. T-03's first attempt scoped
+                 AlphaRegistry to the one method kernel calls
+                 and failed mypy on seven attribute errors in
+                 harness and cli, none of them in FILES,
+                 because orchestrator hands the instance out
+                 through a public alpha_registry property. A
+                 Protocol on a type the orchestrator exposes
+                 must cover every consumer of that property,
+                 not just the kernel's own calls. Enumerate
+                 the property's callers before writing the
+                 surface.
+                 SIZE A RUNG BY A PER-NAME CENSUS, NOT A
+                 PACKAGE LABEL. T-04's one-line description
+                 named selection_policy; kernel imported
+                 seven names from three composition modules,
+                 and a Protocol-only step would have left
+                 five in place with the pin unmoved. Before
+                 a rung is written as a block, enumerate
+                 every kernel import of that package with
+                 line and kind, classify each as injected,
+                 default-constructed, annotation-only, or a
+                 function/enum/dataclass that no Protocol
+                 can replace, and check for a public
+                 orchestrator property. A rung whose names
+                 mix those kinds splits.
+                 NET DELTA COUNTS RELOCATIONS AS ZERO. A name
+                 that leaves one module and arrives in another
+                 is a relocation, not an addition, and an alias
+                 re-export is an ImportFrom that measure.py does
+                 not count. T-04a and T-05b both declared a
+                 figure that counted names landing in the new
+                 module and measured lower. A block's NET DELTA
+                 states what measure.py will report, not an
+                 inventory of the destination file.
+                 STATE AN ALIAS'S DIRECTION BEFORE WRITING IT.
+                 A relocation alias is an import in the
+                 opposite direction. On an engine file it can
+                 reverse the very edge the step is cutting, and
+                 S2 expands one such import into every engine
+                 the kernel touches -- T-06a's first attempt
+                 produced four new twelve-engine pairs from a
+                 single alias line. Engine-to-core aliases are
+                 legal and are the normal case. An alias whose
+                 target is in kernel or another engine is not:
+                 retarget the consumer instead, and put that
+                 consumer in FILES.
+                 AN UNUSED IMPORT CAN BE A TEST'S IDENTITY
+                 ANCHOR. T-08b's block called
+                 HAZARD_EXIT_REASONS unused in orchestrator and
+                 said to drop it;
+                 test_orchestrator_hazard_exit_routing.py, not in
+                 FILES, asserts identity against the orchestrator
+                 module global. Retargeting kept the `is` holding
+                 and still dropped the pin. A per-name census must
+                 check module-global identity assertions, not only
+                 call sites: grep the name across tests before
+                 declaring it droppable.
+                 A PROTOCOL MOVE IS TRANSITIVE. The closure is
+                 every type the Protocol's signatures name, and
+                 every type those name in turn. T-08c's
+                 PositionManager dragged PositionManagerConfig,
+                 PositionPlan, PlannedOrder, SuppressedLeg,
+                 DesiredPosition and MarketContext -- and
+                 MarketContext names CostModel, which dragged
+                 CostBreakdown, FillType,
+                 estimate_aggressive_taker_cost_bps and
+                 _within_l1_premium. Moving only the Protocol
+                 leaves core importing the engine, which inverts
+                 the edge the step exists to cut. After any
+                 Protocol move, assert that no core module
+                 imports the engine package.
+                 WALK THE CLOSURE TO FIXPOINT IN THE
+                 BEFORE-STATE, NOT IN THE BLOCK. T-08d stopped
+                 twice, each time on a level of the call chain
+                 found after starting -- the drain chain, then
+                 five pure functions -- and landed on the third
+                 attempt after walking L0 through L5 first. Every
+                 step that returns or moves a body lists each
+                 name the body calls that is not already in
+                 kernel or core, then repeats on those names
+                 until nothing new appears. A block written from
+                 a partial walk names a FILES set that cannot
+                 hold, and the step will stop at the gate or
+                 later.
+NON-CUTS:        A re-export without retarget is not a cut.
+                 A TYPE_CHECKING-only move is not a cut.
+                 A sys.modules lookup (or optional getattr
+                 fallback) is not a cut.
+                 Widening a type to object or Any is not a cut.
+                 A deleted TYPE_CHECKING import is not a cut;
+                 retarget the annotation to a legal owner.
+LADDER:          Pair count is the layers contract, not G40.
+                 Shared-file steps are sequential, not
+                 independently revertible.
+                 A step that does not empty a package
+                 does not move the pin.
+                   now                                              13
+                   1  harness → cli (env down)                     12
+                   2  harness → bootstrap (composition-root up)   11
+                   3  bind: injected types
+                      (alpha, sensors, signals)                      8
+                   4  bind: selection_policy required
+                      (composition)                                 7
+                   T-05a  four regime helpers (functions;
+                          services)                                 7
+                   T-05b  RegimeEngine, RegimeHazardDetector
+                          Protocols (services)                      6
+                   T-06a  halt helpers, IdleTick, DataHealth,
+                          HaltTradeability, MarketDataNormalizer
+                          (ingestion)                                 5
+                   T-06b  MetricCollector retarget; invert
+                          LatencyBudgetMonitor; KillSwitch
+                          (property), AlertManager,
+                          PaperSessionRecorder;
+                          observe_kill_switch,
+                          apply_breach_response (monitoring)       4
+                   T-07a  LotLedger invert; PositionBookView
+                          (portfolio)                              4
+                   T-07b  fill helpers return to kernel;
+                          attribution names; PositionStore
+                          retarget; Protocol FillAttributionLedger,
+                          StrategyPositionStore (portfolio)      3
+                   T-08a  risk helpers, HAZARD_EXIT bind,
+                          RiskLevel; invert BudgetBasedSizer
+                          and create_risk_escalation_machine;
+                          Protocol RiskEngine,
+                          HazardExitController, PositionSizer,
+                          EdgeWeightedSizer (risk)                2
+                   T-08b  invert SignalPositionTranslator,
+                          PortfolioNetter, DesiredTargetBook,
+                          MarketContext,
+                          create_order_state_machine,
+                          min-cost policy; Protocol
+                          ExecutionBackend and remaining
+                          injected types;
+                          enums/dataclasses/functions
+                          (execution)                                1
+                   T-09a  TradeRecord; fill_bindings retarget
+                          (storage)                                  1
+                   T-09b  EventLog, FeatureSnapshotStore,
+                          TradeJournal query (storage)              0
+                   close  empty pin AND Five import tiers KEPT
+                          AND drop continue-on-error          0 KEPT
+                 Gate at every pair-dropping step: pairs ==
+                 the expected remaining _TIER_RESIDUALS.
+                 S2 (test_twelve_engine_independence) re-run
+                 after every pair-dropping step; stays KEPT
+                 at zero pairs. A new twelve-engine pair is a
+                 STOP.
+                 The close rung adds statuses["Five import
+                 tiers"] == "KEPT" beside pairs == frozenset().
+                 If pairs == frozenset() but
+                 statuses["Five import tiers"] reports BROKEN,
+                 the campaign has not closed and
+                 continue-on-error does not flip. Two green
+                 assertions disagreeing with the status line
+                 is a detector question, not a close.
+                 Only alpha is TYPE_CHECKING-only; step 3
+                 retargets it, it does not delete l.25.
+```
+
+---
+
+## G. Migration plan
+
+Step blocks land in the fence below. `verify_step` parses fenced `STEP:`
+blocks (the P7 template).
+
+```
+STEP:            T-01
+CLOSES:          nothing. Drops harness → cli. Five import tiers stays
+                 BROKEN. 13 → 12. G40 stays CLOSED.
+PROBLEM:         feelies.harness.backtest_runner imports feelies.cli.env
+                 (l.35) and looks up MASSIVE_API_KEY inside
+                 run_backtest_api. That is T3 importing T1. The three
+                 names are only used at run_backtest_api:929-932.
+                 Callers that reach that lookup: cli/backtest.py:33,
+                 backtest_runner.main:1026, scripts/run_backtest.py:81.
+                 No test calls either function.
+FILES:           src/feelies/harness/backtest_runner.py
+                 src/feelies/cli/backtest.py
+                 scripts/run_backtest.py
+                 tests/conformance/test_import_contracts.py
+                 tests/conformance/test_fail_quiet.py
+                 Do not add a module. Do not move cli/env.py. Do not
+                 include tests/conftest.py. Do not include
+                 harness/__init__.py (re-export, not a call). Do not
+                 include cli/main.py. Do not include cli/env.py.
+                 Do not include .github/workflows/ci.yml.
+WHY THIS OWNER:  T1 already owns operator env. The illegal edge is
+                 harness reaching up for a secret. The invert is the
+                 entry point supplying a required api_key, not relocating
+                 dotenv into core or harness.
+REFACTOR PATH:   one commit. (1) run_backtest_api and main take required
+                 api_key; drop the feelies.cli.env import; no os.getenv,
+                 no None default, no getattr, no sys.modules.
+                 (2) cli.backtest.run_backtest_handler: load_dotenv_optional,
+                 massive_api_key_from_env, print MASSIVE_API_KEY_ERROR
+                 and return 1 on None, else pass the string.
+                 (3) scripts/run_backtest.py if __name__: same load, then
+                 main(..., api_key=...).
+                 (4) drop ("feelies.harness", "feelies.cli") from
+                 _TIER_RESIDUALS (equality, 12 remain).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 12-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/cli/test_backtest_cli.py; tests/cli/
+                 test_cli_import_isolation.py; tests/harness/
+                 test_backtest_runner.py. No XPASS. lint-imports: Five
+                 import tiers still BROKEN, Twelve engine module sets
+                 KEPT. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only who reads the key changes.
+DELETES:         the harness → cli pair; the cli.env import from
+                 backtest_runner.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible from T-02
+                 (same backtest_runner.py; not independently revertible
+                 once T-02 lands).
+```
+
+```
+STEP:            T-02
+CLOSES:          nothing. Drops harness → bootstrap. Five import tiers stays
+                 BROKEN. 12 → 11. G40 stays CLOSED.
+PROBLEM:         feelies.harness.backtest_runner imports
+                 feelies.bootstrap.build_platform (l.30) and calls it inside
+                 _run_backtest_phases_2_7 (l.714-723) after prep. That is T3
+                 importing the composition root. The only in-package caller is
+                 run_backtest_api:1001. External callers of
+                 _run_backtest_phases_2_7, all of which currently rely on
+                 harness composing: tests/harness/test_backtest_runner.py:137
+                 and :182, tests/acceptance/test_backtest_app_baseline.py:353,
+                 scripts/compare_multialpha_runs.py:421,
+                 tools/arch/perfmeasure.py:576. No test calls run_backtest_api
+                 or harness main. scripts/run_backtest.py re-exports the
+                 function; it does not call it.
+WHY THIS OWNER:  T1 already owns the operator entry. The illegal edge is
+                 harness reaching up for construction. The invert is the entry
+                 point supplying a required platform_factory, not relocating
+                 bootstrap into harness or moving construction into T3.
+FILES:           src/feelies/harness/backtest_runner.py
+                 src/feelies/cli/backtest.py
+                 scripts/run_backtest.py
+                 tests/harness/test_backtest_runner.py
+                 tests/acceptance/test_backtest_app_baseline.py
+                 scripts/compare_multialpha_runs.py
+                 tools/arch/perfmeasure.py
+                 tests/conformance/test_import_contracts.py
+                 tests/conformance/test_fail_quiet.py
+                 Do not add a module. Do not edit bootstrap.py. Do not
+                 include harness/__init__.py (re-export, not a call). Do not
+                 include cli/main.py. Do not include cli/env.py. Do not
+                 include .github/workflows/ci.yml. Do not touch
+                 perfmeasure.py DIRECT_PROBES.
+REFACTOR PATH:   one commit. Mechanism: required keyword-only
+                 platform_factory on _run_backtest_phases_2_7, run_backtest_api,
+                 and main; threaded from the entry points; bootstrap untouched.
+                 No None default, no getattr, no sys.modules, no
+                 TYPE_CHECKING import of build_platform. A default added so
+                 an undeclared caller keeps working is not a cut (S-35c1).
+                 (1) drop the feelies.bootstrap import from backtest_runner;
+                 call platform_factory at the existing compose site with the
+                 same kwargs. (2) cli.backtest.run_backtest_handler: import
+                 build_platform, pass it into run_backtest_api.
+                 (3) scripts/run_backtest.py if __name__: same, then
+                 main(..., platform_factory=build_platform).
+                 (4) test_backtest_runner.py (both sites), the APP oracle,
+                 compare_multialpha_runs.py, and perfmeasure.py pass
+                 platform_factory=build_platform. (5) drop
+                 ("feelies.harness", "feelies.bootstrap") from
+                 _TIER_RESIDUALS (equality, 11 remain). (6) FAIL_QUIET_KEEP
+                 is line-pinned. Deleting backtest_runner.py:30 shifts 590,
+                 795, 832 by one, to 589, 794, 831. One extra signature line
+                 on _run_backtest_phases_2_7, between the first keep-row and
+                 the other two, puts 795 and 832 back and leaves 590→589.
+                 Measure the three rows after the cut; retarget what actually
+                 moved, in this commit. Do not assume the numbers. Do not
+                 re-key by enclosing symbol. bootstrap.py 1607 and 1825 do
+                 not move.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 11-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP oracle);
+                 tests/harness/test_backtest_runner.py; tests/cli/
+                 test_backtest_cli.py. No XPASS. lint-imports: Five import
+                 tiers still BROKEN, Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is unmoved;
+                 only who names build_platform changes. A moved HASH or
+                 COUNT means the factory call was not a transparent
+                 substitute (kwargs, order, or a silent default) — STOP,
+                 do not re-pin.
+DELETES:         the harness → bootstrap pair; the bootstrap import from
+                 backtest_runner.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible from T-03
+                 (same backtest_runner.py; not independently revertible
+                 once T-03 lands).
+```
+
+```
+STEP:            T-03
+CLOSES:          nothing. Drops kernel → alpha, kernel → sensors,
+                 kernel → signals. Five import tiers stays BROKEN.
+                 11 → 8. G40 stays CLOSED.
+PROBLEM:         feelies.kernel.orchestrator imports four injected
+                 types from three engine packages: AlphaRegistry
+                 (TYPE_CHECKING, l.25), HorizonScheduler (l.190),
+                 SensorRegistry (l.191), HorizonSignalEngine (l.194).
+                 Used only as constructor/property annotations
+                 (l.266, 271-273, 670). Runtime calls methods on the
+                 injected instances; no isinstance, no construction.
+                 That is T5 importing T2/T3/T4 for names. Bootstrap
+                 already constructs all four and passes them in
+                 (bootstrap.py ~676-685).
+                 The alpha_registry property hands the
+                 instance to feelies.harness.backtest_runner,
+                 feelies.harness.backtest_report and
+                 feelies.cli.forensics, which call alpha_ids,
+                 get and get_lifecycle. The Protocol must
+                 cover their typed use or mypy fails in files
+                 outside FILES. Typing the property as the
+                 concrete keeps the import and the pair.
+                 sensor_registry, horizon_scheduler and
+                 horizon_signal_engine have no public
+                 property and no such exposure.
+WHY THIS OWNER:  T5 core already owns the names kernel may use.
+                 The illegal edges are annotation imports. The invert
+                 is Protocols in core, named for the engine concern,
+                 not relocating the concretes and not a TYPE_CHECKING
+                 delete. Two new modules (alpha_registry,
+                 sensor_registry) plus HorizonScheduler and
+                 HorizonSignalEngine added to horizon_protocol.py --
+                 that file already owns the horizon concern
+                 (HorizonSignal). A third new horizon module would
+                 duplicate it. SensorRegistry is not horizon; it
+                 does not go there.
+REFACTOR PATH:   one commit. Mechanism: kernel annotates against
+                 core Protocols; bootstrap already constructs the
+                 concretes and is not in FILES. No object/Any, no
+                 getattr, no sys.modules, no TYPE_CHECKING-only move,
+                 no re-export of the Protocol from the engine package
+                 as the cut, no kernel_ports.py, no explicit
+                 subclassing of the Protocol on the concrete (structural).
+                 Alpha is TYPE_CHECKING-only. Retarget the annotation
+                 at orchestrator.py:25 to feelies.core.alpha_registry;
+                 do not delete l.25 as the cut while the name still
+                 binds feelies.alpha.registry. That deletion is the
+                 fifth catalogued non-cut.
+                 (1) add src/feelies/core/alpha_registry.py:
+                 AlphaRegistry Protocol. Members:
+                 has_portfolio_alphas() -> bool;
+                 alpha_ids() -> frozenset[str];
+                 get(alpha_id: str) returning a nested
+                 Protocol with only manifest.version: str;
+                 get_lifecycle(alpha_id: str) -> object | None.
+                 Do not import feelies.alpha. reset and
+                 portfolio_alphas stay getattr, not
+                 Protocol members. The property at
+                 orchestrator.py:670 stays AlphaRegistry
+                 | None, so this surface covers harness
+                 and cli as well as kernel.
+                 (2) add src/feelies/core/sensor_registry.py:
+                 SensorRegistry Protocol, is_empty.
+                 (3) add HorizonScheduler (on_event → tuple of
+                 HorizonTick) and HorizonSignalEngine (is_empty
+                 property) to horizon_protocol.py; extend __all__.
+                 (4) orchestrator: import the four names from core;
+                 drop feelies.alpha.registry, feelies.sensors.*,
+                 feelies.signals.horizon_engine. Keep the call sites.
+                 (5) drop ("feelies.kernel", "feelies.alpha"),
+                 ("feelies.kernel", "feelies.sensors"),
+                 ("feelies.kernel", "feelies.signals") from
+                 _TIER_RESIDUALS in the same commit (equality, 8
+                 remain). (6) coverage map for the two new modules:
+                 _FILE_OWNERS rows (audit_core_clock_config) and the
+                 README core_clock_config citation list, same commit,
+                 S-21. horizon_protocol.py already has a row.
+                 orchestrator.py and the core Protocol files are not
+                 keep-row files; do not include test_fail_quiet.py.
+                 Do not edit bootstrap.py. Do not edit
+                 alpha/layer_validator.py. Do not include
+                 harness/__init__.py, cli/, ci.yml.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/alpha_registry.py
+                 src/feelies/core/sensor_registry.py
+                 src/feelies/core/horizon_protocol.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 8-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP
+                 oracle). No XPASS. lint-imports: Five import tiers
+                 still BROKEN, Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP. test_prompt_coverage_map
+                 owns the two new modules.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module kernel names for the four
+                 injected types changes. A moved HASH or COUNT means
+                 the Protocol call was not a transparent substitute
+                 (surface, attribute, or a silent default) — STOP,
+                 do not re-pin.
+DELETES:         the kernel → alpha, kernel → sensors, and
+                 kernel → signals pairs; the four engine-package
+                 imports from orchestrator.
+NET DELTA:       src modules +2, public symbols +4, branch points 0
+ROLLBACK:        revert the commit. The two new Protocol modules
+                 revert with it. Independently revertible from T-04
+                 on those two files; orchestrator.py is shared with
+                 T-04 and is not independently revertible once T-04
+                 lands.
+```
+
+```
+STEP:            T-04a
+CLOSES:          nothing. Pin stays 8. Does not drop kernel →
+                 composition. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A step that leaves the count unchanged
+                 is legitimate here and must not be mistaken for a
+                 failed cut.
+PROBLEM:         feelies.kernel.orchestrator is the only kernel file
+                 that imports feelies.composition. Seven names:
+                 CompositionEngine from composition.engine
+                 (TYPE_CHECKING, l.26); SelectionPolicy from
+                 composition.protocol (runtime, l.30);
+                 StandaloneArbitrationCollision, Top1SelectionPolicy,
+                 collision_is_harmless_flat_gate_close,
+                 is_redundant_gate_close_flat,
+                 standalone_signal_actionable_for_strategy from
+                 composition.selection_policy (runtime, l.31-36).
+                 CompositionEngine is injected optional; stored;
+                 is None at :1168; getattr reset at :2522. No public
+                 property. Kernel never calls is_empty or reset by
+                 name. Bootstrap already constructs and passes it
+                 (bootstrap.py ~558, ~688). An empty Protocol is
+                 enough. Deleting l.26 while the name still binds
+                 feelies.composition.engine is not a cut.
+                 StandaloneArbitrationCollision is a frozen
+                 dataclass kernel constructs at :1594-1605.
+                 Public property arbitration_collisions at :630.
+                 scripts/compare_multialpha_runs.py imports that
+                 name from kernel (not composition) and reads
+                 candidate_count, strategy_ids, kinds, harmless.
+                 After the move, orchestrator still binds the name
+                 from core, so that script import stays valid.
+                 The three helpers (and private
+                 _signal_reduces_book) are pure predicates on
+                 Signal plus book qty, used on the standalone
+                 SIGNAL path before select(). Honest owner is
+                 core, not Engine 6. Injecting three callables is
+                 the wrong cost. SelectionPolicy and
+                 Top1SelectionPolicy stay for T-04b.
+WHY THIS OWNER:  T5 core already owns the names kernel may use.
+                 composition_protocol.py already owns the
+                 composition concern (CompositionContextError).
+                 The illegal edges here are annotation and helper
+                 imports. The invert is names in that existing
+                 module, not relocating Top1, not a TYPE_CHECKING
+                 delete, and not a new module. A second composition
+                 Protocol file would duplicate it.
+REFACTOR PATH:   one commit. Mechanism: move the collision record and
+                 the three Signal predicates (plus private
+                 _signal_reduces_book) into
+                 feelies.core.composition_protocol; retarget
+                 CompositionEngine at orchestrator.py:26 onto that
+                 same module; re-export the moved names from
+                 feelies.composition.selection_policy as a
+                 convenience for consumers that already import them
+                 from Engine 6. That re-export is not the cut. Do
+                 not invert selection_policy. No object/Any, no
+                 getattr, no sys.modules, no TYPE_CHECKING-only
+                 move, no re-export of the Protocol from the engine
+                 package as the cut, no kernel_ports.py, no explicit
+                 subclassing of the Protocol on the concrete
+                 (structural).
+                 CompositionEngine is TYPE_CHECKING-only. Retarget
+                 the annotation at orchestrator.py:26 to
+                 feelies.core.composition_protocol; do not delete
+                 l.26 as the cut while the name still binds
+                 feelies.composition.engine. That retarget, not a
+                 delete of l.26, is the fifth catalogued non-cut.
+                 (1) extend src/feelies/core/composition_protocol.py:
+                 CompositionEngine Protocol (empty; kernel never
+                 calls methods by name; reset stays getattr, not a
+                 Protocol member); StandaloneArbitrationCollision
+                 frozen dataclass (candidate_count, strategy_ids,
+                 kinds, harmless); the three helpers and
+                 _signal_reduces_book. Import Signal /
+                 SignalDirection from feelies.core.events. Do not
+                 import feelies.composition. The property at
+                 orchestrator.py:630 stays
+                 tuple[StandaloneArbitrationCollision, ...], so
+                 this surface covers the kernel property and
+                 compare_multialpha_runs.py without retargeting
+                 the script.
+                 (2) selection_policy.py: delete the moved bodies;
+                 re-export the four public names from
+                 feelies.core.composition_protocol. Keep
+                 Top1SelectionPolicy here. The re-export is a
+                 convenience for consumers (including
+                 tests/kernel/test_standalone_signal_ownership.py);
+                 it is not the cut.
+                 (3) orchestrator: import CompositionEngine,
+                 StandaloneArbitrationCollision, and the three
+                 helpers from feelies.core.composition_protocol;
+                 drop those names from composition.engine and
+                 composition.selection_policy. Keep
+                 SelectionPolicy from composition.protocol and
+                 Top1SelectionPolicy from selection_policy. Keep
+                 the call sites.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 8-pair pin (pin
+                 does not move); test_twelve_engine_independence
+                 KEPT at zero pairs; tests/acceptance/
+                 test_backtest_app_baseline.py (APP oracle). No
+                 XPASS. lint-imports: Five import tiers still BROKEN,
+                 Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module kernel names for
+                 CompositionEngine, the collision record, and the
+                 three helpers changes. A moved HASH or COUNT
+                 means the Protocol or helper was not a transparent
+                 substitute (surface, field, or a silent default)
+                 — STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/composition_protocol.py
+                 src/feelies/composition/selection_policy.py
+                 Do not add a module. Do not invert
+                 selection_policy. Do not edit bootstrap.py. Do not
+                 include tests/conformance/test_import_contracts.py
+                 (pin does not move). Do not include
+                 scripts/compare_multialpha_runs.py; it keeps
+                 importing StandaloneArbitrationCollision from
+                 kernel. Do not include
+                 tests/conformance/test_fail_quiet.py.
+                 composition/factor_neutralizer.py is not in
+                 FILES; keep-rows 28 (ImportError) and 139
+                 (np.linalg.LinAlgError) stay untouched. Do not
+                 include tests/docs/test_prompt_coverage_map.py
+                 or docs/prompts/README.md
+                 (composition_protocol.py already has a row and a
+                 README citation). Do not include
+                 tests/kernel/test_standalone_signal_ownership.py
+                 (re-export covers it). Do not include
+                 composition/engine.py or composition/protocol.py.
+                 Do not include harness/__init__.py, cli/,
+                 .github/workflows/ci.yml.
+DELETES:         the engine-package imports of CompositionEngine,
+                 StandaloneArbitrationCollision, and the three
+                 helpers from orchestrator. Does not delete the
+                 kernel → composition pair.
+NET DELTA:       src modules 0, public symbols +1, branch points 0
+                 (CompositionEngine Protocol is new; the three
+                 helpers and collision relocate: selection_policy
+                 loses four public names that become imports;
+                 composition_protocol gains them).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-04b until T-04b lands; orchestrator.py and
+                 composition_protocol.py are shared with T-04b
+                 and are not independently revertible once T-04b
+                 lands.
+```
+
+```
+STEP:            T-04b
+CLOSES:          nothing. Drops kernel → composition. Five import
+                 tiers stays BROKEN. 8 → 7. G40 stays CLOSED.
+PROBLEM:         After T-04a, kernel still imports SelectionPolicy
+                 from feelies.composition.protocol (runtime, l.30)
+                 and Top1SelectionPolicy from
+                 feelies.composition.selection_policy. Constructor
+                 takes selection_policy: SelectionPolicy | None = None
+                 at :279 and defaults at :365-366 with
+                 Top1SelectionPolicy(). Runtime uses
+                 select(buf).winner at :1636 and
+                 type(...).__name__ at :1634. Nothing currently
+                 passes selection_policy= — not bootstrap
+                 (_RootOrchestrator at ~659), not any of the 52
+                 real Orchestrator( sites in 19 test files. A
+                 default Top1SelectionPolicy() is the illegal
+                 import itself. No legitimate default both
+                 preserves Top-1 and drops kernel → composition.
+                 Same shape as T-02: a default added so an
+                 undeclared caller keeps working is not a cut
+                 (S-35c1; T-02's default was
+                 platform_factory=build_platform). selection_policy
+                 is not a public property; no extra Protocol surface
+                 for harness or cli.
+WHY THIS OWNER:  T5 core already owns the names kernel may use.
+                 SelectionPolicy is the injected type. The
+                 illegal edge is the default constructing Top1.
+                 The invert is the composition root supplying a
+                 required SelectionPolicy, not relocating Top1 into
+                 kernel and not a default that keeps the import.
+REFACTOR PATH:   one commit. Mechanism: SelectionPolicy Protocol in
+                 feelies.core.composition_protocol (same file as
+                 T-04a); selection_policy required, no default;
+                 bootstrap and every real Orchestrator( site pass
+                 Top1SelectionPolicy(). No object/Any, no getattr,
+                 no sys.modules, no TYPE_CHECKING-only move, no
+                 re-export of the Protocol from the engine package
+                 as the cut, no kernel_ports.py, no explicit
+                 subclassing of the Protocol on Top1 (structural).
+                 A default = Top1SelectionPolicy() is the illegal
+                 import itself; no default is legitimate (T-02 /
+                 S-35c1 parallel).
+                 (1) add SelectionPolicy Protocol to
+                 composition_protocol.py. Member: select → nested
+                 Protocol with only winner: Signal | None. Do not
+                 import SelectionResult or anything else from
+                 feelies.composition (that would be core →
+                 composition). Nested name underscored so it is
+                 not a public symbol.
+                 (2) orchestrator: import SelectionPolicy from
+                 feelies.core.composition_protocol; drop
+                 feelies.composition.protocol and
+                 Top1SelectionPolicy. Required
+                 selection_policy: SelectionPolicy with no default
+                 and no | None. Delete the ternary at :365-366;
+                 store the argument. Keep the call sites.
+                 (3) bootstrap.py passes
+                 selection_policy=Top1SelectionPolicy() into
+                 _RootOrchestrator. bootstrap.py is a keep-row file
+                 (1607 KeyError, 1825 TypeError/ValueError).
+                 test_fail_quiet.py is not in FILES, so this step
+                 must not insert or delete lines above those rows:
+                 squeeze the Top1SelectionPolicy import onto an
+                 existing import line and
+                 selection_policy=Top1SelectionPolicy() onto an
+                 existing _RootOrchestrator argument line. Measure
+                 1607 and 1825 after the cut; if they moved, STOP.
+                 (4) every real Orchestrator( site in the 19 test
+                 files passes selection_policy=Top1SelectionPolicy().
+                 tests/kernel/test_orchestrator.py: updating
+                 _build_orchestrator does not cover that file's 27
+                 raw sites. Files that import _build_orchestrator
+                 from test_orchestrator.py and have no
+                 Orchestrator( of their own need no edit of their
+                 own: tests/kernel/test_fill_attribution_seam.py,
+                 tests/conformance/test_pathological_refusal.py,
+                 tests/kernel/test_reverse_edge_calibration.py,
+                 tests/kernel/test_orchestrator_order_routing.py,
+                 tests/kernel/test_orchestrator_edge_calibration.py.
+                 (5) drop ("feelies.kernel", "feelies.composition")
+                 from _TIER_RESIDUALS in the same commit (equality,
+                 7 remain).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 7-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP
+                 oracle). No XPASS. lint-imports: Five import tiers
+                 still BROKEN, Twelve engine module sets KEPT. A
+                 new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only who constructs Top1 and which
+                 module kernel names for SelectionPolicy changes.
+                 A moved HASH or COUNT means the Protocol call or
+                 the required handle was not a transparent
+                 substitute (surface, a silent default, or a
+                 different policy) — STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/composition_protocol.py
+                 src/feelies/bootstrap.py
+                 (1 site: _RootOrchestrator ~659; squeeze, see
+                 REFACTOR PATH)
+                 tests/kernel/test_orchestrator.py
+                 (28: 1 factory + 27 raw)
+                 tests/kernel/test_orchestrator_bus_sized_intent.py
+                 (4: 1 local factory + 3 raw)
+                 tests/determinism/test_forced_exit_attribution_replay.py
+                 (3)
+                 tests/causality/test_anti_lookahead.py
+                 (2)
+                 tests/kernel/test_trade_path_regime_gate_cold_start.py
+                 (1)
+                 tests/determinism/test_position_pnl_replay.py
+                 (1)
+                 tests/kernel/test_reducing_signal_survives_risk_gate.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (1 local factory)
+                 tests/kernel/test_data_integrity_runtime.py
+                 (1 local factory)
+                 tests/determinism/test_symbol_halted_replay.py
+                 (1)
+                 tests/kernel/test_orchestrator_shutdown_drain.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_async_fill_latency.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_bus_signal.py
+                 (1 local factory)
+                 tests/conformance/test_registration_order.py
+                 (1)
+                 tests/kernel/test_orchestrator_exit_composer_routing.py
+                 (1 local factory)
+                 tests/kernel/test_orchestrator_idle_tick.py
+                 (1 local factory)
+                 tests/kernel/test_standalone_signal_ownership.py
+                 (1 local factory)
+                 tests/services/test_regime_hazard_engine_wiring.py
+                 (1 local factory)
+                 tests/integration/test_dual_scale_down_e2e.py
+                 (1)
+                 tests/conformance/test_import_contracts.py
+                 Do not add a module. Do not include
+                 scripts/compare_multialpha_runs.py; it keeps
+                 importing StandaloneArbitrationCollision from
+                 kernel. Do not include
+                 tests/conformance/test_fail_quiet.py.
+                 composition/factor_neutralizer.py is not in
+                 FILES; keep-rows 28 and 139 stay untouched. Do
+                 not include the five test_orchestrator.py-factory
+                 funnel files listed in REFACTOR PATH. Do not
+                 include tests/harness/test_emit_edge_calibration.py
+                 or tests/harness/test_backtest_report.py
+                 (_FakeOrchestrator, not a real constructor). Do
+                 not include composition/selection_policy.py
+                 (T-04a re-export; not this cut) or
+                 composition/protocol.py (Top1 still imports
+                 SelectionPolicy from there; structural). Do not
+                 include harness/__init__.py, cli/,
+                 .github/workflows/ci.yml.
+DELETES:         the kernel → composition pair; the
+                 composition.protocol and Top1SelectionPolicy
+                 imports from orchestrator; the Top1 default.
+NET DELTA:       src modules 0, public symbols +1, branch points 0
+                 (SelectionPolicy Protocol; nested winner type is
+                 underscored).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-05 until T-05 lands; orchestrator.py is shared
+                 with T-04a and T-05 and is not independently
+                 revertible once T-05 lands.
+```
+
+```
+STEP:            T-05a
+CLOSES:          nothing. Pin stays 7. Does not drop kernel →
+                 services. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A step that leaves the count unchanged
+                 is legitimate here and must not be mistaken for a
+                 failed cut.
+PROBLEM:         feelies.kernel.orchestrator is the only kernel file
+                 that imports feelies.services. Six names in two
+                 modules. This step is the four underscored helpers
+                 from services.regime_engine (runtime, l.191):
+                 _calibrate_regime_engine, _checkpoint_feature_snapshots,
+                 _restore_feature_snapshots, _update_regime. Used at
+                 :818, :819, :1002, :1543, each as f(self, ...). They
+                 take the orchestrator as self: Any and mutate kernel
+                 session state (_bus, _seq, _hazard_seq,
+                 _last_regime_state, _publish_alert). Two private
+                 callees in the same file exist only for those four:
+                 _checkpoint_regime_snapshot, _maybe_publish_hazard_spike.
+                 They travel with the four. _regime_label_for is also
+                 in that file from S-19; kernel does not import it —
+                 not this rung. RegimeEngine and RegimeHazardDetector
+                 stay for T-05b. A helpers-only step that left those
+                 two types would leave the pair; that is the declared
+                 outcome, same shape as T-04a.
+WHY THIS OWNER:  The bodies were written in the kernel and parked in
+                 services in S-19 (_calibrate_regime_engine,
+                 _update_regime, plus the two private callees) and S-20
+                 (_restore_feature_snapshots, _checkpoint_feature_snapshots,
+                 because after S-19 they only touch regime snapshots).
+                 services/regime_engine.py already holds those
+                 kernel-authored helper bodies. This is a return
+                 move, not a new home. Honest owner is kernel: they
+                 take orchestrator as self and write kernel session
+                 fields. Core would be convenient, not honest — T-04a
+                 put pure Signal predicates in core because they had no
+                 orchestrator. These are the opposite. Injecting four
+                 callables is the wrong cost.
+REFACTOR PATH:   one commit. Mechanism: return the four helpers and
+                 the two private callees from
+                 feelies.services.regime_engine to
+                 feelies.kernel.orchestrator as the same module-level
+                 functions taking the orchestrator as self. Kernel
+                 drops those names from the services import; keeps
+                 RegimeEngine and RegimeHazardDetector. Call sites
+                 stay. No object/Any widening, no getattr, no
+                 sys.modules, no TYPE_CHECKING-only move, no
+                 kernel_ports.py, no new module, no re-export of the
+                 helpers from services as the cut.
+                 (1) move _calibrate_regime_engine,
+                 _checkpoint_feature_snapshots,
+                 _restore_feature_snapshots, _update_regime,
+                 _checkpoint_regime_snapshot, and
+                 _maybe_publish_hazard_spike into orchestrator.py.
+                 Bodies unchanged. _restore_feature_snapshots already
+                 calls Orchestrator._restore_regime_snapshot; that
+                 callee stays. Leave _regime_label_for in services
+                 (kernel does not import it).
+                 (2) orchestrator: drop the four names from
+                 feelies.services.regime_engine; keep RegimeEngine from
+                 that module and RegimeHazardDetector from
+                 regime_hazard_detector. Keep the call sites.
+                 (3) tests/kernel/test_orchestrator.py: retarget
+                 `_calibrate_regime_engine` from
+                 feelies.services.regime_engine onto kernel
+                 (the one FILES-visible importer of a helper).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 7-pair pin (pin
+                 does not move); test_twelve_engine_independence
+                 KEPT at zero pairs; tests/acceptance/
+                 test_backtest_app_baseline.py (APP oracle). No
+                 XPASS. lint-imports: Five import tiers still BROKEN,
+                 Twelve engine module sets KEPT. A new
+                 twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module defines the four
+                 helpers changes. A moved HASH or COUNT means the
+                 returned helper was not a transparent substitute
+                 (body, order, or a silent default) — STOP, do not
+                 re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/services/regime_engine.py
+                 tests/kernel/test_orchestrator.py
+                 Do not add a module. Do not invert RegimeEngine or
+                 RegimeHazardDetector. Do not edit bootstrap.py. Do
+                 not include tests/conformance/test_import_contracts.py
+                 (pin does not move). Do not include
+                 tests/conformance/test_fail_quiet.py. No keep-row
+                 file is touched: orchestrator.py and
+                 regime_engine.py are not in FAIL_QUIET_KEEP;
+                 bootstrap.py 1607/1825, backtest_runner.py
+                 588/794/831, layer_validator.py 1190,
+                 factor_neutralizer.py 28/139,
+                 massive_ingestor.py 73, massive_ws.py 185/228/344
+                 stay unedited. Do not include
+                 tools/arch/perfmeasure.py (DIRECT_PROBES is unowned;
+                 it still names feelies.services.regime_engine:_update_regime).
+                 Do not include portfolio/fill_reconciliation.py.
+                 Do not include services/regime_hazard_detector.py.
+                 Do not include core/regime_gate.py. Do not include
+                 harness/, cli/, .github/workflows/ci.yml.
+DELETES:         the engine-package imports of the four helpers from
+                 orchestrator. Does not delete the kernel → services
+                 pair.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+                 (underscored helpers relocate; not public).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-05b until T-05b lands; orchestrator.py is shared with
+                 T-05b and is not independently revertible once T-05b
+                 lands.
+```
+
+```
+STEP:            T-05b
+CLOSES:          nothing. Drops kernel → services. Five import
+                 tiers stays BROKEN. 7 → 6. G40 stays CLOSED.
+PROBLEM:         After T-05a, kernel still imports three names from
+                 feelies.services, not two. feelies.kernel.orchestrator
+                 is the only kernel file that imports that package.
+                 RegimeEngine from feelies.services.regime_engine
+                 (runtime, l.194) and RegimeHazardDetector from
+                 feelies.services.regime_hazard_detector (runtime,
+                 l.195). Both are injected optional (| None = None);
+                 stored; never default-constructed in kernel. None
+                 is not the illegal import (T-04b's default was
+                 Top1SelectionPolicy()). Bootstrap already constructs
+                 and passes them. Runtime named calls: restore on
+                 the engine at :3293; posterior(quote) at :374;
+                 state_names at :377; checkpoint() at :249;
+                 RegimeHazardDetector.reset at :2388; detect at
+                 :425. After T-05a the returned helpers name those.
+                 calibrate, calibrated, discriminability, and
+                 discriminability_for_symbol stay getattr inside
+                 _calibrate_regime_engine / _update_regime. reset is
+                 also reachable via getattr through _maybe_reset;
+                 that walk does not list either engine, and named
+                 reset is the detector. No public orchestrator
+                 property hands either instance out — no
+                 harness/cli extra surface (T-03). services/
+                 regime_engine.py already defines a RegimeEngine
+                 Protocol (state_names, n_states, posterior,
+                 current_state, reset(symbol), checkpoint, restore)
+                 that is wider than kernel's named calls and lives in
+                 the engine package; importing that Protocol is still
+                 kernel → services.
+                 Third name, function, no Protocol can replace it:
+                 regime_posterior_entropy_nats from
+                 feelies.services.regime_engine (runtime, l.194),
+                 called at _update_regime :403 to fill
+                 RegimeState.posterior_entropy_nats. Signature
+                 (posteriors: Sequence[float]) -> float. Pure
+                 Shannon entropy in nats; no orchestrator, no engine
+                 instance, no state. T-05a PROBLEM counted six names
+                 (four helpers + two types). The function lived in
+                 the same services module as _update_regime and
+                 needed no kernel import until the helper returned
+                 with the body unchanged. Other callers
+                 (tests/services, tests/core, tests/determinism,
+                 scripts/regime_diagnostics.py, services/__init__.py)
+                 are not kernel. Honest owner is core, same shape as
+                 T-04a's Signal predicates. Leaving it on the kernel
+                 import leaves the pair and the pin at 7.
+WHY THIS OWNER:  T5 core already owns the names kernel may use. The
+                 illegal edge is kernel naming Engine 3 for injected
+                 types. The invert is a core Protocol module named
+                 for the regime concern, not relocating HMM3 or the
+                 detector, not deleting the TYPE_CHECKING-equivalent
+                 runtime import, and not appending to
+                 core/regime_gate.py (that file is the gate DSL).
+                 The helpers' return in T-05a does not replace this
+                 bind.
+REFACTOR PATH:   one commit. Mechanism: Selection-style Protocols
+                 plus the pure entropy function in a new
+                 feelies.core.regime_protocol (named for the
+                 regime concern, not the step; one module per
+                 engine concern). Kernel retargets both type
+                 annotations and the entropy import there.
+                 Required Protocol surface is every named kernel
+                 call after T-05a, not a copy of the services
+                 Protocol. Structural; no subclassing on
+                 HMM3StateFractional or RegimeHazardDetector. No
+                 object/Any, no getattr fallback, no sys.modules,
+                 no TYPE_CHECKING-only move, no re-export of the
+                 Protocol from the engine package as the cut, no
+                 kernel_ports.py. Do not inline the entropy formula
+                 in _update_regime; do not copy the body.
+                 Per-name Protocol surface:
+                 RegimeEngine: restore(data: bytes) -> None (named
+                 at :3293); posterior(quote: NBBOQuote) ->
+                 list[float] (named in returned _update_regime);
+                 state_names -> Sequence[str] (named there);
+                 checkpoint() -> bytes (named in returned
+                 _checkpoint_regime_snapshot). Do not put
+                 calibrate, calibrated, discriminability, or
+                 discriminability_for_symbol on the Protocol —
+                 getattr, T-03. Do not put n_states, current_state,
+                 or reset(symbol: str) on it — kernel never names
+                 them (current_state is _regime_label_for, not
+                 imported; services reset(symbol) is the wrong arity
+                 for getattr reset()).
+                 RegimeHazardDetector: reset() -> None (named at
+                 :2388); detect(prev: RegimeState | None,
+                 curr: RegimeState) -> RegimeHazardSpike | None
+                 (named in returned _maybe_publish_hazard_spike).
+                 regime_posterior_entropy_nats(posteriors:
+                 Sequence[float]) -> float — move the body from
+                 services.regime_engine into this module; kernel
+                 imports it from core. services.regime_engine
+                 re-exports the name from core (alias, T-04a);
+                 that is not the cut. Import Signal/quote/state/
+                 spike types from feelies.core.events. Import
+                 nothing from feelies.services.
+                 (1) add src/feelies/core/regime_protocol.py with those
+                 two Protocols and the entropy function. Nested winner
+                 types are not needed; detect's return is already a
+                 core event.
+                 (2) orchestrator: import both Protocols and
+                 regime_posterior_entropy_nats from
+                 feelies.core.regime_protocol; drop
+                 feelies.services.regime_engine and
+                 feelies.services.regime_hazard_detector. Keep
+                 constructor optionality and the call sites.
+                 Leave getattr as getattr. Leave the services
+                 Protocol in place for services/bootstrap/alpha —
+                 that re-export is not the cut.
+                 (3) services/regime_engine.py: delete the def;
+                 `from feelies.core.regime_protocol import
+                 regime_posterior_entropy_nats as
+                 regime_posterior_entropy_nats`. Leave HMM3 and
+                 the services Protocol unedited.
+                 (4) drop ("feelies.kernel", "feelies.services") from
+                 _TIER_RESIDUALS in the same commit (equality, 6
+                 remain).
+                 (5) new core module: _FILE_OWNERS row and README
+                 citation in this commit (S-21), same as T-03.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 6-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py (APP
+                 oracle). No XPASS. lint-imports: Five import tiers
+                 still BROKEN, Twelve engine module sets KEPT. A
+                 new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. The ingest/replay body is
+                 unmoved; only which module kernel names for the two
+                 injected types changes. A moved HASH or COUNT
+                 means the Protocol call was not a transparent
+                 substitute (surface, attribute, or a silent
+                 default) — STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/regime_protocol.py
+                 src/feelies/services/regime_engine.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 services/regime_engine.py is the T-04a
+                 selection_policy.py re-export only: replace the
+                 def with an alias from core; do not invert HMM3
+                 or the services Protocol. Do not retarget
+                 tests/scripts/services/__init__.py — the re-export
+                 is not the cut. Do not edit
+                 services/regime_hazard_detector.py. Do not edit
+                 bootstrap.py. Do not include
+                 tests/conformance/test_fail_quiet.py. No keep-row
+                 file is touched. Do not include
+                 core/regime_gate.py. Do not include
+                 harness/, cli/, .github/workflows/ci.yml.
+DELETES:         the kernel → services pair; the services.regime_engine
+                 and services.regime_hazard_detector imports from
+                 orchestrator.
+NET DELTA:       src modules +1, public symbols +3, branch points 0
+                 (RegimeEngine and RegimeHazardDetector Protocols,
+                 and regime_posterior_entropy_nats).
+ROLLBACK:        revert the commit. The new Protocol module reverts
+                 with it. Independently revertible from T-06 until
+                 T-06 lands; orchestrator.py is shared with T-05a
+                 and T-06 and is not independently revertible once T-06
+                 lands.
+```
+
+```
+STEP:            T-06z
+CLOSES:          nothing. Pin stays 6. Does not drop kernel →
+                 ingestion. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A placement step, not a cut, same
+                 shape as T-04a: an unchanged count is the
+                 declared outcome, not a failed cut.
+PROBLEM:         T-06a must put _HaltTradeability and
+                 _sync_halt_store_and_health in
+                 feelies.core.data_health. Those bodies raise
+                 KernelFault from
+                 feelies.kernel.exception_taxonomy. Core is the
+                 bottom layer (below kernel). core → kernel is a
+                 new layers violation, not in _TIER_RESIDUALS.
+                 KernelFault is a FeeliesError subclass with a
+                 nested Kind enum. It imports only
+                 feelies.core.errors. It names no orchestrator
+                 state. Five raisers construct it:
+                 kernel.orchestrator (TICK_PIPELINE),
+                 ingestion.data_integrity (SESSION_HALT),
+                 ingestion.massive_ws (INGRESS_ADMIT),
+                 alpha.registry (UNIVERSE),
+                 sensors.horizon_scheduler (HORIZON_GRID).
+                 Five tests import it from
+                 kernel.exception_taxonomy:
+                 test_exception_containment,
+                 test_session_halt_authority,
+                 test_ingress_admit, test_universe_authority,
+                 test_horizon_grid. S-30a pinned the type to
+                 kernel by role (the kernel contains it), not by
+                 data.
+WHY THIS OWNER:  T5 core already owns FeeliesError and
+                 FailureMode. KernelFault is a FeeliesError.
+                 The illegal edge is a core module raising a
+                 kernel type. The invert is the body in core,
+                 aliased from kernel, not relocating the
+                 raisers and not folding Kind into a second
+                 FeeliesError subclass per member.
+REFACTOR PATH:   one commit. Mechanism: move the KernelFault
+                 body into a new feelies.core.exception_taxonomy
+                 (core/exception_taxonomy.py). Alias-re-export
+                 from kernel/exception_taxonomy.py so the five
+                 raisers and the five test importers need no
+                 retarget. No object/Any, no getattr, no
+                 sys.modules, no TYPE_CHECKING-only move, no
+                 kernel_ports.py, no subclassing on the
+                 concretes. Do not fold into core/errors.py:
+                 that file is one class per FailureMode;
+                 KernelFault is one type with a nested Kind
+                 ("do not subclass for each §F item", S-30a).
+                 Mixing them is the shared-module error the
+                 campaign forbids (one module per concern,
+                 named for the thing). The existing module is
+                 kernel/exception_taxonomy.py; the invert is
+                 that concern in core, not an append onto
+                 errors.py.
+                 (1) add src/feelies/core/exception_taxonomy.py
+                 with the KernelFault body unchanged. Import
+                 FailureMode and FeeliesError from
+                 feelies.core.errors. Import nothing from
+                 feelies.kernel.
+                 (2) kernel/exception_taxonomy.py: delete the
+                 body; `from feelies.core.exception_taxonomy
+                 import KernelFault as KernelFault`. Keep the
+                 module docstring. That alias is a convenience
+                 for the ten importers; it is not a cut.
+                 (3) do not retarget the five raisers or the
+                 five tests. engine → kernel is legal; engine
+                 → core is legal. None of those edges is in
+                 _TIER_RESIDUALS. The alias does not add a
+                 pair and does not drop one. THE PIN DOES NOT
+                 MOVE.
+                 (4) new core module: _FILE_OWNERS row
+                 (audit_core_clock_config) and the README
+                 core_clock_config citation, same commit, S-21.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved
+                 6-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs; tests/acceptance/
+                 test_backtest_app_baseline.py (APP oracle);
+                 tests/conformance/test_exception_containment.py
+                 (taxonomy kinds and tick fail-into, via the
+                 alias). No XPASS. lint-imports: Five import
+                 tiers still BROKEN (6 pairs), Twelve engine
+                 module sets KEPT. A new twelve-engine pair is
+                 a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH. The
+                 ingest/replay body is unmoved; only which
+                 module defines KernelFault changes. A moved
+                 HASH or COUNT means the alias was not the
+                 same type (class identity, Kind member, or a
+                 silent default) — STOP, do not re-pin.
+FILES:           src/feelies/core/exception_taxonomy.py
+                 src/feelies/kernel/exception_taxonomy.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 kernel/exception_taxonomy.py is the T-04a
+                 selection_policy.py re-export only: replace
+                 the class with an alias from core. Do not
+                 retarget orchestrator.py, data_integrity.py,
+                 massive_ws.py, alpha/registry.py,
+                 sensors/horizon_scheduler.py, or the five
+                 test importers. Do not include
+                 tests/conformance/test_import_contracts.py
+                 (pin does not move). Do not include
+                 tests/conformance/test_fail_quiet.py. No
+                 keep-row file is touched: exception_taxonomy.py
+                 is not in FAIL_QUIET_KEEP; massive_ws.py
+                 (185, 228, 344) imports KernelFault through
+                 the kernel alias and is not in FILES. Do not
+                 include core/errors.py. Do not include
+                 harness/, cli/, .github/workflows/ci.yml.
+DELETES:         the KernelFault body from
+                 kernel/exception_taxonomy.py. Does not delete
+                 the kernel → ingestion pair.
+NET DELTA:       src modules +1, public symbols 0, branch
+                 points 0 (KernelFault relocates; the kernel
+                 alias is ImportFrom, which measure.py does
+                 not count).
+ROLLBACK:        revert the commit. The new module reverts
+                 with it. Independently revertible from T-06a
+                 until T-06a lands; after T-06a,
+                 core/data_health.py imports KernelFault from
+                 this module.
+```
+
+```
+STEP:            T-06a
+CLOSES:          nothing. Drops kernel → ingestion. Five import
+                 tiers stays BROKEN. 6 → 5. G40 stays CLOSED.
+PROBLEM:         After T-05b, kernel still imports twelve names from
+                 feelies.ingestion, all from orchestrator, all runtime.
+                 Eight functions from data_integrity (l.138-145):
+                 _bind_halt_tradeability, _configure_halt_from_config,
+                 _require_halt_authority, _reset_halt_state,
+                 _update_halt_state, _update_ssr_state,
+                 _data_health_blocks_trading, _verify_data_integrity.
+                 DataHealth (enum, l.136). IdleTick (dataclass, l.147,
+                 isinstance). _HaltTradeability (l.137): injected
+                 optional; _bind default-constructs it; isinstance
+                 in bind/require — not a Protocol. MarketDataNormalizer
+                 (l.148) is already a Protocol in ingestion; injecting
+                 that type is still kernel → ingestion. Named on the
+                 normalizer: health (orchestrator) and all_health
+                 (returned helpers). No public normalizer property.
+                 Returning _update_halt_state drags
+                 _sync_halt_store_and_health, which massive_normalizer
+                 also calls, plus HaltSignal and classify_halt_status
+                 underneath _sync. Core must not import ingestion.
+                 G33 AST-pins halt-store writes,
+                 transition(DataHealth.HALTED), and
+                 KernelFault(SESSION_HALT) constructions to the path
+                 string _AUTHORITY. S-30b locked that path to
+                 ingestion/data_integrity.py because that is where the
+                 producer was put; the invariant is one producer of
+                 halt state, not the ingestion package. After the
+                 bodies move, _AUTHORITY follows the store to
+                 core/data_health.py. T-06z has already moved
+                 KernelFault into core, so data_health.py does not
+                 import feelies.kernel. A relocation alias is an
+                 import in the opposite direction, and on an engine
+                 file that reverses the tier edge the step is trying
+                 to cut.
+WHY THIS OWNER:  T5 core already owns names kernel may use. Empty the
+                 package in one step so the pin moves. A helpers-only
+                 return leaves DataHealth, IdleTick,
+                 _HaltTradeability, MarketDataNormalizer, and _sync
+                 and the pin stays 6.
+REFACTOR PATH:   one commit. Mechanism: relocate DataHealth,
+                 HaltSignal, classify_halt_status,
+                 _sync_halt_store_and_health, _HaltTradeability,
+                 and _require_halt_authority into
+                 feelies.core.data_health (core/data_health.py).
+                 _require_halt_authority travels with _sync; kernel
+                 imports it from core. Relocate IdleTick into
+                 feelies.core.idle_tick (core/idle_tick.py).
+                 Alias-re-export from data_integrity and idle_tick
+                 so bootstrap, massive_normalizer, massive_ingestor,
+                 massive_ws need no retarget. Relocated names
+                 aliased on data_integrity: DataHealth, HaltSignal,
+                 classify_halt_status, _sync_halt_store_and_health,
+                 _HaltTradeability, _require_halt_authority. Of the
+                 eight helpers, only _require_halt_authority is
+                 aliased there. The other seven return to kernel as
+                 local defs and have no data_integrity alias:
+                 _bind_halt_tradeability, _configure_halt_from_config,
+                 _reset_halt_state, _update_halt_state,
+                 _update_ssr_state, _data_health_blocks_trading,
+                 _verify_data_integrity. _data_health_blocks_trading
+                 is the exception: G33 currently imports it, and an
+                 alias on data_integrity.py would make ingestion import
+                 feelies.kernel.orchestrator, which S2 expands into
+                 portfolio, execution, risk and monitoring -- four
+                 new twelve-engine pairs. The body cannot go to core
+                 because it names MacroState.DEGRADED, which would be
+                 core to kernel -- the violation T-06z exists to
+                 prevent. Return those seven plus the private callees
+                 that have no other caller (_halt_health_xor_store,
+                 _emit_symbol_halted). _bound_trade_feed_health_sm
+                 travels with _sync into core. Kernel annotates
+                 MarketDataNormalizer against a core Protocol in
+                 data_health.py whose named surface is health and
+                 all_health; leave the ingestion Protocol in place
+                 for implementations. Keep constructor optionality.
+                 Leave getattr (_halt_tradeability, _maybe_reset)
+                 as getattr. isinstance on _HaltTradeability stays,
+                 against the inverted class. data_health.py imports
+                 KernelFault from feelies.core.exception_taxonomy
+                 (T-06z), not from feelies.kernel. Drop
+                 ("feelies.kernel", "feelies.ingestion") from
+                 _TIER_RESIDUALS in the same commit. New core modules:
+                 _FILE_OWNERS rows and README citation (S-21).
+                 Retarget G33 `_AUTHORITY` to
+                 `src/feelies/core/data_health.py` in the same
+                 commit. G33 retargets the
+                 _data_health_blocks_trading import to
+                 feelies.kernel.orchestrator; keep
+                 _HaltTradeability and _require_halt_authority on
+                 the data_integrity aliases. No
+                 _data_health_blocks_trading alias on
+                 data_integrity.py.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 5-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py;
+                 tests/conformance/test_session_halt_authority.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/data_health.py
+                 src/feelies/core/idle_tick.py
+                 src/feelies/ingestion/data_integrity.py
+                 src/feelies/ingestion/idle_tick.py
+                 tests/conformance/test_import_contracts.py
+                 tests/conformance/test_session_halt_authority.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 data_integrity.py and idle_tick.py are alias
+                 re-exports only for relocated names. Do not alias
+                 _data_health_blocks_trading. G33 file is the
+                 _AUTHORITY retarget and the
+                 _data_health_blocks_trading import retarget to
+                 feelies.kernel.orchestrator; _HaltTradeability and
+                 _require_halt_authority stay on data_integrity.
+                 Do not invert MassiveNormalizer. Do not retarget
+                 bootstrap, massive_normalizer.py,
+                 massive_ingestor.py, massive_ws.py. Do not include
+                 tests/conformance/test_fail_quiet.py. No keep-row
+                 file is touched. Do not include harness/, cli/,
+                 .github/workflows/ci.yml. Do not include
+                 core/exception_taxonomy.py (T-06z).
+DELETES:         the kernel → ingestion pair; the data_integrity,
+                 idle_tick, and normalizer imports from orchestrator.
+NET DELTA:       src modules +2, public symbols +1, branch points 0
+                 (core MarketDataNormalizer Protocol). DataHealth,
+                 HaltSignal, classify_halt_status, _sync,
+                 _HaltTradeability, IdleTick are relocations.
+ROLLBACK:        revert the commit. The new modules revert with it.
+                 Independently revertible from T-06b until T-06b
+                 lands; orchestrator.py is shared with T-06b.
+                 Not independently revertible from T-06z once this
+                 lands (data_health.py imports KernelFault from
+                 core.exception_taxonomy).
+```
+
+```
+STEP:            T-06b
+CLOSES:          nothing. Drops kernel → monitoring. Five import
+                 tiers stays BROKEN. 5 → 4. G40 stays CLOSED.
+PROBLEM:         After T-06a, kernel still imports seven names from
+                 feelies.monitoring, all from orchestrator, all runtime.
+                 MetricCollector from telemetry (l.160) is already a
+                 core Protocol re-export; importing telemetry is still
+                 kernel → monitoring. Required constructor arg.
+                 Named: record, flush. Public property
+                 metric_collector; harness getattr/_events and
+                 isinstance(InMemoryMetricCollector) stay getattr /
+                 isinstance. KillSwitch from kill_switch (l.154):
+                 already a Protocol; injected optional. Named:
+                 is_active, reset(operator, audit_token). Public
+                 property kill_switch — harness reads is_active;
+                 test_kill_switch_consumer calls activate and
+                 is_active. observe_kill_switch (l.154) is a
+                 function. _LatencyBudgetMonitor (l.155) is
+                 default-constructed at init :957 and again in
+                 reset() :3045; named observe. _apply_breach_response
+                 (l.157) calls KillSwitch.activate. AlertManager
+                 (l.153) already a Protocol; injected optional; named
+                 emit; the monitoring Protocol also has
+                 active_alerts and acknowledge; no public property.
+                 PaperSessionRecorder (l.159) is a concrete class;
+                 public setter only; named record_idle_tick,
+                 record_timing. _p99 and _BudgetStatus are private
+                 callees of _LatencyBudgetMonitor with a second
+                 importer in tests/conformance/test_latency_budget.py.
+WHY THIS OWNER:  T5 core. MetricCollector already lives there.
+                 Empty the package in one step. Returning
+                 _apply_breach_response without a core KillSwitch
+                 leaves the pair. Default-constructing
+                 _LatencyBudgetMonitor in reset() without inverting
+                 the class leaves the pair.
+REFACTOR PATH:   one commit. Mechanism: retarget MetricCollector to
+                 feelies.core.metric_collector (existing module; do
+                 not copy). Move the KillSwitch Protocol (is_active,
+                 activate, reset — the property's consumers, already
+                 the monitoring surface) and observe_kill_switch
+                 into feelies.core.kill_switch (core/kill_switch.py).
+                 Alias from monitoring.kill_switch. Direction:
+                 monitoring → core (legal downward). Invert
+                 _LatencyBudgetMonitor into
+                 feelies.core.latency_budget (core/latency_budget.py)
+                 with alias from latency_budget; both construction
+                 sites construct the core class. Relocate
+                 _apply_breach_response next to it; alias. _p99
+                 and _BudgetStatus travel with the monitor body;
+                 alias them on latency_budget.py so
+                 test_latency_budget.py needs no retarget.
+                 Direction of every latency_budget alias:
+                 monitoring → core. core/latency_budget.py
+                 imports KillSwitch from feelies.core.kill_switch,
+                 not from feelies.monitoring. Move the AlertManager
+                 Protocol (emit, active_alerts, acknowledge — the
+                 full monitoring surface, so __init__.py and
+                 tests/monitoring stay alias-covered; kernel names
+                 only emit) into feelies.core.alert_manager
+                 (core/alert_manager.py) with alias from alerting.
+                 Direction: monitoring → core. PaperSessionRecorder
+                 stays a concrete in monitoring; kernel annotates a
+                 Protocol in feelies.core.paper_session_recorder
+                 (core/paper_session_recorder.py) with
+                 record_idle_tick and record_timing; no subclassing;
+                 no alias on the concrete. Leave getattr as getattr.
+                 No alias whose target is kernel or another engine.
+                 Drop ("feelies.kernel", "feelies.monitoring") from
+                 _TIER_RESIDUALS in the same commit. New core
+                 modules: _FILE_OWNERS and README in this commit
+                 (S-21). Do not edit bootstrap.py. Do not edit
+                 harness/. Relocated bodies do not raise
+                 KernelFault and do not import feelies.kernel.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 4-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/kill_switch.py
+                 src/feelies/core/latency_budget.py
+                 src/feelies/core/alert_manager.py
+                 src/feelies/core/paper_session_recorder.py
+                 src/feelies/monitoring/kill_switch.py
+                 src/feelies/monitoring/latency_budget.py
+                 src/feelies/monitoring/alerting.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 monitoring files are alias / Protocol-move only.
+                 Do not invert InMemoryKillSwitch or
+                 PaperSessionRecorder bodies. Do not retarget
+                 telemetry.py (already a re-export). Do not include
+                 bootstrap.py, harness/, cli/,
+                 tests/conformance/test_fail_quiet.py,
+                 tests/conformance/test_latency_budget.py
+                 (aliases cover _p99 / _BudgetStatus /
+                 _LatencyBudgetMonitor / _apply_breach_response),
+                 .github/workflows/ci.yml. Do not edit
+                 metric_collector.py, telemetry.py, or
+                 paper_session_recorder.py. No keep-row file is
+                 touched.
+DELETES:         the kernel → monitoring pair; the alerting,
+                 kill_switch, latency_budget,
+                 paper_session_recorder, and telemetry imports from
+                 orchestrator.
+NET DELTA:       src modules +4, public symbols +1, branch points 0
+                 (PaperSessionRecorder Protocol). KillSwitch and
+                 AlertManager Protocol moves, observe_kill_switch,
+                 _LatencyBudgetMonitor, _apply_breach_response,
+                 _p99, and _BudgetStatus are relocations.
+                 MetricCollector retarget is not a new name.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-07 until T-07 lands; orchestrator.py is shared
+                 with T-07. Not independently revertible from T-06a
+                 (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-07a
+CLOSES:          nothing. Does not drop kernel → portfolio. Five import
+                 tiers stays BROKEN. Pin stays 4. G40 stays CLOSED.
+PROBLEM:         After T-06b, kernel still imports six names from
+                 feelies.portfolio, all from orchestrator.
+                 LotLedger from lot_ledger (l.163) is default-constructed
+                 at init :902 and again in reset() :3045. Public property
+                 lot_ledger; tests/kernel/test_orchestrator.py names
+                 apply_fill, net_quantity, lots, Lot.quantity, Lot.intent.
+                 PositionBookView from position_book_view (l.161) is
+                 constructed via from_store on the position_store
+                 property :1118 (returns PositionBookView, not
+                 PositionStore) and at :1181. Named: from_store, get.
+                 Property consumers: harness/backtest_report.py
+                 all_positions + Position.{realized_pnl,unrealized_pnl,
+                 quantity}; test_backtest_app_baseline all_positions +
+                 cumulative_fees; test_orchestrator isinstance + get.
+                 The four remaining names (PositionStore,
+                 FillAttributionLedger, StrategyPositionStore, the two
+                 fill helpers) stay on the import. This step does not
+                 empty the package.
+WHY THIS OWNER:  T5 core. LotLedger and PositionBookView are concretes
+                 kernel constructs; a Protocol cannot replace them.
+                 The fill helpers cannot travel with them: they import
+                 TradeRecord via kernel.fill_bindings and
+                 forced_exit_reasons. Core cannot import kernel. Leaving
+                 them for T-07b is the census, not a failed cut.
+REFACTOR PATH:   one commit. Invert LotLedger (Lot and _same_sign travel)
+                 into feelies.core.lot_ledger (core/lot_ledger.py) with
+                 alias from portfolio.lot_ledger. Direction: portfolio
+                 → core. Both construction sites construct the core class.
+                 Invert PositionBookView (_ReadableBook travels) into
+                 feelies.core.position_book_view
+                 (core/position_book_view.py) with alias from
+                 position_book_view. Direction: portfolio → core.
+                 core/position_book_view.py imports Position from
+                 feelies.core.position, not from feelies.portfolio.
+                 Do not edit core/position.py. Do not edit bootstrap.py
+                 (alias covers from_store / from_quantities). Do not
+                 invert fill helpers. No alias whose target is kernel or
+                 another engine. Pin stays 4. New core modules:
+                 _FILE_OWNERS and README in this commit (S-21).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved 4-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/lot_ledger.py
+                 src/feelies/core/position_book_view.py
+                 src/feelies/portfolio/lot_ledger.py
+                 src/feelies/portfolio/position_book_view.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 portfolio files are alias only. Do not include
+                 test_import_contracts.py (pin does not move),
+                 bootstrap.py, harness/, test_fail_quiet.py,
+                 tests/kernel/test_orchestrator.py,
+                 tests/portfolio/test_lot_ledger.py,
+                 fill_reconciliation.py, fill_attribution.py,
+                 core/position.py, ci.yml. No keep-row file is
+                 touched.
+DELETES:         the lot_ledger and position_book_view imports from
+                 orchestrator.
+NET DELTA:       src modules +2, public symbols 0, branch points 0.
+                 LotLedger, Lot, PositionBookView are relocations.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-07b until T-07b lands; orchestrator.py is shared
+                 with T-07b. Not independently revertible from T-06b
+                 (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-07b
+CLOSES:          nothing. Drops kernel → portfolio. Five import
+                 tiers stays BROKEN. 4 → 3. G40 stays CLOSED.
+PROBLEM:         After T-07a, kernel still imports four portfolio
+                 modules. PositionStore from position_store (l.162) is
+                 already a core Protocol re-export; importing
+                 position_store is still kernel → portfolio. Required
+                 constructor arg. Named: get (.quantity and the Position
+                 object passed to _plan_for_signal), total_exposure,
+                 update_mark. latest_mark and reset stay getattr.
+                 Public property position_store returns
+                 PositionBookView, not this type. FillAttributionLedger
+                 from fill_attribution (l.26) is TYPE_CHECKING, injected
+                 optional. After the helpers return, kernel names record
+                 and allocate_fill; _maybe_reset stays getattr. No
+                 public property. StrategyPositionStore from
+                 strategy_position_store (l.30) is TYPE_CHECKING,
+                 injected optional. Named: update_mark, get (.quantity);
+                 helpers add strategy_ids, update, debit_fees. No
+                 public property. _record_fill_attribution and
+                 _reconcile_fills (l.228) are functions. Private
+                 callees: _regime_label_for, _order_owns_one_slice,
+                 _TradeJournalLeg, _trade_journal_legs,
+                 _distribute_fill_to_strategies. They import TradeRecord
+                 via kernel.fill_bindings and forced_exit_reasons, so
+                 they cannot go to core. They also name
+                 AttributionRecord, AlphaContribution,
+                 largest_remainder_split, split_fees. Returning the
+                 helpers without relocating those four leaves runtime
+                 kernel → fill_attribution and the pair stays.
+                 docs/prompts/audit_forensics.md:88 cites the deleted
+                 module. It is the only forensics-scope instruction
+                 naming the slice book, journal legs and PositionUpdate;
+                 audit_kernel.md and audit_position_management.md name
+                 orchestrator for other reasons and do not cover them.
+                 Retarget, do not drop. Two prompts cite the path:
+                 that bullet and the README coverage row, both in FILES.
+WHY THIS OWNER:  T5 core for the Protocols and the attribution types.
+                 Empty the package in one step. A TYPE_CHECKING-only
+                 delete is not a cut. Returning helpers without the
+                 four fill_attribution names leaves the pair.
+REFACTOR PATH:   one commit. Retarget PositionStore to
+                 feelies.core.position (existing module; do not copy,
+                 do not edit). Move AttributionRecord,
+                 AlphaContribution, largest_remainder_split, and
+                 split_fees into feelies.core.fill_attribution
+                 (core/fill_attribution.py) with alias from
+                 portfolio.fill_attribution. Direction: portfolio →
+                 core. Move the FillAttributionLedger Protocol (record,
+                 allocate_fill — kernel's names after the helpers
+                 return; reset stays getattr) into the same module.
+                 No subclassing; no alias on the concrete. Move the
+                 StrategyPositionStore Protocol (get, update,
+                 debit_fees, update_mark, strategy_ids) into
+                 feelies.core.strategy_position_store
+                 (core/strategy_position_store.py). No alias on the
+                 concrete. Return _record_fill_attribution,
+                 _reconcile_fills and the five private callees to
+                 kernel.orchestrator. Do not alias them from
+                 fill_reconciliation.py — that would be portfolio →
+                 kernel. Retarget tests/kernel/test_orchestrator.py,
+                 tests/kernel/test_fill_attribution_seam.py, and
+                 tests/integration/test_paper_rth_safety.py. Delete
+                 fill_reconciliation.py (emptied; an alias is illegal).
+                 Prune its _FILE_OWNERS row. Retarget the two
+                 TYPE_CHECKING imports; do not delete them. Drop
+                 ("feelies.kernel", "feelies.portfolio") from
+                 _TIER_RESIDUALS in the same commit. New core modules:
+                 _FILE_OWNERS and README in this commit (S-21).
+                 Relocated bodies do not raise KernelFault. Returned
+                 helpers keep importing TradeRecord from
+                 kernel.fill_bindings and forced_exit_reasons from
+                 kernel (legal; they live in kernel).
+                 Retarget the audit_forensics.md forensics-core
+                 bullet from src/feelies/portfolio/fill_reconciliation.py
+                 to src/feelies/kernel/orchestrator.py, keeping the
+                 wording "fill -> slice book, journal legs,
+                 PositionUpdate"; leave the fill-attribution lineage
+                 bullet on portfolio/fill_attribution.py. Do not
+                 whitelist the stale path in test_internal_links.py --
+                 S-26 did that because FILES omitted the prompt, and
+                 it hides the citation rather than fixing it.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 3-pair pin;
+                 test_twelve_engine_independence KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/fill_attribution.py
+                 src/feelies/core/strategy_position_store.py
+                 src/feelies/portfolio/fill_attribution.py
+                 src/feelies/portfolio/fill_reconciliation.py
+                 tests/kernel/test_orchestrator.py
+                 tests/kernel/test_fill_attribution_seam.py
+                 tests/integration/test_paper_rth_safety.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 docs/prompts/audit_forensics.md
+                 Do not edit core/position.py, bootstrap.py, harness/,
+                 cli/, memory_position_store.py,
+                 strategy_position_store.py (concrete),
+                 test_fail_quiet.py, ci.yml. No keep-row file is
+                 touched. No alias whose target is kernel.
+DELETES:         the kernel → portfolio pair; the position_store,
+                 fill_attribution, strategy_position_store, and
+                 fill_reconciliation imports from orchestrator;
+                 fill_reconciliation.py;
+                 test_fill_reconciliation_does_not_import_orchestrator.
+                 The test cannot survive the module delete: its
+                 subject file is gone, it cannot be retargeted onto
+                 orchestrator without becoming a different claim,
+                 and an alias on the deleted module is forbidden.
+NET DELTA:       src modules +1, public symbols +2, branch points 0
+                 (two Protocols). AttributionRecord,
+                 AlphaContribution, largest_remainder_split,
+                 split_fees, and the helper cluster are relocations
+                 (helpers into kernel). PositionStore retarget is not
+                 a new name. fill_reconciliation.py deleted (−1).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08 until T-08 lands; orchestrator.py is shared
+                 with T-08. Not independently revertible from T-07a
+                 (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-07c
+CLOSES:          nothing. Pin stays 3. Does not drop kernel →
+                 risk. Five import tiers stays BROKEN. G40
+                 stays CLOSED. A placement step, not a cut, same
+                 shape as T-06z: an unchanged count is the
+                 declared outcome, not a failed cut.
+PROBLEM:         T-07b deleted test_fill_reconciliation_does_not_import_orchestrator
+                 with fill_reconciliation.py. That test guarded
+                 portfolio → kernel.orchestrator. Five import
+                 tiers lists portfolio above kernel, so the
+                 reverse edge is legal. S2 is engine-to-engine
+                 only and catches engine → kernel.orchestrator
+                 only because orchestrator imports other engines
+                 (that is T-06a). It does not catch engine →
+                 kernel.macro, kernel.micro,
+                 kernel.forced_exit_reasons, kernel.order_states,
+                 kernel.exception_taxonomy, or
+                 kernel.fill_bindings. Nothing now detects a
+                 kernel import anywhere in portfolio. T-08a and
+                 T-08b still touch engine files that already
+                 import kernel paths while kernel still imports
+                 those packages. A decorative pin of the current
+                 set would pass by construction and protect
+                 nothing.
+WHY THIS OWNER:  Insurance on T-08 and T-09, the rungs still to
+                 touch kernel-importing engines. Not a later
+                 campaign: those rungs are this campaign's
+                 remaining pair-drops. A contract change forbidding
+                 engines → kernel cannot go green (harness must
+                 import Orchestrator; MacroState lives in kernel).
+                 Accepting the gap leaves T-08/T-09 blind on every
+                 kernel module except orchestrator.
+FILES:           tests/conformance/test_import_contracts.py
+                 Do not edit core/position.py, bootstrap.py,
+                 harness/, cli/, orchestrator.py,
+                 fill_attribution.py (portfolio or core),
+                 forced_exit_clamp.py, order_policy.py,
+                 test_fail_quiet.py, ci.yml. No keep-row file is
+                 touched. The probe edits
+                 portfolio/fill_attribution.py only for the
+                 mutation and restores it; that file is not in
+                 the commit.
+REFACTOR PATH:   one commit. Mechanism: equality pin of the
+                 measured engine → kernel import set, same shape
+                 as _TIER_RESIDUALS. Not a subset. A fifteenth
+                 pair fails immediately.
+                 Measured set, fourteen pairs:
+                 ("feelies.ingestion.massive_ws",
+                  "feelies.kernel.exception_taxonomy")
+                 ("feelies.sensors.horizon_scheduler",
+                  "feelies.kernel.exception_taxonomy")
+                 ("feelies.alpha.registry",
+                  "feelies.kernel.exception_taxonomy")
+                 ("feelies.risk.engine",
+                  "feelies.kernel.macro")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.forced_exit_reasons")
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.order_states")
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.macro")
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.micro")
+                 ("feelies.forensics.gate_close_attribution",
+                  "feelies.kernel.forced_exit_reasons")
+                 ("feelies.harness.backtest_runner",
+                  "feelies.kernel.orchestrator")
+                 ("feelies.harness.backtest_runner",
+                  "feelies.kernel.signal_order_trace")
+                 ("feelies.harness.backtest_runner",
+                  "feelies.kernel.macro")
+                 ("feelies.harness.backtest_report",
+                  "feelies.kernel.macro")
+                 ("feelies.harness.backtest_report",
+                  "feelies.kernel.orchestrator")
+                 Walk src/feelies engine packages only
+                 (ingestion, storage, sensors, features,
+                 services, signals, alpha, promotion,
+                 composition, portfolio, risk, execution,
+                 broker, monitoring, harness, research,
+                 forensics). Exclude kernel, bus, core, cli,
+                 bootstrap. Record Import and ImportFrom of
+                 feelies.kernel and feelies.kernel.*.
+                 T-08a may shrink the pin if
+                 forced_exit_clamp.py is deleted. Any shrink
+                 lands in that same commit. Returning helpers
+                 to kernel does not add a pair; a new engine
+                 package importing kernel does.
+                 Order: (1) add test_engine_kernel_imports_equal_pin
+                 with _KERNEL_IMPORT_RESIDUALS equal to the
+                 fourteen pairs. On this tree it passes by
+                 construction -- that is not the proof.
+                 (2) probe, S-28a shape. Add a throwaway
+                 `from feelies.kernel.macro import MacroState`
+                 to src/feelies/portfolio/fill_attribution.py
+                 (not in the pin; not a keep-row file; the
+                 package whose reverse-edge detector T-07b
+                 deleted). Run only
+                 test_engine_kernel_imports_equal_pin. It MUST
+                 fail naming
+                 ('feelies.portfolio.fill_attribution',
+                  'feelies.kernel.macro'). Remove the import.
+                 Confirm fill_attribution.py is byte-identical
+                 to HEAD. Re-run the test green. Report the
+                 fail-then-green output and the restore hash
+                 at the gate. Without the probe the pin is
+                 decorative.
+                 (3) commit the test only.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_engine_kernel_imports_equal_pin equals
+                 the 14-pair pin; probe failed-before on the
+                 throwaway pair then passed-after restore;
+                 test_five_import_tiers equals the unmoved
+                 3-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. A test-only change that
+                 moves a hash means the file was not test-only.
+DELETES:         nothing. Pin stays 3. The fourteen-pair set is
+                 a new equality pin, not a dropped five-tier pair.
+NET DELTA:       src modules 0, public symbols 0, branch points 0
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08 until T-08 lands; test_import_contracts.py
+                 is shared with T-08. Not independently revertible
+                 from T-07b (already landed;
+                 test_import_contracts.py is shared).
+```
+
+```
+STEP:            T-08a
+CLOSES:          nothing. Pin stays 3. Does not drop kernel →
+                 risk. Five import tiers stays BROKEN. G40
+                 stays CLOSED. T-07c pin stays 14. A placement
+                 invert, same shape as T-07a: an unchanged count
+                 is the declared outcome, not a failed cut.
+PROBLEM:         Kernel still imports 23 risk names from seven
+                 modules, all from orchestrator. Mixed kinds.
+                 A Protocol-only step leaves the helpers, HAZARD_EXIT
+                 constants, BuyingPowerPhase, SizeDivergence, and
+                 _record_size_shadow, and the pair stays. This rung
+                 is the invert that can leave without emptying.
+                 RiskEngine from engine (l.177) is already a
+                 Protocol; required ctor arg. Named: check_signal,
+                 check_order, check_sized_intent. record_fill,
+                 set_buying_power_phase, reset stay getattr. No
+                 public property.
+                 HazardExitController from hazard_exit (l.29)
+                 is TYPE_CHECKING, injected optional, concrete class.
+                 Kernel only _maybe_reset (getattr reset). No public
+                 property.
+                 PositionSizer and BudgetBasedSizer from
+                 position_sizer (l.200). PositionSizer is already a
+                 Protocol; BudgetBasedSizer is default-constructed
+                 in kernel when position_sizer is None (l.1347-1348).
+                 Bootstrap already constructs and passes a sizer.
+                 Named: compute_target_quantity (via the engine
+                 helper, still in risk this step). No public property.
+                 RiskLevel and create_risk_escalation_machine from
+                 escalation (l.184). Factory default-constructed in
+                 kernel (l.1505) and in reset. Public property
+                 risk_level returns RiskLevel. Callers:
+                 tests/kernel/test_orchestrator.py (NORMAL, LOCKED,
+                 FORCED_FLATTEN) and test_orchestrator_bus_signal.py
+                 (LOCKED). Kernel itself compares those three members.
+                 gate_registry bind_markers=("RiskLevel.",) is a
+                 string. The remaining names (engine helpers, clamp
+                 cluster, HAZARD_EXIT_*, BuyingPowerPhase,
+                 EdgeWeightedSizer, SizeDivergence,
+                 _record_size_shadow) stay. This step does not empty
+                 the package.
+WHY THIS OWNER:  T5 core. RiskEngine, PositionSizer, and
+                 HazardExitController are injected types kernel
+                 holds; Protocols belong in core, named for the
+                 thing, not a step. BudgetBasedSizer and the
+                 escalation SM are concretes/factory kernel
+                 constructs; a Protocol cannot replace RiskLevel.
+                 Helpers cannot travel with them: they import
+                 MacroState, kernel.forced_exit_reasons,
+                 kernel.order_states, and HAZARD_EXIT_SOURCE_LAYER.
+                 Leaving them for T-08b is the census, not a
+                 failed cut.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/risk_protocol.py
+                 src/feelies/core/position_sizer.py
+                 src/feelies/core/escalation.py
+                 src/feelies/risk/engine.py
+                 src/feelies/risk/position_sizer.py
+                 src/feelies/risk/escalation.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 risk files are alias only. Do not include
+                 test_import_contracts.py (neither pin moves),
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py, forced_exit_clamp.py,
+                 order_policy.py, edge_weighted_sizer.py,
+                 buying_power.py, hazard_exit.py (concrete),
+                 tests/kernel/test_orchestrator.py (alias covers
+                 RiskLevel), tests/risk/test_escalation.py,
+                 tests/determinism/test_state_transition_replay.py,
+                 core/position.py, ci.yml. No keep-row file is
+                 touched. No alias whose target is kernel or
+                 another engine.
+REFACTOR PATH:   one commit. Mechanism: invert, not a cut.
+                 Move RiskEngine Protocol (check_signal,
+                 check_order, check_sized_intent; reset /
+                 record_fill / set_buying_power_phase stay
+                 getattr) into feelies.core.risk_protocol
+                 (core/risk_protocol.py). Alias from risk.engine.
+                 No subclassing. Move HazardExitController Protocol
+                 (reset) into the same module. No alias on the
+                 concrete. Kernel TYPE_CHECKING import retargets
+                 to core; do not delete it. Move PositionSizer
+                 Protocol (compute_target_quantity) and
+                 BudgetBasedSizer into feelies.core.position_sizer
+                 (core/position_sizer.py) with alias from
+                 risk.position_sizer. Direction: risk → core.
+                 Both construction sites (kernel default and
+                 bootstrap, not in FILES) construct the core
+                 class. Do not make position_sizer required — that
+                 is T-04b's test blast and this default is already
+                 unused on the bootstrap path. Move RiskLevel and
+                 create_risk_escalation_machine into
+                 feelies.core.escalation (core/escalation.py)
+                 with alias from risk.escalation. Direction:
+                 risk → core. Kernel constructs the core factory.
+                 Property risk_level stays; its type is the core
+                 enum. Do not invert helpers. Do not bind
+                 HAZARD_EXIT_*. Do not move BuyingPowerPhase.
+                 Do not Protocol EdgeWeightedSizer. Pin stays 3.
+                 T-07c pin stays 14. New core modules: _FILE_OWNERS
+                 and README in this commit (S-21).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved 3-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 14-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin.
+DELETES:         the RiskEngine, HazardExitController,
+                 PositionSizer, BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine imports from
+                 orchestrator (retargeted to core). Pin stays 3.
+NET DELTA:       src modules +3, public symbols +1, branch points 0.
+                 HazardExitController Protocol is new. RiskEngine,
+                 PositionSizer, BudgetBasedSizer, RiskLevel, and
+                 create_risk_escalation_machine are relocations.
+                 Aliases are ImportFrom; measure.py does not count
+                 them.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08b until T-08b lands; orchestrator.py is shared
+                 with T-08b. Not independently revertible from T-07c
+                 (already landed; test_import_contracts.py is not
+                 in this FILES list).
+```
+
+```
+STEP:            T-08b
+CLOSES:          nothing. Drops kernel → risk. Five import
+                 tiers stays BROKEN. 3 → 2. G40 stays CLOSED.
+                 T-07c pin 14 → 11.
+PROBLEM:         After T-08a, kernel still imports risk for the
+                 names no Protocol replaces. _compute_target_quantity,
+                 _emergency_flatten_all, _escalate_risk,
+                 _maybe_flip_buying_power_at_rth_close from engine
+                 (l.177) are functions. Private callee in engine.py:
+                 a second _submit_tracked_order, divergent from
+                 order_lifecycle, live only as callee of engine
+                 flatten. Do not return it. _force_flatten_symbol_on_degrade
+                 and the six other clamp names from
+                 forced_exit_clamp (l.186) are functions. Private
+                 callees _closable_quantity, _is_forced_market_exit.
+                 No test importer of that module. The file imports
+                 kernel.forced_exit_reasons, kernel.order_states, and
+                 HAZARD_EXIT_SOURCE_LAYER from risk.hazard_exit.
+                 Returning the bodies without binding SOURCE_LAYER
+                 to core leaves kernel → risk. HAZARD_EXIT_REASONS
+                 and HAZARD_EXIT_SOURCE_LAYER from hazard_exit (l.185);
+                 REASONS is unused in orchestrator (# noqa: F401);
+                 SOURCE_LAYER is used at l.3885. BuyingPowerPhase from
+                 buying_power is a lazy import in
+                 _reset_buying_power_phase_for_session (l.1746) and
+                 inside _maybe_flip. EdgeWeightedSizer, SizeDivergence,
+                 _record_size_shadow from edge_weighted_sizer (l.195).
+                 Named on the sizer: config.any_enabled, base.compute_target_quantity,
+                 tilt_breakdown. SizeDivergence is the sink dataclass.
+                 _record_size_shadow is a function. Test importer:
+                 tests/kernel/test_orchestrator.py (_compute_target_quantity,
+                 _emergency_flatten_all, _record_size_shadow).
+                 docs/prompts/audit_risk_engine.md:98 and the README
+                 coverage row cite forced_exit_clamp.py. A deleted
+                 module has three consumers: _FILE_OWNERS, README,
+                 the prompt bullet. Returning helpers without the
+                 binds leaves kernel → risk and the pair stays.
+WHY THIS OWNER:  T5 core for the remaining Protocols, the HAZARD_EXIT
+                 bind, BuyingPowerPhase, and SizeDivergence. Empty the
+                 package in one step. A TYPE_CHECKING-only delete is
+                 not a cut. Returning helpers without the binds leaves
+                 the pair. Engine flatten/escalate are the live
+                 orchestrator copies; unifying them onto policy's
+                 copies is T-08d. This step must not return engine
+                 _submit_tracked_order.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/hazard_exit.py
+                 src/feelies/core/buying_power.py
+                 src/feelies/core/edge_weighted_sizer.py
+                 src/feelies/risk/engine.py
+                 src/feelies/risk/forced_exit_clamp.py
+                 src/feelies/risk/hazard_exit.py
+                 src/feelies/risk/buying_power.py
+                 src/feelies/risk/edge_weighted_sizer.py
+                 tests/kernel/test_orchestrator.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 docs/prompts/audit_risk_engine.md
+                 Do not edit core/position.py, bootstrap.py,
+                 harness/, cli/, order_policy.py,
+                 order_lifecycle.py, test_fail_quiet.py, ci.yml.
+                 No keep-row file is touched. No alias whose target
+                 is kernel. Do not include
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 (alias covers HAZARD_EXIT_*).
+REFACTOR PATH:   one commit. Mechanism: bind HAZARD_EXIT_SOURCE_LAYER and
+                 HAZARD_EXIT_REASONS into feelies.core.hazard_exit
+                 (core/hazard_exit.py) with alias from
+                 risk.hazard_exit. Direction: risk → core. Kernel
+                 and the returned clamp bodies import from core.
+                 Drop the unused REASONS import from orchestrator.
+                 Move BuyingPowerPhase into feelies.core.buying_power
+                 (core/buying_power.py) with alias from
+                 risk.buying_power. Direction: risk → core.
+                 buying_power_limit stays in risk and imports the
+                 core enum. Move EdgeWeightedSizer Protocol (config,
+                 base, tilt_breakdown) and SizeDivergence into
+                 feelies.core.edge_weighted_sizer
+                 (core/edge_weighted_sizer.py). Alias SizeDivergence
+                 from risk.edge_weighted_sizer. No alias on the
+                 concrete sizer. Return _compute_target_quantity,
+                 _emergency_flatten_all, _escalate_risk,
+                 _maybe_flip_buying_power_at_rth_close to
+                 kernel.orchestrator. Do not return engine
+                 _submit_tracked_order; the returned flatten calls
+                 the order_lifecycle _submit_tracked_order kernel
+                 already imports (equivalent on OrderState).
+                 Return the seven clamp helpers and _closable_quantity,
+                 _is_forced_market_exit. Do not alias them from
+                 forced_exit_clamp.py — that would be risk → kernel.
+                 Return _record_size_shadow. Retarget
+                 tests/kernel/test_orchestrator.py. Delete
+                 forced_exit_clamp.py (emptied; an alias is illegal).
+                 Prune its _FILE_OWNERS row. Retarget the README
+                 coverage row and the audit_risk_engine.md bullet
+                 to kernel.orchestrator for the clamp, keeping the
+                 wording of the monotone veto. Do not whitelist the
+                 stale path in test_internal_links.py. Strip
+                 helpers from risk.engine so it drops
+                 feelies.kernel.macro. Drop
+                 ("feelies.kernel", "feelies.risk") from
+                 _TIER_RESIDUALS and drop
+                 ("feelies.risk.engine", "feelies.kernel.macro"),
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.forced_exit_reasons"),
+                 ("feelies.risk.forced_exit_clamp",
+                  "feelies.kernel.order_states")
+                 from _KERNEL_IMPORT_RESIDUALS in the same commit.
+                 Relocated bodies do not raise KernelFault. Returned
+                 helpers keep importing MacroState from
+                 kernel.macro and forced_exit_reasons /
+                 order_states from kernel (legal; they live in
+                 kernel). New core modules: _FILE_OWNERS and README
+                 in this commit (S-21).
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 2-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 11-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 A missing T-07c pair fails as loudly as an
+                 unexpected one.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. Callee retarget of flatten
+                 onto lifecycle submit is equivalent on OrderState,
+                 not a behaviour change, not a re-pin.
+DELETES:         the kernel → risk pair; the engine-helper, clamp,
+                 HAZARD_EXIT, BuyingPowerPhase, EdgeWeightedSizer,
+                 SizeDivergence, and _record_size_shadow imports
+                 from orchestrator; forced_exit_clamp.py;
+                 three T-07c pairs (engine.macro, clamp.forced_exit_reasons,
+                 clamp.order_states).
+NET DELTA:       src modules +2, public symbols +1, branch points 0
+                 (EdgeWeightedSizer Protocol is new; SizeDivergence,
+                 BuyingPowerPhase, HAZARD_EXIT_*, and the helper
+                 cluster are relocations). forced_exit_clamp.py
+                 deleted (−1).
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08c until T-08c lands; orchestrator.py and
+                 test_import_contracts.py are shared with T-08c/d.
+                 Not independently revertible from T-08a (already
+                 landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-08c
+CLOSES:          nothing. Pin stays 2. Does not drop kernel →
+                 execution. Five import tiers stays BROKEN. G40
+                 stays CLOSED. T-07c pin stays 11. A placement
+                 invert, same shape as T-08a: an unchanged count
+                 is the declared outcome, not a failed cut.
+PROBLEM:         Kernel still imports 43 execution names from
+                 twelve modules, all from orchestrator. Mixed
+                 kinds. A helper-only step leaves the constructed
+                 types, the Protocols, the TYPE_CHECKING
+                 CostModel, and the pair stays. This rung is the
+                 invert that can leave without emptying.
+                 ExecutionBackend from backend (l.85) is a
+                 concrete facade, required ctor arg. Kernel
+                 never subclasses it. Named surface is not one
+                 method: market_data.events() and
+                 order_router.submit, plus getattr(order_router,
+                 "cancel_order") and getattr(order_router,
+                 "on_trade"). No public property.
+                 Bootstrap and backtest_backend construct the
+                 concrete (bootstrap l.65 import;
+                 build_backtest_backend at bootstrap l.978).
+                 IntentTranslator from intent (l.90) is already
+                 a Protocol; optional ctor arg, default
+                 SignalPositionTranslator() at orchestrator
+                 l.1847 AND bootstrap l.521. Named: translate.
+                 No public property. Do not make
+                 intent_translator required — that is T-04b's
+                 test blast and this default is already unused
+                 on the bootstrap path.
+                 PositionManager from position_manager (l.126)
+                 is already a Protocol; optional injected, not
+                 default-constructed. Named: plan. No public
+                 property. No alias on TargetPositionManager or
+                 LegacyPositionManager.
+                 CostModel from cost_model is TYPE_CHECKING
+                 (l.196). import-linter still sees that
+                 ImportFrom. A TYPE_CHECKING-only move is not a
+                 cut; retarget the annotation to core this step
+                 so T-08d is not blocked by a leftover
+                 execution.cost_model import. Named: compute.
+                 Default-constructed (every site):
+                 SignalPositionTranslator() — orchestrator
+                 l.1847 and bootstrap l.521.
+                 DesiredTargetBook() — orchestrator ctor l.1863
+                 and reset l.4098.
+                 PortfolioNetter(...) — ctor l.1865, boot
+                 l.2282, reset l.4099.
+                 MarketContext() — ctor l.1884, boot l.2269
+                 (impact knobs), reset l.4103.
+                 MinimumCostExecutionPolicy(...) and
+                 MinCostPolicyConfig(...) — boot l.2308 only,
+                 when execution_mode == "minimum_cost".
+                 create_order_state_machine(order_id, clock) —
+                 orchestrator l.4155. tests/execution/
+                 test_order_state.py and tests/determinism/
+                 test_state_transition_replay.py construct via
+                 alias.
+                 Remaining invert names: OrderIntent,
+                 TradingIntent, OrderState, NetDivergence,
+                 standing_target_from_desired, DesiredPosition,
+                 ExecStyle, PlanLeg, desired_from_signal,
+                 order_intent_from_plan, TradingSessionBounds
+                 (injected, not constructed in kernel),
+                 in_session_flatten_window, BorrowTier,
+                 build_borrow_table, parse_borrow_tier,
+                 ExposureDelta, BLOCK_LOCATE_UNAVAILABLE,
+                 BLOCK_SSR, admission_block_reason,
+                 exposure_delta_from_intent, side_for_intent.
+                 Helpers stay: _emit_ssr_suppression_alert;
+                 the six order_lifecycle names; the four
+                 order_policy names kernel imports. This step
+                 does not empty the package.
+WHY THIS OWNER:  T5 core. ExecutionBackend, IntentTranslator, and
+                 PositionManager are injected types kernel
+                 holds; Protocols belong in core, named for the
+                 thing, not a step. SignalPositionTranslator,
+                 DesiredTargetBook, PortfolioNetter,
+                 MarketContext, the min-cost policy, and
+                 create_order_state_machine are concretes/factory
+                 kernel constructs; a Protocol cannot replace
+                 OrderState or BorrowTier. Helpers cannot
+                 travel with them: they are self: Any bodies,
+                 and order_policy.py is the only execution
+                 module that imports kernel.macro and
+                 kernel.micro. Leaving them for T-08d is the
+                 census, not a failed cut.
+REFACTOR PATH:   one commit. Mechanism: invert, not a cut.
+                 Move ExecutionBackend Protocol into
+                 feelies.core.execution_backend
+                 (core/execution_backend.py). Surface covers
+                 market_data (events) and order_router
+                 (submit; poll_acks is used by a helper that
+                 stays until T-08d; cancel_order and on_trade
+                 stay getattr). Nested private Protocols for
+                 those two attributes, like
+                 _SizedIntentRiskResult. No subclassing. No
+                 alias on the concrete in execution.backend —
+                 an alias would shadow the constructible class
+                 bootstrap still builds. Kernel retargets to
+                 core; bootstrap.py and backtest_backend.py are
+                 not in FILES.
+                 Move IntentTranslator Protocol (translate),
+                 SignalPositionTranslator, TradingIntent,
+                 OrderIntent into feelies.core.intent
+                 (core/intent.py) with alias from
+                 execution.intent. Direction: execution →
+                 core. Both construction sites (kernel default
+                 and bootstrap, not in FILES) construct the
+                 core class.
+                 Move PositionManager Protocol (plan) into
+                 feelies.core.position_manager
+                 (core/position_manager.py). Alias the Protocol
+                 and the kernel-imported types (DesiredPosition,
+                 ExecStyle, PlanLeg, MarketContext,
+                 desired_from_signal, order_intent_from_plan)
+                 from execution.position_manager. No alias on
+                 TargetPositionManager or LegacyPositionManager.
+                 Protocol closure travels even when not in the
+                 43-name list: PositionManagerConfig,
+                 PositionPlan, PlannedOrder — otherwise core
+                 imports execution. Direction: execution →
+                 core.
+                 Move CostModel Protocol (compute) and
+                 CostBreakdown into feelies.core.cost_model
+                 (core/cost_model.py) with alias from
+                 execution.cost_model. Direction: execution →
+                 core. Kernel TYPE_CHECKING import retargets to
+                 core; do not delete it. DefaultCostModel stays
+                 in execution. MinimumCostExecutionPolicy.decide
+                 calls cost_model.compute and
+                 estimate_aggressive_taker_cost_bps; that
+                 function travels with the Protocol so core
+                 does not import execution.
+                 Move MinCostPolicyConfig and
+                 MinimumCostExecutionPolicy into
+                 feelies.core.min_cost_policy
+                 (core/min_cost_policy.py) with alias from
+                 execution.min_cost_policy. Direction:
+                 execution → core. Kernel boot constructs the
+                 core class.
+                 Move OrderState and
+                 create_order_state_machine into
+                 feelies.core.order_state
+                 (core/order_state.py) with alias from
+                 execution.order_state. Direction: execution →
+                 core. Kernel constructs the core factory.
+                 Move DesiredTargetBook, PortfolioNetter,
+                 NetDivergence, standing_target_from_desired
+                 (and StandingTarget, the netter's private
+                 closure) into feelies.core.portfolio_netter
+                 (core/portfolio_netter.py) with alias from
+                 execution.portfolio_netter. Direction:
+                 execution → core.
+                 Move TradingSessionBounds and
+                 in_session_flatten_window into
+                 feelies.core.trading_session
+                 (core/trading_session.py) with alias from
+                 execution.trading_session. Direction:
+                 execution → core. Bounds methods call
+                 et_clock_to_ns and session_date_from_ns;
+                 in_session_flatten_window calls
+                 session_flatten_deadline_ns. Those helpers
+                 travel into the same core module so core does
+                 not import execution.moc_session.
+                 moc_session.py retargets to core (execution →
+                 core). Do not move MocSessionBounds.
+                 Move BorrowTier, build_borrow_table,
+                 parse_borrow_tier into
+                 feelies.core.borrow_availability
+                 (core/borrow_availability.py) with alias from
+                 execution.regulatory.borrow_availability.
+                 Direction: execution → core.
+                 Move ExposureDelta, BLOCK_LOCATE_UNAVAILABLE,
+                 BLOCK_SSR, admission_block_reason,
+                 exposure_delta_from_intent, side_for_intent
+                 into feelies.core.order_admission
+                 (core/order_admission.py) with alias from
+                 execution.order_admission. Direction:
+                 execution → core. Do not invert
+                 _emit_ssr_suppression_alert.
+                 Do not invert helpers. Do not return
+                 order_policy bodies. Pin stays 2. T-07c pin
+                 stays 11. Grep each moved name across tests
+                 for module-global identity assertions before
+                 treating an orchestrator import as droppable;
+                 none of these names have an orchestrator
+                 module-global `is` pin today. New core
+                 modules: _FILE_OWNERS and README in this
+                 commit (S-21).
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/execution_backend.py
+                 src/feelies/core/intent.py
+                 src/feelies/core/position_manager.py
+                 src/feelies/core/cost_model.py
+                 src/feelies/core/min_cost_policy.py
+                 src/feelies/core/order_state.py
+                 src/feelies/core/portfolio_netter.py
+                 src/feelies/core/trading_session.py
+                 src/feelies/core/borrow_availability.py
+                 src/feelies/core/order_admission.py
+                 src/feelies/execution/intent.py
+                 src/feelies/execution/position_manager.py
+                 src/feelies/execution/cost_model.py
+                 src/feelies/execution/min_cost_policy.py
+                 src/feelies/execution/order_state.py
+                 src/feelies/execution/portfolio_netter.py
+                 src/feelies/execution/trading_session.py
+                 src/feelies/execution/moc_session.py
+                 src/feelies/execution/regulatory/borrow_availability.py
+                 src/feelies/execution/order_admission.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 execution files are alias only except
+                 moc_session.py (retarget of the two calendar
+                 helpers). Do not include
+                 test_import_contracts.py (neither pin moves),
+                 bootstrap.py, harness/, cli/,
+                 execution/backend.py (no alias on the
+                 concrete), order_policy.py,
+                 order_lifecycle.py, backtest_backend.py,
+                 tests/execution/test_order_state.py,
+                 tests/determinism/test_state_transition_replay.py
+                 (alias covers), tests/kernel/, ci.yml.
+                 No keep-row file is touched. No alias whose
+                 target is kernel or another engine.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved 2-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 unmoved 11-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. These names sit on the
+                 order, session-flatten, and min-cost paths; a
+                 moved hash means an order fired, a flatten
+                 window flipped, or a route chose differently.
+DELETES:         the inverted execution imports from
+                 orchestrator (retargeted to core). Pin stays 2.
+                 The eleven helper imports stay.
+NET DELTA:       src modules +10, public symbols +1, branch points 0.
+                 ExecutionBackend Protocol is new. IntentTranslator,
+                 PositionManager, CostModel, SignalPositionTranslator,
+                 the constructed types, enums, and functions are
+                 relocations. Nested market_data / order_router
+                 Protocols are private. Aliases are ImportFrom;
+                 measure.py does not count them.
+ROLLBACK:        revert the commit. Independently revertible from
+                 T-08d until T-08d lands; orchestrator.py is shared
+                 with T-08d. Not independently revertible from
+                 T-08b (already landed; orchestrator.py is shared).
+```
+
+```
+STEP:            T-08d
+CLOSES:          nothing. Drops kernel → execution. Five import
+                 tiers stays BROKEN. 2 → 1. G40 stays CLOSED.
+                 T-07c pin 11 → 9.
+PROBLEM:         After T-08c, kernel still imports execution for
+                 the names no Protocol replaces. _apply_ack_to_order,
+                 _drain_async_fills,
+                 _filter_portfolio_orders_for_pending_conflicts,
+                 _poll_order_router_acks, _submit_tracked_order,
+                 _transition_order from order_lifecycle are
+                 functions. _emit_ssr_suppression_alert from
+                 order_admission is a function. _execute_reverse,
+                 _filter_portfolio_orders_for_admission,
+                 _plan_for_signal, _try_build_order_from_intent
+                 from order_policy are functions.
+                 order_policy.py is the only remaining execution
+                 module that imports kernel: kernel.macro and
+                 kernel.micro. Emptying that file is what drops
+                   ("feelies.execution.order_policy",
+                    "feelies.kernel.macro")
+                   ("feelies.execution.order_policy",
+                    "feelies.kernel.micro")
+                 and is why both pins shrink in the same commit.
+                 Duplicate-body problem: order_policy's
+                 _emergency_flatten_all and _escalate_risk are
+                 the second copies of what T-08b already
+                 returned onto orchestrator. Kernel no longer
+                 imports them from order_policy. The kernel
+                 copies are the live call path (orchestrator
+                 flatten/escalate and, after this return, the
+                 callees of _try_build_order_from_intent and
+                 _execute_reverse). Returning the order_policy
+                 copies would land duplicate names in
+                 orchestrator.py. That is a deletion of dead
+                 duplicates, not a merge, not a behaviour
+                 change. Do not merge the bodies. Kernel copies
+                 win because they already run; the policy
+                 copies become unreferenced once their last
+                 callers have been returned, and are deleted
+                 with the file. Callee retarget of the returned
+                 _try_build_order_from_intent / _execute_reverse
+                 onto kernel _escalate_risk is equivalent on the
+                 live RiskLevel SM (policy used type(level);
+                 kernel names RiskLevel), not a re-pin.
+                 Remaining bodies in order_policy.py after the
+                 four kernel imports return:
+                 _round_trip_cost_bps, _edge_clears_round_trip_cost,
+                 _signal_passes_edge_cost_gate,
+                 _reversal_passes_combined_edge_gate,
+                 _resolve_order_route, _portfolio_leg_edge_block,
+                 _PostExitPositionView. They travel as private
+                 callees because the file is emptied. Test
+                 importers of those remaining bodies — census
+                 found four, not three — must be in FILES (no
+                 alias on a deleted module; an alias would be
+                 execution → kernel, T-06a-illegal):
+                 tests/kernel/test_orchestrator.py
+                 (_plan_for_signal, _round_trip_cost_bps,
+                 _try_build_order_from_intent),
+                 tests/kernel/test_orchestrator_order_routing.py
+                 (_resolve_order_route),
+                 tests/kernel/test_orchestrator_edge_calibration.py
+                 (_signal_passes_edge_cost_gate),
+                 tests/conformance/test_a3_zero_core_edits.py
+                 (_resolve_order_route).
+                 A deleted module has three consumers:
+                 _FILE_OWNERS ("execution/order_policy.py":
+                 "audit_execution_fills"), the README coverage
+                 row `execution/order_policy.py` |
+                 execution_fills, and the prompt. audit_execution_fills.md
+                 does not name order_policy.py today; prune the
+                 owners row and drop/retarget the README row;
+                 do not whitelist the stale path in
+                 test_internal_links.py.
+                 _drain_async_fills calls
+                 _escalate_unfilled_working_exits, which calls
+                 _submit_working_exit_fallback. Function globals
+                 are the defining module; returning drain alone
+                 NameErrors. All three return together. The prior
+                 block claimed both callees have test importers.
+                 _escalate_unfilled_working_exits has one:
+                 tests/kernel/test_orchestrator.py (already in
+                 FILES). _submit_working_exit_fallback has none;
+                 it travels as a private callee and adds zero
+                 files. cancel_order stays in order_lifecycle.py
+                 with its test importer
+                 (tests/kernel/test_orchestrator.py). That file
+                 is NOT deleted. This is not a module deletion
+                 and the three-consumer rule does not apply to
+                 it. An alias on order_lifecycle targeting kernel
+                 is T-06a-illegal; retarget the six's extra test
+                 importers instead (seven files, listed in
+                 FILES).
+                 BLOCK_EDGE_BELOW_COST and
+                 BLOCK_EDGE_UNPRICEABLE live only in
+                 execution.order_admission. Returned
+                 _portfolio_leg_edge_block needs them. T-08c
+                 left them because they are B4 tokens outside
+                 admission_block_reason's closure (T-08c moved
+                 the tokens that function returns). Move them
+                 into core/order_admission.py with an alias from
+                 execution.order_admission — the T-08c
+                 pattern, execution → core. Importing them
+                 from execution would keep the five-tier pair.
+                 Returning helpers without emptying
+                 order_policy.py leaves the two
+                 engine-to-kernel pairs and the five-tier pair
+                 stays.
+                 The four kernel-imported policy names and the
+                 seven private callees already listed call five
+                 pure functions that still live in execution.
+                 _round_trip_cost_bps calls round_trip_cost_bps
+                 (execution.position_manager :312), which calls
+                 estimate_round_trip_cost_bps
+                 (execution.cost_model :239).
+                 _edge_clears_round_trip_cost calls
+                 entry_edge_clears_cost
+                 (execution.position_manager :349).
+                 _reversal_passes_combined_edge_gate calls
+                 reversal_edge_gate
+                 (execution.position_manager :361).
+                 _try_build_order_from_intent and
+                 _execute_reverse call htb_fee_applies
+                 (execution.regulatory.borrow_availability :36).
+                 None of the five is in core. Importing them
+                 from execution is kernel → execution; the
+                 2-pair pin stays. They are T-04a pure
+                 functions (no orchestrator). Honest owner is
+                 core with an execution alias, T-08c, not
+                 kernel: round_trip_cost_bps and
+                 entry_edge_clears_cost still serve
+                 TargetPositionManager.plan, and a kernel
+                 landing would be execution → kernel
+                 (T-06a). Closure: wrapper → estimator →
+                 estimate_aggressive_taker_cost_bps /
+                 CostModel.compute (already core) →
+                 _within_l1_premium (already core). Four
+                 levels; fixpoint at names T-08c already
+                 moved. is_short_sale_intent is not on the
+                 chain. Do not move it.
+WHY THIS OWNER:  T5 kernel for the helper return. Empty the
+                 kernel → execution import in one step. A
+                 TYPE_CHECKING-only delete is not a cut.
+                 Returning helpers without emptying
+                 order_policy.py leaves engine-to-kernel.
+                 Do not return order_policy's flatten/escalate
+                 copies.
+REFACTOR PATH:   one commit. Mechanism: return the helper
+                 clusters to kernel.orchestrator and empty
+                 order_policy.py. Both pins drop in that same
+                 commit. Return the six order_lifecycle helpers
+                 kernel imports. _drain_async_fills calls
+                 _escalate_unfilled_working_exits, which calls
+                 _submit_working_exit_fallback; all three return
+                 together. Returning drain alone NameErrors.
+                 _submit_working_exit_fallback has no test
+                 importer; it travels as a private callee and
+                 adds zero files. Do not return cancel_order;
+                 do not delete order_lifecycle.py. Retarget the
+                 six's extra test importers (the seven files in
+                 FILES). On
+                 test_orchestrator_hazard_exit_routing.py
+                 retarget _transition_order ONLY; leave the
+                 HAZARD_EXIT identity import alone. Return
+                 _emit_ssr_suppression_alert. Return
+                 _execute_reverse,
+                 _filter_portfolio_orders_for_admission,
+                 _plan_for_signal, _try_build_order_from_intent
+                 and their private callees
+                 (_round_trip_cost_bps,
+                 _edge_clears_round_trip_cost,
+                 _signal_passes_edge_cost_gate,
+                 _reversal_passes_combined_edge_gate,
+                 _resolve_order_route,
+                 _portfolio_leg_edge_block,
+                 _PostExitPositionView). Do not return
+                 order_policy _emergency_flatten_all or
+                 _escalate_risk — those are the second copies;
+                 kernel copies win; deleting them is a
+                 deletion of dead duplicates, not a merge.
+                 After the return, _try_build_order_from_intent
+                 and _execute_reverse call kernel _escalate_risk
+                 already in the module. Move
+                 BLOCK_EDGE_BELOW_COST and
+                 BLOCK_EDGE_UNPRICEABLE into
+                 core/order_admission.py with an alias from
+                 execution.order_admission (T-08c pattern;
+                 execution → core). T-08c left them because
+                 they are B4 tokens outside
+                 admission_block_reason's closure. Do not
+                 alias anything from order_policy.py — that
+                 would be execution → kernel. Retarget the
+                 four order_policy test importers. Delete
+                 order_policy.py (emptied; an alias is
+                 illegal). Prune its _FILE_OWNERS row.
+                 Drop or retarget the README coverage row to
+                 kernel.orchestrator for the returned policy
+                 helpers. Do not whitelist the stale path in
+                 test_internal_links.py. Drop
+                 ("feelies.kernel", "feelies.execution") from
+                 _TIER_RESIDUALS and drop
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.macro"),
+                 ("feelies.execution.order_policy",
+                  "feelies.kernel.micro")
+                 from _KERNEL_IMPORT_RESIDUALS in the same
+                 commit as the code. A five-tier drop that
+                 leaves a stale engine-to-kernel entry fails
+                 the second pin on "missing". Relocated bodies
+                 do not raise KernelFault.                  Returned helpers keep
+                 importing MacroState and MicroState from
+                 kernel (legal; they live in kernel).
+                 Move estimate_round_trip_cost_bps into
+                 feelies.core.cost_model
+                 (core/cost_model.py) with alias from
+                 execution.cost_model. Direction:
+                 execution → core. It calls
+                 estimate_aggressive_taker_cost_bps and
+                 CostModel.compute, already in that module.
+                 Move round_trip_cost_bps,
+                 entry_edge_clears_cost, and
+                 reversal_edge_gate into
+                 feelies.core.position_manager
+                 (core/position_manager.py) with alias from
+                 execution.position_manager. Direction:
+                 execution → core. The wrapper imports
+                 estimate_round_trip_cost_bps from
+                 core.cost_model. TargetPositionManager.plan
+                 keeps calling the aliases in the same file.
+                 Move htb_fee_applies into
+                 feelies.core.borrow_availability
+                 (core/borrow_availability.py) with alias
+                 from
+                 execution.regulatory.borrow_availability.
+                 Direction: execution → core. Do not move
+                 is_short_sale_intent. Returned
+                 _round_trip_cost_bps / _edge_clears_* /
+                 _reversal_* / _try_build / _execute_reverse
+                 import those five from core, not execution.
+                 No new module. No alias whose target is
+                 kernel.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/execution/order_policy.py
+                 src/feelies/execution/order_lifecycle.py
+                 src/feelies/execution/order_admission.py
+                 src/feelies/core/order_admission.py
+                 tests/kernel/test_orchestrator.py
+                 tests/kernel/test_orchestrator_order_routing.py
+                 tests/kernel/test_orchestrator_edge_calibration.py
+                 tests/kernel/test_orchestrator_idle_tick.py
+                 tests/kernel/test_orchestrator_shutdown_drain.py
+                 tests/kernel/test_orchestrator_async_fill_latency.py
+                 tests/kernel/test_orchestrator_bus_sized_intent.py
+                 tests/kernel/test_orchestrator_hazard_exit_routing.py
+                 tests/conformance/test_a3_zero_core_edits.py
+                 tests/conformance/test_pathological_refusal.py
+                 tests/conformance/test_import_contracts.py
+                 tests/integration/test_paper_rth_safety.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 docs/prompts/audit_execution_fills.md
+                 src/feelies/core/cost_model.py
+                 src/feelies/execution/cost_model.py
+                 src/feelies/core/position_manager.py
+                 src/feelies/execution/position_manager.py
+                 src/feelies/core/borrow_availability.py
+                 src/feelies/execution/regulatory/borrow_availability.py
+                 Twenty-six files. Six additions: the five-name
+                 closure (round_trip_cost_bps,
+                 estimate_round_trip_cost_bps,
+                 entry_edge_clears_cost, reversal_edge_gate,
+                 htb_fee_applies) into existing core modules
+                 with execution aliases. Do not include
+                 execution/regulatory/__init__.py (alias
+                 covers). Do not include
+                 tests/execution/test_position_manager.py,
+                 test_cost_model.py,
+                 test_round_trip_cost_estimate.py,
+                 test_depth_aware_estimate.py,
+                 test_borrow_availability.py, or
+                 test_orchestrator_cost_gate.py (alias
+                 covers). Do not add a module.
+                 Twenty files. Eight additions:
+                 core/order_admission.py — BLOCK_EDGE_BELOW_COST
+                 and BLOCK_EDGE_UNPRICEABLE move here with an
+                 execution.order_admission alias (T-08c
+                 pattern).
+                 test_orchestrator_idle_tick.py — imports
+                 _apply_ack_to_order, _drain_async_fills,
+                 _transition_order from order_lifecycle.
+                 test_orchestrator_shutdown_drain.py — imports
+                 _apply_ack_to_order, _transition_order.
+                 test_orchestrator_async_fill_latency.py —
+                 imports _transition_order.
+                 test_orchestrator_bus_sized_intent.py —
+                 imports _transition_order.
+                 test_orchestrator_hazard_exit_routing.py —
+                 imports _transition_order. Retarget that
+                 import ONLY. Leave the HAZARD_EXIT identity
+                 import alone (T-08b: an unused orchestrator
+                 import can be a test's identity anchor).
+                 test_pathological_refusal.py — imports
+                 _filter_portfolio_orders_for_pending_conflicts,
+                 _transition_order.
+                 test_paper_rth_safety.py — imports
+                 _transition_order.
+                 Do not edit bootstrap.py, harness/, cli/,
+                 execution/backend.py, intent.py,
+                 forced_exit_clamp.py, test_fail_quiet.py,
+                 ci.yml, test_internal_links.py. No keep-row
+                 file is touched. No alias whose target is
+                 kernel. Do not delete order_lifecycle.py.
+                 Grep each returned or deleted name across tests
+                 for module-global identity assertions before
+                 declaring it droppable.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the 1-pair pin;
+                 test_engine_kernel_imports_equal_pin equals the
+                 9-pair pin; test_twelve_engine_independence
+                 KEPT at zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 A missing T-07c pair fails as loudly as an
+                 unexpected one.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. These helpers gate orders,
+                 reverses, admission, and hazard-adjacent
+                 submits; a moved hash means an order fired or
+                 an exit routed differently. Callee retarget
+                 onto kernel escalate is equivalent on
+                 RiskLevel, not a behaviour change, not a
+                 re-pin.
+DELETES:         the kernel → execution pair; the
+                 order_lifecycle, admission-helper, and
+                 order_policy imports from orchestrator;
+                 order_policy.py; two T-07c pairs
+                 (order_policy.macro, order_policy.micro).
+NET DELTA:       src modules −1, public symbols 0, branch points 0.
+                 Helpers relocate into orchestrator (0).
+                 order_policy.py deleted (−1). measure.py reports
+                 the deletion, not an inventory of orchestrator.py.
+ROLLBACK:        revert the commit. Not independently revertible
+                 from T-08c (already landed; orchestrator.py is
+                 shared). Independently revertible from T-09a
+                 until T-09a lands.
+```
+
+```
+STEP:            T-09a
+CLOSES:          nothing. Pin stays 1. Does not drop kernel →
+                 storage. Five import tiers stays BROKEN. G40
+                 stays CLOSED. T-07c pin stays 9. A placement
+                 relocate, same shape as T-08c: an unchanged
+                 count is the declared outcome, not a failed
+                 cut.
+PROBLEM:         Kernel still imports storage. Two files.
+                 orchestrator.py runtime: EventLog (l.187),
+                 FeatureSnapshotMeta and FeatureSnapshotStore
+                 (l.188), TradeJournal (l.189). fill_bindings.py
+                 runtime: TradeRecord as TradeRecord (l.5).
+                 No TYPE_CHECKING storage import.
+                 TradeRecord is a frozen dataclass kernel
+                 constructs in _reconcile_fills (l.735-762).
+                 A Protocol cannot replace it. fill_bindings.py
+                 is a kernel re-export of that dataclass; the
+                 sole importer is orchestrator l.49. Retargeting
+                 fill_bindings to core empties that file's
+                 storage import and leaves the package pair:
+                 orchestrator still names EventLog,
+                 FeatureSnapshotMeta, FeatureSnapshotStore,
+                 TradeJournal from storage. Pin stays 1.
+                 FeatureSnapshotMeta does not ride here. It is
+                 named by FeatureSnapshotStore.save/load/
+                 list_snapshots, not by TradeRecord. It travels
+                 with its Store in T-09b (one module per
+                 concern; Protocol move is transitive). Do not
+                 create core/feature_snapshot.py in this step.
+                 Do not move TradeJournal. Do not invert
+                 EventLog or FeatureSnapshotStore.
+WHY THIS OWNER:  T5 core. TradeRecord is a constructed
+                 dataclass; honest owner is core, same shape
+                 as T-04a's collision record. fill_bindings is
+                 kernel; kernel → core is legal. An alias on
+                 fill_bindings targeting storage would leave
+                 that file's storage import and is not a
+                 retarget. Not T-09b: relocating TradeRecord
+                 does not empty kernel → storage.
+FILES:           src/feelies/core/trade_journal.py
+                 src/feelies/storage/trade_journal.py
+                 src/feelies/kernel/fill_bindings.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 Five files. Do not include orchestrator.py
+                 (keeps `from feelies.kernel.fill_bindings
+                 import TradeRecord`). Do not include
+                 test_import_contracts.py (pin does not
+                 move). Do not include memory_trade_journal.py,
+                 storage/__init__.py, harness/, forensics/,
+                 scripts/, tests that import TradeRecord from
+                 storage (alias covers). Do not include
+                 bootstrap.py, ci.yml, test_fail_quiet.py.
+                 No keep-row file is touched. No alias whose
+                 target is kernel or another engine. Do not
+                 delete fill_bindings.py. Do not add
+                 core/feature_snapshot.py. Do not add
+                 core/event_log.py. Grep TradeRecord across
+                 tests for module-global identity assertions
+                 before treating an import as droppable;
+                 none today.
+REFACTOR PATH:   one commit. Mechanism: relocate the
+                 dataclass; retarget the kernel re-export.
+                 Pin stays 1. THE PIN DOES NOT MOVE.
+                 Move TradeRecord (frozen dataclass, including
+                 net_pnl) into feelies.core.trade_journal
+                 (core/trade_journal.py). Closure: Side and
+                 TrendMechanism already core; Decimal; dict.
+                 net_pnl uses only own fields. Fixpoint. Import
+                 nothing from feelies.storage.
+                 storage/trade_journal.py: delete the
+                 TradeRecord body; `from feelies.core.trade_journal
+                 import TradeRecord as TradeRecord`. Leave
+                 the TradeJournal Protocol in this file (T-09b).
+                 Direction: storage → core. Storage is not an
+                 S2 engine; the alias cannot expand S2.
+                 fill_bindings.py: retarget to
+                 `from feelies.core.trade_journal import
+                 TradeRecord as TradeRecord`. Kernel → core.
+                 Do not alias fill_bindings from storage.
+                 New core module: _FILE_OWNERS row
+                 core/trade_journal.py →
+                 audit_core_clock_config and the README
+                 core_clock_config citation, same commit
+                 (S-21). No kernel_ports.py. No Protocol on
+                 TradeRecord. No object/Any, no getattr, no
+                 sys.modules, no TYPE_CHECKING-only move.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the unmoved
+                 1-pair pin; test_engine_kernel_imports_equal_pin
+                 equals the unmoved 9-pair pin;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 lint-imports: Five import tiers still BROKEN
+                 (1 pair), Twelve engine module sets KEPT.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. Only which module defines
+                 TradeRecord changes. A moved hash means the
+                 dataclass was not the same type (fields,
+                 net_pnl, or a silent default).
+DELETES:         the TradeRecord body from
+                 storage/trade_journal.py (aliased). The
+                 fill_bindings storage import (retargeted to
+                 core). Does not delete the kernel → storage
+                 pair. Pin stays 1.
+NET DELTA:       src modules +1, public symbols 0, branch
+                 points 0. TradeRecord relocates. The storage
+                 alias and the fill_bindings retarget are
+                 ImportFrom; measure.py does not count them.
+ROLLBACK:        revert the commit. The new module reverts
+                 with it. Independently revertible from T-09b
+                 until T-09b lands; core/trade_journal.py and
+                 fill_bindings.py are shared with T-09b. Not
+                 independently revertible from T-08d once
+                 T-09a lands (campaign sequence); this step
+                 does not edit orchestrator.py.
+```
+
+```
+STEP:            T-09b
+CLOSES:          nothing. Drops kernel → storage. Five import
+                 tiers stays BROKEN. 1 → 0. G40 stays CLOSED.
+                 T-07c pin stays 9. Empty pairs is not a close:
+                 test_five_import_tiers still does not assert
+                 KEPT, and continue-on-error does not flip.
+PROBLEM:         After T-09a, kernel still imports storage from
+                 orchestrator only: EventLog (l.187),
+                 FeatureSnapshotMeta and FeatureSnapshotStore
+                 (l.188), TradeJournal (l.189). fill_bindings
+                 already names TradeRecord from core. All
+                 three remaining types are Protocols already
+                 in storage, injected, not default-constructed.
+                 EventLog is a required ctor arg (l.2960);
+                 kernel calls append (l.3794, 3806, 4203)
+                 and replay (l.844). FeatureSnapshotStore is
+                 optional (l.2966); kernel calls save (l.794)
+                 and load (l.5769). TradeJournal is optional
+                 (l.2965); kernel calls record (l.734).
+                 Public property trade_journal (l.3343-3344)
+                 is the only storage type handed out. T-03:
+                 the Protocol covers every consumer of that
+                 property, not kernel's record call alone.
+                 Consumers of orchestrator.trade_journal:
+                 harness/backtest_runner.py:632 (query;
+                 filled_quantity, fill_price, realized_pnl,
+                 strategy_id via edge calibration);
+                 harness/backtest_report.py:215 (query;
+                 realized_pnl, trading_intent,
+                 correlation_id, order_id), :801 (query;
+                 order_id, symbol, strategy_id, side,
+                 filled_quantity, fill_price, realized_pnl,
+                 fees, cost_bps), :912 (query; len);
+                 scripts/run_paper.py:163 (query; then
+                 trade_records_to_dicts: order_id, symbol,
+                 strategy_id, side, requested_quantity,
+                 filled_quantity, fill_price,
+                 fill_timestamp_ns, cost_bps, realized_pnl,
+                 fees);
+                 scripts/compare_multialpha_runs.py:463
+                 (query; side, filled_quantity, fill_price,
+                 strategy_id, trading_intent, realized_pnl,
+                 fees, fill_timestamp_ns);
+                 tools/arch/perfmeasure.py:595 (query; len);
+                 tests/acceptance/test_backtest_app_baseline.py:370
+                 (query; len);
+                 tests/harness/test_backtest_parity_no_cache.py:56-57
+                 (is not None; query; len);
+                 tests/determinism/test_forced_exit_attribution_replay.py:172,
+                 :310, :425 (query; strategy_id,
+                 filled_quantity, realized_pnl, fees,
+                 metadata).
+                 Surface they need: record(trade: TradeRecord)
+                 and query(symbol, strategy_id, start_ns,
+                 end_ns) -> Iterator[TradeRecord]. Do not shrink
+                 query's keyword args.
+                 Keep the full Protocol surface, not kernel's
+                 call sites. Ingestion and the in-memory stores
+                 implement the rest: EventLog.append_batch,
+                 replace_events, last_sequence;
+                 FeatureSnapshotStore.list_snapshots.
+                 Shrinking those is a consumer change, not a
+                 cut.
+                 FeatureSnapshotMeta is a frozen dataclass
+                 kernel constructs in
+                 _checkpoint_regime_snapshot (l.786-793). It
+                 travels with FeatureSnapshotStore into
+                 core/feature_snapshot.py. Fields are str/int.
+                 Closure walk to fixpoint, before-state:
+                 L0 EventLog, FeatureSnapshotMeta,
+                 FeatureSnapshotStore, TradeJournal
+                 (orchestrator). TradeRecord already core.
+                 L1 EventLog names Event (core), Sequence,
+                 Iterator (stdlib). FeatureSnapshotStore names
+                 FeatureSnapshotMeta, bytes. TradeJournal
+                 names TradeRecord (core), Iterator.
+                 FeatureSnapshotMeta names str, int.
+                 L2 nothing new outside kernel or core.
+                 Terminates in core and stdlib. No helper
+                 body to return.
+WHY THIS OWNER:  T5 core. EventLog, FeatureSnapshotStore, and
+                 TradeJournal are injected Protocols kernel
+                 holds; Protocols belong in core, named for
+                 the thing, never for the step. One module
+                 per concern. Existing core/trade_journal.py
+                 (T-09a) is retargeted, not duplicated. No
+                 kernel_ports.py. Concretes
+                 (InMemoryEventLog, InMemoryFeatureSnapshotStore,
+                 InMemoryTradeJournal) stay in storage. No
+                 subclassing on those concretes. Helpers cannot
+                 travel: there are none.
+FILES:           src/feelies/kernel/orchestrator.py
+                 src/feelies/core/event_log.py
+                 src/feelies/core/feature_snapshot.py
+                 src/feelies/core/trade_journal.py
+                 src/feelies/storage/event_log.py
+                 src/feelies/storage/feature_snapshot.py
+                 src/feelies/storage/trade_journal.py
+                 tests/conformance/test_import_contracts.py
+                 tests/docs/test_prompt_coverage_map.py
+                 docs/prompts/README.md
+                 Ten files. storage files are alias only.
+                 Do not include fill_bindings.py (already
+                 core). Do not include bootstrap.py,
+                 memory_event_log.py,
+                 memory_feature_snapshot.py,
+                 memory_trade_journal.py, ingestion/,
+                 harness/, cli/, scripts/,
+                 storage/__init__.py (alias covers). Do not
+                 include ci.yml (T-09z). Do not include
+                 test_fail_quiet.py. No keep-row file is
+                 touched. No alias whose target is kernel or
+                 another engine. Do not delete the storage
+                 modules. Do not add kernel_ports.py. Grep
+                 each moved name across tests for
+                 module-global identity assertions before
+                 treating an orchestrator import as
+                 droppable; none today.
+REFACTOR PATH:   one commit. Mechanism: invert the three
+                 Protocols. Drop the last five-tier pair in
+                 that same commit. T-07c pin stays 9.
+                 Move EventLog Protocol into
+                 feelies.core.event_log (core/event_log.py).
+                 Full surface: append, append_batch,
+                 replace_events, replay, last_sequence.
+                 Import Event from feelies.core.events.
+                 Import nothing from feelies.storage.
+                 Alias from storage/event_log.py.
+                 Direction: storage → core.
+                 Move FeatureSnapshotMeta and
+                 FeatureSnapshotStore Protocol into
+                 feelies.core.feature_snapshot
+                 (core/feature_snapshot.py). Full surface:
+                 save, load, list_snapshots. Meta travels
+                 here, not T-09a. Import nothing from
+                 feelies.storage. Alias both names from
+                 storage/feature_snapshot.py. Direction:
+                 storage → core.
+                 Append TradeJournal Protocol onto existing
+                 feelies.core.trade_journal
+                 (core/trade_journal.py). Full surface:
+                 record(trade: TradeRecord) and query(...) ->
+                 Iterator[TradeRecord]. TradeRecord is already
+                 in this module. storage/trade_journal.py:
+                 delete the Protocol body; alias
+                 TradeJournal from core (TradeRecord alias
+                 already there from T-09a). Direction:
+                 storage → core.
+                 orchestrator: import EventLog from
+                 feelies.core.event_log; FeatureSnapshotMeta and
+                 FeatureSnapshotStore from
+                 feelies.core.feature_snapshot; TradeJournal
+                 from feelies.core.trade_journal. Drop
+                 feelies.storage.event_log,
+                 feelies.storage.feature_snapshot,
+                 feelies.storage.trade_journal. Keep ctor
+                 optionality, call sites, and the
+                 trade_journal property. Keep
+                 `from feelies.kernel.fill_bindings import
+                 TradeRecord`.
+                 After the move, assert that no module under
+                 src/feelies/core ImportFrom-imports
+                 feelies.storage. CLOSURE OK is a gate, not a
+                 note. A core → storage import inverts the
+                 edge this step exists to cut.
+                 Drop ("feelies.kernel", "feelies.storage")
+                 from _TIER_RESIDUALS in the same commit
+                 (equality, empty pin). Do not add
+                 statuses["Five import tiers"] == "KEPT"
+                 (T-09z). Do not flip ci.yml.
+                 New core modules: _FILE_OWNERS rows
+                 core/event_log.py and
+                 core/feature_snapshot.py →
+                 audit_core_clock_config and the README
+                 core_clock_config citations, same commit
+                 (S-21). core/trade_journal.py already has a
+                 row from T-09a.
+                 No object/Any, no getattr fallback, no
+                 sys.modules, no TYPE_CHECKING-only move, no
+                 re-export of the Protocol from the engine
+                 package as the cut. Structural; no
+                 subclassing on the in-memory stores.
+BLAST RADIUS:    boundary
+VALIDATED BY:    test_five_import_tiers equals the empty pin;
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 S2 re-run after this pair-drop; stays KEPT
+                 at zero. CLOSURE OK: no core module imports
+                 feelies.storage. lint-imports may already
+                 print Five import tiers KEPT when pairs are
+                 empty; that is not a close. Do not assert
+                 KEPT here.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. These types sit on
+                 append, replay, journal record/query, and
+                 regime checkpoint/restore. A moved hash means
+                 a Protocol call was not a transparent
+                 substitute (surface, field, or a silent
+                 default).
+DELETES:         the kernel → storage pair; the EventLog,
+                 FeatureSnapshotMeta, FeatureSnapshotStore,
+                 and TradeJournal imports from orchestrator
+                 (retargeted to core). Does not delete the
+                 storage modules (aliases). Does not delete
+                 the T-07c pin. Does not flip ci.yml.
+NET DELTA:       src modules +2, public symbols 0, branch
+                 points 0. EventLog, FeatureSnapshotStore,
+                 FeatureSnapshotMeta, and TradeJournal
+                 relocate. Aliases are ImportFrom; measure.py
+                 does not count them. TradeJournal appends to
+                 the T-09a module (0).
+ROLLBACK:        revert the commit. The two new modules
+                 revert with it. Not independently revertible
+                 from T-09a (already landed;
+                 core/trade_journal.py is shared).
+                 Independently revertible from T-09z until
+                 T-09z lands; test_import_contracts.py is
+                 shared with T-09z.
+```
+
+```
+STEP:            T-09z
+CLOSES:          Five import tiers KEPT; .github/workflows/ci.yml
+                 Import contracts continue-on-error.
+PROBLEM:         After T-09b, _TIER_RESIDUALS is empty and
+                 test_five_import_tiers asserts only
+                 pairs == _TIER_RESIDUALS. It does not assert
+                 statuses["Five import tiers"] == "KEPT".
+                 Empty pairs with BROKEN status would still
+                 pass and would read as a close without being
+                 one. lint-imports may already print KEPT;
+                 that passes by construction and protects
+                 nothing. ci.yml Import contracts still has
+                 continue-on-error: true. The comment says
+                 do not drop it until both contracts are
+                 kept. Twelve engine module sets is already
+                 KEPT. This rung adds the KEPT assertion and
+                 the flip in one commit. A KEPT assertion
+                 without the flip, or a flip without the
+                 assertion, is not a close.
+WHY THIS OWNER:  Campaign close. Detector vs close: pairs ==
+                 frozenset() is T-09b; KEPT plus the CI flip
+                 is this rung. Not a later campaign. The
+                 engine-to-kernel pin, the gap list, and S-34f
+                 g-o are not this campaign.
+FILES:           tests/conformance/test_import_contracts.py
+                 .github/workflows/ci.yml
+                 Two files. Do not edit pyproject.toml. Do not
+                 rewrite the layers contract. Do not add
+                 ignore_imports. Do not edit orchestrator.py,
+                 fill_bindings.py, storage/, core/,
+                 bootstrap.py, harness/, cli/,
+                 test_fail_quiet.py. No keep-row file is
+                 touched. The probe edits
+                 src/feelies/kernel/fill_bindings.py only for
+                 the mutation and restores it; that file is
+                 not in the commit.
+REFACTOR PATH:   one commit. Mechanism: close assertion plus
+                 CI flip. Pin already empty from T-09b.
+                 Order: (1) in test_five_import_tiers, assert
+                 statuses["Five import tiers"] == "KEPT"
+                 first, then pairs == frozenset(). KEPT first
+                 so a BROKEN status fails that line, not
+                 only the pair equality. Keep
+                 test_twelve_engine_independence asserting
+                 KEPT. On this tree both lines pass by
+                 construction -- that is not the proof.
+                 (2) probe, T-07c shape. Add a throwaway
+                 `from feelies.storage.event_log import EventLog`
+                 to src/feelies/kernel/fill_bindings.py (kernel
+                 → storage; not a keep-row file; not in
+                 FILES). Run only test_five_import_tiers.
+                 It MUST fail on the KEPT assertion
+                 (status BROKEN). Remove the import. Confirm
+                 fill_bindings.py is byte-identical to HEAD.
+                 Re-run the test green. Report the
+                 fail-then-green output and the restore hash
+                 at the gate. Without the probe the KEPT
+                 line is decorative.
+                 (3) drop continue-on-error: true from the
+                 Import contracts step in
+                 .github/workflows/ci.yml in the same commit
+                 as the KEPT assertion. Rewrite the comment
+                 so it no longer says the step is allowed to
+                 fail. The flip waits on BOTH contracts KEPT
+                 (Five import tiers and Twelve engine module
+                 sets). Do not flip if the probe did not
+                 fail-then-green. Do not flip if S2 is not
+                 KEPT.
+                 (4) commit the test and ci.yml only.
+BLAST RADIUS:    platform-wide
+VALIDATED BY:    test_five_import_tiers asserts KEPT and
+                 pairs == frozenset(); probe failed-before
+                 on the throwaway kernel → storage import
+                 then passed-after restore;
+                 test_twelve_engine_independence KEPT at
+                 zero pairs;
+                 test_engine_kernel_imports_equal_pin equals
+                 the unmoved 9-pair pin;
+                 tests/acceptance/test_backtest_app_baseline.py.
+                 No XPASS. A new twelve-engine pair is a STOP.
+                 lint-imports: both contracts KEPT, no
+                 continue-on-error.
+PARITY IMPACT:   Hold: all 64 HASH/COUNT constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH. A moved HASH or COUNT is a
+                 STOP, do not re-pin. A test-and-yaml change that
+                 moves a hash means the file was not test-only.
+DELETES:         continue-on-error on Import contracts.
+                 Does not delete the engine-to-kernel pin.
+                 Does not delete G10, G28, G32, G36, G39,
+                 G41, G42, G44, G45, G46; S-34f groups g-o;
+                 perfmeasure.py DIRECT_PROBES; G6 empty
+                 depends_on_sensors; S-04c; serialization.py
+                 fail-open; verify_step frozen bugs; 152
+                 research cache days; R6 14/31; the four
+                 EXEMPTION tests. Those remain open and are
+                 not this campaign.
+NET DELTA:       src modules 0, public symbols 0, branch
+                 points 0
+ROLLBACK:        revert the commit. Independently revertible
+                 from nothing that follows (campaign end).
+                 Not independently revertible from T-09b
+                 (already landed; test_import_contracts.py is
+                 shared).
+```
+

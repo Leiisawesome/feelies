@@ -38,11 +38,7 @@ def _load_allowlists() -> tuple[frozenset[tuple[str, str]], frozenset[tuple[str,
 
 def test_s17_bootstrap_assignments_are_constructor_injected() -> None:
     patched = external_attribute_assignment()
-    bootstrap = {
-        h["target"]
-        for h in patched
-        if h["path"] == "src/feelies/bootstrap.py"
-    }
+    bootstrap = {h["target"] for h in patched if h["path"] == "src/feelies/bootstrap.py"}
     leftover = sorted(bootstrap & _INJECTED_BOOTSTRAP_TARGETS)
     assert leftover == [], (
         "post-construction assignment still on bootstrap; "

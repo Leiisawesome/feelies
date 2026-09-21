@@ -46,7 +46,7 @@ from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
 from feelies.core.gate_registry import record_verdict
 from feelies.features.definition import FeatureDefinition
-from feelies.kernel.exception_taxonomy import KernelFault
+from feelies.core.exception_taxonomy import KernelFault
 
 _logger = logging.getLogger(__name__)
 
@@ -199,8 +199,7 @@ class AlphaRegistry:
         current = self._universe_snapshot
         if current is not None and current.symbols != snapshot.symbols:
             raise KernelFault(
-                "universe authority conflict: registry already bound to a "
-                "different membership",
+                "universe authority conflict: registry already bound to a different membership",
                 kind=KernelFault.Kind.UNIVERSE,
             )
         self._universe_snapshot = snapshot

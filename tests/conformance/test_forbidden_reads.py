@@ -133,9 +133,7 @@ def _allowed_pairs(
     n = len(engines)
     for rec in GATE_REGISTRY.values():
         owner = rec.owner_engine
-        assert 1 <= owner <= n, (
-            f"cannot attribute gate {rec.stable_id} owner_engine={owner}"
-        )
+        assert 1 <= owner <= n, f"cannot attribute gate {rec.stable_id} owner_engine={owner}"
         allowed.add((engines[owner - 1], "gate", rec.stable_id))
     return allowed
 
@@ -192,15 +190,11 @@ def _scan_forbidden_accesses(
                         if name in event_facts:
                             key = (engine, "event", name)
                             if key not in allowed:
-                                hits.append(
-                                    f"{rel}:{node.lineno} {engine} event {name}"
-                                )
+                                hits.append(f"{rel}:{node.lineno} {engine} event {name}")
                         if name in stream_facts:
                             key = (engine, "stream", name)
                             if key not in allowed:
-                                hits.append(
-                                    f"{rel}:{node.lineno} {engine} stream {name}"
-                                )
+                                hits.append(f"{rel}:{node.lineno} {engine} stream {name}")
                 if not isinstance(node, ast.Call):
                     continue
                 func = _dotted(node.func).split(".")[-1]
@@ -214,9 +208,7 @@ def _scan_forbidden_accesses(
                     if fact is not None and fact in event_facts:
                         key = (engine, "event", fact)
                         if key not in allowed:
-                            hits.append(
-                                f"{rel}:{node.lineno} {engine} event {fact}"
-                            )
+                            hits.append(f"{rel}:{node.lineno} {engine} event {fact}")
                 for kw in node.keywords:
                     if kw.arg != "stream":
                         continue
@@ -229,9 +221,7 @@ def _scan_forbidden_accesses(
                         continue
                     key = (engine, "stream", fact)
                     if key not in allowed:
-                        hits.append(
-                            f"{rel}:{node.lineno} {engine} stream {fact}"
-                        )
+                        hits.append(f"{rel}:{node.lineno} {engine} stream {fact}")
     return hits
 
 
@@ -245,13 +235,11 @@ def test_s14_static_matrix_and_access_analysis() -> None:
     actual = {_row_key(row) for row in matrix}
     missing = [pair for pair in expected if pair not in actual]
     assert not missing, (
-        "forbidden-reads matrix missing pair: "
-        f"{missing[0][0]} {missing[0][1]} {missing[0][2]}"
+        f"forbidden-reads matrix missing pair: {missing[0][0]} {missing[0][1]} {missing[0][2]}"
     )
     extra = sorted(actual - set(expected))
     assert not extra, (
-        "forbidden-reads matrix missing pair: "
-        f"{extra[0][0]} {extra[0][1]} {extra[0][2]}"
+        f"forbidden-reads matrix missing pair: {extra[0][0]} {extra[0][1]} {extra[0][2]}"
     )
     class_engine = _class_to_engine(engines)
     allowed = _allowed_pairs(engines, class_engine)
@@ -265,9 +253,7 @@ def _subscriber_engines() -> frozenset[str]:
     """Engines that own a wiring-manifest subscriber. Derived, not chosen."""
     class_engine = _class_to_engine(_independence_engines())
     return frozenset(
-        class_engine[sub.subscriber]
-        for sub in SUBSCRIPTIONS
-        if sub.subscriber in class_engine
+        class_engine[sub.subscriber] for sub in SUBSCRIPTIONS if sub.subscriber in class_engine
     )
 
 
@@ -313,11 +299,7 @@ def _replay_phase4() -> EngineProbe:
 def _forbidden_hits(
     reads: tuple[FactRead, ...], forbidden: set[tuple[str, str, str]]
 ) -> list[FactRead]:
-    return [
-        read
-        for read in reads
-        if (read.engine, read.kind, read.fact) in forbidden
-    ]
+    return [read for read in reads if (read.engine, read.kind, read.fact) in forbidden]
 
 
 def test_s14_dynamic_no_forbidden_read_during_tick_sequence() -> None:
@@ -340,16 +322,14 @@ def test_s14_dynamic_no_forbidden_read_during_tick_sequence() -> None:
     assert null_probe.fact_reads, "probe observed no reads"
     null_hits = _forbidden_hits(null_probe.fact_reads, forbidden)
     assert not null_hits, (
-        f"forbidden read: {null_hits[0].engine} {null_hits[0].kind} "
-        f"{null_hits[0].fact}"
+        f"forbidden read: {null_hits[0].engine} {null_hits[0].kind} {null_hits[0].fact}"
     )
 
     phase4_probe = _replay_phase4()
     assert phase4_probe.fact_reads, "probe observed no reads"
     phase4_hits = _forbidden_hits(phase4_probe.fact_reads, forbidden)
     assert not phase4_hits, (
-        f"forbidden read: {phase4_hits[0].engine} {phase4_hits[0].kind} "
-        f"{phase4_hits[0].fact}"
+        f"forbidden read: {phase4_hits[0].engine} {phase4_hits[0].kind} {phase4_hits[0].fact}"
     )
 
     observed = {read.engine for read in null_probe.fact_reads} | {

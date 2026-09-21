@@ -77,8 +77,7 @@ class EventBus:
         """
         if self._depth >= MAX_CASCADE_DEPTH:
             raise RuntimeError(
-                f"event bus cascade depth {self._depth + 1} exceeds "
-                f"bound {MAX_CASCADE_DEPTH}"
+                f"event bus cascade depth {self._depth + 1} exceeds bound {MAX_CASCADE_DEPTH}"
             )
         self._depth += 1
         try:

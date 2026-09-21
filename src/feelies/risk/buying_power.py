@@ -9,17 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from enum import Enum, auto
+
+from feelies.core.buying_power import BuyingPowerPhase as BuyingPowerPhase
 
 # Stable reject token consumed by the risk engine and acceptance tests.
 INSUFFICIENT_BUYING_POWER = "INSUFFICIENT_BUYING_POWER"
-
-
-class BuyingPowerPhase(Enum):
-    """Reg-T phase controlling the equity multiplier."""
-
-    INTRADAY = auto()
-    OVERNIGHT = auto()
 
 
 @dataclass(frozen=True, kw_only=True)

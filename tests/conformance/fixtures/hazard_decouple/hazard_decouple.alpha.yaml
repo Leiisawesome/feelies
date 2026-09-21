@@ -1,0 +1,74 @@
+# =============================================================
+#   R-04a — hazard + decouple SIGNAL for the reset spy
+#   ----------------------------------------------------------------
+#   Constructs HazardExitController, ExitComposer, and
+#   DeferralCapController. evaluate returns None unconditionally,
+#   so no Signal exists and the book stays flat. A fired hazard
+#   is not the claim: construction plus cascade is.
+#   Universe stays inside {AAPL, MSFT} so _synth_events is reusable.
+#   G17 forces trend_mechanism (INVENTORY); G16 rules 5 and 10
+#   then require quote_replenish_asymmetry in both
+#   l1_signature_sensors and depends_on_sensors.
+# =============================================================
+
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: hazard_decouple
+version: "1.0.0"
+description: |
+  Conformance fixture for the hazard_decouple reset-invocation tape.
+  Emits no Signal. Both hazard_exit and decouple_caps_only are on so
+  the three cascade objects are constructed.
+
+hypothesis: |
+  None. This fixture exploits no structural mechanism; it exists so
+  the reset spy can see HazardExitController, ExitComposer, and
+  DeferralCapController without moving the book.
+
+falsification_criteria:
+  - |
+    The fixture emits a Signal. Its evaluate returns None on every input,
+    so a single emission means the Layer-2 evaluation path is inventing
+    signals rather than relaying them.
+
+symbols:
+  - AAPL
+  - MSFT
+
+depends_on_sensors:
+  - quote_replenish_asymmetry
+
+horizon_seconds: 30
+
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: "True"
+  off_condition: "False"
+
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
+  cost_basis: one_way
+
+hazard_exit:
+  enabled: true
+
+safety_exit_policy:
+  mode: decouple_caps_only
+  max_hold_after_safe_off: 30
+  hard_exit_age_seconds: 40
+
+trend_mechanism:
+  family: INVENTORY
+  expected_half_life_seconds: 30
+  l1_signature_sensors:
+    - quote_replenish_asymmetry
+  failure_signature:
+    - "evaluate returns None; no inventory edge is claimed"
+
+signal: |
+  def evaluate(snapshot, regime, params):
+      return None

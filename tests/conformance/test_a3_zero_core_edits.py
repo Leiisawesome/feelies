@@ -13,7 +13,7 @@ from pathlib import Path
 from feelies.bootstrap import build_platform
 from feelies.core.events import NBBOQuote, Side
 from feelies.core.platform_config import OperatingMode, PlatformConfig
-from feelies.execution.order_policy import _resolve_order_route
+from feelies.kernel.orchestrator import _resolve_order_route
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -126,6 +126,5 @@ def test_a3_declared_closing_auction_routes_without_core_edits(tmp_path: Path) -
         for path in (_SRC / pkg).rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             assert _PROBE_ID not in text, (
-                f"{path.as_posix()} names the attached alpha — attachment "
-                "required a core edit"
+                f"{path.as_posix()} names the attached alpha — attachment required a core edit"
             )

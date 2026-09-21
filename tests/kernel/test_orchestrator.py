@@ -46,26 +46,27 @@ from feelies.execution.order_admission import (
     admission_block_reason,
     exposure_delta_from_intent,
 )
-from feelies.execution.order_lifecycle import (
-    _apply_ack_to_order,
-    _drain_async_fills,
-    _escalate_unfilled_working_exits,
-    _transition_order,
-    cancel_order,
-)
-from feelies.execution.order_policy import (
-    _plan_for_signal,
-    _round_trip_cost_bps,
-    _try_build_order_from_intent,
-)
+from feelies.execution.order_lifecycle import cancel_order
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
-from feelies.kernel.orchestrator import Orchestrator
-from feelies.portfolio.fill_reconciliation import (
+from feelies.composition.selection_policy import Top1SelectionPolicy
+from feelies.kernel.orchestrator import (
+    Orchestrator,
+    _apply_ack_to_order,
+    _calibrate_regime_engine,
+    _compute_target_quantity,
     _distribute_fill_to_strategies,
+    _drain_async_fills,
+    _emergency_flatten_all,
+    _escalate_unfilled_working_exits,
+    _plan_for_signal,
     _reconcile_fills,
+    _record_size_shadow,
+    _round_trip_cost_bps,
+    _transition_order,
+    _try_build_order_from_intent,
 )
 from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -75,10 +76,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.stop_exit import StopExitController, StopExitPolicy
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
-from feelies.risk.engine import _compute_target_quantity, _emergency_flatten_all
-from feelies.risk.edge_weighted_sizer import _record_size_shadow
 from feelies.risk.escalation import RiskLevel
-from feelies.services.regime_engine import _calibrate_regime_engine
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -424,6 +422,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,
@@ -520,6 +519,7 @@ class TestOrchestratorBoot:
             mode="BACKTEST",
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=EventBus(),
             backend=backend,
@@ -600,6 +600,7 @@ class TestOrchestratorFullPipeline:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -763,6 +764,7 @@ class TestOrchestratorFullPipeline:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -794,6 +796,7 @@ class TestOrchestratorFullPipeline:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -878,7 +881,8 @@ class TestOrchestratorAckProcessing:
             strategy_id="alpha_1",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -966,7 +970,8 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1013,7 +1018,8 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
@@ -1058,13 +1064,15 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=1300,
                 correlation_id="c3",
@@ -1072,9 +1080,10 @@ class TestOrchestratorFillReconcileGuards:
                 order_id=order.order_id,
                 symbol="AAPL",
                 status=OrderAckStatus.ACKNOWLEDGED,
-            )
+            ),
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=1310,
                 correlation_id="c3",
@@ -1084,9 +1093,10 @@ class TestOrchestratorFillReconcileGuards:
                 status=OrderAckStatus.FILLED,
                 filled_quantity=10,
                 fill_price=Decimal("150"),
-            )
+            ),
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=1320,
                 correlation_id="c3",
@@ -1096,7 +1106,7 @@ class TestOrchestratorFillReconcileGuards:
                 status=OrderAckStatus.FILLED,
                 filled_quantity=10,
                 fill_price=Decimal("150"),
-            )
+            ),
         )
 
         assert any(a.alert_name == "duplicate_terminal_fill_ack" for a in alerts)
@@ -1116,6 +1126,7 @@ class TestOrchestratorFillReconcileGuards:
         router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -1162,13 +1173,15 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="cc",
@@ -1176,7 +1189,7 @@ class TestOrchestratorFillReconcileGuards:
                 order_id=order.order_id,
                 symbol="AAPL",
                 status=OrderAckStatus.ACKNOWLEDGED,
-            )
+            ),
         )
 
         assert cancel_order(orch, order.order_id) is True
@@ -1201,13 +1214,15 @@ class TestOrchestratorFillReconcileGuards:
             strategy_id="a",
         )
         orch._track_order(order.order_id, order.side, order)
-        _transition_order(orch,
+        _transition_order(
+            orch,
             order.order_id,
             OrderState.SUBMITTED,
             "submitted",
             correlation_id=order.correlation_id,
         )
-        _apply_ack_to_order(orch,
+        _apply_ack_to_order(
+            orch,
             OrderAck(
                 timestamp_ns=clock.now_ns(),
                 correlation_id="sd",
@@ -1215,7 +1230,7 @@ class TestOrchestratorFillReconcileGuards:
                 order_id=order.order_id,
                 symbol="AAPL",
                 status=OrderAckStatus.ACKNOWLEDGED,
-            )
+            ),
         )
         sm = orch._active_orders[order.order_id][0]
         sm.transition(
@@ -1273,6 +1288,7 @@ class TestOrchestratorFlatSignalExit:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2035,6 +2051,7 @@ class TestOrchestratorMacroLifecycleRemediation:
         kill.activate("pre_unlock", activated_by="test")
         bus = EventBus()
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2407,6 +2424,7 @@ class TestScaleDownToZeroSuppression:
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2471,6 +2489,7 @@ class TestEdgeCostGate:
         )
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -2548,7 +2567,8 @@ class TestExecutionCostContext:
         orch._cost_model = replacement_cost_model
         quote = _make_quote(bid="99.80", ask="100.20")
         signal = _make_signal(quote)
-        _plan_for_signal(orch,
+        _plan_for_signal(
+            orch,
             signal,
             Position(symbol="AAPL"),
             target_qty=100,
@@ -2564,7 +2584,8 @@ class TestExecutionCostContext:
         assert market.within_l1_impact_factor == Decimal("0.21")
         assert market.permanent_impact_coefficient == Decimal("0.04")
 
-        actual_cost_bps = _round_trip_cost_bps(orch,
+        actual_cost_bps = _round_trip_cost_bps(
+            orch,
             symbol="AAPL",
             entry_side=Side.BUY,
             quantity=100,
@@ -2618,6 +2639,7 @@ class TestPositionManagerTrim:
         pos_store.update("AAPL", 150, Decimal("100"))  # long 150
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2671,6 +2693,7 @@ class TestPositionManagerTrim:
         pos_store.update("AAPL", 150, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2714,6 +2737,7 @@ class TestPositionManagerTrim:
         pos_store.update("AAPL", 150, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2801,6 +2825,7 @@ class TestSessionFlatten:
             pos_store.update("AAPL", position, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -2930,6 +2955,7 @@ class TestWorkingExitFallback:
         bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3014,6 +3040,7 @@ class TestWorkingExitFallback:
         pos.update("AAPL", 150, Decimal("100"))
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3057,6 +3084,7 @@ class TestNetShadow:
         bus = EventBus()
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3266,6 +3294,7 @@ class TestNetDrive:
         pos = MemoryPositionStore()
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3409,6 +3438,7 @@ class TestLotLedgerIntegration:
         pos = MemoryPositionStore()
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3448,6 +3478,7 @@ class TestLotLedgerIntegration:
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         # seed the ledger to mirror the preloaded position
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -3532,6 +3563,7 @@ class TestReversalEdgeGuard:
             mode="BACKTEST",
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -3654,6 +3686,7 @@ class TestRestingOrderGuardAfterRisk:
             mode="BACKTEST",
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=backend,
@@ -3809,8 +3842,8 @@ class TestRestingOrderGuardAfterRisk:
         orch._track_order(cover.order_id, Side.BUY, cover, trading_intent="EXIT")
         # Mirror a real resting passive order: SUBMITTED → ACKNOWLEDGED so a
         # broker CANCELLED ack is a valid (non-terminal → terminal) transition.
-        _transition_order(orch,cover.order_id, OrderState.SUBMITTED, "submitted")
-        _transition_order(orch,cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+        _transition_order(orch, cover.order_id, OrderState.SUBMITTED, "submitted")
+        _transition_order(orch, cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         assert orch._has_pending_order_for_symbol("AAPL")
 
         alerts: list[Alert] = []
@@ -4049,6 +4082,7 @@ class TestExitBypassesMinOrderShares:
         bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4105,6 +4139,7 @@ class TestExitBypassesEdgeCostGate:
         bt_router.on_quote(quote)
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4157,6 +4192,7 @@ class TestHaltModeling:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4290,6 +4326,7 @@ class TestHaltModeling:
             fill_hazard_max=Decimal("0"),
         )
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4343,8 +4380,8 @@ class TestHaltModeling:
         for req in (resting, deferred):
             router.submit(req)
             orch._track_order(req.order_id, req.side, req)
-            _transition_order(orch,req.order_id, OrderState.SUBMITTED, "submitted")
-            _transition_order(orch,req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+            _transition_order(orch, req.order_id, OrderState.SUBMITTED, "submitted")
+            _transition_order(orch, req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
         router.poll_acks()  # drain the two ACKNOWLEDGED acks
         assert router.resting_order_count == 1
 
@@ -4528,6 +4565,7 @@ class TestSSRRefuseShort:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(
@@ -4634,6 +4672,7 @@ class TestBorrowAvailability:
     ) -> tuple[Orchestrator, BacktestOrderRouter]:
         bt_router = BacktestOrderRouter(clock=clock)
         orch = Orchestrator(
+            selection_policy=Top1SelectionPolicy(),
             clock=clock,
             bus=bus,
             backend=ExecutionBackend(

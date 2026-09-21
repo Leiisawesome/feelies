@@ -24,6 +24,7 @@ from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
@@ -123,6 +124,7 @@ def _run(router_cls: type[Any], *, stop_first: bool) -> _Run:
         policy=StopExitPolicy(stop_loss_per_share=1.0),
     )
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=ExecutionBackend(
@@ -167,9 +169,7 @@ def _run(router_cls: type[Any], *, stop_first: bool) -> _Run:
     bus.subscribe(OrderRequest, _on_order)
     bus.subscribe(OrderAck, _on_ack)
 
-    orch._process_tick(
-        _quote(timestamp_ns=1_000_000, bid=_SEED_BID, ask=_SEED_ASK, sequence=1)
-    )
+    orch._process_tick(_quote(timestamp_ns=1_000_000, bid=_SEED_BID, ask=_SEED_ASK, sequence=1))
     orch._process_tick(
         _quote(timestamp_ns=2_000_000, bid=_TRIGGER_BID, ask=_TRIGGER_ASK, sequence=2)
     )
@@ -205,18 +205,17 @@ def test_r3_forced_exit_fill_stream_independent_of_registration_order() -> None:
         assert stop_first.stop_reasons == (STOP_EXIT_REASON_STOP,), (
             f"{name} stop_first did not submit a stop-exit: {stop_first.stop_reasons!r}"
         )
-        assert any(row[0] == OrderAckStatus.FILLED.name or row[0] == OrderAckStatus.REJECTED.name
-                   for row in router_first.fills), (
-            f"{name} router_first produced no terminal acks: {router_first.fills!r}"
-        )
-        assert any(row[0] == OrderAckStatus.FILLED.name or row[0] == OrderAckStatus.REJECTED.name
-                   for row in stop_first.fills), (
-            f"{name} stop_first produced no terminal acks: {stop_first.fills!r}"
-        )
+        assert any(
+            row[0] == OrderAckStatus.FILLED.name or row[0] == OrderAckStatus.REJECTED.name
+            for row in router_first.fills
+        ), f"{name} router_first produced no terminal acks: {router_first.fills!r}"
+        assert any(
+            row[0] == OrderAckStatus.FILLED.name or row[0] == OrderAckStatus.REJECTED.name
+            for row in stop_first.fills
+        ), f"{name} stop_first produced no terminal acks: {stop_first.fills!r}"
 
     dump = "\n".join(
-        f"  {name} {order}: handlers={run.handler_order} "
-        f"stop={run.stop_reasons} fills={run.fills}"
+        f"  {name} {order}: handlers={run.handler_order} stop={run.stop_reasons} fills={run.fills}"
         for (name, order), run in runs.items()
     )
     disagreements = []
@@ -259,9 +258,7 @@ def _hash_fill_stream(*, reverse_registration: bool) -> str:
     orig = EventBus.subscribe
     buffered: list[tuple[EventBus, type[Any], Any]] = []
 
-    def _buffer(
-        self: EventBus, event_type: type[Any], handler: Any
-    ) -> None:
+    def _buffer(self: EventBus, event_type: type[Any], handler: Any) -> None:
         buffered.append((self, event_type, handler))
 
     EventBus.subscribe = _buffer  # type: ignore[method-assign]

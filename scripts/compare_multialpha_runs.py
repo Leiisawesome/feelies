@@ -44,6 +44,7 @@ if __name__ == "__main__":
         sys.path.insert(0, str(_REPO_ROOT / "src"))
     os.chdir(_REPO_ROOT)
 
+from feelies.bootstrap import build_platform  # noqa: E402
 from feelies.core.events import Side, Signal, SignalDirection  # noqa: E402
 from feelies.core.platform_config import PlatformConfig  # noqa: E402
 from feelies.forensics.cost_survival import per_alpha_cost_survival  # noqa: E402
@@ -428,6 +429,7 @@ def _run_one(
             symbol_str,
             date,
             time.monotonic(),
+            platform_factory=build_platform,
             prep=prep,
         )
     return outcome, outcome.recorder

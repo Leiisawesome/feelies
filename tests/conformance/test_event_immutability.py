@@ -24,8 +24,6 @@ def test_frozen_events_carry_no_mutable_container() -> None:
         for name, cls in events.items()
     }
     mutable = {name: fields for name, fields in mutable.items() if fields}
-    assert not mutable, (
-        "frozen events with mutable container fields (G12): " + ", ".join(
-            f"{name}={fields}" for name, fields in sorted(mutable.items())
-        )
+    assert not mutable, "frozen events with mutable container fields (G12): " + ", ".join(
+        f"{name}={fields}" for name, fields in sorted(mutable.items())
     )

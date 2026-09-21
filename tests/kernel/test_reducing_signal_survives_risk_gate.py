@@ -31,6 +31,7 @@ from feelies.execution.cost_model import ZeroCostModel
 from feelies.execution.moc_session import et_clock_to_ns
 from feelies.execution.trading_session import TradingSessionBounds
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
@@ -178,6 +179,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,

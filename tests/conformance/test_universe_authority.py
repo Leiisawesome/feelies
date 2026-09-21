@@ -114,8 +114,7 @@ def test_g31_engine_5_is_sole_universe_membership_writer() -> None:
     assert sites, "G31 scan found no universe-store writes — the guard would be vacuous"
     illegal = [f"{path}:{line} {kind}" for path, line, kind in sites if path != _AUTHORITY]
     assert not illegal, (
-        "universe membership has a writer outside engine 5 "
-        f"({_AUTHORITY}). First: {illegal[0]}"
+        f"universe membership has a writer outside engine 5 ({_AUTHORITY}). First: {illegal[0]}"
     )
 
 

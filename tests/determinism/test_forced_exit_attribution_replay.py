@@ -37,6 +37,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.kernel.macro import MacroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
@@ -83,9 +84,7 @@ class _FillingRouter:
         self.submitted: list[OrderRequest] = []
         self._pending: list[OrderAck] = []
 
-    def submit(
-        self, request: OrderRequest, triggering_quote: NBBOQuote | None = None
-    ) -> None:
+    def submit(self, request: OrderRequest, triggering_quote: NBBOQuote | None = None) -> None:
         self.submitted.append(request)
         self._pending.append(
             OrderAck(
@@ -134,6 +133,7 @@ def _replay() -> tuple[str, int]:
 
     router = _FillingRouter()
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=ExecutionBackend(
@@ -265,6 +265,7 @@ def test_forced_exit_closes_both_slices_and_mints_no_sentinel() -> None:
 
     router = _FillingRouter()
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=ExecutionBackend(
@@ -372,6 +373,7 @@ def test_legs_need_not_sum_to_symbol_net_when_slices_survive_the_exit() -> None:
 
     router = _FillingRouter()
     orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=SimulatedClock(start_ns=1_000),
         bus=(bus := EventBus()),
         backend=ExecutionBackend(

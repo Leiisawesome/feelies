@@ -533,6 +533,7 @@ def _run_replay(
 ) -> RunResult:
     import argparse as _argparse
 
+    from feelies.bootstrap import build_platform
     from feelies.core.platform_config import PlatformConfig
     from feelies.harness import compute_parity_hash, prepare_backtest_event_log
     from feelies.harness.backtest_cli import apply_backtest_session_dates_from_cli
@@ -583,6 +584,7 @@ def _run_replay(
             "+".join(resolved),
             date,
             time.monotonic(),
+            platform_factory=build_platform,
             prep=prep,
         )
     if outcome.exit_code != 0:

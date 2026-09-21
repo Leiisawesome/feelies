@@ -91,12 +91,61 @@ jobs:
         run: uv run mypy src/feelies
 
       - name: Import contracts
-        # Allowed to fail: the layers contract is G16 (S-04) and independence
-        # is G40 (S-34). S2 is the conformance gate; this step only makes the
-        # CLI output visible in CI. Do not drop continue-on-error until both
-        # contracts are kept.
-        continue-on-error: true
+        # Blocking. Five import tiers (T-09z) and Twelve engine module sets
+        # (G40) are both KEPT. A broken contract fails this job.
         run: uv run lint-imports --no-cache
+
+      - name: Restore APP baseline event cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.feelies/cache
+          # A historical session never changes, so the key is static. Bump the
+          # suffix to force a refetch if the normalizer's on-disk format moves.
+          key: feelies-eventcache-APP-2026-03-26-v1
+
+      - name: Mark hot-path fork skip
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: echo "FEELIES_HOTPATH_FORK_SKIP=1" >> "$GITHUB_ENV"
+
+      - name: Populate cache on miss
+        # Fetching needs the Massive key. If the cache missed and no key is
+        # configured, fail here with the reason rather than letting the next
+        # step report a confusing replay error.
+        #
+        # Fork PRs get no secrets, so on a cache miss they can neither fetch nor
+        # prime this entry. Skip on forks — as parity-oracle does — so a miss
+        # cannot fail the lint/type/test job for external contributors; the
+        # hot-path pin below self-skips when the evidence file is absent.
+        if: >-
+          success() && (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository )
+        run: |
+          if [ -f "$HOME/.feelies/cache/APP/2026-03-26.jsonl.gz" ]; then
+            echo "cache hit — skipping fetch"
+            exit 0
+          fi
+          if [ -z "${MASSIVE_API_KEY}" ]; then
+            echo "::error::APP/2026-03-26 event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
+            exit 1
+          fi
+          uv run feelies backtest --config configs/bt_app.yaml \
+            --symbol APP --date 2026-03-26 >/dev/null
+        env:
+          MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
+
+      - name: Generate the hot-path executed set
+        # test_g45_keep reads tools/arch/evidence/hotpath_executed.json, which is
+        # gitignored. This replay needs the APP event cache, which fork PRs
+        # cannot obtain, so skip on forks — the pin self-skips when the file is
+        # absent rather than raising SystemExit and reddening the job.
+        if: >-
+          success() && (
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository )
+        run: uv run python tools/arch/perfmeasure.py --mode profile
 
       - name: Tests
         # `functional` needs a live Massive key; `paper_rth` needs IB Gateway and

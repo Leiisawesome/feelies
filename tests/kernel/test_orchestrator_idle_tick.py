@@ -32,7 +32,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.order_lifecycle import (
+from feelies.kernel.orchestrator import (
     _apply_ack_to_order,
     _drain_async_fills,
     _transition_order,
@@ -41,6 +41,7 @@ from feelies.execution.order_state import OrderState
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -98,12 +99,14 @@ def _track_submitted_order(orch: Orchestrator) -> OrderRequest:
         strategy_id="alpha_x",
     )
     orch._track_order(order.order_id, order.side, order)
-    _transition_order(orch,
+    _transition_order(
+        orch,
         order.order_id,
         OrderState.SUBMITTED,
         "submitted",
     )
-    _apply_ack_to_order(orch,
+    _apply_ack_to_order(
+        orch,
         OrderAck(
             timestamp_ns=orch._clock.now_ns(),
             correlation_id="paper-order",
@@ -111,7 +114,7 @@ def _track_submitted_order(orch: Orchestrator) -> OrderRequest:
             order_id=order.order_id,
             symbol="AAPL",
             status=OrderAckStatus.ACKNOWLEDGED,
-        )
+        ),
     )
     return order
 
@@ -159,6 +162,7 @@ def _build_orch(
             )
 
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,

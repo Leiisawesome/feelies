@@ -47,8 +47,7 @@ def test_h3_backend_substitution_is_composition_root_construction_only() -> None
     )
     tests = [ast.unparse(n.test) for n in ast.walk(fn) if isinstance(n, ast.If)]
     assert any("OperatingMode" in t for t in tests), (
-        "_create_backend does not branch on OperatingMode — backend identity "
-        "is not selected there"
+        "_create_backend does not branch on OperatingMode — backend identity is not selected there"
     )
 
     hits = [h for h in mode_branches() if h["kind"] == "operating_mode"]

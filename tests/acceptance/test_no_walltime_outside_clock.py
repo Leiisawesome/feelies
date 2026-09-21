@@ -43,9 +43,7 @@ _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
 # Line keys, if any remain, still match first. Latency telemetry into
 # _tick_timings; event timestamps still use the injected clock.
 _WALL_CLOCK_CALL_ALLOWLIST: dict[str, Sequence[tuple[int | str, str]]] = {
-    "kernel/orchestrator.py": (
-        *(("_process_tick_inner", "time.perf_counter_ns()"),) * 6,
-    ),
+    "kernel/orchestrator.py": (*(("_process_tick_inner", "time.perf_counter_ns()"),) * 6,),
 }
 
 
@@ -207,7 +205,9 @@ def _tick_timings_keys_written(func: ast.FunctionDef | ast.AsyncFunctionDef) -> 
         for target in targets:
             if not isinstance(target, ast.Subscript):
                 continue
-            if not (isinstance(target.value, ast.Attribute) and target.value.attr == "_tick_timings"):
+            if not (
+                isinstance(target.value, ast.Attribute) and target.value.attr == "_tick_timings"
+            ):
                 continue
             slc = target.slice
             if isinstance(slc, ast.Constant) and isinstance(slc.value, str):
@@ -221,7 +221,10 @@ def test_process_tick_inner_tick_timings_keys() -> None:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     func: ast.FunctionDef | ast.AsyncFunctionDef | None = None
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_process_tick_inner":
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "_process_tick_inner"
+        ):
             func = node
             break
     assert func is not None, "_process_tick_inner not found"

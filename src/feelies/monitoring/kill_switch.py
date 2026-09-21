@@ -20,49 +20,7 @@ both can halt trading independently.
 
 from __future__ import annotations
 
-from typing import Protocol
-
-from feelies.core.gate_registry import record_verdict
-
-
-class KillSwitch(Protocol):
-    """Emergency trading halt — irreversible without manual re-enable.
-
-    Any layer can check kill switch state via ``is_active``.
-    Only the alert manager (EMERGENCY severity), the risk engine
-    (via escalation), or a manual operator can activate it.
-
-    Failure mode: fail-safe.  If the kill switch mechanism itself
-    fails, the system defaults to halted (is_active returns True).
-    """
-
-    @property
-    def is_active(self) -> bool:
-        """Whether the kill switch is currently engaged."""
-        ...
-
-    def activate(self, reason: str, *, activated_by: str = "automated") -> None:
-        """Activate the kill switch.
-
-        Implementations record activation locally.  Typed
-        ``KillSwitchActivation`` bus events are emitted by orchestration
-        paths that activate the switch (e.g. risk escalation), not by every
-        concrete ``KillSwitch`` adapter.
-
-        Irreversible without manual re-enable via ``reset()``.
-        """
-        ...
-
-    def reset(self, *, operator: str, audit_token: str) -> None:
-        """Re-enable trading after kill switch activation.
-
-        Requires human authorization.  Audit token is logged for
-        provenance (invariant 13).
-        """
-        ...
-
-
-def observe_kill_switch(active: bool, *, reason: str = "") -> bool:
-    """Record RT.KILL_SWITCH on the notification channel; return *active* unchanged."""
-    record_verdict("RT.KILL_SWITCH", "FAIL" if active else "PASS", reason)
-    return active
+from feelies.core.kill_switch import (
+    KillSwitch as KillSwitch,
+    observe_kill_switch as observe_kill_switch,
+)

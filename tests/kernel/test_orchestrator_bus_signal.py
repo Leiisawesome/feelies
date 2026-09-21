@@ -40,6 +40,7 @@ from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import ZeroCostModel
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
+from feelies.composition.selection_policy import Top1SelectionPolicy
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.in_memory import InMemoryKillSwitch
@@ -293,6 +294,7 @@ def _build_orchestrator(
         mode="BACKTEST",
     )
     return Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
         clock=clock,
         bus=bus,
         backend=backend,
