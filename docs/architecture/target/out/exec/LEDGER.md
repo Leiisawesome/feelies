@@ -27875,3 +27875,204 @@ FINDINGS:    A census inherits its detector's
              FactorNeutralizer.factor_model left
              the zero-call set via the property-
              read count, not via getattr.
+
+---
+
+## O-01  2026-09-21T21:07:04+08:00
+  STEP:          O-01
+  BASE:          61a41417bbd397a10a3a973b34974b124cc0affc
+  RESULT SHA:    b8e13fba714440a9e9757587adc45a36d5f9ba73 (exec/O-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. First commit of a new
+                 cycle on arch/exec. Closes the S-09
+                 fail-open: a missing
+                 __schema_version__ is rejected
+                 rather than read as v1.
+                 test_legacy_record_without_schema_version_loads
+                 pinned that defect as
+                 backward-compat; inverted to
+                 test_record_without_schema_version_rejected.
+                 Fail-first (1), unchanged serializer:
+                   FAILED tests/core/test_serialization.py::
+                   TestJsonLineEventSerializer::
+                   test_record_without_schema_version_rejected
+                   E   Failed: DID NOT RAISE <class 'ValueError'>
+                   1 failed, 1 passed
+                 (the 1 passed is
+                 test_unsupported_schema_version_rejected,
+                 untouched). After the serializer
+                 fix: serialization 14 passed;
+                 unsupported-version still green.
+                 An intermediate tree used
+                 except KeyError: schema_version = None,
+                 which FAIL_QUIET_KEEP rejected
+                 (test_no_unallowlisted_fail_quiet_exception_handler:
+                 extra dict_to_event except KeyError).
+                 The committed tree raises ValueError
+                 from that KeyError in the same
+                 message family as an unsupported
+                 version, so the handler is not
+                 quiet. FAIL_QUIET_KEEP unmoved
+                 (seventeen rows). S5 xfail intact,
+                 reason "GAP G41 G42". No XPASS.
+                 Four xfailed unchanged (G39, G10 G28,
+                 G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff
+                 check src/ tests/ scripts/ green.
+                 ruff format --check 720 files
+                 already formatted.
+  TESTS:         capture pre-O-01 RED 4916 passed /
+                 1 failed / 18 skipped / 4 xfailed.
+                 -> capture post-O-01 RED 4916
+                 passed / 1 failed / 18 skipped / 4
+                 xfailed. The one failure both
+                 sides is the accepted IB
+                 after-hours test
+                 (test_after_hours_reject_surfaces_as_rejected).
+                 No failure outside the accepted
+                 set. serialization 14 -> 14
+                 (renamed pin, same count).
+                 tests/core 245 passed. tests/storage
+                 70 passed. not-paper_rth: 4915
+                 passed / 1 failed / 5 skipped / 14
+                 deselected / 4 xfailed; same
+                 accepted IB failure. APP oracle 2
+                 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the
+                 commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-01 vs post-O-01;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE.
+                 S2 KEPT at zero. Engine-to-kernel
+                 stayed frozenset(). MUST_INVOKE
+                 stays 33. DECLARED_UNINVOKED stays
+                 9. _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (seventeen
+                 rows). S5 xfail not dropped. APP
+                 oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs b8e13fba). Hand FILES: 0
+                 extra CLEAN.
+                 Touched: src/feelies/core/serialization.py,
+                 tests/core/test_serialization.py.
+                 Named-not-edited:
+                 disk_event_cache.py (load() already
+                 catches ValueError and returns None).
+                 LEDGER.md (this entry uncommitted).
+                 Any plan file. FAIL_QUIET_KEEP.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47042 -> 47048 (+6)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0. sloc +6 is the
+                 KeyError-to-ValueError raise in
+                 dict_to_event, outside the declared
+                 triple.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. Four checks
+                 by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4916->4916 passed, failed 1->1
+                 is the accepted IB after-hours
+                 test, not outside the set;
+                 serialization 14->14; no XPASS;
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/O-01,
+                 b8e13fba714440a9e9757587adc45a36d5f9ba73,
+                 "O-01: reject a missing
+                 __schema_version__ instead of
+                 reading it as v1". Parent 61a41417
+                 on arch/exec. Two files, +14 / -10.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 pop("__schema_version__") has no
+                 default. A missing tag raises
+                 ValueError
+                 unsupported event __schema_version__: None
+                 (this build reads v1). Version 999
+                 still raises the same family.
+                 test_deserialize_rejects_unknown_type
+                 now carries __schema_version__: 1 so
+                 the type pin still hits the type
+                 branch; untagged records never
+                 reconstruct.
+                 The oracle tape was checked to be
+                 fully tagged before the default was
+                 removed: APP/2026-03-26 loaded from
+                 cache (2 passed,
+                 FEELIES_REQUIRE_BASELINE_CACHE=1).
+                 CacheReplayError did not fire; no
+                 untagged line on the tape. The 152
+                 stale research-cache days are
+                 untouched -- they fail on
+                 event_schema_hash in DiskEventCache.load
+                 before deserialize, so they never
+                 reach this code.
+                 Compact:
+                 O-01      passed
+                 tests     4916 passed / 1 failed
+                           (accepted IB) -> 4916
+                           passed / 1 failed
+                           (accepted IB)
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     2 declared, 2 touched, clean
+                 next      merge, push, open the PR
+                           from arch/exec
+                 An intermediate draft used
+                 except KeyError: schema_version = None,
+                 and FAIL_QUIET_KEEP rejected it as an
+                 unallowlisted quiet handler -- the 0.1
+                 re-key caught a real attempt to
+                 reintroduce the silent fallback this
+                 rung removes.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot
+                 resolve); G39 xfail is
+                 test_construction_integrity; G10
+                 and G28 are decided keeps; S-34f
+                 END STATE 15 engine bodies g-o,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse O-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 152 research cache days. The
+                 serialization.py fail-open named in
+                 the G44 close REMAINS OPEN list is
+                 this rung. Accepted baseline
+                 failures remain the IB after-hours
+                 test, g12, and any live-feed test
+                 in tests/ingestion/test_massive_functional.py.
+  NEXT:          merge, push, open the PR from
+                 arch/exec
+                 Left uncommitted: baseline_pre-O-01.json,
+                 baseline_post-O-01.json, this ledger
+                 entry.
