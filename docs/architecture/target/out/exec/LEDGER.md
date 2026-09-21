@@ -26734,3 +26734,217 @@ FINDINGS:    A blindness probe runs by insertion
                  campaign's first rung, or
                  merge on its own once green.
                  Not started here.
+
+---
+
+## G46-01  2026-09-21T14:27:00+08:00
+  STEP:          G46-01
+  BASE:          30c45b369ba32c747b5e2db1f7fdb879cfe8a223
+  RESULT SHA:    54bdd5f9e6a89f383d9bd7d59e46970ff976a6bb (exec/G46-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Rides PR #243. Closes the
+                 G46 remainder: UNIT_UNDETERMINED on
+                 every Event field, by fill or by S9
+                 exemption, not by keeping the token.
+                 S9 already closed "undeclared".
+                 Conformance 120 passed / 5 xfailed
+                 -> 122 passed / 4 xfailed. Dropped
+                 the strict xfail on
+                 test_s9_undetermined_units_remain_unresolved
+                 (list emptied) and deleted its stale
+                 reason string (still named
+                 RiskVerdict.constraints, deleted at
+                 S-31a) in the same commit. No XPASS.
+                 S5 xfail intact (GAP G41 G42 G44
+                 G45). import contracts 3 passed.
+                 Inv-10's three tests passed inside
+                 that run. Reset partition passed:
+                 _TAPES five, MUST_INVOKE 33,
+                 DECLARED_UNINVOKED nine.
+                 FAIL_QUIET_KEEP seventeen rows.
+                 mypy src/feelies: Success, 250
+                 source files. ruff check green.
+                 ruff format --check 720 files
+                 already formatted.
+  TESTS:         capture pre-G46-01 GREEN 4913 passed /
+                 0 failed / 19 skipped / 5 xfailed.
+                 -> capture post-G46-01 GREEN 4915
+                 passed / 0 failed / 19 skipped / 4
+                 xfailed. +2 is the undetermined
+                 assertion moving xfail->pass and
+                 the new _S9_HETEROGENEOUS pin.
+                 Conformance xfail 5 -> 4. No
+                 failure in the accepted set. No
+                 failure outside it. No XPASS.
+                 not-paper_rth: 4914 passed / 0 failed /
+                 6 skipped / 14 deselected / 4 xfailed.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G46-01 vs post-G46-01;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 Metadata is outside every hashed
+                 surface (_compute_schema_hash is
+                 name:type). THE FIVE-TIER PIN DID
+                 NOT MOVE. S2 KEPT at zero.
+                 Engine-to-kernel stayed frozenset().
+                 MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved. APP oracle five baselines
+                 unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs 54bdd5f9). Hand FILES: 0
+                 extra CLEAN.
+                 Touched: src/feelies/core/events.py,
+                 tests/conformance/test_unit_declaration.py.
+                 Metadata only in events.py. No field
+                 added, removed, renamed, or retyped.
+                 Named-not-edited: LEDGER.md (this
+                 entry uncommitted), any plan file,
+                 GAP_REGISTRY, serialization.py,
+                 disk_event_cache.py.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47049 -> 47045 (-4)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0. sloc -4 is the
+                 metadata-line collapse, outside the
+                 declared triple.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. Four checks
+                 by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4913->4915 passed, failed 0->0,
+                 xfailed 5->4 (+2 the pin and the
+                 emptied remaining assertion; no
+                 failure outside the accepted set);
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/G46-01,
+                 54bdd5f9e6a89f383d9bd7d59e46970ff976a6bb,
+                 "G46-01: fill five units, exempt
+                 three tagged unions, drop the S9
+                 xfail". Parent 30c45b36 on
+                 arch/exec. Two files, +49 / -33.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 tools/exec vs exec-tools-v1 empty.
+                 UNIT_UNDETERMINED before (10):
+                 HorizonFeatureSnapshot.values,
+                 MetricEvent.value,
+                 NBBOQuote.bid_size,
+                 NBBOQuote.ask_size,
+                 RegimeHazardSpike.hazard_score,
+                 RegimeState.discriminability,
+                 SensorReading.value,
+                 SizedPositionIntent.target_positions,
+                 SizedPositionIntent.factor_exposures,
+                 SizedPositionIntent.disclosed_cost_total_bps_by_symbol.
+                 After: []. The xfail reason listed
+                 eleven names including stale
+                 RiskVerdict.constraints.
+                 Fills (metadata only):
+                 NBBOQuote.bid_size / ask_size ->
+                 "share". Quote sizes were settled
+                 by FQ-5B (2026-07-10,
+                 prompt_pack_03c §8; data_contract
+                 §8 OQ-1 RESOLVED SHARES; AXIS-2
+                 size-units RESOLVED) a month
+                 before S-10 (2026-08-20) marked
+                 them undetermined — a schema
+                 census that did not ingest a
+                 closed research finding.
+                 Trade.size is already "share".
+                 RegimeHazardSpike.hazard_score ->
+                 "1". RegimeState.discriminability
+                 -> "1".
+                 SizedPositionIntent.disclosed_cost_total_bps_by_symbol
+                 -> "bps".
+                 factor_exposures -> "1" (one
+                 producer; residual factor loading;
+                 L2 consumers; same token as
+                 mechanism_breakdown).
+                 target_positions: strip the token.
+                 Mapping[str, TargetPosition] is
+                 not a numeric leaf.
+                 Exemption, not a keep. Pin
+                 _S9_HETEROGENEOUS = frozenset({
+                 "HorizonFeatureSnapshot.values",
+                 "MetricEvent.value",
+                 "SensorReading.value"}). The
+                 one-unit walk skips exactly that
+                 set. Those three lose the token;
+                 declared_unit is None. The
+                 exemption refuses to write
+                 "undetermined is the unit of
+                 MetricEvent.value". UNIT_UNDETERMINED
+                 the constant stays; the remaining
+                 walk still detects it.
+                 Fail-firsts, in-memory, disk
+                 untouched except the two FILES.
+                 (1) setattr _G46ProbeUndetermined
+                 (probe: float,
+                 metadata={"unit": UNIT_UNDETERMINED})
+                 on feelies.core.events; remaining-
+                 empty failed naming it; delattr.
+                 Verbatim:
+                 AssertionError: undetermined units remain: _G46ProbeUndetermined.probe
+                 assert not ['_G46ProbeUndetermined.probe']
+                 (2) setattr _G46ProbeNoUnit
+                 (probe: float, no unit); one-unit
+                 walk failed naming it; delattr.
+                 Proves the exemption did not
+                 widen into "skip anything without
+                 a unit". Verbatim:
+                 AssertionError: numeric fields with no declared unit: _G46ProbeNoUnit.probe
+                 assert not ['_G46ProbeNoUnit.probe']
+                 (3) added "Probe.field" to
+                 _S9_HETEROGENEOUS in the working
+                 tree; equality assertion failed
+                 naming that name; removed it. A
+                 src drop cannot move a frozenset.
+                 Verbatim:
+                 AssertionError: assert frozenset({'H...ading.value'}) == frozenset({'H...ading.value'})
+                 Extra items in the left set:
+                 'Probe.field'
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN; G44 partial
+                 (103 public methods with zero
+                 in-src call sites, tree-wide);
+                 G32 deferred; G41/G42 BLOCKED; G39
+                 xfail is test_construction_integrity;
+                 G10 and G28 decided keeps; S-34f
+                 15 engine bodies; perfmeasure.py
+                 DIRECT_PROBES; verify_step frozen;
+                 G6 empty depends_on_sensors;
+                 S-04c; serialization.py fail-open;
+                 152 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          G44 census (report only). Not
+                 started. Do not begin G44.
+                 Left uncommitted: baseline_pre-G46-01.json,
+                 baseline_post-G46-01.json, this ledger
+                 entry.
