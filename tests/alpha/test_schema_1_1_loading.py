@@ -219,3 +219,35 @@ def test_layer_validator_fires_on_every_schema_1_1_spec() -> None:
     )
     with pytest.raises(LayerValidationError, match="G14"):
         AlphaLoader().load_from_dict(spec, source="<test>")
+
+
+# ── alpha_id syntax (loader YAML door; S-06a) ──────────────────────────
+
+
+@pytest.mark.parametrize(
+    "alpha_id",
+    [
+        "Foo",
+        "1foo",
+        "foo-bar",
+        "",
+        " foo",
+        "foo bar",
+        "foo/bar",
+        "foo\\bar",
+        "__probe__",
+    ],
+)
+def test_schema_1_1_invalid_alpha_id_rejected(alpha_id: str) -> None:
+    """Reject an alpha_id that does not match ``^[a-z][a-z0-9_]*$``."""
+    spec = _spec(schema_version="1.1", layer="SIGNAL", alpha_id=alpha_id)
+    with pytest.raises(AlphaLoadError) as excinfo:
+        AlphaLoader().load_from_dict(spec, source="<test>")
+    assert f"alpha_id '{alpha_id}'" in str(excinfo.value)
+
+
+def test_schema_1_1_valid_alpha_id_loads() -> None:
+    """Control: a legal id still loads so a blanket refusal cannot pass."""
+    spec = _spec(schema_version="1.1", layer="SIGNAL", alpha_id="ok_id")
+    loaded = AlphaLoader().load_from_dict(spec, source="<test>")
+    assert loaded.manifest.alpha_id == "ok_id"
