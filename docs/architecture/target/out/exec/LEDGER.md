@@ -27473,3 +27473,405 @@ OWNER:       G44-01a deletes the property
                  Left uncommitted: baseline_pre-G44-01a.json,
                  baseline_post-G44-01a.json, this ledger
                  entry.
+
+---
+
+## G44-01  2026-09-21T19:42:04+08:00
+  STEP:          G44-01
+  BASE:          32df0b00af022deba213eb64ecd4f1bd1d56b08d
+  RESULT SHA:    9ba178f6e3b09f24b50d0e2ee9f0392830026e73 (exec/G44-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   CLOSES nothing by deleting. Installs
+                 the keep. n_zero_call_anywhere stays 6,
+                 equal to _G44_KEEP. S5 reason narrowed
+                 to "GAP G41 G42". G44 now has its own
+                 pin (test_g44_dead_compute); G45
+                 already does via test_g45_keep. S5
+                 xfail intact, no XPASS. First assert
+                 is still the proven-non-empty failure
+                 (make_correlation_id). Five import
+                 tiers empty _TIER_RESIDUALS and
+                 statuses KEPT. G40 CLOSED.
+                 Engine-to-kernel equals frozenset().
+                 S2 KEPT at zero twelve-engine pairs.
+                 conformance 122 passed / 4 xfailed
+                 -> 123 passed / 4 xfailed. +1 passed
+                 is test_g44_dead_compute. Inv-10's
+                 three tests passed inside that run.
+                 mypy src/feelies: Success, 250 source
+                 files. docs 103. ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check src/ tests/ scripts/ 720
+                 files already formatted.
+  TESTS:         capture pre-G44-01 GREEN 4916 passed /
+                 0 failed / 18 skipped / 4 xfailed.
+                 -> capture post-G44-01 RED 4916
+                 passed / 1 failed / 18 skipped / 4
+                 xfailed. The one failure is the
+                 accepted IB after-hours test
+                 (test_after_hours_reject_surfaces_as_rejected).
+                 No failure outside the accepted set.
+                 Capture passed count is unchanged
+                 because test_g44_dead_compute (+1)
+                 was offset by that IB test flipping
+                 pass to fail. not-paper_rth: 4915
+                 passed / 1 failed / 5 skipped / 14
+                 deselected / 4 xfailed; same accepted
+                 IB failure. APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-G44-01 vs post-G44-01;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE. Empty
+                 _TIER_RESIDUALS, statuses KEPT. S2
+                 KEPT at zero. Engine-to-kernel stayed
+                 frozenset(). MUST_INVOKE stays 33.
+                 DECLARED_UNINVOKED stays 9. _TAPES
+                 stays the five ids. FAIL_QUIET_KEEP
+                 unmoved (seventeen rows). APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 9ba178f6). Hand FILES: 0 extra
+                 CLEAN.
+                 Touched: tests/conformance/test_hot_path_allow_list.py.
+                 Named-not-edited: hotpath.py (detector
+                 already landed), engine.py (deletion
+                 already landed), cost_arithmetic.py,
+                 risk_wrapper.py, regime_state_cache.py,
+                 horizon_engine.py, identifiers.py,
+                 test_fail_quiet.py, ci.yml. S5 xfail
+                 not dropped. None of the six deleted.
+                 verify_step not runnable (G44-*;
+                 frozen at exec-tools-v1).
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47042 -> 47042 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   frozen at exec-tools-v1; cannot parse G44-*.
+                 Four checks by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS capture 4916->4916 passed, failed
+                 0->1 is the accepted IB after-hours
+                 test, not outside the set; conformance
+                 122->123 passed, 4 xfailed unchanged;
+                 +1 is test_g44_dead_compute;
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/G44-01,
+                 9ba178f6e3b09f24b50d0e2ee9f0392830026e73,
+                 "G44-01: pin the six dead-compute keeps; S5 narrows to G41 G42".
+                 Parent 32df0b00 on arch/exec. One
+                 file, +59 / -1:
+                 tests/conformance/test_hot_path_allow_list.py
+                 only. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 n_zero_call_anywhere is 6 on arrival
+                 from G44-01a, not by construction of
+                 this pin. The six, each with its
+                 contract:
+                 CostArithmetic.declared_round_trip_cost_bps
+                 -- Inv-12 declaration-time disclosure,
+                 distinct from runtime B4;
+                 AlphaBudgetRiskWrapper.checkpoint_risk_state
+                 -- persist per-alpha HWM across
+                 restarts;
+                 AlphaBudgetRiskWrapper.restore_risk_state
+                 -- restore pair of checkpoint;
+                 RegimeStateCache.for_engine
+                 -- named-engine lookup (tick path
+                 uses latest());
+                 RegimeStateCache.forget
+                 -- S7 delisting of cached regime
+                 state;
+                 HorizonSignalEngine.forget
+                 -- S7 symbol lifecycle on the signal
+                 engine.
+                 Key is (path, class, method); no line
+                 number. Assertion is equality on the
+                 live n_zero_call_anywhere set and
+                 _G44_KEEP, not a subset. A src drop
+                 cannot move this frozenset.
+                 Fail-first (1), uncommitted: added a
+                 seventh triple that is not live
+                 (src/feelies/core/cost_arithmetic.py,
+                 CostArithmetic,
+                 not_a_live_zero_call_anywhere).
+                 test_g44_dead_compute FAILED missing
+                 that member: AssertionError:
+                 unexpected []; missing
+                 [('src/feelies/core/cost_arithmetic.py',
+                 'CostArithmetic',
+                 'not_a_live_zero_call_anywhere')].
+                 Removed the extra triple. Re-run
+                 green: 1 passed. Did not delete a
+                 keep member to prove the pin.
+                 Fail-first (2), honesty check on the
+                 narrowed marker, --runxfail: S5 still
+                 fails on its first assert (proven
+                 non-empty, make_correlation_id).
+                 AssertionError: hot-path prohibitions
+                 with proven per-event sites:
+                     string_formatting: 1 proven
+                     per-event
+                     (src/feelies/core/identifiers.py:15)
+                 Reason is now "GAP G41 G42". No
+                 XPASS. test_g45_keep still green.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot
+                 resolve); G39 xfail is
+                 test_construction_integrity; G10
+                 and G28 are decided keeps; S-34f
+                 END STATE 15 engine bodies g-o,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse G44-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 serialization.py fail-open; 152
+                 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          campaign close
+                 Left uncommitted: baseline_pre-G44-01.json,
+                 baseline_post-G44-01.json, this ledger
+                 entry.
+
+---
+
+## CAMPAIGN CLOSE  G44 dead-compute keep
+DATE:        2026-09-21
+CLOSED AT:   G44-01. Commit 9ba178f6 on exec/G44-01;
+             not merged. Campaign base b782caa1
+             (G44-00 parent on arch/exec);
+             G44-01 parent 32df0b00 on arch/exec.
+LOCKED:      3 rungs in the campaign LADDER
+             (G44-00, G44-01a, G44-01). G44-01 is
+             the contract rung. Shared-file steps
+             are sequential: G44-01a depends on
+             G44-00; G44-01 depends on G44-01a.
+EXECUTED:    3 unique step ids passed (retries
+             not recounted). 3 locked ids ran as
+             themselves (G44-00, G44-01a, G44-01).
+             0 were splits. 0 were added
+             mid-campaign. One FINDING between
+             G44-00 and G44-01a was not a ladder
+             rung: the census inherited the
+             scanner's blind spots.
+CLOSED:      dead_compute n_zero_call_anywhere
+             equals a named keep of the six
+             documented API surfaces, with G44
+             owning its own pin
+             (test_g44_dead_compute) and S5's
+             reason narrowed to "GAP G41 G42".
+             Live anywhere walked 17 to 6:
+             G44-00 detector, 17->7 (finding:
+             CompositionEngine.alphas); G44-01a
+             deleted that property, 7->6, the
+             six equal the S-31c keeps; G44-01
+             named them, 6->6, keep-hits ==
+             _G44_KEEP.
+             The six kept, with reasons:
+             CostArithmetic.declared_round_trip_cost_bps
+             -- Inv-12 declaration-time
+             disclosure, distinct from runtime
+             B4;
+             AlphaBudgetRiskWrapper.checkpoint_risk_state
+             -- persist per-alpha HWM across
+             restarts;
+             AlphaBudgetRiskWrapper.restore_risk_state
+             -- restore pair of checkpoint;
+             RegimeStateCache.for_engine
+             -- named-engine lookup (tick path
+             uses latest());
+             RegimeStateCache.forget
+             -- S7 delisting of cached regime
+             state;
+             HorizonSignalEngine.forget
+             -- S7 symbol lifecycle on the
+             signal engine.
+             One deleted:
+             CompositionEngine.alphas. A
+             @property returning
+             tuple(self._alphas). No .alphas
+             read and no getattr(..., "alphas")
+             anywhere in src/, tests/, scripts/,
+             tools/, configs/, or docs/prompts.
+             Its only apparent reach was the
+             "alphas" JSON key in
+             cli/promote.py:466, which reads
+             the promotion ledger, not this
+             property. git log -S "def alphas"
+             on engine.py is one commit,
+             1be467b8 (Phase-4); git log -S
+             ".alphas" on src/feelies, tests,
+             scripts is empty. self._alphas,
+             register(), attach and
+             _on_context stayed.
+             The census said zero dead (103
+             n_zero_call / 17
+             n_zero_call_anywhere / 0 DEAD)
+             and was wrong by one, because it
+             ran on the scanner G44-00 fixed.
+             S5 narrowed to G41/G42. The
+             marker was not dropped. G44's pin
+             is test_g44_dead_compute; G45's
+             pin is test_g45_keep.
+             The shape was one detector rung,
+             one deletion rung, one contract
+             rung. The detector landed first,
+             because a keep named against a
+             blind scanner is not a keep.
+             Five import tiers stayed KEPT.
+             G40 stayed CLOSED. Twelve engine
+             module sets stayed KEPT at zero
+             pairs for every rung.
+             Engine-to-kernel stayed
+             frozenset().
+DOES NOT
+CLOSE:       G41 and G42 (the budget and the
+             meter, BLOCKED -- S-33 cannot close
+             an overrun the per-quote timer
+             cannot resolve; S-32 recorded that
+             instrument uninformative). G45
+             (already closed; pin is
+             test_g45_keep). G46 (orphan matcher,
+             closed at G46-01). Deleting any of
+             the six is not a close. A getattr
+             rewrite to a direct call is not a
+             G44 rung: that uses the method, it
+             does not prove it dead. Emptying
+             n_zero_call_anywhere by shrinking
+             the walker is not a keep.
+REMAINS OPEN:
+             G32 S-30f deferred; never cut
+             G36 S-30g; left OPEN -- seventeen
+             keepers remain keepers
+             G39 S-12 (S17 xfail;
+             test_construction_integrity). S15
+             passes.
+             G41 S-33; left OPEN
+             G42 S-33; left OPEN
+             Orchestrator residual: 15 engine
+             bodies, groups g-o, no step ids --
+             S-34f END STATE, deliberate
+             perfmeasure.py DIRECT_PROBES -- three
+             dead entries, unowned
+             G6 empty depends_on_sensors -- S-01
+             finding, no step
+             config-path / loader alpha_id -- S-04c,
+             never written
+             serialization.py fail-open -- own
+             step, never allocated
+             verify_step uppercase / unfenced /
+             named-constant / letter-suffix --
+             frozen at exec-tools-v1, unowned
+             152 research cache days stale; APP/
+             2026-03-26 current -- no step.
+             Nine never-rows: DECLARED_UNINVOKED
+             stays nine. _TAPES stays the five
+             ids. MUST_INVOKE stays 33. invoked
+             == MUST_INVOKE. Reset owed is 0
+             since R-07.
+             S5 xfail remains (G41 G42). G44
+             and G45 are closed; the marker no
+             longer names them.
+DECIDED:     G10 S-12/S-31a -- StateTransition is
+             a notification record; publish kept.
+             G28 CLOSED (S-12) via
+             _NotificationObserver; X9 green.
+             G45 CLOSED (G45-05): proven equals
+             the keep.
+             G44 CLOSED (G44-01): anywhere equals
+             the keep of six.
+             G46 closed at G46-01 (orphan
+             matcher).
+CI.YML:      Import contracts blocks. Both
+             contracts KEPT. Do not restore
+             continue-on-error. check generates
+             the hot-path executed set (ede9d1d9);
+             the G45 keep skip is keyed to fork
+             PRs (e1cc4e62), not to a missing
+             evidence file.
+INVARIANTS:  Oracle frozen at exec-tools-v1. Never
+             run scripts/rebaseline_parity_hashes.py.
+             Hold all 64 HASH/COUNT constants, the
+             fingerprint
+             (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6),
+             and _BASELINE_CONFIG_HASH unless a step
+             names a re-pin.
+             Accepted baseline failures are the IB
+             after-hours test
+             (test_after_hours_reject_surfaces_as_rejected),
+             g12
+             (test_g12_cost_exceeds_disclosure_alert),
+             and any live-feed test in
+             tests/ingestion/test_massive_functional.py.
+             S-13 EXEMPTION ALSO is adopted. A
+             failure outside that set is a stop.
+             Both equality pins hold: Five import
+             tiers is empty _TIER_RESIDUALS and
+             statuses KEPT; Twelve engine module
+             sets is KEPT at zero pairs;
+             engine-to-kernel equals frozenset().
+             Do not restore continue-on-error.
+             Do not invent suffixes for g-o.
+             Reset partition holds: _TAPES the
+             five ids; MUST_INVOKE 33;
+             DECLARED_UNINVOKED nine; invoked ==
+             MUST_INVOKE.
+             FAIL_QUIET_KEEP must never regain a
+             line key after 0.1. ruff locked at
+             0.15.12 in uv.lock.
+             Specific to this campaign: do not
+             drop S5's xfail. After G44-01 the
+             reason is "GAP G41 G42". G44's pin
+             is test_g44_dead_compute; G45's pin
+             is test_g45_keep. Do not delete any
+             of the six.
+             LEDGER APPENDS ARE END-OF-FILE WRITES,
+             NEVER A PREFIX-PRESERVING STRREPLACE.
+FINDINGS:    A census inherits its detector's
+             blind spots. The G44 census said
+             zero dead because it was run by the
+             scanner G44-00 was about to fix.
+             Naming _G44_KEEP against that tape
+             would have pinned six while a
+             seventh live zero-call sat unnamed,
+             the UNIT_UNDETERMINED shape.
+             A getattr fix must be proven not to
+             widen. The negative probe:
+             CompositionEngine.alphas stayed in
+             the zero-call set after G44-00,
+             reached_by_name_literal true.
+             "alphas" is the JSON key at
+             cli/promote.py:466, not a getattr
+             argument. Counting JSON/YAML keys
+             as calls is the catalogued non-cut.
+             FactorNeutralizer.factor_model left
+             the zero-call set via the property-
+             read count, not via getattr.
