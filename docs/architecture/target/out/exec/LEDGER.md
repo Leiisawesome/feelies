@@ -26373,6 +26373,20 @@ FINDINGS:    A blindness probe runs by insertion
              the count of distinct campaign
              names, and no step id appears
              twice. OPEN — not done here.
+             LEDGER APPENDS ARE END-OF-FILE WRITES, NEVER A
+             PREFIX-PRESERVING STRREPLACE. A StrReplace
+             whose old_string is the ledger's tail and
+             whose new_string is that tail plus a block
+             stays applicable after it succeeds, so any
+             retry, compaction resume or "continue"
+             appends the block again. That is the cause
+             of 89d3ac28, c62903ce and the four G46-01
+             copies. tools/exec is frozen and cannot
+             enforce this. Every ledger append is an
+             end-of-file write, and
+             tests/docs/test_exec_ledger_structure.py
+             runs BEFORE git add of the ledger, not
+             after.
 
 ---
 
