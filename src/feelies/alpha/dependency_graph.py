@@ -202,17 +202,18 @@ def reject_reads_outside_declared_sensors(
 ) -> None:
     """Reject a SIGNAL alpha that reads a feature it did not declare.
 
-    Body keys and regime-gate names are judged separately. ``evaluate``
-    receives ``snapshot.values`` and never the sensor cache, so a body
-    key must be a feature id produced by a sensor in
-    ``depends_on_sensors``. A raw sensor id in the body reads ``None``
-    forever, declared or not.
+    The warm-set scan already resolves the names ``evaluate`` and the
+    regime gate read. This makes that set a build contract.
 
-    Gate names that are feature ids, or that expand to the features a
-    sensor publishes at this horizon, must be owned by a declared
-    sensor. A gate name that publishes no horizon feature is the
-    sensor-cache back-fill in ``_build_bindings``: accepted when the
-    alpha declared that sensor, rejected when it did not.
+    Ownership: every resolved name must be a feature id produced by a
+    sensor in ``depends_on_sensors``. Gate names that are not themselves
+    feature ids expand the same way ``required_warm_feature_ids_for_signal_alpha``
+    does (a sensor id stands for the features it publishes). Body keys
+    the warm-set drops because they are not published stay in the set:
+    a read that is not a feature of a declared sensor is still a read.
+    A declared gate name that publishes no feature at this horizon is
+    rejected on that same path: sensor emission shape is not declared,
+    so a raw sensor id is not a supported regime-gate read.
 
     An unresolvable body scan (``consumed_value_keys_from_signal_source``
     returns ``None``) is rejected. Unknown is not a proof of inclusion.
@@ -234,6 +235,19 @@ def reject_reads_outside_declared_sensors(
         for feature in horizon_features
         if feature.horizon_seconds == horizon_seconds
     }
+    read_names: set[str] = set(consumed)
+    raw_gate_names: set[str] = set()
+    for name in gate.binding_identifier_names():
+        if name.endswith("_percentile") or name.endswith("_zscore") or name in available:
+            read_names.add(name)
+            continue
+        produced = feature_ids_for_sensor_at_horizon(name, horizon_seconds, horizon_features)
+        if produced:
+            read_names.update(produced)
+        else:
+            read_names.add(name)
+            raw_gate_names.add(name)
+
     feature_owners: dict[str, set[str]] = {}
     for feature in horizon_features:
         if feature.horizon_seconds != horizon_seconds:
@@ -241,31 +255,22 @@ def reject_reads_outside_declared_sensors(
         feature_owners.setdefault(feature.feature_id, set()).update(feature.input_sensor_ids)
 
     declared = frozenset(depends_on_sensors)
-
-    def _unowned(name: str) -> bool:
-        owners = feature_owners.get(name)
-        return not owners or not owners <= declared
-
-    # Body keys never join the gate names before this branch. A declared
-    # raw sensor id is legal in the gate and still a read of None in evaluate.
-    outside: set[str] = {name for name in consumed if _unowned(name)}
-    for name in gate.binding_identifier_names():
-        if name.endswith("_percentile") or name.endswith("_zscore") or name in available:
-            if _unowned(name):
-                outside.add(name)
-            continue
-        produced = feature_ids_for_sensor_at_horizon(name, horizon_seconds, horizon_features)
-        if produced:
-            outside.update(feature_id for feature_id in produced if _unowned(feature_id))
-            continue
-        if name not in declared:
-            outside.add(name)
-
+    outside = [
+        name
+        for name in sorted(read_names)
+        if not (owners := feature_owners.get(name)) or not owners <= declared
+    ]
     if not outside:
         return
     detail = ", ".join(
-        f"read {name!r} is not a feature of declared sensors {sorted(declared)}"
-        for name in sorted(outside)
+        (
+            f"sensor {name!r} publishes no horizon feature at horizon "
+            f"{horizon_seconds}s, and a regime-gate read of a raw sensor id "
+            f"is not supported because sensor emission shape is not declared"
+        )
+        if name in raw_gate_names and name in declared
+        else f"read {name!r} is not a feature of declared sensors {sorted(declared)}"
+        for name in outside
     )
     raise ConfigurationError(f"alpha {alpha_id!r}: {detail}")
 
