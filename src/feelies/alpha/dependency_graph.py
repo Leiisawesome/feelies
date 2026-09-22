@@ -211,6 +211,9 @@ def reject_reads_outside_declared_sensors(
     does (a sensor id stands for the features it publishes). Body keys
     the warm-set drops because they are not published stay in the set:
     a read that is not a feature of a declared sensor is still a read.
+    A declared gate name that publishes no feature at this horizon is
+    rejected on that same path: sensor emission shape is not declared,
+    so a raw sensor id is not a supported regime-gate read.
 
     An unresolvable body scan (``consumed_value_keys_from_signal_source``
     returns ``None``) is rejected. Unknown is not a proof of inclusion.
@@ -233,6 +236,7 @@ def reject_reads_outside_declared_sensors(
         if feature.horizon_seconds == horizon_seconds
     }
     read_names: set[str] = set(consumed)
+    raw_gate_names: set[str] = set()
     for name in gate.binding_identifier_names():
         if name.endswith("_percentile") or name.endswith("_zscore") or name in available:
             read_names.add(name)
@@ -242,6 +246,7 @@ def reject_reads_outside_declared_sensors(
             read_names.update(produced)
         else:
             read_names.add(name)
+            raw_gate_names.add(name)
 
     feature_owners: dict[str, set[str]] = {}
     for feature in horizon_features:
@@ -258,7 +263,13 @@ def reject_reads_outside_declared_sensors(
     if not outside:
         return
     detail = ", ".join(
-        f"read {name!r} is not a feature of declared sensors {sorted(declared)}"
+        (
+            f"sensor {name!r} publishes no horizon feature at horizon "
+            f"{horizon_seconds}s, and a regime-gate read of a raw sensor id "
+            f"is not supported because sensor emission shape is not declared"
+        )
+        if name in raw_gate_names and name in declared
+        else f"read {name!r} is not a feature of declared sensors {sorted(declared)}"
         for name in outside
     )
     raise ConfigurationError(f"alpha {alpha_id!r}: {detail}")

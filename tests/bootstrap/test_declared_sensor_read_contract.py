@@ -18,10 +18,12 @@ import pytest
 from feelies.alpha.registry import UnresolvedDependencyError
 from feelies.bootstrap import build_platform
 from feelies.core.errors import ConfigurationError
-from feelies.core.events import NBBOQuote
+from feelies.core.events import NBBOQuote, Trade
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.snr_drift_diffusion import SNRDriftDiffusionSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
+from feelies.sensors.impl.vpin_50bucket import VPIN50BucketSensor
 from feelies.sensors.spec import SensorSpec
 
 _SESSION_OPEN_NS = 1_768_532_400_000_000_000
@@ -46,7 +48,33 @@ def _spread() -> SensorSpec:
     )
 
 
-def _signal(*, alpha_id: str, depends: list[str], read: str) -> str:
+def _vpin() -> SensorSpec:
+    return SensorSpec(
+        sensor_id="vpin_50bucket",
+        sensor_version="1.1.0",
+        cls=VPIN50BucketSensor,
+        params={},
+        subscribes_to=(Trade,),
+    )
+
+
+def _snr() -> SensorSpec:
+    return SensorSpec(
+        sensor_id="snr_drift_diffusion",
+        sensor_version="1.3.0",
+        cls=SNRDriftDiffusionSensor,
+        params={},
+        subscribes_to=(NBBOQuote,),
+    )
+
+
+def _signal(
+    *,
+    alpha_id: str,
+    depends: list[str],
+    read: str,
+    on_condition: str = "P(normal) > 0.5",
+) -> str:
     depends_literal = "[" + ", ".join(depends) + "]"
     return f"""
 schema_version: "1.1"
@@ -67,7 +95,7 @@ risk_budget:
   capital_allocation_pct: 0.1
 regime_gate:
   regime_engine: hmm_3state_fractional
-  on_condition: "P(normal) > 0.5"
+  on_condition: "{on_condition}"
   off_condition: "False"
 cost_arithmetic:
   edge_estimate_bps: 9.0
@@ -183,6 +211,65 @@ def test_build_accepts_a_read_of_a_declared_sensor() -> None:
         read='return snapshot.values.get("spread_z_30d")',
     )
     _build([("probe.alpha.yaml", spec)], (_spread(),))
+
+
+_RAW_GATE_UNSUPPORTED = (
+    "publishes no horizon feature at horizon 30s, and a regime-gate read of a "
+    "raw sensor id is not supported because sensor emission shape is not declared"
+)
+
+
+def test_build_rejects_gate_read_of_declared_raw_sensor() -> None:
+    """A declared raw id with no horizon feature is not a supported gate read."""
+    spec = _signal(
+        alpha_id="gate_raw_declared",
+        depends=["vpin_50bucket"],
+        read="return None",
+        on_condition="vpin_50bucket > 0.5",
+    )
+    with pytest.raises(ConfigurationError, match=_RAW_GATE_UNSUPPORTED):
+        _build([("probe.alpha.yaml", spec)], (_vpin(),))
+
+
+def test_build_rejects_body_read_of_declared_raw_sensor() -> None:
+    """evaluate sees snapshot.values only. The same raw id reads None forever."""
+    spec = _signal(
+        alpha_id="body_raw_declared",
+        depends=["vpin_50bucket"],
+        read='return snapshot.values["vpin_50bucket"]',
+    )
+    with pytest.raises(
+        ConfigurationError,
+        match="read 'vpin_50bucket' is not a feature of declared sensors",
+    ):
+        _build([("probe.alpha.yaml", spec)], (_vpin(),))
+
+
+def test_build_rejects_gate_read_of_undeclared_raw_sensor() -> None:
+    """An undeclared raw sensor id is still outside the declared set."""
+    spec = _signal(
+        alpha_id="gate_raw_undeclared",
+        depends=["spread_z_30d"],
+        read="return None",
+        on_condition="vpin_50bucket > 0.5",
+    )
+    with pytest.raises(
+        ConfigurationError,
+        match="read 'vpin_50bucket' is not a feature of declared sensors",
+    ):
+        _build([("probe.alpha.yaml", spec)], (_spread(), _vpin()))
+
+
+def test_build_rejects_gate_read_of_declared_tuple_sensor() -> None:
+    """Bugbot: snr_drift_diffusion emits a tuple and is not cached under its id."""
+    spec = _signal(
+        alpha_id="gate_tuple_declared",
+        depends=["snr_drift_diffusion"],
+        read="return None",
+        on_condition="snr_drift_diffusion > 0.5",
+    )
+    with pytest.raises(ConfigurationError, match=_RAW_GATE_UNSUPPORTED):
+        _build([("probe.alpha.yaml", spec)], (_snr(),))
 
 
 def test_portfolio_spec_builds() -> None:
