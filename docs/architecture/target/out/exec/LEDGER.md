@@ -29545,3 +29545,91 @@ FINDINGS:    A census inherits its detector's
                  S-30f deferred.
   NEXT:          O-10 ZERO_SUBSCRIBER_RESOLUTIONS equality pin.
                  Not started.
+
+---
+
+## O-10  2026-09-22T16:54:58+08:00
+  STEP:          O-10
+  BASE:          7f7c3cbd34d87541ea58b59a3e92199dfa267412 (arch/exec, the
+                 O-09 ledger commit)
+  RESULT SHA:    c98cc4ec2016d75354d43126053df3600bd4b4b4 (exec/O-10). Merged
+                 to arch/exec as 641bcb2430774642f977267f0708699882e3ffaa.
+  VERDICT:       passed
+  CONFORMANCE:   ZERO_SUBSCRIBER_RESOLUTIONS is a Counter pin of
+                 event_type against the live zero-subscriber set,
+                 both directions. The row is
+                 (StateTransition, notification_record). Retired the
+                 G10/G28 emptiness xfail. Deleted
+                 test_every_published_type_has_a_subscriber and its
+                 xfail(strict, GAP G10 G28). G10 and G28 stay OPEN:
+                 StateTransition is a declared keep, and GAP_REGISTRY
+                 was not in FILES. No XPASS. The one remaining xfail
+                 is test_hot_path_allow_list, GAP G41 G42.
+                 conformance 125 passed, 2 xfailed -> 126 passed,
+                 1 xfailed. The passed count rose by one because the
+                 new pin passes and the deleted test was an xfail.
+  TESTS:         conformance -rxX:
+                 XFAIL tests/conformance/test_hot_path_allow_list.py::
+                 test_hot_path_allow_list - GAP G41 G42
+                 126 passed, 1 xfailed. ruff check passed. ruff format
+                 clean. mypy src/feelies: Success, 250 source files.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS. fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+                 manifest_hash() digest change is DECLARED.
+                 old f5c02a0b08f08641d1efdf230b00b865ec57148a57c8dc1481ae580ed74db256
+                 new 47bd109dbd8617a134d5d5d3ae2a7fe53d913d0e9ab60492277e033d939a625e
+                 Nothing locked reads it. A search of the tree before
+                 this ledger block found neither digest. test_s15
+                 asserts length 64, not the digest. bootstrap.py logs
+                 manifest_hash()[:12]. No determinism constant is
+                 that digest.
+  FILES:         2 touched.
+                 src/feelies/core/wiring_manifest.py
+                 tests/conformance/test_emission_registry.py
+                 Resolution tuple 6 -> 1. The five consumer types stay
+                 in SUBSCRIPTIONS (ordinals 31-35). Union of
+                 subscription event types with the resolution tuple
+                 stays 22. forbidden_reads and test_single_owner were
+                 not FILES; they still see the same fact set.
+  NET DELTA:     Subscription graph unchanged. StateTransition remains
+                 the only published type with no subscribe site.
+  DETERMINISM:   No HASH/COUNT pin moved. Parity constants hold 64/64.
+                 The manifest digest moved as declared above.
+  VERIFY_STEP:   FILES 2. PARITY 64/64 hold. Digest declared.
+                 conformance xfailed 2 -> 1, failed 0, no XPASS.
+  NOTES:         Fail-first (1), pin built while the five consumer
+                 rows were still in the tuple:
+                 AssertionError: ZERO_SUBSCRIBER_RESOLUTIONS rows
+                 absent from the live zero-subscriber set:
+                 KillSwitchActivation, OrderAck, PositionUpdate,
+                 RiskVerdict, SymbolHalted
+                 assert Counter({those five: 1}) == Counter()
+                 1 failed. Then those five rows were removed.
+                 Pin green: 1 passed. Tuple is exactly
+                 (StateTransition, notification_record).
+                 The G10/G28 xfail was deleted only after that.
+                 Fail-first (2), scratch class _O10ProbeEvent and
+                 bus.publish(_O10ProbeEvent()) appended to
+                 src/feelies/core/events.py, then restored.
+                 AssertionError: published types with no subscriber
+                 and no resolution row: _O10ProbeEvent
+                 assert Counter({"_O10ProbeEvent": 1}) == Counter()
+                 Restored byte-identical. SHA-256 before and after
+                 AF7F3CCCB7143A5211F7130E8952EC5F9D496661A2B47C119393D6F6D861A755.
+                 git hash-object
+                 989d12690298c2f9ede84e522d125ab374255f54 matches
+                 HEAD:src/feelies/core/events.py.
+                 Compact:
+                 O-10      passed
+                 tests     conformance 125 passed, 2 xfailed ->
+                           126 passed, 1 xfailed, 0 xpassed
+                 parity    64/64 0 moved; manifest digest declared
+                 files     2 declared, 2 touched, clean
+                 next      stop. G41/G42 xfail remains
+  FINDINGS:      Carried, not fixed here: G10 and G28 OPEN on the
+                 StateTransition keep; G39 OPEN on the counted rows;
+                 G41/G42 xfail remains; G36 OPEN on the seventeen
+                 keepers; G32 S-30f deferred.
+  NEXT:          Stop. The one remaining conformance xfail is S5,
+                 GAP G41 G42. Not started.
