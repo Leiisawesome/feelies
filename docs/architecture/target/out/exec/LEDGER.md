@@ -28895,3 +28895,184 @@ FINDINGS:    A census inherits its detector's
                  baseline_post-O-03a.json,
                  baseline_post-O-03b.json, this ledger
                  entry.
+
+---
+
+## O-05  2026-09-22T13:21:52+08:00
+  STEP:          O-05
+  BASE:          dfd5576ec15cb6adafc86499ac736d7ab152d495
+                 (arch/exec; main 61a41417 is an ancestor)
+  RESULT SHA:    a8897669fb8b98198e26f311b979b2233987b53d
+                 (exec/O-05; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no plan
+                 file. New branch exec/O-05 off arch/exec.
+                 Build-time contract: every name a SIGNAL alpha
+                 reads in evaluate or the regime gate must be a
+                 feature id of a sensor in depends_on_sensors.
+                 (B) PUBLICATION was dropped.
+                 resolve_signal_dependencies already raises
+                 UnresolvedDependencyError when a declared
+                 sensor is not registered. That behaviour is
+                 pinned, not reimplemented.
+                 reject_reads_outside_declared_sensors lives in
+                 feelies.alpha.dependency_graph and is called
+                 from _create_signal_layer beside the O-03b
+                 check, after resolve_signal_dependencies. Gate
+                 names that are not feature ids expand the same
+                 way the warm-set scan does. Body keys the
+                 warm-set drops stay in the set. If
+                 consumed_value_keys_from_signal_source returns
+                 None, ConfigurationError: unknown is not a
+                 proof of inclusion. PORTFOLIO specs have no
+                 signal body and are exempt; they are not in
+                 signal_alphas. H3/M2 and the unused-dependency
+                 warning are untouched. HorizonAggregator,
+                 _build_bindings, RegimeGate.evaluate, and
+                 _dispatch_one were not edited.
+                 configs/paper_run.yaml was not edited.
+                 Fail-first (1), before the check: FAILED
+                 test_build_rejects_read_of_an_undeclared_sensor
+                 E Failed: DID NOT RAISE ConfigurationError.
+                 After: alpha 'undeclared_owner': read
+                 'ofi_ewma_zscore' is not a feature of declared
+                 sensors ['spread_z_30d']. Fail-first (2), the
+                 publication pin, green before and after:
+                 UnresolvedDependencyError, 'unpublished_owner'
+                 requires 'book_imbalance'. Fail-first (4),
+                 before: FAILED
+                 test_build_rejects_params_only_read_key E
+                 Failed: DID NOT RAISE. After: alpha
+                 'params_only_read': signal body read set could
+                 not be resolved. Fail-first (5):
+                 test_portfolio_spec_builds passed before and
+                 after. Fail-first (6): O-03 and O-03b probes
+                 still pass. Quoted together: 18 passed, 32
+                 deselected. tests/bootstrap and tests/alpha:
+                 548 passed. tests/conformance: 123 passed, 4
+                 xfailed, no XPASS. S5 xfail intact,
+                 test_hot_path_allow_list, reason GAP G41 G42.
+                 mypy src/feelies: Success, 250 source files.
+                 ruff check green. ruff format: 722 files
+                 already formatted. lint-imports: 2 kept, 0
+                 broken.
+  TESTS:         capture pre-O-05 GREEN 4941 passed / 0 failed /
+                 19 skipped. -> capture post-O-05 GREEN 4946
+                 passed / 0 failed / 19 skipped. +5 is this rung
+                 (undeclared owner, the unregistered-sensor pin,
+                 params-only key, a declared read builds, a
+                 portfolio spec builds). not-paper_rth: 4945
+                 passed / 0 failed / 6 skipped / 14 deselected /
+                 4 xfailed. determinism 148 -> 148. APP oracle 2
+                 passed with FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip). R-01 and R6:
+                 2 passed.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre-O-05 vs post-O-05; 0 moved
+                 | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 APP oracle baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93, _BASELINE_FILL_COUNT
+                 20, _BASELINE_DATA_VERSION
+                 cache:2364ef7fe41c27d9, _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 A raise before any tick cannot move a replay.
+                 bt_app.yaml was not edited.
+  FILES:         3 declared, 3 touched, 3 committed (clean vs
+                 a8897669). Hand FILES: 0 extra in the commit.
+                 Touched: src/feelies/alpha/dependency_graph.py,
+                 src/feelies/bootstrap.py,
+                 tests/bootstrap/test_declared_sensor_read_contract.py.
+                 configs/paper_run.yaml not touched. LEDGER.md
+                 (this entry uncommitted). Captures uncommitted.
+  NET DELTA:     no plan triple. actual modules 250 -> 250 (+0)
+                 public_symbols 592 -> 593 (+1) sloc 47153 ->
+                 47226 (+73) n_edges 677 -> 677 (+0) n_modules
+                 203 -> 203 cycles 1 -> 1 alphaleak 0 -> 0. The
+                 +1 public symbol is
+                 reject_reads_outside_declared_sensors. No new
+                 edge. The call reuses the existing
+                 dependency_graph import.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash pin
+                 moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step cannot
+                 parse O-*. Four checks by hand: FILES 3
+                 declared / 3 touched CLEAN; PARITY 64/64
+                 HASH+COUNT hold, 0 moved; TESTS 4941->4946
+                 passed, failed 0->0, conformance 123 passed / 4
+                 xfailed, no XPASS; NET DELTA modules 0 / edges
+                 0 / cycles 0 / alphaleak 0. public_symbols +1
+                 and sloc +73 are the build-time check, not a
+                 moved locked hash.
+  NOTES:         One commit on exec/O-05,
+                 a8897669fb8b98198e26f311b979b2233987b53d,
+                 "O-05: build rejects an alpha reading a feature
+                 it did not declare". Parent dfd5576e. Three
+                 files, +286. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Compact: O-05 passed. tests 4941 passed / 0
+                 failed / 19 skipped -> 4946 passed / 0 failed /
+                 19 skipped. parity declared hold 64 HASH/COUNT
+                 + fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                 | actual 64/64 0 moved | MATCH. files 3
+                 declared, 3 touched, clean. next decide
+                 paper_run.yaml; then merge and open the PR.
+                 The first configs loop called bare build_platform,
+                 which stops at "ingest terminal health not populated"
+                 for every bt_*.yaml before O-05's check runs, so it
+                 verified nothing for them. Re-run through the harness
+                 path (load_event_log_from_disk_cache,
+                 _attach_day_source_provenance, platform_factory)
+                 reached _create_signal_layer for all eight on both
+                 trees: built before and after, and the booted read
+                 sets matched the static census for all six alphas.
+                 Lesson: a verification that calls the right function
+                 through the wrong door verifies nothing -- boot a
+                 config the way it actually boots.
+  FINDINGS:      The census claimed paper_run builds and it does
+                 not. With MASSIVE_API_KEY set, build_platform
+                 on configs/paper_run.yaml raises ValueError:
+                 kyle_lambda_60s instantiates as sensor_version
+                 2.0.0 while the spec pins 1.2.0. The kyle block
+                 is unchanged since 577bce76 (2026-05-24). The
+                 class default flipped from 1.2.0 to 2.0.0 in
+                 441e0445 (2026-06-12). The registry has
+                 required the instance version to match the spec
+                 since 672b15a1 (2026-04-24). The config has
+                 been unbootable since 2026-06-12, 102 days
+                 before 2026-09-22. scripts/run_paper.py
+                 defaults to platform.yaml. CI does not name
+                 paper_run.yaml. README runs run_paper.py
+                 against platform.yaml. The yaml is an example
+                 in the script docstring and in audits. Under
+                 configs/, paper_run is the only kyle_lambda_60s
+                 pin, at 1.2.0. platform.yaml pins 2.1.0 and
+                 passes sensor_version into params. Every bt_*
+                 config extends platform.yaml.
+                 paper_smoke_rth.yaml does not register kyle.
+                 (B) was already enforced upstream: a declared
+                 sensor the platform does not register raises
+                 UnresolvedDependencyError before the read
+                 contract. The new test pins that. The lesson: a
+                 census that says builds must call
+                 build_platform. Configs loop, MASSIVE_API_KEY
+                 set for PAPER, identical before and after this
+                 rung. Eight bt_*.yaml FAIL ConfigurationError
+                 because ingest_terminal_symbol_health is not
+                 populated. paper_run.yaml FAIL ValueError kyle
+                 version. paper_smoke_rth.yaml PASS. No config
+                 changed from pass to fail. Carried, not fixed
+                 here: G36 OPEN; G32 S-30f deferred; G41/G42
+                 BLOCKED; G39 xfail is
+                 test_construction_integrity; G10 and G28 are
+                 decided keeps. This capture was green on both
+                 sides (0 failed).
+  NEXT:          decide paper_run.yaml; then merge and open the
+                 PR. Left uncommitted: baseline_pre-O-05.json,
+                 baseline_post-O-05.json, this ledger entry.
