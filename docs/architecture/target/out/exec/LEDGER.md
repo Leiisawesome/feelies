@@ -28895,3 +28895,741 @@ FINDINGS:    A census inherits its detector's
                  baseline_post-O-03a.json,
                  baseline_post-O-03b.json, this ledger
                  entry.
+
+---
+
+## O-05  2026-09-22T13:21:52+08:00
+  STEP:          O-05
+  BASE:          dfd5576ec15cb6adafc86499ac736d7ab152d495
+                 (arch/exec; main 61a41417 is an ancestor)
+  RESULT SHA:    a8897669fb8b98198e26f311b979b2233987b53d
+                 (exec/O-05; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no plan
+                 file. New branch exec/O-05 off arch/exec.
+                 Build-time contract: every name a SIGNAL alpha
+                 reads in evaluate or the regime gate must be a
+                 feature id of a sensor in depends_on_sensors.
+                 (B) PUBLICATION was dropped.
+                 resolve_signal_dependencies already raises
+                 UnresolvedDependencyError when a declared
+                 sensor is not registered. That behaviour is
+                 pinned, not reimplemented.
+                 reject_reads_outside_declared_sensors lives in
+                 feelies.alpha.dependency_graph and is called
+                 from _create_signal_layer beside the O-03b
+                 check, after resolve_signal_dependencies. Gate
+                 names that are not feature ids expand the same
+                 way the warm-set scan does. Body keys the
+                 warm-set drops stay in the set. If
+                 consumed_value_keys_from_signal_source returns
+                 None, ConfigurationError: unknown is not a
+                 proof of inclusion. PORTFOLIO specs have no
+                 signal body and are exempt; they are not in
+                 signal_alphas. H3/M2 and the unused-dependency
+                 warning are untouched. HorizonAggregator,
+                 _build_bindings, RegimeGate.evaluate, and
+                 _dispatch_one were not edited.
+                 configs/paper_run.yaml was not edited.
+                 Fail-first (1), before the check: FAILED
+                 test_build_rejects_read_of_an_undeclared_sensor
+                 E Failed: DID NOT RAISE ConfigurationError.
+                 After: alpha 'undeclared_owner': read
+                 'ofi_ewma_zscore' is not a feature of declared
+                 sensors ['spread_z_30d']. Fail-first (2), the
+                 publication pin, green before and after:
+                 UnresolvedDependencyError, 'unpublished_owner'
+                 requires 'book_imbalance'. Fail-first (4),
+                 before: FAILED
+                 test_build_rejects_params_only_read_key E
+                 Failed: DID NOT RAISE. After: alpha
+                 'params_only_read': signal body read set could
+                 not be resolved. Fail-first (5):
+                 test_portfolio_spec_builds passed before and
+                 after. Fail-first (6): O-03 and O-03b probes
+                 still pass. Quoted together: 18 passed, 32
+                 deselected. tests/bootstrap and tests/alpha:
+                 548 passed. tests/conformance: 123 passed, 4
+                 xfailed, no XPASS. S5 xfail intact,
+                 test_hot_path_allow_list, reason GAP G41 G42.
+                 mypy src/feelies: Success, 250 source files.
+                 ruff check green. ruff format: 722 files
+                 already formatted. lint-imports: 2 kept, 0
+                 broken.
+  TESTS:         capture pre-O-05 GREEN 4941 passed / 0 failed /
+                 19 skipped. -> capture post-O-05 GREEN 4946
+                 passed / 0 failed / 19 skipped. +5 is this rung
+                 (undeclared owner, the unregistered-sensor pin,
+                 params-only key, a declared read builds, a
+                 portfolio spec builds). not-paper_rth: 4945
+                 passed / 0 failed / 6 skipped / 14 deselected /
+                 4 xfailed. determinism 148 -> 148. APP oracle 2
+                 passed with FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip). R-01 and R6:
+                 2 passed.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants,
+                 the fingerprint, _BASELINE_CONFIG_HASH | actual
+                 64/64 identical pre-O-05 vs post-O-05; 0 moved
+                 | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 APP oracle baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93, _BASELINE_FILL_COUNT
+                 20, _BASELINE_DATA_VERSION
+                 cache:2364ef7fe41c27d9, _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 A raise before any tick cannot move a replay.
+                 bt_app.yaml was not edited.
+  FILES:         3 declared, 3 touched, 3 committed (clean vs
+                 a8897669). Hand FILES: 0 extra in the commit.
+                 Touched: src/feelies/alpha/dependency_graph.py,
+                 src/feelies/bootstrap.py,
+                 tests/bootstrap/test_declared_sensor_read_contract.py.
+                 configs/paper_run.yaml not touched. LEDGER.md
+                 (this entry uncommitted). Captures uncommitted.
+  NET DELTA:     no plan triple. actual modules 250 -> 250 (+0)
+                 public_symbols 592 -> 593 (+1) sloc 47153 ->
+                 47226 (+73) n_edges 677 -> 677 (+0) n_modules
+                 203 -> 203 cycles 1 -> 1 alphaleak 0 -> 0. The
+                 +1 public symbol is
+                 reject_reads_outside_declared_sensors. No new
+                 edge. The call reuses the existing
+                 dependency_graph import.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash pin
+                 moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step cannot
+                 parse O-*. Four checks by hand: FILES 3
+                 declared / 3 touched CLEAN; PARITY 64/64
+                 HASH+COUNT hold, 0 moved; TESTS 4941->4946
+                 passed, failed 0->0, conformance 123 passed / 4
+                 xfailed, no XPASS; NET DELTA modules 0 / edges
+                 0 / cycles 0 / alphaleak 0. public_symbols +1
+                 and sloc +73 are the build-time check, not a
+                 moved locked hash.
+  NOTES:         One commit on exec/O-05,
+                 a8897669fb8b98198e26f311b979b2233987b53d,
+                 "O-05: build rejects an alpha reading a feature
+                 it did not declare". Parent dfd5576e. Three
+                 files, +286. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Compact: O-05 passed. tests 4941 passed / 0
+                 failed / 19 skipped -> 4946 passed / 0 failed /
+                 19 skipped. parity declared hold 64 HASH/COUNT
+                 + fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                 | actual 64/64 0 moved | MATCH. files 3
+                 declared, 3 touched, clean. next decide
+                 paper_run.yaml; then merge and open the PR.
+                 The first configs loop called bare build_platform,
+                 which stops at "ingest terminal health not populated"
+                 for every bt_*.yaml before O-05's check runs, so it
+                 verified nothing for them. Re-run through the harness
+                 path (load_event_log_from_disk_cache,
+                 _attach_day_source_provenance, platform_factory)
+                 reached _create_signal_layer for all eight on both
+                 trees: built before and after, and the booted read
+                 sets matched the static census for all six alphas.
+                 Lesson: a verification that calls the right function
+                 through the wrong door verifies nothing -- boot a
+                 config the way it actually boots.
+  FINDINGS:      The census claimed paper_run builds and it does
+                 not. With MASSIVE_API_KEY set, build_platform
+                 on configs/paper_run.yaml raises ValueError:
+                 kyle_lambda_60s instantiates as sensor_version
+                 2.0.0 while the spec pins 1.2.0. The kyle block
+                 is unchanged since 577bce76 (2026-05-24). The
+                 class default flipped from 1.2.0 to 2.0.0 in
+                 441e0445 (2026-06-12). The registry has
+                 required the instance version to match the spec
+                 since 672b15a1 (2026-04-24). The config has
+                 been unbootable since 2026-06-12, 102 days
+                 before 2026-09-22. scripts/run_paper.py
+                 defaults to platform.yaml. CI does not name
+                 paper_run.yaml. README runs run_paper.py
+                 against platform.yaml. The yaml is an example
+                 in the script docstring and in audits. Under
+                 configs/, paper_run is the only kyle_lambda_60s
+                 pin, at 1.2.0. platform.yaml pins 2.1.0 and
+                 passes sensor_version into params. Every bt_*
+                 config extends platform.yaml.
+                 paper_smoke_rth.yaml does not register kyle.
+                 (B) was already enforced upstream: a declared
+                 sensor the platform does not register raises
+                 UnresolvedDependencyError before the read
+                 contract. The new test pins that. The lesson: a
+                 census that says builds must call
+                 build_platform. Configs loop, MASSIVE_API_KEY
+                 set for PAPER, identical before and after this
+                 rung. Eight bt_*.yaml FAIL ConfigurationError
+                 because ingest_terminal_symbol_health is not
+                 populated. paper_run.yaml FAIL ValueError kyle
+                 version. paper_smoke_rth.yaml PASS. No config
+                 changed from pass to fail. Carried, not fixed
+                 here: G36 OPEN; G32 S-30f deferred; G41/G42
+                 BLOCKED; G39 xfail is
+                 test_construction_integrity; G10 and G28 are
+                 decided keeps. This capture was green on both
+                 sides (0 failed).
+  NEXT:          decide paper_run.yaml; then merge and open the
+                 PR. Left uncommitted: baseline_pre-O-05.json,
+                 baseline_post-O-05.json, this ledger entry.
+
+---
+
+## O-06  2026-09-22T13:52:09+08:00
+  STEP:          O-06
+  BASE:          3903b0f279419121fa3f6e7ca40fe040fefc0ced (arch/exec, the O-05
+                 ledger commit)
+  RESULT SHA:    fcd954b18bc75add273cab4532b9d377d271d2a3 (exec/O-06). Merged
+                 to arch/exec as b9a3be21019526bd8477e35d9a75065adcd79a2e.
+  VERDICT:       passed
+  CONFORMANCE:   Retirement. configs/paper_run.yaml deleted.
+                 scripts/run_paper.py docstring example now names
+                 platform.yaml, the default the script already uses. No
+                 src/feelies edit.
+  TESTS:         not-paper_rth: 4945 passed / 0 failed / 6 skipped / 14
+                 deselected / 4 xfailed. tests/scripts: 91 passed. uv run
+                 python scripts/run_paper.py --help exits 0; --config default
+                 remains platform.yaml. ruff check scripts/run_paper.py: all
+                 checks passed. ruff format --check: 1 file already formatted.
+  PARITY:        64 -> 64 against baseline_post-O-05.json. changed 0, added 0,
+                 removed 0. HOLDS. A config nothing boots cannot move a hash.
+  FILES:         2 touched, under the cap of 3. Deleted configs/paper_run.yaml.
+                 Edited scripts/run_paper.py. No test loads the yaml, so none
+                 was stopped.
+  NET DELTA:     No source module change. Configs loop: 10 entries to 9. The
+                 eight bt_*.yaml still fail bare build_platform with
+                 ConfigurationError, ingest terminal health not populated.
+                 paper_smoke_rth.yaml still PASS. The dropped entry is
+                 paper_run.yaml, which failed ValueError on the kyle_lambda_60s
+                 pin. Nothing else in the loop changed.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   No plan file; orphan retirement. FILES 2. PARITY 64/64 hold.
+                 TESTS 4945 passed, failed 0, same count as the O-05
+                 not-paper_rth run.
+  NOTES:         Unbootable 102 days on a kyle_lambda_60s pin (1.2.0 in the
+                 config, 2.0.0 in the class since 441e0445), not a default, not
+                 in CI, edited on 2026-08-12 (1ec5b1e6) without being booted.
+                 Retired on the user's decision rather than repaired, because
+                 repairing it means choosing what it is for. Live references
+                 updated: the file itself, and the run_paper.py docstring
+                 example. Historical records stay: the ledger,
+                 docs/architecture/target/out/phase0_comprehension.md,
+                 phase7_migration.md, docs/audits (data_ingestion,
+                 signal_alpha, alpha_lifecycle), and
+                 docs/research/prompt_pack_03_data_contract.md. src/, tests/,
+                 configs/ other than the deleted file, .github/, README.md, and
+                 docs/prompts/ do not name paper_run.yaml.
+                 tests/paper/conftest.py uses a temp directory named paper_run
+                 and loads paper_smoke_rth.yaml.
+                 scripts/compare_paper_backtest.py takes a paper_run_dir
+                 argument. Neither loads this config.
+  FINDINGS:      No test loaded configs/paper_run.yaml. Deleting it did not
+                 change the not-paper_rth count.
+  NEXT:          Push arch/exec and open the cycle PR.
+
+---
+
+## O-07  2026-09-22T14:49:50+08:00
+  STEP:          O-07
+  BASE:          16475cf98ef7154559ba9e45f9f429f236f4affb (arch/exec, the O-06
+                 ledger commit)
+  RESULT SHA:    5e3f34012709d3adfe52beccfbec28c6351a54e5 (exec/O-07). Merged
+                 to arch/exec as d5fc487a2c922b30560a11bdb9469a33c0543bfc.
+  VERDICT:       passed
+  CONFORMANCE:   DIRECT_PROBES resolves completely. An unresolved probe
+                 raises. No src/feelies edit. Eleven rows retargeted,
+                 engine number and label kept. Ten module functions now
+                 named feelies.kernel.orchestrator:_<name>:
+                 E1.data_health_gate _data_health_blocks_trading,
+                 E1.verify_integrity _verify_data_integrity,
+                 E1.update_halt_state _update_halt_state,
+                 E1.update_ssr_state _update_ssr_state,
+                 E3.update_regime _update_regime,
+                 E8.compute_target_qty _compute_target_quantity,
+                 E8.buying_power_flip _maybe_flip_buying_power_at_rth_close,
+                 E9.build_order _try_build_order_from_intent,
+                 E10.submit_tracked_order _submit_tracked_order,
+                 X.size_shadow _record_size_shadow.
+                 E10.router_submit retargeted from
+                 BacktestOrderRouter.submit_order to
+                 BacktestOrderRouter.submit.
+                 _install_direct_probes raises RuntimeError on both the
+                 old continue branch and the old swallowed exception.
+                 The BLE001 noqa ("a miss is evidence, not a crash") is
+                 gone. Fail-first (1), against the unchanged list:
+                 FAILED test_every_direct_probe_resolves, unresolved
+                 direct probes, eleven rows:
+                 feelies.ingestion.data_integrity:_data_health_blocks_trading,
+                 feelies.ingestion.data_integrity:_verify_data_integrity,
+                 feelies.ingestion.data_integrity:_update_halt_state,
+                 feelies.ingestion.data_integrity:_update_ssr_state,
+                 feelies.services.regime_engine:_update_regime,
+                 feelies.risk.engine:_compute_target_quantity,
+                 feelies.risk.engine:_maybe_flip_buying_power_at_rth_close,
+                 feelies.kernel.orchestrator:Orchestrator._try_build_order_from_intent,
+                 feelies.execution.order_lifecycle:_submit_tracked_order,
+                 feelies.execution.backtest_router:BacktestOrderRouter.submit_order,
+                 feelies.kernel.orchestrator:Orchestrator._record_size_shadow.
+                 After the retarget, and before the installer raised,
+                 test_every_direct_probe_resolves passed (48 resolved).
+                 Fail-first (2), that same tree, fake name
+                 Orchestrator._o07_no_such_probe appended after the
+                 forty-eight: FAILED test_unresolved_direct_probe_raises
+                 Failed: DID NOT RAISE RuntimeError. After the raise,
+                 both tests passed. The raise was not scored until the
+                 eleven resolved, so it is not true for those names.
+                 Install is against a copy of the list. Every setattr
+                 is restored. After the tests, Orchestrator methods,
+                 BacktestOrderRouter.on_quote / submit / poll_acks, and
+                 the ten module functions are the original objects
+                 (identity). S5 xfail intact, test_hot_path_allow_list,
+                 reason GAP G41 G42. test_g45_keep and
+                 test_g44_dead_compute green, including after the
+                 profile regeneration. conformance 125 passed, 4
+                 xfailed, no XPASS.
+  TESTS:         capture pre-O-07 GREEN 4946 passed / 0 failed /
+                 19 skipped. -> capture post-O-07 GREEN 4948 passed /
+                 0 failed / 19 skipped. +2 is this rung.
+                 not-paper_rth: 4947 passed / 0 failed / 6 skipped /
+                 14 deselected / 4 xfailed. determinism 148 -> 148.
+                 ruff check src/ tests/ scripts/ tools/: all checks
+                 passed. ruff format --check src/ tests/ scripts/:
+                 723 files already formatted.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64 -> 64
+                 against baseline_pre-O-07.json, changed 0, added 0,
+                 removed 0 | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 Probed APP/2026-03-26 parity hash
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 fills 20. A tools change cannot move a replay hash.
+  FILES:         2 declared, 2 touched, clean. Edited
+                 tools/arch/perfmeasure.py. Added
+                 tests/conformance/test_direct_probes_resolve.py.
+                 No src/feelies edit.
+  NET DELTA:     modules 250 -> 250, public_symbols 593 -> 593,
+                 sloc 47226 -> 47226, n_edges 677 -> 677,
+                 n_modules 203 -> 203, cycles 1 -> 1, alphaleak 0 -> 0.
+  DETERMINISM:   148 -> 148 passed. No hash pin moved.
+  VERIFY_STEP:   No plan file; orphan rung. Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN; PARITY 64/64
+                 hold, 0 moved; TESTS 4946 -> 4948 passed, failed
+                 0 -> 0; NET DELTA modules 0 / public symbols 0 /
+                 cycles 0 / alphaleak 0.
+  NOTES:         Probed APP day, 82678 quotes.
+                 probes_resolved includes all 48 DIRECT_PROBES rows.
+                 probes_unresolved is empty. 40 of the 48 recorded
+                 armed calls. Eight resolved and recorded zero armed
+                 calls, so they are absent from STATS and from the
+                 tool's caller table: E1.event_log_append,
+                 E1.verify_integrity, E8.check_sized_intent,
+                 E9.netter_net, E9.min_cost_decide,
+                 E10.router_on_quote, E10.router_submit,
+                 E10.router_poll. platform.yaml execution_mode is
+                 passive_limit, so the APP router is
+                 PassiveLimitOrderRouter. BacktestOrderRouter.submit,
+                 on_quote, and poll_acks are the named callees and
+                 are not that router. E10.router_submit now resolves;
+                 it does not fire on this day. The other five
+                 zero-call rows were already aimed at methods this
+                 day does not enter inside the armed window.
+                 The three E10.router_* probes resolve to
+                 BacktestOrderRouter, but the APP day runs
+                 execution_mode passive_limit, so the router is
+                 instrumented on a class the representative backtest
+                 never uses and records zero calls. Resolving is not
+                 measuring. For the G41/G42 meter: a probe that reads
+                 zero because it sits on the wrong object is
+                 indistinguishable from a cheap engine.
+                 Direct-probe exclusive shares, armed calls only,
+                 zeros contribute nothing:
+                 e0 67.6%, e1 0.8%, e2 11.2%, e3 11.6%, e4 0.0%,
+                 e6 0.9%, e7 2.0%, e8 2.5%, e9 0.0%, e10 1.8%,
+                 e11 1.2%, e12 0.3%.
+                 Tool table (--mode report), bus and sensor probes
+                 included: e0 44.9%, e1 0.5%, e2 38.1%, e3 7.7%,
+                 e4 1.3%, e6 0.6%, e7 1.3%, e8 2.4%, e9 0.0%,
+                 e10 1.2%, e11 0.8%, e12 0.2%, e13 1.1%.
+                 Profile regenerated. proven_per_event_sites
+                 unchanged: string_formatting 1 (the keep),
+                 transcendental 1, decimal_arithmetic 3.
+                 n_zero_call_anywhere 6 unchanged. Not a finding.
+                 Born-dead history. At tool birth (b92ded1b) the
+                 evidence file's probes_unresolved had one row:
+                 BacktestOrderRouter.submit_order. The method has
+                 been submit since 7113d4f6. That probe was born
+                 dead and never resolved until this rung.
+                 The other ten were born on Orchestrator and
+                 resolved. Extraction moved the bodies and, for
+                 eight of them, retargeted the probe onto the new
+                 address, so they resolved again:
+                 E1 four, S-20 (318e1855 halt, 28d8c03e ssr,
+                 99fbb035 health, f8088a7f verify);
+                 E3, dead after S-19 (466da57c) moved _update_regime
+                 off Orchestrator, resolved when 318e1855 retargeted
+                 the probe to regime_engine, where the body then
+                 lived; E8 pair, S-22 (670e2772, b96f59c3);
+                 E10.submit_tracked_order, S-25 (1d834019).
+                 They died again when the bodies came back to
+                 kernel/orchestrator.py as module functions and the
+                 probe strings stayed on the extraction addresses:
+                 T-05a (e80bb2f7) E3; T-06a (97acf4a5) the four E1;
+                 T-08b (048763dd) the E8 pair; T-08d (379a95ae)
+                 _submit_tracked_order. E9.build_order died at S-24
+                 (88893857) when _try_build_order_from_intent left
+                 the class; the probe was not retargeted. X.size_shadow
+                 died at S-34f (9d6698e4) the same way. T-08b and
+                 T-08d brought those two bodies back as module
+                 functions, which a class-qualified probe still
+                 misses. Every callee still exists.
+                 The ledger's carried count stayed at three (the
+                 S-34f pair plus T-05a's E3) after T-06a had already
+                 noted four more and the later returns added the
+                 rest. Three was the ledger's figure. Eleven is
+                 the tree's.
+                 Compact:
+                 O-07      passed
+                 tests     4946 passed / 0 failed / 19 skipped ->
+                           4948 passed / 0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved | MATCH
+                 files     2 declared, 2 touched, clean
+                 next      G36/G39 retirement decision
+  FINDINGS:      G41/G42. Every probed per-engine share in this
+                 ledger before O-07 was computed with an unknown
+                 subset of probes missing and the survivors
+                 renormalized to 100%. Do not calibrate a future
+                 meter against them. Carried, not fixed here:
+                 G36 OPEN; G32 S-30f deferred; G39 xfail is
+                 test_construction_integrity; G10 and G28 are
+                 decided keeps.
+  NEXT:          G36/G39 retirement decision.
+
+---
+
+## O-08  2026-09-22T16:19:37+08:00
+  STEP:          O-08
+  BASE:          964db1e265b107c441f7c402a910bb995b1adddb (arch/exec, the O-07
+                 note commit)
+  RESULT SHA:    7debc4de745ee33e6c9bed0c24bb0de6ee3e30de (exec/O-08). Merged
+                 to arch/exec as cca520edb77c18d430dad4f8179a3f4101a93655.
+  VERDICT:       passed
+  CONFORMANCE:   Retired G36's emptiness xfail. Deleted
+                 test_no_fail_quiet_exception_handler and its
+                 xfail(strict, GAP G36). The surviving pin is
+                 test_no_unallowlisted_fail_quiet_exception_handler.
+                 FAIL_QUIET_KEEP was not edited. Seventeen keepers
+                 remain, so G36 stays OPEN. GAP_REGISTRY was not
+                 in FILES. No XPASS. The other three xfails are
+                 intact: G39 test_construction_integrity, G10/G28
+                 test_every_published_type_has_a_subscriber, G41/G42
+                 test_hot_path_allow_list.
+                 conformance 125 passed, 4 xfailed -> 125 passed,
+                 3 xfailed.
+  TESTS:         conformance before: 125 passed / 4 xfailed /
+                 0 xpassed. conformance after: 125 passed /
+                 3 xfailed / 0 xpassed. The deleted test was an
+                 xfail, so the passed count did not move.
+                 ruff check on the edited file: all checks passed.
+                 ruff format --check: 1 file already formatted.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS. A deleted
+                 xfail cannot move a pinned constant.
+  FILES:         1 touched.
+                 tests/conformance/test_exception_containment.py.
+                 Removed the pytest import the deletion left
+                 unused. The X7 docstring no longer points at the
+                 deleted scan. FAIL_QUIET_KEEP and
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 untouched.
+  NET DELTA:     No src/feelies edit. No evidence snapshot this
+                 rung.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   No plan file; orphan retirement. FILES 1.
+                 PARITY 64/64 hold. TESTS conformance xfailed
+                 4 -> 3, failed 0, no XPASS.
+  NOTES:         In-memory proof before the deletion.
+                 (a) fail_quiet_handlers() keyed as
+                 Counter((path, enclosing_symbol, exc_type))
+                 equals the FAIL_QUIET_KEEP Counter.
+                 quiet 17
+                 found_n 17 found_keys 16
+                 allowed_n 17 allowed_keys 16
+                 extra {}
+                 missing {}
+                 equal True
+                 Sixteen keys because
+                 _run_backtest_phases_2_7 / Exception is two rows.
+                 (b) Scratch injection in src/feelies/cli/env.py,
+                 function _o08_probe_quiet, except ValueError: pass.
+                 The surviving equality test failed naming it:
+                 AssertionError: 1 fail-quiet handler(s) not in
+                 FAIL_QUIET_KEEP. First:
+                 src/feelies/cli/env.py:_o08_probe_quiet except ValueError
+                 Restored from the scratch copy. SHA-256 before
+                 and after
+                 8CA8A500A90FEBF3E84CBDB14DE303E39447196FB26FB5264356E402612087D8.
+                 git hash-object
+                 f6f4880387d425f0675597857705225ad74a0a2a matches
+                 HEAD:src/feelies/cli/env.py. A new quiet handler
+                 fails the pin by name. The emptiness xfail cannot
+                 pass while the seventeen keepers exist, so it was
+                 not a failure list.
+  FINDINGS:      Carried, not fixed here: G36 OPEN on the
+                 seventeen keepers; G39 xfail is
+                 test_construction_integrity; G10 and G28 are
+                 decided keeps and their xfail remains; G41/G42
+                 xfail remains; G32 S-30f deferred.
+  NEXT:          O-09 G39 Counter pin, then O-10 zero-subscriber
+                 equality. Not started.
+
+---
+
+## O-09a  2026-09-22T16:41:44+08:00
+  STEP:          O-09a
+  BASE:          1acf09555759504314b0310b9e5f9047da974c99 (arch/exec, the O-08
+                 ledger commit)
+  RESULT SHA:    84d6691c999fe7ed892cc9f57c80ae92a7cc0669 (exec/O-09a). Merged
+                 to arch/exec as 857872ac3b1892a9bb8e671beae7c928a2c169fa.
+  VERDICT:       passed
+  CONFORMANCE:   No conformance test edited. The three xfails stay
+                 where O-08 left them. This rung does not re-run
+                 the conformance suite.
+  TESTS:         tests/cli: 67 passed. New test
+                 test_missing_subcommand_is_usage_error_exit_2
+                 covers feelies, feelies forensics, and feelies
+                 promote. ruff check passed. ruff format clean.
+                 mypy src/feelies: Success, 250 source files.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS.
+                 fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+  FILES:         4 touched.
+                 src/feelies/cli/main.py
+                 src/feelies/cli/forensics.py
+                 src/feelies/cli/promote.py
+                 tests/cli/test_required_subcommands.py
+                 Each CLI diff is required=True on add_subparsers
+                 and the deleted .required = True line.
+  NET DELTA:     external_attribute_assignment 42 -> 39 sites,
+                 32 -> 29 keys. subparsers.required and both
+                 sub.required keys left the scan.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   FILES 4. PARITY 64/64 hold. tests/cli 67 passed.
+  NOTES:         Fail-first (1), assignment still present, before
+                 the edit: 3 passed.
+                 Fail-first (2), delete only the assignment, keep
+                 the old add_subparsers call. Each parser failed
+                 alone, then the file was restored. git hash-object
+                 of the three CLI files matched HEAD.
+                 feelies: FAILED
+                 test_missing_subcommand_is_usage_error_exit_2[feelies]
+                 Failed: DID NOT RAISE SystemExit. 1 failed, 2 passed.
+                 feelies forensics: FAILED
+                 test_missing_subcommand_is_usage_error_exit_2[feelies forensics]
+                 Failed: DID NOT RAISE SystemExit. 1 failed, 2 passed.
+                 feelies promote: FAILED
+                 test_missing_subcommand_is_usage_error_exit_2[feelies promote]
+                 Failed: DID NOT RAISE SystemExit. 1 failed, 2 passed.
+                 Fail-first (3), required=True on the constructor
+                 call: 3 passed.
+                 Python 3.12.13. No TypeError. stderr names the
+                 metavar, which argparse prints when metavar is
+                 set. dest is command, forensics_command, and
+                 promote_command, not SUPPRESS.
+                 feelies: error: the following arguments are
+                 required: <command>
+                 feelies forensics: error: the following arguments
+                 are required: <subcommand>
+                 feelies promote: error: the following arguments
+                 are required: <subcommand>
+                 Exit code 2. CI confirms 3.13.
+                 Compact:
+                 O-09a     passed
+                 tests     tests/cli 67 passed
+                 parity    64/64 0 moved, fingerprint de5d64b0 MATCH
+                 files     4 declared, 4 touched, clean
+                 next      O-09 Counter pin over 39 assignment sites
+  FINDINGS:      Carried, not fixed here: G39 xfail is
+                 test_construction_integrity; G10/G28 xfail remains;
+                 G41/G42 xfail remains; G36 OPEN on the seventeen
+                 keepers; G32 S-30f deferred.
+  NEXT:          O-09 G39 Counter pin over the 39 assignment sites
+                 that remain. Not started.
+
+---
+
+## O-09  2026-09-22T16:48:14+08:00
+  STEP:          O-09
+  BASE:          c5626010a07bc031b45059e1d8a131a7ec84a109 (arch/exec, the
+                 O-09a ledger commit)
+  RESULT SHA:    75456794a3cf5ed06aa9104b488560c4bb892fa7 (exec/O-09). Merged
+                 to arch/exec as 03858edec90281bb162be57b275b31754a6a5e63.
+  VERDICT:       passed
+  CONFORMANCE:   S17 is a Counter pin. Both directions, extra empty
+                 and missing empty. Retired G39 emptiness xfail.
+                 Deleted test_no_post_construction_mutation_or_private_reach
+                 and its xfail(strict, GAP G39). G39 stays OPEN:
+                 the pin is the residue, and GAP_REGISTRY was not
+                 in FILES. No XPASS. Remaining xfails: G10/G28
+                 test_every_published_type_has_a_subscriber, G41/G42
+                 test_hot_path_allow_list.
+                 conformance 125 passed, 3 xfailed -> 125 passed,
+                 2 xfailed.
+  TESTS:         conformance: 125 passed / 2 xfailed / 0 xpassed.
+                 The deleted test was an xfail, so the passed count
+                 did not move. S17: 3 passed. ruff check passed.
+                 ruff format clean. mypy src/feelies: Success,
+                 250 source files.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS. The pins are
+                 not in manifest_hash(). fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+  FILES:         3 touched.
+                 src/feelies/core/wiring_manifest.py
+                 tests/conformance/test_composition_root.py
+                 tests/conformance/test_construction_integrity.py
+                 Assignment rows 39, private rows 7. The stale
+                 gate._referenced_identifiers row is gone. The three
+                 CLI required keys are not rows. Bootstrap injection
+                 test stays.
+  NET DELTA:     No tick-path change. Private pin 6 set-rows -> 7
+                 counted sites (orchestrator._bus is 3). Assignment
+                 pin counts the 39 live sites.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   FILES 3. PARITY 64/64 hold. conformance xfailed
+                 3 -> 2, failed 0, no XPASS.
+  NOTES:         Fail-first (1), pin built with the stale row still
+                 present. Assignment test passed. Private test:
+                 AssertionError: 1 composition-root pin row(s) are
+                 not live cross-object private reach. First:
+                 src/feelies/signals/regime_gate.py
+                 gate._referenced_identifiers
+                 assert Counter({(..., gate._referenced_identifiers): 1})
+                 == Counter()
+                 1 failed, 2 passed. Then the stale row was removed.
+                 Pin green: 3 passed.
+                 Fail-first (2), scratch fifth pos.avg_entry_price
+                 in memory_position_store.py update(), then restored.
+                 AssertionError: 1 external attribute assignment
+                 site(s) not in the composition-root pin. First:
+                 src/feelies/portfolio/memory_position_store.py
+                 pos.avg_entry_price
+                 assert Counter({(..., pos.avg_entry_price): 1}) == Counter()
+                 frozenset membership of that (path, target) in the
+                 pin keys: True. pin_rows for that key: 4.
+                 Restored byte-identical. SHA-256 before and after
+                 C7C9C0995AD6728BEA067C9255991788D5BE1BDC8F64A30FADFA964F40C9D46E.
+                 git hash-object
+                 82db4138ae0aa6f86c24b18ccd58b57b9a113d6b matches
+                 HEAD:src/feelies/portfolio/memory_position_store.py.
+                 Pin green again: 3 passed. G39 xfail deleted only
+                 after that.
+                 Compact:
+                 O-09      passed
+                 tests     conformance 125 passed, 3 xfailed ->
+                           125 passed, 2 xfailed, 0 xpassed
+                 parity    64/64 0 moved, fingerprint de5d64b0 MATCH
+                 files     3 declared, 3 touched, clean
+                 next      O-10 zero-subscriber equality pin
+  FINDINGS:      Carried, not fixed here: G39 OPEN on the 39+7
+                 counted rows; G10/G28 xfail remains; G41/G42 xfail
+                 remains; G36 OPEN on the seventeen keepers; G32
+                 S-30f deferred.
+  NEXT:          O-10 ZERO_SUBSCRIBER_RESOLUTIONS equality pin.
+                 Not started.
+
+---
+
+## O-10  2026-09-22T16:54:58+08:00
+  STEP:          O-10
+  BASE:          7f7c3cbd34d87541ea58b59a3e92199dfa267412 (arch/exec, the
+                 O-09 ledger commit)
+  RESULT SHA:    c98cc4ec2016d75354d43126053df3600bd4b4b4 (exec/O-10). Merged
+                 to arch/exec as 641bcb2430774642f977267f0708699882e3ffaa.
+  VERDICT:       passed
+  CONFORMANCE:   ZERO_SUBSCRIBER_RESOLUTIONS is a Counter pin of
+                 event_type against the live zero-subscriber set,
+                 both directions. The row is
+                 (StateTransition, notification_record). Retired the
+                 G10/G28 emptiness xfail. Deleted
+                 test_every_published_type_has_a_subscriber and its
+                 xfail(strict, GAP G10 G28). G10 and G28 stay OPEN:
+                 StateTransition is a declared keep, and GAP_REGISTRY
+                 was not in FILES. No XPASS. The one remaining xfail
+                 is test_hot_path_allow_list, GAP G41 G42.
+                 conformance 125 passed, 2 xfailed -> 126 passed,
+                 1 xfailed. The passed count rose by one because the
+                 new pin passes and the deleted test was an xfail.
+  TESTS:         conformance -rxX:
+                 XFAIL tests/conformance/test_hot_path_allow_list.py::
+                 test_hot_path_allow_list - GAP G41 G42
+                 126 passed, 1 xfailed. ruff check passed. ruff format
+                 clean. mypy src/feelies: Success, 250 source files.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS. fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+                 manifest_hash() digest change is DECLARED.
+                 old f5c02a0b08f08641d1efdf230b00b865ec57148a57c8dc1481ae580ed74db256
+                 new 47bd109dbd8617a134d5d5d3ae2a7fe53d913d0e9ab60492277e033d939a625e
+                 Nothing locked reads it. A search of the tree before
+                 this ledger block found neither digest. test_s15
+                 asserts length 64, not the digest. bootstrap.py logs
+                 manifest_hash()[:12]. No determinism constant is
+                 that digest.
+  FILES:         2 touched.
+                 src/feelies/core/wiring_manifest.py
+                 tests/conformance/test_emission_registry.py
+                 Resolution tuple 6 -> 1. The five consumer types stay
+                 in SUBSCRIPTIONS (ordinals 31-35). Union of
+                 subscription event types with the resolution tuple
+                 stays 22. forbidden_reads and test_single_owner were
+                 not FILES; they still see the same fact set.
+  NET DELTA:     Subscription graph unchanged. StateTransition remains
+                 the only published type with no subscribe site.
+  DETERMINISM:   No HASH/COUNT pin moved. Parity constants hold 64/64.
+                 The manifest digest moved as declared above.
+  VERIFY_STEP:   FILES 2. PARITY 64/64 hold. Digest declared.
+                 conformance xfailed 2 -> 1, failed 0, no XPASS.
+  NOTES:         Fail-first (1), pin built while the five consumer
+                 rows were still in the tuple:
+                 AssertionError: ZERO_SUBSCRIBER_RESOLUTIONS rows
+                 absent from the live zero-subscriber set:
+                 KillSwitchActivation, OrderAck, PositionUpdate,
+                 RiskVerdict, SymbolHalted
+                 assert Counter({those five: 1}) == Counter()
+                 1 failed. Then those five rows were removed.
+                 Pin green: 1 passed. Tuple is exactly
+                 (StateTransition, notification_record).
+                 The G10/G28 xfail was deleted only after that.
+                 Fail-first (2), scratch class _O10ProbeEvent and
+                 bus.publish(_O10ProbeEvent()) appended to
+                 src/feelies/core/events.py, then restored.
+                 AssertionError: published types with no subscriber
+                 and no resolution row: _O10ProbeEvent
+                 assert Counter({"_O10ProbeEvent": 1}) == Counter()
+                 Restored byte-identical. SHA-256 before and after
+                 AF7F3CCCB7143A5211F7130E8952EC5F9D496661A2B47C119393D6F6D861A755.
+                 git hash-object
+                 989d12690298c2f9ede84e522d125ab374255f54 matches
+                 HEAD:src/feelies/core/events.py.
+                 Compact:
+                 O-10      passed
+                 tests     conformance 125 passed, 2 xfailed ->
+                           126 passed, 1 xfailed, 0 xpassed
+                 parity    64/64 0 moved; manifest digest declared
+                 files     2 declared, 2 touched, clean
+                 next      stop. G41/G42 xfail remains
+  FINDINGS:      Carried, not fixed here: G10 and G28 OPEN on the
+                 StateTransition keep; G39 OPEN on the counted rows;
+                 G41/G42 xfail remains; G36 OPEN on the seventeen
+                 keepers; G32 S-30f deferred.
+  NEXT:          Stop. The one remaining conformance xfail is S5,
+                 GAP G41 G42. Not started.

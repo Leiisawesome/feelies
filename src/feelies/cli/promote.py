@@ -783,8 +783,8 @@ def register(promote_parser: argparse.ArgumentParser) -> None:
     sub = promote_parser.add_subparsers(
         dest="promote_command",
         metavar="<subcommand>",
+        required=True,
     )
-    sub.required = True
 
     p_inspect = sub.add_parser(
         "inspect",

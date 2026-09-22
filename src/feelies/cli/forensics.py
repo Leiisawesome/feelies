@@ -212,8 +212,8 @@ def register(forensics_parser: argparse.ArgumentParser) -> None:
     sub = forensics_parser.add_subparsers(
         dest="forensics_command",
         metavar="<subcommand>",
+        required=True,
     )
-    sub.required = True
 
     breaker = sub.add_parser(
         "circuit-breaker",

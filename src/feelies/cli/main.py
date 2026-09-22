@@ -49,8 +49,7 @@ def _build_parser(argv: Sequence[str] | None = None) -> argparse.ArgumentParser:
             "bleeding LIVE alpha to QUARANTINED."
         ),
     )
-    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
-    subparsers.required = True
+    subparsers = parser.add_subparsers(dest="command", metavar="<command>", required=True)
 
     from feelies.cli import promote
 
