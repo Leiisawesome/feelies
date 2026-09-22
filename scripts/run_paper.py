@@ -9,7 +9,7 @@ Usage::
     #
     # Standard run (uses ``platform.yaml`` from CWD):
     python scripts/run_paper.py
-    python scripts/run_paper.py --config configs/paper_run.yaml
+    python scripts/run_paper.py --config platform.yaml
     python scripts/run_paper.py --config configs/paper_smoke_rth.yaml \\
         --max-runtime-s 600 --run-dir runs/paper_$(date +%F)
 
