@@ -243,6 +243,67 @@ def test_g6_reads_no_sensor_rejects_regime_gate_feature_binding() -> None:
         _validator().validate(spec, source="<test>")
 
 
+def test_g6_reads_no_sensor_accepts_declared_numeric_parameter() -> None:
+    """A declared numeric parameter in the regime gate is a constant.
+
+    The loader injects numeric parameter defaults into the gate. The
+    converse scan has to use that same map, or the name is read as a
+    feature binding and a no-sensor spec is rejected.
+    """
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["parameters"] = {
+        "threshold": {
+            "type": "float",
+            "default": 0.5,
+            "description": "gate constant",
+        },
+    }
+    spec["regime_gate"]["on_condition"] = "threshold > 0"
+    _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_parameter_does_not_smuggle_a_feature_name() -> None:
+    """A numeric parameter does not drop a different feature binding."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["parameters"] = {
+        "threshold": {
+            "type": "float",
+            "default": 0.5,
+            "description": "gate constant",
+        },
+    }
+    spec["regime_gate"]["on_condition"] = "ofi_ewma > threshold"
+    with pytest.raises(LayerValidationError, match="ofi_ewma"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_parameter_same_name_as_feature_is_the_constant() -> None:
+    """A parameter that reuses a feature name is that name's constant.
+
+    The scan drops injected parameter keys, so ``ofi_ewma > 0`` loads
+    when ``ofi_ewma`` is a declared numeric parameter. It does not
+    conceal a different feature name (see the smuggle probe). At
+    evaluation a live sensor value of the colliding name still
+    overrides the constant.
+    """
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["parameters"] = {
+        "ofi_ewma": {
+            "type": "float",
+            "default": 0.5,
+            "description": "collides with a feature id",
+        },
+    }
+    spec["regime_gate"]["on_condition"] = "ofi_ewma > 0"
+    _validator().validate(spec, source="<test>")
+
+
 def test_g6_reads_no_sensor_rejects_nonempty_depends_on_sensors() -> None:
     """reads_no_sensor: true with a non-empty list contradicts itself."""
     spec = _signal_spec()
