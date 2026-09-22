@@ -8,7 +8,7 @@ Only SIGNAL and PORTFOLIO specs are loadable:
 * G2  — typed event contract  (signal: must be a non-empty string)
 * G4  — regime-gate purity     (DSL parse must succeed, whitelist only)
 * G5  — signal purity          (no import/exec/eval/__builtins__/etc.)
-* G6  — feature/sensor DAG     (depends_on_sensors non-empty + unique)
+* G6  — feature/sensor DAG     (named sensors resolve; empty only with reads_no_sensor)
 * G7  — horizon registration   (horizon_seconds in registry)
 * G8  — no implicit lookahead  (no time/datetime/now refs in signal:)
 * G12 — cost arithmetic block  (delegated to CostArithmetic.from_spec)
@@ -17,13 +17,22 @@ Only SIGNAL and PORTFOLIO specs are loadable:
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 import pytest
 
+from feelies.alpha.dependency_graph import (
+    required_warm_feature_ids_for_signal_alpha,
+    warn_unread_sensor_dependencies,
+)
+from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.layer_validator import (
     DEFAULT_REGISTERED_HORIZONS,
     LayerValidationError,
     LayerValidator,
 )
+from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature
 
 
 # ── Spec templates ──────────────────────────────────────────────────────
@@ -166,6 +175,173 @@ def test_g6_rejects_empty_depends_on_sensors() -> None:
     spec["depends_on_sensors"] = []
     with pytest.raises(LayerValidationError, match="G6"):
         _validator().validate(spec, source="<test>")
+
+
+def test_g6_rejects_empty_depends_when_reads_no_sensor_is_false() -> None:
+    """Absent or false keeps the forgotten-field guard."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = False
+    spec["depends_on_sensors"] = []
+    with pytest.raises(LayerValidationError, match="G6"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_empty_depends_loads_and_audit_is_silent(caplog) -> None:
+    """reads_no_sensor: true with depends_on_sensors: [] loads, and the
+    unused-dependency audit logs nothing."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
+        spec,
+        source="<test>",
+    )
+    features = [SensorPassthroughFeature("ofi_ewma", spec["horizon_seconds"])]
+    with caplog.at_level(logging.WARNING, logger="feelies.alpha.dependency_graph"):
+        warn_unread_sensor_dependencies(
+            alpha_id=spec["alpha_id"],
+            depends_on_sensors=spec["depends_on_sensors"],
+            horizon_seconds=spec["horizon_seconds"],
+            horizon_features=features,
+            warm_ids=frozenset(),
+        )
+    assert not caplog.records
+
+
+def test_g6_reads_no_sensor_rejects_evaluate_that_reads_snapshot_values() -> None:
+    """reads_no_sensor is not an opt-out: evaluate that reads a feature raises."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["signal"] = (
+        "def evaluate(snapshot, regime, params):\n    return snapshot.values['ofi_ewma']\n"
+    )
+    with pytest.raises(LayerValidationError, match="G6"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_rejects_unresolvable_snapshot_values_access() -> None:
+    """An unresolved .values access is not an empty read; the warm-set scan
+    returns None for it, and reads_no_sensor must not treat that as clean."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["signal"] = (
+        "def evaluate(snapshot, regime, params):\n    return snapshot.values[params['k']]\n"
+    )
+    with pytest.raises(LayerValidationError, match="G6"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_rejects_regime_gate_feature_binding() -> None:
+    """Regime-gate bindings are part of the warm-set scan."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["regime_gate"]["on_condition"] = "ofi_ewma > 0"
+    with pytest.raises(LayerValidationError, match="G6"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_accepts_declared_numeric_parameter() -> None:
+    """A declared numeric parameter in the regime gate is a constant.
+
+    The loader injects numeric parameter defaults into the gate. The
+    converse scan has to use that same map, or the name is read as a
+    feature binding and a no-sensor spec is rejected.
+    """
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["parameters"] = {
+        "threshold": {
+            "type": "float",
+            "default": 0.5,
+            "description": "gate constant",
+        },
+    }
+    spec["regime_gate"]["on_condition"] = "threshold > 0"
+    _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_parameter_does_not_smuggle_a_feature_name() -> None:
+    """A numeric parameter does not drop a different feature binding."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["parameters"] = {
+        "threshold": {
+            "type": "float",
+            "default": 0.5,
+            "description": "gate constant",
+        },
+    }
+    spec["regime_gate"]["on_condition"] = "ofi_ewma > threshold"
+    with pytest.raises(LayerValidationError, match="ofi_ewma"):
+        _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_validator_does_not_decide_name_collisions() -> None:
+    """The validator cannot know which ids a platform publishes.
+
+    A parameter named ``ofi_ewma`` is a gate constant at validation
+    time, so this spec loads. ``build_platform`` rejects it when that
+    id is actually published.
+    """
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = []
+    spec["parameters"] = {
+        "ofi_ewma": {
+            "type": "float",
+            "default": 0.5,
+            "description": "collides with a feature id",
+        },
+    }
+    spec["regime_gate"]["on_condition"] = "ofi_ewma > 0"
+    _validator().validate(spec, source="<test>")
+
+
+def test_g6_reads_no_sensor_rejects_nonempty_depends_on_sensors() -> None:
+    """reads_no_sensor: true with a non-empty list contradicts itself."""
+    spec = _signal_spec()
+    spec["reads_no_sensor"] = True
+    spec["depends_on_sensors"] = ["ofi_ewma"]
+    with pytest.raises(LayerValidationError, match="G6"):
+        _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
+            spec,
+            source="<test>",
+        )
+
+
+_CONTROL_FIXTURES = (
+    Path("tests/conformance/fixtures/null_alpha/null_alpha.alpha.yaml"),
+    Path("tests/conformance/fixtures/portfolio/upstream_signal.alpha.yaml"),
+)
+
+
+@pytest.mark.parametrize("path", _CONTROL_FIXTURES, ids=lambda p: p.parent.name)
+def test_control_fixtures_audit_is_silent(path: Path, caplog) -> None:
+    """Both control fixtures declare an empty sensor list and the unused-dependency audit is silent."""
+    module = AlphaLoader(enforce_trend_mechanism=False).load(path)
+    assert module.depends_on_sensors == ()
+    features = [SensorPassthroughFeature("ofi_ewma", module.horizon_seconds)]
+    warm_ids = required_warm_feature_ids_for_signal_alpha(
+        depends_on_sensors=module.depends_on_sensors,
+        horizon_seconds=module.horizon_seconds,
+        horizon_features=features,
+        gate=module.gate,
+        signal_source=module.signal_source,
+    )
+    with caplog.at_level(logging.WARNING, logger="feelies.alpha.dependency_graph"):
+        warn_unread_sensor_dependencies(
+            alpha_id=module.manifest.alpha_id,
+            depends_on_sensors=module.depends_on_sensors,
+            horizon_seconds=module.horizon_seconds,
+            horizon_features=features,
+            warm_ids=warm_ids,
+        )
+    assert not caplog.records
 
 
 def test_g6_rejects_non_string_entry() -> None:

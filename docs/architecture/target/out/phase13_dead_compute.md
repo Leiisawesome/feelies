@@ -114,21 +114,18 @@ INVARIANTS:      Oracle frozen at exec-tools-v1. Never run
                  test_g44_dead_compute; G45's pin is
                  test_g45_keep. Do not delete any of
                  the six.
-                 LEDGER APPENDS ARE END-OF-FILE WRITES,
-                 NEVER A PREFIX-PRESERVING STRREPLACE.
-                 A StrReplace whose old_string is the
-                 ledger's tail and whose new_string is
-                 that tail plus a block stays applicable
-                 after it succeeds, so any retry,
-                 compaction resume or "continue" appends
-                 the block again. That is the cause of
-                 89d3ac28, c62903ce and the four G46-01
-                 copies. tools/exec is frozen and cannot
-                 enforce this. Every ledger append is an
-                 end-of-file write, and
+                 LEDGER APPENDS ARE END-OF-FILE WRITES.
+                 A prefix-preserving StrReplace is one
+                 cause of a duplicated block, not the
+                 cause: any append that gets retried
+                 duplicates, and an end-of-file write is
+                 no more idempotent than the StrReplace
+                 was. The rule recorded at b782caa1
+                 reduced the odds. tools/exec is frozen
+                 and cannot enforce this.
                  tests/docs/test_exec_ledger_structure.py
-                 runs BEFORE git add of the ledger, not
-                 after.
+                 is the guard, and it runs BEFORE git add
+                 of the ledger, not after.
 NON-CUTS:        Deleting any of the six is not a cut.
                  A getattr rewrite to a direct call
                  is not a G44 rung: that uses the

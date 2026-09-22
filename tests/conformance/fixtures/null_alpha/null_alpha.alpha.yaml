@@ -39,13 +39,13 @@ falsification_criteria:
     Position, realized P&L or unrealized P&L becomes non-zero at any event
     of a replay in which this is the only registered alpha.
 
-# G6 rejects an empty list on a SIGNAL spec, so one sensor is declared to
-# satisfy the schema. Nothing reads it, and the unused-dependency audit will
-# say so on load: that warning is correct and expected here. Do not silence
-# it by wiring a discarded read into evaluate — an unconditional `return
-# None` is the property this fixture exists to guarantee.
-depends_on_sensors:
-  - ofi_ewma
+# reads_no_sensor: evaluate returns None and the regime gate binds no
+# feature, so the empty sensor list is the declaration rather than a
+# forgotten depends_on_sensors. Do not silence that by wiring a discarded
+# read into evaluate — an unconditional `return None` is the property this
+# fixture exists to guarantee.
+reads_no_sensor: true
+depends_on_sensors: []
 
 parameters: {}
 

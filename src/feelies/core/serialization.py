@@ -15,7 +15,7 @@ from feelies.core.events import Event, NBBOQuote, Trade
 _TYPE_QUOTE = "NBBOQuote"
 _TYPE_TRADE = "Trade"
 
-# Records without a schema tag are version 1.
+# Tagged records only. A missing __schema_version__ is rejected.
 _SCHEMA_VERSION = 1
 
 
@@ -76,13 +76,18 @@ def dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
     non-additive change this build cannot safely interpret.
 
     Raises ``ValueError`` if ``__type__`` is missing/unknown, if the
-    ``__schema_version__`` is unsupported, or if the record cannot be
-    reconstructed into the target event (e.g. a required field is absent).
+    ``__schema_version__`` is missing or unsupported, or if the record
+    cannot be reconstructed into the target event (e.g. a required
+    field is absent).
     """
     work = dict(d)
     type_tag = work.pop("__type__", None)
-    # Missing tags identify version-1 records.
-    schema_version = work.pop("__schema_version__", _SCHEMA_VERSION)
+    try:
+        schema_version = work.pop("__schema_version__")
+    except KeyError:
+        raise ValueError(
+            f"unsupported event __schema_version__: {None!r} (this build reads v{_SCHEMA_VERSION})"
+        ) from None
     if schema_version != _SCHEMA_VERSION:
         raise ValueError(
             f"unsupported event __schema_version__: {schema_version!r} "

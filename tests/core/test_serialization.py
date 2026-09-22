@@ -131,18 +131,17 @@ class TestJsonLineEventSerializer:
 
     def test_deserialize_rejects_unknown_type(self) -> None:
         with pytest.raises(ValueError, match="unknown or missing event __type__"):
-            dict_to_event({"__type__": "Bogus", "symbol": "AAPL"})
+            dict_to_event({"__type__": "Bogus", "__schema_version__": 1, "symbol": "AAPL"})
 
     def test_serialized_dict_carries_schema_version(self) -> None:
         d = event_to_dict(_quote())
         assert d["__schema_version__"] == 1
 
-    def test_legacy_record_without_schema_version_loads(self) -> None:
-        # Records written before versioning carry no __schema_version__ and
-        # must still deserialize (== v1) — DiskEventCache backward-compat.
+    def test_record_without_schema_version_rejected(self) -> None:
         d = event_to_dict(_quote())
         del d["__schema_version__"]
-        assert dict_to_event(d) == _quote()
+        with pytest.raises(ValueError, match="unsupported event __schema_version__"):
+            dict_to_event(d)
 
     def test_unsupported_schema_version_rejected(self) -> None:
         d = event_to_dict(_quote())

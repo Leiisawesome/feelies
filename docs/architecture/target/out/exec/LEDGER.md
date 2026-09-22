@@ -26373,20 +26373,18 @@ FINDINGS:    A blindness probe runs by insertion
              the count of distinct campaign
              names, and no step id appears
              twice. OPEN — not done here.
-             LEDGER APPENDS ARE END-OF-FILE WRITES, NEVER A
-             PREFIX-PRESERVING STRREPLACE. A StrReplace
-             whose old_string is the ledger's tail and
-             whose new_string is that tail plus a block
-             stays applicable after it succeeds, so any
-             retry, compaction resume or "continue"
-             appends the block again. That is the cause
-             of 89d3ac28, c62903ce and the four G46-01
-             copies. tools/exec is frozen and cannot
-             enforce this. Every ledger append is an
-             end-of-file write, and
+             LEDGER APPENDS ARE END-OF-FILE WRITES.
+             A prefix-preserving StrReplace is one
+             cause of a duplicated block, not the
+             cause: any append that gets retried
+             duplicates, and an end-of-file write is
+             no more idempotent than the StrReplace
+             was. The rule recorded at b782caa1
+             reduced the odds. tools/exec is frozen
+             and cannot enforce this.
              tests/docs/test_exec_ledger_structure.py
-             runs BEFORE git add of the ledger, not
-             after.
+             is the guard, and it runs BEFORE git add
+             of the ledger, not after.
 
 ---
 
@@ -27875,3 +27873,1025 @@ FINDINGS:    A census inherits its detector's
              FactorNeutralizer.factor_model left
              the zero-call set via the property-
              read count, not via getattr.
+
+---
+
+## O-01  2026-09-21T21:07:04+08:00
+  STEP:          O-01
+  BASE:          61a41417bbd397a10a3a973b34974b124cc0affc
+  RESULT SHA:    b8e13fba714440a9e9757587adc45a36d5f9ba73 (exec/O-01; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. First commit of a new
+                 cycle on arch/exec. Closes the S-09
+                 fail-open: a missing
+                 __schema_version__ is rejected
+                 rather than read as v1.
+                 test_legacy_record_without_schema_version_loads
+                 pinned that defect as
+                 backward-compat; inverted to
+                 test_record_without_schema_version_rejected.
+                 Fail-first (1), unchanged serializer:
+                   FAILED tests/core/test_serialization.py::
+                   TestJsonLineEventSerializer::
+                   test_record_without_schema_version_rejected
+                   E   Failed: DID NOT RAISE <class 'ValueError'>
+                   1 failed, 1 passed
+                 (the 1 passed is
+                 test_unsupported_schema_version_rejected,
+                 untouched). After the serializer
+                 fix: serialization 14 passed;
+                 unsupported-version still green.
+                 An intermediate tree used
+                 except KeyError: schema_version = None,
+                 which FAIL_QUIET_KEEP rejected
+                 (test_no_unallowlisted_fail_quiet_exception_handler:
+                 extra dict_to_event except KeyError).
+                 The committed tree raises ValueError
+                 from that KeyError in the same
+                 message family as an unsupported
+                 version, so the handler is not
+                 quiet. FAIL_QUIET_KEEP unmoved
+                 (seventeen rows). S5 xfail intact,
+                 reason "GAP G41 G42". No XPASS.
+                 Four xfailed unchanged (G39, G10 G28,
+                 G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff
+                 check src/ tests/ scripts/ green.
+                 ruff format --check 720 files
+                 already formatted.
+  TESTS:         capture pre-O-01 RED 4916 passed /
+                 1 failed / 18 skipped / 4 xfailed.
+                 -> capture post-O-01 RED 4916
+                 passed / 1 failed / 18 skipped / 4
+                 xfailed. The one failure both
+                 sides is the accepted IB
+                 after-hours test
+                 (test_after_hours_reject_surfaces_as_rejected).
+                 No failure outside the accepted
+                 set. serialization 14 -> 14
+                 (renamed pin, same count).
+                 tests/core 245 passed. tests/storage
+                 70 passed. not-paper_rth: 4915
+                 passed / 1 failed / 5 skipped / 14
+                 deselected / 4 xfailed; same
+                 accepted IB failure. APP oracle 2
+                 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1.
+                 determinism 148 -> 148 after the
+                 commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-01 vs post-O-01;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE.
+                 S2 KEPT at zero. Engine-to-kernel
+                 stayed frozenset(). MUST_INVOKE
+                 stays 33. DECLARED_UNINVOKED stays
+                 9. _TAPES stays the five ids.
+                 FAIL_QUIET_KEEP unmoved (seventeen
+                 rows). S5 xfail not dropped. APP
+                 oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         2 declared, 2 touched, 2 committed
+                 (clean vs b8e13fba). Hand FILES: 0
+                 extra CLEAN.
+                 Touched: src/feelies/core/serialization.py,
+                 tests/core/test_serialization.py.
+                 Named-not-edited:
+                 disk_event_cache.py (load() already
+                 catches ValueError and returns None).
+                 LEDGER.md (this entry uncommitted).
+                 Any plan file. FAIL_QUIET_KEEP.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47042 -> 47048 (+6)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0. sloc +6 is the
+                 KeyError-to-ValueError raise in
+                 dict_to_event, outside the declared
+                 triple.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. Four checks
+                 by hand:
+                 FILES 2 declared / 2 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4916->4916 passed, failed 1->1
+                 is the accepted IB after-hours
+                 test, not outside the set;
+                 serialization 14->14; no XPASS;
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/O-01,
+                 b8e13fba714440a9e9757587adc45a36d5f9ba73,
+                 "O-01: reject a missing
+                 __schema_version__ instead of
+                 reading it as v1". Parent 61a41417
+                 on arch/exec. Two files, +14 / -10.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 pop("__schema_version__") has no
+                 default. A missing tag raises
+                 ValueError
+                 unsupported event __schema_version__: None
+                 (this build reads v1). Version 999
+                 still raises the same family.
+                 test_deserialize_rejects_unknown_type
+                 now carries __schema_version__: 1 so
+                 the type pin still hits the type
+                 branch; untagged records never
+                 reconstruct.
+                 The oracle tape was checked to be
+                 fully tagged before the default was
+                 removed: APP/2026-03-26 loaded from
+                 cache (2 passed,
+                 FEELIES_REQUIRE_BASELINE_CACHE=1).
+                 CacheReplayError did not fire; no
+                 untagged line on the tape. The 152
+                 stale research-cache days are
+                 untouched -- they fail on
+                 event_schema_hash in DiskEventCache.load
+                 before deserialize, so they never
+                 reach this code.
+                 Compact:
+                 O-01      passed
+                 tests     4916 passed / 1 failed
+                           (accepted IB) -> 4916
+                           passed / 1 failed
+                           (accepted IB)
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     2 declared, 2 touched, clean
+                 next      merge, push, open the PR
+                           from arch/exec
+                 An intermediate draft used
+                 except KeyError: schema_version = None,
+                 and FAIL_QUIET_KEEP rejected it as an
+                 unallowlisted quiet handler -- the 0.1
+                 re-key caught a real attempt to
+                 reintroduce the silent fallback this
+                 rung removes.
+  FINDINGS:      None of this step. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot
+                 resolve); G39 xfail is
+                 test_construction_integrity; G10
+                 and G28 are decided keeps; S-34f
+                 END STATE 15 engine bodies g-o,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse O-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 152 research cache days. The
+                 serialization.py fail-open named in
+                 the G44 close REMAINS OPEN list is
+                 this rung. Accepted baseline
+                 failures remain the IB after-hours
+                 test, g12, and any live-feed test
+                 in tests/ingestion/test_massive_functional.py.
+  NEXT:          merge, push, open the PR from
+                 arch/exec
+                 Left uncommitted: baseline_pre-O-01.json,
+                 baseline_post-O-01.json, this ledger
+                 entry.
+
+---
+
+## O-02  2026-09-21T21:59:17+08:00
+  STEP:          O-02
+  BASE:          c52308657a2b5e3158355964bcaa40e5eab84686
+  RESULT SHA:    5a0bac372e674e56e7dcf90d366dfe54a91e9925 (exec/O-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Rides draft PR #244 from
+                 arch/exec. Closes the S-06a suite
+                 hole: the loader's alpha_id guard
+                 (_ALPHA_ID_RE at
+                 _validate_alpha_id_and_version) had
+                 no YAML-door pin. Deleting
+                 `if not _ALPHA_ID_RE.match` left
+                 tests/alpha and tests/conformance
+                 at 564 passed (441 + 123). Registry
+                 S-06a tests cover register(), not
+                 the loader. Test-only; no src edit.
+                 Fail-first (1), guard present:
+                   10 passed, 17 deselected
+                 Fail-first (2), guard deleted:
+                   9 failed, 1 passed, 17 deselected
+                   in 0.31s
+                   Every invalid case:
+                   Failed: DID NOT RAISE
+                   <class 'feelies.alpha.loader.AlphaLoadError'>
+                   Cases: Foo, 1foo, foo-bar, empty,
+                   leading space, inner space,
+                   foo/bar, foo\\bar, __probe__.
+                   The 1 passed is
+                   test_schema_1_1_valid_alpha_id_loads
+                   (ok_id).
+                 Restore SHA256 of loader.py:
+                   A88448E5B9AD553CAA22B855A13B3535314BE3AE462FAC5335A86FC2FCB8487F
+                   before mutation and after restore,
+                   matching the declared pin.
+                 Fail-first (4): 10 passed, 17
+                 deselected. loader.py is not in the
+                 commit. S5 xfail intact, reason
+                 "GAP G41 G42". No XPASS. Four
+                 xfailed unchanged (G39, G10 G28,
+                 G36, G41 G42). ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check 720 files already formatted.
+  TESTS:         capture pre-O-02 RED 4926 passed /
+                 2 failed / 7 skipped / 4 xfailed.
+                 -> capture post-O-02 RED 4935
+                 passed / 3 failed / 7 skipped / 4
+                 xfailed. Pre failures: IB
+                 after-hours and g12. Post adds the
+                 accepted live-feed
+                 test_websocket_feed_emits_live_massive_event.
+                 Accounting: +10 pins, live-feed
+                 flipped pass->fail so +9 passed and
+                 +1 failed. No failure outside the
+                 accepted set (IB after-hours, g12,
+                 massive live-feed). tests/alpha
+                 441 -> 451. tests/conformance 123
+                 passed / 4 xfailed both sides.
+                 not-paper_rth: 4925 passed / 1
+                 failed / 5 skipped / 14 deselected
+                 / 4 xfailed; the one failure is
+                 the accepted IB after-hours test.
+                 determinism 148 -> 148 after the
+                 commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-02 vs post-O-02;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE.
+                 S5 xfail not dropped. APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 5a0bac37). Hand FILES: 0
+                 extra CLEAN.
+                 Touched:
+                 tests/alpha/test_schema_1_1_loading.py.
+                 Named-not-edited: loader.py (guard
+                 already existed; restored
+                 byte-identical). LEDGER.md (this
+                 entry uncommitted). Any plan file.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47048 -> 47048 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. Four checks
+                 by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS tests/alpha 441->451;
+                 capture 4926->4935 passed, failed
+                 2->3 is the accepted live-feed
+                 joining IB and g12, not outside
+                 the set; conformance 123->123; no
+                 XPASS;
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/O-02,
+                 5a0bac372e674e56e7dcf90d366dfe54a91e9925,
+                 "O-02: pin the loader's alpha_id
+                 guard". Parent c5230865 on
+                 arch/exec. One file, +32 / -0.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Parametrized invalid ids plus
+                 valid ok_id so a blanket refusal
+                 cannot pass. Message asserts
+                 alpha_id '<id>'.
+                 FINDING: the fourth duplicated ledger append. An interrupted end-of-file write
+                 left three identical O-02 copies -- so the cause is not the prefix-preserving
+                 StrReplace specifically, it is any append that gets retried. An EOF write is
+                 no more idempotent than the StrReplace was. The rule recorded at b782caa1
+                 reduced the odds; tests/docs/test_exec_ledger_structure.py is the enforcement,
+                 and it has now caught two of the four before commit. The rule stands, but the
+                 test is what must run before every ledger git add.
+                 Compact:
+                 O-02      passed
+                 tests     tests/alpha 441 -> 451;
+                           capture 4926 passed / 2
+                           failed (accepted IB+g12)
+                           -> 4935 passed / 3
+                           failed (accepted IB+g12
+                           + live-feed)
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     1 declared, 1 touched, clean
+                 next      merge onto arch/exec, push
+                           to #244
+  FINDINGS:      OPEN ITEM, not work done: the
+                 promotion ledger and the promote
+                 CLI accept alpha_id as a free
+                 string -- tests use ALPHA-A, which
+                 the loader rejects -- so one
+                 identifier lives in two
+                 namespaces. It does not reach a
+                 filesystem path, so it is an
+                 identity question, not a security
+                 one. Probe: 564 passed with the
+                 guard deleted (tests/alpha 441 +
+                 tests/conformance 123) before this
+                 pin. Carried, not fixed: G36 OPEN
+                 (seventeen keepers); G32 S-30f
+                 deferred; G41/G42 BLOCKED (S-33;
+                 per-quote timer cannot resolve);
+                 G39 xfail is
+                 test_construction_integrity; G10
+                 and G28 are decided keeps; S-34f
+                 END STATE 15 engine bodies g-o,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse O-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 152 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          merge onto arch/exec, push to #244
+                 Left uncommitted: baseline_pre-O-02.json,
+                 baseline_post-O-02.json, this ledger
+                 entry.
+
+---
+
+## O-03  2026-09-22T10:09:01+08:00
+  STEP:          O-03
+  BASE:          fc230ef6170288275d68460377a65701dc0344a5
+  RESULT SHA:    59d10b414a25d8c1825e82702a2b2c0b1077b7ec (exec/O-03; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Rides draft PR #244 from
+                 arch/exec. Closes the S-01 G6
+                 contradiction: a control alpha that
+                 reads no sensor can declare
+                 depends_on_sensors: [] without naming
+                 a dummy sensor and without tripping
+                 the unused-dependency audit.
+                 G6's non-empty clause was a guard, not
+                 in the SCHEMA.md definition (resolution:
+                 every named sensor exists, no
+                 duplicates, no cycles). The fix kept
+                 that guard for everything that does not
+                 opt out. The converse check is what
+                 keeps reads_no_sensor from being an
+                 opt-out.
+                 Fail-first (1), unchanged validator:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_empty_depends_loads_and_audit_is_silent
+                   E   feelies.alpha.layer_validator.LayerValidationError:
+                   <test>: G6 — layer: SIGNAL spec must declare
+                   a non-empty 'depends_on_sensors' list; got []
+                   1 failed, 30 deselected in 0.22s
+                 After the empty-list allowance, (1) and
+                 test_g6_rejects_empty_depends_on_sensors
+                 (unedited) were 2 passed.
+                 Fail-first (3), before the feature scan:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_rejects_evaluate_that_reads_snapshot_values
+                   E   Failed: DID NOT RAISE
+                   <class 'feelies.alpha.layer_validator.LayerValidationError'>
+                   1 failed, 31 deselected in 0.20s
+                 Then green.
+                 Fail-first (4), before the non-empty rejection:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_rejects_nonempty_depends_on_sensors
+                   E   Failed: DID NOT RAISE
+                   <class 'feelies.alpha.layer_validator.LayerValidationError'>
+                   1 failed, 34 deselected in 0.20s
+                 Then green.
+                 The warm-set scan's two remaining holes
+                 were also red before those checks
+                 (DID NOT RAISE): an unresolved
+                 snapshot.values access, and a
+                 regime-gate feature binding. Both green
+                 once None is not treated as an empty
+                 read and binding_identifier_names is
+                 scanned.
+                 S5 xfail intact, reason "GAP G41 G42".
+                 No XPASS. Four xfailed unchanged (G39,
+                 G10 G28, G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff check
+                 src/ tests/ scripts/ green. ruff format
+                 --check 720 files already formatted.
+  TESTS:         capture pre-O-03 GREEN 4926 passed /
+                 0 failed / 19 skipped / 4 xfailed.
+                 -> capture post-O-03 GREEN 4934 passed /
+                 0 failed / 19 skipped / 4 xfailed.
+                 +8 is this rung's pins (empty-list
+                 acceptance, explicit false, evaluate
+                 subscript, unresolved access,
+                 regime-gate binding, non-empty
+                 contradiction, two fixture audits).
+                 tests/alpha 451 -> 459.
+                 tests/conformance 123 passed / 4 xfailed
+                 both sides. not-paper_rth: 4933 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 4 xfailed. determinism 148 -> 148.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip).
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-03 vs post-O-03;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE.
+                 S5 xfail not dropped. APP oracle five
+                 baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         5 declared, 5 touched, 5 committed
+                 (clean vs 59d10b41). Hand FILES: 0
+                 extra CLEAN.
+                 Touched: src/feelies/alpha/layer_validator.py,
+                 tests/alpha/test_layer_validator_g2_g13.py,
+                 tests/conformance/fixtures/null_alpha/null_alpha.alpha.yaml,
+                 tests/conformance/fixtures/portfolio/upstream_signal.alpha.yaml,
+                 alphas/SCHEMA.md.
+                 Named-not-edited: _SENSOR_SPECS (still
+                 registers ofi_ewma on PlatformConfig),
+                 hazard_decouple.alpha.yaml, any file
+                 under alphas/ other than SCHEMA.md.
+                 LEDGER.md (this entry uncommitted).
+                 Captures uncommitted. Any plan file.
+  NET DELTA:     no plan triple. actual modules
+                 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47048 -> 47101 (+53)
+                 n_edges 676 -> 677 (+1)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 The +1 edge is the warm-set scan import
+                 consumed_value_keys_from_signal_source.
+                 regime_gate was already imported by G4.
+                 +53 sloc is the private G6 helper. No
+                 new public symbol.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step
+                 cannot parse O-*. Four checks by hand:
+                 FILES 5 declared / 5 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4926->4934 passed, failed 0->0,
+                 conformance 123->123, no XPASS;
+                 NET DELTA modules 0 / public symbols 0 /
+                 cycles 0 / alphaleak 0. sloc +53 and
+                 edges +1 are the helper, not a moved
+                 locked hash.
+  NOTES:         One commit on exec/O-03,
+                 59d10b414a25d8c1825e82702a2b2c0b1077b7ec,
+                 "O-03: reads_no_sensor lets a control
+                 alpha declare an empty sensor list".
+                 Parent fc230ef6 on arch/exec. Five
+                 files, +191 / -14. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 reads_no_sensor is SIGNAL-only. True
+                 requires depends_on_sensors: [] and a
+                 warm-set scan with no feature reference
+                 (evaluate keys, unresolved access as
+                 not-empty, regime-gate bindings). True
+                 with a non-empty list is rejected.
+                 Absent or false keeps the forgotten-field
+                 guard. Audit on the edited fixtures:
+                   AUDIT null_alpha depends=() warm=[]
+                   new_warnings=0
+                   AUDIT upstream_null depends=() warm=[]
+                   new_warnings=0
+                   AUDIT total_warnings=0
+                 R-01 and R6: 2 passed. Per tape, reset
+                 entered both classes:
+                   TAPE fix1 SensorRegistry=True
+                   HorizonAggregator=True
+                   registry_type=SensorRegistry
+                   TAPE portfolio SensorRegistry=True
+                   HorizonAggregator=True
+                   registry_type=SensorRegistry
+                 Compact:
+                 O-03      passed
+                 tests     4926 passed / 0 failed /
+                           19 skipped -> 4934 passed /
+                           0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     5 declared, 5 touched, clean
+                 next      merge onto arch/exec, push
+                           to #244
+                 The converse scan needed two probes beyond the planned one -- a feature read through a params-resolved key, and a feature named in on_condition -- each red before the check and green after. Without them reads_no_sensor was evadable by indirection.
+  FINDINGS:      G6's empty-list rejection, carried
+                 since S-01, is this rung. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot resolve);
+                 G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps; S-34f END STATE
+                 15 engine bodies g-o, deliberately
+                 unowned; perfmeasure.py DIRECT_PROBES
+                 three dead entries, unowned;
+                 verify_step frozen at exec-tools-v1,
+                 cannot parse O-*; S-04c; 152 research
+                 cache days. This capture was green on
+                 both sides (0 failed). The accepted
+                 IB after-hours, g12, and live-feed
+                 failures did not run; they remain the
+                 accepted set when they do.
+  NEXT:          merge onto arch/exec, push to #244
+                 Left uncommitted: baseline_pre-O-03.json,
+                 baseline_post-O-03.json, this ledger
+                 entry.
+
+---
+
+## O-04  2026-09-22T10:43:07+08:00  retirement
+  RECORD:        S-04c retired, not built.
+                 load_platform_config drops the Path and
+                 PlatformConfig carries none; that is
+                 true and does not matter.
+  PROVENANCE:    Already the resolved-config hash
+                 (_BASELINE_CONFIG_HASH,
+                 compute_config_hash over the snapshot),
+                 printed in the report's Parity section,
+                 logged at compose, and bound to the
+                 trade journal. Paper metadata already
+                 records config_path from argv.
+  WHY NOT:       The path would be a worse account of
+                 the run. CLI overrides (--symbol,
+                 --inv12-stress, session-date rebinding)
+                 are applied after load, so the path
+                 names the file before the run was
+                 configured and the hash names what it
+                 ran.
+  HASH:          Carrying the path on PlatformConfig
+                 would move _BASELINE_CONFIG_HASH, and
+                 as an absolute path would make the hash
+                 depend on the clone -- a defect, not a
+                 re-pin. cache_dir is excluded from the
+                 snapshot for the same reason.
+  CONSUMERS:     No consumer reads WHERE. The only red
+                 test would assert a label that was
+                 never emitted.
+  FINDING:       A named-but-unbuilt rung should be
+                 closed with a reason when the census
+                 shows it adds nothing. Building it
+                 because it was named would have put a
+                 less accurate record beside a more
+                 accurate one.
+  NEXT:          close orphan cycle; merge #244 to main
+
+---
+
+## O-03a  2026-09-22T11:21:18+08:00
+  STEP:          O-03a
+  BASE:          c8d44317dc1dfb2d16519c633234beaa5ea18d77
+  RESULT SHA:    38702721017e3ab034bc2824b53ca0c67a889022
+                 (exec/O-03a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Rides draft PR #244 from
+                 arch/exec. Bugbot found the defect by
+                 review: a comment on #244 against
+                 layer_validator.py at b46c9b43, not a
+                 push. The defect was two paths computing
+                 the same gate params differently. The
+                 loader injects numeric parameter
+                 defaults into the regime gate. The
+                 reads_no_sensor converse scan built that
+                 gate with no params, so
+                 binding_identifier_names read a declared
+                 numeric name as a feature binding and
+                 rejected the spec. The warm-set scan
+                 already treated those names as constants
+                 because it sees the loader's gate. The
+                 fix made one path.
+                 numeric_gate_params in
+                 feelies.core.regime_gate is the only
+                 filter (bool excluded; non-numeric
+                 omitted). It accepts the loader's
+                 resolved map, and a YAML parameters
+                 block reduced to defaults, then runs
+                 that same filter. core.regime_gate
+                 imports the stdlib only. loader and
+                 layer_validator already import it, and
+                 neither imports the other. No new edge.
+                 No cycle. A home in either alpha module
+                 would have made one import the other.
+                 Fail-first (1), unchanged validator:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_accepts_declared_numeric_parameter
+                   E   feelies.alpha.layer_validator.LayerValidationError:
+                   <test>: G6 — reads_no_sensor: true but regime-gate
+                   bindings reference feature name(s) ['threshold']
+                   1 failed, 38 deselected in 0.24s
+                 Fail-first (2), after the shared function:
+                   the same test loads. Quoted with the
+                   probes below: 6 passed, 35 deselected
+                   in 0.08s.
+                 Fail-first (3), the O-03 probes still
+                 fire, and a parameter does not hide a
+                 different feature name:
+                   test_g6_reads_no_sensor_rejects_evaluate_that_reads_snapshot_values
+                   test_g6_reads_no_sensor_rejects_unresolvable_snapshot_values_access
+                   test_g6_reads_no_sensor_rejects_regime_gate_feature_binding
+                   test_g6_reads_no_sensor_parameter_does_not_smuggle_a_feature_name
+                   ofi_ewma > threshold still raises G6
+                   on ofi_ewma.
+                 Same-name case: a parameter named
+                 ofi_ewma with on_condition "ofi_ewma > 0"
+                 loads. That test pinned the evasion.
+                 The scan drops injected parameter keys,
+                 so the validator treats the colliding
+                 name as the constant. It cannot know
+                 what a platform publishes. O-03b inverted
+                 the pin: the test was renamed and still
+                 loads; build_platform rejects the
+                 collision.
+                 S5 xfail intact, reason "GAP G41 G42".
+                 No XPASS. Four xfailed unchanged (G39,
+                 G10 G28, G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff check
+                 src/ tests/ scripts/ green. ruff format
+                 --check 720 files already formatted.
+                 lint-imports: 2 kept, 0 broken.
+  TESTS:         capture pre-O-03a GREEN 4934 passed /
+                 0 failed / 19 skipped.
+                 -> capture post-O-03a GREEN 4937 passed /
+                 0 failed / 19 skipped.
+                 +3 is this rung's pins (numeric parameter
+                 accepted, a parameter does not hide
+                 another feature, same-name parameter is
+                 the constant).
+                 tests/alpha 462 passed.
+                 tests/conformance 123 passed / 4 xfailed.
+                 not-paper_rth: 4936 passed / 0 failed /
+                 6 skipped / 14 deselected / 4 xfailed.
+                 determinism 148 -> 148.
+                 Regime-gate DSL and the inventory-revert
+                 loader test: 86 passed. Overrides still
+                 move gate thresholds, so the loader's
+                 gate is the resolved numeric map.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip).
+                 R-01 and R6: 2 passed.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-03a vs post-O-03a;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         4 declared, 4 touched, 4 committed
+                 (clean vs 38702721). Hand FILES: 0
+                 extra in the commit.
+                 Touched: src/feelies/alpha/layer_validator.py,
+                 src/feelies/alpha/loader.py,
+                 src/feelies/core/regime_gate.py,
+                 tests/alpha/test_layer_validator_g2_g13.py.
+                 Helper: feelies.core.regime_gate.numeric_gate_params.
+                 LEDGER.md (this entry uncommitted).
+                 Captures uncommitted.
+  NET DELTA:     no plan triple. actual modules
+                 250 -> 250 (+0)
+                 public_symbols 590 -> 591 (+1)
+                 sloc 47101 -> 47126 (+25)
+                 n_edges 677 -> 677 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 The +1 public symbol is
+                 numeric_gate_params. +25 sloc is that
+                 function. No new import edge.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step
+                 cannot parse O-*. Four checks by hand:
+                 FILES 4 declared / 4 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4934->4937 passed, failed 0->0,
+                 conformance 123 passed / 4 xfailed,
+                 no XPASS;
+                 NET DELTA modules 0 / edges 0 /
+                 cycles 0 / alphaleak 0.
+                 public_symbols +1 and sloc +25 are the
+                 shared function, not a moved locked hash.
+  NOTES:         The same-name test pinned the
+                 evasion and was inverted by O-03b.
+                 The validator still loads that spec.
+                 build_platform rejects the collision.
+                 One commit on exec/O-03a,
+                 38702721017e3ab034bc2824b53ca0c67a889022,
+                 "O-03a: the reads_no_sensor scan uses the loader's gate params".
+                 Parent c8d44317 on arch/exec. Four
+                 files, +102 / -10. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Compact:
+                 O-03a     passed
+                 tests     4934 passed / 0 failed /
+                           19 skipped -> 4937 passed /
+                           0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     4 declared, 4 touched, clean
+                 next      resolve the thread citing
+                           O-03a, then close the cycle
+  FINDINGS:      This rung is the Bugbot comment. The
+                 thread is not resolved. Carried, not
+                 fixed here: G36 OPEN; G32 S-30f
+                 deferred; G41/G42 BLOCKED; G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps. This capture was
+                 green on both sides (0 failed).
+  NEXT:          resolve the thread citing O-03a, then
+                 close the cycle
+                 Left uncommitted: baseline_pre-O-03a.json,
+                 baseline_post-O-03a.json, this ledger
+                 entry.
+
+---
+
+## O-03b  2026-09-22T11:53:41+08:00
+  STEP:          O-03b
+  BASE:          38702721017e3ab034bc2824b53ca0c67a889022
+                 (O-03a on exec/O-03a)
+  RESULT SHA:    b5072ae0df9c35fd9444c4e4a9988eb27feced64
+                 (exec/O-03a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Same branch as O-03a. The
+                 O-03a same-name load was a false
+                 acceptance. Measured on a FIX-1-shaped
+                 platform (ofi_ewma registered, horizon
+                 30, reads_no_sensor, parameter ofi_ewma
+                 default 0.5, on_condition "ofi_ewma > 0"):
+                 the third gate evaluation resolved
+                 598.9217938200513, which is 598.92, not
+                 0.5. Live snapshot values override the
+                 parameter. The check therefore raises,
+                 before any tick.
+                 It lives in build_platform, not the
+                 validator. The validator cannot know
+                 what a platform publishes. The exact
+                 set is the registered sensor ids plus
+                 the horizon feature ids actually built,
+                 and that set exists only after horizon
+                 features are constructed. A static
+                 catalog or a suffix rule misses
+                 factory-assigned ids (ofi_integrated,
+                 micro_price_drift, ofi_ewma_zscore).
+                 reject_parameter_shadowed_by_published_id
+                 sits beside warn_unread_sensor_dependencies
+                 in feelies.alpha.dependency_graph and
+                 takes the published ids as an argument.
+                 Alpha imports nothing new. bootstrap
+                 passes covered, which is already
+                 feature_ids | known_sensor_ids, and
+                 the resolved parameter names.
+                 Exception: ConfigurationError
+                 (feelies.core.errors). The same fatal
+                 composition error maybe_prune_unused_sensors
+                 already raises. AlphaLoadError is the
+                 loader's per-spec failure, and this
+                 check is the platform after features
+                 exist.
+                 The O-03a same-name test was renamed
+                 test_g6_reads_no_sensor_validator_does_not_decide_name_collisions.
+                 It still loads. The validator does not
+                 decide name collisions.
+                 Fail-first (1), unchanged build_platform,
+                 the reads_no_sensor spec whose parameter
+                 is ofi_ewma:
+                   FAILED tests/bootstrap/test_parameter_published_id_collision.py::
+                   test_build_rejects_reads_no_sensor_parameter_named_ofi_ewma
+                   E   Failed: DID NOT RAISE
+                   <class 'feelies.core.errors.ConfigurationError'>
+                   tests\bootstrap\test_parameter_published_id_collision.py:109
+                   1 failed, 3 deselected in 0.49s
+                 That build is the evasion.
+                 Fail-first (2), after the raise:
+                   alpha 'collision_probe': parameter
+                   'ofi_ewma' is shadowed by published
+                   id 'ofi_ewma'
+                 Fail-first (3), the same collision
+                 without reads_no_sensor:
+                   alpha 'collision_with_deps': parameter
+                   'ofi_ewma' is shadowed by published
+                   id 'ofi_ewma'
+                 Fail-first (4), derived id the ofi_ewma
+                 factory actually publishes
+                 (HorizonWindowedFeature feature_id
+                 ofi_ewma_zscore, beside the passthrough
+                 ofi_ewma):
+                   alpha 'zscore_collision': parameter
+                   'ofi_ewma_zscore' is shadowed by
+                   published id 'ofi_ewma_zscore'
+                 Fail-first (5): a parameter named
+                 spread_z_30d on a platform that
+                 registers only ofi_ewma builds.
+                 spread_z_30d is a real sensor id and
+                 is not published here.
+                 Fail-first (6): the threshold > 0
+                 case and every O-03 probe still pass.
+                 Quoted with the four build tests:
+                 10 passed, 35 deselected in 0.27s.
+                 Did not touch HorizonAggregator,
+                 _build_bindings, or RegimeGate.evaluate.
+                 S5 xfail intact, reason "GAP G41 G42".
+                 No XPASS. Four xfailed unchanged (G39,
+                 G10 G28, G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff check
+                 src/ tests/ scripts/ green. ruff format
+                 --check 721 files already formatted.
+                 lint-imports: 2 kept, 0 broken.
+  TESTS:         capture post-O-03a GREEN 4937 passed /
+                 0 failed / 19 skipped.
+                 -> capture post-O-03b GREEN 4941 passed /
+                 0 failed / 19 skipped.
+                 +4 is this rung's build pins (ofi_ewma
+                 collision, the same collision without
+                 reads_no_sensor, ofi_ewma_zscore,
+                 an unpublished sensor name builds).
+                 The validator rename adds no test.
+                 tests/alpha 462 passed.
+                 tests/conformance 123 passed / 4 xfailed.
+                 not-paper_rth: 4936 passed -> 4940
+                 passed / 0 failed / 6 skipped /
+                 14 deselected / 4 xfailed.
+                 determinism 148 -> 148.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip).
+                 R-01 and R6: 2 passed.
+                 The broad suite is the evidence that
+                 every shipped alpha under alphas/ and
+                 every test config that builds a
+                 platform still builds.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical post-O-03a vs post-O-03b;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 A raise before any tick cannot move a
+                 replay. Nothing in the build of the
+                 shipped configs changed.
+  FILES:         4 declared, 4 touched, 4 committed
+                 (clean vs b5072ae0). Hand FILES: 0
+                 extra in the commit.
+                 Touched: src/feelies/alpha/dependency_graph.py,
+                 src/feelies/bootstrap.py,
+                 tests/alpha/test_layer_validator_g2_g13.py
+                 (rename only),
+                 tests/bootstrap/test_parameter_published_id_collision.py.
+                 LEDGER.md (this entry uncommitted).
+                 Captures uncommitted.
+  NET DELTA:     no plan triple. actual modules
+                 250 -> 250 (+0)
+                 public_symbols 591 -> 592 (+1)
+                 sloc 47126 -> 47153 (+27)
+                 n_edges 677 -> 677 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 The +1 public symbol is
+                 reject_parameter_shadowed_by_published_id.
+                 +27 sloc is that function and the
+                 bootstrap call. The call reuses the
+                 existing dependency_graph import.
+                 No new edge.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step
+                 cannot parse O-*. Four checks by hand:
+                 FILES 4 declared / 4 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4937->4941 passed, failed 0->0,
+                 conformance 123 passed / 4 xfailed,
+                 no XPASS;
+                 NET DELTA modules 0 / edges 0 /
+                 cycles 0 / alphaleak 0.
+                 public_symbols +1 and sloc +27 are the
+                 build-time check, not a moved locked
+                 hash.
+  NOTES:         One commit on exec/O-03a,
+                 b5072ae0df9c35fd9444c4e4a9988eb27feced64,
+                 "O-03b: build_platform rejects a parameter shadowed by a published feature".
+                 Parent 38702721. Four files, +183 / -8.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Compact:
+                 O-03b     passed
+                 tests     4937 passed / 0 failed /
+                           19 skipped -> 4941 passed /
+                           0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     4 declared, 4 touched, clean
+                 next      merge O-03a and O-03b,
+                           resolve the thread, close
+                           the cycle
+  FINDINGS:      OPEN FINDING. Declared dependencies
+                 do not bound what the regime gate
+                 receives. HorizonAggregator publishes
+                 every warm feature on the horizon, and
+                 _build_bindings back-fills from the
+                 sensor cache, so any alpha's gate can
+                 read any registered feature. Filtering
+                 the gate to declared dependencies is a
+                 runtime change with parity exposure and
+                 needs its own sizing. This rung does
+                 not make that change. The thread is
+                 not resolved. Carried, not fixed here:
+                 G36 OPEN; G32 S-30f deferred; G41/G42
+                 BLOCKED; G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps. This capture was
+                 green on both sides (0 failed).
+  NEXT:          merge O-03a and O-03b, resolve the
+                 thread, close the cycle
+                 Left uncommitted: baseline_pre-O-03a.json,
+                 baseline_post-O-03a.json,
+                 baseline_post-O-03b.json, this ledger
+                 entry.

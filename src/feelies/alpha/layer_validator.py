@@ -608,9 +608,14 @@ class LayerValidator:
     def _check_g6_feature_dependency_dag(self, spec: dict[str, Any], source: str) -> None:
         """G6 — sensor / feature dependency graph must be a DAG.
 
-        - **SIGNAL**: ``depends_on_sensors`` must be a non-empty list
-          of unique sensor identifiers.  When ``known_sensor_ids`` was
-          injected at construction, every entry must resolve.
+        - **SIGNAL**: ``depends_on_sensors`` is a list of unique sensor
+          identifiers.  When ``known_sensor_ids`` was injected at
+          construction, every entry must resolve.  An empty list is
+          rejected — the forgotten-field guard — unless
+          ``reads_no_sensor`` is true.  When that flag is true the list
+          must be ``[]`` and neither the evaluate body nor the
+          regime-gate bindings may reference a feature.  True with a
+          non-empty list is rejected.
         - **PORTFOLIO**: no inline-feature DAG to validate; the gate is
           a no-op.  Cross-alpha dependencies on upstream SIGNAL outputs
           are resolved at registry merge time by the composition layer.
@@ -621,6 +626,14 @@ class LayerValidator:
         if layer != "SIGNAL":
             return
         depends = spec.get("depends_on_sensors")
+        if spec.get("reads_no_sensor", False) is True:
+            if depends != []:
+                raise LayerValidationError(
+                    f"{source}: G6 — reads_no_sensor: true requires "
+                    f"depends_on_sensors: []; got {depends!r}"
+                )
+            self._reject_reads_no_sensor_feature_reference(spec, source)
+            return
         if not isinstance(depends, list) or not depends:
             raise LayerValidationError(
                 f"{source}: G6 — layer: SIGNAL spec must declare "
@@ -649,6 +662,55 @@ class LayerValidator:
                     f"in the platform; available: "
                     f"{sorted(self._known_sensor_ids)}"
                 )
+
+    def _reject_reads_no_sensor_feature_reference(self, spec: dict[str, Any], source: str) -> None:
+        """G6 converse: reads_no_sensor may not hide a feature read.
+
+        Reuses the warm-set scan: ``consumed_value_keys_from_signal_source``
+        on the evaluate body, plus ``RegimeGate.binding_identifier_names``
+        on the regime gate built with :func:`feelies.core.regime_gate.numeric_gate_params`.
+        ``None`` from the body scan means the access could not be resolved,
+        which is not a proof of an empty read.
+        """
+        from feelies.alpha.dependency_graph import consumed_value_keys_from_signal_source
+        from feelies.core.regime_gate import RegimeGate, RegimeGateError, numeric_gate_params
+
+        signal_code = spec.get("signal")
+        consumed = consumed_value_keys_from_signal_source(
+            signal_code if isinstance(signal_code, str) else None
+        )
+        if consumed is None or consumed:
+            if consumed is None:
+                detail = "evaluate snapshot.values access could not be resolved to an empty set"
+            else:
+                detail = f"evaluate reads snapshot.values key(s) {sorted(consumed)}"
+            raise LayerValidationError(f"{source}: G6 — reads_no_sensor: true but {detail}")
+
+        gate_block = spec.get("regime_gate")
+        if not isinstance(gate_block, dict):
+            raise LayerValidationError(
+                f"{source}: G6 — reads_no_sensor: true but regime_gate "
+                f"could not be scanned; got {type(gate_block).__name__}"
+            )
+        raw_parameters = spec.get("parameters")
+        try:
+            gate = RegimeGate.from_spec(
+                alpha_id=str(spec.get("alpha_id") or "<unknown>"),
+                spec=gate_block,
+                params=numeric_gate_params(
+                    raw_parameters if isinstance(raw_parameters, dict) else {}
+                ),
+            )
+        except RegimeGateError as exc:
+            raise LayerValidationError(
+                f"{source}: G6 — reads_no_sensor: true but regime gate could not be scanned: {exc}"
+            ) from exc
+        names = gate.binding_identifier_names()
+        if names:
+            raise LayerValidationError(
+                f"{source}: G6 — reads_no_sensor: true but regime-gate "
+                f"bindings reference feature name(s) {sorted(names)}"
+            )
 
     def _check_g7_horizon_registration(self, spec: dict[str, Any], source: str) -> None:
         """G7 — declared ``horizon_seconds`` must be in

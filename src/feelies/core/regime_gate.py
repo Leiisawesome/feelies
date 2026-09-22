@@ -470,6 +470,37 @@ def _resolve_posterior(state_name: str, b: Bindings) -> float:
     return float(posteriors[state_names.index(state_name)])
 
 
+# ── Parameter constants ─────────────────────────────────────────────────
+
+
+def numeric_gate_params(params: Mapping[str, Any]) -> dict[str, float]:
+    """Numeric values injected as regime-gate constants.
+
+    Bool is excluded despite being an ``int`` subclass. Non-numeric
+    values are omitted.
+
+    ``params`` is either the loader's resolved map (name → value) or a
+    YAML ``parameters:`` block (name → mapping with ``default``). Spec
+    entries contribute their default, then the same filter runs. The
+    loader and the ``reads_no_sensor`` scan both call this so a
+    parameter name cannot be a feature binding in one path and a
+    constant in the other.
+    """
+    values: dict[str, Any] = {}
+    for name, raw in params.items():
+        if isinstance(raw, Mapping):
+            if "default" not in raw:
+                continue
+            values[name] = raw["default"]
+        else:
+            values[name] = raw
+    return {
+        name: float(value)
+        for name, value in values.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
+
+
 # ── Hysteresis state machine ────────────────────────────────────────────
 
 
