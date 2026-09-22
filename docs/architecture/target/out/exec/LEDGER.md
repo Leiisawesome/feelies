@@ -29130,3 +29130,176 @@ FINDINGS:    A census inherits its detector's
   FINDINGS:      No test loaded configs/paper_run.yaml. Deleting it did not
                  change the not-paper_rth count.
   NEXT:          Push arch/exec and open the cycle PR.
+
+---
+
+## O-07  2026-09-22T14:49:50+08:00
+  STEP:          O-07
+  BASE:          16475cf98ef7154559ba9e45f9f429f236f4affb (arch/exec, the O-06
+                 ledger commit)
+  RESULT SHA:    5e3f34012709d3adfe52beccfbec28c6351a54e5 (exec/O-07). Merged
+                 to arch/exec as d5fc487a2c922b30560a11bdb9469a33c0543bfc.
+  VERDICT:       passed
+  CONFORMANCE:   DIRECT_PROBES resolves completely. An unresolved probe
+                 raises. No src/feelies edit. Eleven rows retargeted,
+                 engine number and label kept. Ten module functions now
+                 named feelies.kernel.orchestrator:_<name>:
+                 E1.data_health_gate _data_health_blocks_trading,
+                 E1.verify_integrity _verify_data_integrity,
+                 E1.update_halt_state _update_halt_state,
+                 E1.update_ssr_state _update_ssr_state,
+                 E3.update_regime _update_regime,
+                 E8.compute_target_qty _compute_target_quantity,
+                 E8.buying_power_flip _maybe_flip_buying_power_at_rth_close,
+                 E9.build_order _try_build_order_from_intent,
+                 E10.submit_tracked_order _submit_tracked_order,
+                 X.size_shadow _record_size_shadow.
+                 E10.router_submit retargeted from
+                 BacktestOrderRouter.submit_order to
+                 BacktestOrderRouter.submit.
+                 _install_direct_probes raises RuntimeError on both the
+                 old continue branch and the old swallowed exception.
+                 The BLE001 noqa ("a miss is evidence, not a crash") is
+                 gone. Fail-first (1), against the unchanged list:
+                 FAILED test_every_direct_probe_resolves, unresolved
+                 direct probes, eleven rows:
+                 feelies.ingestion.data_integrity:_data_health_blocks_trading,
+                 feelies.ingestion.data_integrity:_verify_data_integrity,
+                 feelies.ingestion.data_integrity:_update_halt_state,
+                 feelies.ingestion.data_integrity:_update_ssr_state,
+                 feelies.services.regime_engine:_update_regime,
+                 feelies.risk.engine:_compute_target_quantity,
+                 feelies.risk.engine:_maybe_flip_buying_power_at_rth_close,
+                 feelies.kernel.orchestrator:Orchestrator._try_build_order_from_intent,
+                 feelies.execution.order_lifecycle:_submit_tracked_order,
+                 feelies.execution.backtest_router:BacktestOrderRouter.submit_order,
+                 feelies.kernel.orchestrator:Orchestrator._record_size_shadow.
+                 After the retarget, and before the installer raised,
+                 test_every_direct_probe_resolves passed (48 resolved).
+                 Fail-first (2), that same tree, fake name
+                 Orchestrator._o07_no_such_probe appended after the
+                 forty-eight: FAILED test_unresolved_direct_probe_raises
+                 Failed: DID NOT RAISE RuntimeError. After the raise,
+                 both tests passed. The raise was not scored until the
+                 eleven resolved, so it is not true for those names.
+                 Install is against a copy of the list. Every setattr
+                 is restored. After the tests, Orchestrator methods,
+                 BacktestOrderRouter.on_quote / submit / poll_acks, and
+                 the ten module functions are the original objects
+                 (identity). S5 xfail intact, test_hot_path_allow_list,
+                 reason GAP G41 G42. test_g45_keep and
+                 test_g44_dead_compute green, including after the
+                 profile regeneration. conformance 125 passed, 4
+                 xfailed, no XPASS.
+  TESTS:         capture pre-O-07 GREEN 4946 passed / 0 failed /
+                 19 skipped. -> capture post-O-07 GREEN 4948 passed /
+                 0 failed / 19 skipped. +2 is this rung.
+                 not-paper_rth: 4947 passed / 0 failed / 6 skipped /
+                 14 deselected / 4 xfailed. determinism 148 -> 148.
+                 ruff check src/ tests/ scripts/ tools/: all checks
+                 passed. ruff format --check src/ tests/ scripts/:
+                 723 files already formatted.
+  PARITY:        declared hold -- all 64 HASH/COUNT constants, the
+                 fingerprint, _BASELINE_CONFIG_HASH | actual 64 -> 64
+                 against baseline_pre-O-07.json, changed 0, added 0,
+                 removed 0 | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 Probed APP/2026-03-26 parity hash
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 fills 20. A tools change cannot move a replay hash.
+  FILES:         2 declared, 2 touched, clean. Edited
+                 tools/arch/perfmeasure.py. Added
+                 tests/conformance/test_direct_probes_resolve.py.
+                 No src/feelies edit.
+  NET DELTA:     modules 250 -> 250, public_symbols 593 -> 593,
+                 sloc 47226 -> 47226, n_edges 677 -> 677,
+                 n_modules 203 -> 203, cycles 1 -> 1, alphaleak 0 -> 0.
+  DETERMINISM:   148 -> 148 passed. No hash pin moved.
+  VERIFY_STEP:   No plan file; orphan rung. Four checks by hand:
+                 FILES 2 declared / 2 touched CLEAN; PARITY 64/64
+                 hold, 0 moved; TESTS 4946 -> 4948 passed, failed
+                 0 -> 0; NET DELTA modules 0 / public symbols 0 /
+                 cycles 0 / alphaleak 0.
+  NOTES:         Probed APP day, 82678 quotes.
+                 probes_resolved includes all 48 DIRECT_PROBES rows.
+                 probes_unresolved is empty. 40 of the 48 recorded
+                 armed calls. Eight resolved and recorded zero armed
+                 calls, so they are absent from STATS and from the
+                 tool's caller table: E1.event_log_append,
+                 E1.verify_integrity, E8.check_sized_intent,
+                 E9.netter_net, E9.min_cost_decide,
+                 E10.router_on_quote, E10.router_submit,
+                 E10.router_poll. platform.yaml execution_mode is
+                 passive_limit, so the APP router is
+                 PassiveLimitOrderRouter. BacktestOrderRouter.submit,
+                 on_quote, and poll_acks are the named callees and
+                 are not that router. E10.router_submit now resolves;
+                 it does not fire on this day. The other five
+                 zero-call rows were already aimed at methods this
+                 day does not enter inside the armed window.
+                 Direct-probe exclusive shares, armed calls only,
+                 zeros contribute nothing:
+                 e0 67.6%, e1 0.8%, e2 11.2%, e3 11.6%, e4 0.0%,
+                 e6 0.9%, e7 2.0%, e8 2.5%, e9 0.0%, e10 1.8%,
+                 e11 1.2%, e12 0.3%.
+                 Tool table (--mode report), bus and sensor probes
+                 included: e0 44.9%, e1 0.5%, e2 38.1%, e3 7.7%,
+                 e4 1.3%, e6 0.6%, e7 1.3%, e8 2.4%, e9 0.0%,
+                 e10 1.2%, e11 0.8%, e12 0.2%, e13 1.1%.
+                 Profile regenerated. proven_per_event_sites
+                 unchanged: string_formatting 1 (the keep),
+                 transcendental 1, decimal_arithmetic 3.
+                 n_zero_call_anywhere 6 unchanged. Not a finding.
+                 Born-dead history. At tool birth (b92ded1b) the
+                 evidence file's probes_unresolved had one row:
+                 BacktestOrderRouter.submit_order. The method has
+                 been submit since 7113d4f6. That probe was born
+                 dead and never resolved until this rung.
+                 The other ten were born on Orchestrator and
+                 resolved. Extraction moved the bodies and, for
+                 eight of them, retargeted the probe onto the new
+                 address, so they resolved again:
+                 E1 four, S-20 (318e1855 halt, 28d8c03e ssr,
+                 99fbb035 health, f8088a7f verify);
+                 E3, dead after S-19 (466da57c) moved _update_regime
+                 off Orchestrator, resolved when 318e1855 retargeted
+                 the probe to regime_engine, where the body then
+                 lived; E8 pair, S-22 (670e2772, b96f59c3);
+                 E10.submit_tracked_order, S-25 (1d834019).
+                 They died again when the bodies came back to
+                 kernel/orchestrator.py as module functions and the
+                 probe strings stayed on the extraction addresses:
+                 T-05a (e80bb2f7) E3; T-06a (97acf4a5) the four E1;
+                 T-08b (048763dd) the E8 pair; T-08d (379a95ae)
+                 _submit_tracked_order. E9.build_order died at S-24
+                 (88893857) when _try_build_order_from_intent left
+                 the class; the probe was not retargeted. X.size_shadow
+                 died at S-34f (9d6698e4) the same way. T-08b and
+                 T-08d brought those two bodies back as module
+                 functions, which a class-qualified probe still
+                 misses. Every callee still exists.
+                 The ledger's carried count stayed at three (the
+                 S-34f pair plus T-05a's E3) after T-06a had already
+                 noted four more and the later returns added the
+                 rest. Three was the ledger's figure. Eleven is
+                 the tree's.
+                 Compact:
+                 O-07      passed
+                 tests     4946 passed / 0 failed / 19 skipped ->
+                           4948 passed / 0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved | MATCH
+                 files     2 declared, 2 touched, clean
+                 next      G36/G39 retirement decision
+  FINDINGS:      G41/G42. Every probed per-engine share in this
+                 ledger before O-07 was computed with an unknown
+                 subset of probes missing and the survivors
+                 renormalized to 100%. Do not calibrate a future
+                 meter against them. Carried, not fixed here:
+                 G36 OPEN; G32 S-30f deferred; G39 xfail is
+                 test_construction_integrity; G10 and G28 are
+                 decided keeps.
+  NEXT:          G36/G39 retirement decision.
