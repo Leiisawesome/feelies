@@ -191,6 +191,79 @@ def reject_parameter_shadowed_by_published_id(
     raise ConfigurationError(f"alpha {alpha_id!r}: {detail}")
 
 
+def reject_reads_outside_declared_sensors(
+    *,
+    alpha_id: str,
+    depends_on_sensors: Sequence[str],
+    horizon_seconds: int,
+    horizon_features: Sequence[HorizonFeature],
+    gate: RegimeGate,
+    signal_source: str | None,
+) -> None:
+    """Reject a SIGNAL alpha that reads a feature it did not declare.
+
+    The warm-set scan already resolves the names ``evaluate`` and the
+    regime gate read. This makes that set a build contract.
+
+    Ownership: every resolved name must be a feature id produced by a
+    sensor in ``depends_on_sensors``. Gate names that are not themselves
+    feature ids expand the same way ``required_warm_feature_ids_for_signal_alpha``
+    does (a sensor id stands for the features it publishes). Body keys
+    the warm-set drops because they are not published stay in the set:
+    a read that is not a feature of a declared sensor is still a read.
+
+    An unresolvable body scan (``consumed_value_keys_from_signal_source``
+    returns ``None``) is rejected. Unknown is not a proof of inclusion.
+
+    A declared sensor the platform does not register is already
+    ``UnresolvedDependencyError`` from
+    ``AlphaRegistry.resolve_signal_dependencies``. This function does
+    not repeat that check.
+
+    PORTFOLIO specs have no signal body and are exempt. Callers must
+    not invoke this for them.
+    """
+    consumed = consumed_value_keys_from_signal_source(signal_source)
+    if consumed is None:
+        raise ConfigurationError(f"alpha {alpha_id!r}: signal body read set could not be resolved")
+
+    available = {
+        feature.feature_id
+        for feature in horizon_features
+        if feature.horizon_seconds == horizon_seconds
+    }
+    read_names: set[str] = set(consumed)
+    for name in gate.binding_identifier_names():
+        if name.endswith("_percentile") or name.endswith("_zscore") or name in available:
+            read_names.add(name)
+            continue
+        produced = feature_ids_for_sensor_at_horizon(name, horizon_seconds, horizon_features)
+        if produced:
+            read_names.update(produced)
+        else:
+            read_names.add(name)
+
+    feature_owners: dict[str, set[str]] = {}
+    for feature in horizon_features:
+        if feature.horizon_seconds != horizon_seconds:
+            continue
+        feature_owners.setdefault(feature.feature_id, set()).update(feature.input_sensor_ids)
+
+    declared = frozenset(depends_on_sensors)
+    outside = [
+        name
+        for name in sorted(read_names)
+        if not (owners := feature_owners.get(name)) or not owners <= declared
+    ]
+    if not outside:
+        return
+    detail = ", ".join(
+        f"read {name!r} is not a feature of declared sensors {sorted(declared)}"
+        for name in outside
+    )
+    raise ConfigurationError(f"alpha {alpha_id!r}: {detail}")
+
+
 def warn_unread_sensor_dependencies(
     *,
     alpha_id: str,
@@ -307,6 +380,7 @@ __all__ = [
     "feature_ids_for_sensor_at_horizon",
     "maybe_prune_unused_sensors",
     "reject_parameter_shadowed_by_published_id",
+    "reject_reads_outside_declared_sensors",
     "required_warm_feature_ids_for_signal_alpha",
     "warn_unread_sensor_dependencies",
 ]
