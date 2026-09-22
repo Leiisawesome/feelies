@@ -668,11 +668,12 @@ class LayerValidator:
 
         Reuses the warm-set scan: ``consumed_value_keys_from_signal_source``
         on the evaluate body, plus ``RegimeGate.binding_identifier_names``
-        on the regime gate. ``None`` from the body scan means the access
-        could not be resolved, which is not a proof of an empty read.
+        on the regime gate built with :func:`feelies.core.regime_gate.numeric_gate_params`.
+        ``None`` from the body scan means the access could not be resolved,
+        which is not a proof of an empty read.
         """
         from feelies.alpha.dependency_graph import consumed_value_keys_from_signal_source
-        from feelies.core.regime_gate import RegimeGate, RegimeGateError
+        from feelies.core.regime_gate import RegimeGate, RegimeGateError, numeric_gate_params
 
         signal_code = spec.get("signal")
         consumed = consumed_value_keys_from_signal_source(
@@ -691,10 +692,14 @@ class LayerValidator:
                 f"{source}: G6 — reads_no_sensor: true but regime_gate "
                 f"could not be scanned; got {type(gate_block).__name__}"
             )
+        raw_parameters = spec.get("parameters")
         try:
             gate = RegimeGate.from_spec(
                 alpha_id=str(spec.get("alpha_id") or "<unknown>"),
                 spec=gate_block,
+                params=numeric_gate_params(
+                    raw_parameters if isinstance(raw_parameters, dict) else {}
+                ),
             )
         except RegimeGateError as exc:
             raise LayerValidationError(

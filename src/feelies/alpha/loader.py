@@ -55,7 +55,7 @@ from feelies.core.events import (
     TrendMechanism,
 )
 from feelies.core.platform_config import compute_manifest_hash
-from feelies.core.regime_gate import RegimeGate, RegimeGateError
+from feelies.core.regime_gate import RegimeGate, RegimeGateError, numeric_gate_params
 
 logger = logging.getLogger(__name__)
 
@@ -347,12 +347,7 @@ class AlphaLoader:
         except CostArithmeticError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
-        # Expose numeric parameters to gates; exclude bool despite its int subclass.
-        gate_params = {
-            name: float(value)
-            for name, value in params.items()
-            if isinstance(value, (int, float)) and not isinstance(value, bool)
-        }
+        gate_params = numeric_gate_params(params)
         try:
             regime_gate = RegimeGate.from_spec(
                 alpha_id=alpha_id,

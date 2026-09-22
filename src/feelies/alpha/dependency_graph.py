@@ -168,6 +168,29 @@ def required_warm_feature_ids_for_signal_alpha(
     return frozenset(req)
 
 
+def reject_parameter_shadowed_by_published_id(
+    *,
+    alpha_id: str,
+    parameter_names: Sequence[str],
+    published_ids: frozenset[str],
+) -> None:
+    """Reject a parameter a published sensor or feature can override.
+
+    ``RegimeGate.evaluate`` merges live sensor values over parameter
+    constants. A parameter whose name is also an id this platform
+    publishes is not a constant: the live value silently replaces it.
+    ``published_ids`` is the registered sensor ids plus the horizon
+    feature ids actually built.
+    """
+    shadowed = sorted(name for name in parameter_names if name in published_ids)
+    if not shadowed:
+        return
+    detail = ", ".join(
+        f"parameter {name!r} is shadowed by published id {name!r}" for name in shadowed
+    )
+    raise ConfigurationError(f"alpha {alpha_id!r}: {detail}")
+
+
 def warn_unread_sensor_dependencies(
     *,
     alpha_id: str,
@@ -283,6 +306,7 @@ __all__ = [
     "consumed_value_keys_from_signal_source",
     "feature_ids_for_sensor_at_horizon",
     "maybe_prune_unused_sensors",
+    "reject_parameter_shadowed_by_published_id",
     "required_warm_feature_ids_for_signal_alpha",
     "warn_unread_sensor_dependencies",
 ]

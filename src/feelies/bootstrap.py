@@ -36,6 +36,7 @@ from feelies.promotion.lifecycle import LifecycleRevocation
 from feelies.alpha.dependency_graph import (
     consumed_features_for_signal_registration,
     maybe_prune_unused_sensors,
+    reject_parameter_shadowed_by_published_id,
     required_warm_feature_ids_for_signal_alpha,
     warn_unread_sensor_dependencies,
 )
@@ -1495,6 +1496,11 @@ def _create_signal_layer(
             horizon_seconds=module.horizon_seconds,
             horizon_features=horizon_features or [],
             warm_ids=warm_ids,
+        )
+        reject_parameter_shadowed_by_published_id(
+            alpha_id=module.manifest.alpha_id,
+            parameter_names=tuple(module.params),
+            published_ids=covered,
         )
         consumed_feature_ids = consumed_features_for_signal_registration(
             declared_consumed_features=module.consumed_features,
