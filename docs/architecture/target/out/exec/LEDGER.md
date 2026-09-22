@@ -26373,20 +26373,18 @@ FINDINGS:    A blindness probe runs by insertion
              the count of distinct campaign
              names, and no step id appears
              twice. OPEN — not done here.
-             LEDGER APPENDS ARE END-OF-FILE WRITES, NEVER A
-             PREFIX-PRESERVING STRREPLACE. A StrReplace
-             whose old_string is the ledger's tail and
-             whose new_string is that tail plus a block
-             stays applicable after it succeeds, so any
-             retry, compaction resume or "continue"
-             appends the block again. That is the cause
-             of 89d3ac28, c62903ce and the four G46-01
-             copies. tools/exec is frozen and cannot
-             enforce this. Every ledger append is an
-             end-of-file write, and
+             LEDGER APPENDS ARE END-OF-FILE WRITES.
+             A prefix-preserving StrReplace is one
+             cause of a duplicated block, not the
+             cause: any append that gets retried
+             duplicates, and an end-of-file write is
+             no more idempotent than the StrReplace
+             was. The rule recorded at b782caa1
+             reduced the odds. tools/exec is frozen
+             and cannot enforce this.
              tests/docs/test_exec_ledger_structure.py
-             runs BEFORE git add of the ledger, not
-             after.
+             is the guard, and it runs BEFORE git add
+             of the ledger, not after.
 
 ---
 
@@ -28075,4 +28073,189 @@ FINDINGS:    A census inherits its detector's
                  arch/exec
                  Left uncommitted: baseline_pre-O-01.json,
                  baseline_post-O-01.json, this ledger
+                 entry.
+
+---
+
+## O-02  2026-09-21T21:59:17+08:00
+  STEP:          O-02
+  BASE:          c52308657a2b5e3158355964bcaa40e5eab84686
+  RESULT SHA:    5a0bac372e674e56e7dcf90d366dfe54a91e9925 (exec/O-02; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Rides draft PR #244 from
+                 arch/exec. Closes the S-06a suite
+                 hole: the loader's alpha_id guard
+                 (_ALPHA_ID_RE at
+                 _validate_alpha_id_and_version) had
+                 no YAML-door pin. Deleting
+                 `if not _ALPHA_ID_RE.match` left
+                 tests/alpha and tests/conformance
+                 at 564 passed (441 + 123). Registry
+                 S-06a tests cover register(), not
+                 the loader. Test-only; no src edit.
+                 Fail-first (1), guard present:
+                   10 passed, 17 deselected
+                 Fail-first (2), guard deleted:
+                   9 failed, 1 passed, 17 deselected
+                   in 0.31s
+                   Every invalid case:
+                   Failed: DID NOT RAISE
+                   <class 'feelies.alpha.loader.AlphaLoadError'>
+                   Cases: Foo, 1foo, foo-bar, empty,
+                   leading space, inner space,
+                   foo/bar, foo\\bar, __probe__.
+                   The 1 passed is
+                   test_schema_1_1_valid_alpha_id_loads
+                   (ok_id).
+                 Restore SHA256 of loader.py:
+                   A88448E5B9AD553CAA22B855A13B3535314BE3AE462FAC5335A86FC2FCB8487F
+                   before mutation and after restore,
+                   matching the declared pin.
+                 Fail-first (4): 10 passed, 17
+                 deselected. loader.py is not in the
+                 commit. S5 xfail intact, reason
+                 "GAP G41 G42". No XPASS. Four
+                 xfailed unchanged (G39, G10 G28,
+                 G36, G41 G42). ruff check src/
+                 tests/ scripts/ green. ruff format
+                 --check 720 files already formatted.
+  TESTS:         capture pre-O-02 RED 4926 passed /
+                 2 failed / 7 skipped / 4 xfailed.
+                 -> capture post-O-02 RED 4935
+                 passed / 3 failed / 7 skipped / 4
+                 xfailed. Pre failures: IB
+                 after-hours and g12. Post adds the
+                 accepted live-feed
+                 test_websocket_feed_emits_live_massive_event.
+                 Accounting: +10 pins, live-feed
+                 flipped pass->fail so +9 passed and
+                 +1 failed. No failure outside the
+                 accepted set (IB after-hours, g12,
+                 massive live-feed). tests/alpha
+                 441 -> 451. tests/conformance 123
+                 passed / 4 xfailed both sides.
+                 not-paper_rth: 4925 passed / 1
+                 failed / 5 skipped / 14 deselected
+                 / 4 xfailed; the one failure is
+                 the accepted IB after-hours test.
+                 determinism 148 -> 148 after the
+                 commit.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-02 vs post-O-02;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE.
+                 S5 xfail not dropped. APP oracle
+                 five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         1 declared, 1 touched, 1 committed
+                 (clean vs 5a0bac37). Hand FILES: 0
+                 extra CLEAN.
+                 Touched:
+                 tests/alpha/test_schema_1_1_loading.py.
+                 Named-not-edited: loader.py (guard
+                 already existed; restored
+                 byte-identical). LEDGER.md (this
+                 entry uncommitted). Any plan file.
+  NET DELTA:     declared src modules 0, public symbols 0,
+                 branch points 0
+                 actual modules 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47048 -> 47048 (+0)
+                 n_edges 676 -> 676 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 MATCH on modules 0 / symbols 0 /
+                 branch points 0.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. Four checks
+                 by hand:
+                 FILES 1 declared / 1 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS tests/alpha 441->451;
+                 capture 4926->4935 passed, failed
+                 2->3 is the accepted live-feed
+                 joining IB and g12, not outside
+                 the set; conformance 123->123; no
+                 XPASS;
+                 NET DELTA MATCH 0/0/0.
+  NOTES:         One commit on exec/O-02,
+                 5a0bac372e674e56e7dcf90d366dfe54a91e9925,
+                 "O-02: pin the loader's alpha_id
+                 guard". Parent c5230865 on
+                 arch/exec. One file, +32 / -0.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Parametrized invalid ids plus
+                 valid ok_id so a blanket refusal
+                 cannot pass. Message asserts
+                 alpha_id '<id>'.
+                 FINDING: the fourth duplicated ledger append. An interrupted end-of-file write
+                 left three identical O-02 copies -- so the cause is not the prefix-preserving
+                 StrReplace specifically, it is any append that gets retried. An EOF write is
+                 no more idempotent than the StrReplace was. The rule recorded at b782caa1
+                 reduced the odds; tests/docs/test_exec_ledger_structure.py is the enforcement,
+                 and it has now caught two of the four before commit. The rule stands, but the
+                 test is what must run before every ledger git add.
+                 Compact:
+                 O-02      passed
+                 tests     tests/alpha 441 -> 451;
+                           capture 4926 passed / 2
+                           failed (accepted IB+g12)
+                           -> 4935 passed / 3
+                           failed (accepted IB+g12
+                           + live-feed)
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     1 declared, 1 touched, clean
+                 next      merge onto arch/exec, push
+                           to #244
+  FINDINGS:      OPEN ITEM, not work done: the
+                 promotion ledger and the promote
+                 CLI accept alpha_id as a free
+                 string -- tests use ALPHA-A, which
+                 the loader rejects -- so one
+                 identifier lives in two
+                 namespaces. It does not reach a
+                 filesystem path, so it is an
+                 identity question, not a security
+                 one. Probe: 564 passed with the
+                 guard deleted (tests/alpha 441 +
+                 tests/conformance 123) before this
+                 pin. Carried, not fixed: G36 OPEN
+                 (seventeen keepers); G32 S-30f
+                 deferred; G41/G42 BLOCKED (S-33;
+                 per-quote timer cannot resolve);
+                 G39 xfail is
+                 test_construction_integrity; G10
+                 and G28 are decided keeps; S-34f
+                 END STATE 15 engine bodies g-o,
+                 deliberately unowned;
+                 perfmeasure.py DIRECT_PROBES three
+                 dead entries, unowned; verify_step
+                 frozen at exec-tools-v1, cannot
+                 parse O-*; G6 empty
+                 depends_on_sensors; S-04c;
+                 152 research cache days. Accepted
+                 baseline failures remain the IB
+                 after-hours test, g12, and any
+                 live-feed test in
+                 tests/ingestion/test_massive_functional.py.
+  NEXT:          merge onto arch/exec, push to #244
+                 Left uncommitted: baseline_pre-O-02.json,
+                 baseline_post-O-02.json, this ledger
                  entry.
