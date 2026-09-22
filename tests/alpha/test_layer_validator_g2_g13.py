@@ -281,14 +281,12 @@ def test_g6_reads_no_sensor_parameter_does_not_smuggle_a_feature_name() -> None:
         _validator().validate(spec, source="<test>")
 
 
-def test_g6_reads_no_sensor_parameter_same_name_as_feature_is_the_constant() -> None:
-    """A parameter that reuses a feature name is that name's constant.
+def test_g6_reads_no_sensor_validator_does_not_decide_name_collisions() -> None:
+    """The validator cannot know which ids a platform publishes.
 
-    The scan drops injected parameter keys, so ``ofi_ewma > 0`` loads
-    when ``ofi_ewma`` is a declared numeric parameter. It does not
-    conceal a different feature name (see the smuggle probe). At
-    evaluation a live sensor value of the colliding name still
-    overrides the constant.
+    A parameter named ``ofi_ewma`` is a gate constant at validation
+    time, so this spec loads. ``build_platform`` rejects it when that
+    id is actually published.
     """
     spec = _signal_spec()
     spec["reads_no_sensor"] = True
