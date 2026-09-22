@@ -27,7 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, NamedTuple
 
 Disposition = Literal["consumer", "notification_record"]
 
@@ -91,54 +91,260 @@ ZERO_SUBSCRIBER_RESOLUTIONS: tuple[tuple[str, str], ...] = (
     ("StateTransition", "notification_record"),
 )
 
-# Frozen remainder of G39. The five bootstrap patches are constructor-injected
-# and must not appear here.
-COMPOSITION_ROOT_ASSIGNMENT_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("src/feelies/broker/ib/contracts.py", "c.symbol"),
-        ("src/feelies/broker/ib/contracts.py", "c.secType"),
-        ("src/feelies/broker/ib/contracts.py", "c.exchange"),
-        ("src/feelies/broker/ib/contracts.py", "c.currency"),
-        ("src/feelies/broker/ib/contracts.py", "c.primaryExchange"),
-        ("src/feelies/broker/ib/router.py", "order.action"),
-        ("src/feelies/broker/ib/router.py", "order.totalQuantity"),
-        ("src/feelies/broker/ib/router.py", "order.tif"),
-        ("src/feelies/broker/ib/router.py", "order.eTradeOnly"),
-        ("src/feelies/broker/ib/router.py", "order.firmQuoteOnly"),
-        ("src/feelies/broker/ib/router.py", "order.orderType"),
-        ("src/feelies/broker/ib/router.py", "order.lmtPrice"),
-        ("src/feelies/cli/forensics.py", "sub.required"),
-        ("src/feelies/cli/main.py", "subparsers.required"),
-        ("src/feelies/cli/promote.py", "sub.required"),
-        ("src/feelies/execution/passive_limit_router.py", "pending.at_bbo"),
-        ("src/feelies/execution/passive_limit_router.py", "pending.ticks_at_level"),
-        ("src/feelies/execution/passive_limit_router.py", "pending.shares_traded_at_level"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_fills_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_sensor_readings_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_horizon_ticks_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_snapshots_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_signals_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_hazard_spikes_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_cross_sectional_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_sized_intents_jsonl"),
-        ("src/feelies/harness/backtest_cli.py", "args.emit_hazard_exits_jsonl"),
-        ("src/feelies/portfolio/memory_position_store.py", "pos.quantity"),
-        ("src/feelies/portfolio/memory_position_store.py", "pos.unrealized_pnl"),
-        ("src/feelies/portfolio/memory_position_store.py", "pos.avg_entry_price"),
-        ("src/feelies/storage/submitted_order_journal.py", "router.submit"),
-        ("src/feelies/storage/submitted_order_journal.py", "router.poll_acks"),
-    }
+
+class CompositionRootAssignment(NamedTuple):
+    """One external attribute assignment the composition-root pin counts."""
+
+    path: str
+    target: str
+    reason: str
+
+
+class CompositionRootPrivate(NamedTuple):
+    """One cross-object private reach the composition-root pin counts."""
+
+    path: str
+    expr: str
+    reason: str
+
+
+# One row per live scanner site. A repeated (path, target) is a repeated
+# site: the pin is a Counter, not a set. Bootstrap's constructor-injected
+# patches are not rows.
+COMPOSITION_ROOT_ASSIGNMENT_ALLOWLIST: tuple[CompositionRootAssignment, ...] = (
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/contracts.py",
+        "c.symbol",
+        "ibapi.Contract() takes no symbol argument; the library reads the attribute",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/contracts.py",
+        "c.secType",
+        "ibapi.Contract() takes no secType argument; STK is this factory's asset class",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/contracts.py",
+        "c.exchange",
+        "ibapi.Contract() takes no exchange argument; the caller passes SMART or an override",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/contracts.py",
+        "c.currency",
+        "ibapi.Contract() takes no currency argument; the caller passes USD or an override",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/contracts.py",
+        "c.primaryExchange",
+        "ibapi.Contract() takes no primaryExchange argument; set only to disambiguate a cross-listed symbol",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.action",
+        "ibapi.Order() takes no action argument; request.side maps to BUY or SELL",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.totalQuantity",
+        "ibapi.Order() takes no totalQuantity argument; ibapi 10.x requires a Decimal quantity",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.tif",
+        "ibapi.Order() takes no tif argument; the router submits DAY",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.eTradeOnly",
+        "ibapi.Order() leaves eTradeOnly set so the gateway rejects with Error 10268; the router sets False",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.firmQuoteOnly",
+        "ibapi.Order() leaves firmQuoteOnly set so the gateway rejects with Error 10268; the router sets False",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.orderType",
+        "limit branch: ibapi.Order() takes no orderType argument; LMT comes from OrderType.LIMIT",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.lmtPrice",
+        "limit branch: ibapi.Order() takes no lmtPrice argument; the request limit is not a constructor field",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/broker/ib/router.py",
+        "order.orderType",
+        "market branch: ibapi.Order() takes no orderType argument; MKT is the non-limit path",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/execution/passive_limit_router.py",
+        "pending.at_bbo",
+        "buy through-fill: this quote's ask crossed the resting limit after _PendingOrder was built",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/execution/passive_limit_router.py",
+        "pending.ticks_at_level",
+        "buy left the level: reset the at-level tick clock; the quote arrives after construction",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/execution/passive_limit_router.py",
+        "pending.shares_traded_at_level",
+        "buy left the level: reset shares traded at the level; the quote arrives after construction",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/execution/passive_limit_router.py",
+        "pending.at_bbo",
+        "sell through-fill: this quote's bid crossed the resting limit after _PendingOrder was built",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/execution/passive_limit_router.py",
+        "pending.ticks_at_level",
+        "sell left the level: reset the at-level tick clock; the quote arrives after construction",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/execution/passive_limit_router.py",
+        "pending.shares_traded_at_level",
+        "sell left the level: reset shares traded at the level; the quote arrives after construction",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/execution/passive_limit_router.py",
+        "pending.at_bbo",
+        "record whether this quote is at the resting level so a later timeout cancel can be classified; the quote is after construction",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_fills_jsonl",
+        "cache-replay entry forces emit_fills_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_sensor_readings_jsonl",
+        "cache-replay entry forces emit_sensor_readings_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_horizon_ticks_jsonl",
+        "cache-replay entry forces emit_horizon_ticks_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_snapshots_jsonl",
+        "cache-replay entry forces emit_snapshots_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_signals_jsonl",
+        "cache-replay entry forces emit_signals_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_hazard_spikes_jsonl",
+        "cache-replay entry forces emit_hazard_spikes_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_cross_sectional_jsonl",
+        "cache-replay entry forces emit_cross_sectional_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_sized_intents_jsonl",
+        "cache-replay entry forces emit_sized_intents_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/harness/backtest_cli.py",
+        "args.emit_hazard_exits_jsonl",
+        "cache-replay entry forces emit_hazard_exits_jsonl off on a Namespace it did not build; a new Namespace would drop the other parsed fields",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.avg_entry_price",
+        "open from flat: the fill price is the episode entry; Position(symbol=) exists before the fill, and get() has already handed out that instance",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.avg_entry_price",
+        "same-direction add: blend the new fill into the open episode; the fill is after construction, and a new Position would fork get()",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.avg_entry_price",
+        "reversal: the fill crosses through zero and the residual opens at the fill price; that size is not known at construction",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.avg_entry_price",
+        "flat: the closing fill zeros the stored entry; the fill is after construction, and get() holds this instance",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.quantity",
+        "apply the fill's quantity delta to the Position instance get() already returned",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.unrealized_pnl",
+        "quantity is zero, so unrealized PnL is zero; that quantity is the result of a later fill",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.unrealized_pnl",
+        "no bid, ask, or mid is stored yet, so unrealized PnL stays zero instead of a missing mark",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/portfolio/memory_position_store.py",
+        "pos.unrealized_pnl",
+        "mark to the side-specific BBO, else the mid, times quantity; the mark arrives on a later quote",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/storage/submitted_order_journal.py",
+        "router.submit",
+        "router has no bind_submitted_order_journal, so the journal wraps the already-built submit to refuse a duplicate order_id",
+    ),
+    CompositionRootAssignment(
+        "src/feelies/storage/submitted_order_journal.py",
+        "router.poll_acks",
+        "same fallback: wrap the already-built poll_acks so a reject updates the journal the router was not constructed with",
+    ),
 )
 
-COMPOSITION_ROOT_PRIVATE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("src/feelies/bootstrap.py", "module._construct"),
-        ("src/feelies/bootstrap.py", "horizon_scheduler._session_id"),
-        ("src/feelies/cli/backtest.py", "argparse._SubParsersAction"),
-        ("src/feelies/harness/backtest_runner.py", "orchestrator._bus"),
-        ("src/feelies/harness/backtest_runner.py", "_metrics_collector._events"),
-        ("src/feelies/signals/regime_gate.py", "gate._referenced_identifiers"),
-    }
+COMPOSITION_ROOT_PRIVATE_ALLOWLIST: tuple[CompositionRootPrivate, ...] = (
+    CompositionRootPrivate(
+        "src/feelies/bootstrap.py",
+        "module._construct",
+        "read the loader's private callable to see if it is the default constructor; construct() invokes it and does not return it, and the engine does not exist when the module is first built",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/bootstrap.py",
+        "horizon_scheduler._session_id",
+        "log the session id HorizonScheduler stored from its constructor argument; there is no public reader, and this reach is a read, not a second injection",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/cli/backtest.py",
+        "argparse._SubParsersAction",
+        "register() annotates the object add_subparsers returns; argparse publishes that type only as _SubParsersAction, and the name is not a value to inject",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/harness/backtest_runner.py",
+        "orchestrator._bus",
+        "subscribe the harness BusRecorder to the event types this invocation retains; the recorder is built from CLI flags after the orchestrator exists, and Orchestrator does not take harness subscribers",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/harness/backtest_runner.py",
+        "orchestrator._bus",
+        "subscribe a harness closure that keeps only tick_to_decision_latency_ns MetricEvents; the closure is created after the orchestrator exists",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/harness/backtest_runner.py",
+        "orchestrator._bus",
+        "subscribe QuoteReplayObserver after boot, once n_quotes is known; the observer does not exist at Orchestrator construction",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/harness/backtest_runner.py",
+        "_metrics_collector._events",
+        "drop warmup MetricEvents stored after the collector was constructed and before replay; those events do not exist at construction, and the buffer is private",
+    ),
 )
 
 
