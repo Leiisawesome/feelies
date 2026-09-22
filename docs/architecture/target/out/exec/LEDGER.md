@@ -29076,3 +29076,57 @@ FINDINGS:    A census inherits its detector's
   NEXT:          decide paper_run.yaml; then merge and open the
                  PR. Left uncommitted: baseline_pre-O-05.json,
                  baseline_post-O-05.json, this ledger entry.
+
+---
+
+## O-06  2026-09-22T13:52:09+08:00
+  STEP:          O-06
+  BASE:          3903b0f279419121fa3f6e7ca40fe040fefc0ced (arch/exec, the O-05
+                 ledger commit)
+  RESULT SHA:    fcd954b18bc75add273cab4532b9d377d271d2a3 (exec/O-06). Merged
+                 to arch/exec as b9a3be21019526bd8477e35d9a75065adcd79a2e.
+  VERDICT:       passed
+  CONFORMANCE:   Retirement. configs/paper_run.yaml deleted.
+                 scripts/run_paper.py docstring example now names
+                 platform.yaml, the default the script already uses. No
+                 src/feelies edit.
+  TESTS:         not-paper_rth: 4945 passed / 0 failed / 6 skipped / 14
+                 deselected / 4 xfailed. tests/scripts: 91 passed. uv run
+                 python scripts/run_paper.py --help exits 0; --config default
+                 remains platform.yaml. ruff check scripts/run_paper.py: all
+                 checks passed. ruff format --check: 1 file already formatted.
+  PARITY:        64 -> 64 against baseline_post-O-05.json. changed 0, added 0,
+                 removed 0. HOLDS. A config nothing boots cannot move a hash.
+  FILES:         2 touched, under the cap of 3. Deleted configs/paper_run.yaml.
+                 Edited scripts/run_paper.py. No test loads the yaml, so none
+                 was stopped.
+  NET DELTA:     No source module change. Configs loop: 10 entries to 9. The
+                 eight bt_*.yaml still fail bare build_platform with
+                 ConfigurationError, ingest terminal health not populated.
+                 paper_smoke_rth.yaml still PASS. The dropped entry is
+                 paper_run.yaml, which failed ValueError on the kyle_lambda_60s
+                 pin. Nothing else in the loop changed.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   No plan file; orphan retirement. FILES 2. PARITY 64/64 hold.
+                 TESTS 4945 passed, failed 0, same count as the O-05
+                 not-paper_rth run.
+  NOTES:         Unbootable 102 days on a kyle_lambda_60s pin (1.2.0 in the
+                 config, 2.0.0 in the class since 441e0445), not a default, not
+                 in CI, edited on 2026-08-12 (1ec5b1e6) without being booted.
+                 Retired on the user's decision rather than repaired, because
+                 repairing it means choosing what it is for. Live references
+                 updated: the file itself, and the run_paper.py docstring
+                 example. Historical records stay: the ledger,
+                 docs/architecture/target/out/phase0_comprehension.md,
+                 phase7_migration.md, docs/audits (data_ingestion,
+                 signal_alpha, alpha_lifecycle), and
+                 docs/research/prompt_pack_03_data_contract.md. src/, tests/,
+                 configs/ other than the deleted file, .github/, README.md, and
+                 docs/prompts/ do not name paper_run.yaml.
+                 tests/paper/conftest.py uses a temp directory named paper_run
+                 and loads paper_smoke_rth.yaml.
+                 scripts/compare_paper_backtest.py takes a paper_run_dir
+                 argument. Neither loads this config.
+  FINDINGS:      No test loaded configs/paper_run.yaml. Deleting it did not
+                 change the not-paper_rth count.
+  NEXT:          Push arch/exec and open the cycle PR.
