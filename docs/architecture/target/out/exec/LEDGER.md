@@ -29463,3 +29463,85 @@ FINDINGS:    A census inherits its detector's
                  keepers; G32 S-30f deferred.
   NEXT:          O-09 G39 Counter pin over the 39 assignment sites
                  that remain. Not started.
+
+---
+
+## O-09  2026-09-22T16:48:14+08:00
+  STEP:          O-09
+  BASE:          c5626010a07bc031b45059e1d8a131a7ec84a109 (arch/exec, the
+                 O-09a ledger commit)
+  RESULT SHA:    75456794a3cf5ed06aa9104b488560c4bb892fa7 (exec/O-09). Merged
+                 to arch/exec as 03858edec90281bb162be57b275b31754a6a5e63.
+  VERDICT:       passed
+  CONFORMANCE:   S17 is a Counter pin. Both directions, extra empty
+                 and missing empty. Retired G39 emptiness xfail.
+                 Deleted test_no_post_construction_mutation_or_private_reach
+                 and its xfail(strict, GAP G39). G39 stays OPEN:
+                 the pin is the residue, and GAP_REGISTRY was not
+                 in FILES. No XPASS. Remaining xfails: G10/G28
+                 test_every_published_type_has_a_subscriber, G41/G42
+                 test_hot_path_allow_list.
+                 conformance 125 passed, 3 xfailed -> 125 passed,
+                 2 xfailed.
+  TESTS:         conformance: 125 passed / 2 xfailed / 0 xpassed.
+                 The deleted test was an xfail, so the passed count
+                 did not move. S17: 3 passed. ruff check passed.
+                 ruff format clean. mypy src/feelies: Success,
+                 250 source files.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS. The pins are
+                 not in manifest_hash(). fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+  FILES:         3 touched.
+                 src/feelies/core/wiring_manifest.py
+                 tests/conformance/test_composition_root.py
+                 tests/conformance/test_construction_integrity.py
+                 Assignment rows 39, private rows 7. The stale
+                 gate._referenced_identifiers row is gone. The three
+                 CLI required keys are not rows. Bootstrap injection
+                 test stays.
+  NET DELTA:     No tick-path change. Private pin 6 set-rows -> 7
+                 counted sites (orchestrator._bus is 3). Assignment
+                 pin counts the 39 live sites.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   FILES 3. PARITY 64/64 hold. conformance xfailed
+                 3 -> 2, failed 0, no XPASS.
+  NOTES:         Fail-first (1), pin built with the stale row still
+                 present. Assignment test passed. Private test:
+                 AssertionError: 1 composition-root pin row(s) are
+                 not live cross-object private reach. First:
+                 src/feelies/signals/regime_gate.py
+                 gate._referenced_identifiers
+                 assert Counter({(..., gate._referenced_identifiers): 1})
+                 == Counter()
+                 1 failed, 2 passed. Then the stale row was removed.
+                 Pin green: 3 passed.
+                 Fail-first (2), scratch fifth pos.avg_entry_price
+                 in memory_position_store.py update(), then restored.
+                 AssertionError: 1 external attribute assignment
+                 site(s) not in the composition-root pin. First:
+                 src/feelies/portfolio/memory_position_store.py
+                 pos.avg_entry_price
+                 assert Counter({(..., pos.avg_entry_price): 1}) == Counter()
+                 frozenset membership of that (path, target) in the
+                 pin keys: True. pin_rows for that key: 4.
+                 Restored byte-identical. SHA-256 before and after
+                 C7C9C0995AD6728BEA067C9255991788D5BE1BDC8F64A30FADFA964F40C9D46E.
+                 git hash-object
+                 82db4138ae0aa6f86c24b18ccd58b57b9a113d6b matches
+                 HEAD:src/feelies/portfolio/memory_position_store.py.
+                 Pin green again: 3 passed. G39 xfail deleted only
+                 after that.
+                 Compact:
+                 O-09      passed
+                 tests     conformance 125 passed, 3 xfailed ->
+                           125 passed, 2 xfailed, 0 xpassed
+                 parity    64/64 0 moved, fingerprint de5d64b0 MATCH
+                 files     3 declared, 3 touched, clean
+                 next      O-10 zero-subscriber equality pin
+  FINDINGS:      Carried, not fixed here: G39 OPEN on the 39+7
+                 counted rows; G10/G28 xfail remains; G41/G42 xfail
+                 remains; G36 OPEN on the seventeen keepers; G32
+                 S-30f deferred.
+  NEXT:          O-10 ZERO_SUBSCRIBER_RESOLUTIONS equality pin.
+                 Not started.
