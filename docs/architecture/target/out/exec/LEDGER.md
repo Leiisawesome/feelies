@@ -28259,3 +28259,201 @@ FINDINGS:    A census inherits its detector's
                  Left uncommitted: baseline_pre-O-02.json,
                  baseline_post-O-02.json, this ledger
                  entry.
+
+---
+
+## O-03  2026-09-22T10:09:01+08:00
+  STEP:          O-03
+  BASE:          fc230ef6170288275d68460377a65701dc0344a5
+  RESULT SHA:    59d10b414a25d8c1825e82702a2b2c0b1077b7ec (exec/O-03; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Rides draft PR #244 from
+                 arch/exec. Closes the S-01 G6
+                 contradiction: a control alpha that
+                 reads no sensor can declare
+                 depends_on_sensors: [] without naming
+                 a dummy sensor and without tripping
+                 the unused-dependency audit.
+                 G6's non-empty clause was a guard, not
+                 in the SCHEMA.md definition (resolution:
+                 every named sensor exists, no
+                 duplicates, no cycles). The fix kept
+                 that guard for everything that does not
+                 opt out. The converse check is what
+                 keeps reads_no_sensor from being an
+                 opt-out.
+                 Fail-first (1), unchanged validator:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_empty_depends_loads_and_audit_is_silent
+                   E   feelies.alpha.layer_validator.LayerValidationError:
+                   <test>: G6 — layer: SIGNAL spec must declare
+                   a non-empty 'depends_on_sensors' list; got []
+                   1 failed, 30 deselected in 0.22s
+                 After the empty-list allowance, (1) and
+                 test_g6_rejects_empty_depends_on_sensors
+                 (unedited) were 2 passed.
+                 Fail-first (3), before the feature scan:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_rejects_evaluate_that_reads_snapshot_values
+                   E   Failed: DID NOT RAISE
+                   <class 'feelies.alpha.layer_validator.LayerValidationError'>
+                   1 failed, 31 deselected in 0.20s
+                 Then green.
+                 Fail-first (4), before the non-empty rejection:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_rejects_nonempty_depends_on_sensors
+                   E   Failed: DID NOT RAISE
+                   <class 'feelies.alpha.layer_validator.LayerValidationError'>
+                   1 failed, 34 deselected in 0.20s
+                 Then green.
+                 The warm-set scan's two remaining holes
+                 were also red before those checks
+                 (DID NOT RAISE): an unresolved
+                 snapshot.values access, and a
+                 regime-gate feature binding. Both green
+                 once None is not treated as an empty
+                 read and binding_identifier_names is
+                 scanned.
+                 S5 xfail intact, reason "GAP G41 G42".
+                 No XPASS. Four xfailed unchanged (G39,
+                 G10 G28, G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff check
+                 src/ tests/ scripts/ green. ruff format
+                 --check 720 files already formatted.
+  TESTS:         capture pre-O-03 GREEN 4926 passed /
+                 0 failed / 19 skipped / 4 xfailed.
+                 -> capture post-O-03 GREEN 4934 passed /
+                 0 failed / 19 skipped / 4 xfailed.
+                 +8 is this rung's pins (empty-list
+                 acceptance, explicit false, evaluate
+                 subscript, unresolved access,
+                 regime-gate binding, non-empty
+                 contradiction, two fixture audits).
+                 tests/alpha 451 -> 459.
+                 tests/conformance 123 passed / 4 xfailed
+                 both sides. not-paper_rth: 4933 passed /
+                 0 failed / 6 skipped / 14 deselected /
+                 4 xfailed. determinism 148 -> 148.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip).
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-03 vs post-O-03;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 THE FIVE-TIER PIN DID NOT MOVE.
+                 S5 xfail not dropped. APP oracle five
+                 baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         5 declared, 5 touched, 5 committed
+                 (clean vs 59d10b41). Hand FILES: 0
+                 extra CLEAN.
+                 Touched: src/feelies/alpha/layer_validator.py,
+                 tests/alpha/test_layer_validator_g2_g13.py,
+                 tests/conformance/fixtures/null_alpha/null_alpha.alpha.yaml,
+                 tests/conformance/fixtures/portfolio/upstream_signal.alpha.yaml,
+                 alphas/SCHEMA.md.
+                 Named-not-edited: _SENSOR_SPECS (still
+                 registers ofi_ewma on PlatformConfig),
+                 hazard_decouple.alpha.yaml, any file
+                 under alphas/ other than SCHEMA.md.
+                 LEDGER.md (this entry uncommitted).
+                 Captures uncommitted. Any plan file.
+  NET DELTA:     no plan triple. actual modules
+                 250 -> 250 (+0)
+                 public_symbols 590 -> 590 (+0)
+                 sloc 47048 -> 47101 (+53)
+                 n_edges 676 -> 677 (+1)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 The +1 edge is the warm-set scan import
+                 consumed_value_keys_from_signal_source.
+                 regime_gate was already imported by G4.
+                 +53 sloc is the private G6 helper. No
+                 new public symbol.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step
+                 cannot parse O-*. Four checks by hand:
+                 FILES 5 declared / 5 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4926->4934 passed, failed 0->0,
+                 conformance 123->123, no XPASS;
+                 NET DELTA modules 0 / public symbols 0 /
+                 cycles 0 / alphaleak 0. sloc +53 and
+                 edges +1 are the helper, not a moved
+                 locked hash.
+  NOTES:         One commit on exec/O-03,
+                 59d10b414a25d8c1825e82702a2b2c0b1077b7ec,
+                 "O-03: reads_no_sensor lets a control
+                 alpha declare an empty sensor list".
+                 Parent fc230ef6 on arch/exec. Five
+                 files, +191 / -14. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 reads_no_sensor is SIGNAL-only. True
+                 requires depends_on_sensors: [] and a
+                 warm-set scan with no feature reference
+                 (evaluate keys, unresolved access as
+                 not-empty, regime-gate bindings). True
+                 with a non-empty list is rejected.
+                 Absent or false keeps the forgotten-field
+                 guard. Audit on the edited fixtures:
+                   AUDIT null_alpha depends=() warm=[]
+                   new_warnings=0
+                   AUDIT upstream_null depends=() warm=[]
+                   new_warnings=0
+                   AUDIT total_warnings=0
+                 R-01 and R6: 2 passed. Per tape, reset
+                 entered both classes:
+                   TAPE fix1 SensorRegistry=True
+                   HorizonAggregator=True
+                   registry_type=SensorRegistry
+                   TAPE portfolio SensorRegistry=True
+                   HorizonAggregator=True
+                   registry_type=SensorRegistry
+                 Compact:
+                 O-03      passed
+                 tests     4926 passed / 0 failed /
+                           19 skipped -> 4934 passed /
+                           0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     5 declared, 5 touched, clean
+                 next      merge onto arch/exec, push
+                           to #244
+                 The converse scan needed two probes beyond the planned one -- a feature read through a params-resolved key, and a feature named in on_condition -- each red before the check and green after. Without them reads_no_sensor was evadable by indirection.
+  FINDINGS:      G6's empty-list rejection, carried
+                 since S-01, is this rung. Carried, not
+                 fixed: G36 OPEN (seventeen keepers);
+                 G32 S-30f deferred; G41/G42 BLOCKED
+                 (S-33; per-quote timer cannot resolve);
+                 G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps; S-34f END STATE
+                 15 engine bodies g-o, deliberately
+                 unowned; perfmeasure.py DIRECT_PROBES
+                 three dead entries, unowned;
+                 verify_step frozen at exec-tools-v1,
+                 cannot parse O-*; S-04c; 152 research
+                 cache days. This capture was green on
+                 both sides (0 failed). The accepted
+                 IB after-hours, g12, and live-feed
+                 failures did not run; they remain the
+                 accepted set when they do.
+  NEXT:          merge onto arch/exec, push to #244
+                 Left uncommitted: baseline_pre-O-03.json,
+                 baseline_post-O-03.json, this ledger
+                 entry.
