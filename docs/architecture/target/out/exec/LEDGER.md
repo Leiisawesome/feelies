@@ -29633,3 +29633,102 @@ FINDINGS:    A census inherits its detector's
                  keepers; G32 S-30f deferred.
   NEXT:          Stop. The one remaining conformance xfail is S5,
                  GAP G41 G42. Not started.
+
+---
+
+## O-11  2026-09-22T19:21:30+08:00
+  STEP:          O-11
+  BASE:          9394ba8ab8113294a8c870dd620fd0d60c70f0ca (arch/exec, level
+                 with origin/main)
+  RESULT SHA:    85a2b4acb7d3fe53e2e4102a3bba2f3bbe904f70 (exec/O-11). Merged
+                 to arch/exec as 1c6c92593527ea8d56f4aeb4f7d07ffb25bf4217.
+  VERDICT:       passed
+  CONFORMANCE:   Closes O-05's false rejection of a regime-gate read of a
+                 declared raw sensor id. Before the edit,
+                 reject_reads_outside_declared_sensors merged gate names
+                 and body keys into one read_names set, then ran one
+                 ownership branch. When feature_ids_for_sensor_at_horizon
+                 was empty it kept the name, then failed it because the
+                 name is not a feature id. The sensor-cache back-fill in
+                 _build_bindings reaches the gate only. evaluate receives
+                 snapshot.values and never that cache. The fix splits the
+                 two sources before the branch. A gate read of a declared
+                 raw sensor id with no horizon feature is accepted. A body
+                 read of the same name is still rejected: it would read
+                 None forever, the inert-alpha case O-05 exists to catch.
+                 An undeclared raw sensor id, gate or body, is still
+                 rejected. Sensors with no horizon feature:
+                 vpin_50bucket, snr_drift_diffusion,
+                 structural_break_score, sweep_flow_imbalance. No shipped
+                 alpha hits the false rejection. conformance 126 passed,
+                 1 xfailed. The xfail is test_hot_path_allow_list,
+                 GAP G41 G42 (S5). No XPASS.
+  TESTS:         Fail-first (1), before the split:
+                 test_build_accepts_gate_read_of_declared_raw_sensor
+                 ConfigurationError: alpha 'gate_raw_declared': read
+                 'vpin_50bucket' is not a feature of declared sensors
+                 ['vpin_50bucket']. 1 failed, 7 passed. After: that spec
+                 builds. Fail-first (2), body
+                 snapshot.values["vpin_50bucket"], declared: raises
+                 read 'vpin_50bucket' is not a feature of declared
+                 sensors, before and after. Fail-first (3), gate read of
+                 undeclared vpin_50bucket: the same contract, before and
+                 after. O-05, O-03, and O-03b probes: 23 passed, 30
+                 deselected. Eight bt_*.yaml boot through
+                 load_event_log_from_disk_cache (APP 2026-03-26,
+                 266754 events, health HEALTHY),
+                 prepare_backtest_event_log,
+                 _attach_day_source_provenance, and build_platform.
+                 All eight PASS before and after, same alpha counts:
+                 bt_app 1, bt_multialpha 3, bt_netting_contest 2,
+                 bt_sig_benign_midcap 1, bt_sig_hawkes_burst 1,
+                 bt_sig_inventory_revert 1, bt_sig_kyle_drift 1,
+                 bt_sig_moc_imbalance 1. ruff check passed. ruff format
+                 clean. mypy src/feelies: Success, 250 source files.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS. fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+  FILES:         2 touched, the cap.
+                 src/feelies/alpha/dependency_graph.py
+                 tests/bootstrap/test_declared_sensor_read_contract.py
+                 _build_bindings was not edited.
+  NET DELTA:     Build-time check only. No tick-path change. The gate
+                 may now name a declared raw sensor id the cache
+                 back-fill serves. evaluate still may not.
+  DETERMINISM:   No HASH/COUNT pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   No plan file; orphan rung. FILES 2. PARITY 64/64 hold.
+                 conformance 126 passed, 1 xfailed, failed 0, no XPASS.
+  NOTES:         One commit on exec/O-11,
+                 85a2b4acb7d3fe53e2e4102a3bba2f3bbe904f70,
+                 "O-11: a gate may read a declared raw sensor id served
+                 by the cache back-fill". Parent 9394ba8a. Two files,
+                 +101/-35. Merged to arch/exec as
+                 1c6c92593527ea8d56f4aeb4f7d07ffb25bf4217. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Compact:
+                 O-11      passed
+                 tests     gate declared vpin builds; body and
+                           undeclared still raise; probes 23 passed
+                 parity    64/64 0 moved, fingerprint de5d64b0 MATCH
+                 files     2 declared, 2 touched, clean
+                 next      push arch/exec and open the cycle PR
+  FINDINGS:      A Bugbot thread on #245 was resolved by cursor[bot]
+                 with no fixing commit. Review thread on
+                 src/feelies/alpha/dependency_graph.py, BUGBOT_BUG_ID
+                 6aa49001-bb01-4389-bb77-2cb639c19f17, for commit
+                 16475cf98ef7154559ba9e45f9f429f236f4affb. isResolved
+                 true, resolvedBy cursor[bot], isOutdated false, one
+                 comment and no reply. The lines never moved and the
+                 false rejection still held on 9394ba8a: the error
+                 listed vpin_50bucket as both the read and the declared
+                 sensor. "Resolved" on a bot thread is not evidence.
+                 From now on, closing a cycle checks EVERY thread,
+                 resolved or not, and each must name the commit that
+                 fixed it or the reason it does not apply.
+                 Carried, not fixed here: G41/G42 xfail remains (S5);
+                 G10 and G28 OPEN on the StateTransition keep; G39 OPEN
+                 on the counted rows; G36 OPEN on the seventeen keepers;
+                 G32 S-30f deferred.
+  NEXT:          Push arch/exec and open the cycle PR. Not started.
