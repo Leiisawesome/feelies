@@ -29311,3 +29311,81 @@ FINDINGS:    A census inherits its detector's
                  test_construction_integrity; G10 and G28 are
                  decided keeps.
   NEXT:          G36/G39 retirement decision.
+
+---
+
+## O-08  2026-09-22T16:19:37+08:00
+  STEP:          O-08
+  BASE:          964db1e265b107c441f7c402a910bb995b1adddb (arch/exec, the O-07
+                 note commit)
+  RESULT SHA:    7debc4de745ee33e6c9bed0c24bb0de6ee3e30de (exec/O-08). Merged
+                 to arch/exec as cca520edb77c18d430dad4f8179a3f4101a93655.
+  VERDICT:       passed
+  CONFORMANCE:   Retired G36's emptiness xfail. Deleted
+                 test_no_fail_quiet_exception_handler and its
+                 xfail(strict, GAP G36). The surviving pin is
+                 test_no_unallowlisted_fail_quiet_exception_handler.
+                 FAIL_QUIET_KEEP was not edited. Seventeen keepers
+                 remain, so G36 stays OPEN. GAP_REGISTRY was not
+                 in FILES. No XPASS. The other three xfails are
+                 intact: G39 test_construction_integrity, G10/G28
+                 test_every_published_type_has_a_subscriber, G41/G42
+                 test_hot_path_allow_list.
+                 conformance 125 passed, 4 xfailed -> 125 passed,
+                 3 xfailed.
+  TESTS:         conformance before: 125 passed / 4 xfailed /
+                 0 xpassed. conformance after: 125 passed /
+                 3 xfailed / 0 xpassed. The deleted test was an
+                 xfail, so the passed count did not move.
+                 ruff check on the edited file: all checks passed.
+                 ruff format --check: 1 file already formatted.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS. A deleted
+                 xfail cannot move a pinned constant.
+  FILES:         1 touched.
+                 tests/conformance/test_exception_containment.py.
+                 Removed the pytest import the deletion left
+                 unused. The X7 docstring no longer points at the
+                 deleted scan. FAIL_QUIET_KEEP and
+                 test_no_unallowlisted_fail_quiet_exception_handler
+                 untouched.
+  NET DELTA:     No src/feelies edit. No evidence snapshot this
+                 rung.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   No plan file; orphan retirement. FILES 1.
+                 PARITY 64/64 hold. TESTS conformance xfailed
+                 4 -> 3, failed 0, no XPASS.
+  NOTES:         In-memory proof before the deletion.
+                 (a) fail_quiet_handlers() keyed as
+                 Counter((path, enclosing_symbol, exc_type))
+                 equals the FAIL_QUIET_KEEP Counter.
+                 quiet 17
+                 found_n 17 found_keys 16
+                 allowed_n 17 allowed_keys 16
+                 extra {}
+                 missing {}
+                 equal True
+                 Sixteen keys because
+                 _run_backtest_phases_2_7 / Exception is two rows.
+                 (b) Scratch injection in src/feelies/cli/env.py,
+                 function _o08_probe_quiet, except ValueError: pass.
+                 The surviving equality test failed naming it:
+                 AssertionError: 1 fail-quiet handler(s) not in
+                 FAIL_QUIET_KEEP. First:
+                 src/feelies/cli/env.py:_o08_probe_quiet except ValueError
+                 Restored from the scratch copy. SHA-256 before
+                 and after
+                 8CA8A500A90FEBF3E84CBDB14DE303E39447196FB26FB5264356E402612087D8.
+                 git hash-object
+                 f6f4880387d425f0675597857705225ad74a0a2a matches
+                 HEAD:src/feelies/cli/env.py. A new quiet handler
+                 fails the pin by name. The emptiness xfail cannot
+                 pass while the seventeen keepers exist, so it was
+                 not a failure list.
+  FINDINGS:      Carried, not fixed here: G36 OPEN on the
+                 seventeen keepers; G39 xfail is
+                 test_construction_integrity; G10 and G28 are
+                 decided keeps and their xfail remains; G41/G42
+                 xfail remains; G32 S-30f deferred.
+  NEXT:          O-09 G39 Counter pin, then O-10 zero-subscriber
+                 equality. Not started.
