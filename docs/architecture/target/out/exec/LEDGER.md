@@ -29389,3 +29389,77 @@ FINDINGS:    A census inherits its detector's
                  xfail remains; G32 S-30f deferred.
   NEXT:          O-09 G39 Counter pin, then O-10 zero-subscriber
                  equality. Not started.
+
+---
+
+## O-09a  2026-09-22T16:41:44+08:00
+  STEP:          O-09a
+  BASE:          1acf09555759504314b0310b9e5f9047da974c99 (arch/exec, the O-08
+                 ledger commit)
+  RESULT SHA:    84d6691c999fe7ed892cc9f57c80ae92a7cc0669 (exec/O-09a). Merged
+                 to arch/exec as 857872ac3b1892a9bb8e671beae7c928a2c169fa.
+  VERDICT:       passed
+  CONFORMANCE:   No conformance test edited. The three xfails stay
+                 where O-08 left them. This rung does not re-run
+                 the conformance suite.
+  TESTS:         tests/cli: 67 passed. New test
+                 test_missing_subcommand_is_usage_error_exit_2
+                 covers feelies, feelies forensics, and feelies
+                 promote. ruff check passed. ruff format clean.
+                 mypy src/feelies: Success, 250 source files.
+  PARITY:        64 -> 64 against baseline_post-O-07.json.
+                 changed 0, added 0, removed 0. HOLDS.
+                 fingerprint
+                 de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+  FILES:         4 touched.
+                 src/feelies/cli/main.py
+                 src/feelies/cli/forensics.py
+                 src/feelies/cli/promote.py
+                 tests/cli/test_required_subcommands.py
+                 Each CLI diff is required=True on add_subparsers
+                 and the deleted .required = True line.
+  NET DELTA:     external_attribute_assignment 42 -> 39 sites,
+                 32 -> 29 keys. subparsers.required and both
+                 sub.required keys left the scan.
+  DETERMINISM:   No hash pin moved. Parity constants hold 64/64.
+  VERIFY_STEP:   FILES 4. PARITY 64/64 hold. tests/cli 67 passed.
+  NOTES:         Fail-first (1), assignment still present, before
+                 the edit: 3 passed.
+                 Fail-first (2), delete only the assignment, keep
+                 the old add_subparsers call. Each parser failed
+                 alone, then the file was restored. git hash-object
+                 of the three CLI files matched HEAD.
+                 feelies: FAILED
+                 test_missing_subcommand_is_usage_error_exit_2[feelies]
+                 Failed: DID NOT RAISE SystemExit. 1 failed, 2 passed.
+                 feelies forensics: FAILED
+                 test_missing_subcommand_is_usage_error_exit_2[feelies forensics]
+                 Failed: DID NOT RAISE SystemExit. 1 failed, 2 passed.
+                 feelies promote: FAILED
+                 test_missing_subcommand_is_usage_error_exit_2[feelies promote]
+                 Failed: DID NOT RAISE SystemExit. 1 failed, 2 passed.
+                 Fail-first (3), required=True on the constructor
+                 call: 3 passed.
+                 Python 3.12.13. No TypeError. stderr names the
+                 metavar, which argparse prints when metavar is
+                 set. dest is command, forensics_command, and
+                 promote_command, not SUPPRESS.
+                 feelies: error: the following arguments are
+                 required: <command>
+                 feelies forensics: error: the following arguments
+                 are required: <subcommand>
+                 feelies promote: error: the following arguments
+                 are required: <subcommand>
+                 Exit code 2. CI confirms 3.13.
+                 Compact:
+                 O-09a     passed
+                 tests     tests/cli 67 passed
+                 parity    64/64 0 moved, fingerprint de5d64b0 MATCH
+                 files     4 declared, 4 touched, clean
+                 next      O-09 Counter pin over 39 assignment sites
+  FINDINGS:      Carried, not fixed here: G39 xfail is
+                 test_construction_integrity; G10/G28 xfail remains;
+                 G41/G42 xfail remains; G36 OPEN on the seventeen
+                 keepers; G32 S-30f deferred.
+  NEXT:          O-09 G39 Counter pin over the 39 assignment sites
+                 that remain. Not started.
