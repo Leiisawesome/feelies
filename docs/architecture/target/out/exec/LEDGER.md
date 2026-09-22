@@ -28495,3 +28495,403 @@ FINDINGS:    A census inherits its detector's
                  less accurate record beside a more
                  accurate one.
   NEXT:          close orphan cycle; merge #244 to main
+
+---
+
+## O-03a  2026-09-22T11:21:18+08:00
+  STEP:          O-03a
+  BASE:          c8d44317dc1dfb2d16519c633234beaa5ea18d77
+  RESULT SHA:    38702721017e3ab034bc2824b53ca0c67a889022
+                 (exec/O-03a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Rides draft PR #244 from
+                 arch/exec. Bugbot found the defect by
+                 review: a comment on #244 against
+                 layer_validator.py at b46c9b43, not a
+                 push. The defect was two paths computing
+                 the same gate params differently. The
+                 loader injects numeric parameter
+                 defaults into the regime gate. The
+                 reads_no_sensor converse scan built that
+                 gate with no params, so
+                 binding_identifier_names read a declared
+                 numeric name as a feature binding and
+                 rejected the spec. The warm-set scan
+                 already treated those names as constants
+                 because it sees the loader's gate. The
+                 fix made one path.
+                 numeric_gate_params in
+                 feelies.core.regime_gate is the only
+                 filter (bool excluded; non-numeric
+                 omitted). It accepts the loader's
+                 resolved map, and a YAML parameters
+                 block reduced to defaults, then runs
+                 that same filter. core.regime_gate
+                 imports the stdlib only. loader and
+                 layer_validator already import it, and
+                 neither imports the other. No new edge.
+                 No cycle. A home in either alpha module
+                 would have made one import the other.
+                 Fail-first (1), unchanged validator:
+                   FAILED tests/alpha/test_layer_validator_g2_g13.py::
+                   test_g6_reads_no_sensor_accepts_declared_numeric_parameter
+                   E   feelies.alpha.layer_validator.LayerValidationError:
+                   <test>: G6 — reads_no_sensor: true but regime-gate
+                   bindings reference feature name(s) ['threshold']
+                   1 failed, 38 deselected in 0.24s
+                 Fail-first (2), after the shared function:
+                   the same test loads. Quoted with the
+                   probes below: 6 passed, 35 deselected
+                   in 0.08s.
+                 Fail-first (3), the O-03 probes still
+                 fire, and a parameter does not hide a
+                 different feature name:
+                   test_g6_reads_no_sensor_rejects_evaluate_that_reads_snapshot_values
+                   test_g6_reads_no_sensor_rejects_unresolvable_snapshot_values_access
+                   test_g6_reads_no_sensor_rejects_regime_gate_feature_binding
+                   test_g6_reads_no_sensor_parameter_does_not_smuggle_a_feature_name
+                   ofi_ewma > threshold still raises G6
+                   on ofi_ewma.
+                 Same-name case: a parameter named
+                 ofi_ewma with on_condition "ofi_ewma > 0"
+                 loads. That test pinned the evasion.
+                 The scan drops injected parameter keys,
+                 so the validator treats the colliding
+                 name as the constant. It cannot know
+                 what a platform publishes. O-03b inverted
+                 the pin: the test was renamed and still
+                 loads; build_platform rejects the
+                 collision.
+                 S5 xfail intact, reason "GAP G41 G42".
+                 No XPASS. Four xfailed unchanged (G39,
+                 G10 G28, G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff check
+                 src/ tests/ scripts/ green. ruff format
+                 --check 720 files already formatted.
+                 lint-imports: 2 kept, 0 broken.
+  TESTS:         capture pre-O-03a GREEN 4934 passed /
+                 0 failed / 19 skipped.
+                 -> capture post-O-03a GREEN 4937 passed /
+                 0 failed / 19 skipped.
+                 +3 is this rung's pins (numeric parameter
+                 accepted, a parameter does not hide
+                 another feature, same-name parameter is
+                 the constant).
+                 tests/alpha 462 passed.
+                 tests/conformance 123 passed / 4 xfailed.
+                 not-paper_rth: 4936 passed / 0 failed /
+                 6 skipped / 14 deselected / 4 xfailed.
+                 determinism 148 -> 148.
+                 Regime-gate DSL and the inventory-revert
+                 loader test: 86 passed. Overrides still
+                 move gate thresholds, so the loader's
+                 gate is the resolved numeric map.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip).
+                 R-01 and R6: 2 passed.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical pre-O-03a vs post-O-03a;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+  FILES:         4 declared, 4 touched, 4 committed
+                 (clean vs 38702721). Hand FILES: 0
+                 extra in the commit.
+                 Touched: src/feelies/alpha/layer_validator.py,
+                 src/feelies/alpha/loader.py,
+                 src/feelies/core/regime_gate.py,
+                 tests/alpha/test_layer_validator_g2_g13.py.
+                 Helper: feelies.core.regime_gate.numeric_gate_params.
+                 LEDGER.md (this entry uncommitted).
+                 Captures uncommitted.
+  NET DELTA:     no plan triple. actual modules
+                 250 -> 250 (+0)
+                 public_symbols 590 -> 591 (+1)
+                 sloc 47101 -> 47126 (+25)
+                 n_edges 677 -> 677 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 The +1 public symbol is
+                 numeric_gate_params. +25 sloc is that
+                 function. No new import edge.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step
+                 cannot parse O-*. Four checks by hand:
+                 FILES 4 declared / 4 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4934->4937 passed, failed 0->0,
+                 conformance 123 passed / 4 xfailed,
+                 no XPASS;
+                 NET DELTA modules 0 / edges 0 /
+                 cycles 0 / alphaleak 0.
+                 public_symbols +1 and sloc +25 are the
+                 shared function, not a moved locked hash.
+  NOTES:         The same-name test pinned the
+                 evasion and was inverted by O-03b.
+                 The validator still loads that spec.
+                 build_platform rejects the collision.
+                 One commit on exec/O-03a,
+                 38702721017e3ab034bc2824b53ca0c67a889022,
+                 "O-03a: the reads_no_sensor scan uses the loader's gate params".
+                 Parent c8d44317 on arch/exec. Four
+                 files, +102 / -10. Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Compact:
+                 O-03a     passed
+                 tests     4934 passed / 0 failed /
+                           19 skipped -> 4937 passed /
+                           0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     4 declared, 4 touched, clean
+                 next      resolve the thread citing
+                           O-03a, then close the cycle
+  FINDINGS:      This rung is the Bugbot comment. The
+                 thread is not resolved. Carried, not
+                 fixed here: G36 OPEN; G32 S-30f
+                 deferred; G41/G42 BLOCKED; G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps. This capture was
+                 green on both sides (0 failed).
+  NEXT:          resolve the thread citing O-03a, then
+                 close the cycle
+                 Left uncommitted: baseline_pre-O-03a.json,
+                 baseline_post-O-03a.json, this ledger
+                 entry.
+
+---
+
+## O-03b  2026-09-22T11:53:41+08:00
+  STEP:          O-03b
+  BASE:          38702721017e3ab034bc2824b53ca0c67a889022
+                 (O-03a on exec/O-03a)
+  RESULT SHA:    b5072ae0df9c35fd9444c4e4a9988eb27feced64
+                 (exec/O-03a; not merged)
+  VERDICT:       passed
+  CONFORMANCE:   Orphan rung, not a campaign. Opens no
+                 plan file. Same branch as O-03a. The
+                 O-03a same-name load was a false
+                 acceptance. Measured on a FIX-1-shaped
+                 platform (ofi_ewma registered, horizon
+                 30, reads_no_sensor, parameter ofi_ewma
+                 default 0.5, on_condition "ofi_ewma > 0"):
+                 the third gate evaluation resolved
+                 598.9217938200513, which is 598.92, not
+                 0.5. Live snapshot values override the
+                 parameter. The check therefore raises,
+                 before any tick.
+                 It lives in build_platform, not the
+                 validator. The validator cannot know
+                 what a platform publishes. The exact
+                 set is the registered sensor ids plus
+                 the horizon feature ids actually built,
+                 and that set exists only after horizon
+                 features are constructed. A static
+                 catalog or a suffix rule misses
+                 factory-assigned ids (ofi_integrated,
+                 micro_price_drift, ofi_ewma_zscore).
+                 reject_parameter_shadowed_by_published_id
+                 sits beside warn_unread_sensor_dependencies
+                 in feelies.alpha.dependency_graph and
+                 takes the published ids as an argument.
+                 Alpha imports nothing new. bootstrap
+                 passes covered, which is already
+                 feature_ids | known_sensor_ids, and
+                 the resolved parameter names.
+                 Exception: ConfigurationError
+                 (feelies.core.errors). The same fatal
+                 composition error maybe_prune_unused_sensors
+                 already raises. AlphaLoadError is the
+                 loader's per-spec failure, and this
+                 check is the platform after features
+                 exist.
+                 The O-03a same-name test was renamed
+                 test_g6_reads_no_sensor_validator_does_not_decide_name_collisions.
+                 It still loads. The validator does not
+                 decide name collisions.
+                 Fail-first (1), unchanged build_platform,
+                 the reads_no_sensor spec whose parameter
+                 is ofi_ewma:
+                   FAILED tests/bootstrap/test_parameter_published_id_collision.py::
+                   test_build_rejects_reads_no_sensor_parameter_named_ofi_ewma
+                   E   Failed: DID NOT RAISE
+                   <class 'feelies.core.errors.ConfigurationError'>
+                   tests\bootstrap\test_parameter_published_id_collision.py:109
+                   1 failed, 3 deselected in 0.49s
+                 That build is the evasion.
+                 Fail-first (2), after the raise:
+                   alpha 'collision_probe': parameter
+                   'ofi_ewma' is shadowed by published
+                   id 'ofi_ewma'
+                 Fail-first (3), the same collision
+                 without reads_no_sensor:
+                   alpha 'collision_with_deps': parameter
+                   'ofi_ewma' is shadowed by published
+                   id 'ofi_ewma'
+                 Fail-first (4), derived id the ofi_ewma
+                 factory actually publishes
+                 (HorizonWindowedFeature feature_id
+                 ofi_ewma_zscore, beside the passthrough
+                 ofi_ewma):
+                   alpha 'zscore_collision': parameter
+                   'ofi_ewma_zscore' is shadowed by
+                   published id 'ofi_ewma_zscore'
+                 Fail-first (5): a parameter named
+                 spread_z_30d on a platform that
+                 registers only ofi_ewma builds.
+                 spread_z_30d is a real sensor id and
+                 is not published here.
+                 Fail-first (6): the threshold > 0
+                 case and every O-03 probe still pass.
+                 Quoted with the four build tests:
+                 10 passed, 35 deselected in 0.27s.
+                 Did not touch HorizonAggregator,
+                 _build_bindings, or RegimeGate.evaluate.
+                 S5 xfail intact, reason "GAP G41 G42".
+                 No XPASS. Four xfailed unchanged (G39,
+                 G10 G28, G36, G41 G42). mypy src/feelies:
+                 Success, 250 source files. ruff check
+                 src/ tests/ scripts/ green. ruff format
+                 --check 721 files already formatted.
+                 lint-imports: 2 kept, 0 broken.
+  TESTS:         capture post-O-03a GREEN 4937 passed /
+                 0 failed / 19 skipped.
+                 -> capture post-O-03b GREEN 4941 passed /
+                 0 failed / 19 skipped.
+                 +4 is this rung's build pins (ofi_ewma
+                 collision, the same collision without
+                 reads_no_sensor, ofi_ewma_zscore,
+                 an unpublished sensor name builds).
+                 The validator rename adds no test.
+                 tests/alpha 462 passed.
+                 tests/conformance 123 passed / 4 xfailed.
+                 not-paper_rth: 4936 passed -> 4940
+                 passed / 0 failed / 6 skipped /
+                 14 deselected / 4 xfailed.
+                 determinism 148 -> 148.
+                 APP oracle 2 passed with
+                 FEELIES_REQUIRE_BASELINE_CACHE=1
+                 (the replay ran; it did not skip).
+                 R-01 and R6: 2 passed.
+                 The broad suite is the evidence that
+                 every shipped alpha under alphas/ and
+                 every test config that builds a
+                 platform still builds.
+  PARITY:        declared hold -- all 64 HASH/COUNT
+                 constants, the fingerprint,
+                 _BASELINE_CONFIG_HASH | actual 64/64
+                 identical post-O-03a vs post-O-03b;
+                 0 moved | MATCH. Fingerprint unmoved
+                 (de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6).
+                 _BASELINE_CONFIG_HASH unmoved
+                 (bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95).
+                 APP oracle five baselines unmoved:
+                 _BASELINE_TRADE_PARITY_HASH
+                 0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3,
+                 _BASELINE_NET_PNL 103.93,
+                 _BASELINE_FILL_COUNT 20,
+                 _BASELINE_DATA_VERSION cache:2364ef7fe41c27d9,
+                 _BASELINE_CONFIG_HASH
+                 bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95.
+                 A raise before any tick cannot move a
+                 replay. Nothing in the build of the
+                 shipped configs changed.
+  FILES:         4 declared, 4 touched, 4 committed
+                 (clean vs b5072ae0). Hand FILES: 0
+                 extra in the commit.
+                 Touched: src/feelies/alpha/dependency_graph.py,
+                 src/feelies/bootstrap.py,
+                 tests/alpha/test_layer_validator_g2_g13.py
+                 (rename only),
+                 tests/bootstrap/test_parameter_published_id_collision.py.
+                 LEDGER.md (this entry uncommitted).
+                 Captures uncommitted.
+  NET DELTA:     no plan triple. actual modules
+                 250 -> 250 (+0)
+                 public_symbols 591 -> 592 (+1)
+                 sloc 47126 -> 47153 (+27)
+                 n_edges 677 -> 677 (+0)
+                 n_modules 203 -> 203
+                 cycles 1 -> 1
+                 alphaleak 0 -> 0
+                 The +1 public symbol is
+                 reject_parameter_shadowed_by_published_id.
+                 +27 sloc is that function and the
+                 bootstrap call. The call reuses the
+                 existing dependency_graph import.
+                 No new edge.
+  DETERMINISM:   148 -> 148 passed after the commit; no hash
+                 pin moved
+  VERIFY_STEP:   no plan file; orphan rung. verify_step
+                 cannot parse O-*. Four checks by hand:
+                 FILES 4 declared / 4 touched CLEAN;
+                 PARITY 64/64 HASH+COUNT hold, 0 moved;
+                 TESTS 4937->4941 passed, failed 0->0,
+                 conformance 123 passed / 4 xfailed,
+                 no XPASS;
+                 NET DELTA modules 0 / edges 0 /
+                 cycles 0 / alphaleak 0.
+                 public_symbols +1 and sloc +27 are the
+                 build-time check, not a moved locked
+                 hash.
+  NOTES:         One commit on exec/O-03a,
+                 b5072ae0df9c35fd9444c4e4a9988eb27feced64,
+                 "O-03b: build_platform rejects a parameter shadowed by a published feature".
+                 Parent 38702721. Four files, +183 / -8.
+                 Clone
+                 C:/Users/cheng.lei/OneDrive/Documents/GitHub/feelies.
+                 Compact:
+                 O-03b     passed
+                 tests     4937 passed / 0 failed /
+                           19 skipped -> 4941 passed /
+                           0 failed / 19 skipped
+                 parity    declared hold 64 HASH/COUNT
+                           + fingerprint
+                           de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6
+                           | actual 64/64 0 moved |
+                           MATCH
+                 files     4 declared, 4 touched, clean
+                 next      merge O-03a and O-03b,
+                           resolve the thread, close
+                           the cycle
+  FINDINGS:      OPEN FINDING. Declared dependencies
+                 do not bound what the regime gate
+                 receives. HorizonAggregator publishes
+                 every warm feature on the horizon, and
+                 _build_bindings back-fills from the
+                 sensor cache, so any alpha's gate can
+                 read any registered feature. Filtering
+                 the gate to declared dependencies is a
+                 runtime change with parity exposure and
+                 needs its own sizing. This rung does
+                 not make that change. The thread is
+                 not resolved. Carried, not fixed here:
+                 G36 OPEN; G32 S-30f deferred; G41/G42
+                 BLOCKED; G39 xfail is
+                 test_construction_integrity; G10 and
+                 G28 are decided keeps. This capture was
+                 green on both sides (0 failed).
+  NEXT:          merge O-03a and O-03b, resolve the
+                 thread, close the cycle
+                 Left uncommitted: baseline_pre-O-03a.json,
+                 baseline_post-O-03a.json,
+                 baseline_post-O-03b.json, this ledger
+                 entry.
