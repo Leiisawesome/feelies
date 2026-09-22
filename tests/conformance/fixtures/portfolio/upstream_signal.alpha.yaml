@@ -29,8 +29,10 @@ symbols:
   - AAPL
   - MSFT
 
-depends_on_sensors:
-  - ofi_ewma
+# reads_no_sensor: evaluate returns None and the regime gate binds no
+# feature, so this feeder declares no sensor.
+reads_no_sensor: true
+depends_on_sensors: []
 
 horizon_seconds: 300
 

@@ -140,6 +140,7 @@ Alphas can be placed in either layout:
 | `cost_arithmetic` | string | No (Phase 3) | Declares whether edge / cost are quoted in `bps` or `usd`. Phase-3 gate G12 will require this on all non-legacy alphas. |
 | `regime_gate` | string | No (Phase 3) | DSL expression over regime posteriors (e.g. `dominant == "compression" and P("vol_breakout") < 0.2`). Evaluated at the horizon boundary. |
 | `depends_on_sensors` | list[string] | No (Phase 2/3) | Sensor IDs (with version pin) consumed by this alpha. |
+| `reads_no_sensor` | bool | No | `SIGNAL` only. When `true`, the alpha reads no feature: `depends_on_sensors` must be `[]`, and neither the evaluate body nor the regime-gate bindings may reference a feature (the same static scan that builds the warm set; an unresolved `snapshot.values` access is not an empty read). Absent or `false` leaves G6's non-empty `depends_on_sensors` guard in force. `true` with a non-empty list is rejected. |
 | `depends_on_signals` | list[string] | No (Phase 4) | Upstream `SIGNAL` alphas consumed by a `PORTFOLIO` alpha. |
 | `structural_actor` | string | No (Phase 3) | Free-text description of the actor whose behavior the alpha trades against. |
 | `mechanism` | string | No (Phase 3) | Free-text mechanism summary; complementary to the v0.3 `trend_mechanism` block below. |
@@ -231,7 +232,7 @@ enforced: `story_permission` present ⇒ `mode` must be `decouple_caps_only`
 | G3 | **Active** (Phase 4) | Strict cross-alpha isolation — a PORTFOLIO alpha's `depends_on_signals` may not reference signals at a different `horizon_seconds`. Downgradable to a warning via `PlatformConfig.enforce_layer_gates: false`; always blocks in strict mode. |
 | G4 | **Active** (Phase 3-α) | Regime-gate purity — `regime_gate.on/off_condition` must parse as a whitelisted DSL expression (`RegimeGate.compile`). |
 | G5 | **Active** (Phase 3-α) | Signal purity — `signal:` evaluate must not import, mutate globals, call `open`/network/clock, or read state outside `(snapshot, regime, params)`. |
-| G6 | **Active** (Phase 3-α) | Feature/sensor dependency DAG — every entry in `depends_on_sensors` must resolve to a registered sensor; no unknown ids; no cycles. |
+| G6 | **Active** (Phase 3-α) | Feature/sensor dependency DAG — every named entry in `depends_on_sensors` must resolve to a registered sensor; no unknown ids; no duplicates; no cycles. An empty list is the forgotten-field guard and is rejected unless `reads_no_sensor: true` (`SIGNAL` only), in which case the list must be `[]` and the evaluate body plus regime-gate bindings must reference no feature (the warm-set scan; an unresolved `snapshot.values` access is not an empty read). `reads_no_sensor: true` with a non-empty list is rejected. |
 | G7 | **Active** (Phase 3-α) | Horizon registration — `horizon_seconds` must be one of the platform-registered horizons. |
 | G8 | **Active** (Phase 3-α) | No implicit lookahead — AST-scan rejects access to future-bucketed names. |
 | G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.80`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
