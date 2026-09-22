@@ -1,14 +1,11 @@
 """build_platform rejects a SIGNAL alpha that reads outside its sensors.
 
-Ownership is a build contract. A name ``evaluate`` reads must be a
-feature of a sensor in ``depends_on_sensors``. A regime-gate name may
-also be a declared sensor id that publishes no horizon feature: the
-gate resolves that id from the sensor-cache back-fill, and
-``evaluate`` never sees that cache. An unresolvable body scan is not
-proof that the read is inside the declared set. A declared sensor the
-platform does not register is already ``UnresolvedDependencyError``
-from ``resolve_signal_dependencies``. PORTFOLIO specs have no signal
-body and stay exempt.
+Ownership is a build contract: every name ``evaluate`` or the regime
+gate reads must be a feature of a sensor in ``depends_on_sensors``.
+An unresolvable body scan is not proof that the read is inside that
+set. A declared sensor the platform does not register is already
+``UnresolvedDependencyError`` from ``resolve_signal_dependencies``.
+PORTFOLIO specs have no signal body and stay exempt.
 """
 
 from __future__ import annotations
@@ -24,6 +21,7 @@ from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote, Trade
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.snr_drift_diffusion import SNRDriftDiffusionSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.impl.vpin_50bucket import VPIN50BucketSensor
 from feelies.sensors.spec import SensorSpec
@@ -57,6 +55,16 @@ def _vpin() -> SensorSpec:
         cls=VPIN50BucketSensor,
         params={},
         subscribes_to=(Trade,),
+    )
+
+
+def _snr() -> SensorSpec:
+    return SensorSpec(
+        sensor_id="snr_drift_diffusion",
+        sensor_version="1.3.0",
+        cls=SNRDriftDiffusionSensor,
+        params={},
+        subscribes_to=(NBBOQuote,),
     )
 
 
@@ -205,15 +213,22 @@ def test_build_accepts_a_read_of_a_declared_sensor() -> None:
     _build([("probe.alpha.yaml", spec)], (_spread(),))
 
 
-def test_build_accepts_gate_read_of_declared_raw_sensor() -> None:
-    """A declared sensor with no horizon feature is served to the gate by the cache."""
+_RAW_GATE_UNSUPPORTED = (
+    "publishes no horizon feature at horizon 30s, and a regime-gate read of a "
+    "raw sensor id is not supported because sensor emission shape is not declared"
+)
+
+
+def test_build_rejects_gate_read_of_declared_raw_sensor() -> None:
+    """A declared raw id with no horizon feature is not a supported gate read."""
     spec = _signal(
         alpha_id="gate_raw_declared",
         depends=["vpin_50bucket"],
         read="return None",
         on_condition="vpin_50bucket > 0.5",
     )
-    _build([("probe.alpha.yaml", spec)], (_vpin(),))
+    with pytest.raises(ConfigurationError, match=_RAW_GATE_UNSUPPORTED):
+        _build([("probe.alpha.yaml", spec)], (_vpin(),))
 
 
 def test_build_rejects_body_read_of_declared_raw_sensor() -> None:
@@ -231,7 +246,7 @@ def test_build_rejects_body_read_of_declared_raw_sensor() -> None:
 
 
 def test_build_rejects_gate_read_of_undeclared_raw_sensor() -> None:
-    """The cache back-fill does not make an undeclared sensor id legal."""
+    """An undeclared raw sensor id is still outside the declared set."""
     spec = _signal(
         alpha_id="gate_raw_undeclared",
         depends=["spread_z_30d"],
@@ -243,6 +258,18 @@ def test_build_rejects_gate_read_of_undeclared_raw_sensor() -> None:
         match="read 'vpin_50bucket' is not a feature of declared sensors",
     ):
         _build([("probe.alpha.yaml", spec)], (_spread(), _vpin()))
+
+
+def test_build_rejects_gate_read_of_declared_tuple_sensor() -> None:
+    """Bugbot: snr_drift_diffusion emits a tuple and is not cached under its id."""
+    spec = _signal(
+        alpha_id="gate_tuple_declared",
+        depends=["snr_drift_diffusion"],
+        read="return None",
+        on_condition="snr_drift_diffusion > 0.5",
+    )
+    with pytest.raises(ConfigurationError, match=_RAW_GATE_UNSUPPORTED):
+        _build([("probe.alpha.yaml", spec)], (_snr(),))
 
 
 def test_portfolio_spec_builds() -> None:
