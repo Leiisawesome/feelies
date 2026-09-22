@@ -28457,3 +28457,41 @@ FINDINGS:    A census inherits its detector's
                  Left uncommitted: baseline_pre-O-03.json,
                  baseline_post-O-03.json, this ledger
                  entry.
+
+---
+
+## O-04  2026-09-22T10:43:07+08:00  retirement
+  RECORD:        S-04c retired, not built.
+                 load_platform_config drops the Path and
+                 PlatformConfig carries none; that is
+                 true and does not matter.
+  PROVENANCE:    Already the resolved-config hash
+                 (_BASELINE_CONFIG_HASH,
+                 compute_config_hash over the snapshot),
+                 printed in the report's Parity section,
+                 logged at compose, and bound to the
+                 trade journal. Paper metadata already
+                 records config_path from argv.
+  WHY NOT:       The path would be a worse account of
+                 the run. CLI overrides (--symbol,
+                 --inv12-stress, session-date rebinding)
+                 are applied after load, so the path
+                 names the file before the run was
+                 configured and the hash names what it
+                 ran.
+  HASH:          Carrying the path on PlatformConfig
+                 would move _BASELINE_CONFIG_HASH, and
+                 as an absolute path would make the hash
+                 depend on the clone -- a defect, not a
+                 re-pin. cache_dir is excluded from the
+                 snapshot for the same reason.
+  CONSUMERS:     No consumer reads WHERE. The only red
+                 test would assert a label that was
+                 never emitted.
+  FINDING:       A named-but-unbuilt rung should be
+                 closed with a reason when the census
+                 shows it adds nothing. Building it
+                 because it was named would have put a
+                 less accurate record beside a more
+                 accurate one.
+  NEXT:          close orphan cycle; merge #244 to main
