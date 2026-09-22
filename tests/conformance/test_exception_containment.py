@@ -10,26 +10,14 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
-
 from tools.arch.gatescan import fail_quiet_handlers
 
 _ORCHESTRATOR = Path("src/feelies/kernel/orchestrator.py")
 _ORCHESTRATOR_POSIX = "src/feelies/kernel/orchestrator.py"
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G36")
-def test_no_fail_quiet_exception_handler() -> None:
-    quiet = fail_quiet_handlers()
-    assert quiet is not None
-    assert not quiet, (
-        f"{len(quiet)} fail-quiet except handler(s). First: "
-        f"{quiet[0]['path']}:{quiet[0]['line']} except {quiet[0]['exc_type']}"
-    )
-
-
 def test_composition_position_lookup_handler_is_not_fail_quiet() -> None:
-    """X7 — G20 only. The tree-wide scan above stays xfailed on G36 residue."""
+    """X7 — G20 only."""
     quiet = fail_quiet_handlers()
     hits = [
         h
