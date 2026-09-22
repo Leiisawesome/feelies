@@ -8,18 +8,13 @@ slot they occupy when they do attach — between StopExit and Orchestrator.
 New observers for previously zero-subscriber types are appended; they
 subscribe distinct types, so existing per-type order is unchanged.
 
-Zero-subscriber resolutions (step 4, one type at a time):
+Zero-subscriber resolution:
 
-* ``OrderAck`` — consumer (observer). Publish kept; no ``self._seq`` change.
-* ``PositionUpdate`` — consumer (observer). Publish kept.
-* ``RiskVerdict`` — consumer (observer). Publish kept (removing it would
-  re-pin). Notification-shaped, still a domain-bus event this step.
-* ``SymbolHalted`` — consumer (observer). Forensic marker; publish kept.
-* ``KillSwitchActivation`` — consumer (observer). Additive; the four
-  direct orchestrator reads are the control path.
-* ``StateTransition`` — reclassified as a notification record. Publish
-  kept (S-31 deletes it). No subscriber this step, so S11 remains xfail
-  on this type alone.
+* ``StateTransition`` — notification record. Publish stays, and nothing
+  subscribes, because it is not a domain-bus consumer (G10).
+  ``OrderAck``, ``PositionUpdate``, ``RiskVerdict``, ``SymbolHalted``,
+  and ``KillSwitchActivation`` are subscribers (ordinals 31-35), not
+  resolutions.
 """
 
 from __future__ import annotations
@@ -83,11 +78,6 @@ SUBSCRIPTIONS: tuple[Subscription, ...] = (
 )
 
 ZERO_SUBSCRIBER_RESOLUTIONS: tuple[tuple[str, str], ...] = (
-    ("OrderAck", "consumer"),
-    ("PositionUpdate", "consumer"),
-    ("RiskVerdict", "consumer"),
-    ("SymbolHalted", "consumer"),
-    ("KillSwitchActivation", "consumer"),
     ("StateTransition", "notification_record"),
 )
 

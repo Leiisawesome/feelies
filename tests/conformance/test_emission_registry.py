@@ -1,41 +1,50 @@
-"""S11 — every published event type has a subscriber.
+"""S11 — zero-subscriber types match ZERO_SUBSCRIBER_RESOLUTIONS.
 
-Promotes ``tools.arch.contracts.bus_sites``.  A type published onto the
-domain bus with zero static subscribers is a docstring promise with no
-consumer (G10); ``KillSwitchActivation`` is the named case (G28).
+A published type with no subscribe site fails unless it is a counted
+resolution row. ``StateTransition`` is the notification-record keep (G10).
+``KillSwitchActivation`` is a subscriber (G28), not a resolution.
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter
 
-import pytest
-
+from feelies.core.wiring_manifest import ZERO_SUBSCRIBER_RESOLUTIONS
 from tools.arch.contracts import bus_sites, collect_classes, event_closure, global_returns
 
 
-@pytest.mark.xfail(strict=True, reason="GAP G10 G28")
-def test_every_published_type_has_a_subscriber() -> None:
+def _live_zero_subscribers() -> Counter[str]:
     events = event_closure(collect_classes())
-    assert events, "contracts scanner found no Event subclasses"
     names = set(events)
     pubs, subs, _unresolved = bus_sites(names, global_returns(names))
-    assert pubs, "scanner found no publish sites — the subscriber check is vacuous"
-
-    pub_by: dict[str, set[str]] = defaultdict(set)
-    sub_by: dict[str, set[str]] = defaultdict(set)
+    published: set[str] = set()
+    subscribed: set[str] = set()
     for rec in pubs:
-        if rec["event_type"] in names:
-            pub_by[rec["event_type"]].add(f"{rec['path']}:{rec['line']}")
+        event_type = rec["event_type"]
+        if event_type in names:
+            published.add(event_type)
     for rec in subs:
         if rec["call"] == "subscribe" and rec["event_type"] in names:
-            sub_by[rec["event_type"]].add(f"{rec['path']}:{rec['line']}")
+            subscribed.add(rec["event_type"])
+    return Counter(published - subscribed)
 
-    published_never_subscribed = sorted(set(pub_by) - set(sub_by))
-    assert not published_never_subscribed, (
-        "event types published to zero static subscribers: "
-        + ", ".join(published_never_subscribed)
+
+def test_zero_subscriber_resolutions_match_live_set() -> None:
+    found = _live_zero_subscribers()
+    allowed: Counter[str] = Counter(
+        event_type for event_type, _resolution in ZERO_SUBSCRIBER_RESOLUTIONS
     )
+    extra = found - allowed
+    missing = allowed - found
+    assert extra == Counter(), (
+        "published types with no subscriber and no resolution row: " + ", ".join(sorted(extra))
+    )
+    assert missing == Counter(), (
+        "ZERO_SUBSCRIBER_RESOLUTIONS rows absent from the live zero-subscriber set: "
+        + ", ".join(sorted(missing))
+    )
+    assert all(resolution.strip() for _event_type, resolution in ZERO_SUBSCRIBER_RESOLUTIONS)
+    assert ZERO_SUBSCRIBER_RESOLUTIONS == (("StateTransition", "notification_record"),)
 
 
 def test_discarded_forecasts_are_named_on_the_selection_result() -> None:
