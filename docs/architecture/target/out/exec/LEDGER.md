@@ -29239,6 +29239,14 @@ FINDINGS:    A census inherits its detector's
                  it does not fire on this day. The other five
                  zero-call rows were already aimed at methods this
                  day does not enter inside the armed window.
+                 The three E10.router_* probes resolve to
+                 BacktestOrderRouter, but the APP day runs
+                 execution_mode passive_limit, so the router is
+                 instrumented on a class the representative backtest
+                 never uses and records zero calls. Resolving is not
+                 measuring. For the G41/G42 meter: a probe that reads
+                 zero because it sits on the wrong object is
+                 indistinguishable from a cheap engine.
                  Direct-probe exclusive shares, armed calls only,
                  zeros contribute nothing:
                  e0 67.6%, e1 0.8%, e2 11.2%, e3 11.6%, e4 0.0%,
