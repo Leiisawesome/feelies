@@ -1,11 +1,14 @@
 """build_platform rejects a SIGNAL alpha that reads outside its sensors.
 
-Ownership is a build contract: every name ``evaluate`` or the regime
-gate reads must be a feature of a sensor in ``depends_on_sensors``.
-An unresolvable body scan is not proof that the read is inside that
-set. A declared sensor the platform does not register is already
-``UnresolvedDependencyError`` from ``resolve_signal_dependencies``.
-PORTFOLIO specs have no signal body and stay exempt.
+Ownership is a build contract. A name ``evaluate`` reads must be a
+feature of a sensor in ``depends_on_sensors``. A regime-gate name may
+also be a declared sensor id that publishes no horizon feature: the
+gate resolves that id from the sensor-cache back-fill, and
+``evaluate`` never sees that cache. An unresolvable body scan is not
+proof that the read is inside the declared set. A declared sensor the
+platform does not register is already ``UnresolvedDependencyError``
+from ``resolve_signal_dependencies``. PORTFOLIO specs have no signal
+body and stay exempt.
 """
 
 from __future__ import annotations
@@ -18,10 +21,11 @@ import pytest
 from feelies.alpha.registry import UnresolvedDependencyError
 from feelies.bootstrap import build_platform
 from feelies.core.errors import ConfigurationError
-from feelies.core.events import NBBOQuote
+from feelies.core.events import NBBOQuote, Trade
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
+from feelies.sensors.impl.vpin_50bucket import VPIN50BucketSensor
 from feelies.sensors.spec import SensorSpec
 
 _SESSION_OPEN_NS = 1_768_532_400_000_000_000
@@ -46,7 +50,23 @@ def _spread() -> SensorSpec:
     )
 
 
-def _signal(*, alpha_id: str, depends: list[str], read: str) -> str:
+def _vpin() -> SensorSpec:
+    return SensorSpec(
+        sensor_id="vpin_50bucket",
+        sensor_version="1.1.0",
+        cls=VPIN50BucketSensor,
+        params={},
+        subscribes_to=(Trade,),
+    )
+
+
+def _signal(
+    *,
+    alpha_id: str,
+    depends: list[str],
+    read: str,
+    on_condition: str = "P(normal) > 0.5",
+) -> str:
     depends_literal = "[" + ", ".join(depends) + "]"
     return f"""
 schema_version: "1.1"
@@ -67,7 +87,7 @@ risk_budget:
   capital_allocation_pct: 0.1
 regime_gate:
   regime_engine: hmm_3state_fractional
-  on_condition: "P(normal) > 0.5"
+  on_condition: "{on_condition}"
   off_condition: "False"
 cost_arithmetic:
   edge_estimate_bps: 9.0
@@ -183,6 +203,46 @@ def test_build_accepts_a_read_of_a_declared_sensor() -> None:
         read='return snapshot.values.get("spread_z_30d")',
     )
     _build([("probe.alpha.yaml", spec)], (_spread(),))
+
+
+def test_build_accepts_gate_read_of_declared_raw_sensor() -> None:
+    """A declared sensor with no horizon feature is served to the gate by the cache."""
+    spec = _signal(
+        alpha_id="gate_raw_declared",
+        depends=["vpin_50bucket"],
+        read="return None",
+        on_condition="vpin_50bucket > 0.5",
+    )
+    _build([("probe.alpha.yaml", spec)], (_vpin(),))
+
+
+def test_build_rejects_body_read_of_declared_raw_sensor() -> None:
+    """evaluate sees snapshot.values only. The same raw id reads None forever."""
+    spec = _signal(
+        alpha_id="body_raw_declared",
+        depends=["vpin_50bucket"],
+        read='return snapshot.values["vpin_50bucket"]',
+    )
+    with pytest.raises(
+        ConfigurationError,
+        match="read 'vpin_50bucket' is not a feature of declared sensors",
+    ):
+        _build([("probe.alpha.yaml", spec)], (_vpin(),))
+
+
+def test_build_rejects_gate_read_of_undeclared_raw_sensor() -> None:
+    """The cache back-fill does not make an undeclared sensor id legal."""
+    spec = _signal(
+        alpha_id="gate_raw_undeclared",
+        depends=["spread_z_30d"],
+        read="return None",
+        on_condition="vpin_50bucket > 0.5",
+    )
+    with pytest.raises(
+        ConfigurationError,
+        match="read 'vpin_50bucket' is not a feature of declared sensors",
+    ):
+        _build([("probe.alpha.yaml", spec)], (_spread(), _vpin()))
 
 
 def test_portfolio_spec_builds() -> None:
