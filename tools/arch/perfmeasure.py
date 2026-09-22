@@ -140,11 +140,11 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         1,
         "E1.data_health_gate",
-        "feelies.ingestion.data_integrity:_data_health_blocks_trading",
+        "feelies.kernel.orchestrator:_data_health_blocks_trading",
     ),
-    (1, "E1.verify_integrity", "feelies.ingestion.data_integrity:_verify_data_integrity"),
-    (1, "E1.update_halt_state", "feelies.ingestion.data_integrity:_update_halt_state"),
-    (1, "E1.update_ssr_state", "feelies.ingestion.data_integrity:_update_ssr_state"),
+    (1, "E1.verify_integrity", "feelies.kernel.orchestrator:_verify_data_integrity"),
+    (1, "E1.update_halt_state", "feelies.kernel.orchestrator:_update_halt_state"),
+    (1, "E1.update_ssr_state", "feelies.kernel.orchestrator:_update_ssr_state"),
     # -- engine 2: state / feature ----------------------------------------
     (
         2,
@@ -153,7 +153,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     ),
     (2, "E2.horizon_scheduler", "feelies.sensors.horizon_scheduler:HorizonScheduler.on_event"),
     # -- engine 3: regime --------------------------------------------------
-    (3, "E3.update_regime", "feelies.services.regime_engine:_update_regime"),
+    (3, "E3.update_regime", "feelies.kernel.orchestrator:_update_regime"),
     # -- engine 6: portfolio construction ---------------------------------
     (
         6,
@@ -201,17 +201,17 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         8,
         "E8.compute_target_qty",
-        "feelies.risk.engine:_compute_target_quantity",
+        "feelies.kernel.orchestrator:_compute_target_quantity",
     ),
     (
         8,
         "E8.buying_power_flip",
-        "feelies.risk.engine:_maybe_flip_buying_power_at_rth_close",
+        "feelies.kernel.orchestrator:_maybe_flip_buying_power_at_rth_close",
     ),
     # -- engine 9: execution decision -------------------------------------
     (9, "E9.plan", "feelies.execution.position_manager:TargetPositionManager.plan"),
     (9, "E9.netter_net", "feelies.execution.portfolio_netter:PortfolioNetter.net"),
-    (9, "E9.build_order", "feelies.kernel.orchestrator:Orchestrator._try_build_order_from_intent"),
+    (9, "E9.build_order", "feelies.kernel.orchestrator:_try_build_order_from_intent"),
     (
         9,
         "E9.min_cost_decide",
@@ -224,7 +224,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         10,
         "E10.submit_tracked_order",
-        "feelies.execution.order_lifecycle:_submit_tracked_order",
+        "feelies.kernel.orchestrator:_submit_tracked_order",
     ),
     (10, "E10.settle_router_acks", "feelies.kernel.orchestrator:Orchestrator._settle_router_acks"),
     (
@@ -235,7 +235,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (
         10,
         "E10.router_submit",
-        "feelies.execution.backtest_router:BacktestOrderRouter.submit_order",
+        "feelies.execution.backtest_router:BacktestOrderRouter.submit",
     ),
     (10, "E10.router_poll", "feelies.execution.backtest_router:BacktestOrderRouter.poll_acks"),
     # -- engine 11: observability -----------------------------------------
@@ -243,7 +243,7 @@ DIRECT_PROBES: list[tuple[int, str, str]] = [
     (11, "E11.alert_emit", "feelies.monitoring.in_memory:InMemoryAlertManager.emit"),
     # -- measurement-only paths that run on the tick path -----------------
     (12, "X.net_shadow", "feelies.kernel.orchestrator:Orchestrator._record_net_shadow"),
-    (12, "X.size_shadow", "feelies.kernel.orchestrator:Orchestrator._record_size_shadow"),
+    (12, "X.size_shadow", "feelies.kernel.orchestrator:_record_size_shadow"),
     (
         12,
         "X.arbitration_trace",
@@ -355,8 +355,7 @@ def _install_direct_probes() -> None:
             if "." not in attr:
                 fn = getattr(mod, attr, None)
                 if fn is None or not callable(fn):
-                    _UNRESOLVED.append(f"{target}  (not a plain method)")
-                    continue
+                    raise RuntimeError(f"unresolved direct probe: {target} (not a plain method)")
                 setattr(mod, attr, _wrap(engine, label, fn))
                 _RESOLVED.append(f"{label}={target}")
                 continue
@@ -366,12 +365,15 @@ def _install_direct_probes() -> None:
             if fn is None:
                 fn = getattr(cls, meth, None)
             if fn is None or not callable(fn) or isinstance(fn, property):
-                _UNRESOLVED.append(f"{target}  (not a plain method)")
-                continue
+                raise RuntimeError(f"unresolved direct probe: {target} (not a plain method)")
             setattr(cls, meth, _wrap(engine, label, fn))
             _RESOLVED.append(f"{label}={target}")
-        except Exception as exc:  # noqa: BLE001 -- a miss is evidence, not a crash
-            _UNRESOLVED.append(f"{target}  ({type(exc).__name__}: {exc})")
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(
+                f"unresolved direct probe: {target} ({type(exc).__name__}: {exc})"
+            ) from exc
 
 
 def _install_sensor_probes() -> None:
