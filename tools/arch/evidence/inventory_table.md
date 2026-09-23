@@ -1,3 +1,7 @@
+# PHASE 0 SNAPSHOT
+
+Generated 2026-08-15 at 84d5654f. Describes 196 modules and 43,197 sloc. Superseded by seven campaigns. This file is not regenerated on purpose: it is the Phase 0 record that phase0_comprehension.md cites, and regenerating it would destroy that snapshot. The current tree is 250 modules and 47,424 sloc via tools/arch/measure.py modules. Three listed paths no longer exist: alpha/arbitration.py, alpha/fill_attribution.py, alpha/risk_wrapper.py.
+
 | module | sloc | public | declared responsibility (docstring — a claim) |
 |---|---|---|---|
 | `src/feelies/__init__.py` | 1 | 0 | Feelies — deterministic intraday trading platform. |
