@@ -29813,3 +29813,67 @@ FINDINGS:    A census inherits its detector's
                  G32 S-30f deferred.
   NEXT:          Reply on the #246 Bugbot thread citing O-11b, then
                  the close procedure. Not started.
+
+---
+
+## STAGE LOCK  arch-migration-v1
+DATE:        2026-09-23T09:17:33+08:00
+TAG:         arch-migration-v1
+SHA:         aab9f3ce4cd24f114e5c09a0083d95bfcebf09d7
+             Annotated tag on arch/exec. Pushed
+             to origin. The tag object is that
+             commit. This block is the record
+             written after the tag, so the
+             tagged tree does not contain it.
+CLOSED:      Seven campaigns: G40; five import
+             tiers; reset partition; CI
+             restoration; engine-to-kernel; G45
+             proven-site keep; G44 dead-compute
+             keep. Three orphan cycles, O-01
+             through O-11b.
+CONFORMANCE: One xfail. S5,
+             test_hot_path_allow_list, reason
+             GAP G41 G42.
+PARITY:      64 HASH/COUNT constants.
+             Fingerprint
+             de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+OPEN:        Five items. The tag does not close
+             them.
+             1. G41/G42 meter. S5 xfail remains.
+             S-33 cannot close an overrun the
+             per-quote timer cannot resolve.
+             2. Sensor emission shape. O-11b: a
+             regime-gate read of a raw sensor id
+             stays rejected until sensors
+             declare emission shape. 16 scalar
+             sensors, 19 files.
+             3. Runtime gate-input filtering.
+             O-05's ownership check is
+             build-time. RegimeGate.evaluate and
+             _dispatch_one were not edited, so
+             the tick path does not filter gate
+             inputs to the declared set.
+             4. Alpha_id namespaces. O-02: the
+             promotion ledger and the promote
+             CLI accept alpha_id as a free
+             string. The loader rejects ids the
+             tests use (ALPHA-A). One
+             identifier, two namespaces.
+             Identity, not a filesystem path.
+             5. Ubuntu 26 on 19 October 2026.
+             ubuntu-latest migrates then. CI
+             restoration VERIFIED (run
+             35434851568) recorded the warning.
+             The registered corpus needs
+             re-verifying after it.
+CARRIED:     Unchanged from O-11b, and not part
+             of the five. G32 S-30f deferred.
+             G36 OPEN on the seventeen keepers.
+             G39 OPEN on
+             test_construction_integrity. G10
+             and G28 OPEN on the StateTransition
+             keep. This lock does not close them.
+REFERENCE:   arch-migration-v1 is the reference
+             any later cleanup diffs against.
+NEXT:        The cleanup cycle opens the PR.
+             Not started. This lock does not.
