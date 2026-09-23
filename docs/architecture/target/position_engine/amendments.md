@@ -1,0 +1,24 @@
+# Amendments to v2
+
+Every departure from the v2 design, with a justification that makes no reference to
+results. Approved by the operator 2026-09-23 as part of the target: a 13th position engine,
+risk reduced to safety and veto, the mark rail in engine 7, per-alpha exit policy,
+backtest only.
+
+| Id | v2 said | Now | Justification |
+|---|---|---|---|
+| A-01 | Build standalone; integrate later. | Engine 13 inside feelies, own independence set, imports only `core`. | v2's own condition for building in-platform — a shared event bus and clock intended for reuse — now holds, and the architecture migration is closed at `arch-migration-v1`. Isolation is kept by the import contract rather than by a separate repo. |
+| A-02 | (no mode notion) | BACKTEST only; build rejects `exit_policy` in PAPER/LIVE. | Operator scope decision. Live needs the feed-gap fix (`feed.md` F1) and order-state handling this campaign does not build. |
+| A-03 | Two states; no `EXITING`. | OPEN → EXITING → CLOSED. | v2 banned `EXITING` because it had no orders. In feelies an exit is an order; the position is not flat until it fills, and a second exit must be prevented by state, not by luck. |
+| A-04 | The cell refuses to be born without a paying price, when crossed, or past cutoff. | Refusal moves to entry admission (engine 9); scale-in also refused there. | In feelies the cell is born from a fill, after which the position exists and must be managed. Refusing a fill is impossible; refusing the order is not. |
+| A-05 | Entry price = rail `paying_mark`, frozen. | Entry = exact quantity-weighted average of the episode's entry fills. | The position engine values what was actually paid. Partial fills of one entry order are real in the router (depth depletion). |
+| A-06 | Event time = one declared feed clock. | `exchange_timestamp_ns` of the quote for durations; platform `sequence` for order. | Makes the declaration concrete for feelies; the existing stop and session-flatten code already use exchange ts. |
+| A-07 | `S` and `D` exogenous per configuration. | `S` and `D` are run-level config of the rail. | The rail serves every alpha on a name; a per-alpha window would make the rail learn that positions exist. |
+| A-08 | (no other exit authors) | Owned slices are exclusive to engine 13; engine 8 safety exits outrank it and close the cell as EXTERNAL. | Two authors reducing the same exposure on different triggers with no arbitration is the double-flatten hazard (phase2 F.4). Safety exits must never wait for strategy logic. |
+| A-09 | Adverse comparison mark implicit; `forced_exit_mark` = worse side + `S`. | New `worst_side_mark` (worse side, held price stands in); gate compares on it and proposes `forced_exit_mark`. | Comparing on a mark that includes `S` would silently move the stop level by `S`. Booking and triggering are different questions. |
+| A-10 | Invalidation gate deferred (needed the belief rail). | Invalidation path added: a FLAT or opposite `Signal` for the owned slice. Resolved at the next rail event. | Feelies' signal layer already publishes the belief verdict; the cell already read the signal at birth in v2, so no new reader is added. The belief rail and alpha-decay gate stay deferred. |
+| A-11 | Session cutoff carried with the signal. | Read at birth from the session fact (engine 1's fact, phase2 F.3). | Feelies signals do not carry it; the session fact is the platform's single source. Read once, frozen. |
+| A-12 | Emits an exit intent. | Emits `DeRiskRequirement`, `source_layer="POSITION"`, MARKET, slice-scoped. | Engine 9 turns requirements into orders (phase2 L961); one requirement type keeps one exit-plan path. |
+| A-13 | Declared slippage `S` only. | `ADVERSE_EXCURSION` joins the router's stop-slippage reason set. | The router's realized fill for a stop should carry the same panic treatment as the existing stop; proposed and realized prices are both recorded. |
+| A-14 | Ages in ms. | Ages and spans in ns. | One unit across the engine removes a class of conversion bugs. |
+| A-15 | First reading = −spread for every position. | Exact for MARKET entries filled at the touch; in general first reading = valuation at birth − entry fill. | A fill away from the touch is a fill-model question, not a side error. |
