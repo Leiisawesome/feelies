@@ -22002,6 +22002,7 @@ FINDINGS:    A future campaign that inverts an
 ---
 
 ## CAMPAIGN CLOSE  Reset invocation
+PLAN:        docs/architecture/target/out/phase9_resets.md
 DATE:        2026-09-16
 CLOSED AT:   R-07. Commit 31609304 on exec/R-07;
              not merged. Campaign base 4e707c17
@@ -22820,6 +22821,7 @@ FINDINGS:    A detector's failure mode is part of
 ---
 
 ## CAMPAIGN CLOSE  CI restoration
+PLAN:        docs/architecture/target/out/phase10_ci.md
 DATE:        2026-09-18
 CLOSED AT:   0.3. Commit eaa3a153 on exec/0.3;
              not merged. Campaign base c1c11288
@@ -23998,6 +24000,7 @@ VERIFIED:    PR #242 (draft), run 35434851568,
 ---
 
 ## CAMPAIGN CLOSE  Engine-to-kernel pin
+PLAN:        docs/architecture/target/out/phase11_kernel_pin.md
 DATE:        2026-09-20
 CLOSED AT:   A-02. Commit 042c680f on exec/A-02;
              not merged. Campaign base b2d91c38
@@ -26087,6 +26090,7 @@ FINDINGS:    A detector's scope must be stated in
 ---
 
 ## CAMPAIGN CLOSE  G45 proven-site keep
+PLAN:        docs/architecture/target/out/phase12_hotpath.md
 DATE:        2026-09-21
 CLOSED AT:   G45-05. Commit 6b9c5389 on exec/G45-05;
              not merged. Campaign base a25032dc
@@ -27662,6 +27666,7 @@ OWNER:       G44-01a deletes the property
 ---
 
 ## CAMPAIGN CLOSE  G44 dead-compute keep
+PLAN:        docs/architecture/target/out/phase13_dead_compute.md
 DATE:        2026-09-21
 CLOSED AT:   G44-01. Commit 9ba178f6 on exec/G44-01;
              not merged. Campaign base b782caa1
@@ -29813,3 +29818,247 @@ FINDINGS:    A census inherits its detector's
                  G32 S-30f deferred.
   NEXT:          Reply on the #246 Bugbot thread citing O-11b, then
                  the close procedure. Not started.
+
+---
+
+## STAGE LOCK  arch-migration-v1
+DATE:        2026-09-23T09:17:33+08:00
+TAG:         arch-migration-v1
+SHA:         aab9f3ce4cd24f114e5c09a0083d95bfcebf09d7
+             Annotated tag on arch/exec. Pushed
+             to origin. The tag object is that
+             commit. This block is the record
+             written after the tag, so the
+             tagged tree does not contain it.
+CLOSED:      Seven campaigns: G40; five import
+             tiers; reset partition; CI
+             restoration; engine-to-kernel; G45
+             proven-site keep; G44 dead-compute
+             keep. Three orphan cycles, O-01
+             through O-11b.
+CONFORMANCE: One xfail. S5,
+             test_hot_path_allow_list, reason
+             GAP G41 G42.
+PARITY:      64 HASH/COUNT constants.
+             Fingerprint
+             de5d64b019075de0ca271b53834f342623f2b1a39f23ff73910e45b0bc90beb6.
+OPEN:        Five items. The tag does not close
+             them.
+             1. G41/G42 meter. S5 xfail remains.
+             S-33 cannot close an overrun the
+             per-quote timer cannot resolve.
+             2. Sensor emission shape. O-11b: a
+             regime-gate read of a raw sensor id
+             stays rejected until sensors
+             declare emission shape. 16 scalar
+             sensors, 19 files.
+             3. Runtime gate-input filtering.
+             O-05's ownership check is
+             build-time. RegimeGate.evaluate and
+             _dispatch_one were not edited, so
+             the tick path does not filter gate
+             inputs to the declared set.
+             4. Alpha_id namespaces. O-02: the
+             promotion ledger and the promote
+             CLI accept alpha_id as a free
+             string. The loader rejects ids the
+             tests use (ALPHA-A). One
+             identifier, two namespaces.
+             Identity, not a filesystem path.
+             5. Ubuntu 26 on 19 October 2026.
+             ubuntu-latest migrates then. CI
+             restoration VERIFIED (run
+             35434851568) recorded the warning.
+             The registered corpus needs
+             re-verifying after it.
+CARRIED:     Unchanged from O-11b, and not part
+             of the five. G32 S-30f deferred.
+             G36 OPEN on the seventeen keepers.
+             G39 OPEN on
+             test_construction_integrity. G10
+             and G28 OPEN on the StateTransition
+             keep. This lock does not close them.
+REFERENCE:   arch-migration-v1 is the reference
+             any later cleanup diffs against.
+NEXT:        The cleanup cycle opens the PR.
+             Not started. This lock does not.
+
+---
+
+## C-01  2026-09-23T10:00:34+08:00
+  STEP:          C-01
+  BASE:          8754310c5abe916c8d09919517e3a1e68d0b2041
+                 (arch/exec, the stage-lock commit)
+  RESULT SHA:    cd5aaed49756b0e7f3adff3b54cdcf6cb10c8043
+                 (exec/C-01). Merged to arch/exec as
+                 a0f43208f2510bfe0a9970b66318d55501014177.
+  VERDICT:       passed
+  CONFORMANCE:   Documentation only. Nothing deleted.
+                 The four uncited captures stay.
+                 baseline_pre_at8e42a3d.json,
+                 baseline_pre_blind43.json, and
+                 baseline_x1.json are pre-convention
+                 captures: no label, no ledger
+                 citation, no reader. Two of them are
+                 named in a porcelain block.
+                 baseline_pre.json records
+                 baseline_pre_at8e42a3d.json.
+                 baseline_pre_at8e42a3d.json records
+                 baseline_pre_blind43.json. A capture's
+                 git-status snapshot is part of its
+                 evidence. Deleting a file a cited
+                 capture records as present would leave
+                 that line pointing at nothing.
+                 baseline_pre-S-04b.json stays because
+                 its rung ran. The pre-state is evidence
+                 even where the ledger cites only the
+                 post (baseline_post-S-04b.json).
+                 FINDING: an artifact referenced only by
+                 a historical snapshot is still
+                 load-bearing for that snapshot's
+                 integrity. Uncited is not unreferenced.
+                 Plan citations added, one line each,
+                 inside the existing CLOSE blocks:
+                 Reset invocation -> phase9_resets.md;
+                 CI restoration -> phase10_ci.md;
+                 Engine-to-kernel pin ->
+                 phase11_kernel_pin.md; G45 proven-site
+                 keep -> phase12_hotpath.md; G44
+                 dead-compute keep ->
+                 phase13_dead_compute.md. Their absence
+                 was a ledger gap, not a reason to
+                 delete a campaign's plan.
+                 inventory_table.md is marked a PHASE 0
+                 SNAPSHOT. Generated 2026-08-15 at
+                 84d5654f. Describes 196 modules and
+                 43,197 sloc. Superseded by seven
+                 campaigns. Not regenerated on purpose:
+                 it is the Phase 0 record that
+                 phase0_comprehension.md cites, and
+                 regenerating it would destroy that
+                 snapshot. The current tree is 250
+                 modules and 47,424 sloc via
+                 tools/arch/measure.py modules. Three
+                 listed paths no longer exist:
+                 alpha/arbitration.py,
+                 alpha/fill_attribution.py,
+                 alpha/risk_wrapper.py. Table rows were
+                 not touched.
+  TESTS:         tests/docs/test_exec_ledger_structure.py
+                 2 passed, before git add. not
+                 paper_rth: 4955 passed, 6 skipped, 14
+                 deselected, 1 xfailed. ruff check
+                 passed. ruff format --check: 696 files
+                 already formatted.
+  PARITY:        64 -> 64 against
+                 baseline_post-O-07.json, the latest
+                 post-O capture. baseline_post-O-11b.json
+                 is not in the tree. changed 0, added 0,
+                 removed 0. HOLDS.
+  FILES:         2 touched.
+                 docs/architecture/target/out/exec/LEDGER.md
+                 tools/arch/evidence/inventory_table.md
+  OPEN:          configs/bt_netting_contest.yaml is
+                 loaded by no test. Kept. Untested is
+                 not unused. It booted in the O-11
+                 harness check and sig_contra_fixture_v1
+                 names it. A test that boots it and
+                 asserts its alpha count is the fix,
+                 when someone wants it.
+                 Three docs/research/artifacts/*.json
+                 total about 13 MB of the 34 MB tracked
+                 tree, and no test reads them. Research
+                 evidence, not exec artifacts. A
+                 question for whoever owns the research
+                 record, not this cycle.
+  NEXT:          Stop.
+
+---
+
+## C-02  2026-09-23T10:24:42+08:00
+  STEP:          C-02
+  BASE:          bcd43f035f146b439bdabb3be3ad10078343be43
+                 (arch/exec, the C-01 ledger commit)
+  CAPTURE SHA:   aab9f3ce4cd24f114e5c09a0083d95bfcebf09d7
+                 (detached HEAD at arch-migration-v1).
+                 Written after returning to arch/exec.
+                 Not a rung's post step.
+  VERDICT:       passed
+  CONFORMANCE:   X2_step.md requires a pre capture and a
+                 post capture on every step
+                 (capture --label pre-S-nn, then
+                 capture --label post-S-nn). No exemption
+                 for a test-only rung. O-06, O-08, O-09a,
+                 O-09, O-10, O-11 and O-11b took neither.
+                 Four edited src/feelies: O-09a
+                 (cli/main.py, cli/forensics.py,
+                 cli/promote.py), O-09
+                 (core/wiring_manifest.py), O-10
+                 (core/wiring_manifest.py), and O-11 with
+                 O-11b (alpha/dependency_graph.py; O-11b
+                 reverts O-11). O-06 edited
+                 configs/paper_run.yaml and
+                 scripts/run_paper.py. O-08 edited only
+                 tests/conformance/test_exception_containment.py.
+                 O-08, O-09a, O-09, O-10, O-11 and O-11b
+                 each reported 64/64 against
+                 baseline_post-O-07.json. O-06 reported
+                 64/64 against baseline_post-O-05.json.
+                 In every case that was a hold against an
+                 ancestor, not a pair around the change.
+                 The claim was true; the evidence was
+                 weaker than the ledger implied.
+                 The cause: orphan rungs have no plan
+                 file, so verify_step never ran, and the
+                 execution prompts for those rungs did not
+                 carry the capture commands. A convention
+                 enforced only by a prompt is not enforced.
+                 The repair:
+                 baseline_at-arch-migration-v1-posthoc.json,
+                 taken at aab9f3ce after the fact, and the
+                 compare below. That compare is the
+                 pre/post pair for O-08 through O-11b,
+                 six rungs at once. O-06 sits before
+                 O-07's pair and is outside this span.
+  CAPTURE:       label at-arch-migration-v1-posthoc.
+                 git sha
+                 aab9f3ce4cd24f114e5c09a0083d95bfcebf09d7.
+                 tests 4956 passed, 0 failed, 19 skipped,
+                 exit 0. determinism 148 passed, 0 failed,
+                 exit 0. parity_count 64. GREEN.
+  COMPARE:       uv run python tools/exec/baseline.py
+                 compare --before
+                 docs/architecture/target/out/exec/baseline_post-O-07.json
+                 --after
+                 docs/architecture/target/out/exec/baseline_at-arch-migration-v1-posthoc.json
+                 Exit 0. Tool fingerprints matched.
+                 PARITY 64 -> 64, changed 0, added 0,
+                 removed 0. HOLDS. No constant moved, so
+                 no rung from O-08 through O-11b moved a
+                 HASH or COUNT constant. O-10's declared
+                 manifest_hash digest change is not one
+                 of the 64.
+                 TESTS passed 4948 -> 4956 (+8), failed
+                 0 -> 0. skipped 19 -> 19, read from the
+                 two files; the compare tool prints
+                 passed and failed only.
+                 determinism passed 148 -> 148, failed
+                 0 -> 0.
+                 modules.total_files 250 -> 250.
+                 modules.total_sloc 47226 -> 47424 (+198).
+                 modules.public_symbols 593 -> 595 (+2).
+                 imports.n_modules 203 -> 203.
+                 imports.n_edges 677 -> 677.
+                 imports.n_cycles 1 -> 1.
+                 alphaleak.n 0 -> 0.
+                 GIT 5e3f340127 (exec/O-07) ->
+                 aab9f3ce4c (HEAD).
+  OPEN:          Nothing checks that a rung took its
+                 captures. The ledger structure test
+                 could assert that every step block
+                 naming a capture has that file present,
+                 but no test asserts a step block MUST
+                 name one. Sizing that is a decision for
+                 the next cycle.
+  NEXT:          Push origin arch/exec. This commit
+                 rides draft PR #247.
