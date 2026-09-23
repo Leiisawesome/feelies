@@ -29882,3 +29882,93 @@ REFERENCE:   arch-migration-v1 is the reference
              any later cleanup diffs against.
 NEXT:        The cleanup cycle opens the PR.
              Not started. This lock does not.
+
+---
+
+## C-01  2026-09-23T10:00:34+08:00
+  STEP:          C-01
+  BASE:          8754310c5abe916c8d09919517e3a1e68d0b2041
+                 (arch/exec, the stage-lock commit)
+  RESULT SHA:    cd5aaed49756b0e7f3adff3b54cdcf6cb10c8043
+                 (exec/C-01). Merged to arch/exec as
+                 a0f43208f2510bfe0a9970b66318d55501014177.
+  VERDICT:       passed
+  CONFORMANCE:   Documentation only. Nothing deleted.
+                 The four uncited captures stay.
+                 baseline_pre_at8e42a3d.json,
+                 baseline_pre_blind43.json, and
+                 baseline_x1.json are pre-convention
+                 captures: no label, no ledger
+                 citation, no reader. Two of them are
+                 named in a porcelain block.
+                 baseline_pre.json records
+                 baseline_pre_at8e42a3d.json.
+                 baseline_pre_at8e42a3d.json records
+                 baseline_pre_blind43.json. A capture's
+                 git-status snapshot is part of its
+                 evidence. Deleting a file a cited
+                 capture records as present would leave
+                 that line pointing at nothing.
+                 baseline_pre-S-04b.json stays because
+                 its rung ran. The pre-state is evidence
+                 even where the ledger cites only the
+                 post (baseline_post-S-04b.json).
+                 FINDING: an artifact referenced only by
+                 a historical snapshot is still
+                 load-bearing for that snapshot's
+                 integrity. Uncited is not unreferenced.
+                 Plan citations added, one line each,
+                 inside the existing CLOSE blocks:
+                 Reset invocation -> phase9_resets.md;
+                 CI restoration -> phase10_ci.md;
+                 Engine-to-kernel pin ->
+                 phase11_kernel_pin.md; G45 proven-site
+                 keep -> phase12_hotpath.md; G44
+                 dead-compute keep ->
+                 phase13_dead_compute.md. Their absence
+                 was a ledger gap, not a reason to
+                 delete a campaign's plan.
+                 inventory_table.md is marked a PHASE 0
+                 SNAPSHOT. Generated 2026-08-15 at
+                 84d5654f. Describes 196 modules and
+                 43,197 sloc. Superseded by seven
+                 campaigns. Not regenerated on purpose:
+                 it is the Phase 0 record that
+                 phase0_comprehension.md cites, and
+                 regenerating it would destroy that
+                 snapshot. The current tree is 250
+                 modules and 47,424 sloc via
+                 tools/arch/measure.py modules. Three
+                 listed paths no longer exist:
+                 alpha/arbitration.py,
+                 alpha/fill_attribution.py,
+                 alpha/risk_wrapper.py. Table rows were
+                 not touched.
+  TESTS:         tests/docs/test_exec_ledger_structure.py
+                 2 passed, before git add. not
+                 paper_rth: 4955 passed, 6 skipped, 14
+                 deselected, 1 xfailed. ruff check
+                 passed. ruff format --check: 696 files
+                 already formatted.
+  PARITY:        64 -> 64 against
+                 baseline_post-O-07.json, the latest
+                 post-O capture. baseline_post-O-11b.json
+                 is not in the tree. changed 0, added 0,
+                 removed 0. HOLDS.
+  FILES:         2 touched.
+                 docs/architecture/target/out/exec/LEDGER.md
+                 tools/arch/evidence/inventory_table.md
+  OPEN:          configs/bt_netting_contest.yaml is
+                 loaded by no test. Kept. Untested is
+                 not unused. It booted in the O-11
+                 harness check and sig_contra_fixture_v1
+                 names it. A test that boots it and
+                 asserts its alpha count is the fix,
+                 when someone wants it.
+                 Three docs/research/artifacts/*.json
+                 total about 13 MB of the 34 MB tracked
+                 tree, and no test reads them. Research
+                 evidence, not exec artifacts. A
+                 question for whoever owns the research
+                 record, not this cycle.
+  NEXT:          Stop.
