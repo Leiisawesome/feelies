@@ -30115,3 +30115,29 @@ NEXT:        The cleanup cycle opens the PR.
 C-02 recorded that six rungs took no captures. The L-03 census at a05ab35b measured 13 rung ids and 23 (id, side) pairs without a committed capture: pre and post for O-04, O-06, O-08, O-09a, O-09, O-10, O-11, O-11b, C-01, C-02; pre only for S-35e, L-02, O-03b. L-02's block cites pre-L-02, which was never committed. The 23 pairs are pinned with reasons in `_UNCAPTURED_KEEP` in tests/docs/test_exec_ledger_captures.py. C-02 is not edited.
 
 This correction lands in the L-03 merge-record commit.
+
+---
+
+## P-00  position engine spec pack and phase 14 plan  2026-09-23T20:35:43+08:00
+  STEP:          P-00
+  BASE:          e2b2745fdfd7717e06f9af2fa76a1cf21aeaf9af
+  RESULT SHA:    faec2ce79df15e8aa8e31b817adb3ea77a47cc2e (exec/P-00), merged
+                 to arch/exec as 498842b64b5fe60ae9ff95bf50d0b9b5d887c595.
+  VERDICT:       passed
+  CONFORMANCE:   docs rung, opens campaign phase 14 (position engine, backtest
+                 only). Nine files extracted from the operator-supplied pack
+                 after the pre capture; all nine SHA-256 verified on disk and
+                 on the committed blobs (eol lf, autocrlf true, text auto).
+                 No src, tests, or configs.
+  TESTS:         tests/docs 105 passed; suite 4948 passed, 29 skipped, 1 xfailed
+  PARITY:        captures pre-P-00, post-P-00; HOLDS 64 -> 64, 0 changed
+  FILES:         9 declared, 9 touched, 9 committed:
+                 docs/architecture/target/out/phase14_position_engine.md and
+                 docs/architecture/target/position_engine/{README,contracts,
+                 results,battery,feed,amendments,assumptions,decisions}.md
+  NOTES:         operator-approved target (2026-09-23): 13th position engine;
+                 risk reduced to safety and veto; mark rail in engine 7;
+                 per-alpha exit_policy; backtest only, paper/live separate.
+                 Skip count 19 (post-L-03) -> 29 (pre-P-00) on
+                 content-identical trees; section 1 of the merge report lists
+                 the skips; unresolved, carried to P-10's census.
