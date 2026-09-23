@@ -29972,3 +29972,93 @@ NEXT:        The cleanup cycle opens the PR.
                  question for whoever owns the research
                  record, not this cycle.
   NEXT:          Stop.
+
+---
+
+## C-02  2026-09-23T10:24:42+08:00
+  STEP:          C-02
+  BASE:          bcd43f035f146b439bdabb3be3ad10078343be43
+                 (arch/exec, the C-01 ledger commit)
+  CAPTURE SHA:   aab9f3ce4cd24f114e5c09a0083d95bfcebf09d7
+                 (detached HEAD at arch-migration-v1).
+                 Written after returning to arch/exec.
+                 Not a rung's post step.
+  VERDICT:       passed
+  CONFORMANCE:   X2_step.md requires a pre capture and a
+                 post capture on every step
+                 (capture --label pre-S-nn, then
+                 capture --label post-S-nn). No exemption
+                 for a test-only rung. O-06, O-08, O-09a,
+                 O-09, O-10, O-11 and O-11b took neither.
+                 Four edited src/feelies: O-09a
+                 (cli/main.py, cli/forensics.py,
+                 cli/promote.py), O-09
+                 (core/wiring_manifest.py), O-10
+                 (core/wiring_manifest.py), and O-11 with
+                 O-11b (alpha/dependency_graph.py; O-11b
+                 reverts O-11). O-06 edited
+                 configs/paper_run.yaml and
+                 scripts/run_paper.py. O-08 edited only
+                 tests/conformance/test_exception_containment.py.
+                 O-08, O-09a, O-09, O-10, O-11 and O-11b
+                 each reported 64/64 against
+                 baseline_post-O-07.json. O-06 reported
+                 64/64 against baseline_post-O-05.json.
+                 In every case that was a hold against an
+                 ancestor, not a pair around the change.
+                 The claim was true; the evidence was
+                 weaker than the ledger implied.
+                 The cause: orphan rungs have no plan
+                 file, so verify_step never ran, and the
+                 execution prompts for those rungs did not
+                 carry the capture commands. A convention
+                 enforced only by a prompt is not enforced.
+                 The repair:
+                 baseline_at-arch-migration-v1-posthoc.json,
+                 taken at aab9f3ce after the fact, and the
+                 compare below. That compare is the
+                 pre/post pair for O-08 through O-11b,
+                 six rungs at once. O-06 sits before
+                 O-07's pair and is outside this span.
+  CAPTURE:       label at-arch-migration-v1-posthoc.
+                 git sha
+                 aab9f3ce4cd24f114e5c09a0083d95bfcebf09d7.
+                 tests 4956 passed, 0 failed, 19 skipped,
+                 exit 0. determinism 148 passed, 0 failed,
+                 exit 0. parity_count 64. GREEN.
+  COMPARE:       uv run python tools/exec/baseline.py
+                 compare --before
+                 docs/architecture/target/out/exec/baseline_post-O-07.json
+                 --after
+                 docs/architecture/target/out/exec/baseline_at-arch-migration-v1-posthoc.json
+                 Exit 0. Tool fingerprints matched.
+                 PARITY 64 -> 64, changed 0, added 0,
+                 removed 0. HOLDS. No constant moved, so
+                 no rung from O-08 through O-11b moved a
+                 HASH or COUNT constant. O-10's declared
+                 manifest_hash digest change is not one
+                 of the 64.
+                 TESTS passed 4948 -> 4956 (+8), failed
+                 0 -> 0. skipped 19 -> 19, read from the
+                 two files; the compare tool prints
+                 passed and failed only.
+                 determinism passed 148 -> 148, failed
+                 0 -> 0.
+                 modules.total_files 250 -> 250.
+                 modules.total_sloc 47226 -> 47424 (+198).
+                 modules.public_symbols 593 -> 595 (+2).
+                 imports.n_modules 203 -> 203.
+                 imports.n_edges 677 -> 677.
+                 imports.n_cycles 1 -> 1.
+                 alphaleak.n 0 -> 0.
+                 GIT 5e3f340127 (exec/O-07) ->
+                 aab9f3ce4c (HEAD).
+  OPEN:          Nothing checks that a rung took its
+                 captures. The ledger structure test
+                 could assert that every step block
+                 naming a capture has that file present,
+                 but no test asserts a step block MUST
+                 name one. Sizing that is a decision for
+                 the next cycle.
+  NEXT:          Push origin arch/exec. This commit
+                 rides draft PR #247.
