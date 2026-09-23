@@ -22002,6 +22002,7 @@ FINDINGS:    A future campaign that inverts an
 ---
 
 ## CAMPAIGN CLOSE  Reset invocation
+PLAN:        docs/architecture/target/out/phase9_resets.md
 DATE:        2026-09-16
 CLOSED AT:   R-07. Commit 31609304 on exec/R-07;
              not merged. Campaign base 4e707c17
@@ -22820,6 +22821,7 @@ FINDINGS:    A detector's failure mode is part of
 ---
 
 ## CAMPAIGN CLOSE  CI restoration
+PLAN:        docs/architecture/target/out/phase10_ci.md
 DATE:        2026-09-18
 CLOSED AT:   0.3. Commit eaa3a153 on exec/0.3;
              not merged. Campaign base c1c11288
@@ -23998,6 +24000,7 @@ VERIFIED:    PR #242 (draft), run 35434851568,
 ---
 
 ## CAMPAIGN CLOSE  Engine-to-kernel pin
+PLAN:        docs/architecture/target/out/phase11_kernel_pin.md
 DATE:        2026-09-20
 CLOSED AT:   A-02. Commit 042c680f on exec/A-02;
              not merged. Campaign base b2d91c38
@@ -26087,6 +26090,7 @@ FINDINGS:    A detector's scope must be stated in
 ---
 
 ## CAMPAIGN CLOSE  G45 proven-site keep
+PLAN:        docs/architecture/target/out/phase12_hotpath.md
 DATE:        2026-09-21
 CLOSED AT:   G45-05. Commit 6b9c5389 on exec/G45-05;
              not merged. Campaign base a25032dc
@@ -27662,6 +27666,7 @@ OWNER:       G44-01a deletes the property
 ---
 
 ## CAMPAIGN CLOSE  G44 dead-compute keep
+PLAN:        docs/architecture/target/out/phase13_dead_compute.md
 DATE:        2026-09-21
 CLOSED AT:   G44-01. Commit 9ba178f6 on exec/G44-01;
              not merged. Campaign base b782caa1
