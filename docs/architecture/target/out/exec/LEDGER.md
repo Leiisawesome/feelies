@@ -30062,3 +30062,56 @@ NEXT:        The cleanup cycle opens the PR.
                  the next cycle.
   NEXT:          Push origin arch/exec. This commit
                  rides draft PR #247.
+
+---
+
+## L-03  every rung id has committed pre/post captures  2026-09-23T12:41:15+08:00
+  STEP:          L-03
+  BASE:          a05ab35b2d1d64c732988b2d4df3e0b37a16cf02
+  RESULT SHA:    dd4718902be420635f25caafdbd03ce3b8063857 (exec/L-03). Merged
+                 to arch/exec as a0e58bfd96a5f7a0866ea71f74414389e2a34504.
+  VERDICT:       passed
+  CONFORMANCE:   F1 empty keep failed on exactly 23 (id, side) pairs, then
+                 pinned. F2 stale row Z-99 fails. F3 dropped O-06 post fails
+                 as a new miss. F4 "## z-97 probe" fails the heading guard.
+                 F6 guard forced to accept -> passes (guard is load-bearing).
+                 F7 IGNORECASE classifies z-97 as a rung. F5 "## Z-98 probe"
+                 fails on both sides, still fails with untracked Z-98
+                 captures, "## RECORD probe" passes. Restores byte-identical:
+                 test T0
+                 7be3437fe5537dfa3ff2b75e7d7f35bebb6386b1c3d062d84590bbc7854bae56,
+                 LEDGER L0
+                 b4a40919ad565395d3f7a7c742eb58852d5f5fe0da52809eccbe83b88ee86d12.
+                 Heading classes measured: rung pattern, CAMPAIGN CLOSE, and
+                 7 prefixes DEFERRAL, EXEMPTION, END STATE, FINDING,
+                 CORRECTION, RECORD, STAGE LOCK (12 non-rung headings).
+                 NON-CUTS: no exemption line; no citation check; no capture
+                 JSON content checks.
+  TESTS:         4958 passed, 19 skipped, 1 xfailed. tests/docs 105 passed.
+  PARITY:        captures pre-L-03, post-L-03; parity HOLDS 64 -> 64,
+                 0 changed.
+  FILES:         2 declared, 2 touched, 2 committed:
+                 tests/docs/test_exec_ledger_captures.py (new),
+                 docs/architecture/target/EXEC-RUNBOOK.md (+1 paragraph after
+                 the command table).
+  NOTES:         AMENDMENTS (recorded, not silent):
+                 1. A first run executed from the step block without the EXEC
+                 prompt; it took no pre capture and was reverted uncommitted
+                 (reset-L-03).
+                 2. Runbook sentence placed after the command table, not after
+                 line 178 (line 178 is a table row; step 4 blocked, then
+                 resumed).
+                 3. stdin=subprocess.DEVNULL on the git call: without it
+                 pytest's spawn raised OSError [WinError 6]. Precedent:
+                 tests/acceptance/test_mypy_strict_scope.py. A git failure
+                 still fails the test.
+                 4. python on PATH is 3.14 without ibapi; the suite ran with
+                 .venv\Scripts first on PATH.
+
+---
+
+## CORRECTION  C-02 capture count  2026-09-23T12:41:15+08:00
+
+C-02 recorded that six rungs took no captures. The L-03 census at a05ab35b measured 13 rung ids and 23 (id, side) pairs without a committed capture: pre and post for O-04, O-06, O-08, O-09a, O-09, O-10, O-11, O-11b, C-01, C-02; pre only for S-35e, L-02, O-03b. L-02's block cites pre-L-02, which was never committed. The 23 pairs are pinned with reasons in `_UNCAPTURED_KEEP` in tests/docs/test_exec_ledger_captures.py. C-02 is not edited.
+
+This correction lands in the L-03 merge-record commit.

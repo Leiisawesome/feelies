@@ -183,6 +183,8 @@ The serious case is §4 — an erroneous re-baseline, where constants were updat
 | Verify a step | `uv run python tools\exec\verify_step.py S-07 --base <sha>` |
 | Ledger vs git | `uv run python tools\exec\verify_step.py --reconcile` |
 
+Every `## <rung-id>` ledger block needs committed `baseline_pre-<id>.json` and `baseline_post-<id>.json`; work with no code change uses a `## RECORD` or `## CORRECTION` heading. `tests/docs/test_exec_ledger_captures.py` enforces this; historical misses are pinned in `_UNCAPTURED_KEEP`.
+
 `baseline.py` and `verify_step.py` only read and record. Neither writes to `src/` or `tests/`.
 
 ---
