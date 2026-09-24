@@ -19,9 +19,14 @@ diff touching that path in a build rung is a STOP.
 - **Injection helpers**: hold a quote past its time; remove a side (zero size); cross the
   book at a chosen level; set `feed_gap_before`. Paired with the clean tape they came from.
 - **Fixture alpha** `sig_position_fixture_v1` (test-only): enters on a deterministic
-  schedule, declares `exit_policy`, used by every member that needs positions.
+  schedule independent of sensor values, stamps its own `strategy_id`
+  (`sig_position_fixture_v1`), declares `exit_policy`, and is used by every member that
+  needs positions. The copy landed at P-15 is data-gated and stamps
+  `sig_contra_fixture_v1`; P-21 corrects both (D-19).
 - **Real session**: the APP 2026-03-26 cache day, through the harness door `bt_*` configs
   boot by, execution mode `market`.
+- **Where real-session members run**: marker `battery_real`, collected by the
+  `parity oracle` CI job with the cache required (`evaluation.md` §5, D-20).
 - **Null configuration**: `S = 0`, `D = 0`, fees 0 or independently computed, deadline as
   stated per member.
 - **Enabling in tests**: `build_platform(..., enable_position_engine=True)` until P-15; from
@@ -186,8 +191,25 @@ BLOCKS THE BUILD:  no — needs closing records
 | D | position cell | + 4 (birth), 10, 11 green |
 | E | both gates, precedence | all eleven green |
 
+Engine-on regression after P-99 is guarded by the position oracle, not by this battery
+(`evaluation.md` §1).
+
 Four of the six blocking members stay red until stage E. That is expected, not a signal
 to soften them.
+
+## Stage gate mechanism (D-18)
+
+The current stage is one letter in `docs/architecture/target/position_engine/stage.txt`,
+created at P-21. Each blocking member declares `GREEN_FROM` (a stage letter) and
+`RED_REASON` (a regex). A conftest hook in `tests/position_engine/` enforces the rule:
+
+- stage < `GREEN_FROM`: the member must fail with an `AssertionError` whose message matches
+  `RED_REASON`. Any other outcome fails the run: a pass, or any other exception (including
+  ImportError).
+- stage ≥ `GREEN_FROM`: the member must pass.
+
+Only a stage-gate rung edits `stage.txt`. No build rung edits a test. `xfail` is not used for
+battery members.
 
 ## Broken engines (stage A gate)
 

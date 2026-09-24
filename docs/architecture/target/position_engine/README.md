@@ -17,6 +17,7 @@ Read in this order:
 | `amendments.md` | Every departure from v2, with its justification |
 | `assumptions.md` | The assumption register. Append-only |
 | `decisions.md` | Decisions the spec did not cover, taken during the build. Append-only |
+| `evaluation.md` | how results are judged: three oracles, the break protocol, P-95, campaign 14E |
 
 Campaign plan: `docs/architecture/target/out/phase14_position_engine.md`.
 
