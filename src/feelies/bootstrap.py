@@ -65,7 +65,12 @@ from feelies.core.wiring_manifest import manifest_hash
 from feelies.core.session_clock import rth_open_ns
 from feelies.sensors.horizon_scheduler import HorizonScheduler, _publish_horizon_grid
 from feelies.sensors.registry import SensorRegistry
-from feelies.execution.backend import ExecutionBackend, MarketDataSource, OrderRouter
+from feelies.execution.backend import (
+    ExecutionBackend,
+    MarketDataSource,
+    OrderRouter,
+    refuse_position_engine_outside_backtest,
+)
 from feelies.execution.backtest_backend import (
     build_backtest_backend,
     build_passive_limit_backend,
@@ -238,6 +243,7 @@ def build_platform(
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
     edge_calibration_factors: "Mapping[str, float] | None" = None,
+    enable_position_engine: bool = False,
 ) -> tuple[KernelOrchestrator, PlatformConfig]:
     """Compose an orchestrator and resolved platform config.
 
@@ -248,6 +254,8 @@ def build_platform(
     if isinstance(config, (str, Path)):
         config_source = Path(config)
         config = PlatformConfig.from_yaml(config)
+
+    refuse_position_engine_outside_backtest(config.mode, enable_position_engine)
 
     config.validate()
 
@@ -658,6 +666,19 @@ def build_platform(
     # record is deterministic (SimulatedClock); only PAPER reads wall time
     # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
     config_snapshot = config.snapshot(ts_ns=clock.now_ns())
+    mark_rail = None
+    if enable_position_engine:
+        from feelies.portfolio.mark_rail import MarkRail
+        from feelies.position.engine import PositionEngine, PositionRecordSink
+
+        mark_rail = MarkRail(SequenceGenerator(stream="mark_rail", thread_safe=_seq_thread_safe))
+        position_engine = PositionEngine(
+            bus,
+            SequenceGenerator(stream="position", thread_safe=_seq_thread_safe),
+        )
+        position_sink = PositionRecordSink(bus)
+        position_engine.attach()
+        position_sink.attach()
     orchestrator = _RootOrchestrator(
         config_snapshot=config_snapshot,
         live_feed=bundle.live_feed,
@@ -709,6 +730,7 @@ def build_platform(
         ),
         position_manager_urgency_exec=config.position_manager_urgency_exec,
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
+        mark_rail=mark_rail,
     )
     _attach_notification_observer(bus, _NotificationObserver(alert_manager))
 

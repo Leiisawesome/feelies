@@ -260,7 +260,10 @@ def _subscriber_engines() -> frozenset[str]:
 def _run_replay(config: PlatformConfig, events: list[object]) -> EngineProbe:
     event_log = InMemoryEventLog()
     event_log.append_batch(events)
-    orchestrator, _ = build_platform(config, event_log=event_log)
+    # P-10: dark engines are built so their runtime reads are probed
+    orchestrator, _ = build_platform(
+        config, event_log=event_log, enable_position_engine=True
+    )
     probe = EngineProbe(
         positions=orchestrator._positions,
         symbols=tuple(sorted(config.symbols)),
@@ -313,9 +316,9 @@ def test_s14_dynamic_no_forbidden_read_during_tick_sequence() -> None:
     assert matrix, "no forbidden-reads matrix"
     forbidden = {_row_key(row) for row in matrix}
     expected_engines = _subscriber_engines()
-    assert len(expected_engines) == 7, (
+    assert len(expected_engines) == 8, (  # P-10: feelies.position
         f"wiring manifest attributes {len(expected_engines)} subscriber "
-        f"engines, expected 7: {sorted(expected_engines)}"
+        f"engines, expected 8: {sorted(expected_engines)}"
     )
 
     null_probe = _replay_null_alpha()

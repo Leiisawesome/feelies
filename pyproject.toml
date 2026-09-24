@@ -164,14 +164,14 @@ containers = ["feelies"]
 layers = [
     "cli",
     "bootstrap",
-    "ingestion : storage : sensors : features : services : signals : alpha : promotion : composition : portfolio : risk : execution : broker : monitoring : harness : research : forensics",
+    "ingestion : storage : sensors : features : services : signals : alpha : promotion : composition : portfolio : risk : execution : broker : monitoring : harness : research : forensics : position",
     "kernel : bus",
     "core",
 ]
 
 [[tool.importlinter.contracts]]
 id = "engines"
-name = "Twelve engine module sets"
+name = "Engine module sets"
 type = "independence"
 modules = [
     "feelies.ingestion",
@@ -186,4 +186,5 @@ modules = [
     "feelies.broker",
     "feelies.monitoring",
     "feelies.forensics",
+    "feelies.position",
 ]
