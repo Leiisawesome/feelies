@@ -30141,3 +30141,77 @@ This correction lands in the L-03 merge-record commit.
                  Skip count 19 (post-L-03) -> 29 (pre-P-00) on
                  content-identical trees; section 1 of the merge report lists
                  the skips; unresolved, carried to P-10's census.
+
+---
+
+## P-10  position engine contract surface (dark)  2026-09-24T09:59:17+08:00
+  STEP:          P-10
+  BASE:          5836a532aeb7a2b135c335eed67a0377ce75e514
+  RESULT SHA:    4ac5fcb51d3593daa15ddb130c8fc90df6f94d08 (exec/P-10), merged
+                 to arch/exec as 6e9fa06f778458c6bd6e500e4921716029e64dc8.
+  VERDICT:       passed (boundary rung; operator go 2026-09-24)
+  CONFORMANCE:   five Event types (MarkRailUpdate, SlicePositionUpdate,
+                 PositionSnapshot, GateDecision, PositionClosed) plus four
+                 frozen payload dataclasses; five SUBSCRIPTIONS rows; streams
+                 mark_rail, slice_position, position; feelies.position as 13th
+                 independence module (contract renamed "Engine module sets");
+                 MarkRail and PositionEngine stubs; built only with
+                 build_platform(enable_position_engine=True), refused outside
+                 BACKTEST in the mode seam (execution/backend.py). Fail-firsts:
+                 T1–T6 ImportError on unchanged tree; S-09 drift named the five
+                 classes; manifest fingerprint ff2ca64c... ->
+                 7a4739fe3f55821fdfaddc3d3183a0bf86de04eced612ddb0b97ca2eb7d9e8a3
+                 (pin edit; not one of the 64); F6 S-12 named mark_rail; T7
+                 (F5') named PositionClosed; S14 dynamic named missing
+                 feelies.position, then negative probe named "feelies.position
+                 event RegimeState". All restores SHA-verified.
+  AMENDMENTS:    A-P10-1 (FILES cap 22: forbidden_reads ENGINES,
+                 subscriber-engine pin 7->8, prompt ownership,
+                 audit_position_engine.md, guard moved into the mode seam;
+                 test_mode_seam untouched; T7 added, T0 935CEF8D... -> T0'
+                 8CA52F68...). First application reverted when the S14 dynamic
+                 probe could not observe a dark engine. A-P10-2: S14 replay
+                 builds with enable_position_engine=True so engine 13's runtime
+                 reads are probed. Deviations accepted: audit prompt carries the
+                 two headings test_audit_prompt_structure requires;
+                 portfolio/mark_rail.py owned by audit_position_engine
+                 (portfolio modules have no single owner; that prompt's scope
+                 names the file).
+  TESTS:         tests/position_engine 8 passed; conformance+determinism+docs
+                 381 passed, 1 xfailed; suite 4968 passed, 19 skipped,
+                 1 xfailed
+  PARITY:        captures pre-P-10, post-P-10 (IB Gateway port 4002 up at
+                 both); HOLDS 64 -> 64. Enabled APP measurement: fills 20, net
+                 PnL 103.93, trade parity hash 0601295a...17df3 matches,
+                 MarkRailUpdate 82678 = quotes processed, SlicePositionUpdate
+                 20.
+  FILES:         22 committed:
+                 docs/architecture/target/position_engine/decisions.md
+                 docs/prompts/README.md
+                 docs/prompts/audit_position_engine.md
+                 pyproject.toml
+                 src/feelies/bootstrap.py
+                 src/feelies/core/events.py
+                 src/feelies/core/forbidden_reads.py
+                 src/feelies/core/mark_rail.py
+                 src/feelies/core/sequence_authority.py
+                 src/feelies/core/wiring_manifest.py
+                 src/feelies/execution/backend.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/portfolio/mark_rail.py
+                 src/feelies/position/__init__.py
+                 src/feelies/position/engine.py
+                 tests/conformance/test_forbidden_reads.py
+                 tests/conformance/test_import_contracts.py
+                 tests/conformance/test_schema_drift.py
+                 tests/determinism/test_parity_manifest.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/position_engine/__init__.py
+                 tests/position_engine/test_p10_contract_surface.py
+  NOTES:         decisions D-01..D-06 appended; spec amendments pending a docs
+                 rung. Closes the P-00 skip-drift note: 29 - 19 = 10 = the IB
+                 functional tests that require only a reachable IB Gateway
+                 (tests/broker/ib/test_ib_functional.py); captures record counts
+                 only, so shown by partition, not by ids. From P-10, every rung
+                 records port 4002 and requires the same state at pre and post
+                 capture.
