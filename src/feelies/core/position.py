@@ -118,6 +118,13 @@ class PositionStore(Protocol):
         """Reference price for sizing and exposure notional only; never valuation. Remaining valuation readers: D-23."""
         ...
 
+    def valuation_mark(self, symbol: str, quantity: int) -> Decimal | None:
+        """Executable side for a signed quantity. Long uses the bid, short the ask.
+
+        Returns None when quantity is 0 or that side was never stored. Pure read.
+        """
+        ...
+
     def reference_mid(self, symbol: str) -> Decimal | None:
         """Stored reference mid from the last accepted mark. Not a valuation input."""
         ...

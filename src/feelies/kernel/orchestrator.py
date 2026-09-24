@@ -1723,13 +1723,11 @@ class _PostExitPositionView:
 
     def _adjusted(self, position: Position) -> Position:
         new_quantity = position.quantity + self._adjustment
-        mark = self.latest_mark(position.symbol)
         unrealized_pnl = Decimal("0")
         if new_quantity != 0:
-            if mark is not None and mark > 0:
-                unrealized_pnl = (mark - position.avg_entry_price) * new_quantity
-            else:
-                unrealized_pnl = position.unrealized_pnl
+            price = self._inner.valuation_mark(position.symbol, new_quantity)
+            if price is not None:
+                unrealized_pnl = (price - position.avg_entry_price) * new_quantity
         return Position(
             symbol=position.symbol,
             quantity=new_quantity,
@@ -1772,6 +1770,9 @@ class _PostExitPositionView:
 
     def latest_mark(self, symbol: str) -> Decimal | None:
         return self._inner.latest_mark(symbol)
+
+    def valuation_mark(self, symbol: str, quantity: int) -> Decimal | None:
+        return self._inner.valuation_mark(symbol, quantity)
 
     def reference_mid(self, symbol: str) -> Decimal | None:
         return self._inner.reference_mid(symbol)

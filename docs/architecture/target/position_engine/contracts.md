@@ -125,8 +125,11 @@ itself rejects only a non-positive side, retaining the last valid bid/ask. A pos
 symbol has no valid bid/ask is valued at its entry price and flagged stale. The mid is not a
 valuation input. It survives only as `reference_mid`, the last VALID quote's mid, for sizing
 and exposure notional (`basic_risk._resolve_mark`, `sized_intent_orders._resolve_mark`,
-`sized_intent_legs.resolve_mark`, `total_exposure`). Open item D-23: the post-exit
-hypothetical views still value at the mid; rung P-12.
+`sized_intent_legs.resolve_mark`, `total_exposure`). The post-exit hypothetical views value the same way, at `valuation_mark` for the hypothetical
+direction, while their exposure notional keeps `reference_mid` (D-26). Other notional readers
+of `reference_mid`: the composition layer's position lookup and the orchestrator's portfolio
+net shadow. A static test pins that no production code values at the mid, in dotted or
+getattr form.
 
 ---
 
