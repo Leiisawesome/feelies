@@ -24,6 +24,19 @@ diff touching that path in a build rung is a STOP.
   boot by, execution mode `market`.
 - **Null configuration**: `S = 0`, `D = 0`, fees 0 or independently computed, deadline as
   stated per member.
+- **Enabling in tests**: `build_platform(..., enable_position_engine=True)` until P-15; from
+  P-15, a fixture alpha declaring `exit_policy`.
+
+## Structural checks already in force (not battery members)
+
+- **T7** (`tests/position_engine/test_p10_contract_surface.py`): the S15 runtime-subset check
+  on an enabled build. T7 reuses S15's `_measure_phase4` by re-pointing that module's
+  `build_platform`; if S15 stops exposing either, T7 must fail loudly, never pass vacuously.
+- **S14 dynamic forbidden-reads probe** builds with the engine enabled, so engine 13's runtime
+  reads are probed (negative probe on record: a `RegimeState` subscription in `PositionEngine`
+  fails it).
+- **S-09 / manifest fingerprint**: the five event types and their payloads are pinned; any
+  field change is a pin edit with a fail-first.
 
 ## The six that block the build
 
@@ -79,9 +92,9 @@ SETUP:             long and short positions present; market-mode entries
 ASSERTS:           every rail update: paying and valuation on opposite sides, differing by
                    exactly the quoted spread (unless crossed); worst_side_mark and
                    forced_exit_mark never better than valuation_mark. At birth: the first
-                   move_now_ticks = (valuation at the birth fill − entry fill) exactly, and
-                   = −entry_spread_ticks exactly for a MARKET entry filled at the touch,
-                   long and short alike
+                   move_now_cents = sign × (valuation at the birth fill × size −
+                   entry_cost_cents) exactly, and = −entry_spread_ticks × size exactly for a
+                   MARKET entry filled at the touch, long and short alike
 FAILURE LOOKS LIKE:one event and which assertion
 BLOCKS THE BUILD:  yes — red until stage C (rail) / D (birth)
 ```
@@ -168,7 +181,7 @@ BLOCKS THE BUILD:  no — needs closing records
 | Stage | Lands | Gate |
 |---|---|---|
 | A | tape generator + its test; the six blocking members, red; the broken engines | every broken engine caught, each by a named member |
-| B | walking skeleton: rail, cell and gates as contract-satisfying stubs; event wiring; two-phase step; sinks | members 1, 2 green |
+| B | walking skeleton on the P-10 surface (event types, wiring, streams and sinks landed in P-10): stub cell with birth/close from slice fills, stub gates, the two-phase step | members 1, 2 green |
 | C | mark rail | members 1, 2, 4 (rail half), 9 green |
 | D | position cell | + 4 (birth), 10, 11 green |
 | E | both gates, precedence | all eleven green |

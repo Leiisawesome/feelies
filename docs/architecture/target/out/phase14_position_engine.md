@@ -36,13 +36,21 @@ STANDING INVARIANTS:
 NON-CUTS:  No new exit authors outside engine 13. No change to engine 8 safety exits.
            No change to production alpha YAMLs. No sizing or allocator work.
 
-PARITY RISK TO MEASURE, NOT ARGUE:
-           Adding core event types may move the event-manifest fingerprint (S-17a folds
-           Event field sets into it) even while every trade hash holds. The first rung
-           that adds an event type measures this first; if the fingerprint moves, the
-           rung stops and the operator decides whether to declare a manifest-only break.
+PARITY FACTS (measured at P-10, census 2026-09-23/24):
+           None of the 64 constants hashes the whole bus; each hashes one named stream,
+           the trade journal, or the config. A new event type published on the bus moves
+           none of them unless it changes fills. The event-manifest fingerprint
+           (EXPECTED_MANIFEST_FINGERPRINT) is not one of the 64; P-10 moved it once by pin
+           edit (ff2ca64c... -> 7a4739fe...). A new config field moves
+           _BASELINE_CONFIG_HASH (one of the 64) unless omitted when at its default, the
+           existing mechanism in PlatformConfig._to_dict. Enabled APP run at P-10: 20
+           fills, net 103.93, trade hash unchanged.
            P-11 (book mark rule) may move unrealized PnL / equity constants; measured by
            capture, declared or reverted by the operator.
+
+CAPTURE RULE (from P-10): every rung records whether the IB Gateway (port 4002) is up,
+           and the pre and post captures must be taken in the same state; ten IB
+           functional tests run only when it is up.
 ```
 
 ## Ladder
@@ -52,13 +60,14 @@ Each rung opens with a report-only census; the block is written from that eviden
 | Rung | Stage | Lands | Gate | Parity |
 |---|---|---|---|---|
 | P-00 | — | this plan and the spec pack (docs only) | ledger + docs tests green | hold |
-| P-10 | rail | `MarkRailUpdate` core event; engine 7 rail module emitting only when the engine is enabled | rail unit tests; manifest fingerprint measured | hold, or stop on fingerprint |
+| P-10 | surface | DONE (merged 6e9fa06f). Contract surface in one rung, because the static emission, S-09, S-12 and manifest checks make types, producers and subscribers one unit: five event types, wiring rows, streams `mark_rail` / `slice_position` / `position`, 13th independence module, `MarkRail` and `PositionEngine` stubs, `PositionRecordSink`, mode refusal in the seam, T1–T7 | T1–T7; S14 probes engine 13; enabled APP run unchanged | held; manifest pin moved |
+| P-11a | docs | fold P-10 decisions D-01..D-06 into the spec and this plan (A-16, A-17) | docs tests | hold |
 | P-11 | rail | book mark rule: executable-side valuation, retain last valid mark on crossed/locked/zero-side, stale flag; named `reference_mid` for sizing consumers the census identifies | engine 7 contract tests | measured; operator declares or reverts |
 | P-15 | schema | `exit_policy` in `alphas/SCHEMA.md` (schema bump), loader keys, load checks L1–L8, mode rule | fail-first per load check | hold |
 | P-20 | A | synthetic tape generator and its own test | generator verified driftless, on lattice | hold |
 | P-21 | A | fixture alpha; the six blocking members, red | each red for the stated reason, quoted | hold |
 | P-22 | A | broken engines B1–B11 | each caught by its named member | hold |
-| P-30 | B | 13th independence set in `pyproject.toml` and the import pins; skeleton: stub rail consumer, stub cell, stub gates, two-phase step, sinks, events | members 1, 2 green | hold (fingerprint as P-10) |
+| P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink | members 1, 2 green | hold |
 | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled) | + 4 (rail half), 9 | hold |
 | P-50 | D | position cell: birth from fill, entry rational, excursion, extremes, deadline, states, closing record | + 4 (birth), 10, 11 | hold |
 | P-51 | D | entry admission refusals and no-scale-in for owned alphas | member 10 refusal cases | hold |
