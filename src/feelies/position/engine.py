@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from feelies.bus.event_bus import EventBus
+from feelies.core.exit_policy import ExitPolicy
 from feelies.core.events import (
     GateDecision,
     MarkRailUpdate,
@@ -16,9 +19,15 @@ from feelies.core.identifiers import SequenceGenerator
 class PositionEngine:
     """Subscribes the rail and the slice stream. Handlers are no-ops until P-50/P-60."""
 
-    def __init__(self, bus: EventBus, sequence_generator: SequenceGenerator) -> None:
+    def __init__(
+        self,
+        bus: EventBus,
+        sequence_generator: SequenceGenerator,
+        policies: Mapping[str, ExitPolicy] | None = None,
+    ) -> None:
         self._bus = bus
         self._seq = sequence_generator
+        self.policies: dict[str, ExitPolicy] = dict(policies or {})
 
     def attach(self) -> None:
         self._bus.subscribe(MarkRailUpdate, self._on_mark_rail)
