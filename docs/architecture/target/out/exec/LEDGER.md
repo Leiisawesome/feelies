@@ -30335,7 +30335,8 @@ This correction lands in the L-03 merge-record commit.
 ## P-16  evaluation architecture (D-14..D-20)  2026-09-24T13:37:26+08:00
   STEP:          P-16
   BASE:          32ed957610c19925e0a35e89895199328289dd42
-  RESULT SHA:    this commit on exec/P-16; not merged
+  RESULT SHA:    8bf1aa40d3fcb877e831750d16266f72d52df581 (exec/P-16),
+                 merged as a08a7d08a7c16e5f906bc8c4215aeea7f9ae51b2.
   VERDICT:       passed (docs rung; parity hold)
   CONFORMANCE:   evaluation.md (three oracles, declared-break protocol, P-95
                  attribution diff, campaign 14E bar, battery_real placement);
@@ -30359,5 +30360,4 @@ This correction lands in the L-03 merge-record commit.
                  docs/architecture/target/out/exec/LEDGER.md
                  docs/architecture/target/out/exec/baseline_pre-P-16.json
                  docs/architecture/target/out/exec/baseline_post-P-16.json
-  NOTES:         draft PR against arch/exec; do not merge. RESULT SHA is this
-                 commit because the ledger block is in it.
+  NOTES:         PR #250 merged to arch/exec.
