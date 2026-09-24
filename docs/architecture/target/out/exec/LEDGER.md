@@ -30402,6 +30402,8 @@ This correction lands in the L-03 merge-record commit.
 ## P-12  post-exit views at the executable side  2026-09-24T18:35:59+08:00
   STEP:          P-12
   BASE:          e64727320f34f5753c4b8c3e58365f6a5a533069
+  RESULT SHA:    40656bb4012cf84f4edc7c37653a96f086f7e99e (exec/P-12),
+                 merged as ed7e96ca0b15c51ac0ca632bbb3afe4745611722.
   PREDICTION:    PREDICTED MOVES: none. All 64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
                  identical.
                  FILLS: no change.
@@ -30424,3 +30426,26 @@ This correction lands in the L-03 merge-record commit.
   NOTES:         Post-capture suite was red only on test_capture_misses_equal_keep, because the
                  two capture files were not yet tracked. Rerun after they were staged: passed.
                  Port 4002 was up for the pre-capture and the post-capture.
+                 T4 prompt parenthetical said 42.00; the old value was 63.00 (operator-side typo); the
+                 assertion (0) is unaffected.
+                 Merge gate: functional IB test test_after_hours_reject_surfaces_as_rejected failed on the
+                 merge commit; discriminator D1/D2: D1 09:05:09 ET FAIL (expected terminal cleanup, got []),
+                 D1 09:05:31 ET FAIL (same), D2 09:06:00 ET on e6472732 FAIL (same); classified environmental /
+                 pre-existing. From P-12 on, the merge gate is CI's marker set (not functional and not
+                 paper_rth); functional results are recorded, non-gating.
+
+---
+
+## FINDING  IB functional tests are wall-clock and gateway dependent
+DATE:        2026-09-24
+CAUSE:       IB functional tests are wall-clock and
+             gateway dependent. Two distinct flakes in
+             phase 14 (test_submit_buy_limit_and_cancel;
+             test_after_hours_reject_surfaces_as_rejected).
+STATE:       Defect item for the paper/live campaign:
+             make them deterministic or gate them on
+             session state; until then they do not gate
+             backtest merges.
+RISK:        A local full suite can fail a backtest
+             merge on session state alone.
+OWNER:       paper/live campaign.
