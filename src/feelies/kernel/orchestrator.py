@@ -67,6 +67,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     PositionUpdate,
+    SlicePositionUpdate,
     RegimeHazardSpike,
     RegimeState,
     RiskAction,
@@ -81,6 +82,7 @@ from feelies.core.events import (
     TrendMechanism,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
+from feelies.core.mark_rail import MarkRailProtocol
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.core.execution_backend import ExecutionBackend
@@ -432,6 +434,41 @@ def _distribute_fill_to_strategies(
     return applied
 
 
+def _publish_slice_position_update(
+    self: Any,
+    *,
+    ack: OrderAck,
+    correlation_id: str,
+    strategy_id: str,
+    symbol: str,
+    fill_quantity: int,
+    slice_position: Any,
+) -> None:
+    """Emit one slice fill on the slice_position stream. P-10. No-op when the rail is dark."""
+    if self._mark_rail is None:
+        return
+    fill_price = ack.fill_price
+    if fill_price is None:
+        return
+    self._bus.publish(
+        SlicePositionUpdate(
+            timestamp_ns=ack.timestamp_ns,
+            correlation_id=correlation_id,
+            sequence=self._slice_seq.next(),
+            source_layer="kernel",
+            symbol=symbol,
+            strategy_id=strategy_id,
+            order_id=ack.order_id,
+            fill_price=fill_price,
+            fill_quantity=fill_quantity,
+            fill_ack_sequence=ack.sequence,
+            fill_timestamp_ns=ack.timestamp_ns,
+            quantity=slice_position.quantity,
+            avg_entry_price=slice_position.avg_entry_price,
+        )
+    )
+
+
 def _reconcile_fills(
     self: Any,
     acks: list[OrderAck],
@@ -614,6 +651,15 @@ def _reconcile_fills(
                         fees=alloc_fees,
                         timestamp_ns=ack.timestamp_ns,
                     )
+                    _publish_slice_position_update(
+                        self,
+                        ack=ack,
+                        correlation_id=correlation_id,
+                        strategy_id=strat_id,
+                        symbol=sym,
+                        fill_quantity=alpha_signed,
+                        slice_position=slice_position,
+                    )
                     attributed_legs.append(
                         (
                             strat_id,
@@ -634,6 +680,15 @@ def _reconcile_fills(
                     ack.fill_price,
                     fees=ack.fees,
                     timestamp_ns=ack.timestamp_ns,
+                )
+                _publish_slice_position_update(
+                    self,
+                    ack=ack,
+                    correlation_id=correlation_id,
+                    strategy_id=order.strategy_id,
+                    symbol=ack.symbol,
+                    fill_quantity=signed_qty,
+                    slice_position=slice_position,
                 )
                 attributed_legs = [
                     (
@@ -2997,6 +3052,7 @@ class Orchestrator:
         thread_safe_sequences: bool = True,
         session_by_strategy: Mapping[str, str] | None = None,
         halt_tradeability: _HaltTradeability | None = None,
+        mark_rail: MarkRailProtocol | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -3056,6 +3112,13 @@ class Orchestrator:
         # threaded replay); paper/live keep the lock.
         _seq_kw = {"thread_safe": thread_safe_sequences}
         self._seq = SequenceGenerator(stream="orchestrator", **_seq_kw)
+        self._mark_rail = mark_rail
+        self._slice_seq: SequenceGenerator | None = None
+        if mark_rail is not None:
+            self._slice_seq = SequenceGenerator(
+                stream="slice_position",
+                thread_safe=thread_safe_sequences,
+            )
 
         # Optional sensor and horizon components; None keeps the short tick path.
         self._sensor_registry = sensor_registry
@@ -4240,6 +4303,9 @@ class Orchestrator:
                     bid=quote.bid,
                     ask=quote.ask,
                 )
+
+        if self._mark_rail is not None:
+            self._bus.publish(self._mark_rail.on_quote(quote))
 
         # Sensor fan-out (+ router on_quote) runs synchronously inside
         # publish; time the call for hot-path attribution.

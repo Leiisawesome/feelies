@@ -18,7 +18,7 @@ _SRC_FEELIES = Path(__file__).resolve().parents[2] / "src" / "feelies"
 _WALK_EXCLUDE = frozenset({"kernel", "bus", "core", "cli", "harness", "bootstrap"})
 
 _SUMMARY = re.compile(r"Contracts:\s*(\d+)\s*kept,\s*(\d+)\s*broken")
-_STATUS = re.compile(r"^(Five import tiers|Twelve engine module sets)\s+(KEPT|BROKEN)\s*$", re.M)
+_STATUS = re.compile(r"^(Five import tiers|Engine module sets)\s+(KEPT|BROKEN)\s*$", re.M)
 _LAYER_PAIR = re.compile(
     r"^(feelies\.[a-z0-9_]+) is not allowed to import (feelies\.[a-z0-9_]+):",
     re.M,
@@ -84,7 +84,7 @@ def test_five_import_tiers() -> None:
     out, _kept, _broken, statuses = run_import_linter()
     assert "Five import tiers" in statuses, out
     assert statuses["Five import tiers"] == "KEPT", out
-    pairs = _broken_layer_pairs(out, "Five import tiers", "Twelve engine module sets")
+    pairs = _broken_layer_pairs(out, "Five import tiers", "Engine module sets")
     assert pairs == _TIER_RESIDUALS, (
         f"unexpected {sorted(pairs - _TIER_RESIDUALS)}; "
         f"missing {sorted(_TIER_RESIDUALS - pairs)}\n{out}"
@@ -93,8 +93,8 @@ def test_five_import_tiers() -> None:
 
 def test_twelve_engine_independence() -> None:
     out, _kept, _broken, statuses = run_import_linter()
-    assert "Twelve engine module sets" in statuses, out
-    assert statuses["Twelve engine module sets"] == "KEPT", out
+    assert "Engine module sets" in statuses, out
+    assert statuses["Engine module sets"] == "KEPT", out
 
 
 def _module_from_path(path: Path) -> str:
