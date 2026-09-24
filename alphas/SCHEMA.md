@@ -30,6 +30,33 @@
 | `risk_budget` | dict | No | Per-alpha risk limits (see below). |
 | `features` | dict or list | Yes | Feature definitions (see below). |
 | `signal` | string | Yes | Python code defining `evaluate(features, params)`. |
+| `layer` | string | Yes | Dispatch key. One of `SIGNAL`, `PORTFOLIO`, `SENSOR`. The historical value `LEGACY_SIGNAL` is rejected with a workstream-D.2 retirement error; `SENSOR` is reserved for Phase 5. |
+| `horizon_seconds` | int | No (Phase 3) | Decision-horizon for `SIGNAL` and `PORTFOLIO` alphas. Must be a registered horizon (Phase 3). |
+| `cost_arithmetic` | string | No (Phase 3) | Declares whether edge / cost are quoted in `bps` or `usd`. Phase-3 gate G12 will require this on all non-legacy alphas. |
+| `regime_gate` | string | No (Phase 3) | DSL expression over regime posteriors (e.g. `dominant == "compression" and P("vol_breakout") < 0.2`). Evaluated at the horizon boundary. |
+| `depends_on_sensors` | list[string] | No (Phase 2/3) | Sensor IDs (with version pin) consumed by this alpha. |
+| `reads_no_sensor` | bool | No | `SIGNAL` only. When `true`, the alpha reads no feature: `depends_on_sensors` must be `[]`, and neither the evaluate body nor the regime-gate bindings may reference a feature (the same static scan that builds the warm set; an unresolved `snapshot.values` access is not an empty read). Absent or `false` leaves G6's non-empty `depends_on_sensors` guard in force. `true` with a non-empty list is rejected. |
+| `depends_on_signals` | list[string] | No (Phase 4) | Upstream `SIGNAL` alphas consumed by a `PORTFOLIO` alpha. |
+| `structural_actor` | string | No (Phase 3) | Free-text description of the actor whose behavior the alpha trades against. |
+| `mechanism` | string | No (Phase 3) | Free-text mechanism summary; complementary to the v0.3 `trend_mechanism` block below. |
+| `trend_mechanism` | dict | No (Phase 1.1 parsed, Phase 3.1 enforced) | v0.3 mechanism descriptor, see below. |
+| `hazard_exit` | dict | No (Phase 1.1 parsed, Phase 4.1 enforced) | v0.3 hazard-rate exit policy, see below. |
+| `session` | string | No | Order-route session. Closed set: `continuous` (default when omitted) or `closing_auction`. `closing_auction` diverts entry orders to the closing auction once MOC session bounds resolve; exits stay on the continuous book. Engine 9 reads this property — never an alpha-id list in platform config. |
+| `promotion` | dict | No (Workstream F-5) | Per-alpha override of the platform `GateThresholds` used by `validate_gate(...)` at promotion time, see below. |
+| `lifecycle_state` | string | No (BT-13) | Only `"RESEARCH"` is accepted. Caps the alpha at RESEARCH — blocks PAPER/LIVE promotion — while it still loads for backtest/integration use, see below. |
+| `universe` | list[string] | PORTFOLIO | Cross-sectional membership. See the PORTFOLIO section. |
+| `factor_neutralization` | bool | PORTFOLIO | Disclosed factor neutralization. See the PORTFOLIO section. |
+| `safety_exit_policy` | dict | No | Stage-0 dual-permission actuation. See below. |
+| `notes` | string | No | Free-text annotation. No runtime meaning. The loader accepts the key and does not read it. |
+| `exit_policy` | dict | No | Position-engine exit policy (P-15). Opt-in by presence. BACKTEST only. See below. |
+| `author` | string | No | Free-text author annotation. No runtime meaning. |
+| `regimes` | dict | No | Optional `regimes.engine` name. Requires the injected regime engine. |
+| `construct` | string | No | PORTFOLIO inline constructor. |
+| `data_sources` | list | No | Optional G14 declaration. Absent means L1 NBBO + trades. |
+| `fill_model` | dict | No | Optional G15 fill-router declaration. |
+| `story_permission` | dict | No | G17 story map. Requires `safety_exit_policy.mode=decouple_caps_only`. |
+
+Unknown top-level keys are rejected at load (`AlphaLoadError` names the key and lists this set).
 
 ## Parameters
 
@@ -149,6 +176,46 @@ Alphas can be placed in either layout:
 | `session` | string | No | Order-route session. Closed set: `continuous` (default when omitted) or `closing_auction`. `closing_auction` diverts entry orders to the closing auction once MOC session bounds resolve; exits stay on the continuous book. Engine 9 reads this property — never an alpha-id list in platform config. |
 | `promotion` | dict | No (Workstream F-5) | Per-alpha override of the platform `GateThresholds` used by `validate_gate(...)` at promotion time, see below. |
 | `lifecycle_state` | string | No (BT-13) | Only `"RESEARCH"` is accepted. Caps the alpha at RESEARCH — blocks PAPER/LIVE promotion — while it still loads for backtest/integration use, see below. |
+
+### `exit_policy:` block (position engine, P-15)
+
+Opt-in by presence. Absent means the position engine is not enabled by this alpha. Accepted only when the platform mode is BACKTEST; PAPER and LIVE reject the build before any component is constructed. An alpha that declares `exit_policy` may not also declare `hazard_exit` or `safety_exit_policy`.
+
+Seconds fields are converted to integer nanoseconds on the manifest (`× 1_000_000_000`). Tick fields stay in ticks. `premium_bps` is bps. `giveback_spread_multiple` is a multiple of entry spread.
+
+| Field | Type | Unit |
+|---|---|---|
+| `archetype` | `liquidity_provision` \| `informed_flow_following` \| `declared_other` |  |
+| `declared_shape` | string | Required for `declared_other`. |
+| `curve_ref` | string | Required. `ARBITRARY_NOT_CALIBRATED` or a named curve. |
+| `fee_round_trip_ticks` | int | ticks |
+| `horizon.T_seconds` | int > 0 | seconds |
+| `horizon.cutoff_before_close_seconds` | int > 0 | seconds |
+| `adverse.centre_ticks` | int > 0 | ticks |
+| `adverse.band_ticks` | even int ≥ 0 | ticks |
+| `adverse.lo_ticks` | int > 0 | ticks |
+| `adverse.hi_ticks` | int | ticks |
+| `adverse.blind_limit_seconds` | int > 0 | seconds |
+| `adverse.crossing_ticks` | int | ticks. Forbidden on `ARBITRARY_NOT_CALIBRATED`. Required otherwise. |
+| `adverse.premium_bps` | number | bps. Forbidden on `ARBITRARY_NOT_CALIBRATED`. Required when `centre_ticks` < `crossing_ticks`. |
+| `favorable.form` | `fixed` \| `trailing` |  |
+| `favorable.target_ticks` | int | ticks. Required for `fixed`. |
+| `favorable.giveback_spread_multiple` | number | spread multiples. Required for `trailing`. |
+| `favorable.ceiling_ticks` | int | ticks. Optional. |
+| `favorable.quiet_limit_seconds` | int > 0 | seconds |
+
+Load checks (failure does not load):
+
+| # | Check |
+|---|---|
+| L1 | `fixed` target `target_ticks > fee_round_trip_ticks + 1` |
+| L2 | band `[centre − band/2, centre + band/2]` lies inside `[lo, hi]`, and `lo > fee_round_trip_ticks + 1` |
+| L3 | `ARBITRARY_NOT_CALIBRATED` rejects `crossing_ticks` and `premium_bps`; any other `curve_ref` requires `crossing_ticks`; `centre_ticks < crossing_ticks` requires `premium_bps` |
+| L4 | `curve_ref` present and non-empty |
+| L5 | `liquidity_provision` is `fixed`, not `trailing`; `informed_flow_following` may be `fixed` or `trailing`; `declared_other` requires `declared_shape`; `trailing` requires `giveback_spread_multiple` |
+| L6 | no `hazard_exit` or `safety_exit_policy` on the alpha; platform `stop_loss_pct`, `stop_loss_per_share`, `trail_activate_pct`, and `trail_activate_per_share` are 0; `session_flatten_seconds_before_close` < every cutoff when session flatten is enabled |
+| L7 | mode is BACKTEST |
+| L8 | `T_seconds`, `cutoff_before_close_seconds`, `blind_limit_seconds`, `quiet_limit_seconds`, `centre_ticks`, and `lo_ticks` are > 0; `band_ticks` is even and ≥ 0 |
 
 ### `trend_mechanism:` block (v0.3, §20.5)
 

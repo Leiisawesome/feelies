@@ -732,6 +732,7 @@ GATE_ALIASES: dict[str, _Alias] = {
     "G15": _Alias(stable_id="GOV.LAYER_VALIDATE", kind="current"),
     "G16": _Alias(stable_id="GOV.CONTRACT_SHAPE", kind="current"),
     "G17": _Alias(stable_id="GOV.LAYER_VALIDATE", kind="current"),
+    "EXIT_POLICY": _Alias(stable_id="GOV.LAYER_VALIDATE", kind="current"),
 }
 
 _NOTIFICATION: deque[VerdictRecord] = deque(maxlen=4096)
