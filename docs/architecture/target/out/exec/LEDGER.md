@@ -30276,3 +30276,56 @@ This correction lands in the L-03 merge-record commit.
                  docs/architecture/target/position_engine/decisions.md
   NOTES:         PR #249 checks on 98d09ead at preflight: Cursor Bugbot pass;
                  check (ubuntu-latest) pass (run 35949028617); parity oracle pass.
+
+---
+
+## P-15  exit_policy schema, parser, load checks L1-L8, enabling rule  2026-09-24T12:20:16+08:00
+  STEP:          P-15
+  BASE:          34937b303c7b2064155ff25618fc972d9ef2f828
+  RESULT SHA:    22e4b52dc466fae4d0fba41390c9e42518a934f7 +
+                 8313e3f2b59a53f4cba82f145a753b5d9f1efb75 (exec/P-15),
+                 merged as 2281f0653cd29775e34df03ffbd54fc07d2cb62c.
+  VERDICT:       passed (boundary rung; operator go 2026-09-24)
+  CONFORMANCE:   exit_policy block (SCHEMA.md), _parse_exit_policy_block, core
+                 ExitPolicy, load checks L1–L5, L6 alpha-level, L8 in
+                 LayerValidator._check_exit_policy bound via GATE_ALIASES
+                 "EXIT_POLICY" -> GOV.LAYER_VALIDATE (no GATE_REGISTRY row); L6
+                 platform-level in bootstrap; L7 via the mode seam with the
+                 derived enable (enable_position_engine or any exit_policy);
+                 closed top-level key set, unknown key -> AlphaLoadError.
+                 Fail-firsts: 26 failed / 18 passed on the unchanged tree (E3
+                 file loads pass by design; exit_polcy did not raise).
+  AMENDMENTS:    amended P15-b (key set = SCHEMA tables + universe,
+                 factor_neutralization, safety_exit_policy, notes +
+                 exit_policy, from the measured union); A-P15-1 (_platform()
+                 reuses configs/bt_netting_contest.yaml:32 sensors; T0
+                 CA73239E... -> T0' F81921AF...); D-13 (six keys from inline
+                 test specs; rule: production-read or documented annotation).
+  ACCEPTED DEVIATIONS:
+                 E12 fail-first was ModuleNotFoundError for the module under
+                 construction (import is its first line), same shape as E1;
+                 post-capture first run hit IB functional
+                 test_submit_buy_limit_and_cancel (not on the accepted list),
+                 passed on immediate rerun — recorded as flake 1 with port
+                 4002 up; a recurrence is a defect to fix, not a retry.
+  TESTS:         four CI check steps exit 0; P-15 tests 44 passed; suite
+                 5012 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-15, post-P-15 (port 4002 up at both); HOLDS
+                 64 -> 64
+  FILES:         22e4b52dc466fae4d0fba41390c9e42518a934f7:
+                 alphas/SCHEMA.md
+                 docs/architecture/target/position_engine/decisions.md
+                 src/feelies/alpha/layer_validator.py
+                 src/feelies/alpha/loader.py
+                 src/feelies/alpha/module.py
+                 src/feelies/bootstrap.py
+                 src/feelies/core/exit_policy.py
+                 src/feelies/core/gate_registry.py
+                 src/feelies/position/engine.py
+                 tests/position_engine/fixtures/sig_position_fixture_v1.alpha.yaml
+                 tests/position_engine/test_p15_exit_policy.py
+                 8313e3f2b59a53f4cba82f145a753b5d9f1efb75:
+                 docs/architecture/target/position_engine/decisions.md
+  NOTES:         open hygiene item — documented-but-unused top-level keys
+                 features, mechanism, promotion, structural_actor: production
+                 readers unchecked.
