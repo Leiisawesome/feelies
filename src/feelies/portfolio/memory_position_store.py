@@ -133,10 +133,7 @@ class MemoryPositionStore:
             pos.unrealized_pnl = Decimal("0")
             return
         # Executable side only. A missing side values the position at entry.
-        if pos.quantity > 0:
-            mark = self._bids.get(pos.symbol)
-        else:
-            mark = self._asks.get(pos.symbol)
+        mark = self.valuation_mark(pos.symbol, pos.quantity)
         if mark is None:
             pos.unrealized_pnl = Decimal("0")
             return
@@ -193,8 +190,16 @@ class MemoryPositionStore:
         return self._marks.get(symbol)
 
     def latest_mark(self, symbol: str) -> Decimal | None:
-        """Reference price for sizing and exposure notional only; never valuation. Remaining valuation readers: D-23."""
+        """Reference price for sizing and exposure notional only; never valuation (D-22, D-26)."""
         return self.reference_mid(symbol)
+
+    def valuation_mark(self, symbol: str, quantity: int) -> Decimal | None:
+        """Bid for a long, ask for a short. Zero quantity or a missing side is None."""
+        if quantity > 0:
+            return self._bids.get(symbol)
+        if quantity < 0:
+            return self._asks.get(symbol)
+        return None
 
     def mark_stale(self, symbol: str) -> None:
         """Flag the symbol stale without moving bid, ask, or the reference mid."""

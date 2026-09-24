@@ -30398,3 +30398,29 @@ This correction lands in the L-03 merge-record commit.
   OUTCOME:       prediction held. 64/64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
                  identical (determinism corpus 148 passed). FILLS unchanged.
   NOTES:         Post-capture was taken while test_capture_misses_equal_keep awaited the capture file; the constants compare was clean; the suite is fully green on the merge commit.
+
+## P-12  post-exit views at the executable side  2026-09-24T18:35:59+08:00
+  STEP:          P-12
+  BASE:          e64727320f34f5753c4b8c3e58365f6a5a533069
+  PREDICTION:    PREDICTED MOVES: none. All 64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical.
+                 FILLS: no change.
+                 MECHANISM: Only the post-exit views' hypothetical unrealized moves from reference mid to the
+                 executable side for the hypothetical direction (PositionStore.valuation_mark). Their exposure
+                 notional keeps reference_mid (D-22). The only production consumer is the reverse entry-leg
+                 check_order in _execute_reverse. Census P-12 (passivity proven): on APP one view is
+                 constructed and never valued (entry edge gate not passed); the determinism corpus constructs
+                 and values no view. The two unit tests that value a view have a flat hypothetical position
+                 (unrealized 0 at any price) and an unchanged exposure path. No pinned decision input changes;
+                 no existing test assertion changes.
+                 Two further reference-mid readers are notional and unchanged by P-12:
+                 bootstrap._create_composition_layer._position_lookup and
+                 Orchestrator._record_portfolio_net_shadow (Stage 0 classification).
+  STAGE 0:       unchanged (arch/exec e6472732). Implementers: MemoryPositionStore, PostExitPositionView,
+                 _PostExitPositionView, tests _Exploding(MemoryPositionStore). No other.
+                 Stage 0 found two unlisted mid readers (bootstrap composition lookup; portfolio net shadow via getattr); classified NOTIONAL; Amendment A.
+  OUTCOME:       prediction held. 64/64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical. FILLS unchanged. Post-capture compare: changed 0.
+  NOTES:         Post-capture suite was red only on test_capture_misses_equal_keep, because the
+                 two capture files were not yet tracked. Rerun after they were staged: passed.
+                 Port 4002 was up for the pre-capture and the post-capture.
