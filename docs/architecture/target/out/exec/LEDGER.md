@@ -30367,6 +30367,8 @@ This correction lands in the L-03 merge-record commit.
 ## P-11  book mark rule (engine 7)  2026-09-24T15:43:00+08:00
   STEP:          P-11
   BASE:          95101d3244d9d42ee362ff3964c3e1e77b6b1488
+  RESULT SHA:    3350a35ea6d78a9f8407bcc6fb80db134971ef8e (exec/P-11),
+                 merged as 06c9dc5ec1258ac688797b979f3c9e6af2f1b57f.
   PREDICTION:    PREDICTED MOVES: none. All 64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
                  identical (no event type or payload changes).
                  FILLS: no change.
@@ -30395,3 +30397,4 @@ This correction lands in the L-03 merge-record commit.
                  _process_tick: 0. (b) direct update_mark with a non-positive side: 0.
   OUTCOME:       prediction held. 64/64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
                  identical (determinism corpus 148 passed). FILLS unchanged.
+  NOTES:         Post-capture was taken while test_capture_misses_equal_keep awaited the capture file; the constants compare was clean; the suite is fully green on the merge commit.
