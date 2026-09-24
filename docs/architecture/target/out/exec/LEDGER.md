@@ -30329,3 +30329,35 @@ This correction lands in the L-03 merge-record commit.
   NOTES:         open hygiene item — documented-but-unused top-level keys
                  features, mechanism, promotion, structural_actor: production
                  readers unchecked.
+
+---
+
+## P-16  evaluation architecture (D-14..D-20)  2026-09-24T13:37:26+08:00
+  STEP:          P-16
+  BASE:          32ed957610c19925e0a35e89895199328289dd42
+  RESULT SHA:    this commit on exec/P-16; not merged
+  VERDICT:       passed (docs rung; parity hold)
+  CONFORMANCE:   evaluation.md (three oracles, declared-break protocol, P-95
+                 attribution diff, campaign 14E bar, battery_real placement);
+                 battery.md fixture-alpha bullet, real-session marker, stage-letter
+                 mechanism (D-18); decisions D-14..D-20 appended; README pack row;
+                 phase14 DOES NOT CLOSE, standing invariant, ladder P-16 / P-11 gate /
+                 P-95 / P-99 lands. No behaviour change. Fail-first n/a.
+  AMENDMENTS:    D-14..D-20. Fixture defect recorded (D-19): P-15 copy is data-gated
+                 and stamps sig_contra_fixture_v1; P-21 corrects it. Stage letter
+                 lands at P-21 (D-18). battery_real marker and CI job change land
+                 with the first real-session member, P-21 (D-20).
+  TESTS:         four CI check steps exit 0; tests/docs 107 passed; suite
+                 5012 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-16, post-P-16 (port 4002 up at both); HOLDS
+                 64 -> 64
+  FILES:         docs/architecture/target/position_engine/evaluation.md
+                 docs/architecture/target/position_engine/battery.md
+                 docs/architecture/target/position_engine/decisions.md
+                 docs/architecture/target/position_engine/README.md
+                 docs/architecture/target/out/phase14_position_engine.md
+                 docs/architecture/target/out/exec/LEDGER.md
+                 docs/architecture/target/out/exec/baseline_pre-P-16.json
+                 docs/architecture/target/out/exec/baseline_post-P-16.json
+  NOTES:         draft PR against arch/exec; do not merge. RESULT SHA is this
+                 commit because the ledger block is in it.
