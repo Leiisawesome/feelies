@@ -261,9 +261,7 @@ def _run_replay(config: PlatformConfig, events: list[object]) -> EngineProbe:
     event_log = InMemoryEventLog()
     event_log.append_batch(events)
     # P-10: dark engines are built so their runtime reads are probed
-    orchestrator, _ = build_platform(
-        config, event_log=event_log, enable_position_engine=True
-    )
+    orchestrator, _ = build_platform(config, event_log=event_log, enable_position_engine=True)
     probe = EngineProbe(
         positions=orchestrator._positions,
         symbols=tuple(sorted(config.symbols)),
