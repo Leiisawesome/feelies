@@ -30215,3 +30215,31 @@ This correction lands in the L-03 merge-record commit.
                  only, so shown by partition, not by ids. From P-10, every rung
                  records port 4002 and requires the same state at pre and post
                  capture.
+
+---
+
+## P-10b  CI format fix for P-10  2026-09-24T10:51:19+08:00
+  STEP:          P-10b
+  BASE:          1f1fa282f6a5bbe87a2062b09af93c4db8b729cd
+  RESULT SHA:    4807722c2f800d397a6dfe6bb4fe8cde343dcc0d (exec/P-10b), merged
+                 to arch/exec as d33c416404f12143f4a8eab0a807ada80515fcee.
+  VERDICT:       passed
+  CONFORMANCE:   PR #249 run 35945324266 failed at Format (ruff format --check
+                 src/ tests/ scripts/: "Would reformat:
+                 tests/conformance/test_forbidden_reads.py"); Lint passed;
+                 Types, Import contracts and Tests were skipped. Cause: P-10's
+                 three-line build_platform call at 264-266 (blame 4ac5fcb5).
+                 Fail-first quoted; fixed with ruff format on that file only;
+                 diff is the one collapsed call.
+  TESTS:         the four CI check steps (ruff check, ruff format --check,
+                 mypy src/feelies, lint-imports --no-cache) all exit 0 locally;
+                 suite 4968 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-10b, post-P-10b (port 4002 open at both);
+                 HOLDS 64 -> 64
+  FILES:         1 declared, 1 touched, 1 committed:
+                 tests/conformance/test_forbidden_reads.py
+  NOTES:         P-10's gate ran pytest but not CI's lint/format/types/import
+                 steps. Standing rule from P-10b: every rung's validation runs
+                 those four CI commands exactly as ci.yml runs them. 15 files
+                 under tools/ and colab/ are unformatted but outside CI's Format
+                 paths; pre-existing, not touched.
