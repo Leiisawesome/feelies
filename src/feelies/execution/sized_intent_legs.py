@@ -43,7 +43,7 @@ def resolve_mark(symbol: str, current: object, positions: PositionStore) -> Deci
     flowed through.  Returns ``0`` when neither is available -- the caller must
     treat zero as "skip this leg" (Inv-11 fail-safe).
     """
-    latest = getattr(positions, "latest_mark", None)
+    latest = getattr(positions, "reference_mid", None)
     if callable(latest):
         try:
             m = latest(symbol)

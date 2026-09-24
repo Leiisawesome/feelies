@@ -58,47 +58,47 @@ class TestMemoryPositionStoreBidAskMarks:
         )
         assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
 
-    def test_legacy_update_mark_without_bbo_uses_mid(self) -> None:
-        """Backward-compat: callers that don't supply bid/ask use mid."""
+    def test_mid_only_update_is_not_a_valuation_input(self) -> None:
+        """A mid with no bid/ask is reference_mid only. Valuation stays at entry."""
         store = MemoryPositionStore()
         store.update("AAPL", quantity_delta=100, fill_price=Decimal("100"))
         store.update_mark("AAPL", Decimal("101"))
-        # (101 - 100) * 100 = $100 unrealized
-        assert store.get("AAPL").unrealized_pnl == Decimal("100")
+        assert store.get("AAPL").unrealized_pnl == Decimal("0")
+        assert store.reference_mid("AAPL") == Decimal("101")
 
-    def test_long_unrealized_less_with_bid_than_with_mid(self) -> None:
-        """Spread-aware mark is strictly less optimistic for longs."""
-        store_a = MemoryPositionStore()
-        store_b = MemoryPositionStore()
-        store_a.update("AAPL", 100, Decimal("100"))
-        store_b.update("AAPL", 100, Decimal("100"))
-        store_a.update_mark("AAPL", Decimal("101"))
-        store_b.update_mark(
+    def test_long_unrealized_uses_bid_mid_only_does_not_revalue(self) -> None:
+        """A long marks to the bid. A later mid-only update does not revalue it."""
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("100"))
+        store.update_mark(
             "AAPL",
             Decimal("101"),
             bid=Decimal("100.95"),
             ask=Decimal("101.05"),
         )
-        # Mid mark: $100 unrealized. Bid liquidation mark: $95.
-        assert store_a.get("AAPL").unrealized_pnl > store_b.get("AAPL").unrealized_pnl
+        assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
+        assert store.is_mark_stale("AAPL") is False
+        store.update_mark("AAPL", Decimal("110"))
+        assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
+        assert store.is_mark_stale("AAPL") is False
+        assert store.reference_mid("AAPL") == Decimal("110")
 
-    def test_short_unrealized_less_with_ask_than_with_mid(self) -> None:
-        """Spread-aware mark is strictly less optimistic for shorts."""
-        store_a = MemoryPositionStore()
-        store_b = MemoryPositionStore()
-        store_a.update("AAPL", -100, Decimal("100"))
-        store_b.update("AAPL", -100, Decimal("100"))
-        # mid below entry → short is profitable; ask is HIGHER than mid,
-        # so close-at-ask is less profitable than close-at-mid.
-        store_a.update_mark("AAPL", Decimal("99"))
-        store_b.update_mark(
+    def test_short_unrealized_uses_ask_mid_only_does_not_revalue(self) -> None:
+        """A short marks to the ask. A later mid-only update does not revalue it."""
+        store = MemoryPositionStore()
+        store.update("AAPL", -100, Decimal("100"))
+        store.update_mark(
             "AAPL",
             Decimal("99"),
             bid=Decimal("98.95"),
             ask=Decimal("99.05"),
         )
-        # Mid mark: $100 unrealized. Ask liquidation mark: $95.
-        assert store_a.get("AAPL").unrealized_pnl > store_b.get("AAPL").unrealized_pnl
+        assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
+        assert store.is_mark_stale("AAPL") is False
+        store.update_mark("AAPL", Decimal("90"))
+        assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
+        assert store.is_mark_stale("AAPL") is False
+        assert store.reference_mid("AAPL") == Decimal("90")
 
 
 class TestStrategyPositionStoreBidAskMarks:
