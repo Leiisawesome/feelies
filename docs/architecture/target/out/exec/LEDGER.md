@@ -30361,3 +30361,37 @@ This correction lands in the L-03 merge-record commit.
                  docs/architecture/target/out/exec/baseline_pre-P-16.json
                  docs/architecture/target/out/exec/baseline_post-P-16.json
   NOTES:         PR #250 merged to arch/exec.
+
+---
+
+## P-11  book mark rule (engine 7)  2026-09-24T15:43:00+08:00
+  STEP:          P-11
+  BASE:          95101d3244d9d42ee362ff3964c3e1e77b6b1488
+  PREDICTION:    PREDICTED MOVES: none. All 64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical (no event type or payload changes).
+                 FILLS: no change.
+                 MECHANISM: The full quote-quality rule is applied only in the orchestrator's mark path, the
+                 only production writer of marks. Non-VALID quotes (crossed, locked, zero-size side,
+                 non-positive) no longer move the book there. The store rejects only a non-positive side,
+                 retaining the last valid bid/ask instead of dropping it. Mid is retired as a valuation input.
+                 The two post-exit views gain delegation-only methods and keep their valuation unchanged (D-23).
+                 APP oracle (census P-11 part 2, passivity proven): 0 of 31 exposure resolves, 43 risk
+                 verdicts, 42 drawdown checks, 20 fills, 20 PositionUpdates and 142 high-water increases
+                 occurred on a non-VALID quote; PositionUpdate is emitted on fill acks only; the day ends flat;
+                 0 mid-fallback valuations. Non-APP tapes (Stage 0, attempts 1–2): none passes a non-VALID
+                 NBBOQuote through the orchestrator, and none writes a non-positive side to the store. The
+                 risk-verdict fixture's direct locked write (0.01/0.01) is accepted by the store under D-24.
+                 No decision input on any pinned tape can change.
+  ATTEMPTS:      attempt 1 blocked at Stage 0 (determinism fixture writes a locked pair to the store) → D-24.
+                 attempt 2 blocked at the F5 implementor check (two post-exit views also implement
+                 PositionStore) → view delegations. Both pre-build, no branch.
+                 Attempt 3: built; blocked at V3 (second protocol core/strategy_position_store.py) and V5 (mid-only valuation setups) → F19, D-25; continued without reset. Continuation stop at P4 was a rule false positive (fake store unreachable from the mark path); amended, no fake edited. Amendment B: bounded D-25 sweep, 1 files, setup lines only.
+  STAGE 0:       unchanged (arch/exec still 95101d32). Implementers: MemoryPositionStore
+                 (portfolio/memory_position_store.py:16), _AggregateView
+                 (portfolio/strategy_position_store.py:255), PostExitPositionView
+                 (risk/post_exit_position_view.py:11), _PostExitPositionView
+                 (kernel/orchestrator.py:1708). No test fake implements PositionStore and is passed
+                 into Orchestrator or build_platform. (a) non-APP non-VALID quotes through
+                 _process_tick: 0. (b) direct update_mark with a non-positive side: 0.
+  OUTCOME:       prediction held. 64/64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical (determinism corpus 148 passed). FILLS unchanged.

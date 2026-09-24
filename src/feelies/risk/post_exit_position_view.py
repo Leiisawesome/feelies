@@ -75,5 +75,14 @@ class PostExitPositionView:
     def latest_mark(self, symbol: str) -> Decimal | None:
         return self._inner.latest_mark(symbol)
 
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        return self._inner.reference_mid(symbol)
+
+    def mark_stale(self, symbol: str) -> None:
+        self._inner.mark_stale(symbol)
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        return self._inner.is_mark_stale(symbol)
+
     def opened_at_ns(self, symbol: str) -> int | None:
         return self._inner.opened_at_ns(symbol)

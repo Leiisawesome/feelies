@@ -54,3 +54,15 @@ class StrategyPositionStore(Protocol):
     def strategy_ids(self) -> frozenset[str]:
         """Set of all strategy IDs with positions."""
         ...
+
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        """Stored reference mid from the last accepted mark. Not a valuation input."""
+        ...
+
+    def mark_stale(self, symbol: str) -> None:
+        """Flag the symbol stale without moving bid, ask, or the reference mid."""
+        ...
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        """True when flagged stale, or when no valid bid and ask were ever stored."""
+        ...

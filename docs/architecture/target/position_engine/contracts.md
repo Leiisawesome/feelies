@@ -114,12 +114,19 @@ happened, not what is available; another name's quote makes the rail cross-secti
 one; fall back to a trade price; repair, clamp or discard a crossed book; reset an age
 without a real price change; suppress an emission; order by anything but sequence.
 
-**Book mark (engine 7 contract, phase2 L733/L765).** The book of record values positions
-from the rail's `valuation_mark` for the position's direction. A crossed, locked or
-zero-side quote does not move the book mark: retain the last valid mark, flag it stale,
-emit. The stored mid mark is retired as a valuation input. Any consumer that needs a
-reference price for sizing rather than valuation must name it as such; which consumers
-those are is measured in the campaign 3 census, not decided here.
+**Book mark (engine 7 contract, phase2 L733/L765; A-18, D-21, D-22, D-24).** The book of
+record values each position at the executable side for its direction — long at the bid, short
+at the ask — by the same quote-quality rule as the rail (`feelies.core.quote_quality`). The
+rule is applied at one point, the orchestrator's mark path, which is the only production
+writer of marks (pinned by a static test). There, only a VALID quote moves the book. A
+crossed, locked, zero-size-side or non-positive quote leaves the last valid bid, ask and
+reference mid in place, and flags the symbol stale until the next VALID quote. The store
+itself rejects only a non-positive side, retaining the last valid bid/ask. A position whose
+symbol has no valid bid/ask is valued at its entry price and flagged stale. The mid is not a
+valuation input. It survives only as `reference_mid`, the last VALID quote's mid, for sizing
+and exposure notional (`basic_risk._resolve_mark`, `sized_intent_orders._resolve_mark`,
+`sized_intent_legs.resolve_mark`, `total_exposure`). Open item D-23: the post-exit
+hypothetical views still value at the mid; rung P-12.
 
 ---
 

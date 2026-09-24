@@ -167,6 +167,7 @@ from feelies.core.paper_session_recorder import PaperSessionRecorder
 from feelies.core.metric_collector import MetricCollector
 from feelies.core.position_book_view import PositionBookView
 from feelies.core.position import Position, PositionStore
+from feelies.core.quote_quality import QuoteQuality, classify
 from feelies.core.lot_ledger import LotLedger
 from feelies.core.fill_attribution import (
     AlphaContribution,
@@ -1771,6 +1772,15 @@ class _PostExitPositionView:
 
     def latest_mark(self, symbol: str) -> Decimal | None:
         return self._inner.latest_mark(symbol)
+
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        return self._inner.reference_mid(symbol)
+
+    def mark_stale(self, symbol: str) -> None:
+        self._inner.mark_stale(symbol)
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        return self._inner.is_mark_stale(symbol)
 
     def opened_at_ns(self, symbol: str) -> int | None:
         return self._inner.opened_at_ns(symbol)
@@ -4279,30 +4289,36 @@ class Orchestrator:
             self._tick_quote_for_trace = quote
             self._last_quote_context_for_signal_trace = quote
         # Mark before subscribers so risk exits see current liquidation value.
-        mid = (quote.bid + quote.ask) / Decimal("2")
-        if mid > 0:
-            # Mark liquidation at bid for longs and ask for shorts.
-            self._positions.update_mark(
-                quote.symbol,
-                mid,
-                bid=quote.bid,
-                ask=quote.ask,
-            )
-            # Refresh peak equity on every mark; minimal test doubles may omit the hook.
-            refresh_hwm = getattr(
-                self._risk_engine,
-                "refresh_high_water_mark",
-                None,
-            )
-            if callable(refresh_hwm):
-                refresh_hwm(self._positions)
-            if self._strategy_positions is not None:
-                self._strategy_positions.update_mark(
+        quality = classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size)
+        if quality is QuoteQuality.VALID:
+            mid = (quote.bid + quote.ask) / Decimal("2")
+            if mid > 0:
+                # Mark liquidation at bid for longs and ask for shorts.
+                self._positions.update_mark(
                     quote.symbol,
                     mid,
                     bid=quote.bid,
                     ask=quote.ask,
                 )
+                # Refresh peak equity on every mark; minimal test doubles may omit the hook.
+                refresh_hwm = getattr(
+                    self._risk_engine,
+                    "refresh_high_water_mark",
+                    None,
+                )
+                if callable(refresh_hwm):
+                    refresh_hwm(self._positions)
+                if self._strategy_positions is not None:
+                    self._strategy_positions.update_mark(
+                        quote.symbol,
+                        mid,
+                        bid=quote.bid,
+                        ask=quote.ask,
+                    )
+        else:
+            self._positions.mark_stale(quote.symbol)
+            if self._strategy_positions is not None:
+                self._strategy_positions.mark_stale(quote.symbol)
 
         if self._mark_rail is not None:
             self._bus.publish(self._mark_rail.on_quote(quote))
