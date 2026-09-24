@@ -20,8 +20,9 @@ measured feed has timestamp ties (854 in one session, `feed.md` F2); sequence do
 
 | Part | Owner | Module set | Talks to others by |
 |---|---|---|---|
-| Mark rail | engine 7 portfolio | `portfolio` | publishes `MarkRailUpdate` (core event) |
-| Position cell, both gates, precedence | engine 13 position [A-01] | `position` (new, 13th independence set) | subscribes `MarkRailUpdate`, `PositionUpdate`, `Signal`; publishes `PositionSnapshot`, `GateDecision`, `PositionClosed`, `DeRiskRequirement` |
+| Mark rail | engine 7 portfolio (`portfolio/mark_rail.py`, `MarkRail`) | `portfolio` | the kernel calls `MarkRailProtocol.on_quote(quote)` right after the book-mark update and before publishing the quote, and publishes the returned `MarkRailUpdate` (stream `mark_rail`, owner `MarkRail`) |
+| Slice fills | kernel (`Orchestrator`) | — | after each per-strategy slice write on a fill, publishes `SlicePositionUpdate` (stream `slice_position`) [A-17] |
+| Position cell, both gates, precedence | engine 13 position [A-01] (`position/engine.py`, `PositionEngine`) | `position` (13th member of the "Engine module sets" independence contract) | subscribes `MarkRailUpdate`, `SlicePositionUpdate`, `Signal`; publishes `PositionSnapshot`, `GateDecision`, `PositionClosed`, `DeRiskRequirement` (stream `position`) |
 | Entry refusal at birth | engine 9 execution, admission [A-04] | `execution` | reads the latest `MarkRailUpdate` fact for the name |
 | Exit plan | engine 9 execution | `execution` / kernel copy site | consumes `DeRiskRequirement` with `source_layer="POSITION"` |
 | Veto and safety exits | engine 8 risk | `risk` | unchanged: `check_order` on every order; `FORCE_FLATTEN`, `DATA_*`, kill switch outrank everything here |
@@ -38,9 +39,25 @@ also declares `hazard_exit` or `safety_exit_policy`, and rejects any config with
 that can both reduce exposure, on different triggers, with no arbitration, is how a
 platform double-flattens (phase2 F.4).
 
-**Mode rule.** `build_platform` raises `ConfigurationError` if any loaded alpha declares
-`exit_policy` and the mode is not BACKTEST [A-02]. Loud refusal, never a silent run
-without the engine.
+**Mode rule.** `build_platform` raises `ConfigurationError` if the engine is enabled and the
+mode is not BACKTEST [A-02]. Loud refusal, never a silent run without the engine. The check
+lives in the mode seam (`execution/backend.py`, `refuse_position_engine_outside_backtest`),
+the only place outside `_create_backend` where the platform may branch on mode.
+
+**Enabling.** Until P-15, the engine is enabled only by
+`build_platform(..., enable_position_engine=True)`; there is no config field, so the config
+hash cannot move. From P-15, enabled means: at least one loaded alpha declares `exit_policy`.
+Disabled means nothing of the engine is constructed and none of its event types is published.
+
+**Event types.** Field lists are authoritative in `src/feelies/core/events.py` and pinned by
+`PINNED_PAYLOAD` (S-09). This document states meaning; the code states shape. Nested payloads:
+`RailOrientation`, `PositionExtreme`, `PositionFillLeg`, `ExitTriggeredPath`.
+
+**Structural checks that cover this engine.** T7 (`tests/position_engine`) runs the S15
+runtime-subset check on an enabled build, so every runtime subscription of the engine must be
+declared. The S14 dynamic forbidden-reads probe builds with the engine enabled, so engine 13's
+runtime reads are probed; a negative probe (a forbidden `RegimeState` subscription) was shown
+to fail it.
 
 ---
 
@@ -115,12 +132,12 @@ resolves the exit; writes the closing record.
 **Lifecycle** [A-03]:
 
 ```
-            PositionUpdate flat -> nonzero (owned slice)
+            SlicePositionUpdate flat -> nonzero (owned slice)
                               |
                               v
    OPEN --(resolve picks a winner; one DeRiskRequirement emitted)--> EXITING
      |                                                                  |
-     |  PositionUpdate -> 0 caused by any other author                  |  PositionUpdate -> 0
+     |  SlicePositionUpdate -> 0 caused by any other author             |  SlicePositionUpdate -> 0
      v  (engine 8 safety exit)                                          v
   CLOSED (reason EXTERNAL:<token>)                                    CLOSED (reason = winner)
 ```
@@ -136,8 +153,10 @@ resolves the exit; writes the closing record.
   counted and reported separately.
 
 **Reads.** `MarkRailUpdate` for its name (valuation, worst-side, forced, dwelled marks and
-all flags, passed through unaltered). `PositionUpdate` for its slice (quantity, entry fills
-with price, qty, timestamp, sequence). `Signal` for its slice (invalidation intake). The
+all flags, passed through unaltered). `SlicePositionUpdate` for its slice (fill price, signed
+fill quantity, fill ack sequence and timestamp, slice quantity and average entry after the
+fill) [A-17]. `PositionUpdate` is not read: it is the symbol-net book, without strategy or fill
+detail. `Signal` for its slice (invalidation intake). The
 session close fact for the birth date [A-11]. Both gate decisions (resolve phase only).
 Run config.
 
@@ -148,31 +167,36 @@ random or clock-based. `side`. `declared_archetype`. `entry_spread_ticks` =
 `horizon_deadline_ns = min(birth_fill_ts + T, session_close_ns − cutoff_before_close_ns)`.
 *Reason:* a deadline you can nudge becomes a dial tuned until the backtest looks nice.
 
-**Entry mark** [A-05]. The exact quantity-weighted average of the episode's entry fills,
-held as an exact rational (`sum(price_cents × qty) / sum(qty)`). Entry fills after birth
-come only from partial fills of the same entry order; a same-side increase from a new
-signal is refused at admission. Every entry fill is in the closing record.
+**Entry cost** [A-05, A-16]. `entry_cost_cents = Σ price_cents × qty` over the episode's entry
+fills, an exact integer; `size = Σ qty`. Entry fills after birth come only from partial fills
+of the same entry order; a same-side increase from a new signal is refused at admission. Every
+entry fill is in the closing record.
 
-**Excursion accounting** (pure functions, recomputed from the entry origin every event,
-never accumulated). `sign = +1` long, `−1` short.
+**Excursion accounting** (pure functions, recomputed from the entry cost every event, never
+accumulated) [A-16]. Moves are exact integer cents over the **whole position**, not ticks per
+share: the average entry of partial fills is a rational that per-share ticks cannot carry
+exactly, while a whole-position total always can. `sign = +1` long, `−1` short.
 
 ```
-move_now_ticks    = sign × (valuation_mark   − entry_mark) / tick
-move_worst_ticks  = sign × (worst_side_mark  − entry_mark) / tick
-move_forced_ticks = sign × (forced_exit_mark − entry_mark) / tick
-move_now_bps      = 10000 × move_now_ticks × tick / entry_mark
+move_now_cents    = sign × (valuation_mark_cents   × size − entry_cost_cents)
+move_worst_cents  = sign × (worst_side_mark_cents  × size − entry_cost_cents)
+move_forced_cents = sign × (forced_exit_mark_cents × size − entry_cost_cents)
+move_now_bps      = 10000 × move_now_cents / entry_cost_cents      (derived, reporting only)
 ```
+
+A per-share threshold of `X` ticks is compared exactly as `move ≥ X × size × tick_cents`
+(tick = 1 cent in this universe). No division on the decision path.
 
 *Reason (recompute):* nothing drifts, and a dropped event costs only the extremes.
-*Reason (frozen bps denominator):* a moving denominator makes a fixed bps threshold drift.
+*Reason (fixed bps denominator):* a moving denominator makes a fixed bps threshold drift.
 
-**Running extremes.** Seeded at the first reading after birth, never at zero. Updated
-**before** the snapshot is frozen.
+**Running extremes** (`PositionExtreme`). Seeded at the first reading after birth, never at
+zero. Updated **before** the snapshot is frozen.
 
 | Field | Absorbs | Carries |
 |---|---|---|
-| `best_so_far_ticks` / `worst_so_far_ticks` | every event, on `move_now_ticks` | the `sequence` that set it, plus the provenance of that event: `valuation_age_ns`, `valuation_side_absent`, `crossed`, `feed_gap_before` |
-| `best_so_far_clean_ticks` | only events with valuation side present, not crossed, no feed gap | its `sequence` and `valuation_age_ns` |
+| `best` / `worst` | every event, on `move_now_cents` | `sequence` of the event that set it, plus that event's `valuation_age_ns`, `valuation_side_absent`, `crossed`, `feed_gap_before` |
+| `best_clean` | only events with valuation side present, not crossed, no feed gap | its `sequence` and `valuation_age_ns` (the flags are false by construction) |
 
 *Reason (clean peak):* a crossed book flatters the favorable side; a trailing exit anchored
 on it would chase a peak that never existed for the rest of the position's life. The
@@ -213,10 +237,10 @@ optimistic by exactly the worst events in the sample, and a wrong label corrupts
 mix the levels are judged by.
 
 **Emits.**
-- `PositionSnapshot`, every rail event, every open cell: `cell_id`, `state`,
-  `event_timestamp_ns`, `event_sequence`, the four moves, the three extremes with their
-  stamps, `size`, `side`, `declared_archetype`, `entry_spread_ticks`, `horizon_deadline_ns`,
-  and every rail flag, unaltered. Cleans nothing, defaults nothing.
+- `PositionSnapshot`, every rail event, every open cell: `cell_id`, `state`, `rail_sequence`,
+  `size`, `entry_cost_cents`, `entry_spread_ticks`, `horizon_deadline_ns`, the three moves in
+  cents, the three extremes, the position side's `RailOrientation` and the shared rail flags,
+  unaltered. Cleans nothing, defaults nothing.
 - `DeRiskRequirement` (once per episode): `source_layer="POSITION"`, slice-scoped, reason
   one of `ADVERSE_EXCURSION`, `HORIZON`, `INVALIDATION`, `FAVORABLE_EXCURSION`, quantity =
   full slice, order type MARKET [A-12].
@@ -258,11 +282,12 @@ the firmest price there is); `locked` (allowed, recorded).
 missed one shows up as a worse number and is bounded by the other exits.
 
 **Forms.**
-- `fixed`: fire when `move_now_ticks ≥ X`.
-- `trailing`: armed only when `best_so_far_clean_ticks > R + round_trip_ticks`; then fire when
-  `move_now_ticks ≤ best_so_far_clean_ticks − R`. `R = k × entry_spread_ticks`. Optional
+- `fixed`: fire when `move_now_cents ≥ X × size`.
+- `trailing`: armed only when `best_clean.cents > (R + round_trip_ticks) × size`; then fire
+  when `move_now_cents ≤ best_clean.cents − R × size`. `R = k × entry_spread_ticks`. Optional
   ceiling `C` only where the measured curve's sample runs out.
 - `round_trip_ticks = entry_spread_ticks + fee_round_trip_ticks` (declared config).
+- `X`, `R`, `C` are per-share ticks; every comparison multiplies by `size` (tick = 1 cent).
 
 **Emits** a `GateDecision`: `fire | none | suppressed(reason, flag state)`, form, proposed
 price (`dwelled_exit_mark`, always), reference fired against (`X`, or peak + `R` with the
@@ -281,7 +306,7 @@ premium (expected return given up, bps per trade) must be declared.
 **Never skips.** Every rail event, every open cell, a recorded decision: `fire` or `hold`.
 *Reason:* "never declines" is only auditable if the holds are written down.
 
-**Comparison** on `move_worst_ticks`: fire when `move_worst_ticks ≤ −L` [A-09].
+**Comparison** on `move_worst_cents`: fire when `move_worst_cents ≤ −L × size` [A-09, A-16].
 
 | Condition | Handling |
 |---|---|
@@ -328,5 +353,7 @@ stress, so a silent refusal is survivorship.
 
 An object that reads engine outputs and cannot affect any engine output is a sink, not a
 component. Delete it and every number is identical. The per-event decision log and the
-closing-record store are sinks. Checked by battery member 1 (a run with sinks detached is
-byte-identical on every non-sink output).
+closing-record store are sinks; in code, `PositionRecordSink` (`position/engine.py`), which
+subscribes to `PositionSnapshot`, `GateDecision` and `PositionClosed` and has no publish path.
+Checked by battery member 1 (a run with sinks detached is byte-identical on every non-sink
+output).
