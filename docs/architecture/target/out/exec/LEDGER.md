@@ -30243,3 +30243,36 @@ This correction lands in the L-03 merge-record commit.
                  those four CI commands exactly as ci.yml runs them. 15 files
                  under tools/ and colab/ are unformatted but outside CI's Format
                  paths; pre-existing, not touched.
+
+---
+
+## P-11a  fold P-10 decisions into the position engine spec  2026-09-24T11:12:21+08:00
+  STEP:          P-11a
+  BASE:          98d09eaddd44f4693faca4f921bbe39f97ebb6f1
+  RESULT SHA:    bce94403d4a64554196d3690318bbd0cf2abef93 (exec/P-11a), merged
+                 to arch/exec as 492e977b4e034a3c05028981ba1be89c8de82bf7.
+  VERDICT:       passed
+  CONFORMANCE:   docs rung; four spec files replaced from the operator-supplied
+                 archive after the pre capture; base and new SHA-256 verified.
+                 New: contracts.md
+                 5876f4439576dc01749863632dc5b370083a1b6097bf559957304e294835acd6;
+                 battery.md
+                 11ff3e10e817c9c109c358bf2dbaa24345a4d0088341770a0cea8b209b3b0546;
+                 amendments.md
+                 1b19c76ec66abdea21f353238f4a45a23e5dc277b869d49b4ab0a8eda64ba887;
+                 phase14_position_engine.md
+                 02b6dead81e0026134be054bf74b8a51dea21f63a56664842d3a17799bdc885e.
+                 decisions.md D-07 appended. Adds amendments A-16 (whole-position
+                 cents) and A-17 (SlicePositionUpdate).
+  TESTS:         four CI check steps exit 0; tests/docs 107 passed; suite
+                 4968 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-11a, post-P-11a (port 4002 open at both);
+                 HOLDS 64 -> 64
+  FILES:         5 declared, 5 touched, 5 committed:
+                 docs/architecture/target/out/phase14_position_engine.md
+                 docs/architecture/target/position_engine/amendments.md
+                 docs/architecture/target/position_engine/battery.md
+                 docs/architecture/target/position_engine/contracts.md
+                 docs/architecture/target/position_engine/decisions.md
+  NOTES:         PR #249 checks on 98d09ead at preflight: Cursor Bugbot pass;
+                 check (ubuntu-latest) pass (run 35949028617); parity oracle pass.
