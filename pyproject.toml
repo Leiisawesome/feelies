@@ -137,6 +137,8 @@ markers = [
     "backtest_validation: full backtest pipe validation suite",
     "slow: performance benchmarks and long-running tests",
     "paper_rth: requires US RTH + IB Gateway paper @ 4002 + MASSIVE_API_KEY",
+    "battery_member: position-engine battery member gated by the stage letter (tests/position_engine/conftest.py)",
+    "battery_real: battery member on the real APP session; runs only in the parity oracle job with the cache required (D-30)",
 ]
 
 [tool.coverage.run]

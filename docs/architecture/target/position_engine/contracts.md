@@ -367,3 +367,13 @@ closing-record store are sinks; in code, `PositionRecordSink` (`position/engine.
 subscribes to `PositionSnapshot`, `GateDecision` and `PositionClosed` and has no publish path.
 Checked by battery member 1 (a run with sinks detached is byte-identical on every non-sink
 output).
+
+## 8. Test seams (D-31)
+
+- `PositionEngine` accepts `gate_order`, a tuple of gate names, default
+  `("ADVERSE", "FAVORABLE")`. Gates are pure functions of the same snapshot, so every order
+  must produce byte-identical outputs. Battery member 1 runs the reversed order.
+- Attaching `PositionRecordSink` is optional. A run without it must publish byte-identical
+  events on the bus (§7).
+- Fresh-process runs, canonical record serialisation and feed-gap injection are test-side:
+  they need no production hook.
