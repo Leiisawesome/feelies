@@ -72,7 +72,7 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-21a | A | DONE. Fixture schedule, stage-gate hook, markers, member-1 seams, D-29/D-32 | hook self-tests; fixture schedule | hold |
 | P-21b | A | harness (scenarios.py), APP config, CI battery_real step; members 1, 2, 4 | 1, 2, 4-birth red NONVACUOUS; 4-rail green | hold |
 | P-21c | A | spec closure for members 3, 5, 6 (contracts §9, D-40..D-48); docs only | docs tests | hold |
-| P-21d | A | members 3, 5; tape injectors set_quote, excise | each red for its stated reason | hold |
+| P-21d | A | implemented, pending merge. members 3, 5; tape injectors set_quote, excise | each red for its stated reason | hold |
 | P-21e | A | member 6, after an operator-approved design note | red for its stated reason | hold |
 | P-22 | A | broken engines B1–B11 | each caught by its named member | hold |
 | P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it) | members 1, 2 green | hold |

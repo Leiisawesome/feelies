@@ -22,14 +22,20 @@ from feelies.core.events import (
 )
 from tests.position_engine.scenarios import (
     T0,
+    Records,
+    Record,
     attribute,
     canonical,
+    displacement_identity,
+    drawn_adverse_level,
+    exit_reason_at_collision,
     format_line,
+    mean_within_se,
     nonvacuous,
     project_for_multiname,
     run_synthetic,
 )
-from tests.position_engine.tapes import make_tape
+from tests.position_engine.tapes import make_tape, set_quote
 
 
 def _quote() -> NBBOQuote:
@@ -254,3 +260,159 @@ def test_t7_attribution_cursor_on_a_hand_built_stream() -> None:
         (2, "GateDecision"),
     ]
     assert all(text.startswith(type_name) for _cursor, type_name, text in rows)
+
+
+def _canon(type_name: str, body: dict[str, object]) -> str:
+    return type_name + json.dumps(body, sort_keys=True, separators=(",", ":"))
+
+
+def _closed(
+    cell: str,
+    *,
+    side: str,
+    entry_px: int,
+    exit_px: int,
+    qty: int,
+    entry_seq: int,
+    exit_seq: int,
+    reason: str,
+    paths: list[tuple[str, int]],
+    proposed: int,
+) -> Record:
+    body: dict[str, object] = {
+        "cell_id": cell,
+        "symbol": "SYN",
+        "strategy_id": "sig_position_fixture_v1",
+        "side": side,
+        "entry_fills": [
+            {
+                "price_cents": entry_px,
+                "quantity": qty,
+                "sequence": entry_seq,
+                "timestamp_ns": entry_seq,
+            }
+        ],
+        "exit_fills": [
+            {
+                "price_cents": exit_px,
+                "quantity": qty,
+                "sequence": exit_seq,
+                "timestamp_ns": exit_seq,
+            }
+        ],
+        "exit_reason": reason,
+        "proposed_price_cents": proposed,
+        "triggered_paths": [
+            {"path": path, "proposed_price_cents": price} for path, price in paths
+        ],
+    }
+    return Record(exit_seq, "PositionClosed", _canon("PositionClosed", body))
+
+
+def _requirement(cell_ts: int) -> Record:
+    body = {
+        "symbol": "SYN",
+        "strategy_id": "sig_position_fixture_v1",
+        "timestamp_ns": cell_ts,
+        "reason": "ADVERSE_EXCURSION",
+        "source_layer": "POSITION",
+    }
+    return Record(cell_ts, "DeRiskRequirement", _canon("DeRiskRequirement", body))
+
+
+def _quotes() -> dict[int, NBBOQuote]:
+    tape = make_tape(seed=1, n=4, symbol="SYN", start_ns=T0, size=1000)
+    tape[1] = set_quote(tape, 1, bid_cents=10_000, ask_cents=10_001)[1]
+    tape[2] = set_quote(tape, 2, bid_cents=10_010, ask_cents=10_011)[2]
+    return {quote.sequence: quote for quote in tape}
+
+
+def test_t8_displacement_identity_holds_on_tape_quotes() -> None:
+    quotes = _quotes()
+    row = _closed(
+        "C",
+        side="LONG",
+        entry_px=10_001,
+        exit_px=10_011,
+        qty=10,
+        entry_seq=2,
+        exit_seq=3,
+        reason="FAVORABLE",
+        paths=[("FAVORABLE", 10_010)],
+        proposed=10_010,
+    )
+    displacement_identity(Records([row], quotes, ()))
+
+
+def test_t8_displacement_identity_missing_quote() -> None:
+    row = _closed(
+        "C",
+        side="LONG",
+        entry_px=10_001,
+        exit_px=10_011,
+        qty=10,
+        entry_seq=2,
+        exit_seq=9,
+        reason="FAVORABLE",
+        paths=[("FAVORABLE", 10_010)],
+        proposed=10_010,
+    )
+    with pytest.raises(
+        AssertionError,
+        match=r"^displacement identity: cell C exit fill sequence 9 is not on the tape$",
+    ):
+        displacement_identity(Records([row], _quotes(), ()))
+
+
+def test_t8_mean_within_se_balanced_passes() -> None:
+    mean_within_se([1.0, -1.0, 1.0, -1.0], 0.0, label="displacement")
+
+
+def test_t8_mean_within_se_rejects_a_shift() -> None:
+    with pytest.raises(
+        AssertionError,
+        match=r"^mean displacement 10\.0 outside 4 SE of 0\.0 \(bound 0\.0\)$",
+    ):
+        mean_within_se([10.0, 10.0, 10.0, 10.0], 0.0, label="displacement")
+
+
+def test_t8_exit_reason_picks_adverse_over_favorable() -> None:
+    row = _closed(
+        "C",
+        side="LONG",
+        entry_px=10_001,
+        exit_px=9_990,
+        qty=10,
+        entry_seq=2,
+        exit_seq=3,
+        reason="ADVERSE",
+        paths=[("FAVORABLE", 10_020), ("ADVERSE", 9_990)],
+        proposed=9_990,
+    )
+    exit_reason_at_collision(Records([row, _requirement(3)], _quotes(), ()))
+
+
+def test_t8_drawn_level_band_zero_is_the_centre() -> None:
+    assert drawn_adverse_level("SYN|sig_position_fixture_v1|2|LONG", 11, 0) == 11
+    level = drawn_adverse_level("SYN|sig_position_fixture_v1|2|LONG", 11, 8)
+    assert 7 <= level <= 15
+
+
+def test_t8_exit_reason_rejects_the_flattering_tie() -> None:
+    row = _closed(
+        "C",
+        side="LONG",
+        entry_px=10_001,
+        exit_px=9_990,
+        qty=10,
+        entry_seq=2,
+        exit_seq=3,
+        reason="FAVORABLE",
+        paths=[("ADVERSE", 9_990), ("FAVORABLE", 10_020)],
+        proposed=10_020,
+    )
+    with pytest.raises(
+        AssertionError,
+        match=r"^exit reason FAVORABLE != ADVERSE cell C candidates \['ADVERSE', 'FAVORABLE'\]$",
+    ):
+        exit_reason_at_collision(Records([row, _requirement(3)], _quotes(), ()))

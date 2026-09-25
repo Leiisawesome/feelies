@@ -99,6 +99,37 @@ def remove_side(tape: list[NBBOQuote], index: int, side: str) -> list[NBBOQuote]
     return out
 
 
+def set_quote(
+    tape: list[NBBOQuote],
+    index: int,
+    *,
+    bid_cents: int,
+    ask_cents: int,
+    bid_size: int | None = None,
+    ask_size: int | None = None,
+) -> list[NBBOQuote]:
+    if not 0 < bid_cents < ask_cents:
+        raise ValueError("require 0 < bid_cents < ask_cents")
+    quote = tape[index]
+    out = list(tape)
+    out[index] = replace(
+        quote,
+        bid=Decimal(bid_cents) / 100,
+        ask=Decimal(ask_cents) / 100,
+        bid_size=quote.bid_size if bid_size is None else bid_size,
+        ask_size=quote.ask_size if ask_size is None else ask_size,
+    )
+    return out
+
+
+def excise(tape: list[NBBOQuote], index: int, count: int) -> list[NBBOQuote]:
+    if count < 1 or index < 0 or index + count > len(tape):
+        if count < 1:
+            raise ValueError(count)
+        raise IndexError(index)
+    return tape[:index] + tape[index + count :]
+
+
 def cross(tape: list[NBBOQuote], index: int, bid_cents: int, ask_cents: int) -> list[NBBOQuote]:
     if bid_cents <= ask_cents:
         raise ValueError("bid_cents must be greater than ask_cents")

@@ -98,6 +98,11 @@ FAILURE LOOKS LIKE:which configuration, which side of the identity
 BLOCKS THE BUILD:  yes — red until stage E
 ```
 
+Implementation (P-21d): `tests/position_engine/test_battery_m3_known_answer_conservation.py`.
+Tests `test_m3_barriers_only` (V3a, seed 11), `test_m3_barriers_swapped` (V3a2, seed 17),
+`test_m3_barriers_and_deadline` (V3b, seed 19), `test_m3_band_draw` (V3c, seed 23).
+Tape length 120_000 quotes. `green_from` E. (a) and (c) use `T_seconds` 16000 (D-50).
+
 ```
 MEMBER:            4 Side correctness
 DEFENDS AGAINST:   the spread disappearing from the accounting
@@ -129,6 +134,11 @@ ASSERTS:           for every closed cell: proposed price = worst among triggered
 FAILURE LOOKS LIKE:cell, deciding event, candidate list
 BLOCKS THE BUILD:  yes — red until stage E
 ```
+
+Implementation (P-21d): `tests/position_engine/test_battery_m5_precedence.py`.
+Tests `test_m5_invalidation_at_take_profit`, `test_m5_deadline_beyond_stop`,
+`test_m5_gap_through_trail_and_stop` (seed 29, 4_000 quotes; V3a / V3b / V5),
+and `test_m5_real` (`battery_real`). `green_from` E.
 
 ```
 MEMBER:            6 Injection

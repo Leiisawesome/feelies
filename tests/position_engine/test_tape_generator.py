@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import math
 import time
+from decimal import Decimal
 
 import pytest
 
@@ -12,10 +13,12 @@ from feelies.core.quote_quality import QuoteQuality, classify
 from tests.position_engine.tapes import (
     bid_path_cents,
     cross,
+    excise,
     hold,
     lattice_barrier,
     make_tape,
     remove_side,
+    set_quote,
 )
 
 _G3_N = 64
@@ -155,3 +158,42 @@ def test_g7_injectors() -> None:
     )
     with pytest.raises(ValueError):
         cross(tape, 7, bid_cents=10_040, ask_cents=10_050)
+
+
+def test_g8_set_quote_replaces_prices_keeps_identity() -> None:
+    tape = make_tape(seed=3, n=8, size=1000)
+    snapshot = copy.deepcopy(tape)
+    out = set_quote(tape, 3, bid_cents=10_010, ask_cents=10_014, bid_size=40, ask_size=50)
+    assert tape == snapshot
+    assert out[3].bid == Decimal("100.10")
+    assert out[3].ask == Decimal("100.14")
+    assert out[3].bid_size == 40
+    assert out[3].ask_size == 50
+    assert out[3].timestamp_ns == tape[3].timestamp_ns
+    assert out[3].exchange_timestamp_ns == tape[3].exchange_timestamp_ns
+    assert out[3].sequence == tape[3].sequence
+    assert out[3].symbol == tape[3].symbol
+    assert out[2] == tape[2]
+    prices_only = set_quote(tape, 3, bid_cents=10_020, ask_cents=10_021)
+    assert prices_only[3].bid_size == tape[3].bid_size
+    assert prices_only[3].ask_size == tape[3].ask_size
+    with pytest.raises(ValueError):
+        set_quote(tape, 3, bid_cents=10_010, ask_cents=10_010)
+    with pytest.raises(ValueError):
+        set_quote(tape, 3, bid_cents=10_012, ask_cents=10_011)
+
+
+def test_g8_excise_keeps_sequences_and_rejects_bad_spans() -> None:
+    tape = make_tape(seed=3, n=10, start_sequence=7)
+    snapshot = copy.deepcopy(tape)
+    out = excise(tape, 2, 3)
+    assert tape == snapshot
+    assert len(out) == 7
+    assert [quote.sequence for quote in out] == [7, 8, 12, 13, 14, 15, 16]
+    assert [quote.timestamp_ns for quote in out] == [
+        tape[i].timestamp_ns for i in (0, 1, 5, 6, 7, 8, 9)
+    ]
+    with pytest.raises(IndexError):
+        excise(tape, 8, 3)
+    with pytest.raises(ValueError):
+        excise(tape, 0, 0)
