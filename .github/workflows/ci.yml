@@ -152,7 +152,7 @@ jobs:
         # an open US market. Both self-skip, but deselecting is explicit and keeps
         # a skip from quietly becoming a failure the way it did in #223.
         # `slow` stays selected — it carries the mypy scope acceptance test.
-        run: uv run pytest -m "not functional and not paper_rth" -q
+        run: uv run pytest -m "not functional and not paper_rth and not battery_real" -q
 
       - name: Determinism under an unpinned hash seed
         # Everything above runs at PYTHONHASHSEED=0, which means none of it can
@@ -246,6 +246,9 @@ jobs:
         # from the one the baseline was minted on, this fails as "input tape
         # changed" rather than as parity drift — do not answer that by re-pinning.
         run: uv run pytest tests/acceptance/test_backtest_app_baseline.py -q -m ""
+
+      - name: Battery members (real session)
+        run: uv run pytest tests/position_engine -m battery_real -q
 
       - name: Replay the locked APP baseline under an unpinned hash seed
         # The step above runs at PYTHONHASHSEED=0, and until now that was the
