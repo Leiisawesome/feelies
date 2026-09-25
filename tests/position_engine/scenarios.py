@@ -33,6 +33,8 @@ from feelies.core.events import (
     NBBOQuote,
     OrderRequest,
     PositionClosed,
+    RiskAction,
+    RiskVerdict,
     PositionSnapshot,
 )
 from feelies.core.platform_config import OperatingMode, PlatformConfig
@@ -65,16 +67,19 @@ class Records(list[Record]):
 
     quotes: dict[int, NBBOQuote]
     order_requests: tuple[OrderRequest, ...]
+    risk_verdicts: tuple[RiskVerdict, ...]
 
     def __init__(
         self,
         rows: Sequence[Record],
         quotes: dict[int, NBBOQuote],
         order_requests: Sequence[OrderRequest],
+        risk_verdicts: Sequence[RiskVerdict] = (),
     ) -> None:
         super().__init__(rows)
         self.quotes = quotes
         self.order_requests = tuple(order_requests)
+        self.risk_verdicts = tuple(risk_verdicts)
 
 
 def canonical(event: Event) -> str:
@@ -103,6 +108,20 @@ def project_for_multiname(canonical_text: str) -> str:
     name, _, payload = canonical_text.partition("{")
     data = json.loads("{" + payload)
     return name + json.dumps(_drop_keys(data), sort_keys=True, separators=(",", ":"))
+
+
+def assert_no_risk_rejects(records: Records) -> None:
+    """Synthetic batteries must not be thinned by a risk-layer reject."""
+    rejects = [
+        verdict for verdict in records.risk_verdicts if verdict.action is not RiskAction.ALLOW
+    ]
+    if not rejects:
+        return
+    counts: dict[str, int] = {}
+    for verdict in rejects:
+        counts[verdict.reason] = counts.get(verdict.reason, 0) + 1
+    detail = ", ".join(f"{reason}:{counts[reason]}" for reason in sorted(counts))
+    raise AssertionError(f"CONFOUND: risk rejected {len(rejects)} signals ({detail})")
 
 
 def nonvacuous(records: Sequence[Record], *type_names: type[Event] | str, scenario: str) -> None:
@@ -288,7 +307,8 @@ def _capture(bus: object) -> list[Event]:
 def _records_from(stream: Sequence[Event]) -> Records:
     quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
     orders = [event for event in stream if type(event) is OrderRequest]
-    return Records([Record(*row) for row in attribute(stream)], quotes, orders)
+    verdicts = [event for event in stream if type(event) is RiskVerdict]
+    return Records([Record(*row) for row in attribute(stream)], quotes, orders, verdicts)
 
 
 @contextmanager

@@ -8,6 +8,7 @@ from feelies.core.events import PositionClosed
 from tests.position_engine.scenarios import (
     T0,
     Records,
+    assert_no_risk_rejects,
     cell_economics,
     drawn_adverse_level,
     fixture_variant,
@@ -69,6 +70,7 @@ def test_m3_barriers_only() -> None:
     """(a) no deadline. V3a is u:d = 5:10 = 1:2, expected favorable share 2/3."""
     records = run_synthetic(_tape(_SEED_A), symbols=("SYN",), variant=_base())
     nonvacuous(records, PositionClosed, scenario="m3_barriers")
+    assert_no_risk_rejects(records)
     cells = _closed(records)
     assert len(cells) >= 200, f"m3_barriers closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")
@@ -82,6 +84,7 @@ def test_m3_barriers_swapped() -> None:
     variant = _base(centre_ticks=6, target_ticks=9)
     records = run_synthetic(_tape(_SEED_A2), symbols=("SYN",), variant=variant)
     nonvacuous(records, PositionClosed, scenario="m3_barriers_swapped")
+    assert_no_risk_rejects(records)
     cells = _closed(records)
     assert len(cells) >= 200, f"m3_barriers_swapped closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")
@@ -98,6 +101,7 @@ def test_m3_barriers_and_deadline() -> None:
         variant=_base(T_seconds=10),
     )
     nonvacuous(records, PositionClosed, scenario="m3_deadline")
+    assert_no_risk_rejects(records)
     grouped = [
         float(cell_economics(row, records.quotes)[1])
         for row in _closed(records)
@@ -123,6 +127,7 @@ def test_m3_band_draw() -> None:
         variant=_base(band_ticks=8, lo_ticks=7, hi_ticks=15),
     )
     nonvacuous(records, PositionClosed, scenario="m3_band")
+    assert_no_risk_rejects(records)
     cells = _closed(records)
     assert len(cells) >= 200, f"m3_band closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")

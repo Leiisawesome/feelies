@@ -19,11 +19,14 @@ from feelies.core.events import (
     PositionExtreme,
     PositionSnapshot,
     RailOrientation,
+    RiskAction,
+    RiskVerdict,
 )
 from tests.position_engine.scenarios import (
     T0,
     Records,
     Record,
+    assert_no_risk_rejects,
     attribute,
     canonical,
     displacement_identity,
@@ -390,6 +393,35 @@ def test_t8_exit_reason_picks_adverse_over_favorable() -> None:
         proposed=9_990,
     )
     exit_reason_at_collision(Records([row, _requirement(3)], _quotes(), ()))
+
+
+def _verdict(action: RiskAction, reason: str) -> RiskVerdict:
+    return RiskVerdict(
+        timestamp_ns=1,
+        correlation_id="c",
+        sequence=1,
+        symbol="SYN",
+        action=action,
+        reason=reason,
+    )
+
+
+def test_t8_no_risk_rejects_on_a_clean_stream() -> None:
+    clean = Records([], {}, (), (_verdict(RiskAction.ALLOW, "within limits"),))
+    assert_no_risk_rejects(clean)
+
+
+def test_t8_no_risk_rejects_names_a_drawdown() -> None:
+    reason = "per-alpha drawdown 5.05% >= limit 5.0% — alpha should be quarantined"
+    records = Records([], {}, (), (_verdict(RiskAction.REJECT, reason),))
+    with pytest.raises(
+        AssertionError,
+        match=(
+            r"^CONFOUND: risk rejected 1 signals \(per-alpha drawdown 5\.05% >= "
+            r"limit 5\.0% — alpha should be quarantined:1\)$"
+        ),
+    ):
+        assert_no_risk_rejects(records)
 
 
 def test_t8_drawn_level_band_zero_is_the_centre() -> None:
