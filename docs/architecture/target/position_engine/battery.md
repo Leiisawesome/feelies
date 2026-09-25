@@ -70,7 +70,8 @@ TAPE:              real session through a truncating harness
 SETUP:             none
 ASSERTS:           for sampled events k, a run on the tape truncated after k produces an
                    identical rail update, snapshot and decisions at k; the dwell window
-                   holds exactly the quotes inside (t − D, t]; running extremes absorb
+                   holds exactly the quotes inside (t − D, t], and always the current
+                   quote (D-41); running extremes absorb
                    only events at or before k
 FAILURE LOOKS LIKE:the first event where truncated and full runs differ
 BLOCKS THE BUILD:  yes — green from stage B onward
@@ -81,17 +82,18 @@ MEMBER:            3 Known-answer conservation
 DEFENDS AGAINST:   sign errors, off-by-one barriers, hidden costs, the draw breaking the
                    arithmetic
 TAPE:              synthetic driftless, lattice prices, lattice barriers
-SETUP:             null configuration; (a) barriers only, no deadline; (b) barriers plus
+SETUP:             null configuration; (a) barriers only, no deadline (T longer than the tape); (b) barriers plus
                    deadline; (c) adverse level drawn from a band
 ASSERTS:           (a) with the favorable trigger u ticks and the adverse trigger d ticks from the valuation
 mark at birth, share exiting favorable first = d / (u + d) within tolerance, with at least one
 pair at u:d = 1:2 (expected 2/3). Thresholds stated as moves from entry cost translate as
-u = X + s and d = A − s, where X and A are the favorable and adverse thresholds in ticks and s
+u = X + s and d = L − s, where X and L are the favorable and adverse thresholds in ticks and s
 is the entry spread in ticks (the first reading is −s). (D-32); (b) the three exit groups' realized moves
                    integrate to zero within tolerance; (c) (a) holds averaged over draws;
-                   all three: mean result = −(cost figure computed from the tape and the
-                   barrier geometry without reading the engine's trade log), at every
-                   swept threshold
+                   all three: mean displacement = 0 within 4 standard errors, equivalently mean result =
+                   −mean cost, with result, displacement and cost as defined in contracts.md §9 (D-46),
+                   computed from the fills and the tape without reading any engine figure, at every swept
+                   threshold
 FAILURE LOOKS LIKE:which configuration, which side of the identity
 BLOCKS THE BUILD:  yes — red until stage E
 ```
@@ -140,6 +142,10 @@ ASSERTS:           favorable exits do not increase; adverse exits do not decreas
                    on every injected tape
 FAILURE LOOKS LIKE:which injection moved which count, by how much
 BLOCKS THE BUILD:  yes — red until stage E
+NOTE (D-48): under design review for P-21e. "Held quotes" must mean a quiet name (quotes
+excised), not repeated quotes; whether "the overall result does not improve" is implied for a
+correct engine on a single path is to be settled under the amendment rule before the member is
+written.
 ```
 
 ## The five written alongside the build

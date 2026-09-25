@@ -377,3 +377,39 @@ output).
   events on the bus (§7).
 - Fresh-process runs, canonical record serialisation and feed-gap injection are test-side:
   they need no production hook.
+
+## 9. Definitions closed at P-21c (D-40..D-47)
+
+- **S and D (A-07).** Platform config `position_rail_slippage_ticks: int = 0` (S, ticks) and
+  `position_rail_dwell_ns: int = 0` (D, ns); omitted from the config snapshot when at default.
+  Load check (L8 platform half): S ≥ 0, D ≥ 0. Implemented at P-40. (D-40)
+- **Dwell window.** Holds every quote with `exchange_timestamp_ns` in `(t − D, t]` and always
+  the current quote. With D = 0 it holds only the current quote: `dwelled_exit_mark` equals
+  `valuation_mark` and `warmed_up` is true from the first quote. (D-41)
+- **Blind limit A.** `A = adverse.blind_limit_seconds` (ns on the manifest). The adverse gate
+  fires `BLIND` when, for the cell's orientation, `paying_absent_for_ns > A`,
+  `valuation_absent_for_ns > A`, or `symbol_quiet_ns > A`. (D-42)
+- **Favorable suppression reasons**, checked in this order, the first failing one reported,
+  all six recorded in the flag state: `VALUATION_SIDE_ABSENT`, `CROSSED`, `FEED_GAP`,
+  `DWELL_NOT_CLEAN`, `NOT_WARMED_UP`, `SYMBOL_QUIET`. (D-43)
+- **Band draw.** `cell_id` = `symbol|strategy_id|birth_fill_sequence|side`.
+  `L = (centre − B/2) + (int.from_bytes(sha256(cell_id.encode("utf-8")).digest()[:8], "big") mod (B + 1))`.
+  Recomputed each event from `cell_id` and frozen config; never stored. (D-44)
+- **Deadline without session bounds.** When no session close resolves,
+  `horizon_deadline_ns = birth_fill_ts + T`. (D-45)
+- **Exit reasons (closed set).** `ADVERSE`, `HORIZON`, `INVALIDATION`, `FAVORABLE`,
+  `END_OF_TAPE`, `EXTERNAL:SIGN_FLIP`, `EXTERNAL:SAFETY` (engine 8), `EXTERNAL:OTHER`.
+  Requirement reasons map ADVERSE→ADVERSE_EXCURSION, HORIZON→HORIZON,
+  INVALIDATION→INVALIDATION, FAVORABLE→FAVORABLE_EXCURSION. (D-47)
+- **Closing-record flags** (at the deciding rail event unless stated):
+  `closed_on_stale_data` — valuation side absent, or `symbol_quiet_ns > Q`;
+  `exited_on_unusable_data` — trigger `BLIND`;
+  `lived_through_feed_gap` — any rail event in the cell's life had `feed_gap_before`;
+  `first_event_exit` — the deciding event is the cell's first rail event after birth;
+  `stop_inside_round_trip` — drawn `L ≤ round_trip_ticks`;
+  `target_inside_round_trip` — the fixed form was disarmed at birth (L1 runtime clause). (D-47)
+- **Result and cost (battery; not an engine output).** Per closed cell, from raw prices, no
+  fee: `result = sign × (Σ exit fill price × qty − Σ entry fill price × qty)`;
+  `displacement = sign × size × (valuation mark at the quote of the exit fill − valuation mark
+  at the quote of the entry fill)`, taken from the tape; `cost = displacement − result`.
+  Fees never enter engine figures; `fee_round_trip_ticks` enters only `round_trip_ticks`. (D-46)
