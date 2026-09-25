@@ -30501,6 +30501,8 @@ OWNER:       paper/live campaign.
 ## P-21a  stage A infrastructure  2026-09-25T11:10:00+08:00
   STEP:          P-21a (stage A)
   BASE:          8da1afab29cbf65810fb87f11c29d806442b6948 (arch/exec)
+  RESULT SHA:    8d63fe88c2d558a64ba699882ef2db387579c868 (exec/P-21a),
+                 merged as 1a9dceb5374f6e825e9353df1b9f4734879ccd02.
   PREDICTION:    PARITY hold. Tests and docs only. All 64 parity constants identical.
   STAGE 0:       S0-1 return Signal fields: timestamp_ns, correlation_id, sequence,
                  symbol, strategy_id="sig_contra_fixture_v1", direction, strength,
@@ -30538,6 +30540,7 @@ OWNER:       paper/live campaign.
                  FILLED=0 SlicePositionUpdate=0 MarkRailUpdate=6000; rejecting
                  reason "gross exposure limit: 12429.140 >= 10000.00" (also
                  "within limits" on other verdicts).
+  S4: fixture signals reached risk and were rejected on gross exposure (12429.140 >= 10000.00); P-21b must set the members' sizing/exposure explicitly and measure the session rule.
   NOTES:         Attempt 1 blocked: no HorizonTick without a sensor consumer
                  (bootstrap.py:1407); Amendment A adds the P-15 sensor set to the
                  schedule test and removes trend_mechanism (G16 rule 10).
