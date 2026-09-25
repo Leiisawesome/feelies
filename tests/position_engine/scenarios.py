@@ -122,30 +122,34 @@ def _keep(event: Event) -> bool:
     return type(event) in RECORD_TYPES
 
 
-def _capture(bus: object) -> tuple[list[Record], dict[int, NBBOQuote], list[OrderRequest]]:
-    rows: list[Record] = []
-    quotes: dict[int, NBBOQuote] = {}
-    orders: list[OrderRequest] = []
-    last: int | None = None
+def attribute(stream: Sequence[Event]) -> list[tuple[int | None, str, str]]:
+    """Attribute each recorded event to the quote cursor at publication.
 
-    def on_quote(event: NBBOQuote) -> None:
-        nonlocal last
-        last = event.sequence
-        quotes[event.sequence] = event
-
-    def on_event(event: Event) -> None:
-        nonlocal last
+    The cursor starts at None. A MarkRailUpdate sets it to ``quote_sequence``
+    before that update is recorded. An NBBOQuote sets it to ``sequence``.
+    """
+    cursor: int | None = None
+    rows: list[tuple[int | None, str, str]] = []
+    for event in stream:
         if type(event) is MarkRailUpdate:
-            # Published before its quote, so the update names the quote it belongs to.
-            last = event.quote_sequence
-        if type(event) is OrderRequest:
-            orders.append(event)
+            cursor = event.quote_sequence
+        elif type(event) is NBBOQuote:
+            cursor = event.sequence
         if _keep(event):
-            rows.append(Record(last, type(event).__name__, canonical(event)))
+            rows.append((cursor, type(event).__name__, canonical(event)))
+    return rows
 
-    bus.subscribe(NBBOQuote, on_quote)  # type: ignore[attr-defined]
-    bus.subscribe_all(on_event)  # type: ignore[attr-defined]
-    return rows, quotes, orders
+
+def _capture(bus: object) -> list[Event]:
+    stream: list[Event] = []
+    bus.subscribe_all(stream.append)  # type: ignore[attr-defined]
+    return stream
+
+
+def _records_from(stream: Sequence[Event]) -> Records:
+    quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
+    orders = [event for event in stream if type(event) is OrderRequest]
+    return Records([Record(*row) for row in attribute(stream)], quotes, orders)
 
 
 @contextmanager
@@ -200,10 +204,10 @@ def _execute_synthetic(
     )
     with _seams(engine_factory, rail_wrapper, attach_sink):
         orchestrator, resolved = build_platform(config, event_log=log)
-        rows, quotes, orders = _capture(orchestrator._bus)
+        stream = _capture(orchestrator._bus)
         orchestrator.boot(resolved)
         orchestrator.run_backtest()
-    return Records(rows, quotes, orders)
+    return _records_from(stream)
 
 
 _TAPES: dict[tuple[tuple[int, int, str], ...], list[NBBOQuote]] = {}
@@ -357,10 +361,7 @@ def _execute_real(
 
     def factory(config: PlatformConfig, event_log: InMemoryEventLog, **kwargs: object):
         orchestrator, resolved = build_platform(config, event_log=event_log, **kwargs)  # type: ignore[arg-type]
-        rows, quotes, orders = _capture(orchestrator._bus)
-        held["rows"] = rows
-        held["quotes"] = quotes
-        held["orders"] = orders
+        held["stream"] = _capture(orchestrator._bus)
         return orchestrator, resolved
 
     args = argparse.Namespace(
@@ -391,7 +392,7 @@ def _execute_real(
         )
     if outcome.exit_code != 0:
         raise RuntimeError(f"real session exit {outcome.exit_code}")
-    return Records(held["rows"], held["quotes"], held["orders"])  # type: ignore[arg-type]
+    return _records_from(held["stream"])  # type: ignore[arg-type]
 
 
 @functools.lru_cache(maxsize=None)

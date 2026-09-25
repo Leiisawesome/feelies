@@ -30583,6 +30583,9 @@ OWNER:       paper/live campaign.
                  perturbation before the nonvacuity check (TypeError from the P-10
                  stub). Amendment B: baseline → nonvacuous → perturbation, for
                  every member; gate_order is a P-30 obligation (contracts §8, D-31).
+                 Amendment C: attribution cursor moves on MarkRailUpdate and
+                 NBBOQuote (D-39); prevents a false member-2 failure at stage B
+                 that stage A could not show.
   MEMBERS:       m1/m2/m4_birth red NONVACUOUS: no PositionSnapshot records
                  (first missing type). m4_rail green on syn, syn spreads, and the
                  real session. Touch clause untested: birth raises NONVACUOUS
