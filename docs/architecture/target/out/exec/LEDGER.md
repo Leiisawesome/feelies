@@ -30665,3 +30665,24 @@ OWNER:       tooling rung before P-99.
                  0 failed, 19 skipped. Determinism 148 passed on both.
                  Port 4002 LISTENING pid 32216 before the pre-capture and after
                  the post-capture.
+
+---
+
+## P-21d
+  STEP:          P-21d (battery members 3 and 5 + set_quote/excise injectors)
+  PR:            #257
+  RESULT SHA:    9518506cc06cf59939f614db767ccf44f423f0e3,
+                 75fb56cc9996c0c93b237242dedada297d88acb5 (exec/P-21d),
+                 merged as dfc9b9a5b37d57e8948865a36f9fc1671aab3309.
+  PREDICTION:    NONE held. 64/64 constants unchanged. APP oracle unchanged
+                 (20 fills, net 103.93, trade hash 0601295a…).
+  VALIDATION:    gate "5059 passed, 5 skipped, 53 deselected, 1 xfailed, 48 warnings in 373.22s (0:06:13)";
+                 battery_real "10 passed, 107 deselected in 22.55s";
+                 CI battery step "10 passed, 107 deselected in 25.46s".
+  DECISIONS:     D-49..D-53 (D-49 drawdown finding with headroom; D-53 confound guard).
+  MEMBERS:       m3 and m5 green_from E; red at A via NONVACUOUS; m5 real-session
+                 precedence added (battery_real).
+  OPEN:          drawdown headroom (worst run 86.96% of limit) → to be addressed
+                 in P-21e; member 6 design D1–D3 approved and pending recording
+                 in P-21e.
+  OUTCOME:       parity hold. compare pre-P-21d -> post-merge-P-21d: 64 -> 64, changed 0.
