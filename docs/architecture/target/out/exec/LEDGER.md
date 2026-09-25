@@ -30561,6 +30561,50 @@ OWNER:       paper/live campaign.
 
 ---
 
+## P-21b  member harness, APP config, members 1, 2, 4  2026-09-25T13:30:00+08:00
+  STEP:          P-21b (stage A)
+  BASE:          0b77801ab7428a61d82b258a77271b04931f01f2 (arch/exec)
+  RESULT SHA:    the exec/P-21b commit that adds this block.
+  PREDICTION:    PARITY hold. Tests, config, CI, and docs only.
+  STAGE 0:       S0-1 engine 13 publishes PositionSnapshot, GateDecision,
+                 PositionClosed, DeRiskRequirement (source_layer="POSITION").
+                 S0-2 risk_wrapper.py:334-348. alpha_max_exposure =
+                 equity * capital_allocation_pct/100 * max_gross_exposure_pct/100
+                 = 15000 from fixture max_gross_exposure_pct 60. No fixture edit.
+                 S0-3 Top1SelectionPolicy selection_policy.py:27; tie-break
+                 min(-(edge*strength), strategy_id) at lines 82-86. SYN alone
+                 and SYN+ZZZ: 58 SYN order/fill rows, equal. ZZZ OrderRequests 0.
+                 S0-4 market_fill.py:202-225 within-L1 premium, then snap and clamp.
+  NOTES:         Attempt 1 blocked at S0-3: Top1SelectionPolicy kept SYM2 over SYN
+                 (0 vs 58 SYN rows); the exposure-cap raise to 100 was unnecessary
+                 (no rejects) and was not applied; Amendment A: quoted-not-traded
+                 ZZZ (D-36 revised, D-38).
+                 Attempt 2 blocked: test_m1_gates_syn built the gate_order
+                 perturbation before the nonvacuity check (TypeError from the P-10
+                 stub). Amendment B: baseline → nonvacuous → perturbation, for
+                 every member; gate_order is a P-30 obligation (contracts §8, D-31).
+  MEMBERS:       m1/m2/m4_birth red NONVACUOUS: no PositionSnapshot records
+                 (first missing type). m4_rail green on syn, syn spreads, and the
+                 real session. Touch clause untested: birth raises NONVACUOUS
+                 before the clause, so no coverage count was measured.
+  OUTCOME:       parity hold. compare pre-P-21b -> post-P-21b: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (749 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 0: 88 passed, 9 deselected (37.92s).
+                 V6 exit 0: 9 passed, 88 deselected, wall 29.91s.
+                 V7 exit 1: 1 failed, 5039 passed, 5 skipped, 52 deselected,
+                 1 xfailed — only test_capture_misses_equal_keep (post capture
+                 not yet tracked).
+                 V8 compare exit 0, parity HOLDS.
+                 Post-capture full suite: 5077 passed, 1 failed, 19 skipped
+                 (the untracked-capture miss). Pre-capture: 5053 passed,
+                 0 failed, 19 skipped. Determinism 148 passed on both.
+                 Port 4002 LISTENING pid 32216 before the pre-capture and
+                 after the post-capture.
+                 Capture-miss test rerun after both captures were staged: passed.
+
+---
+
 ## FINDING  baseline.py full suite records functional and paper_rth outcomes
 DATE:        2026-09-25
 CAUSE:       tools/exec/baseline.py runs the full suite, so captures

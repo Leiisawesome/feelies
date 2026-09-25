@@ -56,7 +56,8 @@ SETUP:             identical configuration across all runs
 ASSERTS:           byte-identical rail updates, snapshots, gate decisions, requirements
                    and closing records across: a deliberately wrong system clock
                    (time.time/monotonic patched); reversed gate evaluation order; the name
-                   alone versus inside a multi-name universe; a fresh process; sinks
+                   alone versus inside a multi-name universe whose other name is quoted
+                   but not traded (synthetic tapes; D-36, D-38); a fresh process; sinks
                    detached (non-sink outputs only)
 FAILURE LOOKS LIKE:a diff; the first divergent sequence localises it
 BLOCKS THE BUILD:  yes — green from stage B onward, never red again
@@ -106,6 +107,9 @@ ASSERTS:           every rail update: paying and valuation on opposite sides, di
                    move_now_cents = sign × (valuation at the birth fill × size −
                    entry_cost_cents) exactly, and = −entry_spread_ticks × size exactly for a
                    MARKET entry filled at the touch, long and short alike
+The touch clause applies only to cells whose every entry fill printed at the birth paying mark;
+the number of such cells is reported, and a count of zero is recorded as untested, not passed.
+The general identity holds for every cell. (D-34)
 FAILURE LOOKS LIKE:one event and which assertion
 BLOCKS THE BUILD:  yes — red until stage C (rail) / D (birth)
 ```
@@ -193,7 +197,7 @@ BLOCKS THE BUILD:  no — needs closing records
 |---|---|---|
 | A | tape generator + its test; the six blocking members, red; the broken engines | every broken engine caught, each by a named member |
 | B | walking skeleton on the P-10 surface (event types, wiring, streams and sinks landed in P-10): stub cell with birth/close from slice fills, stub gates, the two-phase step | members 1, 2 green |
-| C | mark rail | members 1, 2, 4 (rail half), 9 green |
+| C | mark rail | members 1, 2, 9 green; 4 (rail half) green since A (D-37) |
 | D | position cell | + 4 (birth), 10, 11 green |
 | E | both gates, precedence | all eleven green |
 

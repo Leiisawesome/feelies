@@ -69,9 +69,11 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-15 | schema | `exit_policy` in `alphas/SCHEMA.md` (schema bump), loader keys, load checks L1–L8, mode rule | fail-first per load check | hold |
 | P-16 | docs | evaluation architecture: three oracles, pre-registered breaks, P-95, campaign 14E gate, stage-letter mechanism, fixture defect (D-14..D-20) | docs tests | hold |
 | P-20 | A | synthetic tape generator and its own test | generator verified driftless, on lattice | hold |
-| P-21 | A | fixture alpha; the six blocking members, red | each red for the stated reason, quoted | hold |
+| P-21a | A | DONE. Fixture schedule, stage-gate hook, markers, member-1 seams, D-29/D-32 | hook self-tests; fixture schedule | hold |
+| P-21b | A | harness (scenarios.py), APP config, CI battery_real step; members 1, 2, 4 | 1, 2, 4-birth red NONVACUOUS; 4-rail green | hold |
+| P-21c | A | members 3, 5, 6, after a gate-definition census | each red for its stated reason | hold |
 | P-22 | A | broken engines B1–B11 | each caught by its named member | hold |
-| P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink | members 1, 2 green | hold |
+| P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it) | members 1, 2 green | hold |
 | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled) | + 4 (rail half), 9 | hold |
 | P-50 | D | position cell: birth from fill, entry rational, excursion, extremes, deadline, states, closing record | + 4 (birth), 10, 11 | hold |
 | P-51 | D | entry admission refusals and no-scale-in for owned alphas | member 10 refusal cases | hold |
