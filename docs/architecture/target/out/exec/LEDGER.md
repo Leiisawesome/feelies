@@ -30564,7 +30564,9 @@ OWNER:       paper/live campaign.
 ## P-21b  member harness, APP config, members 1, 2, 4  2026-09-25T13:30:00+08:00
   STEP:          P-21b (stage A)
   BASE:          0b77801ab7428a61d82b258a77271b04931f01f2 (arch/exec)
-  RESULT SHA:    the exec/P-21b commit that adds this block.
+  RESULT SHA:    faac632ee9e5602b14232e73b7bff256f1f19cf6 (exec/P-21b),
+                 merged as 98518981947a1fc95d46186eabc5a370c8617b9a.
+                 CI battery step (parity oracle): 9 passed, 89 deselected in 34.52s.
   PREDICTION:    PARITY hold. Tests, config, CI, and docs only.
   STAGE 0:       S0-1 engine 13 publishes PositionSnapshot, GateDecision,
                  PositionClosed, DeRiskRequirement (source_layer="POSITION").
