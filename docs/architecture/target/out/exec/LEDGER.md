@@ -30449,3 +30449,47 @@ STATE:       Defect item for the paper/live campaign:
 RISK:        A local full suite can fail a backtest
              merge on session state alone.
 OWNER:       paper/live campaign.
+
+## P-20  synthetic tape generator and its own tests  2026-09-24T21:30:00+08:00
+  STEP:          P-20 (stage A)
+  BASE:          399421eded43421ac1faa1b98550d3cefc7bd040 (arch/exec)
+  PREDICTION:    PARITY hold. Tests and docs only. All 64 parity constants identical.
+  STAGE 0:       unchanged (arch/exec 399421ed). tests/position_engine/ held
+                 __init__.py, test_p10_contract_surface.py, test_p15_exit_policy.py,
+                 and fixtures/sig_position_fixture_v1.alpha.yaml. tapes.py and
+                 test_tape_generator.py did not exist.
+                 S0-2: tests/ is a package. Sibling import:
+                 `from tests.conformance.test_null_alpha_conservation import _NULL_ALPHA`.
+                 tapes.py uses the same form:
+                 `from tests.position_engine.tapes import make_tape`.
+                 S0-3: feelies.core.quote_quality.classify(bid, ask, bid_size, ask_size).
+                 S0-4: NBBOQuote(Event) fields unchanged (symbol, bid, ask, bid_size,
+                 ask_size, bid_exchange, ask_exchange, exchange_timestamp_ns, conditions,
+                 indicators, sequence_number, tape, participant_timestamp_ns,
+                 trf_timestamp_ns, received_ns, plus Event provenance).
+  FAIL-FIRST:    ModuleNotFoundError: No module named 'tests.position_engine.tapes'
+  G2:            mean step -0.0009100022750056875 (seed 7, n=400000, p_move 0.25)
+  G3:            n=64. share hitting +1 before -2: 0.6644 (p=2/3).
+                 share hitting +2 before -1: 0.32965 (p=1/3). M=20000.
+  RUNTIME:       tests/position_engine/test_tape_generator.py 7.42s
+  OUTCOME:       parity hold. compare pre-P-20 -> post-P-20: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (741 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 1: 1 failed, 165 passed — only
+                 test_capture_misses_equal_keep (P-20 pre/post not yet tracked).
+                 V6 exit 1: 1 failed, 5010 passed, 5 skipped, 43 deselected,
+                 1 xfailed — same capture miss only.
+                 V7 compare exit 0, parity HOLDS.
+                 Capture-miss test rerun after both captures were staged: passed.
+  NOTES:         Pre-capture full suite: 5033 passed, 1 failed, 18 skipped.
+                 The failure was test_after_hours_reject_surfaces_as_rejected
+                 (expected terminal cleanup, got []). Post-capture full suite:
+                 5049 passed, 3 failed, 7 skipped. The extra failures are that
+                 same IB flake, the untracked-capture miss, and
+                 test_g12_cost_exceeds_disclosure_alert (paper_rth; session had
+                 entered RTH). Both functional failures are the environmental
+                 class recorded after P-12; the merge gate excludes them.
+                 Determinism 148 passed on both captures.
+                 Port 4002 LISTENING pid 1700 before the pre-capture and after
+                 the post-capture.
+                 D-28, D-29 appended. Feed-gap injector deferred to P-21.
