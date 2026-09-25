@@ -30453,6 +30453,8 @@ OWNER:       paper/live campaign.
 ## P-20  synthetic tape generator and its own tests  2026-09-24T21:30:00+08:00
   STEP:          P-20 (stage A)
   BASE:          399421eded43421ac1faa1b98550d3cefc7bd040 (arch/exec)
+  RESULT SHA:    395351e71058f02ac22d35d9d61f522e3c32aabc (exec/P-20),
+                 merged as a0f7c63aec32aece941a06fd7ea63c5c58ab973d.
   PREDICTION:    PARITY hold. Tests and docs only. All 64 parity constants identical.
   STAGE 0:       unchanged (arch/exec 399421ed). tests/position_engine/ held
                  __init__.py, test_p10_contract_surface.py, test_p15_exit_policy.py,
@@ -30493,3 +30495,19 @@ OWNER:       paper/live campaign.
                  Port 4002 LISTENING pid 1700 before the pre-capture and after
                  the post-capture.
                  D-28, D-29 appended. Feed-gap injector deferred to P-21.
+
+---
+
+## FINDING  baseline.py full suite records functional and paper_rth outcomes
+DATE:        2026-09-25
+CAUSE:       tools/exec/baseline.py runs the full suite, so captures
+             record wall-clock- and gateway-dependent functional/paper_rth
+             outcomes (P-20: pre red on
+             test_after_hours_reject_surfaces_as_rejected; post also red on
+             test_g12_cost_exceeds_disclosure_alert after RTH opened). The
+             64-constant compare is unaffected.
+STATE:       Tooling rung before P-99: captures run the merge-gate marker
+             set and record functional results separately.
+RISK:        A capture taken across the RTH boundary can go red on tests
+             the merge gate does not run, and look like a parity failure.
+OWNER:       tooling rung before P-99.
