@@ -30629,6 +30629,10 @@ OWNER:       tooling rung before P-99.
 ## P-21c
   STEP:          P-21c (spec closure for members 3, 5, 6; docs only)
   BASE:          d4d4c6677de2b7b63e1ed73eca84ddbd77a524d6 (arch/exec)
+  RESULT SHA:    c0aa813701f216747c826d88151e9f23f8c75d76 (exec/P-21c),
+                 merged as c2508a4e0088c7fd096049d01be1185a39f9911a.
+                 CI battery step (parity oracle): 9 passed, 89 deselected in 34.46s.
+                 Interrupted write duplicated D-40..D-48 and this block ×3; trimmed before validation. A decision/amendment-id uniqueness test is added to the pre-P-99 tooling rung.
   S0-1:          cell_id format is defined. Quoted sentences:
                  Frozen at birth: `cell_id` = `symbol|strategy_id|birth_fill_sequence|side`
                  — derived from the tape, never random or clock-based.
