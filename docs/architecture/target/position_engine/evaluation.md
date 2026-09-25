@@ -95,8 +95,9 @@ result exists.
 
 ## 5. Where real-session battery members run
 
-The main `check` job excludes the APP cache; the `parity oracle` job has it. Battery members
-that use the real session carry the pytest marker `battery_real`. The `parity oracle` job
-collects them with `FEELIES_REQUIRE_BASELINE_CACHE=1`, so that a missing cache fails rather
-than skips. The marker registration and the CI job change land with the first such member
-(P-21). (D-20)
+The `check` job restores the APP cache but does not require it, so a missing cache would skip
+silently. Battery members that use the real session therefore carry the pytest marker
+`battery_real` and run in exactly one place: the `parity oracle` job, with
+`FEELIES_REQUIRE_BASELINE_CACHE=1`, so a missing cache fails. The `check` job and the local
+merge gate deselect them. The CI change lands with the first `battery_real` member (P-21b),
+because a marker step that selects no tests exits with pytest's code 5. (D-20, D-30)

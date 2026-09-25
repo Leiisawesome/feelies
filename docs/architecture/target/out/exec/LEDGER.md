@@ -30498,6 +30498,66 @@ OWNER:       paper/live campaign.
 
 ---
 
+## P-21a  stage A infrastructure  2026-09-25T11:10:00+08:00
+  STEP:          P-21a (stage A)
+  BASE:          8da1afab29cbf65810fb87f11c29d806442b6948 (arch/exec)
+  PREDICTION:    PARITY hold. Tests and docs only. All 64 parity constants identical.
+  STAGE 0:       S0-1 return Signal fields: timestamp_ns, correlation_id, sequence,
+                 symbol, strategy_id="sig_contra_fixture_v1", direction, strength,
+                 edge_estimate_bps. Feature-derived: direction, strength,
+                 edge_estimate_bps from ofi_ewma_zscore, book_imbalance_mean, params.
+                 S0-2 regime_gate.py: ast.Constant allowed; _eval_node returns
+                 node.value (Python True / False).
+                 S0-3 reads_no_sensor requires depends_on_sensors == [] then rejects
+                 a feature reference.
+                 S0-5 test_p15_exit_policy._platform filters
+                 PlatformConfig.from_yaml("configs/bt_netting_contest.yaml").sensor_specs
+                 to ofi_ewma, book_imbalance, spread_z_30d, realized_vol_30s
+                 (platform.yaml sensor_specs, inherited by the contest config).
+  FIXTURE:       on_condition "True", off_condition "False". strength=1.0,
+                 edge_estimate_bps=9.0, strategy_id=alpha_id.
+                 Removed trend_mechanism block (G16 rule 10):
+                 trend_mechanism:
+                   family: KYLE_INFO
+                   expected_half_life_seconds: 120
+                   l1_signature_sensors:
+                     - book_imbalance
+                     - ofi_ewma
+                     - spread_z_30d
+                   failure_signature:
+                     - "spread_z_30d > 3.0"
+                     - "realized_vol_30s_zscore > 4.5"
+  FAIL-FIRST:    Unchanged fixture, sensors configured: S1 AssertionError set() == {1, 3}
+                 with horizon_engine.py:341 gate suppressed (P(normal), no RegimeState).
+                 S2 passed vacuously (no Signal to check). H1 before conftest:
+                 inner FAILED test_case.py::test_member - AssertionError: NONVACUOUS: none;
+                 outer assert 1 == 0.
+  H1-H9:         9 passed.
+  S1-S4:         S1 LONG at boundary 1, SHORT at 3, none at 0/2/4. S2 strategy_id
+                 sig_position_fixture_v1. S3 same with seed 2. S4 OrderRequest=0
+                 FILLED=0 SlicePositionUpdate=0 MarkRailUpdate=6000; rejecting
+                 reason "gross exposure limit: 12429.140 >= 10000.00" (also
+                 "within limits" on other verdicts).
+  NOTES:         Attempt 1 blocked: no HorizonTick without a sensor consumer
+                 (bootstrap.py:1407); Amendment A adds the P-15 sensor set to the
+                 schedule test and removes trend_mechanism (G16 rule 10).
+  OUTCOME:       parity hold. compare pre-P-21a -> post-P-21a: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (744 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 1: 1 failed, 640 passed — only
+                 test_capture_misses_equal_keep (P-21a pre/post not yet tracked).
+                 V6 exit 1: 1 failed, 5023 passed, 5 skipped, 43 deselected,
+                 1 xfailed — same capture miss only.
+                 V7 compare exit 0, parity HOLDS.
+                 Post-capture full suite: 5052 passed, 1 failed, 19 skipped
+                 (the untracked-capture miss). Pre-capture: 5040 passed,
+                 0 failed, 19 skipped. Determinism 148 passed on both.
+                 Port 4002 LISTENING pid 32216 before the pre-capture and
+                 after the post-capture.
+                 Capture-miss test rerun after both captures were staged: passed.
+
+---
+
 ## FINDING  baseline.py full suite records functional and paper_rth outcomes
 DATE:        2026-09-25
 CAUSE:       tools/exec/baseline.py runs the full suite, so captures

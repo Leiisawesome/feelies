@@ -18,6 +18,9 @@ diff touching that path in a build rung is a STOP.
   a long run, every price and every barrier on a lattice point, seeds reproducible.
 - **Injection helpers**: hold a quote past its time; remove a side (zero size); cross the
   book at a chosen level; set `feed_gap_before`. Paired with the clean tape they came from.
+- **Feed-gap injection** (D-28, D-31): tests wrap `MarkRail.on_quote` and return the update
+  with `feed_gap_before=True` for chosen quote sequences (`dataclasses.replace`), leaving every
+  other field unchanged.
 - **Fixture alpha** `sig_position_fixture_v1` (test-only): enters on a deterministic
   schedule independent of sensor values, stamps its own `strategy_id`
   (`sig_position_fixture_v1`), declares `exit_policy`, and is used by every member that
@@ -79,8 +82,11 @@ DEFENDS AGAINST:   sign errors, off-by-one barriers, hidden costs, the draw brea
 TAPE:              synthetic driftless, lattice prices, lattice barriers
 SETUP:             null configuration; (a) barriers only, no deadline; (b) barriers plus
                    deadline; (c) adverse level drawn from a band
-ASSERTS:           (a) share exiting favorable first = a / (a + b) within tolerance, with at
-                   least one pair at a:b = 1:2; (b) the three exit groups' realized moves
+ASSERTS:           (a) with the favorable trigger u ticks and the adverse trigger d ticks from the valuation
+mark at birth, share exiting favorable first = d / (u + d) within tolerance, with at least one
+pair at u:d = 1:2 (expected 2/3). Thresholds stated as moves from entry cost translate as
+u = X + s and d = A − s, where X and A are the favorable and adverse thresholds in ticks and s
+is the entry spread in ticks (the first reading is −s). (D-32); (b) the three exit groups' realized moves
                    integrate to zero within tolerance; (c) (a) holds averaged over draws;
                    all three: mean result = −(cost figure computed from the tape and the
                    barrier geometry without reading the engine's trade log), at every
@@ -210,6 +216,11 @@ created at P-21. Each blocking member declares `GREEN_FROM` (a stage letter) and
 
 Only a stage-gate rung edits `stage.txt`. No build rung edits a test. `xfail` is not used for
 battery members.
+
+Marker: `@pytest.mark.battery_member(member=N, green_from="<A–E>", red_reason=r"...")`.
+A member split by stage (member 4's rail and birth halves) is two test functions with their
+own `green_from`. Every member asserts non-vacuity first (records of the kind it judges exist)
+with a message beginning `NONVACUOUS:`, then its property.
 
 ## Broken engines (stage A gate)
 
