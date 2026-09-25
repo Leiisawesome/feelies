@@ -30623,3 +30623,41 @@ STATE:       Tooling rung before P-99: captures run the merge-gate marker
 RISK:        A capture taken across the RTH boundary can go red on tests
              the merge gate does not run, and look like a parity failure.
 OWNER:       tooling rung before P-99.
+
+---
+
+## P-21c
+  STEP:          P-21c (spec closure for members 3, 5, 6; docs only)
+  BASE:          d4d4c6677de2b7b63e1ed73eca84ddbd77a524d6 (arch/exec)
+  S0-1:          cell_id format is defined. Quoted sentences:
+                 Frozen at birth: `cell_id` = `symbol|strategy_id|birth_fill_sequence|side`
+                 — derived from the tape, never random or clock-based.
+                 Step, two phases per rail event, per open cell, in `cell_id` order.
+                 PositionSnapshot, every rail event, every open cell, lists `cell_id` among
+                 its fields.
+                 PositionClosed, once, write-once, lists `cell_id`, symbol, strategy, side.
+                 Level: L drawn once per cell from a flat distribution over the whole-tick
+                 band, seeded by SHA-256 of `cell_id`; recomputed each event from `cell_id`
+                 and frozen run config, never stored, never re-drawn.
+                 D-44 uses the defined format verbatim:
+                 `symbol|strategy_id|birth_fill_sequence|side`.
+  FILES:         docs/architecture/target/position_engine/contracts.md
+                 docs/architecture/target/position_engine/battery.md
+                 docs/architecture/target/position_engine/decisions.md
+                 docs/architecture/target/out/phase14_position_engine.md
+                 docs/architecture/target/out/exec/LEDGER.md
+                 docs/architecture/target/out/exec/baseline_pre-P-21c.json
+                 docs/architecture/target/out/exec/baseline_post-P-21c.json
+  OUTCOME:       parity hold. compare pre-P-21c -> post-P-21c: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (721 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 1: 1 failed, 106 passed — only
+                 test_capture_misses_equal_keep (pre and post not yet tracked).
+                 V6 exit 1: 1 failed, 5040 passed, 5 skipped, 52 deselected,
+                 1 xfailed — same capture miss only.
+                 V7 compare exit 0, parity HOLDS.
+                 Post-capture full suite: 5078 passed, 1 failed, 19 skipped
+                 (the untracked-capture miss). Pre-capture: 5079 passed,
+                 0 failed, 19 skipped. Determinism 148 passed on both.
+                 Port 4002 LISTENING pid 32216 before the pre-capture and after
+                 the post-capture.
