@@ -9,11 +9,11 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 
-from feelies.core.events import NBBOQuote, Trade
+from feelies.core.events import Event, NBBOQuote
 from feelies.harness.backtest_prep import _in_rth
 from feelies.storage.cache_replay import iter_trading_dates
 
-CalibrationLoader = Callable[[Sequence[str], str], Sequence[NBBOQuote | Trade] | None]
+CalibrationLoader = Callable[[Sequence[str], str], Sequence[Event] | None]
 
 
 def prior_trading_date(session_date: str) -> str:
