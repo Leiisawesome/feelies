@@ -30709,3 +30709,92 @@ OWNER:       tooling rung before P-99.
                  has 2 risk rejects at stage A (reason and timestamps at P-21f
                  census); P-21f real-session budget (15.0 s per full run).
   OUTCOME:       parity hold. compare pre-P-21e -> post-merge-P-21e: 64 -> 64, changed 0.
+
+---
+
+## P-13
+  STEP:          P-13 (causal regime calibration, fallback C, widened member 2,
+                 pre-registered oracle re-pin)
+  PR:            #259
+  RESULT SHA:    2089f19e (E0 prediction),
+                 7beee259f9ff42d27f1f3f427e4686536a4b000b (exec/P-13),
+                 merged as 91f7433f076f3a6914961147fe8cc19524fe7530.
+  PREDICTION:    PRE-REGISTERED PARITY BREAK held exactly:
+                 FILL_COUNT 20 -> 10, NET_PNL 103.93 -> 24.61,
+                 TRADE_PARITY_HASH 0601295a… -> 18f6bb4e…;
+                 CONFIG_HASH and DATA_VERSION unchanged.
+                 MECHANISM: regime emissions fitted on 2026-03-25 RTH (50636)
+                 instead of the replayed 2026-03-26.
+  COMPARE:       pre-P-13 -> post-P-13: 64 -> 64, changed 3
+                   _BASELINE_FILL_COUNT 20 -> 10
+                   _BASELINE_NET_PNL 103.93 -> 24.61
+                   _BASELINE_TRADE_PARITY_HASH 0601295a20b518ea… -> 18f6bb4ecd7b1b1a…
+                 pre-P-13 -> post-merge-P-13: 64 -> 64, changed 3, same three
+                 values (not changed 0).
+  VALIDATION:    gate "5086 passed, 5 skipped, 51 deselected, 1 xfailed, 48 warnings in 284.02s (0:04:44)";
+                 battery_real "8 passed, 112 deselected in 46.29s";
+                 CI battery step "8 passed, 112 deselected in 78.09s (0:01:18)";
+                 CI jobs check 519 s / parity oracle 162 s (D-71).
+  DECISIONS:     D-63..D-71 (D-63 prior-session quotes; D-64 uncalibrated
+                 factor is min(scales); D-65 widened member 2; D-66 one-time
+                 re-pin; D-67 fallback C; D-68 ex-date guard stays; D-69 cuts
+                 at decision points; D-70 nonvacuous re-proof; D-71 parity job
+                 must not extend the CI critical path).
+  PROCESS:       a fail-first re-proof must be nonvacuous itself (confirm the
+                 injected defect took effect before reading the detector's
+                 verdict). Amendment A's re-proof was vacuous, and B1
+                 corrected it.
+  STAGE:         A.
+  OPEN:          D-63 live/paper wiring (paper/live campaign);
+                 test_two_alphas_hold_live_targets_on_one_symbol (relied on
+                 the removed scan; non-gating);
+                 exchange holiday calendar gap (D-67);
+                 research results on the regime-gated/sized path before P-13
+                 to be re-run causally before campaign 15 (see FINDING).
+  NOTES:         D-71's 519 s / 162 s are run 36238122317 at b291d4d2.
+                 Merge CI run 36239927138: check 5m19s (319 s), parity oracle
+                 2m48s (168 s). Cache key feelies-eventcache-APP-2026-03-25_26-v2
+                 was not a hit; restore-key feelies-eventcache-APP-2026-03-26-v1
+                 hit, then fetch-only populate of 2026-03-25 via ingest_data
+                 (cache hit 2026-03-26). Post-merge capture moved to
+                 ..\feelies-captures\P-13\baseline_post-merge-P-13.json.
+                 Full-suite captures record 1 failed:
+                 test_two_alphas_hold_live_targets_on_one_symbol (functional).
+  OUTCOME:       pre-registered parity break held. compare pre-P-13 ->
+                 post-merge-P-13: 64 -> 64, changed 3.
+
+---
+
+## EXEMPTION  one-time pre-registered APP oracle re-pin (D-66)
+DATE:        2026-09-26
+FAILURE:     parity CHANGED on the APP acceptance oracle. Exactly three
+             constants moved, and no others:
+             _BASELINE_FILL_COUNT 20 -> 10
+             _BASELINE_NET_PNL 103.93 -> 24.61
+             _BASELINE_TRADE_PARITY_HASH 0601295a… -> 18f6bb4e…
+             _BASELINE_CONFIG_HASH and _BASELINE_DATA_VERSION unchanged.
+PRESENT IN:  baseline_pre-P-13.json -> baseline_post-P-13.json, and the
+             same three moves in baseline_post-merge-P-13.json (kept outside
+             the tree).
+CAUSE:       regime emissions fitted on 2026-03-25 RTH (50636 quotes)
+             instead of the replayed 2026-03-26. The break was written
+             before the pre-capture (E0 2089f19e).
+DECISION:    proceed. D-66 allows this re-pin once. The oracle is frozen
+             again after P-13.
+WATCH:       a later compare that moves any other constant, or that does
+             not reproduce these three values, is a stop.
+NOTE:        both compares (pre -> post and pre -> post-merge) show
+             changed 3 with these values.
+
+---
+
+## FINDING  pre-P-13 regime-path research must be re-run causally
+DATE:        2026-09-26
+CAUSE:       The legacy oracle's net fell 103.93 -> 24.61 under causal
+             calibration. Regime emissions had been fitted on the session
+             being replayed.
+STATE:       Any research result on the regime-gated or regime-sized
+             backtest path before P-13 is to be re-run causally before
+             campaign 15 relies on it.
+RISK:        Campaign 15 could treat a lookahead-fitted net as evidence.
+OWNER:       campaign 15.
