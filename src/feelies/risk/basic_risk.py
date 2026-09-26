@@ -874,8 +874,9 @@ class BasicRiskEngine:
     def _regime_scaling(self, symbol: str) -> float:
         """Return ``sum(p_i * scale_i)`` for smooth limit tightening.
 
-        Missing posteriors and unknown states use the minimum scale. A missing
-        regime engine means scaling was explicitly disabled and returns 1.0.
+        Missing posteriors, an uncalibrated state, and unknown states use the
+        minimum scale. A missing regime engine means scaling was explicitly
+        disabled and returns 1.0.
         """
         if self._regime_states is None:
             return 1.0
@@ -883,7 +884,8 @@ class BasicRiskEngine:
         # Read the *published* snapshot, not the live engine: risk and the signal
         # layer must scale and gate on the same announced state (Inv-8).
         state = self._regime_states.latest(symbol)
-        if state is None or not state.posteriors:
+        # An uncalibrated posterior carries no more information than a missing one.
+        if state is None or not state.posteriors or not state.calibrated:
             return self._regime_scale_default
 
         posteriors = state.posteriors

@@ -9,7 +9,6 @@ modes share the same tick pipeline and publish every state transition.
 from __future__ import annotations
 
 import hashlib
-import itertools
 import logging
 import time
 from collections import deque
@@ -852,11 +851,9 @@ def _checkpoint_regime_snapshot(self: Any) -> None:
 
 
 def _calibrate_regime_engine(self: Any) -> None:
-    """Calibrate emissions from a bounded replay prefix.
+    """Fit emissions from the supplied prior-session quotes.
 
-    The run replays its calibration prefix, so early prefix posteriors use
-    moments estimated from later prefix quotes. A prior-session fit is needed
-    when strict causal warm-up behavior matters.
+    ``None`` and ``()`` both skip. The current event log is never scanned.
     """
     if self._regime_engine is None:
         return
@@ -889,42 +886,29 @@ def _calibrate_regime_engine(self: Any) -> None:
         return
 
     precomputed = self._regime_calibration_quotes
-    if precomputed is not None:
-        quotes = list(precomputed)
-    else:
-        quote_stream = (
-            event for event in self._event_log.replay() if isinstance(event, NBBOQuote)
+    if not precomputed:
+        logger.info(
+            "Regime calibration skipped — no prior-session quotes "
+            "(uncalibrated fallback; gates fail closed)"
         )
-        quotes = list(itertools.islice(quote_stream, max_q))
-    if not quotes:
-        logger.info("Regime calibration skipped — no quotes in event log")
+        self._regime_calibration_provenance = (None, 0)
         return
 
+    quotes = list(precomputed)
     prefix_n = len(quotes)
-    # Exact total only when the prefix exhausts the quote stream; otherwise
-    # counting the suffix is O(full log) at boot — report a lower bound.
-    exact_total = precomputed is not None or prefix_n < max_q
-
+    source = self._regime_calibration_source_date
     ok = calibrate_fn(quotes)
+    self._regime_calibration_provenance = (source, prefix_n)
     if ok:
-        if exact_total:
-            logger.info(
-                "Regime engine calibrated from %d quotes (prefix cap=%d, total_log=%d)",
-                prefix_n,
-                max_q,
-                prefix_n,
-            )
-        else:
-            logger.info(
-                "Regime engine calibrated from %d quotes "
-                "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
-                prefix_n,
-                max_q,
-                max_q,
-            )
+        logger.info(
+            "Regime engine calibrated from %d prior-session quotes (source=%s, cap=%d)",
+            prefix_n,
+            source,
+            max_q,
+        )
     else:
         logger.warning(
-            "Regime calibration failed (insufficient data in prefix: "
+            "Regime calibration failed (insufficient data in prior session: "
             "%d quotes, cap=%d) — using default emission parameters",
             prefix_n,
             max_q,
@@ -934,17 +918,16 @@ def _calibrate_regime_engine(self: Any) -> None:
             correlation_id="regime_calibration",
             severity=AlertSeverity.CRITICAL,
             alert_name="regime_calibration_failed",
-            message=f"Regime engine calibrate() returned False (prefix_quotes={prefix_n}, cap={max_q}). Posteriors may discriminate poorly until operators raise regime_calibration_max_quotes or supply cleaner data.",
+            message=(
+                f"Regime engine calibrate() returned False "
+                f"(prior_session_quotes={prefix_n}, cap={max_q}). "
+                "Posteriors may discriminate poorly until operators raise "
+                "regime_calibration_max_quotes or supply cleaner data."
+            ),
             context={
                 "prefix_quote_count": prefix_n,
                 "cap": max_q,
-                "total_quotes_in_log": prefix_n,
-            }
-            if exact_total
-            else {
-                "prefix_quote_count": prefix_n,
-                "cap": max_q,
-                "total_quotes_in_log_at_least": max_q,
+                "source_date": source,
             },
         )
 
@@ -3186,6 +3169,8 @@ class Orchestrator:
         self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
             tuple(regime_calibration_quotes) if regime_calibration_quotes is not None else None
         )
+        self._regime_calibration_source_date: str | None = None
+        self._regime_calibration_provenance: tuple[str | None, int] = (None, 0)
 
         self._config: PlatformConfig | None = None
 
@@ -3413,6 +3398,11 @@ class Orchestrator:
     @property
     def risk_level(self) -> RiskLevel:
         return self._risk_escalation.state
+
+    @property
+    def regime_calibration_provenance(self) -> tuple[str | None, int]:
+        """``(prior session date or None, quote count)`` recorded at boot."""
+        return self._regime_calibration_provenance
 
     @property
     def trade_journal(self) -> TradeJournal | None:

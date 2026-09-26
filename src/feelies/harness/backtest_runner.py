@@ -48,6 +48,7 @@ from feelies.harness.backtest_prep import (
     QuoteReplayObserver,
     prepare_backtest_event_log,
 )
+from feelies.harness.regime_calibration import prior_session_calibration_quotes
 from feelies.harness.backtest_report import (
     cache_data_version,
     format_section,
@@ -85,7 +86,12 @@ from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.ingest_health import terminal_symbol_health_rows
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
-from feelies.storage.cache_replay import IngestDayMeta, iter_trading_dates
+from feelies.storage.cache_replay import (
+    CacheReplayError,
+    IngestDayMeta,
+    iter_trading_dates,
+    load_event_log_from_disk_cache,
+)
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -710,6 +716,50 @@ def _run_backtest_phases_2_7(
             f"({len(_edge_factors)} alpha factor(s))",
             flush=True,
         )
+    session_date = date_range.split(" to ", 1)[0]
+    max_cal = config.regime_calibration_max_quotes
+    if max_cal is None:
+        cal_quotes = None
+        cal_provenance: tuple[str | None, int] = (None, 0)
+    else:
+
+        def _load_prior_session(
+            symbols_in: Sequence[str], day: str
+        ) -> Sequence[NBBOQuote | Trade] | None:
+            cache_arg = getattr(args, "cache_dir", None)
+            if cache_arg:
+                resolved_cache: Path | None = Path(cache_arg)
+            else:
+                resolved_cache = getattr(config, "cache_dir", None)
+            try:
+                prior_log, _, _ = load_event_log_from_disk_cache(
+                    symbols_in,
+                    day,
+                    day,
+                    cache_dir=resolved_cache,
+                )
+            except CacheReplayError:
+                return None
+            return list(prior_log.replay())
+
+        cal_quotes, cal_provenance = prior_session_calibration_quotes(
+            symbols=symbols,
+            session_date=session_date,
+            max_quotes=max_cal,
+            loader=_load_prior_session,
+        )
+        if cal_provenance[0] is None:
+            print(
+                f"  regime calibration: no prior-session data before {session_date}; "
+                "uncalibrated fallback",
+                flush=True,
+            )
+        else:
+            print(
+                f"  regime calibration: prior session {cal_provenance[0]} "
+                f"({cal_provenance[1]} quotes)",
+                flush=True,
+            )
     orchestrator, config_out = platform_factory(
         config,
         event_log=event_log,
@@ -717,9 +767,10 @@ def _run_backtest_phases_2_7(
         net_shadow_sink=net_shadow_sink,
         size_shadow_sink=size_shadow_sink,
         precomputed_ex_date_spans=prep.calendar_spans,
-        regime_calibration_quotes=prep.regime_calibration_quotes,
+        regime_calibration_quotes=cal_quotes,
         edge_calibration_factors=_edge_factors,
     )
+    orchestrator._regime_calibration_source_date = cal_provenance[0]
     alpha_count = (
         len(orchestrator.alpha_registry.alpha_ids())
         if orchestrator.alpha_registry is not None
