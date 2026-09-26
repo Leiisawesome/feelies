@@ -66,6 +66,7 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-11a | docs | fold P-10 decisions D-01..D-06 into the spec and this plan (A-16, A-17) | docs tests | hold |
 | P-11 | rail | book mark rule: executable-side valuation, retain last valid mark on crossed/locked/zero-side, stale flag; named `reference_mid` for sizing consumers the census identifies | engine 7 contract tests; pre-registered prediction per evaluation.md §2, including whether any fill moves | measured; operator declares or reverts |
 | P-12 | rail | post-exit hypothetical views valued at the executable side, not the mid (D-23) | census; pre-registered prediction per evaluation.md §2 | measured |
+| P-13 | A | implemented on exec/P-13. Causal regime calibration from the prior session (D-63), uncalibrated fallback at min(scales) (D-64), widened member 2 (D-65), one-time legacy-oracle re-pin (D-66) | pre-registered prediction; provenance 2026-03-25, n=50636 | declared break: fills 20→10, net 103.93→24.61, trade hash re-pinned |
 | P-15 | schema | `exit_policy` in `alphas/SCHEMA.md` (schema bump), loader keys, load checks L1–L8, mode rule | fail-first per load check | hold |
 | P-16 | docs | evaluation architecture: three oracles, pre-registered breaks, P-95, campaign 14E gate, stage-letter mechanism, fixture defect (D-14..D-20) | docs tests | hold |
 | P-20 | A | synthetic tape generator and its own test | generator verified driftless, on lattice | hold |
