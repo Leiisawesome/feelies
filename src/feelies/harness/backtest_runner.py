@@ -723,9 +723,7 @@ def _run_backtest_phases_2_7(
         cal_provenance: tuple[str | None, int] = (None, 0)
     else:
 
-        def _load_prior_session(
-            symbols_in: Sequence[str], day: str
-        ) -> Sequence[Event] | None:
+        def _load_prior_session(symbols_in: Sequence[str], day: str) -> Sequence[Event] | None:
             cache_arg = getattr(args, "cache_dir", None)
             if cache_arg:
                 resolved_cache: Path | None = Path(cache_arg)
