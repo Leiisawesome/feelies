@@ -101,7 +101,10 @@ jobs:
           path: ~/.feelies/cache
           # A historical session never changes, so the key is static. Bump the
           # suffix to force a refetch if the normalizer's on-disk format moves.
-          key: feelies-eventcache-APP-2026-03-26-v1
+          # v2 adds the prior session (2026-03-25) used for causal regime calibration.
+          key: feelies-eventcache-APP-2026-03-25_26-v2
+          restore-keys: |
+            feelies-eventcache-APP-2026-03-26-v1
 
       - name: Mark hot-path fork skip
         if: >-
@@ -123,16 +126,29 @@ jobs:
           github.event_name == 'push' ||
           github.event.pull_request.head.repo.full_name == github.repository )
         run: |
-          if [ -f "$HOME/.feelies/cache/APP/2026-03-26.jsonl.gz" ]; then
-            echo "cache hit — skipping fetch"
+          missing=0
+          for date in 2026-03-25 2026-03-26; do
+            if [ -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
+              echo "cache hit ${date}"
+            else
+              echo "cache miss ${date}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
             exit 0
           fi
           if [ -z "${MASSIVE_API_KEY}" ]; then
-            echo "::error::APP/2026-03-26 event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
+            echo "::error::APP event cache missing for 2026-03-25 or 2026-03-26 and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
             exit 1
           fi
-          uv run feelies backtest --config configs/bt_app.yaml \
-            --symbol APP --date 2026-03-26 >/dev/null
+          for date in 2026-03-25 2026-03-26; do
+            if [ ! -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
+              echo "fetching ${date}"
+              uv run feelies backtest --config configs/bt_app.yaml \
+                --symbol APP --date "$date" >/dev/null
+            fi
+          done
         env:
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
 
@@ -213,23 +229,39 @@ jobs:
           path: ~/.feelies/cache
           # A historical session never changes, so the key is static. Bump the
           # suffix to force a refetch if the normalizer's on-disk format moves.
-          key: feelies-eventcache-APP-2026-03-26-v1
+          # v2 adds the prior session (2026-03-25) used for causal regime calibration.
+          key: feelies-eventcache-APP-2026-03-25_26-v2
+          restore-keys: |
+            feelies-eventcache-APP-2026-03-26-v1
 
       - name: Populate cache on miss
         # Fetching needs the Massive key. If the cache missed and no key is
         # configured, fail here with the reason rather than letting the next
         # step report a confusing replay error.
         run: |
-          if [ -f "$HOME/.feelies/cache/APP/2026-03-26.jsonl.gz" ]; then
-            echo "cache hit — skipping fetch"
+          missing=0
+          for date in 2026-03-25 2026-03-26; do
+            if [ -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
+              echo "cache hit ${date}"
+            else
+              echo "cache miss ${date}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
             exit 0
           fi
           if [ -z "${MASSIVE_API_KEY}" ]; then
-            echo "::error::APP/2026-03-26 event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
+            echo "::error::APP event cache missing for 2026-03-25 or 2026-03-26 and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
             exit 1
           fi
-          uv run feelies backtest --config configs/bt_app.yaml \
-            --symbol APP --date 2026-03-26 >/dev/null
+          for date in 2026-03-25 2026-03-26; do
+            if [ ! -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
+              echo "fetching ${date}"
+              uv run feelies backtest --config configs/bt_app.yaml \
+                --symbol APP --date "$date" >/dev/null
+            fi
+          done
         env:
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
 
