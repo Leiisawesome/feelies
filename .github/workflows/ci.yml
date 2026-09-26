@@ -137,19 +137,15 @@ jobs:
               exit 1
             fi
             echo "fetching ${date}"
-            # The fetch backtest of a day whose prior session is not cached yet
-            # runs uncalibrated and can fail verification (exit 2) after the
-            # tape is already on disk. The cache file is the success condition.
-            set +e
-            uv run feelies backtest --config configs/bt_app.yaml \
-              --symbol APP --date "$date" >/dev/null
-            status=$?
-            set -e
+            # Fetch-only. ingest_data writes the day cache and does not replay.
+            # A backtest of 2026-03-25 exits 2 under D-67 (2026-03-24 has no tape);
+            # this path does not run that backtest.
+            uv run python -c "import os; from feelies.harness.backtest_runner import ingest_data; ingest_data(os.environ['MASSIVE_API_KEY'], ['APP'], '$date', '$date')"
             if [ ! -f "$f" ]; then
-              echo "::error::fetch of APP/${date} did not write the cache (backtest exit ${status})"
+              echo "::error::fetch of APP/${date} did not write the cache"
               exit 1
             fi
-            echo "fetched ${date} (backtest exit ${status})"
+            echo "fetched ${date} via ingest_data"
           done
         env:
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
@@ -252,19 +248,15 @@ jobs:
               exit 1
             fi
             echo "fetching ${date}"
-            # The fetch backtest of a day whose prior session is not cached yet
-            # runs uncalibrated and can fail verification (exit 2) after the
-            # tape is already on disk. The cache file is the success condition.
-            set +e
-            uv run feelies backtest --config configs/bt_app.yaml \
-              --symbol APP --date "$date" >/dev/null
-            status=$?
-            set -e
+            # Fetch-only. ingest_data writes the day cache and does not replay.
+            # A backtest of 2026-03-25 exits 2 under D-67 (2026-03-24 has no tape);
+            # this path does not run that backtest.
+            uv run python -c "import os; from feelies.harness.backtest_runner import ingest_data; ingest_data(os.environ['MASSIVE_API_KEY'], ['APP'], '$date', '$date')"
             if [ ! -f "$f" ]; then
-              echo "::error::fetch of APP/${date} did not write the cache (backtest exit ${status})"
+              echo "::error::fetch of APP/${date} did not write the cache"
               exit 1
             fi
-            echo "fetched ${date} (backtest exit ${status})"
+            echo "fetched ${date} via ingest_data"
           done
         env:
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}

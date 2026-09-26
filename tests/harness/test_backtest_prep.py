@@ -107,6 +107,7 @@ def test_prepare_backtest_event_log_calibration_respects_cap() -> None:
         regime_calibration_max_quotes=3,
     )
     prep = prepare_backtest_event_log(config, log)
+    assert prep.n_quotes == 5
     assert prep.regime_calibration_quotes is None
 
 
