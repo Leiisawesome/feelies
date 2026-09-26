@@ -200,12 +200,12 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # constant pins the raw ``from_yaml`` snapshot; the operator report prints the
 # post-CLI-override hash, which is a different value for the same run.
 _BASELINE_CONFIG_HASH = "bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95"
-_BASELINE_TRADE_PARITY_HASH = "0601295a20b518ea4b6997cbd1aff145049570de044a0766a16b566a3ba17df3"
+_BASELINE_TRADE_PARITY_HASH = "18f6bb4ecd7b1b1aad5158077cd6ebbc3e6db27fdab2e2effaf5a74e98545bfb"
 # Content-bound identifier for the input tape (per-day event counts + ingestion
 # health). Distinct from the parity hashes: this pins what went *in*.
 _BASELINE_DATA_VERSION = "cache:2364ef7fe41c27d9"
-_BASELINE_NET_PNL = Decimal("103.93")
-_BASELINE_FILL_COUNT = 20
+_BASELINE_NET_PNL = Decimal("24.61")
+_BASELINE_FILL_COUNT = 10
 
 
 def _load_runner():
@@ -218,6 +218,19 @@ def _load_runner():
     sys.modules["_backtest_app_baseline_runner"] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def _calibration_view(orchestrator: Orchestrator) -> tuple[bool, str | None, int]:
+    """(calibrated, NY date of the fit quotes, quote count)."""
+    from feelies.storage.reference.corporate_actions import exchange_timestamp_to_ny_date
+
+    engine = orchestrator._regime_engine
+    calibrated = bool(getattr(engine, "calibrated", False)) if engine is not None else False
+    quotes = tuple(orchestrator._regime_calibration_quotes or ())
+    if not quotes:
+        return calibrated, None, 0
+    source = exchange_timestamp_to_ny_date(quotes[0].exchange_timestamp_ns).isoformat()
+    return calibrated, source, len(quotes)
 
 
 def _net_pnl_from_orchestrator(orchestrator: Orchestrator, recorder) -> Decimal:
@@ -370,12 +383,28 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
     journal = outcome.orchestrator.trade_journal
     assert journal is not None
     records = list(journal.query())
-    assert len(records) == _BASELINE_FILL_COUNT
+    fills = len(records)
+    parity = compute_parity_hash(outcome.orchestrator)
+    assert outcome.recorder is not None
+    net = _net_pnl_from_orchestrator(outcome.orchestrator, outcome.recorder)
+    calibrated, source, n_cal = _calibration_view(outcome.orchestrator)
+    problems: list[str] = []
+    if fills != _BASELINE_FILL_COUNT:
+        problems.append(f"fills {fills} != {_BASELINE_FILL_COUNT}")
+    if net != _BASELINE_NET_PNL:
+        problems.append(f"net {net} != {_BASELINE_NET_PNL}")
+    if parity != _BASELINE_TRADE_PARITY_HASH:
+        problems.append(f"hash {parity} != {_BASELINE_TRADE_PARITY_HASH}")
+    if not (calibrated is True and source == "2026-03-25" and n_cal == 50636):
+        problems.append(f"calibrated={calibrated} source={source} n={n_cal}")
+    assert not problems, "; ".join(problems)
+    assert outcome.orchestrator.regime_calibration_provenance == ("2026-03-25", 50636)
 
     # Trade path — locked by its canonical sequence hash, Net P&L (to the cent),
     # and fill count (above). The config contract is pinned data-free in
     # ``test_app_baseline_config_contract_hash``.
-    assert compute_parity_hash(outcome.orchestrator) == _BASELINE_TRADE_PARITY_HASH
+    assert fills == _BASELINE_FILL_COUNT
+    assert parity == _BASELINE_TRADE_PARITY_HASH
 
     # Fee reconciliation: the report's fee population (sum of all OrderAck.fees)
     # must equal the position store's cumulative_fees (the NAV truth, which
@@ -383,14 +412,13 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
     # Net P&L no longer reconciles with the fills it summarizes.
     from feelies.core.events import OrderAck
 
-    assert outcome.recorder is not None
     ack_fees = sum((a.fees for a in outcome.recorder.of_type(OrderAck)), Decimal("0"))
     cumulative_fees = sum(
         (p.cumulative_fees for p in outcome.orchestrator.position_store.all_positions().values()),
         Decimal("0"),
     )
     assert ack_fees == cumulative_fees
-    assert _net_pnl_from_orchestrator(outcome.orchestrator, outcome.recorder) == _BASELINE_NET_PNL
+    assert net == _BASELINE_NET_PNL
 
 
 def test_app_baseline_config_contract_hash() -> None:

@@ -16,10 +16,11 @@ import math
 import os
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import yaml
 
@@ -30,12 +31,15 @@ from feelies.core.events import (
     Event,
     GateDecision,
     MarkRailUpdate,
+    MetricEvent,
     NBBOQuote,
     OrderRequest,
     PositionClosed,
     RiskAction,
     RiskVerdict,
     PositionSnapshot,
+    StateTransition,
+    Trade,
 )
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -62,12 +66,21 @@ class Record(NamedTuple):
     canonical: str
 
 
+class Widened(NamedTuple):
+    """One kept bus event, reduced to a replay-index cursor and a sha256 digest."""
+
+    cursor: int | None
+    type_name: str
+    digest: bytes
+
+
 class Records(list[Record]):
     """Ordered bus records, plus the quotes and orders of that run."""
 
     quotes: dict[int, NBBOQuote]
     order_requests: tuple[OrderRequest, ...]
     risk_verdicts: tuple[RiskVerdict, ...]
+    widened: tuple[Widened, ...]
 
     def __init__(
         self,
@@ -80,6 +93,7 @@ class Records(list[Record]):
         self.quotes = quotes
         self.order_requests = tuple(order_requests)
         self.risk_verdicts = tuple(risk_verdicts)
+        self.widened = ()
 
 
 def canonical(event: Event) -> str:
@@ -304,11 +318,97 @@ def _capture(bus: object) -> list[Event]:
     return stream
 
 
+_PIPELINE_END = frozenset({"BACKTEST_COMPLETE", "SESSION_FEED_COMPLETE", "CMD_SHUTDOWN"})
+
+
+def _feed_digest(hasher: Any, value: object) -> None:
+    """Stream one value into ``hasher``. Dict keys are sorted; nothing is retained."""
+    if isinstance(value, Event):
+        hasher.update(type(value).__name__.encode())
+        for item in dataclasses.fields(value):
+            hasher.update(b"\0")
+            hasher.update(item.name.encode())
+            _feed_digest(hasher, getattr(value, item.name))
+        return
+    if isinstance(value, Enum):
+        hasher.update(value.name.encode())
+        return
+    if isinstance(value, Mapping):
+        pairs = sorted(value.items(), key=lambda pair: repr(pair[0]))
+        hasher.update(b"{")
+        for key, item in pairs:
+            _feed_digest(hasher, key)
+            _feed_digest(hasher, item)
+        hasher.update(b"}")
+        return
+    if isinstance(value, (tuple, list)):
+        hasher.update(b"[")
+        for item in value:
+            _feed_digest(hasher, item)
+        hasher.update(b"]")
+        return
+    hasher.update(repr(value).encode())
+    hasher.update(b"\0")
+
+
+def _event_digest(event: Event) -> bytes:
+    hasher = hashlib.sha256()
+    _feed_digest(hasher, event)
+    return hasher.digest()
+
+
+def widened_rows(stream: Sequence[Event]) -> tuple[Widened, ...]:
+    """Per-event digests up to the replay boundary.
+
+    MetricEvent is telemetry (wall-clock durations are not a causal prefix).
+    StateTransition includes the session-end transition, which a truncated run
+    emits at the cutoff. The cursor is the replay event index.
+    """
+    cursor: int | None = None
+    rows: list[Widened] = []
+    for event in stream:
+        kind = type(event)
+        if kind is StateTransition:
+            if event.trigger in _PIPELINE_END:
+                break
+            continue
+        if kind is MetricEvent:
+            continue
+        if kind is MarkRailUpdate:
+            cursor = event.quote_sequence
+        elif kind is NBBOQuote:
+            cursor = event.sequence
+        elif kind is Trade:
+            cursor = event.sequence
+        rows.append(Widened(cursor, kind.__name__, _event_digest(event)))
+    return tuple(rows)
+
+
+def assert_widened_prefix(
+    truncated: Sequence[Widened],
+    full: Sequence[Widened],
+    seq_k: int,
+) -> None:
+    """Prefixes through replay index ``seq_k`` are the same sequence of digests."""
+    left = [row for row in truncated if row.cursor is not None and row.cursor <= seq_k]
+    right = [row for row in full if row.cursor is not None and row.cursor <= seq_k]
+    limit = min(len(left), len(right))
+    for index in range(limit):
+        if left[index] != right[index]:
+            row = left[index]
+            raise AssertionError(f"prefix diverged at {row.type_name}, cursor {row.cursor}")
+    if len(left) != len(right):
+        row = left[limit] if len(left) > len(right) else right[limit]
+        raise AssertionError(f"prefix diverged at {row.type_name}, cursor {row.cursor}")
+
+
 def _records_from(stream: Sequence[Event]) -> Records:
     quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
     orders = [event for event in stream if type(event) is OrderRequest]
     verdicts = [event for event in stream if type(event) is RiskVerdict]
-    return Records([Record(*row) for row in attribute(stream)], quotes, orders, verdicts)
+    records = Records([Record(*row) for row in attribute(stream)], quotes, orders, verdicts)
+    records.widened = widened_rows(stream)
+    return records
 
 
 @contextmanager

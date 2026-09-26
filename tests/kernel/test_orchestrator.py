@@ -499,42 +499,70 @@ def _boot_to_backtest(orch: Orchestrator) -> None:
 # ── Tests: Boot lifecycle ─────────────────────────────────────────────
 
 
+def _calibration_boot() -> tuple[Orchestrator, _CountingReplayLog, _StubRegimeEngine]:
+    clock = SimulatedClock(start_ns=1000)
+    quotes = tuple(_make_quote(ts=1000 + i, seq=i + 1) for i in range(100))
+    event_log = _CountingReplayLog(quotes)
+    regime_engine = _StubRegimeEngine()
+    orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
+        clock=clock,
+        bus=EventBus(),
+        backend=ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=BacktestOrderRouter(clock=clock),
+            mode="BACKTEST",
+        ),
+        risk_engine=_StubRiskEngine(),
+        position_store=MemoryPositionStore(),
+        event_log=event_log,
+        metric_collector=_NoOpMetricCollector(),
+        regime_engine=regime_engine,
+    )
+    return orch, event_log, regime_engine
+
+
 class TestOrchestratorBoot:
     def test_initial_macro_state_is_init(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         assert orch.macro_state == MacroState.INIT
 
-    def test_regime_calibration_does_not_scan_suffix_for_total_count(
+    def test_regime_calibration_does_not_scan_the_current_log(
         self,
     ) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        quotes = tuple(_make_quote(ts=1000 + i, seq=i + 1) for i in range(100))
-        event_log = _CountingReplayLog(quotes)
-        regime_engine = _StubRegimeEngine()
-        bt_router = BacktestOrderRouter(clock=clock)
-        backend = ExecutionBackend(
-            market_data=_StubMarketData(),
-            order_router=bt_router,
-            mode="BACKTEST",
-        )
-        orch = Orchestrator(
-            selection_policy=Top1SelectionPolicy(),
-            clock=clock,
-            bus=EventBus(),
-            backend=backend,
-            risk_engine=_StubRiskEngine(),
-            position_store=MemoryPositionStore(),
-            event_log=event_log,
-            metric_collector=_NoOpMetricCollector(),
-            regime_engine=regime_engine,
-        )
+        orch, event_log, regime_engine = _calibration_boot()
         orch._regime_calibration_max_quotes = 3
 
         _calibrate_regime_engine(orch)
 
-        assert regime_engine.calibration_count == 3
-        assert event_log.events_yielded == 3
+        assert regime_engine.calibration_count is None
+        assert event_log.events_yielded == 0
+        assert orch.regime_calibration_provenance == (None, 0)
+
+    def test_regime_calibration_skips_empty_tuple(self) -> None:
+        orch, event_log, regime_engine = _calibration_boot()
+        orch._regime_calibration_max_quotes = 3
+        orch._regime_calibration_quotes = ()
+
+        _calibrate_regime_engine(orch)
+
+        assert regime_engine.calibration_count is None
+        assert event_log.events_yielded == 0
+        assert orch.regime_calibration_provenance == (None, 0)
+
+    def test_regime_calibration_fits_only_the_supplied_tuple(self) -> None:
+        orch, event_log, regime_engine = _calibration_boot()
+        supplied = orch._event_log._events[:2]
+        orch._regime_calibration_max_quotes = 3
+        orch._regime_calibration_quotes = supplied
+        orch._regime_calibration_source_date = "2026-03-25"
+
+        _calibrate_regime_engine(orch)
+
+        assert regime_engine.calibration_count == 2
+        assert event_log.events_yielded == 0
+        assert orch.regime_calibration_provenance == ("2026-03-25", 2)
 
     def test_boot_transitions_to_ready(self) -> None:
         clock = SimulatedClock(start_ns=1000)
