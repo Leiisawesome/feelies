@@ -19,7 +19,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from feelies.alpha.discovery import load_and_register
+from feelies.alpha.discovery import discover_alpha_specs, load_and_register
 from feelies.portfolio.fill_attribution import FillAttributionLedger
 from feelies.alpha.layer_validator import validate_decouple_symbol_scope
 from feelies.alpha.loader import AlphaLoader
@@ -59,13 +59,19 @@ from feelies.core.events import (
     SymbolHalted,
 )
 from feelies.core.errors import ConfigurationError
+from feelies.core.exit_policy import ExitPolicy
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.core.wiring_manifest import manifest_hash
 from feelies.core.session_clock import rth_open_ns
 from feelies.sensors.horizon_scheduler import HorizonScheduler, _publish_horizon_grid
 from feelies.sensors.registry import SensorRegistry
-from feelies.execution.backend import ExecutionBackend, MarketDataSource, OrderRouter
+from feelies.execution.backend import (
+    ExecutionBackend,
+    MarketDataSource,
+    OrderRouter,
+    refuse_position_engine_outside_backtest,
+)
 from feelies.execution.backtest_backend import (
     build_backtest_backend,
     build_passive_limit_backend,
@@ -227,6 +233,59 @@ def _attach_notification_observer(bus: EventBus, observer: _NotificationObserver
     bus.subscribe(KillSwitchActivation, observer.on_event)
 
 
+def _collect_exit_policies(config: PlatformConfig) -> dict[str, ExitPolicy]:
+    """Load specs once so the mode and L6 checks run before any component."""
+    regime_engine = _create_regime_engine(config.regime_engine, config.regime_engine_options)
+    loader = AlphaLoader(
+        regime_engine=regime_engine,
+        enforce_trend_mechanism=config.enforce_trend_mechanism,
+        enforce_layer_gates=config.enforce_layer_gates,
+        regime_engine_options=config.regime_engine_options,
+    )
+    paths: list[Path] = []
+    if config.alpha_spec_dir is not None:
+        paths.extend(discover_alpha_specs(config.alpha_spec_dir))
+    paths.extend(config.alpha_specs)
+    policies: dict[str, ExitPolicy] = {}
+    for spec_path in paths:
+        name = spec_path.name
+        alpha_id_guess = (
+            name[: -len(".alpha.yaml")] if name.endswith(".alpha.yaml") else spec_path.stem
+        )
+        module = loader.load(
+            spec_path, param_overrides=config.parameter_overrides.get(alpha_id_guess)
+        )
+        policy = module.manifest.exit_policy
+        if policy is not None:
+            policies[module.manifest.alpha_id] = policy
+    return policies
+
+
+def _check_exit_policy_l6(config: PlatformConfig, policies: Mapping[str, ExitPolicy]) -> None:
+    """Platform stop/trail off; session flatten buffer shorter than every cutoff."""
+    if not policies:
+        return
+    for name in (
+        "stop_loss_pct",
+        "stop_loss_per_share",
+        "trail_activate_pct",
+        "trail_activate_per_share",
+    ):
+        if float(getattr(config, name)) > 0:
+            raise ConfigurationError(
+                f"EXIT_POLICY L6 — platform {name} must be 0 when an alpha declares exit_policy"
+            )
+    if config.session_flatten_enabled:
+        cutoff_s = min(policy.horizon.cutoff_before_close_ns for policy in policies.values()) // (
+            1_000_000_000
+        )
+        if config.session_flatten_seconds_before_close >= cutoff_s:
+            raise ConfigurationError(
+                "EXIT_POLICY L6 — session_flatten_seconds_before_close must be < "
+                f"every exit_policy cutoff_before_close_seconds ({cutoff_s})"
+            )
+
+
 def build_platform(
     config: PlatformConfig | str | Path,
     event_log: InMemoryEventLog | None = None,
@@ -238,6 +297,7 @@ def build_platform(
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
     edge_calibration_factors: "Mapping[str, float] | None" = None,
+    enable_position_engine: bool = False,
 ) -> tuple[KernelOrchestrator, PlatformConfig]:
     """Compose an orchestrator and resolved platform config.
 
@@ -297,6 +357,11 @@ def build_platform(
         event_log,
         precomputed_spans=precomputed_ex_date_spans,
     )
+
+    exit_policies = _collect_exit_policies(config)
+    position_engine_enabled = enable_position_engine or bool(exit_policies)
+    refuse_position_engine_outside_backtest(config.mode, position_engine_enabled)
+    _check_exit_policy_l6(config, exit_policies)
 
     bus = EventBus()
 
@@ -658,6 +723,20 @@ def build_platform(
     # record is deterministic (SimulatedClock); only PAPER reads wall time
     # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
     config_snapshot = config.snapshot(ts_ns=clock.now_ns())
+    mark_rail = None
+    if position_engine_enabled:
+        from feelies.portfolio.mark_rail import MarkRail
+        from feelies.position.engine import PositionEngine, PositionRecordSink
+
+        mark_rail = MarkRail(SequenceGenerator(stream="mark_rail", thread_safe=_seq_thread_safe))
+        position_engine = PositionEngine(
+            bus,
+            SequenceGenerator(stream="position", thread_safe=_seq_thread_safe),
+            policies=exit_policies,
+        )
+        position_sink = PositionRecordSink(bus)
+        position_engine.attach()
+        position_sink.attach()
     orchestrator = _RootOrchestrator(
         config_snapshot=config_snapshot,
         live_feed=bundle.live_feed,
@@ -709,6 +788,7 @@ def build_platform(
         ),
         position_manager_urgency_exec=config.position_manager_urgency_exec,
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
+        mark_rail=mark_rail,
     )
     _attach_notification_observer(bus, _NotificationObserver(alert_manager))
 

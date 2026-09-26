@@ -141,7 +141,12 @@ def _artifact_id(report: str) -> str:
     raise AssertionError("artifact_id line not found in report")
 
 
-def _generate_report(*, edge_calibration_factors: dict[str, float] | None = None) -> str:
+def _generate_report(
+    *,
+    edge_calibration_factors: dict[str, float] | None = None,
+    orchestrator: _FakeOrchestrator | None = None,
+    date_range: str = "2026-01-01",
+) -> str:
     return generate_report(
         recorder=_FakeRecorder([]),
         ingest_result=IngestResult(
@@ -152,9 +157,9 @@ def _generate_report(*, edge_calibration_factors: dict[str, float] | None = None
             symbols_completed=frozenset(),
         ),
         config=PlatformConfig(version="test", symbols=frozenset({"AAPL"})),
-        orchestrator=_FakeOrchestrator(),
+        orchestrator=orchestrator if orchestrator is not None else _FakeOrchestrator(),
         symbol_str="AAPL",
-        date_range="2026-01-01",
+        date_range=date_range,
         edge_calibration_factors=edge_calibration_factors,
     )
 
@@ -215,6 +220,20 @@ def test_code_version_dirty_tree_appends_dirty_suffix(
     monkeypatch.setattr(backtest_report_mod, "_git_sha", lambda: "abc123def456")
     monkeypatch.setattr(backtest_report_mod, "_working_tree_dirty", lambda: True)
     assert backtest_report_mod.code_version() == "0.1.0+abc123def456+dirty"
+
+
+def test_report_names_regime_calibration_source() -> None:
+    orchestrator = _FakeOrchestrator()
+    orchestrator.regime_calibration_provenance = lambda: ("2026-03-25", 50636)  # type: ignore[attr-defined]
+    report = _generate_report(orchestrator=orchestrator, date_range="2026-03-26")
+    assert "regime calibration: 2026-03-25, n=50636" in report
+
+
+def test_report_names_uncalibrated_regime_fallback() -> None:
+    report = _generate_report(date_range="2026-03-26")
+    assert (
+        "regime calibration: UNCALIBRATED — prior session 2026-03-25 missing (fallback C, D-64)"
+    ) in report
 
 
 def test_code_version_unknown_dirty_state_omits_suffix(

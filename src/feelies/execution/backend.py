@@ -17,7 +17,9 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Iterator, Protocol
 
+from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote, OrderAck, OrderRequest, Trade
+from feelies.core.platform_config import OperatingMode
 
 
 class ExecutionMode(StrEnum):
@@ -100,3 +102,11 @@ class ExecutionBackend:
         self.market_data = market_data
         self.order_router = order_router
         self.mode = ExecutionMode(mode) if not isinstance(mode, ExecutionMode) else mode
+
+
+def refuse_position_engine_outside_backtest(mode: object, enabled: bool) -> None:
+    """Mode seam: the position engine is admitted only in BACKTEST."""
+    if enabled and mode is not OperatingMode.BACKTEST:
+        raise ConfigurationError(
+            f"enable_position_engine requires BACKTEST mode, got {getattr(mode, 'name', mode)}"
+        )

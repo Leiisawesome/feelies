@@ -30115,3 +30115,686 @@ NEXT:        The cleanup cycle opens the PR.
 C-02 recorded that six rungs took no captures. The L-03 census at a05ab35b measured 13 rung ids and 23 (id, side) pairs without a committed capture: pre and post for O-04, O-06, O-08, O-09a, O-09, O-10, O-11, O-11b, C-01, C-02; pre only for S-35e, L-02, O-03b. L-02's block cites pre-L-02, which was never committed. The 23 pairs are pinned with reasons in `_UNCAPTURED_KEEP` in tests/docs/test_exec_ledger_captures.py. C-02 is not edited.
 
 This correction lands in the L-03 merge-record commit.
+
+---
+
+## P-00  position engine spec pack and phase 14 plan  2026-09-23T20:35:43+08:00
+  STEP:          P-00
+  BASE:          e2b2745fdfd7717e06f9af2fa76a1cf21aeaf9af
+  RESULT SHA:    faec2ce79df15e8aa8e31b817adb3ea77a47cc2e (exec/P-00), merged
+                 to arch/exec as 498842b64b5fe60ae9ff95bf50d0b9b5d887c595.
+  VERDICT:       passed
+  CONFORMANCE:   docs rung, opens campaign phase 14 (position engine, backtest
+                 only). Nine files extracted from the operator-supplied pack
+                 after the pre capture; all nine SHA-256 verified on disk and
+                 on the committed blobs (eol lf, autocrlf true, text auto).
+                 No src, tests, or configs.
+  TESTS:         tests/docs 105 passed; suite 4948 passed, 29 skipped, 1 xfailed
+  PARITY:        captures pre-P-00, post-P-00; HOLDS 64 -> 64, 0 changed
+  FILES:         9 declared, 9 touched, 9 committed:
+                 docs/architecture/target/out/phase14_position_engine.md and
+                 docs/architecture/target/position_engine/{README,contracts,
+                 results,battery,feed,amendments,assumptions,decisions}.md
+  NOTES:         operator-approved target (2026-09-23): 13th position engine;
+                 risk reduced to safety and veto; mark rail in engine 7;
+                 per-alpha exit_policy; backtest only, paper/live separate.
+                 Skip count 19 (post-L-03) -> 29 (pre-P-00) on
+                 content-identical trees; section 1 of the merge report lists
+                 the skips; unresolved, carried to P-10's census.
+
+---
+
+## P-10  position engine contract surface (dark)  2026-09-24T09:59:17+08:00
+  STEP:          P-10
+  BASE:          5836a532aeb7a2b135c335eed67a0377ce75e514
+  RESULT SHA:    4ac5fcb51d3593daa15ddb130c8fc90df6f94d08 (exec/P-10), merged
+                 to arch/exec as 6e9fa06f778458c6bd6e500e4921716029e64dc8.
+  VERDICT:       passed (boundary rung; operator go 2026-09-24)
+  CONFORMANCE:   five Event types (MarkRailUpdate, SlicePositionUpdate,
+                 PositionSnapshot, GateDecision, PositionClosed) plus four
+                 frozen payload dataclasses; five SUBSCRIPTIONS rows; streams
+                 mark_rail, slice_position, position; feelies.position as 13th
+                 independence module (contract renamed "Engine module sets");
+                 MarkRail and PositionEngine stubs; built only with
+                 build_platform(enable_position_engine=True), refused outside
+                 BACKTEST in the mode seam (execution/backend.py). Fail-firsts:
+                 T1–T6 ImportError on unchanged tree; S-09 drift named the five
+                 classes; manifest fingerprint ff2ca64c... ->
+                 7a4739fe3f55821fdfaddc3d3183a0bf86de04eced612ddb0b97ca2eb7d9e8a3
+                 (pin edit; not one of the 64); F6 S-12 named mark_rail; T7
+                 (F5') named PositionClosed; S14 dynamic named missing
+                 feelies.position, then negative probe named "feelies.position
+                 event RegimeState". All restores SHA-verified.
+  AMENDMENTS:    A-P10-1 (FILES cap 22: forbidden_reads ENGINES,
+                 subscriber-engine pin 7->8, prompt ownership,
+                 audit_position_engine.md, guard moved into the mode seam;
+                 test_mode_seam untouched; T7 added, T0 935CEF8D... -> T0'
+                 8CA52F68...). First application reverted when the S14 dynamic
+                 probe could not observe a dark engine. A-P10-2: S14 replay
+                 builds with enable_position_engine=True so engine 13's runtime
+                 reads are probed. Deviations accepted: audit prompt carries the
+                 two headings test_audit_prompt_structure requires;
+                 portfolio/mark_rail.py owned by audit_position_engine
+                 (portfolio modules have no single owner; that prompt's scope
+                 names the file).
+  TESTS:         tests/position_engine 8 passed; conformance+determinism+docs
+                 381 passed, 1 xfailed; suite 4968 passed, 19 skipped,
+                 1 xfailed
+  PARITY:        captures pre-P-10, post-P-10 (IB Gateway port 4002 up at
+                 both); HOLDS 64 -> 64. Enabled APP measurement: fills 20, net
+                 PnL 103.93, trade parity hash 0601295a...17df3 matches,
+                 MarkRailUpdate 82678 = quotes processed, SlicePositionUpdate
+                 20.
+  FILES:         22 committed:
+                 docs/architecture/target/position_engine/decisions.md
+                 docs/prompts/README.md
+                 docs/prompts/audit_position_engine.md
+                 pyproject.toml
+                 src/feelies/bootstrap.py
+                 src/feelies/core/events.py
+                 src/feelies/core/forbidden_reads.py
+                 src/feelies/core/mark_rail.py
+                 src/feelies/core/sequence_authority.py
+                 src/feelies/core/wiring_manifest.py
+                 src/feelies/execution/backend.py
+                 src/feelies/kernel/orchestrator.py
+                 src/feelies/portfolio/mark_rail.py
+                 src/feelies/position/__init__.py
+                 src/feelies/position/engine.py
+                 tests/conformance/test_forbidden_reads.py
+                 tests/conformance/test_import_contracts.py
+                 tests/conformance/test_schema_drift.py
+                 tests/determinism/test_parity_manifest.py
+                 tests/docs/test_prompt_coverage_map.py
+                 tests/position_engine/__init__.py
+                 tests/position_engine/test_p10_contract_surface.py
+  NOTES:         decisions D-01..D-06 appended; spec amendments pending a docs
+                 rung. Closes the P-00 skip-drift note: 29 - 19 = 10 = the IB
+                 functional tests that require only a reachable IB Gateway
+                 (tests/broker/ib/test_ib_functional.py); captures record counts
+                 only, so shown by partition, not by ids. From P-10, every rung
+                 records port 4002 and requires the same state at pre and post
+                 capture.
+
+---
+
+## P-10b  CI format fix for P-10  2026-09-24T10:51:19+08:00
+  STEP:          P-10b
+  BASE:          1f1fa282f6a5bbe87a2062b09af93c4db8b729cd
+  RESULT SHA:    4807722c2f800d397a6dfe6bb4fe8cde343dcc0d (exec/P-10b), merged
+                 to arch/exec as d33c416404f12143f4a8eab0a807ada80515fcee.
+  VERDICT:       passed
+  CONFORMANCE:   PR #249 run 35945324266 failed at Format (ruff format --check
+                 src/ tests/ scripts/: "Would reformat:
+                 tests/conformance/test_forbidden_reads.py"); Lint passed;
+                 Types, Import contracts and Tests were skipped. Cause: P-10's
+                 three-line build_platform call at 264-266 (blame 4ac5fcb5).
+                 Fail-first quoted; fixed with ruff format on that file only;
+                 diff is the one collapsed call.
+  TESTS:         the four CI check steps (ruff check, ruff format --check,
+                 mypy src/feelies, lint-imports --no-cache) all exit 0 locally;
+                 suite 4968 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-10b, post-P-10b (port 4002 open at both);
+                 HOLDS 64 -> 64
+  FILES:         1 declared, 1 touched, 1 committed:
+                 tests/conformance/test_forbidden_reads.py
+  NOTES:         P-10's gate ran pytest but not CI's lint/format/types/import
+                 steps. Standing rule from P-10b: every rung's validation runs
+                 those four CI commands exactly as ci.yml runs them. 15 files
+                 under tools/ and colab/ are unformatted but outside CI's Format
+                 paths; pre-existing, not touched.
+
+---
+
+## P-11a  fold P-10 decisions into the position engine spec  2026-09-24T11:12:21+08:00
+  STEP:          P-11a
+  BASE:          98d09eaddd44f4693faca4f921bbe39f97ebb6f1
+  RESULT SHA:    bce94403d4a64554196d3690318bbd0cf2abef93 (exec/P-11a), merged
+                 to arch/exec as 492e977b4e034a3c05028981ba1be89c8de82bf7.
+  VERDICT:       passed
+  CONFORMANCE:   docs rung; four spec files replaced from the operator-supplied
+                 archive after the pre capture; base and new SHA-256 verified.
+                 New: contracts.md
+                 5876f4439576dc01749863632dc5b370083a1b6097bf559957304e294835acd6;
+                 battery.md
+                 11ff3e10e817c9c109c358bf2dbaa24345a4d0088341770a0cea8b209b3b0546;
+                 amendments.md
+                 1b19c76ec66abdea21f353238f4a45a23e5dc277b869d49b4ab0a8eda64ba887;
+                 phase14_position_engine.md
+                 02b6dead81e0026134be054bf74b8a51dea21f63a56664842d3a17799bdc885e.
+                 decisions.md D-07 appended. Adds amendments A-16 (whole-position
+                 cents) and A-17 (SlicePositionUpdate).
+  TESTS:         four CI check steps exit 0; tests/docs 107 passed; suite
+                 4968 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-11a, post-P-11a (port 4002 open at both);
+                 HOLDS 64 -> 64
+  FILES:         5 declared, 5 touched, 5 committed:
+                 docs/architecture/target/out/phase14_position_engine.md
+                 docs/architecture/target/position_engine/amendments.md
+                 docs/architecture/target/position_engine/battery.md
+                 docs/architecture/target/position_engine/contracts.md
+                 docs/architecture/target/position_engine/decisions.md
+  NOTES:         PR #249 checks on 98d09ead at preflight: Cursor Bugbot pass;
+                 check (ubuntu-latest) pass (run 35949028617); parity oracle pass.
+
+---
+
+## P-15  exit_policy schema, parser, load checks L1-L8, enabling rule  2026-09-24T12:20:16+08:00
+  STEP:          P-15
+  BASE:          34937b303c7b2064155ff25618fc972d9ef2f828
+  RESULT SHA:    22e4b52dc466fae4d0fba41390c9e42518a934f7 +
+                 8313e3f2b59a53f4cba82f145a753b5d9f1efb75 (exec/P-15),
+                 merged as 2281f0653cd29775e34df03ffbd54fc07d2cb62c.
+  VERDICT:       passed (boundary rung; operator go 2026-09-24)
+  CONFORMANCE:   exit_policy block (SCHEMA.md), _parse_exit_policy_block, core
+                 ExitPolicy, load checks L1–L5, L6 alpha-level, L8 in
+                 LayerValidator._check_exit_policy bound via GATE_ALIASES
+                 "EXIT_POLICY" -> GOV.LAYER_VALIDATE (no GATE_REGISTRY row); L6
+                 platform-level in bootstrap; L7 via the mode seam with the
+                 derived enable (enable_position_engine or any exit_policy);
+                 closed top-level key set, unknown key -> AlphaLoadError.
+                 Fail-firsts: 26 failed / 18 passed on the unchanged tree (E3
+                 file loads pass by design; exit_polcy did not raise).
+  AMENDMENTS:    amended P15-b (key set = SCHEMA tables + universe,
+                 factor_neutralization, safety_exit_policy, notes +
+                 exit_policy, from the measured union); A-P15-1 (_platform()
+                 reuses configs/bt_netting_contest.yaml:32 sensors; T0
+                 CA73239E... -> T0' F81921AF...); D-13 (six keys from inline
+                 test specs; rule: production-read or documented annotation).
+  ACCEPTED DEVIATIONS:
+                 E12 fail-first was ModuleNotFoundError for the module under
+                 construction (import is its first line), same shape as E1;
+                 post-capture first run hit IB functional
+                 test_submit_buy_limit_and_cancel (not on the accepted list),
+                 passed on immediate rerun — recorded as flake 1 with port
+                 4002 up; a recurrence is a defect to fix, not a retry.
+  TESTS:         four CI check steps exit 0; P-15 tests 44 passed; suite
+                 5012 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-15, post-P-15 (port 4002 up at both); HOLDS
+                 64 -> 64
+  FILES:         22e4b52dc466fae4d0fba41390c9e42518a934f7:
+                 alphas/SCHEMA.md
+                 docs/architecture/target/position_engine/decisions.md
+                 src/feelies/alpha/layer_validator.py
+                 src/feelies/alpha/loader.py
+                 src/feelies/alpha/module.py
+                 src/feelies/bootstrap.py
+                 src/feelies/core/exit_policy.py
+                 src/feelies/core/gate_registry.py
+                 src/feelies/position/engine.py
+                 tests/position_engine/fixtures/sig_position_fixture_v1.alpha.yaml
+                 tests/position_engine/test_p15_exit_policy.py
+                 8313e3f2b59a53f4cba82f145a753b5d9f1efb75:
+                 docs/architecture/target/position_engine/decisions.md
+  NOTES:         open hygiene item — documented-but-unused top-level keys
+                 features, mechanism, promotion, structural_actor: production
+                 readers unchecked.
+
+---
+
+## P-16  evaluation architecture (D-14..D-20)  2026-09-24T13:37:26+08:00
+  STEP:          P-16
+  BASE:          32ed957610c19925e0a35e89895199328289dd42
+  RESULT SHA:    8bf1aa40d3fcb877e831750d16266f72d52df581 (exec/P-16),
+                 merged as a08a7d08a7c16e5f906bc8c4215aeea7f9ae51b2.
+  VERDICT:       passed (docs rung; parity hold)
+  CONFORMANCE:   evaluation.md (three oracles, declared-break protocol, P-95
+                 attribution diff, campaign 14E bar, battery_real placement);
+                 battery.md fixture-alpha bullet, real-session marker, stage-letter
+                 mechanism (D-18); decisions D-14..D-20 appended; README pack row;
+                 phase14 DOES NOT CLOSE, standing invariant, ladder P-16 / P-11 gate /
+                 P-95 / P-99 lands. No behaviour change. Fail-first n/a.
+  AMENDMENTS:    D-14..D-20. Fixture defect recorded (D-19): P-15 copy is data-gated
+                 and stamps sig_contra_fixture_v1; P-21 corrects it. Stage letter
+                 lands at P-21 (D-18). battery_real marker and CI job change land
+                 with the first real-session member, P-21 (D-20).
+  TESTS:         four CI check steps exit 0; tests/docs 107 passed; suite
+                 5012 passed, 19 skipped, 1 xfailed
+  PARITY:        captures pre-P-16, post-P-16 (port 4002 up at both); HOLDS
+                 64 -> 64
+  FILES:         docs/architecture/target/position_engine/evaluation.md
+                 docs/architecture/target/position_engine/battery.md
+                 docs/architecture/target/position_engine/decisions.md
+                 docs/architecture/target/position_engine/README.md
+                 docs/architecture/target/out/phase14_position_engine.md
+                 docs/architecture/target/out/exec/LEDGER.md
+                 docs/architecture/target/out/exec/baseline_pre-P-16.json
+                 docs/architecture/target/out/exec/baseline_post-P-16.json
+  NOTES:         PR #250 merged to arch/exec.
+
+---
+
+## P-11  book mark rule (engine 7)  2026-09-24T15:43:00+08:00
+  STEP:          P-11
+  BASE:          95101d3244d9d42ee362ff3964c3e1e77b6b1488
+  RESULT SHA:    3350a35ea6d78a9f8407bcc6fb80db134971ef8e (exec/P-11),
+                 merged as 06c9dc5ec1258ac688797b979f3c9e6af2f1b57f.
+  PREDICTION:    PREDICTED MOVES: none. All 64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical (no event type or payload changes).
+                 FILLS: no change.
+                 MECHANISM: The full quote-quality rule is applied only in the orchestrator's mark path, the
+                 only production writer of marks. Non-VALID quotes (crossed, locked, zero-size side,
+                 non-positive) no longer move the book there. The store rejects only a non-positive side,
+                 retaining the last valid bid/ask instead of dropping it. Mid is retired as a valuation input.
+                 The two post-exit views gain delegation-only methods and keep their valuation unchanged (D-23).
+                 APP oracle (census P-11 part 2, passivity proven): 0 of 31 exposure resolves, 43 risk
+                 verdicts, 42 drawdown checks, 20 fills, 20 PositionUpdates and 142 high-water increases
+                 occurred on a non-VALID quote; PositionUpdate is emitted on fill acks only; the day ends flat;
+                 0 mid-fallback valuations. Non-APP tapes (Stage 0, attempts 1–2): none passes a non-VALID
+                 NBBOQuote through the orchestrator, and none writes a non-positive side to the store. The
+                 risk-verdict fixture's direct locked write (0.01/0.01) is accepted by the store under D-24.
+                 No decision input on any pinned tape can change.
+  ATTEMPTS:      attempt 1 blocked at Stage 0 (determinism fixture writes a locked pair to the store) → D-24.
+                 attempt 2 blocked at the F5 implementor check (two post-exit views also implement
+                 PositionStore) → view delegations. Both pre-build, no branch.
+                 Attempt 3: built; blocked at V3 (second protocol core/strategy_position_store.py) and V5 (mid-only valuation setups) → F19, D-25; continued without reset. Continuation stop at P4 was a rule false positive (fake store unreachable from the mark path); amended, no fake edited. Amendment B: bounded D-25 sweep, 1 files, setup lines only.
+  STAGE 0:       unchanged (arch/exec still 95101d32). Implementers: MemoryPositionStore
+                 (portfolio/memory_position_store.py:16), _AggregateView
+                 (portfolio/strategy_position_store.py:255), PostExitPositionView
+                 (risk/post_exit_position_view.py:11), _PostExitPositionView
+                 (kernel/orchestrator.py:1708). No test fake implements PositionStore and is passed
+                 into Orchestrator or build_platform. (a) non-APP non-VALID quotes through
+                 _process_tick: 0. (b) direct update_mark with a non-positive side: 0.
+  OUTCOME:       prediction held. 64/64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical (determinism corpus 148 passed). FILLS unchanged.
+  NOTES:         Post-capture was taken while test_capture_misses_equal_keep awaited the capture file; the constants compare was clean; the suite is fully green on the merge commit.
+
+## P-12  post-exit views at the executable side  2026-09-24T18:35:59+08:00
+  STEP:          P-12
+  BASE:          e64727320f34f5753c4b8c3e58365f6a5a533069
+  RESULT SHA:    40656bb4012cf84f4edc7c37653a96f086f7e99e (exec/P-12),
+                 merged as ed7e96ca0b15c51ac0ca632bbb3afe4745611722.
+  PREDICTION:    PREDICTED MOVES: none. All 64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical.
+                 FILLS: no change.
+                 MECHANISM: Only the post-exit views' hypothetical unrealized moves from reference mid to the
+                 executable side for the hypothetical direction (PositionStore.valuation_mark). Their exposure
+                 notional keeps reference_mid (D-22). The only production consumer is the reverse entry-leg
+                 check_order in _execute_reverse. Census P-12 (passivity proven): on APP one view is
+                 constructed and never valued (entry edge gate not passed); the determinism corpus constructs
+                 and values no view. The two unit tests that value a view have a flat hypothetical position
+                 (unrealized 0 at any price) and an unchanged exposure path. No pinned decision input changes;
+                 no existing test assertion changes.
+                 Two further reference-mid readers are notional and unchanged by P-12:
+                 bootstrap._create_composition_layer._position_lookup and
+                 Orchestrator._record_portfolio_net_shadow (Stage 0 classification).
+  STAGE 0:       unchanged (arch/exec e6472732). Implementers: MemoryPositionStore, PostExitPositionView,
+                 _PostExitPositionView, tests _Exploding(MemoryPositionStore). No other.
+                 Stage 0 found two unlisted mid readers (bootstrap composition lookup; portfolio net shadow via getattr); classified NOTIONAL; Amendment A.
+  OUTCOME:       prediction held. 64/64 parity constants identical; EXPECTED_MANIFEST_FINGERPRINT
+                 identical. FILLS unchanged. Post-capture compare: changed 0.
+  NOTES:         Post-capture suite was red only on test_capture_misses_equal_keep, because the
+                 two capture files were not yet tracked. Rerun after they were staged: passed.
+                 Port 4002 was up for the pre-capture and the post-capture.
+                 T4 prompt parenthetical said 42.00; the old value was 63.00 (operator-side typo); the
+                 assertion (0) is unaffected.
+                 Merge gate: functional IB test test_after_hours_reject_surfaces_as_rejected failed on the
+                 merge commit; discriminator D1/D2: D1 09:05:09 ET FAIL (expected terminal cleanup, got []),
+                 D1 09:05:31 ET FAIL (same), D2 09:06:00 ET on e6472732 FAIL (same); classified environmental /
+                 pre-existing. From P-12 on, the merge gate is CI's marker set (not functional and not
+                 paper_rth); functional results are recorded, non-gating.
+
+---
+
+## FINDING  IB functional tests are wall-clock and gateway dependent
+DATE:        2026-09-24
+CAUSE:       IB functional tests are wall-clock and
+             gateway dependent. Two distinct flakes in
+             phase 14 (test_submit_buy_limit_and_cancel;
+             test_after_hours_reject_surfaces_as_rejected).
+STATE:       Defect item for the paper/live campaign:
+             make them deterministic or gate them on
+             session state; until then they do not gate
+             backtest merges.
+RISK:        A local full suite can fail a backtest
+             merge on session state alone.
+OWNER:       paper/live campaign.
+
+## P-20  synthetic tape generator and its own tests  2026-09-24T21:30:00+08:00
+  STEP:          P-20 (stage A)
+  BASE:          399421eded43421ac1faa1b98550d3cefc7bd040 (arch/exec)
+  RESULT SHA:    395351e71058f02ac22d35d9d61f522e3c32aabc (exec/P-20),
+                 merged as a0f7c63aec32aece941a06fd7ea63c5c58ab973d.
+  PREDICTION:    PARITY hold. Tests and docs only. All 64 parity constants identical.
+  STAGE 0:       unchanged (arch/exec 399421ed). tests/position_engine/ held
+                 __init__.py, test_p10_contract_surface.py, test_p15_exit_policy.py,
+                 and fixtures/sig_position_fixture_v1.alpha.yaml. tapes.py and
+                 test_tape_generator.py did not exist.
+                 S0-2: tests/ is a package. Sibling import:
+                 `from tests.conformance.test_null_alpha_conservation import _NULL_ALPHA`.
+                 tapes.py uses the same form:
+                 `from tests.position_engine.tapes import make_tape`.
+                 S0-3: feelies.core.quote_quality.classify(bid, ask, bid_size, ask_size).
+                 S0-4: NBBOQuote(Event) fields unchanged (symbol, bid, ask, bid_size,
+                 ask_size, bid_exchange, ask_exchange, exchange_timestamp_ns, conditions,
+                 indicators, sequence_number, tape, participant_timestamp_ns,
+                 trf_timestamp_ns, received_ns, plus Event provenance).
+  FAIL-FIRST:    ModuleNotFoundError: No module named 'tests.position_engine.tapes'
+  G2:            mean step -0.0009100022750056875 (seed 7, n=400000, p_move 0.25)
+  G3:            n=64. share hitting +1 before -2: 0.6644 (p=2/3).
+                 share hitting +2 before -1: 0.32965 (p=1/3). M=20000.
+  RUNTIME:       tests/position_engine/test_tape_generator.py 7.42s
+  OUTCOME:       parity hold. compare pre-P-20 -> post-P-20: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (741 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 1: 1 failed, 165 passed — only
+                 test_capture_misses_equal_keep (P-20 pre/post not yet tracked).
+                 V6 exit 1: 1 failed, 5010 passed, 5 skipped, 43 deselected,
+                 1 xfailed — same capture miss only.
+                 V7 compare exit 0, parity HOLDS.
+                 Capture-miss test rerun after both captures were staged: passed.
+  NOTES:         Pre-capture full suite: 5033 passed, 1 failed, 18 skipped.
+                 The failure was test_after_hours_reject_surfaces_as_rejected
+                 (expected terminal cleanup, got []). Post-capture full suite:
+                 5049 passed, 3 failed, 7 skipped. The extra failures are that
+                 same IB flake, the untracked-capture miss, and
+                 test_g12_cost_exceeds_disclosure_alert (paper_rth; session had
+                 entered RTH). Both functional failures are the environmental
+                 class recorded after P-12; the merge gate excludes them.
+                 Determinism 148 passed on both captures.
+                 Port 4002 LISTENING pid 1700 before the pre-capture and after
+                 the post-capture.
+                 D-28, D-29 appended. Feed-gap injector deferred to P-21.
+
+---
+
+## P-21a  stage A infrastructure  2026-09-25T11:10:00+08:00
+  STEP:          P-21a (stage A)
+  BASE:          8da1afab29cbf65810fb87f11c29d806442b6948 (arch/exec)
+  RESULT SHA:    8d63fe88c2d558a64ba699882ef2db387579c868 (exec/P-21a),
+                 merged as 1a9dceb5374f6e825e9353df1b9f4734879ccd02.
+  PREDICTION:    PARITY hold. Tests and docs only. All 64 parity constants identical.
+  STAGE 0:       S0-1 return Signal fields: timestamp_ns, correlation_id, sequence,
+                 symbol, strategy_id="sig_contra_fixture_v1", direction, strength,
+                 edge_estimate_bps. Feature-derived: direction, strength,
+                 edge_estimate_bps from ofi_ewma_zscore, book_imbalance_mean, params.
+                 S0-2 regime_gate.py: ast.Constant allowed; _eval_node returns
+                 node.value (Python True / False).
+                 S0-3 reads_no_sensor requires depends_on_sensors == [] then rejects
+                 a feature reference.
+                 S0-5 test_p15_exit_policy._platform filters
+                 PlatformConfig.from_yaml("configs/bt_netting_contest.yaml").sensor_specs
+                 to ofi_ewma, book_imbalance, spread_z_30d, realized_vol_30s
+                 (platform.yaml sensor_specs, inherited by the contest config).
+  FIXTURE:       on_condition "True", off_condition "False". strength=1.0,
+                 edge_estimate_bps=9.0, strategy_id=alpha_id.
+                 Removed trend_mechanism block (G16 rule 10):
+                 trend_mechanism:
+                   family: KYLE_INFO
+                   expected_half_life_seconds: 120
+                   l1_signature_sensors:
+                     - book_imbalance
+                     - ofi_ewma
+                     - spread_z_30d
+                   failure_signature:
+                     - "spread_z_30d > 3.0"
+                     - "realized_vol_30s_zscore > 4.5"
+  FAIL-FIRST:    Unchanged fixture, sensors configured: S1 AssertionError set() == {1, 3}
+                 with horizon_engine.py:341 gate suppressed (P(normal), no RegimeState).
+                 S2 passed vacuously (no Signal to check). H1 before conftest:
+                 inner FAILED test_case.py::test_member - AssertionError: NONVACUOUS: none;
+                 outer assert 1 == 0.
+  H1-H9:         9 passed.
+  S1-S4:         S1 LONG at boundary 1, SHORT at 3, none at 0/2/4. S2 strategy_id
+                 sig_position_fixture_v1. S3 same with seed 2. S4 OrderRequest=0
+                 FILLED=0 SlicePositionUpdate=0 MarkRailUpdate=6000; rejecting
+                 reason "gross exposure limit: 12429.140 >= 10000.00" (also
+                 "within limits" on other verdicts).
+  S4: fixture signals reached risk and were rejected on gross exposure (12429.140 >= 10000.00); P-21b must set the members' sizing/exposure explicitly and measure the session rule.
+  NOTES:         Attempt 1 blocked: no HorizonTick without a sensor consumer
+                 (bootstrap.py:1407); Amendment A adds the P-15 sensor set to the
+                 schedule test and removes trend_mechanism (G16 rule 10).
+  OUTCOME:       parity hold. compare pre-P-21a -> post-P-21a: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (744 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 1: 1 failed, 640 passed — only
+                 test_capture_misses_equal_keep (P-21a pre/post not yet tracked).
+                 V6 exit 1: 1 failed, 5023 passed, 5 skipped, 43 deselected,
+                 1 xfailed — same capture miss only.
+                 V7 compare exit 0, parity HOLDS.
+                 Post-capture full suite: 5052 passed, 1 failed, 19 skipped
+                 (the untracked-capture miss). Pre-capture: 5040 passed,
+                 0 failed, 19 skipped. Determinism 148 passed on both.
+                 Port 4002 LISTENING pid 32216 before the pre-capture and
+                 after the post-capture.
+                 Capture-miss test rerun after both captures were staged: passed.
+
+---
+
+## P-21b  member harness, APP config, members 1, 2, 4  2026-09-25T13:30:00+08:00
+  STEP:          P-21b (stage A)
+  BASE:          0b77801ab7428a61d82b258a77271b04931f01f2 (arch/exec)
+  RESULT SHA:    faac632ee9e5602b14232e73b7bff256f1f19cf6 (exec/P-21b),
+                 merged as 98518981947a1fc95d46186eabc5a370c8617b9a.
+                 CI battery step (parity oracle): 9 passed, 89 deselected in 34.52s.
+  PREDICTION:    PARITY hold. Tests, config, CI, and docs only.
+  STAGE 0:       S0-1 engine 13 publishes PositionSnapshot, GateDecision,
+                 PositionClosed, DeRiskRequirement (source_layer="POSITION").
+                 S0-2 risk_wrapper.py:334-348. alpha_max_exposure =
+                 equity * capital_allocation_pct/100 * max_gross_exposure_pct/100
+                 = 15000 from fixture max_gross_exposure_pct 60. No fixture edit.
+                 S0-3 Top1SelectionPolicy selection_policy.py:27; tie-break
+                 min(-(edge*strength), strategy_id) at lines 82-86. SYN alone
+                 and SYN+ZZZ: 58 SYN order/fill rows, equal. ZZZ OrderRequests 0.
+                 S0-4 market_fill.py:202-225 within-L1 premium, then snap and clamp.
+  NOTES:         Attempt 1 blocked at S0-3: Top1SelectionPolicy kept SYM2 over SYN
+                 (0 vs 58 SYN rows); the exposure-cap raise to 100 was unnecessary
+                 (no rejects) and was not applied; Amendment A: quoted-not-traded
+                 ZZZ (D-36 revised, D-38).
+                 Attempt 2 blocked: test_m1_gates_syn built the gate_order
+                 perturbation before the nonvacuity check (TypeError from the P-10
+                 stub). Amendment B: baseline → nonvacuous → perturbation, for
+                 every member; gate_order is a P-30 obligation (contracts §8, D-31).
+                 Amendment C: attribution cursor moves on MarkRailUpdate and
+                 NBBOQuote (D-39); prevents a false member-2 failure at stage B
+                 that stage A could not show.
+  MEMBERS:       m1/m2/m4_birth red NONVACUOUS: no PositionSnapshot records
+                 (first missing type). m4_rail green on syn, syn spreads, and the
+                 real session. Touch clause untested: birth raises NONVACUOUS
+                 before the clause, so no coverage count was measured.
+  OUTCOME:       parity hold. compare pre-P-21b -> post-P-21b: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (749 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 0: 88 passed, 9 deselected (37.92s).
+                 V6 exit 0: 9 passed, 88 deselected, wall 29.91s.
+                 V7 exit 1: 1 failed, 5039 passed, 5 skipped, 52 deselected,
+                 1 xfailed — only test_capture_misses_equal_keep (post capture
+                 not yet tracked).
+                 V8 compare exit 0, parity HOLDS.
+                 Post-capture full suite: 5077 passed, 1 failed, 19 skipped
+                 (the untracked-capture miss). Pre-capture: 5053 passed,
+                 0 failed, 19 skipped. Determinism 148 passed on both.
+                 Port 4002 LISTENING pid 32216 before the pre-capture and
+                 after the post-capture.
+                 Capture-miss test rerun after both captures were staged: passed.
+
+---
+
+## FINDING  baseline.py full suite records functional and paper_rth outcomes
+DATE:        2026-09-25
+CAUSE:       tools/exec/baseline.py runs the full suite, so captures
+             record wall-clock- and gateway-dependent functional/paper_rth
+             outcomes (P-20: pre red on
+             test_after_hours_reject_surfaces_as_rejected; post also red on
+             test_g12_cost_exceeds_disclosure_alert after RTH opened). The
+             64-constant compare is unaffected.
+STATE:       Tooling rung before P-99: captures run the merge-gate marker
+             set and record functional results separately.
+RISK:        A capture taken across the RTH boundary can go red on tests
+             the merge gate does not run, and look like a parity failure.
+OWNER:       tooling rung before P-99.
+
+---
+
+## P-21c
+  STEP:          P-21c (spec closure for members 3, 5, 6; docs only)
+  BASE:          d4d4c6677de2b7b63e1ed73eca84ddbd77a524d6 (arch/exec)
+  RESULT SHA:    c0aa813701f216747c826d88151e9f23f8c75d76 (exec/P-21c),
+                 merged as c2508a4e0088c7fd096049d01be1185a39f9911a.
+                 CI battery step (parity oracle): 9 passed, 89 deselected in 34.46s.
+                 Interrupted write duplicated D-40..D-48 and this block ×3; trimmed before validation. A decision/amendment-id uniqueness test is added to the pre-P-99 tooling rung.
+  S0-1:          cell_id format is defined. Quoted sentences:
+                 Frozen at birth: `cell_id` = `symbol|strategy_id|birth_fill_sequence|side`
+                 — derived from the tape, never random or clock-based.
+                 Step, two phases per rail event, per open cell, in `cell_id` order.
+                 PositionSnapshot, every rail event, every open cell, lists `cell_id` among
+                 its fields.
+                 PositionClosed, once, write-once, lists `cell_id`, symbol, strategy, side.
+                 Level: L drawn once per cell from a flat distribution over the whole-tick
+                 band, seeded by SHA-256 of `cell_id`; recomputed each event from `cell_id`
+                 and frozen run config, never stored, never re-drawn.
+                 D-44 uses the defined format verbatim:
+                 `symbol|strategy_id|birth_fill_sequence|side`.
+  FILES:         docs/architecture/target/position_engine/contracts.md
+                 docs/architecture/target/position_engine/battery.md
+                 docs/architecture/target/position_engine/decisions.md
+                 docs/architecture/target/out/phase14_position_engine.md
+                 docs/architecture/target/out/exec/LEDGER.md
+                 docs/architecture/target/out/exec/baseline_pre-P-21c.json
+                 docs/architecture/target/out/exec/baseline_post-P-21c.json
+  OUTCOME:       parity hold. compare pre-P-21c -> post-P-21c: 64 -> 64, changed 0.
+  VALIDATION:    V1 ruff check exit 0. V2 ruff format --check exit 0 (721 files).
+                 V3 mypy exit 0 (256 files). V4 lint-imports exit 0 (2 kept).
+                 V5 exit 1: 1 failed, 106 passed — only
+                 test_capture_misses_equal_keep (pre and post not yet tracked).
+                 V6 exit 1: 1 failed, 5040 passed, 5 skipped, 52 deselected,
+                 1 xfailed — same capture miss only.
+                 V7 compare exit 0, parity HOLDS.
+                 Post-capture full suite: 5078 passed, 1 failed, 19 skipped
+                 (the untracked-capture miss). Pre-capture: 5079 passed,
+                 0 failed, 19 skipped. Determinism 148 passed on both.
+                 Port 4002 LISTENING pid 32216 before the pre-capture and after
+                 the post-capture.
+
+---
+
+## P-21d
+  STEP:          P-21d (battery members 3 and 5 + set_quote/excise injectors)
+  PR:            #257
+  RESULT SHA:    9518506cc06cf59939f614db767ccf44f423f0e3,
+                 75fb56cc9996c0c93b237242dedada297d88acb5 (exec/P-21d),
+                 merged as dfc9b9a5b37d57e8948865a36f9fc1671aab3309.
+  PREDICTION:    NONE held. 64/64 constants unchanged. APP oracle unchanged
+                 (20 fills, net 103.93, trade hash 0601295a…).
+  VALIDATION:    gate "5059 passed, 5 skipped, 53 deselected, 1 xfailed, 48 warnings in 373.22s (0:06:13)";
+                 battery_real "10 passed, 107 deselected in 22.55s";
+                 CI battery step "10 passed, 107 deselected in 25.46s".
+  DECISIONS:     D-49..D-53 (D-49 drawdown finding with headroom; D-53 confound guard).
+  MEMBERS:       m3 and m5 green_from E; red at A via NONVACUOUS; m5 real-session
+                 precedence added (battery_real).
+  OPEN:          drawdown headroom (worst run 86.96% of limit) → to be addressed
+                 in P-21e; member 6 design D1–D3 approved and pending recording
+                 in P-21e.
+  OUTCOME:       parity hold. compare pre-P-21d -> post-merge-P-21d: 64 -> 64, changed 0.
+
+---
+
+## P-21e
+  STEP:          P-21e (member 6 spec closure + shift_from/remove_side_run + doc integrity + capture ignore)
+  PR:            #258
+  RESULT SHA:    450b7b20a2ab51fd3048fe8891a2b244a69598e3,
+                 7d12bab4fd5d7795c9114b08aebe8f29978e9fe9 (exec/P-21e),
+                 merged as 37aa506c1828621f4b179fb906715513c31684da.
+  PREDICTION:    NONE held. 64/64 constants unchanged. APP oracle unchanged
+                 (20 fills, net 103.93, trade hash 0601295a…).
+  VALIDATION:    gate "5074 passed, 5 skipped, 53 deselected, 1 xfailed, 48 warnings in 323.49s (0:05:23)";
+                 battery_real "10 passed, 112 deselected in 22.97s";
+                 CI battery step "10 passed, 112 deselected in 24.06s".
+  DECISIONS:     D-54..D-62 (D1–D8 member 6 decisions; D-62 rail side usability, found by S0-1).
+  S0-1:          real session non-VALID episodes:
+                 NONPOS(bid) 1 / 59.91 s; NONPOS(ask) 1 / 59.92 s (both > A);
+                 CROSSED 28 / 0.51 ms; LOCKED 36 / 0.68 ms; ZERO_SZ none.
+  OPEN:          the two one-sided episodes > A → predict BLIND exits for any cell
+                 alive in them at stage E (located at P-21f census); m2 0.75 prefix
+                 has 2 risk rejects at stage A (reason and timestamps at P-21f
+                 census); P-21f real-session budget (15.0 s per full run).
+  OUTCOME:       parity hold. compare pre-P-21e -> post-merge-P-21e: 64 -> 64, changed 0.
+
+---
+
+## P-13
+  STEP:          P-13 (causal regime calibration, fallback C, widened member 2,
+                 pre-registered oracle re-pin)
+  PR:            #259
+  RESULT SHA:    2089f19e (E0 prediction),
+                 7beee259f9ff42d27f1f3f427e4686536a4b000b (exec/P-13),
+                 merged as 91f7433f076f3a6914961147fe8cc19524fe7530.
+  PREDICTION:    PRE-REGISTERED PARITY BREAK held exactly:
+                 FILL_COUNT 20 -> 10, NET_PNL 103.93 -> 24.61,
+                 TRADE_PARITY_HASH 0601295a… -> 18f6bb4e…;
+                 CONFIG_HASH and DATA_VERSION unchanged.
+                 MECHANISM: regime emissions fitted on 2026-03-25 RTH (50636)
+                 instead of the replayed 2026-03-26.
+  COMPARE:       pre-P-13 -> post-P-13: 64 -> 64, changed 3
+                   _BASELINE_FILL_COUNT 20 -> 10
+                   _BASELINE_NET_PNL 103.93 -> 24.61
+                   _BASELINE_TRADE_PARITY_HASH 0601295a20b518ea… -> 18f6bb4ecd7b1b1a…
+                 pre-P-13 -> post-merge-P-13: 64 -> 64, changed 3, same three
+                 values (not changed 0).
+  VALIDATION:    gate "5086 passed, 5 skipped, 51 deselected, 1 xfailed, 48 warnings in 284.02s (0:04:44)";
+                 battery_real "8 passed, 112 deselected in 46.29s";
+                 CI battery step "8 passed, 112 deselected in 78.09s (0:01:18)";
+                 CI jobs check 519 s / parity oracle 162 s (D-71).
+  DECISIONS:     D-63..D-71 (D-63 prior-session quotes; D-64 uncalibrated
+                 factor is min(scales); D-65 widened member 2; D-66 one-time
+                 re-pin; D-67 fallback C; D-68 ex-date guard stays; D-69 cuts
+                 at decision points; D-70 nonvacuous re-proof; D-71 parity job
+                 must not extend the CI critical path).
+  PROCESS:       a fail-first re-proof must be nonvacuous itself (confirm the
+                 injected defect took effect before reading the detector's
+                 verdict). Amendment A's re-proof was vacuous, and B1
+                 corrected it.
+  STAGE:         A.
+  OPEN:          D-63 live/paper wiring (paper/live campaign);
+                 test_two_alphas_hold_live_targets_on_one_symbol (relied on
+                 the removed scan; non-gating);
+                 exchange holiday calendar gap (D-67);
+                 research results on the regime-gated/sized path before P-13
+                 to be re-run causally before campaign 15 (see FINDING).
+  NOTES:         D-71's 519 s / 162 s are run 36238122317 at b291d4d2.
+                 Merge CI run 36239927138: check 5m19s (319 s), parity oracle
+                 2m48s (168 s). Cache key feelies-eventcache-APP-2026-03-25_26-v2
+                 was not a hit; restore-key feelies-eventcache-APP-2026-03-26-v1
+                 hit, then fetch-only populate of 2026-03-25 via ingest_data
+                 (cache hit 2026-03-26). Post-merge capture moved to
+                 ..\feelies-captures\P-13\baseline_post-merge-P-13.json.
+                 Full-suite captures record 1 failed:
+                 test_two_alphas_hold_live_targets_on_one_symbol (functional).
+  OUTCOME:       pre-registered parity break held. compare pre-P-13 ->
+                 post-merge-P-13: 64 -> 64, changed 3.
+
+---
+
+## EXEMPTION  one-time pre-registered APP oracle re-pin (D-66)
+DATE:        2026-09-26
+FAILURE:     parity CHANGED on the APP acceptance oracle. Exactly three
+             constants moved, and no others:
+             _BASELINE_FILL_COUNT 20 -> 10
+             _BASELINE_NET_PNL 103.93 -> 24.61
+             _BASELINE_TRADE_PARITY_HASH 0601295a… -> 18f6bb4e…
+             _BASELINE_CONFIG_HASH and _BASELINE_DATA_VERSION unchanged.
+PRESENT IN:  baseline_pre-P-13.json -> baseline_post-P-13.json, and the
+             same three moves in baseline_post-merge-P-13.json (kept outside
+             the tree).
+CAUSE:       regime emissions fitted on 2026-03-25 RTH (50636 quotes)
+             instead of the replayed 2026-03-26. The break was written
+             before the pre-capture (E0 2089f19e).
+DECISION:    proceed. D-66 allows this re-pin once. The oracle is frozen
+             again after P-13.
+WATCH:       a later compare that moves any other constant, or that does
+             not reproduce these three values, is a stop.
+NOTE:        both compares (pre -> post and pre -> post-merge) show
+             changed 3 with these values.
+
+---
+
+## FINDING  pre-P-13 regime-path research must be re-run causally
+DATE:        2026-09-26
+CAUSE:       The legacy oracle's net fell 103.93 -> 24.61 under causal
+             calibration. Regime emissions had been fitted on the session
+             being replayed.
+STATE:       Any research result on the regime-gated or regime-sized
+             backtest path before P-13 is to be re-run causally before
+             campaign 15 relies on it.
+RISK:        Campaign 15 could treat a lookahead-fitted net as evidence.
+OWNER:       campaign 15.

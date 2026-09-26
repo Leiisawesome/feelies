@@ -75,6 +75,11 @@ SUBSCRIPTIONS: tuple[Subscription, ...] = (
     Subscription(33, "RiskVerdict", "_NotificationObserver", "on_event"),
     Subscription(34, "SymbolHalted", "_NotificationObserver", "on_event"),
     Subscription(35, "KillSwitchActivation", "_NotificationObserver", "on_event"),
+    Subscription(36, "MarkRailUpdate", "PositionEngine", "_on_mark_rail"),
+    Subscription(37, "SlicePositionUpdate", "PositionEngine", "_on_slice_update"),
+    Subscription(38, "PositionSnapshot", "PositionRecordSink", "_on_snapshot"),
+    Subscription(39, "GateDecision", "PositionRecordSink", "_on_gate_decision"),
+    Subscription(40, "PositionClosed", "PositionRecordSink", "_on_closed"),
 )
 
 ZERO_SUBSCRIBER_RESOLUTIONS: tuple[tuple[str, str], ...] = (

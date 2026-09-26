@@ -22,9 +22,10 @@ class MemoryPositionStore:
     def __init__(self) -> None:
         self._positions: dict[str, Position] = {}
         self._marks: dict[str, Decimal] = {}
-        # Use bid for long liquidation and ask for short liquidation; fall back to mid.
+        # Long liquidation uses bid; short liquidation uses ask. Mid is not a valuation input.
         self._bids: dict[str, Decimal] = {}
         self._asks: dict[str, Decimal] = {}
+        self._stale: set[str] = set()
         # Track open-episode age for hazard exits; sign flips restart and flat clears it.
         self._opened_at_ns: dict[str, int] = {}
 
@@ -34,6 +35,7 @@ class MemoryPositionStore:
         self._marks.clear()
         self._bids.clear()
         self._asks.clear()
+        self._stale.clear()
         self._opened_at_ns.clear()
 
     def get(self, symbol: str) -> Position:
@@ -102,25 +104,26 @@ class MemoryPositionStore:
     ) -> None:
         """Refresh the mark for a symbol.
 
-        ``mark_price`` is the mid (used as a fallback liquidation
-        price).  When ``bid`` and ``ask`` are supplied, the position
-        store records them and ``_recompute_unrealized`` uses the
-        side-specific liquidation price: longs mark to bid, shorts
-        mark to ask.  This matches the realistic exit price (you
-        sell at the bid; you cover at the ask), avoiding an optimistic
-        half-spread bias in unrealized PnL.
+        ``mark_price`` is the reference mid, stored for sizing and
+        exposure notional.  It is not a valuation input.  When both
+        ``bid`` and ``ask`` are positive, the store records them and
+        ``_recompute_unrealized`` uses the executable side: longs mark
+        to bid, shorts mark to ask.  A non-positive side is rejected
+        and the last valid bid and ask are retained.  A missing side
+        values the position at its entry price.
         """
         if mark_price <= 0:
             return
-        self._marks[symbol] = mark_price
-        if bid is not None and bid > 0:
+        if bid is not None and ask is not None:
+            if bid <= 0 or ask <= 0:
+                self._stale.add(symbol)
+                return
+            self._marks[symbol] = mark_price
             self._bids[symbol] = bid
-        else:
-            self._bids.pop(symbol, None)
-        if ask is not None and ask > 0:
             self._asks[symbol] = ask
+            self._stale.discard(symbol)
         else:
-            self._asks.pop(symbol, None)
+            self._marks[symbol] = mark_price
         pos = self._positions.get(symbol)
         if pos is not None:
             self._recompute_unrealized(pos)
@@ -129,11 +132,8 @@ class MemoryPositionStore:
         if pos.quantity == 0:
             pos.unrealized_pnl = Decimal("0")
             return
-        # Use side-specific BBO marks when available, otherwise mid.
-        if pos.quantity > 0:
-            mark = self._bids.get(pos.symbol) or self._marks.get(pos.symbol)
-        else:
-            mark = self._asks.get(pos.symbol) or self._marks.get(pos.symbol)
+        # Executable side only. A missing side values the position at entry.
+        mark = self.valuation_mark(pos.symbol, pos.quantity)
         if mark is None:
             pos.unrealized_pnl = Decimal("0")
             return
@@ -185,9 +185,31 @@ class MemoryPositionStore:
             return None
         return ts
 
-    def latest_mark(self, symbol: str) -> Decimal | None:
-        """Return the most recent mark recorded via :meth:`update_mark`."""
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        """Stored reference mid. Sizing and exposure notional, not valuation."""
         return self._marks.get(symbol)
+
+    def latest_mark(self, symbol: str) -> Decimal | None:
+        """Reference price for sizing and exposure notional only; never valuation (D-22, D-26)."""
+        return self.reference_mid(symbol)
+
+    def valuation_mark(self, symbol: str, quantity: int) -> Decimal | None:
+        """Bid for a long, ask for a short. Zero quantity or a missing side is None."""
+        if quantity > 0:
+            return self._bids.get(symbol)
+        if quantity < 0:
+            return self._asks.get(symbol)
+        return None
+
+    def mark_stale(self, symbol: str) -> None:
+        """Flag the symbol stale without moving bid, ask, or the reference mid."""
+        self._stale.add(symbol)
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        """True when flagged stale, or when no valid bid and ask were ever stored."""
+        if symbol in self._stale:
+            return True
+        return symbol not in self._bids or symbol not in self._asks
 
     def total_exposure(self) -> Decimal:
         """Gross notional using the latest mark per symbol.
@@ -202,7 +224,9 @@ class MemoryPositionStore:
         for pos in self._positions.values():
             if pos.quantity == 0:
                 continue
-            price = self._marks.get(pos.symbol, pos.avg_entry_price)
+            price = self.reference_mid(pos.symbol)
+            if price is None:
+                price = pos.avg_entry_price
             total += abs(pos.quantity) * price
         return total
 

@@ -114,7 +114,8 @@ class BudgetBasedSizer:
 
         # Read the *published* snapshot, not the live engine (see basic_risk).
         state = self._regime_states.latest(symbol)
-        if state is None or not state.posteriors:
+        # An uncalibrated posterior carries no more information than a missing one.
+        if state is None or not state.posteriors or not state.calibrated:
             return self._regime_factor_default
 
         posteriors = state.posteriors
