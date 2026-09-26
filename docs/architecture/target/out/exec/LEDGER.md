@@ -30686,3 +30686,26 @@ OWNER:       tooling rung before P-99.
                  in P-21e; member 6 design D1–D3 approved and pending recording
                  in P-21e.
   OUTCOME:       parity hold. compare pre-P-21d -> post-merge-P-21d: 64 -> 64, changed 0.
+
+---
+
+## P-21e
+  STEP:          P-21e (member 6 spec closure + shift_from/remove_side_run + doc integrity + capture ignore)
+  PR:            #258
+  RESULT SHA:    450b7b20a2ab51fd3048fe8891a2b244a69598e3,
+                 7d12bab4fd5d7795c9114b08aebe8f29978e9fe9 (exec/P-21e),
+                 merged as 37aa506c1828621f4b179fb906715513c31684da.
+  PREDICTION:    NONE held. 64/64 constants unchanged. APP oracle unchanged
+                 (20 fills, net 103.93, trade hash 0601295a…).
+  VALIDATION:    gate "5074 passed, 5 skipped, 53 deselected, 1 xfailed, 48 warnings in 323.49s (0:05:23)";
+                 battery_real "10 passed, 112 deselected in 22.97s";
+                 CI battery step "10 passed, 112 deselected in 24.06s".
+  DECISIONS:     D-54..D-62 (D1–D8 member 6 decisions; D-62 rail side usability, found by S0-1).
+  S0-1:          real session non-VALID episodes:
+                 NONPOS(bid) 1 / 59.91 s; NONPOS(ask) 1 / 59.92 s (both > A);
+                 CROSSED 28 / 0.51 ms; LOCKED 36 / 0.68 ms; ZERO_SZ none.
+  OPEN:          the two one-sided episodes > A → predict BLIND exits for any cell
+                 alive in them at stage E (located at P-21f census); m2 0.75 prefix
+                 has 2 risk rejects at stage A (reason and timestamps at P-21f
+                 census); P-21f real-session budget (15.0 s per full run).
+  OUTCOME:       parity hold. compare pre-P-21e -> post-merge-P-21e: 64 -> 64, changed 0.
