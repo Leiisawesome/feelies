@@ -3399,6 +3399,10 @@ class Orchestrator:
     def risk_level(self) -> RiskLevel:
         return self._risk_escalation.state
 
+    def note_regime_calibration_source(self, source_date: str | None) -> None:
+        """Record the prior-session date before boot fits the supplied quotes."""
+        self._regime_calibration_source_date = source_date
+
     @property
     def regime_calibration_provenance(self) -> tuple[str | None, int]:
         """``(prior session date or None, quote count)`` recorded at boot."""

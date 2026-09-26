@@ -770,7 +770,7 @@ def _run_backtest_phases_2_7(
         regime_calibration_quotes=cal_quotes,
         edge_calibration_factors=_edge_factors,
     )
-    orchestrator._regime_calibration_source_date = cal_provenance[0]
+    orchestrator.note_regime_calibration_source(cal_provenance[0])
     alpha_count = (
         len(orchestrator.alpha_registry.alpha_ids())
         if orchestrator.alpha_registry is not None
