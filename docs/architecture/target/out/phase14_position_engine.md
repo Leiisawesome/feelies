@@ -73,10 +73,11 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-21b | A | harness (scenarios.py), APP config, CI battery_real step; members 1, 2, 4 | 1, 2, 4-birth red NONVACUOUS; 4-rail green | hold |
 | P-21c | A | spec closure for members 3, 5, 6 (contracts §9, D-40..D-48); docs only | docs tests | hold |
 | P-21d | A | implemented (PR #257), pending merge. members 3, 5; tape injectors set_quote, excise | each red for its stated reason | hold |
-| P-21e | A | member 6, after an operator-approved design note | red for its stated reason | hold |
+| P-21e | A | implemented (PR pending), pending merge. member 6 spec closure; shift_from, remove_side_run; doc integrity; capture ignore | red for its stated reason | hold |
+| P-21f | A | Member 6 tests (A1–A6, real + synthetic) + member 4 unusable-side clause; green_from per battery.md; red via NONVACUOUS | red via NONVACUOUS | hold |
 | P-22 | A | broken engines B1–B11 | each caught by its named member | hold |
 | P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it) | members 1, 2 green | hold |
-| P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40) | + 4 (rail half), 9 | hold |
+| P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site | + 4 (rail half), 9 | hold |
 | P-50 | D | position cell: birth from fill, entry rational, excursion, extremes, deadline, states, closing record | + 4 (birth), 10, 11 | hold |
 | P-51 | D | entry admission refusals and no-scale-in for owned alphas | member 10 refusal cases | hold |
 | P-52 | D | invalidation intake; kernel stops emitting its own exit for owned slices | member 10, 5 (invalidation cases) | hold |

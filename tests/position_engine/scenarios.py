@@ -372,6 +372,32 @@ def fixture_variant(**overrides: object) -> dict[str, object]:
     return edited
 
 
+def synthetic_alpha_spec(variant: dict[str, object] | None) -> dict[str, object]:
+    """In-memory fixture for synthetic runs. Drawdown is 100 unless set explicitly."""
+    on_disk = yaml.safe_load(_FIXTURE.read_text(encoding="utf-8"))
+    assert isinstance(on_disk, dict)
+    disk_risk = on_disk.get("risk_budget")
+    disk_pct = disk_risk.get("max_drawdown_pct") if isinstance(disk_risk, dict) else None
+    if variant is None:
+        spec: dict[str, object] = copy.deepcopy(on_disk)
+        explicit = False
+    else:
+        spec = copy.deepcopy(variant)
+        caller_risk = variant.get("risk_budget")
+        explicit = (
+            isinstance(caller_risk, dict)
+            and "max_drawdown_pct" in caller_risk
+            and caller_risk.get("max_drawdown_pct") != disk_pct
+        )
+    if not explicit:
+        risk = spec.get("risk_budget")
+        if not isinstance(risk, dict):
+            risk = {}
+            spec["risk_budget"] = risk
+        risk["max_drawdown_pct"] = 100.0
+    return spec
+
+
 def _execute_synthetic(
     tape: Sequence[NBBOQuote],
     symbols: tuple[str, ...],
@@ -393,18 +419,18 @@ def _execute_synthetic(
         risk_max_gross_exposure_pct=80.0,
     )
     original_load = AlphaLoader.load
+    spec = synthetic_alpha_spec(variant)
 
     def _load(
         self: AlphaLoader,
         path: object,
         param_overrides: dict[str, object] | None = None,
     ) -> object:
-        if variant is not None and Path(str(path)) == _FIXTURE:
-            return self.load_from_dict(variant, source=str(_FIXTURE))
+        if Path(str(path)) == _FIXTURE:
+            return self.load_from_dict(spec, source=str(_FIXTURE))
         return original_load(self, path, param_overrides)  # type: ignore[arg-type]
 
-    if variant is not None:
-        AlphaLoader.load = _load  # type: ignore[method-assign]
+    AlphaLoader.load = _load  # type: ignore[method-assign]
     try:
         with _seams(engine_factory, rail_wrapper, attach_sink):
             orchestrator, resolved = build_platform(config, event_log=log)
