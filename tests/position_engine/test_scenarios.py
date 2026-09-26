@@ -7,9 +7,12 @@ import os
 import subprocess
 import sys
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+import yaml
 
+from feelies.alpha.loader import AlphaLoader
 from feelies.core.events import (
     GateDecision,
     MarkRailUpdate,
@@ -32,6 +35,7 @@ from tests.position_engine.scenarios import (
     displacement_identity,
     drawn_adverse_level,
     exit_reason_at_collision,
+    fixture_variant,
     format_line,
     mean_within_se,
     nonvacuous,
@@ -448,3 +452,58 @@ def test_t8_exit_reason_rejects_the_flattering_tie() -> None:
         match=r"^exit reason FAVORABLE != ADVERSE cell C candidates \['ADVERSE', 'FAVORABLE'\]$",
     ):
         exit_reason_at_collision(Records([row, _requirement(3)], _quotes(), ()))
+
+
+def _capture_loaded_specs(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    seen: list[dict[str, object]] = []
+    original = AlphaLoader.load_from_dict
+
+    def _from_dict(
+        self: AlphaLoader,
+        spec: dict[str, object],
+        param_overrides: dict[str, object] | None = None,
+        source: str = "<dict>",
+        manifest_hash: str | None = None,
+    ) -> object:
+        seen.append(spec)
+        return original(self, spec, param_overrides, source, manifest_hash)
+
+    monkeypatch.setattr(AlphaLoader, "load_from_dict", _from_dict)
+    return seen
+
+
+def _fixture_drawdown(specs: list[dict[str, object]]) -> float:
+    matched = [spec for spec in specs if spec.get("alpha_id") == "sig_position_fixture_v1"]
+    assert matched, "fixture alpha was not loaded"
+    risk = matched[-1]["risk_budget"]
+    assert isinstance(risk, dict)
+    return float(risk["max_drawdown_pct"])  # type: ignore[arg-type]
+
+
+def test_d6_synthetic_spec_carries_100(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _capture_loaded_specs(monkeypatch)
+    tape = make_tape(seed=1, n=2, symbol="SYN", start_ns=T0, size=100)
+    run_synthetic(tape, symbols=("SYN",))
+    assert _fixture_drawdown(seen) == 100.0
+
+
+def test_d6_explicit_variant_drawdown_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _capture_loaded_specs(monkeypatch)
+    variant = fixture_variant()
+    risk = variant["risk_budget"]
+    assert isinstance(risk, dict)
+    risk["max_drawdown_pct"] = 20.0
+    tape = make_tape(seed=1, n=2, symbol="SYN", start_ns=T0, size=100)
+    run_synthetic(tape, symbols=("SYN",), variant=variant)
+    assert _fixture_drawdown(seen) == 20.0
+
+
+def test_d6_fixture_file_and_real_spec_stay_at_5() -> None:
+    fixture_path = Path("tests/position_engine/fixtures/sig_position_fixture_v1.alpha.yaml")
+    fixture = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+    assert fixture["risk_budget"]["max_drawdown_pct"] == 5.0
+    app = yaml.safe_load(
+        Path("configs/bt_position_arbitrary_not_calibrated.yaml").read_text(encoding="utf-8")
+    )
+    real = yaml.safe_load(Path(app["alpha_specs"][0]).read_text(encoding="utf-8"))
+    assert real["risk_budget"]["max_drawdown_pct"] == 5.0

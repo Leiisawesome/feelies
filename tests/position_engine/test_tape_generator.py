@@ -18,7 +18,9 @@ from tests.position_engine.tapes import (
     lattice_barrier,
     make_tape,
     remove_side,
+    remove_side_run,
     set_quote,
+    shift_from,
 )
 
 _G3_N = 64
@@ -197,3 +199,50 @@ def test_g8_excise_keeps_sequences_and_rejects_bad_spans() -> None:
         excise(tape, 8, 3)
     with pytest.raises(ValueError):
         excise(tape, 0, 0)
+
+
+def test_g9_shift_from_and_remove_side_run() -> None:
+    tape = make_tape(seed=3, n=12, size=1000)
+    snapshot = copy.deepcopy(tape)
+    shifted = shift_from(tape, 4, 5)
+    assert tape == snapshot
+    _preserved(shifted, tape)
+    assert shifted[3].bid == tape[3].bid
+    assert shifted[3].ask == tape[3].ask
+    for quote, src in zip(shifted[4:], tape[4:], strict=True):
+        assert quote.bid == src.bid + Decimal("0.05")
+        assert quote.ask == src.ask + Decimal("0.05")
+        assert quote.bid_size == src.bid_size
+        assert quote.ask_size == src.ask_size
+        assert quote.sequence == src.sequence
+        assert quote.timestamp_ns == src.timestamp_ns
+
+    removed = remove_side_run(tape, 2, 3, "ask")
+    assert tape == snapshot
+    _preserved(removed, tape)
+    assert removed[1].ask_size == tape[1].ask_size
+    for quote in removed[2:5]:
+        assert quote.ask_size == 0
+        assert quote.bid_size == tape[quote.sequence - tape[0].sequence].bid_size
+    assert removed[5].ask_size == tape[5].ask_size
+
+    offending = tape[6].sequence
+    with pytest.raises(ValueError, match=str(offending)):
+        shift_from(tape, 6, -20_000)
+    with pytest.raises(ValueError):
+        remove_side_run(tape, 0, 0, "bid")
+    with pytest.raises(IndexError):
+        remove_side_run(tape, 10, 3, "bid")
+    with pytest.raises(IndexError):
+        remove_side_run(tape, -1, 1, "bid")
+
+
+def test_g9_shift_from_after_excise_matches_census_c2() -> None:
+    """Seed 11, V3a. Excise 20 quotes at sequence 303, then shift −15 cents from q_g."""
+    tape = make_tape(seed=11, n=400, symbol="SYN", start_ns=1_774_533_600_000_000_000, size=1000)
+    out = shift_from(excise(tape, 302, 20), 302, -15)
+    by_seq = {quote.sequence: quote for quote in out}
+    assert by_seq[323].bid == Decimal("99.76")
+    assert by_seq[323].ask == Decimal("99.77")
+    assert by_seq[324].bid == Decimal("99.75")
+    assert by_seq[324].ask == Decimal("99.76")

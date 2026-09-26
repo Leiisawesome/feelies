@@ -413,3 +413,21 @@ output).
   `displacement = sign × size × (valuation mark at the quote of the exit fill − valuation mark
   at the quote of the entry fill)`, taken from the tape; `cost = displacement − result`.
   Fees never enter engine figures; `fee_round_trip_ticks` enters only `round_trip_ticks`. (D-46)
+- **Rail side usability (D-62).** For every quote the rail publishes an update. A side the
+  orchestrator mark path refuses for the store is marked absent on the rail, and its absence
+  clock runs from the last usable value. `symbol_quiet_ns` measures feed silence only and
+  resets on any quote. Crossed and locked books are absent on both sides. The mark path
+  (`orchestrator.py` 4293–4322) calls `update_mark` with both bid and ask only when
+  `classify` (`quote_quality.py` 19–29) returns `VALID`; every other class calls
+  `mark_stale` and writes neither side. Classification is computed once in that mark path
+  and passed to both store and rail; there is no second `classify` call site (P-40).
+
+  | Class | Store bid | Store ask | Rail bid | Rail ask |
+  |---|---|---|---|---|
+  | VALID | updated | updated | present | present |
+  | NONPOS (bid) | refused | refused | absent | absent |
+  | NONPOS (ask) | refused | refused | absent | absent |
+  | CROSSED | refused | refused | absent | absent |
+  | LOCKED | refused | refused | absent | absent |
+  | ZERO_SZ (bid) | refused | refused | absent | absent |
+  | ZERO_SZ (ask) | refused | refused | absent | absent |

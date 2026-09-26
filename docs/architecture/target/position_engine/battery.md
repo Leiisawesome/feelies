@@ -117,6 +117,10 @@ ASSERTS:           every rail update: paying and valuation on opposite sides, di
 The touch clause applies only to cells whose every entry fill printed at the birth paying mark;
 the number of such cells is reported, and a count of zero is recorded as untested, not passed.
 The general identity holds for every cell. (D-34)
+                   On every non-VALID quote the rail marks absent exactly the sides the store
+                   refuses; absence clocks run; symbol_quiet_ns resets. green_from C, the stage
+                   letter at which P-40 lands:
+                   | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40) |
 FAILURE LOOKS LIKE:one event and which assertion
 BLOCKS THE BUILD:  yes — red until stage C (rail) / D (birth)
 ```
@@ -142,20 +146,38 @@ and `test_m5_real` (`battery_real`). `green_from` E.
 
 ```
 MEMBER:            6 Injection
-DEFENDS AGAINST:   holes in the gates' data-quality rules
-TAPE:              one clean real session and paired injected copies: held quotes, removed
-                   sides, crossed books placed both to flatter the take-profit and to hide
-                   a stop breach, feed_gap_before set directly
-SETUP:             identical configuration on clean and injected runs
-ASSERTS:           favorable exits do not increase; adverse exits do not decrease; the
-                   overall result does not improve; suppression and hold counts non-zero
-                   on every injected tape
-FAILURE LOOKS LIKE:which injection moved which count, by how much
+DEFENDS AGAINST:   holes in the gates' data-quality rules: decisions taken on unusable data, stops
+                   concealed by unusable data, exits credited at prices not on the tape
+TAPE:              (R) one clean real session and three injected copies — a crossed book that flatters
+                   the valuation side; one side removed; feed_gap_before set on a rail event (rail seam,
+                   D3) — placed by rule P.
+                   (S) synthetic constructions: gap through the adverse barrier (excise + shift_from);
+                   BLIND boundary triplets (just under A / exactly A / just over A) for symbol_quiet_ns
+                   (excise), valuation_absent_for_ns and paying_absent_for_ns (remove_side_run); a crossed
+                   book flattering the peak inside a trailing (V5) cell; a stop breach concealed by
+                   unusable data, shorter and longer than A.
+PLACEMENT (P):     an injection sits at event e inside a live cell's life where the clean run makes no
+                   exit decision at e or e+1. Eligible cells are ranked by sha256(cell_id); up to 5
+                   injections per copy. Deterministic.
+SETUP:             identical configuration on clean and injected runs; synthetic runs use the C_SYN harness
+                   (per-alpha drawdown 100, D6)
+ASSERTS:           A1 every FAVORABLE exit, in every run, is decided on an event with all six §9
+                      suppression reasons clear
+                   A2 ignorable injections change no exit: (cell_id, reason, deciding sequence, exit price)
+                      equal the clean run for every cell; the expected flag is set (lived_through_feed_gap on
+                      cells alive at a feed-gap event); ≥1 suppression record per injected copy
+                   A3 every exit price equals the executable side of a real tape quote at or after the
+                      decision quote (the fill quote, F1)
+                   A4 gap through the adverse barrier with gap < A: reason ADVERSE; exit at the executable
+                      side of q_g+1; strictly worse than the barrier price; all values computed from the tape
+                   A5 for each of the three absence measures: no BLIND just under A or at exactly A; BLIND
+                      just over A (strict >, §9)
+                   A6 a breach concealed by unusable data is exited on the first usable event that shows it,
+                      or by BLIND once the concealment exceeds A
+FAILURE LOOKS LIKE:injection, cell, clean vs injected exit tuple, missing flag or suppression record
 BLOCKS THE BUILD:  yes — red until stage E
-NOTE (D-48): under design review for P-21e. "Held quotes" must mean a quiet name (quotes
-excised), not repeated quotes; whether "the overall result does not improve" is implied for a
-correct engine on a single path is to be settled under the amendment rule before the member is
-written.
+CATCHES:           B3 (A3, A4), B7 (A5), B8 (A2 on the V5 construction)
+NOTE (D-48):       Resolved by D-54..D-62 (P-21e).
 ```
 
 ## The five written alongside the build
@@ -251,7 +273,7 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 |---|---|---|
 | B1 | rail values at mid | 4 |
 | B2 | tie resolves toward FAVORABLE | 5 |
-| B3 | adverse exit proposed at the configured level, not the quote | 3 or 5 |
+| B3 | adverse exit proposed at the configured level, not the quote | 3, 5, or 6 |
 | B4 | cell reads the system clock for the deadline | 1 |
 | B5 | excursion accumulated instead of recomputed | 3 or 11 |
 | B6 | best-so-far seeded at zero | 11 |

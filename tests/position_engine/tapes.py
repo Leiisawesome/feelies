@@ -122,6 +122,35 @@ def set_quote(
     return out
 
 
+def shift_from(tape: list[NBBOQuote], index: int, delta_cents: int) -> list[NBBOQuote]:
+    if index < 0 or index > len(tape):
+        raise IndexError(index)
+    out = list(tape)
+    for j in range(index, len(tape)):
+        quote = tape[j]
+        bid_c = int(quote.bid * 100) + delta_cents
+        ask_c = int(quote.ask * 100) + delta_cents
+        if bid_c <= 0 or ask_c <= 0:
+            raise ValueError(f"non-positive side at sequence {quote.sequence}")
+        out[j] = replace(
+            quote,
+            bid=Decimal(bid_c) / 100,
+            ask=Decimal(ask_c) / 100,
+        )
+    return out
+
+
+def remove_side_run(tape: list[NBBOQuote], index: int, count: int, side: str) -> list[NBBOQuote]:
+    if count < 1:
+        raise ValueError(count)
+    if index < 0 or index + count > len(tape):
+        raise IndexError(index)
+    out = list(tape)
+    for j in range(index, index + count):
+        out = remove_side(out, j, side)
+    return out
+
+
 def excise(tape: list[NBBOQuote], index: int, count: int) -> list[NBBOQuote]:
     if count < 1 or index < 0 or index + count > len(tape):
         if count < 1:
