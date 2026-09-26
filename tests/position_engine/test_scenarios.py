@@ -39,10 +39,20 @@ from tests.position_engine.scenarios import (
     format_line,
     mean_within_se,
     nonvacuous,
+    placement_rule,
     project_for_multiname,
+    run_real,
     run_synthetic,
+    CellSpan,
+    check_a1,
+    check_a2,
+    check_a3,
+    check_a4,
+    check_a5,
+    check_a6,
+    check_unusable_side,
 )
-from tests.position_engine.tapes import make_tape, set_quote
+from tests.position_engine.tapes import cross, make_tape, set_quote
 
 
 def _quote() -> NBBOQuote:
@@ -507,3 +517,335 @@ def test_d6_fixture_file_and_real_spec_stay_at_5() -> None:
     )
     real = yaml.safe_load(Path(app["alpha_specs"][0]).read_text(encoding="utf-8"))
     assert real["risk_budget"]["max_drawdown_pct"] == 5.0
+
+
+def _identity(events: list[object]) -> list[object]:
+    return list(events)
+
+
+def _cross_first(events: list[object]) -> list[object]:
+    out = list(events)
+    for index, event in enumerate(out):
+        if type(event) is not NBBOQuote:
+            continue
+        ask_cents = int(event.ask * 100)
+        bid_cents = ask_cents + 50
+        out[index] = cross([event], 0, bid_cents, ask_cents)[0]
+        return out
+    raise AssertionError("quote_transform: no quote in the slice")
+
+
+def _canonical_bytes(records: Records) -> bytes:
+    return "\n".join(row.canonical for row in records).encode()
+
+
+@pytest.mark.battery_real
+def test_quote_transform_identity_matches_plain_run() -> None:
+    same = run_real(quote_transform=_identity, fraction=0.5)
+    plain = run_real(fraction=0.5)
+    assert _canonical_bytes(same) == _canonical_bytes(plain)
+    assert same.quotes.keys() == plain.quotes.keys()
+    for sequence, quote in plain.quotes.items():
+        assert same.quotes[sequence] == quote
+
+
+@pytest.mark.battery_real
+def test_quote_transform_cross_changes_exactly_one_quote() -> None:
+    plain = run_real(fraction=0.5)
+    changed = run_real(quote_transform=_cross_first, fraction=0.5)
+    assert changed.quotes.keys() == plain.quotes.keys()
+    diffs = [
+        sequence for sequence, quote in plain.quotes.items() if changed.quotes[sequence] != quote
+    ]
+    assert diffs == [min(plain.quotes)]
+
+
+def _row(type_name: str, body: dict[str, object], cursor: int | None = None) -> Record:
+    return Record(cursor, type_name, _canon(type_name, body))
+
+
+def _side_flags(*, absent: bool = False, dwell: bool = True) -> dict[str, object]:
+    return {
+        "valuation_side_absent": absent,
+        "paying_side_absent": absent,
+        "dwell_window_clean": dwell,
+        "paying_absent_for_ns": 0,
+        "valuation_absent_for_ns": 0,
+    }
+
+
+def _rail_row(
+    sequence: int,
+    *,
+    crossed: bool = False,
+    gap: bool = False,
+    warm: bool = True,
+    quiet: int = 0,
+    absent: bool = False,
+    dwell: bool = True,
+    paying_absent: int = 0,
+    valuation_absent: int = 0,
+) -> Record:
+    side = _side_flags(absent=absent, dwell=dwell)
+    side["paying_absent_for_ns"] = paying_absent
+    side["valuation_absent_for_ns"] = valuation_absent
+    return _row(
+        "MarkRailUpdate",
+        {
+            "quote_sequence": sequence,
+            "crossed": crossed,
+            "feed_gap_before": gap,
+            "warmed_up": warm,
+            "symbol_quiet_ns": quiet,
+            "long": side,
+            "short": dict(side),
+        },
+        sequence,
+    )
+
+
+def _fire_row(cell: str, sequence: int, gate: str) -> Record:
+    return _row(
+        "GateDecision",
+        {
+            "cell_id": cell,
+            "rail_sequence": sequence,
+            "gate": gate,
+            "outcome": "fire",
+            "reason": "",
+        },
+        sequence,
+    )
+
+
+def _priced_close(
+    cell: str,
+    *,
+    side: str,
+    reason: str,
+    entry_seq: int,
+    exit_seq: int,
+    price: int,
+    flag: bool = False,
+    blind: bool = False,
+) -> Record:
+    return _row(
+        "PositionClosed",
+        {
+            "cell_id": cell,
+            "side": side,
+            "exit_reason": reason,
+            "entry_fills": [{"sequence": entry_seq, "price_cents": 1, "quantity": 1}],
+            "exit_fills": [{"sequence": exit_seq, "price_cents": price, "quantity": 1}],
+            "lived_through_feed_gap": flag,
+            "exited_on_unusable_data": blind,
+            "triggered_paths": [{"path": reason, "trigger": "BLIND" if blind else "LEVEL"}],
+        },
+        exit_seq,
+    )
+
+
+def _book(seq: int, bid_cents: int, ask_cents: int, ts: int) -> NBBOQuote:
+    return NBBOQuote(
+        timestamp_ns=ts,
+        correlation_id=f"q-{seq}",
+        sequence=seq,
+        symbol="SYN",
+        bid=Decimal(bid_cents) / 100,
+        ask=Decimal(ask_cents) / 100,
+        bid_size=100,
+        ask_size=100,
+        exchange_timestamp_ns=ts,
+    )
+
+
+def test_placement_picks_the_midpoint_when_it_is_free() -> None:
+    assert placement_rule([CellSpan("c", 0, 10)], [10]) == (("c", 5),)
+
+
+def test_placement_skips_an_exit_at_the_midpoint() -> None:
+    assert placement_rule([CellSpan("c", 0, 10)], [5, 10]) == (("c", 6),)
+
+
+def test_placement_skips_when_the_next_event_is_an_exit() -> None:
+    assert placement_rule([CellSpan("c", 0, 10)], [6, 10]) == (("c", 7),)
+
+
+def test_placement_drops_a_cell_with_no_eligible_event() -> None:
+    assert placement_rule([CellSpan("c", 0, 1)], [0, 1]) == ()
+
+
+def test_placement_ranks_by_sha256_and_keeps_five() -> None:
+    import hashlib
+
+    cells = [CellSpan(f"id-{index}", 0, 20) for index in range(7)]
+    chosen = placement_rule(cells, [20])
+    ranked = sorted(cells, key=lambda cell: hashlib.sha256(cell.cell_id.encode()).digest())
+    assert [cell for cell, _event in chosen] == [cell.cell_id for cell in ranked[:5]]
+    assert all(event == 10 for _cell, event in chosen)
+
+
+def test_a1_clear_favorable_passes_and_crossed_names_the_prefix() -> None:
+    close = _priced_close("C", side="LONG", reason="FAVORABLE", entry_seq=1, exit_seq=6, price=1)
+    good = Records([_rail_row(5), _fire_row("C", 5, "FAVORABLE"), close], {}, ())
+    check_a1(good, quiet_limit_ns=5_000_000_000)
+    bad = Records(
+        [_rail_row(5, crossed=True), _fire_row("C", 5, "FAVORABLE"), close],
+        {},
+        (),
+    )
+    with pytest.raises(AssertionError, match=r"^A1:"):
+        check_a1(bad, quiet_limit_ns=5_000_000_000)
+
+
+def _a2(price: int, *, suppress: bool) -> Records:
+    rows = [
+        _fire_row("A", 8, "ADVERSE"),
+        _priced_close(
+            "A", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=10, price=price, flag=True
+        ),
+        _fire_row("B", 28, "ADVERSE"),
+        _priced_close(
+            "B", side="LONG", reason="ADVERSE", entry_seq=20, exit_seq=30, price=100, flag=False
+        ),
+    ]
+    if suppress:
+        rows.append(
+            _row(
+                "GateDecision",
+                {
+                    "cell_id": "A",
+                    "rail_sequence": 5,
+                    "gate": "FAVORABLE",
+                    "outcome": "suppressed",
+                    "reason": "CROSSED",
+                },
+                5,
+            )
+        )
+    verdict = _verdict(RiskAction.ALLOW, "within limits")
+    return Records(rows, {}, (), (verdict,))
+
+
+def test_a2_equal_streams_pass_and_a_moved_price_names_the_prefix() -> None:
+    clean = _a2(50, suppress=True)
+    check_a2(clean, _a2(50, suppress=True), feed_gap_sequences={5})
+    with pytest.raises(AssertionError, match=r"^A2:"):
+        check_a2(clean, _a2(51, suppress=True), feed_gap_sequences={5})
+
+
+def test_a3_fill_quote_passes_and_the_wrong_side_names_the_prefix() -> None:
+    quotes = {2: _book(2, 10_010, 10_011, 2)}
+    good = Records(
+        [
+            _fire_row("C", 2, "ADVERSE"),
+            _priced_close(
+                "C", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=2, price=10_010
+            ),
+        ],
+        quotes,
+        (),
+    )
+    check_a3(good)
+    bad = Records(
+        [
+            _fire_row("C", 2, "ADVERSE"),
+            _priced_close(
+                "C", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=2, price=10_011
+            ),
+        ],
+        quotes,
+        (),
+    )
+    with pytest.raises(AssertionError, match=r"^A3:"):
+        check_a3(bad)
+
+
+def test_a4_gap_through_passes_and_the_barrier_price_names_the_prefix() -> None:
+    quotes = {
+        2: _book(2, 10_000, 10_001, 2),
+        4: _book(4, 9_970, 9_971, 4),
+    }
+    good = Records(
+        [_priced_close("C", side="LONG", reason="ADVERSE", entry_seq=2, exit_seq=4, price=9_970)],
+        quotes,
+        (),
+    )
+    check_a4(good, birth_sequence=2, centre=11, band=0)
+    barrier_book = {2: quotes[2], 4: _book(4, 9_989, 9_990, 4)}
+    bad = Records(
+        [_priced_close("C", side="LONG", reason="ADVERSE", entry_seq=2, exit_seq=4, price=9_989)],
+        barrier_book,
+        (),
+    )
+    with pytest.raises(AssertionError, match=r"^A4:"):
+        check_a4(bad, birth_sequence=2, centre=11, band=0)
+
+
+def test_a5_over_a_passes_and_an_early_blind_names_the_prefix() -> None:
+    rows = [
+        _fire_row("C", 10, "ADVERSE"),
+        _priced_close(
+            "C", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=11, price=1, blind=True
+        ),
+    ]
+    records = Records(rows, {}, ())
+    check_a5(records, expect_blind=True, deciding_sequence=10)
+    with pytest.raises(AssertionError, match=r"^A5:"):
+        check_a5(records, expect_blind=False)
+
+
+def test_a6_adverse_reveal_passes_and_the_wrong_reason_names_the_prefix() -> None:
+    good = Records(
+        [
+            _fire_row("C", 20, "ADVERSE"),
+            _priced_close("C", side="SHORT", reason="ADVERSE", entry_seq=10, exit_seq=21, price=1),
+        ],
+        {},
+        (),
+    )
+    check_a6(good, birth_sequence=10, kind="ADVERSE", deciding_sequence=20)
+    bad = Records(
+        [
+            _fire_row("C", 20, "ADVERSE"),
+            _priced_close("C", side="SHORT", reason="HORIZON", entry_seq=10, exit_seq=21, price=1),
+        ],
+        {},
+        (),
+    )
+    with pytest.raises(AssertionError, match=r"^A6:"):
+        check_a6(bad, birth_sequence=10, kind="ADVERSE", deciding_sequence=20)
+
+
+def test_unusable_side_clocks_pass_and_a_present_side_names_the_prefix() -> None:
+    gap = 100_000_000
+    quotes = {1: _book(1, 10_000, 10_001, 0), 2: _book(2, 10_050, 10_000, gap)}
+    clear = Records(
+        [_rail_row(2, absent=True, quiet=gap, paying_absent=gap, valuation_absent=gap)],
+        quotes,
+        (),
+    )
+    check_unusable_side(clear, quote_sequence=2)
+    present = Records([_rail_row(2, quiet=gap)], quotes, ())
+    with pytest.raises(AssertionError, match=r"^UNUSABLE_SIDE:"):
+        check_unusable_side(present, quote_sequence=2)
+
+
+def test_feed_gap_seam_sets_chosen_sequences_only() -> None:
+    from dataclasses import replace
+
+    from feelies.core.identifiers import SequenceGenerator
+    from feelies.portfolio.mark_rail import MarkRail
+    from tests.position_engine.scenarios import _seams
+
+    def wrapper(original: object, quote: NBBOQuote) -> object:
+        update = original(quote)  # type: ignore[operator]
+        if quote.sequence == 4:
+            return replace(update, feed_gap_before=True)
+        return update
+
+    tape = make_tape(seed=1, n=6, symbol="SYN", start_ns=T0)
+    rail = MarkRail(SequenceGenerator(thread_safe=False))
+    with _seams(None, wrapper, True):
+        flags = [rail.on_quote(quote).feed_gap_before for quote in tape]
+    assert flags == [False, False, False, True, False, False]
