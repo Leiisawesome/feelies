@@ -7,6 +7,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from feelies.core.events import NBBOQuote
+from feelies.core.quote_quality import QuoteQuality, classify
 
 
 def make_tape(
@@ -169,4 +170,39 @@ def cross(tape: list[NBBOQuote], index: int, bid_cents: int, ask_cents: int) -> 
         bid=Decimal(bid_cents) / 100,
         ask=Decimal(ask_cents) / 100,
     )
+    return out
+
+
+def force_class(tape: list[NBBOQuote], index: int, cls: str) -> list[NBBOQuote]:
+    """Replace ``tape[index]`` with the canonical unusable-side example for ``cls``.
+
+    Timestamp and sequence stay. The input list is not mutated. ``ValueError``
+    if ``cls`` is unknown or ``classify`` does not return the class it names.
+    """
+    quote = tape[index]
+    if cls == "NONPOS_BID":
+        updated = replace(quote, bid=Decimal("0"), ask=Decimal("100.02"))
+        expected = QuoteQuality.NONPOS
+    elif cls == "NONPOS_ASK":
+        updated = replace(quote, bid=Decimal("100.01"), ask=Decimal("0"))
+        expected = QuoteQuality.NONPOS
+    elif cls == "CROSSED":
+        updated = replace(quote, bid=Decimal("100.50"), ask=Decimal("100.00"))
+        expected = QuoteQuality.CROSSED
+    elif cls == "LOCKED":
+        updated = replace(quote, bid=Decimal("100.00"), ask=Decimal("100.00"))
+        expected = QuoteQuality.LOCKED
+    elif cls == "ZERO_SZ_BID":
+        updated = replace(quote, bid_size=0, ask_size=1000)
+        expected = QuoteQuality.ZERO_SZ
+    elif cls == "ZERO_SZ_ASK":
+        updated = replace(quote, bid_size=1000, ask_size=0)
+        expected = QuoteQuality.ZERO_SZ
+    else:
+        raise ValueError(cls)
+    got = classify(updated.bid, updated.ask, updated.bid_size, updated.ask_size)
+    if got is not expected:
+        raise ValueError(f"force_class {cls} classified {got}")
+    out = list(tape)
+    out[index] = updated
     return out
