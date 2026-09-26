@@ -7,7 +7,7 @@ result exists. Changing it follows the amendment rule in `battery.md`.
 
 | Question | Evidence | Gate |
 |---|---|---|
-| Legacy unchanged? | Legacy oracle: frozen at exec-tools-v1, 64 parity constants, APP 2026-03-26 = 20 fills, net 103.93, trade hash 0601295a…17df3 | every rung; hold unless a declared break passes §2 |
+| Legacy unchanged? | Legacy oracle frozen: frozen again after the one-time D-66 exemption, 64 parity constants, APP 2026-03-26 = 10 fills, net 24.61, trade hash 18f6bb4e…45bfb. D-66 re-pinned fills 20→10, net 103.93→24.61, and the trade hash, from a fit on 2026-03-25 RTH (50636 quotes) instead of the replayed session. | every rung; hold unless a declared break passes §2 |
 | Engine correct? | The battery: eleven members, synthetic known answers, broken engines B1–B11 | stage gates A–E |
 | Engine-on unchanged after pinning? | Position oracle: APP 2026-03-26 through `configs/bt_position_arbitrary_not_calibrated.yaml`, pinned at P-99 | every rung after P-99; §2 applies |
 | Engine-on differences explained? | P-95 attribution diff (§3) | P-99 report; campaign 15 review |

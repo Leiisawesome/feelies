@@ -73,7 +73,7 @@ def test_prepare_backtest_event_log_counts_and_spans() -> None:
     assert prep.n_trades == 1
     assert prep.first_event_ts_ns == 1_000
     assert prep.calendar_spans["APP"][0] == prep.calendar_spans["APP"][1]
-    assert len(prep.regime_calibration_quotes) == 2
+    assert prep.regime_calibration_quotes is None
 
 
 def test_prepare_backtest_event_log_rth_filter_drops_extended_hours() -> None:
@@ -107,7 +107,8 @@ def test_prepare_backtest_event_log_calibration_respects_cap() -> None:
         regime_calibration_max_quotes=3,
     )
     prep = prepare_backtest_event_log(config, log)
-    assert len(prep.regime_calibration_quotes) == 3
+    assert prep.n_quotes == 5
+    assert prep.regime_calibration_quotes is None
 
 
 def test_quote_replay_observer_shares_trace_with_progress() -> None:

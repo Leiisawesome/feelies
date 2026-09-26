@@ -14,10 +14,13 @@ import hashlib
 import json
 import math
 import os
+import struct
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
+from decimal import Decimal
+from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
 
@@ -30,12 +33,17 @@ from feelies.core.events import (
     Event,
     GateDecision,
     MarkRailUpdate,
+    MetricEvent,
     NBBOQuote,
     OrderRequest,
+    RegimeState,
+    SensorReading,
     PositionClosed,
     RiskAction,
     RiskVerdict,
     PositionSnapshot,
+    StateTransition,
+    Trade,
 )
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -62,12 +70,21 @@ class Record(NamedTuple):
     canonical: str
 
 
+class Widened(NamedTuple):
+    """One kept bus event, reduced to a replay-index cursor and a sha256 digest."""
+
+    cursor: int | None
+    type_name: str
+    digest: bytes
+
+
 class Records(list[Record]):
     """Ordered bus records, plus the quotes and orders of that run."""
 
     quotes: dict[int, NBBOQuote]
     order_requests: tuple[OrderRequest, ...]
     risk_verdicts: tuple[RiskVerdict, ...]
+    widened: tuple[Widened, ...]
 
     def __init__(
         self,
@@ -80,6 +97,7 @@ class Records(list[Record]):
         self.quotes = quotes
         self.order_requests = tuple(order_requests)
         self.risk_verdicts = tuple(risk_verdicts)
+        self.widened = ()
 
 
 def canonical(event: Event) -> str:
@@ -300,15 +318,493 @@ def attribute(stream: Sequence[Event]) -> list[tuple[int | None, str, str]]:
 
 def _capture(bus: object) -> list[Event]:
     stream: list[Event] = []
-    bus.subscribe_all(stream.append)  # type: ignore[attr-defined]
+
+    def keep(event: Event) -> None:
+        # MetricEvent is telemetry. StateTransition includes the session-end
+        # marker. Neither is part of the widened prefix.
+        if type(event) is MetricEvent or type(event) is StateTransition:
+            return
+        stream.append(event)
+
+    bus.subscribe_all(keep)  # type: ignore[attr-defined]
     return stream
 
 
-def _records_from(stream: Sequence[Event]) -> Records:
+_PIPELINE_END = frozenset({"BACKTEST_COMPLETE", "SESSION_FEED_COMPLETE", "CMD_SHUTDOWN"})
+_MISSING = object()
+_DC_FIELDS: dict[type, tuple[tuple[bytes, str], ...] | None] = {}
+_ENUM_TYPES: dict[type, bool] = {}
+_SESSION_DIGESTS: dict[str, tuple[Widened, ...]] = {}
+
+
+def _dc_fields(value: object) -> tuple[tuple[bytes, str], ...] | None:
+    cls = type(value)
+    cached = _DC_FIELDS.get(cls, _MISSING)
+    if cached is not _MISSING:
+        return cached  # type: ignore[return-value]
+    if not dataclasses.is_dataclass(value) or isinstance(value, type):
+        _DC_FIELDS[cls] = None
+        return None
+    fields = tuple((item.name.encode(), item.name) for item in dataclasses.fields(value))
+    _DC_FIELDS[cls] = fields
+    return fields
+
+
+def _is_enum(value: object) -> bool:
+    cls = type(value)
+    cached = _ENUM_TYPES.get(cls)
+    if cached is None:
+        cached = isinstance(value, Enum)
+        _ENUM_TYPES[cls] = cached
+    return cached
+
+
+def _sort_token(key: object) -> bytes:
+    kind = type(key)
+    if kind is str:
+        return b"s" + key.encode()
+    if kind is int and not isinstance(key, bool):
+        return b"i" + key.to_bytes(8, "little", signed=True)
+    if kind is float:
+        return b"d" + struct.pack("<d", key)
+    return b"o" + kind.__name__.encode() + str(key).encode()
+
+
+_PACK_I = bytearray(9)
+_PACK_F = bytearray(9)
+_PACK8 = bytearray(64)
+_PACK4 = bytearray(32)
+_STR_PACK: dict[str, bytes] = {}
+_DEC_PACK: dict[Decimal, bytes] = {}
+_PROV_PACK: dict[tuple[tuple[str, ...], tuple[str, ...]], bytes] = {}
+
+
+def _feed_scalar(buf: bytearray, value: object) -> bool:
+    kind = type(value)
+    if kind is int:
+        try:
+            struct.pack_into("<bq", _PACK_I, 0, 0x69, value)
+        except struct.error:
+            raw = value.to_bytes((value.bit_length() // 8) + 2, "little", signed=True)
+            buf.extend(b"I")
+            buf.extend(len(raw).to_bytes(2, "little"))
+            buf.extend(raw)
+            return True
+        buf.extend(_PACK_I)
+        return True
+    if kind is str:
+        _feed_str(buf, value, cache=True)
+        return True
+    if kind is float:
+        struct.pack_into("<bd", _PACK_F, 0, 0x64, value)
+        buf.extend(_PACK_F)
+        return True
+    if kind is bool:
+        buf.extend(b"t" if value else b"f")
+        return True
+    if kind is Decimal:
+        packed = _DEC_PACK.get(value)
+        if packed is None:
+            raw = str(value).encode()
+            packed = b"D" + len(raw).to_bytes(4, "little") + raw
+            _DEC_PACK[value] = packed
+        buf.extend(packed)
+        return True
+    if value is None:
+        buf.extend(b"n")
+        return True
+    return False
+
+
+def _feed_str(buf: bytearray, value: str, *, cache: bool) -> None:
+    if cache:
+        packed = _STR_PACK.get(value)
+        if packed is None:
+            raw = value.encode()
+            packed = b"s" + len(raw).to_bytes(4, "little") + raw
+            _STR_PACK[value] = packed
+        buf.extend(packed)
+        return
+    raw = value.encode()
+    buf.extend(b"s")
+    buf.extend(len(raw).to_bytes(4, "little"))
+    buf.extend(raw)
+
+
+def _feed_opt_int(buf: bytearray, value: int | None) -> None:
+    if value is None:
+        buf.extend(b"n")
+        return
+    struct.pack_into("<bq", _PACK_I, 0, 0x69, value)
+    buf.extend(_PACK_I)
+
+
+def _provenance_bytes(provenance: object) -> bytes:
+    ids = provenance.input_sensor_ids  # type: ignore[attr-defined]
+    kinds = provenance.input_event_kinds  # type: ignore[attr-defined]
+    key = (ids, kinds)
+    packed = _PROV_PACK.get(key)
+    if packed is None:
+        tmp = bytearray()
+        _feed(tmp, ids)
+        _feed(tmp, kinds)
+        packed = bytes(tmp)
+        _PROV_PACK[key] = packed
+    return packed
+
+
+def _feed(buf: bytearray, value: object) -> None:
+    """Compact encoding. Recurse only into nested dataclasses and containers."""
+    if _feed_scalar(buf, value):
+        return
+    kind = type(value)
+    if kind is tuple or kind is list:
+        buf.extend(b"[")
+        for item in value:
+            if not _feed_scalar(buf, item):
+                _feed(buf, item)
+        buf.extend(b"]")
+        return
+    fields = _dc_fields(value)
+    if fields is not None:
+        buf.extend(kind.__name__.encode())
+        for name_bytes, name in fields:
+            buf.extend(b"\0")
+            buf.extend(name_bytes)
+            _feed(buf, getattr(value, name))
+        return
+    if isinstance(value, Mapping):
+        buf.extend(b"{")
+        for key, item in sorted(value.items(), key=lambda pair: _sort_token(pair[0])):
+            if not _feed_scalar(buf, key):
+                _feed(buf, key)
+            if not _feed_scalar(buf, item):
+                _feed(buf, item)
+        buf.extend(b"}")
+        return
+    if _is_enum(value):
+        raw = value.name.encode()  # type: ignore[attr-defined]
+        buf.extend(b"e")
+        buf.extend(len(raw).to_bytes(4, "little"))
+        buf.extend(raw)
+        return
+    raise TypeError(f"digest has no encoding for {kind.__name__}")
+
+
+_DIGEST_BUF = bytearray()
+_TAG_SENSOR = b"SensorReading"
+_TAG_QUOTE = b"NBBOQuote"
+_TAG_RAIL = b"MarkRailUpdate"
+_TAG_TRADE = b"Trade"
+_TAG_REGIME = b"RegimeState"
+
+
+def _pack_orientation(buf: bytearray, side: object) -> None:
+    buf.extend(
+        struct.pack(
+            "<11q3B",
+            side.paying_mark_cents,  # type: ignore[attr-defined]
+            side.valuation_mark_cents,  # type: ignore[attr-defined]
+            side.worst_side_mark_cents,  # type: ignore[attr-defined]
+            side.forced_exit_mark_cents,  # type: ignore[attr-defined]
+            side.dwelled_exit_mark_cents,  # type: ignore[attr-defined]
+            side.paying_size,  # type: ignore[attr-defined]
+            side.valuation_size,  # type: ignore[attr-defined]
+            side.paying_age_ns,  # type: ignore[attr-defined]
+            side.valuation_age_ns,  # type: ignore[attr-defined]
+            side.paying_absent_for_ns,  # type: ignore[attr-defined]
+            side.valuation_absent_for_ns,  # type: ignore[attr-defined]
+            side.paying_side_absent,  # type: ignore[attr-defined]
+            side.valuation_side_absent,  # type: ignore[attr-defined]
+            side.dwell_window_clean,  # type: ignore[attr-defined]
+        )
+    )
+
+
+def _pack_sensor(buf: bytearray, event: SensorReading) -> None:
+    buf.extend(_TAG_SENSOR)
+    struct.pack_into(
+        "<3q",
+        _PACK4,
+        0,
+        event.timestamp_ns,
+        event.sequence,
+        event.schema_version,
+    )
+    buf.extend(_PACK4[:24])
+    _feed_str(buf, event.correlation_id, cache=False)
+    _feed_str(buf, event.source_layer, cache=True)
+    _feed_str(buf, event.symbol, cache=True)
+    _feed_str(buf, event.sensor_id, cache=True)
+    _feed_str(buf, event.sensor_version, cache=True)
+    value = event.value
+    if type(value) is float:
+        struct.pack_into("<d", _PACK_F, 0, value)
+        buf.extend(_PACK_F[:8])
+    elif not _feed_scalar(buf, value):
+        _feed(buf, value)
+    struct.pack_into("<dB", _PACK_F, 0, event.confidence, event.warm)
+    buf.extend(_PACK_F[:9])
+    buf.extend(_provenance_bytes(event.provenance))
+
+
+def _pack_quote(buf: bytearray, event: NBBOQuote) -> None:
+    buf.extend(_TAG_QUOTE)
+    struct.pack_into(
+        "<6q",
+        _PACK8,
+        0,
+        event.timestamp_ns,
+        event.sequence,
+        event.schema_version,
+        event.bid_size,
+        event.ask_size,
+        event.exchange_timestamp_ns,
+    )
+    buf.extend(_PACK8[:48])
+    struct.pack_into(
+        "<4q",
+        _PACK4,
+        0,
+        event.bid_exchange,
+        event.ask_exchange,
+        event.sequence_number,
+        event.tape,
+    )
+    buf.extend(_PACK4[:32])
+    _feed_str(buf, event.correlation_id, cache=False)
+    _feed_str(buf, event.source_layer, cache=True)
+    _feed_str(buf, event.symbol, cache=True)
+    _feed_scalar(buf, event.bid)
+    _feed_scalar(buf, event.ask)
+    _feed(buf, event.conditions)
+    _feed(buf, event.indicators)
+    _feed_opt_int(buf, event.participant_timestamp_ns)
+    _feed_opt_int(buf, event.trf_timestamp_ns)
+    _feed_opt_int(buf, event.received_ns)
+
+
+def _pack_rail(buf: bytearray, event: MarkRailUpdate) -> None:
+    buf.extend(_TAG_RAIL)
+    struct.pack_into(
+        "<6q",
+        _PACK8,
+        0,
+        event.timestamp_ns,
+        event.sequence,
+        event.schema_version,
+        event.quote_sequence,
+        event.event_timestamp_ns,
+        event.symbol_quiet_ns,
+    )
+    buf.extend(_PACK8[:48])
+    _feed_str(buf, event.correlation_id, cache=False)
+    _feed_str(buf, event.source_layer, cache=True)
+    _feed_str(buf, event.symbol, cache=True)
+    _pack_orientation(buf, event.long)
+    _pack_orientation(buf, event.short)
+    buf.extend(
+        bytes(
+            (
+                event.locked,
+                event.crossed,
+                event.feed_gap_before,
+                event.warmed_up,
+            )
+        )
+    )
+
+
+def _pack_trade(buf: bytearray, event: Trade) -> None:
+    buf.extend(_TAG_TRADE)
+    struct.pack_into(
+        "<8q",
+        _PACK8,
+        0,
+        event.timestamp_ns,
+        event.sequence,
+        event.schema_version,
+        event.size,
+        event.exchange,
+        event.exchange_timestamp_ns,
+        event.sequence_number,
+        event.tape,
+    )
+    buf.extend(_PACK8)
+    _feed_str(buf, event.correlation_id, cache=False)
+    _feed_str(buf, event.source_layer, cache=True)
+    _feed_str(buf, event.symbol, cache=True)
+    _feed_str(buf, event.trade_id, cache=False)
+    _feed_scalar(buf, event.price)
+    _feed(buf, event.conditions)
+    if event.decimal_size is None:
+        buf.extend(b"n")
+    else:
+        _feed_str(buf, event.decimal_size, cache=False)
+    _feed_opt_int(buf, event.trf_id)
+    _feed_opt_int(buf, event.trf_timestamp_ns)
+    _feed_opt_int(buf, event.participant_timestamp_ns)
+    _feed_opt_int(buf, event.correction)
+    _feed_opt_int(buf, event.received_ns)
+
+
+def _pack_regime(buf: bytearray, event: RegimeState) -> None:
+    buf.extend(_TAG_REGIME)
+    struct.pack_into(
+        "<5q",
+        _PACK8,
+        0,
+        event.timestamp_ns,
+        event.sequence,
+        event.schema_version,
+        event.dominant_state,
+        event.horizon_seconds,
+    )
+    buf.extend(_PACK8[:40])
+    _feed_str(buf, event.correlation_id, cache=False)
+    _feed_str(buf, event.source_layer, cache=True)
+    _feed_str(buf, event.symbol, cache=True)
+    _feed_str(buf, event.engine_name, cache=True)
+    _feed_str(buf, event.dominant_name, cache=True)
+    _feed(buf, event.state_names)
+    _feed(buf, event.posteriors)
+    struct.pack_into(
+        "<ddB", _PACK4, 0, event.posterior_entropy_nats, event.discriminability, event.calibrated
+    )
+    buf.extend(_PACK4[:17])
+
+
+def _event_digest(event: Event) -> bytes:
+    buf = _DIGEST_BUF
+    buf.clear()
+    kind = type(event)
+    if kind is SensorReading:
+        _pack_sensor(buf, event)
+    elif kind is NBBOQuote:
+        _pack_quote(buf, event)
+    elif kind is Trade:
+        _pack_trade(buf, event)
+    elif kind is MarkRailUpdate:
+        _pack_rail(buf, event)
+    elif kind is RegimeState:
+        _pack_regime(buf, event)
+    else:
+        _feed(buf, event)
+    return hashlib.sha256(buf).digest()
+
+
+def widened_rows(stream: Sequence[Event]) -> tuple[Widened, ...]:
+    """Per-event digests up to the replay boundary.
+
+    MetricEvent is telemetry (wall-clock durations are not a causal prefix).
+    StateTransition includes the session-end transition, which a truncated run
+    emits at the cutoff. The cursor is the replay event index.
+    """
+    cursor: int | None = None
+    rows: list[Widened] = []
+    for event in stream:
+        kind = type(event)
+        if kind is StateTransition:
+            if event.trigger in _PIPELINE_END:
+                break
+            continue
+        if kind is MetricEvent:
+            continue
+        if kind is MarkRailUpdate:
+            cursor = event.quote_sequence
+        elif kind is NBBOQuote:
+            cursor = event.sequence
+        elif kind is Trade:
+            cursor = event.sequence
+        rows.append(Widened(cursor, kind.__name__, _event_digest(event)))
+    return tuple(rows)
+
+
+def assert_widened_prefix(
+    truncated: Sequence[Widened],
+    full: Sequence[Widened],
+    seq_k: int,
+) -> None:
+    """Prefixes through replay index ``seq_k`` are the same sequence of digests."""
+    left = [row for row in truncated if row.cursor is not None and row.cursor <= seq_k]
+    right = [row for row in full if row.cursor is not None and row.cursor <= seq_k]
+    limit = min(len(left), len(right))
+    for index in range(limit):
+        if left[index] != right[index]:
+            row = left[index]
+            raise AssertionError(f"prefix diverged at {row.type_name}, cursor {row.cursor}")
+    if len(left) != len(right):
+        row = left[limit] if len(left) > len(right) else right[limit]
+        raise AssertionError(f"prefix diverged at {row.type_name}, cursor {row.cursor}")
+
+
+def session_digest(key: str, rows: tuple[Widened, ...]) -> tuple[Widened, ...]:
+    """Full-run digest sequence, computed once per session and reused for every cut."""
+    cached = _SESSION_DIGESTS.get(key)
+    if cached is not None:
+        return cached
+    _SESSION_DIGESTS[key] = rows
+    return rows
+
+
+def _replay_index(events: Sequence[Event]) -> dict[int, int]:
+    index_of: dict[int, int] = {}
+    for index, event in enumerate(events):
+        if type(event) is not NBBOQuote and type(event) is not Trade:
+            continue
+        if event.sequence in index_of:
+            raise AssertionError(f"replay sequence {event.sequence} is not unique")
+        index_of[event.sequence] = index
+    return index_of
+
+
+def decision_trigger_indexes(
+    events: Sequence[Event], widened: Sequence[Widened]
+) -> tuple[int, ...]:
+    """Replay indexes of the event that triggered each OrderRequest, in bus order."""
+    index_of = _replay_index(events)
+    triggers: list[int] = []
+    for row in widened:
+        if row.type_name != "OrderRequest" or row.cursor is None:
+            continue
+        index = index_of.get(row.cursor)
+        if index is not None:
+            triggers.append(index)
+    return tuple(triggers)
+
+
+def decision_cut_indices(
+    events: Sequence[Event],
+    widened: Sequence[Widened],
+    fractions: Sequence[float],
+) -> tuple[int, ...]:
+    """First OrderRequest trigger at or after each target position in the replay."""
+    triggers = decision_trigger_indexes(events, widened)
+    n = len(events)
+    cuts: list[int] = []
+    for fraction in fractions:
+        target = int(n * fraction)
+        chosen = next((index for index in triggers if index >= target), None)
+        if chosen is None:
+            raise AssertionError(
+                f"no OrderRequest at or after index {target} ({fraction:.0%} of {n})"
+            )
+        cuts.append(chosen)
+    return tuple(cuts)
+
+
+def _records_from(stream: Sequence[Event], *, digest_only: bool = False) -> Records:
+    widened = widened_rows(stream)
+    if digest_only:
+        records = Records([], {}, (), ())
+        records.widened = widened
+        return records
     quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
     orders = [event for event in stream if type(event) is OrderRequest]
     verdicts = [event for event in stream if type(event) is RiskVerdict]
-    return Records([Record(*row) for row in attribute(stream)], quotes, orders, verdicts)
+    records = Records([Record(*row) for row in attribute(stream)], quotes, orders, verdicts)
+    records.widened = widened
+    return records
 
 
 @contextmanager
@@ -436,7 +932,13 @@ def _execute_synthetic(
             orchestrator, resolved = build_platform(config, event_log=log)
             stream = _capture(orchestrator._bus)
             orchestrator.boot(resolved)
-            orchestrator.run_backtest()
+            import gc
+
+            gc.disable()
+            try:
+                orchestrator.run_backtest()
+            finally:
+                gc.enable()
     finally:
         AlphaLoader.load = original_load  # type: ignore[method-assign]
     return _records_from(stream)
@@ -549,12 +1051,6 @@ def _load_runner():
     return mod
 
 
-def real_cutoff_sequence(fraction: float) -> int:
-    events, _meta = _real_bundle()
-    k = int(len(events) * fraction) - 1
-    return int(events[k].sequence)
-
-
 @functools.lru_cache(maxsize=1)
 def _real_bundle() -> tuple[tuple[Event, ...], tuple[object, ...]]:
     from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_disk_cache
@@ -569,16 +1065,31 @@ def _real_bundle() -> tuple[tuple[Event, ...], tuple[object, ...]]:
     return tuple(event_log.replay()), (ingest, tuple(day_meta))
 
 
+@functools.lru_cache(maxsize=1)
+def rth_replay() -> tuple[Event, ...]:
+    """RTH events of the APP fixture session, in replay order."""
+    events, _meta = _real_bundle()
+    log = InMemoryEventLog()
+    log.append_batch(list(events))
+    from feelies.harness.backtest_prep import prepare_backtest_event_log
+
+    config = PlatformConfig.from_yaml(_APP_CONFIG)
+    prep = prepare_backtest_event_log(config, log)
+    return tuple(prep.event_log.replay())
+
+
 def _execute_real(
-    fraction: float | None,
+    end_index: int | None,
     engine_factory: Callable[..., object] | None,
     attach_sink: bool,
+    digest_only: bool,
 ) -> Records:
     import argparse
 
-    events, (ingest, day_meta) = _real_bundle()
-    if fraction is not None:
-        events = events[: int(len(events) * fraction)]
+    _raw, (ingest, day_meta) = _real_bundle()
+    events: tuple[Event, ...] | list[Event] = rth_replay()
+    if end_index is not None:
+        events = events[: end_index + 1]
     log = InMemoryEventLog()
     log.append_batch(list(events))
     runner = _load_runner()
@@ -642,31 +1153,105 @@ def _execute_real(
         )
     if outcome.exit_code != 0:
         raise RuntimeError(f"real session exit {outcome.exit_code}")
-    return _records_from(held["stream"])  # type: ignore[arg-type]
+    return _records_from(held["stream"], digest_only=digest_only)  # type: ignore[arg-type]
 
 
 @functools.lru_cache(maxsize=None)
 def _cached_real(
-    fraction: float | None,
+    end_index: int | None,
     factory_key: str,
     attach_sink: bool,
     clock_tag: str,
+    digest_only: bool,
 ) -> Records:
     del clock_tag
-    return _execute_real(fraction, _FACTORIES.get(factory_key), attach_sink)
+    return _execute_real(end_index, _FACTORIES.get(factory_key), attach_sink, digest_only)
 
 
 def run_real(
     *,
-    fraction: float | None = None,
+    end_index: int | None = None,
     engine_factory: Callable[..., object] | None = None,
     attach_sink: bool = True,
+    digest_only: bool = False,
 ) -> Records:
-    return _cached_real(fraction, _factory_key(engine_factory), attach_sink, _clock_tag())
+    return _cached_real(
+        end_index,
+        _factory_key(engine_factory),
+        attach_sink,
+        _clock_tag(),
+        digest_only,
+    )
 
 
 def format_line(row: Record) -> str:
     return f"{row.attributed_quote_sequence}\t{row.type_name}\t{row.canonical}"
+
+
+def _dump_widened(path: str, rows: Sequence[Widened]) -> None:
+    with open(path, "wb") as handle:
+        handle.write(len(rows).to_bytes(4, "little"))
+        for row in rows:
+            name = row.type_name.encode()
+            cursor = -1 if row.cursor is None else row.cursor
+            handle.write(cursor.to_bytes(8, "little", signed=True))
+            handle.write(len(name).to_bytes(2, "little"))
+            handle.write(name)
+            handle.write(row.digest)
+
+
+def _load_widened(path: str) -> tuple[Widened, ...]:
+    with open(path, "rb") as handle:
+        (count,) = struct.unpack("<I", handle.read(4))
+        rows: list[Widened] = []
+        for _ in range(count):
+            (cursor,) = struct.unpack("<q", handle.read(8))
+            (name_len,) = struct.unpack("<H", handle.read(2))
+            type_name = handle.read(name_len).decode()
+            digest = handle.read(32)
+            rows.append(Widened(None if cursor < 0 else cursor, type_name, digest))
+    return tuple(rows)
+
+
+def run_real_prefixes(cuts: Sequence[int]) -> tuple[tuple[Widened, ...], ...]:
+    """Replay each decision-point prefix in its own process."""
+    import subprocess
+    import tempfile
+
+    tmp = Path(tempfile.mkdtemp(prefix="p13-prefix-"))
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = "0"
+    procs: list[tuple[int, subprocess.Popen[bytes], str]] = []
+    for cut in cuts:
+        err_path = str(tmp / f"{cut}.err")
+        err = open(err_path, "wb")
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "tests.position_engine.scenarios",
+                "prefix",
+                str(cut),
+                str(tmp / f"{cut}.bin"),
+            ],
+            cwd=Path.cwd(),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=err,
+        )
+        procs.append((cut, proc, err_path))
+        err.close()
+    try:
+        finished = [(cut, proc.wait(timeout=180), err_path) for cut, proc, err_path in procs]
+        for cut, return_code, err_path in finished:
+            if return_code != 0:
+                detail = Path(err_path).read_text(encoding="utf-8", errors="replace")[-2000:]
+                raise AssertionError(f"prefix {cut} exited {return_code}\n{detail}")
+        return tuple(_load_widened(str(tmp / f"{cut}.bin")) for cut in cuts)
+    finally:
+        for path in tmp.iterdir():
+            path.unlink(missing_ok=True)
+        tmp.rmdir()
 
 
 def _scenario(name: str) -> Records:
@@ -680,8 +1265,14 @@ def _scenario(name: str) -> Records:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv if argv is None else argv)
+    if len(args) == 4 and args[1] == "prefix":
+        rows = run_real(end_index=int(args[2]), digest_only=True).widened
+        _dump_widened(args[3], rows)
+        return 0
     if len(args) != 2:
-        raise SystemExit("usage: python -m tests.position_engine.scenarios <syn_m1|real_m1>")
+        raise SystemExit(
+            "usage: python -m tests.position_engine.scenarios <syn_m1|real_m1|prefix>"
+        )
     for row in _scenario(args[1]):
         print(format_line(row))
     return 0
