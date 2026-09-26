@@ -126,28 +126,30 @@ jobs:
           github.event_name == 'push' ||
           github.event.pull_request.head.repo.full_name == github.repository )
         run: |
-          missing=0
           for date in 2026-03-25 2026-03-26; do
-            if [ -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
+            f="$HOME/.feelies/cache/APP/${date}.jsonl.gz"
+            if [ -f "$f" ]; then
               echo "cache hit ${date}"
-            else
-              echo "cache miss ${date}"
-              missing=1
+              continue
             fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            exit 0
-          fi
-          if [ -z "${MASSIVE_API_KEY}" ]; then
-            echo "::error::APP event cache missing for 2026-03-25 or 2026-03-26 and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
-            exit 1
-          fi
-          for date in 2026-03-25 2026-03-26; do
-            if [ ! -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
-              echo "fetching ${date}"
-              uv run feelies backtest --config configs/bt_app.yaml \
-                --symbol APP --date "$date" >/dev/null
+            if [ -z "${MASSIVE_API_KEY}" ]; then
+              echo "::error::APP/${date} event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
+              exit 1
             fi
+            echo "fetching ${date}"
+            # The fetch backtest of a day whose prior session is not cached yet
+            # runs uncalibrated and can fail verification (exit 2) after the
+            # tape is already on disk. The cache file is the success condition.
+            set +e
+            uv run feelies backtest --config configs/bt_app.yaml \
+              --symbol APP --date "$date" >/dev/null
+            status=$?
+            set -e
+            if [ ! -f "$f" ]; then
+              echo "::error::fetch of APP/${date} did not write the cache (backtest exit ${status})"
+              exit 1
+            fi
+            echo "fetched ${date} (backtest exit ${status})"
           done
         env:
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
@@ -239,28 +241,30 @@ jobs:
         # configured, fail here with the reason rather than letting the next
         # step report a confusing replay error.
         run: |
-          missing=0
           for date in 2026-03-25 2026-03-26; do
-            if [ -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
+            f="$HOME/.feelies/cache/APP/${date}.jsonl.gz"
+            if [ -f "$f" ]; then
               echo "cache hit ${date}"
-            else
-              echo "cache miss ${date}"
-              missing=1
+              continue
             fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            exit 0
-          fi
-          if [ -z "${MASSIVE_API_KEY}" ]; then
-            echo "::error::APP event cache missing for 2026-03-25 or 2026-03-26 and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
-            exit 1
-          fi
-          for date in 2026-03-25 2026-03-26; do
-            if [ ! -f "$HOME/.feelies/cache/APP/${date}.jsonl.gz" ]; then
-              echo "fetching ${date}"
-              uv run feelies backtest --config configs/bt_app.yaml \
-                --symbol APP --date "$date" >/dev/null
+            if [ -z "${MASSIVE_API_KEY}" ]; then
+              echo "::error::APP/${date} event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched. Add the secret, or prime the actions/cache entry from a run that has it."
+              exit 1
             fi
+            echo "fetching ${date}"
+            # The fetch backtest of a day whose prior session is not cached yet
+            # runs uncalibrated and can fail verification (exit 2) after the
+            # tape is already on disk. The cache file is the success condition.
+            set +e
+            uv run feelies backtest --config configs/bt_app.yaml \
+              --symbol APP --date "$date" >/dev/null
+            status=$?
+            set -e
+            if [ ! -f "$f" ]; then
+              echo "::error::fetch of APP/${date} did not write the cache (backtest exit ${status})"
+              exit 1
+            fi
+            echo "fetched ${date} (backtest exit ${status})"
           done
         env:
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
