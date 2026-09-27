@@ -2722,7 +2722,13 @@ def _closable_quantity(position_qty: int, side: Side) -> int:
 
 
 def _is_forced_market_exit(order: OrderRequest) -> bool:
-    """Identify controller-authored aggressive exits routed through the risk bridge."""
+    """Identify controller-authored aggressive exits routed through the risk bridge.
+
+    Engine-13 exits are already MARKET (contracts.md §2), so a POSITION
+    requirement in flight is the same kind of pending exit as a RISK one.
+    """
+    if order.source_layer == "POSITION":
+        return True
     return (
         order.source_layer == HAZARD_EXIT_SOURCE_LAYER
         and order.reason in _RISK_FORCED_EXIT_REASONS
@@ -5641,14 +5647,14 @@ class Orchestrator:
         )
 
     def _on_bus_derisk_requirement(self, event: Event) -> None:
-        """Submit non-vetoable risk-layer exits received as DeRiskRequirement.
+        """Submit non-vetoable risk-layer and POSITION exits received as DeRiskRequirement.
 
         Sequence and order_id are the author's. The outbound OrderRequest is
         published with order_type=MARKET; the kernel does not draw self._seq.
         Orders are clamped to currently closable exposure and deduplicated."""
         if not isinstance(event, DeRiskRequirement):
             return
-        if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
+        if event.source_layer != HAZARD_EXIT_SOURCE_LAYER and event.source_layer != "POSITION":
             return
         order = self._order_request_from_derisk(event)
         self._bus.publish(order)

@@ -78,7 +78,7 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-21f | A | implemented (PR #260), pending merge. Member 6 tests (A1–A6, real + synthetic) + member 4 unusable-side clause; green_from per battery.md | red via NONVACUOUS (member 6) and UNUSABLE_SIDE (member 4 clause) | hold |
 | P-22 | A | split: P-22s/P-22a/P-22b | see P-22s, P-62a, P-22a, P-22b | hold |
 | P-22s | A | implemented (PR #261), pending merge. Spec closure G1–G9, member 11 pull-forward, member 1 immutability and member 2 D>0 clauses. Docs only. Parity prediction NONE; captures skipped. | docs tests | NONE |
-| P-62a | A | accept source_layer=POSITION requirements into execution per contracts (from S0-1); prediction NONE | POSITION requirement on the copy path; ADVERSE_EXCURSION in the stop-slippage set | NONE |
+| P-62a | A | implemented (PR #262), pending merge. Admit source_layer=POSITION on the engine-8 copy path (MARKET, slice-scoped, through check_order); ADVERSE_EXCURSION in the stop-slippage set. Prediction NONE. | POSITION requirement on the copy path; ADVERSE_EXCURSION in the stop-slippage set | NONE |
 | P-22a | A | reference engine + D-62 test rail + engine resolution + member 11 + member 1/2 clauses + import guard + trace table; every member green on the reference | every member green on the reference | hold |
 | P-22b | A | mutants B1–B11 each caught by its named member; reference-battery CI job | each mutant caught by its named member | hold |
 | P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it) | members 1, 2 green | hold |
