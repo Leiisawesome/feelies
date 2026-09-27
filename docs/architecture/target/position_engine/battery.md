@@ -58,7 +58,10 @@ ASSERTS:           byte-identical rail updates, snapshots, gate decisions, requi
                    (time.time/monotonic patched); reversed gate evaluation order; the name
                    alone versus inside a multi-name universe whose other name is quoted
                    but not traded (synthetic tapes; D-36, D-38); a fresh process; sinks
-                   detached (non-sink outputs only)
+                   detached (non-sink outputs only). Published records are immutable:
+                   each record's digest at publish time equals its digest at end of run;
+                   at most one PositionSnapshot per (cell_id, rail event). It catches B10.
+                   green_from as member 1
 FAILURE LOOKS LIKE:a diff; the first divergent sequence localises it
 BLOCKS THE BUILD:  yes — green from stage B onward, never red again
 ```
@@ -72,7 +75,12 @@ ASSERTS:           for sampled events k, a run on the tape truncated after k pro
                    identical rail update, snapshot and decisions at k; the dwell window
                    holds exactly the quotes inside (t − D, t], and always the current
                    quote (D-41); running extremes absorb
-                   only events at or before k
+                   only events at or before k. The dwell window is trimmed in the step:
+                   with D > 0, a dirty (crossed) quote older than t−D never blocks a
+                   favorable decision at t. Construction: D = 2 s; a crossed quote at
+                   t−D−100 ms; the favorable condition met at t. It catches B11.
+                   green_from C, the stage at which P-40 lands:
+                   | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site |
 FAILURE LOOKS LIKE:the first event where truncated and full runs differ
 BLOCKS THE BUILD:  yes — green from stage B onward
 ```
@@ -250,6 +258,8 @@ ASSERTS:           with the engine switched off, from closing records and the qu
 BLOCKS THE BUILD:  no — needs closing records
 ```
 
+In scope for P-22a (built in tests). ASSERTS unchanged. (D-85)
+
 ## Stage gates
 
 | Stage | Lands | Gate |
@@ -294,15 +304,20 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 |---|---|---|
 | B1 | rail values at mid | 4 |
 | B2 | tie resolves toward FAVORABLE | 5 |
-| B3 | adverse exit proposed at the configured level, not the quote | 3, 5, or 6 |
+| B3 | adverse exit proposed at the configured level, not the quote | 3, 5, 6 or 11 |
 | B4 | cell reads the system clock for the deadline | 1 |
 | B5 | excursion accumulated instead of recomputed | 3 or 11 |
 | B6 | best-so-far seeded at zero | 11 |
 | B7 | adverse gate skips when a side is absent | 6 or 8 |
 | B8 | clean peak absorbs a crossed event | 6 |
 | B9 | second requirement emitted while EXITING | 5 or 10 |
-| B10 | resolve phase rewrites a published move | 1 |
-| B11 | window trimmed lazily (on read, not in the step) | 2 |
+| B10 | resolve phase rewrites a published move | 1 (immutability clause) |
+| B11 | window trimmed lazily (on read, not in the step) | 2 (D > 0 clause) |
+
+**Reference engine (P-22a).** Built only from the contracts text (§§0–9), not from §9
+alone, with a spec-trace table (D-92). It imports only event types, protocols,
+`core/quote_quality.classify`, `core/exit_policy`, `core/identifiers` and `bus/event_bus`.
+`src/` never imports it (AST guard).
 
 ## Load-time checks
 

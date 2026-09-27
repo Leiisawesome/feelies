@@ -158,9 +158,20 @@ resolves the exit; writes the closing record.
   requirement is emitted. A higher-ranked path may escalate only if the live exit order is
   non-marketable; in this campaign every engine-13 exit is MARKET, so escalation is a no-op
   that is recorded, never acted on.
-- A fill that crosses through zero closes the cell `EXTERNAL:SIGN_FLIP` and births a new one.
-- Every opened cell eventually closes. A cell open at end of tape closes `END_OF_TAPE`,
-  counted and reported separately.
+- (D-76) In `EXITING`, each exit fill reduces the cell's open quantity and is appended as a
+  `PositionFillLeg`. The next rail event's snapshot uses the remaining quantity. No second
+  requirement (the rule above is unchanged). The cell closes when open quantity reaches 0.
+  The closing record lists every exit leg. Economics are computed from the legs in integer cents.
+- (D-81) At most one open cell per `(strategy_id, symbol)`. An opposite-direction fill while a
+  cell is open closes it with `EXTERNAL:SIGN_FLIP` for the overlapping quantity; any excess
+  births a new cell on that same fill.
+- Every opened cell eventually closes.
+- (D-84) `END_OF_TAPE`: when replay ends, every open cell closes with reason `END_OF_TAPE`.
+  The proposed price is the executable exit side of the last usable rail update. No
+  `DeRiskRequirement`, order or fill. Flags are evaluated at that update. These closes are
+  published after the last replay event (outside any replay-index prefix). Production needs
+  an end-of-replay hook (P-50); test harnesses finalize engines explicitly. `END_OF_TAPE`
+  closes are counted and reported separately.
 
 **Reads.** `MarkRailUpdate` for its name (valuation, worst-side, forced, dwelled marks and
 all flags, passed through unaltered). `SlicePositionUpdate` for its slice (fill price, signed
@@ -178,9 +189,11 @@ random or clock-based. `side`. `declared_archetype`. `entry_spread_ticks` =
 *Reason:* a deadline you can nudge becomes a dial tuned until the backtest looks nice.
 
 **Entry cost** [A-05, A-16]. `entry_cost_cents = Σ price_cents × qty` over the episode's entry
-fills, an exact integer; `size = Σ qty`. Entry fills after birth come only from partial fills
-of the same entry order; a same-side increase from a new signal is refused at admission. Every
-entry fill is in the closing record.
+fills, an exact integer; `size = Σ qty`. (D-77) Later fills of the same entry order extend the
+cell (`size` and `entry_cost_cents` accumulate). A fill of a different same-direction order
+while a cell is open is a scale-in and is refused. Entry fills after birth come only from
+partial fills of the same entry order; a same-side increase from a new signal is refused at
+admission (§6). Every entry fill is in the closing record.
 
 **Excursion accounting** (pure functions, recomputed from the entry cost every event, never
 accumulated) [A-16]. Moves are exact integer cents over the **whole position**, not ticks per
@@ -200,8 +213,11 @@ A per-share threshold of `X` ticks is compared exactly as `move ≥ X × size ×
 *Reason (recompute):* nothing drifts, and a dropped event costs only the extremes.
 *Reason (fixed bps denominator):* a moving denominator makes a fixed bps threshold drift.
 
-**Running extremes** (`PositionExtreme`). Seeded at the first reading after birth, never at
-zero. Updated **before** the snapshot is frozen.
+**Running extremes** (`PositionExtreme`). (D-79) All extremes, including the trailing peak
+`best_clean`, are seeded at the first CLEAN rail reading after birth (valuation side present,
+not crossed, no `feed_gap_before` on that event). Until then they are unset and the trailing
+form cannot fire. Never seeded at zero. Updated **before** the snapshot is frozen. After the
+seed:
 
 | Field | Absorbs | Carries |
 |---|---|---|
@@ -251,7 +267,8 @@ mix the levels are judged by.
   `size`, `entry_cost_cents`, `entry_spread_ticks`, `horizon_deadline_ns`, the three moves in
   cents, the three extremes, the position side's `RailOrientation` and the shared rail flags,
   unaltered. Cleans nothing, defaults nothing.
-- `DeRiskRequirement` (once per episode): `source_layer="POSITION"`, slice-scoped, reason
+- `DeRiskRequirement` (once per episode that resolves to a requirement; `END_OF_TAPE` emits
+  none, D-84): `source_layer="POSITION"`, slice-scoped, reason
   one of `ADVERSE_EXCURSION`, `HORIZON`, `INVALIDATION`, `FAVORABLE_EXCURSION`, quantity =
   full slice, order type MARKET [A-12].
 - `PositionClosed`, once, write-once: `cell_id`, symbol, strategy, side; every entry fill
@@ -294,14 +311,17 @@ missed one shows up as a worse number and is bounded by the other exits.
 **Forms.**
 - `fixed`: fire when `move_now_cents ≥ X × size`.
 - `trailing`: armed only when `best_clean.cents > (R + round_trip_ticks) × size`; then fire
-  when `move_now_cents ≤ best_clean.cents − R × size`. `R = k × entry_spread_ticks`. Optional
+  when `move_now_cents ≤ best_clean.cents − R × size`. (D-83) `R = max(1, floor(k × entry_spread_ticks))`,
+  with `k` parsed as an exact fraction from its configured string (no float on the decision path). Optional
   ceiling `C` only where the measured curve's sample runs out.
 - `round_trip_ticks = entry_spread_ticks + fee_round_trip_ticks` (declared config).
 - `X`, `R`, `C` are per-share ticks; every comparison multiplies by `size` (tick = 1 cent).
 
 **Emits** a `GateDecision`: `fire | none | suppressed(reason, flag state)`, form, proposed
 price (`dwelled_exit_mark`, always), reference fired against (`X`, or peak + `R` with the
-peak's sequence), `event_sequence`. Holds no state. Never reads the adverse gate,
+peak's sequence), `event_sequence`. (D-80) `GateDecision` carries `suppressions`: the ordered
+tuple of every failing favorable token (D-43 order); `reason` is its first element. The schema
+field lands in P-22a. Holds no state. Never reads the adverse gate,
 `forced_exit_mark`, `worst_side_mark` or `paying_mark`.
 
 ---
@@ -328,7 +348,8 @@ premium (expected return given up, bps per trade) must be declared.
 
 **Level.** `L` drawn once per cell from a flat distribution over the whole-tick band
 `[centre − B/2, centre + B/2]`, seeded by SHA-256 of `cell_id`; **recomputed** each event
-from `cell_id` and frozen run config, never stored, never re-drawn. The band must lie inside
+from `cell_id` and frozen run config, never stored, never re-drawn. The decision-path draw
+is the integer form in §9 (D-83). The band must lie inside
 `[lo, hi]` (checked at load, never clamped). *Reasons:* a fixed level lands on shared focal
 points and fills worse (congestion, any size) and becomes an inferable footprint (predation,
 at size); clamping rebuilds the focal point at the edge.
@@ -393,8 +414,12 @@ output).
   all six recorded in the flag state: `VALUATION_SIDE_ABSENT`, `CROSSED`, `FEED_GAP`,
   `DWELL_NOT_CLEAN`, `NOT_WARMED_UP`, `SYMBOL_QUIET`. (D-43)
 - **Band draw.** `cell_id` = `symbol|strategy_id|birth_fill_sequence|side`.
-  `L = (centre − B/2) + (int.from_bytes(sha256(cell_id.encode("utf-8")).digest()[:8], "big") mod (B + 1))`.
-  Recomputed each event from `cell_id` and frozen config; never stored. (D-44)
+  `h = int.from_bytes(sha256(cell_id.encode("utf-8")).digest()[:8], "big")`.
+  `L = (centre − B//2) + (h mod (B + 1))`.
+  `B//2` is integer floor division, so the draw has no float. Recomputed each event from
+  `cell_id` and frozen config; never stored. (D-44, D-83)
+- **Give-back R** (D-83). `R = max(1, floor(k × entry_spread_ticks))`, with `k` parsed as an
+  exact fraction from its configured string (no float on the decision path).
 - **Deadline without session bounds.** When no session close resolves,
   `horizon_deadline_ns = birth_fill_ts + T`. (D-45)
 - **Exit reasons (closed set).** `ADVERSE`, `HORIZON`, `INVALIDATION`, `FAVORABLE`,
@@ -407,12 +432,14 @@ output).
   `lived_through_feed_gap` — any rail event in the cell's life had `feed_gap_before`;
   `first_event_exit` — the deciding event is the cell's first rail event after birth;
   `stop_inside_round_trip` — drawn `L ≤ round_trip_ticks`;
-  `target_inside_round_trip` — the fixed form was disarmed at birth (L1 runtime clause). (D-47)
+  `target_inside_round_trip` — the fixed form was disarmed at birth (L1 runtime clause).
+  For `END_OF_TAPE`, flags are evaluated at the last usable rail update (D-84). (D-47)
 - **Result and cost (battery; not an engine output).** Per closed cell, from raw prices, no
   fee: `result = sign × (Σ exit fill price × qty − Σ entry fill price × qty)`;
   `displacement = sign × size × (valuation mark at the quote of the exit fill − valuation mark
   at the quote of the entry fill)`, taken from the tape; `cost = displacement − result`.
-  Fees never enter engine figures; `fee_round_trip_ticks` enters only `round_trip_ticks`. (D-46)
+  Fees never enter engine figures; `fee_round_trip_ticks` enters only `round_trip_ticks`.
+  The sums are integer cents taken from the legs (D-76). (D-46)
 - **Rail side usability (D-62).** For every quote the rail publishes an update. A side the
   orchestrator mark path refuses for the store is marked absent on the rail, and its absence
   clock runs from the last usable value. `symbol_quiet_ns` measures feed silence only and
@@ -431,3 +458,10 @@ output).
   | LOCKED | refused | refused | absent | absent |
   | ZERO_SZ (bid) | refused | refused | absent | absent |
   | ZERO_SZ (ask) | refused | refused | absent | absent |
+
+- **Whole-cent prices** (D-78). Prices are whole cents. A non-whole-cent price raises (fail
+  loudly). Reg NMS Rule 612 bars sub-penny quotes at or above $1, and the universe is midcaps
+  above $1; a sub-cent price is corrupt data.
+- **Absent-side price** (D-82). An absent side republishes its last present price. Before any
+  usable value, that side's price is `None` and its absence clock runs from the symbol's first
+  quote. When a last usable value exists, the absence clock still runs from that value (D-62).
