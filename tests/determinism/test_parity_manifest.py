@@ -397,7 +397,7 @@ def test_scanner_sees_dict_and_underscore_bindings(tmp_path: Path) -> None:
 # so per-strategy re-attribution was invisible to the whole corpus. See
 # ``test_forced_exit_attribution_replay.py``.
 # P-10: five position engine event types
-EXPECTED_MANIFEST_FINGERPRINT = "7a4739fe3f55821fdfaddc3d3183a0bf86de04eced612ddb0b97ca2eb7d9e8a3"
+EXPECTED_MANIFEST_FINGERPRINT = "3ae15104be83658f18aa5ebd982c171d6487aee411654e10ce5d8bd2dc9c8c5f"
 
 
 def test_manifest_fingerprint_matches_locked_value() -> None:

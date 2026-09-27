@@ -61,6 +61,7 @@ PINNED_PAYLOAD: dict[str, tuple[str, ...]] = {
         "reference_ticks",
         "reference_sequence",
         "drawn_level_ticks",
+        "suppressions",
     ),
     "HorizonFeatureSnapshot": (
         "symbol",

@@ -807,11 +807,11 @@ class SizedPositionIntent(Event):
 class RailOrientation:
     """One side of the mark rail. contracts.md §1. P-10."""
 
-    paying_mark_cents: int = field(metadata={"unit": "cent"})
-    valuation_mark_cents: int = field(metadata={"unit": "cent"})
-    worst_side_mark_cents: int = field(metadata={"unit": "cent"})
-    forced_exit_mark_cents: int = field(metadata={"unit": "cent"})
-    dwelled_exit_mark_cents: int = field(metadata={"unit": "cent"})
+    paying_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    valuation_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    worst_side_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    forced_exit_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    dwelled_exit_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
     paying_size: int = field(metadata={"unit": "share"})
     valuation_size: int = field(metadata={"unit": "share"})
     paying_age_ns: int = field(metadata={"unit": "ns"})
@@ -900,12 +900,12 @@ class PositionSnapshot(Event):
     entry_cost_cents: int = field(metadata={"unit": "cent"})
     entry_spread_ticks: int = field(metadata={"unit": "tick"})
     horizon_deadline_ns: int = field(metadata={"unit": "ns"})
-    move_now_cents: int = field(metadata={"unit": "cent"})
-    move_worst_cents: int = field(metadata={"unit": "cent"})
-    move_forced_cents: int = field(metadata={"unit": "cent"})
-    best: PositionExtreme
-    worst: PositionExtreme
-    best_clean: PositionExtreme
+    move_now_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    move_worst_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    move_forced_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    best: PositionExtreme | None = None
+    worst: PositionExtreme | None = None
+    best_clean: PositionExtreme | None = None
     rail: RailOrientation
     symbol_quiet_ns: int = field(metadata={"unit": "ns"})
     locked: bool
@@ -928,6 +928,7 @@ class GateDecision(Event):
     reference_ticks: int = field(metadata={"unit": "tick"})
     reference_sequence: int = field(metadata={"unit": "1"})
     drawn_level_ticks: int = field(metadata={"unit": "tick"})
+    suppressions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -946,10 +947,10 @@ class PositionClosed(Event):
     drawn_level_ticks: int = field(metadata={"unit": "tick"})
     exit_reason: str
     triggered_paths: tuple[ExitTriggeredPath, ...]
-    proposed_price_cents: int = field(metadata={"unit": "cent"})
-    best: PositionExtreme
-    worst: PositionExtreme
-    best_clean: PositionExtreme
+    proposed_price_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    best: PositionExtreme | None = None
+    worst: PositionExtreme | None = None
+    best_clean: PositionExtreme | None = None
     closed_on_stale_data: bool
     exited_on_unusable_data: bool
     lived_through_feed_gap: bool
