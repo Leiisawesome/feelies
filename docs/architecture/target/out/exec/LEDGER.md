@@ -30844,8 +30844,11 @@ OWNER:       campaign 15.
 
 ---
 
-## P-22s
+## RECORD P-22s
   STEP:          P-22s (reference-engine spec closure, docs only)
+  KIND:          record. Docs only; no baseline_pre-P-22s.json or
+                 baseline_post-P-22s.json committed. Post-merge capture
+                 stays outside the tree (D-60).
   PR:            #261
   RESULT SHA:    e9b5cdec59360819afa79c234492dd0691788ab9 (exec/P-22s),
                  merged as 3b3becedcb8425442dfd5ee89804943ef4ec6a99.
