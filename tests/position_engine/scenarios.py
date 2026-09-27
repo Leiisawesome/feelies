@@ -46,6 +46,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.quote_quality import QuoteQuality, classify
 from feelies.storage.memory_event_log import InMemoryEventLog
 from tests.position_engine.tapes import make_tape
 
@@ -281,6 +282,405 @@ def exit_reason_at_collision(records: Records) -> None:
                 count += 1
         if count != 1:
             raise AssertionError(f"requirement count {count} != 1 cell {cell}")
+
+
+_SUPPRESSION = frozenset(
+    {
+        "VALUATION_SIDE_ABSENT",
+        "CROSSED",
+        "FEED_GAP",
+        "DWELL_NOT_CLEAN",
+        "NOT_WARMED_UP",
+        "SYMBOL_QUIET",
+    }
+)
+_EXIT_GATE = {
+    "ADVERSE": "ADVERSE",
+    "FAVORABLE": "FAVORABLE",
+    "HORIZON": "HORIZON",
+    "INVALIDATION": "INVALIDATION",
+}
+
+
+class CellSpan(NamedTuple):
+    """One cell life, as inclusive replay indices."""
+
+    cell_id: str
+    birth_index: int
+    exit_index: int
+
+
+def placement_rule(
+    cells: Sequence[CellSpan],
+    exit_decisions: Sequence[int],
+    *,
+    limit: int = 5,
+) -> tuple[tuple[str, int], ...]:
+    """Rule P. First eligible index at or after each life's midpoint, then sha256 rank.
+
+    An index is eligible when it lies inside the inclusive span and neither it nor
+    the next index is an exit decision. Cells with no such index are dropped.
+    """
+    blocked = set(exit_decisions)
+    chosen: list[tuple[str, int]] = []
+    for cell in cells:
+        if cell.exit_index < cell.birth_index:
+            continue
+        midpoint = cell.birth_index + (cell.exit_index - cell.birth_index) // 2
+        event: int | None = None
+        for index in range(midpoint, cell.exit_index + 1):
+            if index in blocked or (index + 1) in blocked:
+                continue
+            event = index
+            break
+        if event is None:
+            continue
+        chosen.append((cell.cell_id, event))
+    chosen.sort(key=lambda item: hashlib.sha256(item[0].encode("utf-8")).digest())
+    return tuple(chosen[:limit])
+
+
+def _gate_bodies(records: Sequence[Record]) -> list[dict[str, object]]:
+    return [_body(row.canonical) for row in records if row.type_name == "GateDecision"]
+
+
+def _closed_bodies(records: Sequence[Record]) -> list[dict[str, object]]:
+    return [_body(row.canonical) for row in records if row.type_name == "PositionClosed"]
+
+
+def _fires(records: Sequence[Record], cell: str, gate: str | None) -> list[int]:
+    found: list[int] = []
+    for body in _gate_bodies(records):
+        if str(body.get("cell_id")) != cell:
+            continue
+        if str(body.get("outcome", "")).lower() != "fire":
+            continue
+        if gate is not None and str(body.get("gate")) != gate:
+            continue
+        found.append(int(body["rail_sequence"]))  # type: ignore[arg-type]
+    return found
+
+
+def _deciding_sequence(records: Sequence[Record], cell: str, gate: str | None) -> int | None:
+    found = _fires(records, cell, gate)
+    return found[-1] if found else None
+
+
+def _is_blind(body: dict[str, object]) -> bool:
+    if body.get("exited_on_unusable_data") is True:
+        return True
+    paths = body.get("triggered_paths")
+    if not isinstance(paths, list):
+        return False
+    return any(isinstance(path, dict) and path.get("trigger") == "BLIND" for path in paths)
+
+
+def _rail_body(records: Sequence[Record], sequence: int) -> dict[str, object] | None:
+    for row in records:
+        if row.type_name != "MarkRailUpdate":
+            continue
+        body = _body(row.canonical)
+        if int(body["quote_sequence"]) == sequence:  # type: ignore[arg-type]
+            return body
+    return None
+
+
+def _cell_born(records: Sequence[Record], birth_sequence: int) -> dict[str, object] | None:
+    for body in _closed_bodies(records):
+        entries = body.get("entry_fills")
+        if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
+            continue
+        if int(entries[0]["sequence"]) == birth_sequence:
+            return body
+    return None
+
+
+def _executable_exit_cents(quote: NBBOQuote, side: str) -> int:
+    """Closing a long sells the bid. Closing a short buys the ask."""
+    return _cents(quote.bid if side == "LONG" else quote.ask)
+
+
+def _suppression_reason(
+    rail: dict[str, object],
+    orient: dict[str, object],
+    quiet_limit_ns: int,
+) -> str | None:
+    if orient.get("valuation_side_absent") is not False:
+        return "VALUATION_SIDE_ABSENT"
+    if rail.get("crossed") is not False:
+        return "CROSSED"
+    if rail.get("feed_gap_before") is not False:
+        return "FEED_GAP"
+    if orient.get("dwell_window_clean") is not True:
+        return "DWELL_NOT_CLEAN"
+    if rail.get("warmed_up") is not True:
+        return "NOT_WARMED_UP"
+    quiet = rail.get("symbol_quiet_ns")
+    if not isinstance(quiet, int) or quiet > quiet_limit_ns:
+        return "SYMBOL_QUIET"
+    return None
+
+
+def check_a1(records: Records, *, quiet_limit_ns: int) -> None:
+    """Every FAVORABLE exit is decided on an event with all six suppression reasons clear."""
+    for body in _closed_bodies(records):
+        if str(body.get("exit_reason")) != "FAVORABLE":
+            continue
+        cell = str(body["cell_id"])
+        side = str(body["side"])
+        decisions = _fires(records, cell, "FAVORABLE")
+        if not decisions:
+            raise AssertionError(f"A1: FAVORABLE cell {cell} has no deciding event")
+        sequence = decisions[-1]
+        rail = _rail_body(records, sequence)
+        if rail is None:
+            raise AssertionError(
+                f"A1: FAVORABLE cell {cell} decided on {sequence} with no rail update"
+            )
+        orient = rail["long"] if side == "LONG" else rail["short"]
+        if not isinstance(orient, dict):
+            raise AssertionError(
+                f"A1: FAVORABLE cell {cell} decided on {sequence} with no orientation"
+            )
+        reason = _suppression_reason(rail, orient, quiet_limit_ns)
+        if reason is not None:
+            raise AssertionError(f"A1: FAVORABLE cell {cell} decided on {sequence} with {reason}")
+
+
+def _exit_tuples(records: Records) -> dict[str, tuple[str, int | None, int]]:
+    tuples: dict[str, tuple[str, int | None, int]] = {}
+    for body in _closed_bodies(records):
+        cell = str(body["cell_id"])
+        reason = str(body.get("exit_reason"))
+        exits = body.get("exit_fills")
+        if not isinstance(exits, list) or not exits or not isinstance(exits[0], dict):
+            raise AssertionError(f"A2: cell {cell} has no exit fill")
+        price = int(exits[0]["price_cents"])
+        gate = _EXIT_GATE.get(reason)
+        deciding = _deciding_sequence(records, cell, gate)
+        tuples[cell] = (reason, deciding, price)
+    return tuples
+
+
+def _verdict_stream(records: Records) -> tuple[tuple[object, ...], ...]:
+    return tuple(
+        (
+            verdict.sequence,
+            verdict.symbol,
+            verdict.action.name,
+            verdict.reason,
+            verdict.scaling_factor,
+        )
+        for verdict in records.risk_verdicts
+    )
+
+
+def _alive_at_gap(body: dict[str, object], gaps: set[int]) -> bool:
+    entries = body.get("entry_fills")
+    exits = body.get("exit_fills")
+    if not isinstance(entries, list) or not isinstance(exits, list) or not entries or not exits:
+        return False
+    if not isinstance(entries[0], dict) or not isinstance(exits[0], dict):
+        return False
+    entry = int(entries[0]["sequence"])
+    exit_seq = int(exits[0]["sequence"])
+    return any(entry < gap < exit_seq for gap in gaps)
+
+
+def _suppression_count(records: Sequence[Record]) -> int:
+    count = 0
+    for body in _gate_bodies(records):
+        reason = str(body.get("reason") or "")
+        outcome = str(body.get("outcome") or "").lower()
+        if reason in _SUPPRESSION or outcome == "suppressed":
+            count += 1
+    return count
+
+
+def check_a2(clean: Records, injected: Records, *, feed_gap_sequences: set[int]) -> None:
+    """Ignorable injection: same exits, same risk verdicts, feed-gap flags, one suppression."""
+    clean_tuples = _exit_tuples(clean)
+    injected_tuples = _exit_tuples(injected)
+    if clean_tuples != injected_tuples:
+        raise AssertionError(f"A2: exit tuples {injected_tuples} != {clean_tuples}")
+    if _verdict_stream(clean) != _verdict_stream(injected):
+        raise AssertionError("A2: risk verdict streams differ")
+    for body in _closed_bodies(injected):
+        cell = str(body["cell_id"])
+        alive = _alive_at_gap(body, feed_gap_sequences)
+        flag = body.get("lived_through_feed_gap") is True
+        if flag != alive:
+            raise AssertionError(f"A2: lived_through_feed_gap {flag} != {alive} cell {cell}")
+    if _suppression_count(injected) < 1:
+        raise AssertionError("A2: no suppression record on the injected run")
+
+
+def check_a3(records: Records) -> None:
+    """Every exit price is the executable side of the fill quote, at or after the decision."""
+    for body in _closed_bodies(records):
+        cell = str(body["cell_id"])
+        side = str(body["side"])
+        exits = body.get("exit_fills")
+        if not isinstance(exits, list) or not exits or not isinstance(exits[0], dict):
+            raise AssertionError(f"A3: cell {cell} has no exit fill")
+        fill_seq = int(exits[0]["sequence"])
+        price = int(exits[0]["price_cents"])
+        quote = records.quotes.get(fill_seq)
+        if quote is None:
+            raise AssertionError(
+                f"A3: cell {cell} exit fill sequence {fill_seq} is not on the tape"
+            )
+        gate = _EXIT_GATE.get(str(body.get("exit_reason")))
+        decision = _deciding_sequence(records, cell, gate) if gate is not None else None
+        if decision is not None and decision in records.quotes:
+            ordered = sorted(records.quotes)
+            if ordered.index(fill_seq) < ordered.index(decision):
+                raise AssertionError(
+                    f"A3: cell {cell} fill {fill_seq} is before decision {decision}"
+                )
+        expected = _executable_exit_cents(quote, side)
+        if price != expected:
+            raise AssertionError(
+                f"A3: cell {cell} exit price {price} != executable {expected} of quote {fill_seq}"
+            )
+
+
+def check_a4(records: Records, *, birth_sequence: int, centre: int, band: int) -> None:
+    """Gap-through is ADVERSE at the executable side of q_g+1, strictly past the barrier."""
+    body = _cell_born(records, birth_sequence)
+    if body is None:
+        raise AssertionError(f"A4: no cell born at {birth_sequence}")
+    cell = str(body["cell_id"])
+    side = str(body["side"])
+    reason = str(body.get("exit_reason"))
+    if reason != "ADVERSE":
+        raise AssertionError(f"A4: reason {reason} != ADVERSE cell {cell}")
+    birth = records.quotes.get(birth_sequence)
+    if birth is None:
+        raise AssertionError(f"A4: birth sequence {birth_sequence} is not on the tape")
+    level = drawn_adverse_level(cell, centre, band)
+    valuation = _cents(birth.bid if side == "LONG" else birth.ask)
+    barrier = valuation - level if side == "LONG" else valuation + level
+    exits = body.get("exit_fills")
+    if not isinstance(exits, list) or not exits or not isinstance(exits[0], dict):
+        raise AssertionError(f"A4: cell {cell} has no exit fill")
+    fill_seq = int(exits[0]["sequence"])
+    price = int(exits[0]["price_cents"])
+    fill = records.quotes.get(fill_seq)
+    if fill is None:
+        raise AssertionError(f"A4: q_g+1 sequence {fill_seq} is not on the tape")
+    executable = _executable_exit_cents(fill, side)
+    if price != executable:
+        raise AssertionError(
+            f"A4: exit price {price} != executable {executable} of q_g+1 {fill_seq} cell {cell}"
+        )
+    worse = price < barrier if side == "LONG" else price > barrier
+    if not worse:
+        raise AssertionError(
+            f"A4: exit price {price} is not strictly worse than barrier {barrier}"
+        )
+
+
+def check_a5(
+    records: Records,
+    *,
+    expect_blind: bool,
+    deciding_sequence: int | None = None,
+) -> None:
+    """BLIND is strict greater-than A, and the over-A case fires on the expected event."""
+    blinds = [body for body in _closed_bodies(records) if _is_blind(body)]
+    if not expect_blind:
+        if blinds:
+            raise AssertionError(f"A5: BLIND at or under A cell {blinds[0].get('cell_id')}")
+        return
+    if len(blinds) != 1:
+        raise AssertionError(f"A5: expected one BLIND exit, found {len(blinds)}")
+    cell = str(blinds[0]["cell_id"])
+    got = _deciding_sequence(records, cell, "ADVERSE")
+    if got != deciding_sequence:
+        raise AssertionError(f"A5: BLIND on {got} != expected event {deciding_sequence}")
+
+
+def check_a6(
+    records: Records,
+    *,
+    birth_sequence: int,
+    kind: str,
+    deciding_sequence: int,
+) -> None:
+    """A concealed breach exits ADVERSE on the reveal, or BLIND once absence exceeds A."""
+    body = _cell_born(records, birth_sequence)
+    if body is None:
+        raise AssertionError(f"A6: no cell born at {birth_sequence}")
+    cell = str(body["cell_id"])
+    blind = _is_blind(body)
+    if kind == "ADVERSE":
+        if str(body.get("exit_reason")) != "ADVERSE" or blind:
+            raise AssertionError(
+                f"A6: cell {cell} reason {body.get('exit_reason')} blind {blind} != ADVERSE"
+            )
+    elif kind == "BLIND":
+        if not blind:
+            raise AssertionError(f"A6: cell {cell} did not exit BLIND")
+    else:
+        raise AssertionError(f"A6: unknown kind {kind}")
+    got = _deciding_sequence(records, cell, "ADVERSE")
+    if got != deciding_sequence:
+        raise AssertionError(f"A6: cell {cell} decided on {got} != {deciding_sequence}")
+
+
+def check_unusable_side(records: Records, *, quote_sequence: int) -> None:
+    """Both rail sides absent, absence clocks from the last usable quote, quiet resets."""
+    rail = _rail_body(records, quote_sequence)
+    if rail is None:
+        raise AssertionError(f"UNUSABLE_SIDE: no MarkRailUpdate for quote {quote_sequence}")
+    present: list[str] = []
+    for name in ("long", "short"):
+        side = rail.get(name)
+        if not isinstance(side, dict):
+            present.append(name)
+            continue
+        if side.get("paying_side_absent") is not True:
+            present.append(f"{name}.paying")
+        if side.get("valuation_side_absent") is not True:
+            present.append(f"{name}.valuation")
+    if present:
+        raise AssertionError(
+            f"UNUSABLE_SIDE: quote {quote_sequence} side present ({', '.join(present)})"
+        )
+    quote = records.quotes.get(quote_sequence)
+    if quote is None:
+        raise AssertionError(f"UNUSABLE_SIDE: quote {quote_sequence} is not on the tape")
+    ordered = sorted(
+        records.quotes.values(),
+        key=lambda item: (item.exchange_timestamp_ns, item.sequence),
+    )
+    position = next(index for index, item in enumerate(ordered) if item.sequence == quote_sequence)
+    if position == 0:
+        raise AssertionError(f"UNUSABLE_SIDE: quote {quote_sequence} has no previous quote")
+    previous = ordered[position - 1]
+    quiet_gap = quote.exchange_timestamp_ns - previous.exchange_timestamp_ns
+    if rail.get("symbol_quiet_ns") != quiet_gap:
+        raise AssertionError(
+            f"UNUSABLE_SIDE: symbol_quiet_ns {rail.get('symbol_quiet_ns')} != reset gap {quiet_gap}"
+        )
+    last_usable: NBBOQuote | None = None
+    for item in reversed(ordered[:position]):
+        if classify(item.bid, item.ask, item.bid_size, item.ask_size) is QuoteQuality.VALID:
+            last_usable = item
+            break
+    if last_usable is None:
+        raise AssertionError(f"UNUSABLE_SIDE: quote {quote_sequence} has no last usable value")
+    absent_for = quote.exchange_timestamp_ns - last_usable.exchange_timestamp_ns
+    for name in ("long", "short"):
+        side = rail[name]
+        assert isinstance(side, dict)
+        for clock in ("paying_absent_for_ns", "valuation_absent_for_ns"):
+            got = side.get(clock)
+            if got != absent_for:
+                raise AssertionError(
+                    f"UNUSABLE_SIDE: {name}.{clock} {got} != absence {absent_for}"
+                )
 
 
 def _clock_tag() -> str:
@@ -947,6 +1347,7 @@ def _execute_synthetic(
 _TAPES: dict[tuple[tuple[int, int, str, str, str, int, int], ...], list[NBBOQuote]] = {}
 _FACTORIES: dict[str, Callable[..., object]] = {}
 _RAILS: dict[str, Callable[..., object]] = {}
+_TRANSFORMS: dict[str, Callable[[Sequence[Event]], Sequence[Event]]] = {}
 _VARIANTS: dict[str, dict[str, object] | None] = {}
 
 
@@ -964,6 +1365,33 @@ def _rail_key(wrapper: Callable[..., object] | None) -> str:
     key = repr(wrapper)
     _RAILS[key] = wrapper
     return key
+
+
+def _transform_key(
+    transform: Callable[[Sequence[Event]], Sequence[Event]] | None,
+) -> str:
+    if transform is None:
+        return ""
+    key = repr(transform)
+    _TRANSFORMS[key] = transform
+    return key
+
+
+def slice_real_events(
+    events: Sequence[Event],
+    *,
+    end_index: int | None = None,
+    fraction: float | None = None,
+) -> list[Event]:
+    """Prefix of a prepared replay. Fraction is applied after ``end_index``."""
+    sliced = list(events)
+    if end_index is not None:
+        sliced = sliced[: end_index + 1]
+    if fraction is not None:
+        if not 0 < fraction <= 1:
+            raise ValueError(f"fraction must be in (0, 1], got {fraction}")
+        sliced = sliced[: int(len(sliced) * fraction)]
+    return sliced
 
 
 @functools.lru_cache(maxsize=None)
@@ -1080,18 +1508,21 @@ def rth_replay() -> tuple[Event, ...]:
 
 def _execute_real(
     end_index: int | None,
+    fraction: float | None,
     engine_factory: Callable[..., object] | None,
+    rail_wrapper: Callable[..., object] | None,
+    quote_transform: Callable[[Sequence[Event]], Sequence[Event]] | None,
     attach_sink: bool,
     digest_only: bool,
 ) -> Records:
     import argparse
 
     _raw, (ingest, day_meta) = _real_bundle()
-    events: tuple[Event, ...] | list[Event] = rth_replay()
-    if end_index is not None:
-        events = events[: end_index + 1]
+    events = slice_real_events(rth_replay(), end_index=end_index, fraction=fraction)
+    if quote_transform is not None:
+        events = list(quote_transform(events))
     log = InMemoryEventLog()
-    log.append_batch(list(events))
+    log.append_batch(events)
     runner = _load_runner()
     from feelies.harness.backtest_prep import prepare_backtest_event_log
 
@@ -1137,7 +1568,7 @@ def _execute_real(
         emit_sized_intents_jsonl=False,
         emit_hazard_exits_jsonl=False,
     )
-    with _seams(engine_factory, None, attach_sink):
+    with _seams(engine_factory, rail_wrapper, attach_sink):
         outcome = runner._run_backtest_phases_2_7(
             args,
             log,
@@ -1159,25 +1590,42 @@ def _execute_real(
 @functools.lru_cache(maxsize=None)
 def _cached_real(
     end_index: int | None,
+    fraction: float | None,
     factory_key: str,
+    rail_key: str,
+    transform_key: str,
     attach_sink: bool,
     clock_tag: str,
     digest_only: bool,
 ) -> Records:
     del clock_tag
-    return _execute_real(end_index, _FACTORIES.get(factory_key), attach_sink, digest_only)
+    return _execute_real(
+        end_index,
+        fraction,
+        _FACTORIES.get(factory_key),
+        _RAILS.get(rail_key) if rail_key else None,
+        _TRANSFORMS.get(transform_key) if transform_key else None,
+        attach_sink,
+        digest_only,
+    )
 
 
 def run_real(
     *,
     end_index: int | None = None,
+    fraction: float | None = None,
     engine_factory: Callable[..., object] | None = None,
+    rail_wrapper: Callable[..., object] | None = None,
+    quote_transform: Callable[[Sequence[Event]], Sequence[Event]] | None = None,
     attach_sink: bool = True,
     digest_only: bool = False,
 ) -> Records:
     return _cached_real(
         end_index,
+        fraction,
         _factory_key(engine_factory),
+        _rail_key(rail_wrapper),
+        _transform_key(quote_transform),
         attach_sink,
         _clock_tag(),
         digest_only,

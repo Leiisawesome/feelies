@@ -125,6 +125,13 @@ FAILURE LOOKS LIKE:one event and which assertion
 BLOCKS THE BUILD:  yes — red until stage C (rail) / D (birth)
 ```
 
+Implementation (P-21f): unusable-side clause in
+`tests/position_engine/test_battery_m4_side_correctness.py` `test_m4_unusable_side`.
+One tape per class (NONPOS_BID, NONPOS_ASK, CROSSED, LOCKED, ZERO_SZ_BID, ZERO_SZ_ASK)
+via `force_class` (D-72), seed 11, injected after a valid quote. `green_from` C,
+`red_reason` UNUSABLE_SIDE. Both rail sides absent; absence clocks run from the last
+usable quote; `symbol_quiet_ns` resets.
+
 ```
 MEMBER:            5 Precedence
 DEFENDS AGAINST:   ties resolved the flattering way; exits filed under the wrong reason
@@ -179,6 +186,20 @@ BLOCKS THE BUILD:  yes — red until stage E
 CATCHES:           B3 (A3, A4), B7 (A5), B8 (A2 on the V5 construction)
 NOTE (D-48):       Resolved by D-54..D-62 (P-21e).
 ```
+
+Implementation (P-21f): synthetic
+`tests/position_engine/test_battery_m6_injection_syn.py` and real
+`tests/position_engine/test_battery_m6_injection_real.py`. Checkers A1–A6 and
+placement rule P live in `tests/position_engine/scenarios.py`. Synthetic seed 11,
+`start_ns` T0: A1 and A3 on every run; A4 on V3a, 800 quotes (excise 20 from
+index 302, `shift_from` −15); A5 quiet excise 298/299/300 and valuation-absent
+and paying-absent `remove_side_run` 299/300/301, horizon 30; A6 short, 4000
+quotes, horizon 120 (`shift_from` 3602 by +51, cross indices 3602–3900) and A6
+long, 1800 quotes (`shift_from` 1202 by −47, cross indices 1202–1502); A2 on V5,
+2000 quotes (cross index 400). Real fraction 0.5 (S0-1: 12 eligible lives).
+One clean run plus three copies placed by rule P (D-74): crossed-flatter,
+valuation side removed, `feed_gap_before` via the rail seam. A1 and A3 on all
+four runs; A2 on each copy, including risk-verdict equality (D-75). `green_from` E.
 
 ## The five written alongside the build
 

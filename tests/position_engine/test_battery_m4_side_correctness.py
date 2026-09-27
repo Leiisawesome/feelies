@@ -8,12 +8,28 @@ import pytest
 
 from feelies.core.events import MarkRailUpdate, PositionSnapshot
 from feelies.core.quote_quality import QuoteQuality, classify
-from tests.position_engine.scenarios import T0, Records, nonvacuous, run_real, run_synthetic
-from tests.position_engine.tapes import make_tape
+from tests.position_engine.scenarios import (
+    T0,
+    Records,
+    check_unusable_side,
+    nonvacuous,
+    run_real,
+    run_synthetic,
+)
+from tests.position_engine.tapes import force_class, make_tape
 
 _RAIL = pytest.mark.battery_member(member=4, green_from="A", red_reason="^NONVACUOUS: ")
 _BIRTH = pytest.mark.battery_member(member=4, green_from="D", red_reason="^NONVACUOUS: ")
+_UNUSABLE = pytest.mark.battery_member(member=4, green_from="C", red_reason="UNUSABLE_SIDE")
 _REAL = pytest.mark.battery_real
+_UNUSABLE_CLASSES = (
+    "NONPOS_BID",
+    "NONPOS_ASK",
+    "CROSSED",
+    "LOCKED",
+    "ZERO_SZ_BID",
+    "ZERO_SZ_ASK",
+)
 
 
 def _body(canonical: str) -> dict[str, object]:
@@ -115,3 +131,25 @@ def test_m4_birth_syn_partial() -> None:
 @_REAL
 def test_m4_birth_real() -> None:
     _birth(run_real(), "m4_birth_real")
+
+
+def _rail_for(records: Records, sequence: int) -> bool:
+    for row in records:
+        if row.type_name != "MarkRailUpdate":
+            continue
+        body = _body(row.canonical)
+        if body.get("quote_sequence") == sequence:
+            return True
+    return False
+
+
+@_UNUSABLE
+@pytest.mark.parametrize("cls", _UNUSABLE_CLASSES)
+def test_m4_unusable_side(cls: str) -> None:
+    tape = make_tape(seed=11, n=8, symbol="SYN", start_ns=T0, size=1000)
+    injected = force_class(tape, 3, cls)
+    records = run_synthetic(injected, symbols=("SYN",))
+    sequence = injected[3].sequence
+    if not _rail_for(records, sequence):
+        raise AssertionError(f"NONVACUOUS: no MarkRailUpdate for quote {sequence} in m4_{cls}")
+    check_unusable_side(records, quote_sequence=sequence)

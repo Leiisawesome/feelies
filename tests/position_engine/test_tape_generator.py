@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from feelies.core.quote_quality import QuoteQuality, classify
+from tests.position_engine import tapes
 from tests.position_engine.tapes import (
     bid_path_cents,
     cross,
@@ -246,3 +247,38 @@ def test_g9_shift_from_after_excise_matches_census_c2() -> None:
     assert by_seq[323].ask == Decimal("99.77")
     assert by_seq[324].bid == Decimal("99.75")
     assert by_seq[324].ask == Decimal("99.76")
+
+
+_FORCE_EXPECT = {
+    "NONPOS_BID": (QuoteQuality.NONPOS, Decimal("0"), Decimal("100.02"), None, None),
+    "NONPOS_ASK": (QuoteQuality.NONPOS, Decimal("100.01"), Decimal("0"), None, None),
+    "CROSSED": (QuoteQuality.CROSSED, Decimal("100.50"), Decimal("100.00"), None, None),
+    "LOCKED": (QuoteQuality.LOCKED, Decimal("100.00"), Decimal("100.00"), None, None),
+    "ZERO_SZ_BID": (QuoteQuality.ZERO_SZ, None, None, 0, 1000),
+    "ZERO_SZ_ASK": (QuoteQuality.ZERO_SZ, None, None, 1000, 0),
+}
+
+
+@pytest.mark.parametrize("cls", sorted(_FORCE_EXPECT))
+def test_force_class_round_trips_and_does_not_mutate(cls: str) -> None:
+    tape = make_tape(seed=3, n=8, size=1000)
+    snapshot = copy.deepcopy(tape)
+    original = tape[3]
+    out = tapes.force_class(tape, 3, cls)
+    assert tape == snapshot
+    assert tape[3] is original
+    quote = out[3]
+    assert quote.timestamp_ns == tape[3].timestamp_ns
+    assert quote.exchange_timestamp_ns == tape[3].exchange_timestamp_ns
+    assert quote.sequence == tape[3].sequence
+    assert quote.symbol == tape[3].symbol
+    quality, bid, ask, bid_size, ask_size = _FORCE_EXPECT[cls]
+    assert classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size) is quality
+    if bid is not None:
+        assert quote.bid == bid
+        assert quote.ask == ask
+    if bid_size is not None:
+        assert quote.bid_size == bid_size
+        assert quote.ask_size == ask_size
+    assert out[2] == tape[2]
+    assert out[4] == tape[4]
