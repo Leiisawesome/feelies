@@ -30798,3 +30798,46 @@ STATE:       Any research result on the regime-gated or regime-sized
              campaign 15 relies on it.
 RISK:        Campaign 15 could treat a lookahead-fitted net as evidence.
 OWNER:       campaign 15.
+
+---
+
+## P-21f
+  STEP:          P-21f (member 6 injection tests, member 4 unusable-side
+                 clause, force_class, quote_transform seam)
+  PR:            #260
+  RESULT SHA:    d1f053a3e2bdc09a298bd99a852ac7e15e025221 (exec/P-21f),
+                 merged as fa537c592030fbd0da6118ac6dc6eea57be81638.
+  PREDICTION:    NONE held. 64/64 constants unchanged. APP oracle unchanged
+                 (10 fills, net 24.61, trade hash 18f6bb4e…).
+  VALIDATION:    gate "5124 passed, 5 skipped, 54 deselected, 1 xfailed, 48 warnings in 299.81s (0:04:59)";
+                 battery_real "11 passed, 150 deselected in 82.89s (0:01:22)";
+                 CI check 539 s / parity oracle 169 s (D-71 holds);
+                 CI battery step "11 passed, 150 deselected in 94.39s (0:01:34)".
+  DECISIONS:     D-72..D-75 (D-72 force_class; D-73 quote_transform seam and
+                 cache key; D-74 placement rule P; D-75 A2 risk-verdict
+                 equality).
+  MEMBERS:       member 6 (A1-A6): synthetic in the check job; real at
+                 fraction 0.5 with 3 injected copies placed by rule P,
+                 green_from E, red at A via NONVACUOUS. Member 4 unusable-side
+                 clause: green_from C, red at A on the property
+                 (UNUSABLE_SIDE). Projected stage-E real cost 44.5 s local.
+  M0:            ordering confirmed: clean fraction-0.5 run, then NONVACUOUS,
+                 then placement and the injected copies. At stage A the real
+                 test invokes run_real once and stops on NONVACUOUS before
+                 any copy. The +59 s CI battery-step increase (run
+                 36245117021, 132.02 s, versus 72.54 s at 7f7003a5) is three
+                 fraction-0.5 replays that do not share a cache key: the
+                 plain clean run (11.19 s, 1 miss) and the identity and
+                 crossed quote_transform runs (11.51 s and 12.01 s, one miss
+                 each). Later plain calls hit that clean entry (2 hits). Not
+                 clean-run eviction between tests.
+  OPEN:          functional F-P13b (D-63 live wiring);
+                 holiday calendar gap (D-67).
+  NOTES:         Merge CI run 36285408931. Bugbot success. Post-merge
+                 capture moved to
+                 ..\feelies-captures\P-21f\baseline_post-merge-P-21f.json.
+                 Full-suite capture records 1 failed:
+                 test_two_alphas_hold_live_targets_on_one_symbol (functional,
+                 non-gating).
+  OUTCOME:       parity hold. compare pre-P-21f -> post-merge-P-21f:
+                 64 -> 64, changed 0.
