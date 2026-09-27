@@ -30844,7 +30844,7 @@ OWNER:       campaign 15.
 
 ---
 
-## RECORD P-22s
+## P-22s
   STEP:          P-22s (reference-engine spec closure, docs only)
   KIND:          record. Docs only; no baseline_pre-P-22s.json or
                  baseline_post-P-22s.json committed. Post-merge capture
@@ -30896,3 +30896,4 @@ OWNER:       campaign 15.
                  ..\feelies-captures\P-22s\baseline_post-merge-P-22s.json.
   OUTCOME:       parity hold. compare post-P-21f -> post-merge-P-22s:
                  64 -> 64, changed 0.
+  captures reproduced at 9b7e3cc9 / e9b5cdec in P-62a (H1)
