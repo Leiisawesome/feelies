@@ -30841,3 +30841,55 @@ OWNER:       campaign 15.
                  non-gating).
   OUTCOME:       parity hold. compare pre-P-21f -> post-merge-P-21f:
                  64 -> 64, changed 0.
+
+---
+
+## P-22s
+  STEP:          P-22s (reference-engine spec closure, docs only)
+  PR:            #261
+  RESULT SHA:    e9b5cdec59360819afa79c234492dd0691788ab9 (exec/P-22s),
+                 merged as 3b3becedcb8425442dfd5ee89804943ef4ec6a99.
+  PREDICTION:    NONE held. compare post-P-21f -> post-merge-P-22s:
+                 64 -> 64, changed 0.
+  DOCS:          contracts.md, battery.md, decisions.md,
+                 phase14_position_engine.md. Local full gate not run
+                 (docs only; CI check ran it).
+  VALIDATION:    doc integrity 10 passed. CI on e9b5cdec (run
+                 36290857181): check pass, parity oracle pass, Bugbot
+                 skipping; battery step "11 passed, 150 deselected in
+                 135.31s (0:02:15)". Merge CI run 36291819770: check
+                 pass (8m20s), parity oracle pass (3m35s); battery step
+                 "11 passed, 150 deselected in 134.34s (0:02:14)".
+  DECISIONS:     D-76..D-92.
+                 G1-G9 spec gaps closed (§2: G1 G2 G4 G6 G9; §3: G5
+                 G8-R; §9: G3 G7 G8-band): D-76 exit fills and legs;
+                 D-77 same-order extension vs refused scale-in; D-78
+                 whole-cent prices; D-79 extremes seeded at the first
+                 CLEAN reading; D-80 suppressions tuple; D-81 one open
+                 cell and EXTERNAL:SIGN_FLIP; D-82 absent side
+                 republishes the last present price; D-83 integer R
+                 and band draw; D-84 END_OF_TAPE; D-92 reference built
+                 from contracts sections 0-9, not section 9 alone.
+                 Member 11 pulled forward (D-85; B3, B5, B6).
+                 Member 1 immutability clause (D-86, B10).
+                 Member 2 D > 0 clause (D-87, B11, green_from C).
+                 Engine-resolution point (D-88): FEELIES_ENGINE /
+                 FEELIES_RAIL.
+                 FEELIES_STAGE_FILE override (D-89).
+                 Reference-battery CI job design (D-90).
+                 Rung order P-22s -> P-62a -> P-22a -> P-22b; members
+                 7-10 deferred (D-91).
+  S0-1:          POSITION execution per contracts = engine-8 copy path,
+                 slice-scoped, MARKET, full slice quantity, through
+                 check_order. ADVERSE_EXCURSION joins the stop-slippage
+                 set. Escalation is a recorded no-op. Minimal change:
+                 orchestrator.py:5651 (admit POSITION into
+                 _order_request_from_derisk) and
+                 execution/_fill_helpers.py:11-17.
+  STAGE:         A.
+  OPEN:          functional F-P13b (D-63 live wiring);
+                 holiday calendar gap (D-67).
+  NOTES:         Post-merge capture moved to
+                 ..\feelies-captures\P-22s\baseline_post-merge-P-22s.json.
+  OUTCOME:       parity hold. compare post-P-21f -> post-merge-P-22s:
+                 64 -> 64, changed 0.
