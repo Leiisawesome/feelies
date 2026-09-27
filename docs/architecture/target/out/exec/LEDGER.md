@@ -30897,3 +30897,55 @@ OWNER:       campaign 15.
   OUTCOME:       parity hold. compare post-P-21f -> post-merge-P-22s:
                  64 -> 64, changed 0.
   captures reproduced at 9b7e3cc9 / e9b5cdec in P-62a (H1)
+
+---
+
+## P-62a
+  STEP:          P-62a (execute POSITION requirements per contracts +
+                 P-22s captures)
+  PR:            #262
+  RESULT SHA:    29877fec6a57463c10f53808a7f7bbc21ee8f4dd (exec/P-62a),
+                 merged as 6c00c5d0b3d7007e7a68c0902b82fe7ed603eca5.
+  PREDICTION:    NONE held. 64/64 constants unchanged. APP oracle unchanged
+                 (10 fills, net 24.61, trade hash 18f6bb4e…).
+                 compare pre-P-62a -> post-P-62a: 64 -> 64, changed 0.
+                 compare pre-P-22s -> post-P-22s: 64 -> 64, changed 0.
+                 compare pre-P-62a -> post-merge-P-62a: 64 -> 64, changed 0.
+  CHANGE:        POSITION requirements admitted into
+                 _order_request_from_derisk (MARKET, full slice,
+                 slice-scoped, through check_order). ADVERSE_EXCURSION in
+                 the stop-slippage set.
+  S0-1:          static and dynamic POSITION / ADVERSE_EXCURSION producers
+                 = 0 (oracle and fixture).
+  H1:            P-22s captures reproduced at 9b7e3cc9 / e9b5cdec; heading
+                 restored (## P-22s); rule: docs-only rungs still capture.
+  VALIDATION:    gate "5128 passed, 5 skipped, 54 deselected, 1 xfailed, 48 warnings in 289.95s (0:04:49)";
+                 battery_real "11 passed, 150 deselected in 80.61s (0:01:20)";
+                 CI check 5m19s / parity oracle 2m24s (run 36301694252 on
+                 29877fec; battery step "11 passed, 150 deselected in
+                 79.90s (0:01:19)"; Bugbot skipping). Merge CI run
+                 36302701658 on 6c00c5d0: check 8m43s / parity oracle 2m47s;
+                 battery step "11 passed, 150 deselected in 96.40s
+                 (0:01:36)"; Bugbot neutral.
+  DECISIONS:     D-93, D-94.
+  STAGE:         A.
+  OPEN:          G10 escalation record unspecified (to settle in the P-22a
+                 census);
+                 test_g45_keep hermeticity (tooling rung):
+                 hotpath_executed.json is produced by
+                 tools/arch/perfmeasure.py --mode profile into
+                 tools/arch/evidence/hotpath_executed.json. Git-ignored
+                 (tools/arch/evidence/*.json), not tracked. CI step
+                 "Generate the hot-path executed set" (ci.yml) runs that
+                 command before Tests on non-fork runs. Same-repo CI passes
+                 test_g45_keep because that step writes the file scan()
+                 reads. Fork PRs set FEELIES_HOTPATH_FORK_SKIP=1 and skip
+                 the test;
+                 functional F-P13b.
+  NOTES:         Post-merge capture moved to
+                 ..\feelies-captures\P-62a\baseline_post-merge-P-62a.json.
+                 Full-suite capture records 1 failed:
+                 test_two_alphas_hold_live_targets_on_one_symbol (functional,
+                 non-gating).
+  OUTCOME:       parity hold. compare pre-P-62a -> post-merge-P-62a:
+                 64 -> 64, changed 0.
