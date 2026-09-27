@@ -158,6 +158,9 @@ resolves the exit; writes the closing record.
   requirement is emitted. A higher-ranked path may escalate only if the live exit order is
   non-marketable; in this campaign every engine-13 exit is MARKET, so escalation is a no-op
   that is recorded, never acted on.
+- (D-95) In `EXITING`, a gate that triggers a path ranked above the live requirement's reason
+  publishes its `GateDecision` with outcome `ESCALATION_NOOP`; no order.
+  `PositionClosed.triggered_paths` lists every triggered path.
 - (D-76) In `EXITING`, each exit fill reduces the cell's open quantity and is appended as a
   `PositionFillLeg`. The next rail event's snapshot uses the remaining quantity. No second
   requirement (the rule above is unchanged). The cell closes when open quantity reaches 0.
@@ -172,6 +175,9 @@ resolves the exit; writes the closing record.
   published after the last replay event (outside any replay-index prefix). Production needs
   an end-of-replay hook (P-50); test harnesses finalize engines explicitly. `END_OF_TAPE`
   closes are counted and reported separately.
+- (D-102) An `END_OF_TAPE` close with no usable exit-side value ever:
+  `proposed_price_cents = None` and `closed_on_stale_data = True`. Economics skip such cells
+  and report their count.
 
 **Reads.** `MarkRailUpdate` for its name (valuation, worst-side, forced, dwelled marks and
 all flags, passed through unaltered). `SlicePositionUpdate` for its slice (fill price, signed
@@ -207,6 +213,9 @@ move_forced_cents = sign × (forced_exit_mark_cents × size − entry_cost_cents
 move_now_bps      = 10000 × move_now_cents / entry_cost_cents      (derived, reporting only)
 ```
 
+(D-99) A move field is `None` exactly when the mark it needs is `None`. The favorable gate
+treats a `None` valuation as `VALUATION_SIDE_ABSENT`; adverse treats it as absent.
+
 A per-share threshold of `X` ticks is compared exactly as `move ≥ X × size × tick_cents`
 (tick = 1 cent in this universe). No division on the decision path.
 
@@ -216,7 +225,8 @@ A per-share threshold of `X` ticks is compared exactly as `move ≥ X × size ×
 **Running extremes** (`PositionExtreme`). (D-79) All extremes, including the trailing peak
 `best_clean`, are seeded at the first CLEAN rail reading after birth (valuation side present,
 not crossed, no `feed_gap_before` on that event). Until then they are unset and the trailing
-form cannot fire. Never seeded at zero. Updated **before** the snapshot is frozen. After the
+form cannot fire. Never seeded at zero. (D-100) An unset extreme is `None`, on
+`PositionSnapshot` and `PositionClosed`. Updated **before** the snapshot is frozen. After the
 seed:
 
 | Field | Absorbs | Carries |
@@ -270,7 +280,8 @@ mix the levels are judged by.
 - `DeRiskRequirement` (once per episode that resolves to a requirement; `END_OF_TAPE` emits
   none, D-84): `source_layer="POSITION"`, slice-scoped, reason
   one of `ADVERSE_EXCURSION`, `HORIZON`, `INVALIDATION`, `FAVORABLE_EXCURSION`, quantity =
-  full slice, order type MARKET [A-12].
+  full slice, order type MARKET [A-12]. (D-98) `order_id = cell_id + "|EXIT"`. Side is the
+  side that reduces the cell (`LONG` → `SELL`, `SHORT` → `BUY`).
 - `PositionClosed`, once, write-once: `cell_id`, symbol, strategy, side; every entry fill
   (price, qty, ts, seq); `entry_spread_ticks`; `horizon_deadline_ns`; drawn stop level;
   exit reason; `triggered_paths` (each path triggered on the deciding event, its proposed
@@ -321,7 +332,7 @@ missed one shows up as a worse number and is bounded by the other exits.
 price (`dwelled_exit_mark`, always), reference fired against (`X`, or peak + `R` with the
 peak's sequence), `event_sequence`. (D-80) `GateDecision` carries `suppressions`: the ordered
 tuple of every failing favorable token (D-43 order); `reason` is its first element. The schema
-field lands in P-22a. Holds no state. Never reads the adverse gate,
+field is `suppressions` (landed in P-22a1). Holds no state. Never reads the adverse gate,
 `forced_exit_mark`, `worst_side_mark` or `paying_mark`.
 
 ---
@@ -398,6 +409,12 @@ output).
   events on the bus (§7).
 - Fresh-process runs, canonical record serialisation and feed-gap injection are test-side:
   they need no production hook.
+- (D-96) The recorder advances its attribution cursor from a `MarkRailUpdate` type handler
+  registered before the engine attaches. A record carrying `rail_sequence` must be attributed
+  to that sequence; the recorder raises on mismatch.
+- (D-97) The harness calls `engine.finalize()` (if defined) after replay. Records published
+  then carry replay index `N = len(replay)` and attribution cursor `EOT`. They are never
+  attributed to a quote and never fall inside a replay-index prefix.
 
 ## 9. Definitions closed at P-21c (D-40..D-47)
 
@@ -418,8 +435,9 @@ output).
   `L = (centre − B//2) + (h mod (B + 1))`.
   `B//2` is integer floor division, so the draw has no float. Recomputed each event from
   `cell_id` and frozen config; never stored. (D-44, D-83)
-- **Give-back R** (D-83). `R = max(1, floor(k × entry_spread_ticks))`, with `k` parsed as an
-  exact fraction from its configured string (no float on the decision path).
+- **Give-back R** (D-83, D-101). `R = max(1, floor(k × entry_spread_ticks))`, with
+  `k = Fraction(repr(giveback_spread_multiple))` (shortest round-trip decimal; exact; no float
+  on the decision path).
 - **Deadline without session bounds.** When no session close resolves,
   `horizon_deadline_ns = birth_fill_ts + T`. (D-45)
 - **Exit reasons (closed set).** `ADVERSE`, `HORIZON`, `INVALIDATION`, `FAVORABLE`,

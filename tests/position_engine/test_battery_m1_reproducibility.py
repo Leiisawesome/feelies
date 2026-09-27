@@ -13,10 +13,10 @@ from unittest.mock import patch
 import pytest
 
 from feelies.core.events import PositionClosed, PositionSnapshot
-from feelies.position.engine import PositionEngine
 from tests.position_engine.scenarios import (
     T0,
     Records,
+    engine_class,
     format_line,
     nonvacuous,
     project_for_multiname,
@@ -43,6 +43,19 @@ def _syn_projected(records: Records) -> list[str]:
     return [
         project_for_multiname(row.canonical) for row in records if _symbol(row.canonical) == "SYN"
     ]
+
+
+def _one_snapshot_per_rail(records: Records) -> None:
+    """At most one PositionSnapshot per (cell_id, rail_sequence)."""
+    seen: set[tuple[object, object]] = set()
+    for row in records:
+        if row.type_name != "PositionSnapshot":
+            continue
+        body = json.loads(row.canonical[row.canonical.index("{") :])
+        key = (body.get("cell_id"), body.get("rail_sequence"))
+        if key in seen:
+            raise AssertionError(f"duplicate PositionSnapshot for {key}")
+        seen.add(key)
 
 
 def _clock():
@@ -77,6 +90,7 @@ def test_m1_clock_syn() -> None:
     tape = _syn_tape()
     baseline = run_synthetic(tape, symbols=("SYN",))
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_clock_syn")
+    _one_snapshot_per_rail(baseline)
     with _clock():
         records = run_synthetic(tape, symbols=("SYN",))
     assert records == baseline
@@ -87,6 +101,7 @@ def test_m1_clock_syn() -> None:
 def test_m1_clock_real() -> None:
     baseline = run_real()
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_clock_real")
+    _one_snapshot_per_rail(baseline)
     with _clock():
         records = run_real()
     assert records == baseline
@@ -97,10 +112,11 @@ def test_m1_gates_syn() -> None:
     tape = _syn_tape()
     baseline = run_synthetic(tape, symbols=("SYN",))
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_gates_syn")
+    _one_snapshot_per_rail(baseline)
     records = run_synthetic(
         tape,
         symbols=("SYN",),
-        engine_factory=partial(PositionEngine, gate_order=("FAVORABLE", "ADVERSE")),
+        engine_factory=partial(engine_class(), gate_order=("FAVORABLE", "ADVERSE")),
     )
     assert records == baseline
 
@@ -110,7 +126,8 @@ def test_m1_gates_syn() -> None:
 def test_m1_gates_real() -> None:
     baseline = run_real()
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_gates_real")
-    records = run_real(engine_factory=partial(PositionEngine, gate_order=("FAVORABLE", "ADVERSE")))
+    _one_snapshot_per_rail(baseline)
+    records = run_real(engine_factory=partial(engine_class(), gate_order=("FAVORABLE", "ADVERSE")))
     assert records == baseline
 
 
@@ -118,6 +135,7 @@ def test_m1_gates_real() -> None:
 def test_m1_fresh_syn() -> None:
     records = run_synthetic(_syn_tape(), symbols=("SYN",))
     nonvacuous(records, PositionSnapshot, PositionClosed, scenario="m1_fresh_syn")
+    _one_snapshot_per_rail(records)
     assert _fresh("syn_m1") == [format_line(row) for row in records]
 
 
@@ -126,6 +144,7 @@ def test_m1_fresh_syn() -> None:
 def test_m1_fresh_real() -> None:
     records = run_real()
     nonvacuous(records, PositionSnapshot, PositionClosed, scenario="m1_fresh_real")
+    _one_snapshot_per_rail(records)
     assert _fresh("real_m1") == [format_line(row) for row in records]
 
 
@@ -134,6 +153,7 @@ def test_m1_sinks_syn() -> None:
     tape = _syn_tape()
     baseline = run_synthetic(tape, symbols=("SYN",))
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_sinks_syn")
+    _one_snapshot_per_rail(baseline)
     records = run_synthetic(tape, symbols=("SYN",), attach_sink=False)
     assert records == baseline
 
@@ -143,6 +163,7 @@ def test_m1_sinks_syn() -> None:
 def test_m1_sinks_real() -> None:
     baseline = run_real()
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_sinks_real")
+    _one_snapshot_per_rail(baseline)
     records = run_real(attach_sink=False)
     assert records == baseline
 
@@ -152,6 +173,7 @@ def test_m1_multiname() -> None:
     syn = _syn_tape()
     alone = run_synthetic(syn, symbols=("SYN",))
     nonvacuous(alone, PositionSnapshot, PositionClosed, scenario="m1_multiname")
+    _one_snapshot_per_rail(alone)
     zzz = make_tape(
         seed=12,
         n=36000,

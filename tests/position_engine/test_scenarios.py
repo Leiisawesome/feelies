@@ -2,23 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 
 import pytest
 import yaml
 
 from feelies.alpha.loader import AlphaLoader
+from feelies.portfolio.mark_rail import MarkRail as _ProductionRail
+from feelies.position.engine import PositionEngine as _ProductionEngine
 from feelies.core.events import (
     GateDecision,
     MarkRailUpdate,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
+    PositionClosed,
     PositionExtreme,
     PositionSnapshot,
     RailOrientation,
@@ -30,6 +35,7 @@ from tests.position_engine.scenarios import (
     Records,
     Record,
     assert_no_risk_rejects,
+    assert_widened_prefix,
     attribute,
     canonical,
     displacement_identity,
@@ -849,3 +855,211 @@ def test_feed_gap_seam_sets_chosen_sequences_only() -> None:
     with _seams(None, wrapper, True):
         flags = [rail.on_quote(quote).feed_gap_before for quote in tape]
     assert flags == [False, False, False, True, False, False]
+
+
+_PROBE_ENGINE = "tests.position_engine.test_scenarios.ProbeEngine"
+_PROBE_RAIL = "tests.position_engine.test_scenarios.ProbeRail"
+
+
+def _probe_write(line: str) -> None:
+    path = os.environ.get("FEELIES_PROBE_LOG")
+    if not path:
+        return
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
+class ProbeEngine:
+    """Resolution probe. Delegates so a resolved run still completes."""
+
+    def __init__(
+        self,
+        bus: object,
+        sequence_generator: object,
+        policies: object = None,
+        gate_order: object = None,
+    ) -> None:
+        _probe_write(f"engine {gate_order!r}")
+        self._inner = _ProductionEngine(
+            bus,  # type: ignore[arg-type]
+            sequence_generator,  # type: ignore[arg-type]
+            policies=policies,  # type: ignore[arg-type]
+        )
+
+    def attach(self) -> None:
+        self._inner.attach()
+
+
+class ProbeRail:
+    """Resolution probe. Delegates to the production stub rail."""
+
+    def __init__(self, sequence_generator: object) -> None:
+        _probe_write("rail")
+        self._inner = _ProductionRail(sequence_generator)  # type: ignore[arg-type]
+
+    def on_quote(self, quote: NBBOQuote) -> MarkRailUpdate:
+        return self._inner.on_quote(quote)
+
+
+class AttrProbe:
+    """Publishes a nested snapshot on quote 303 and an end record from finalize."""
+
+    def __init__(
+        self, bus: object, sequence_generator: object, policies: object = None, **kwargs: object
+    ) -> None:
+        del policies, kwargs
+        self._bus = bus
+        self._seq = sequence_generator
+
+    def attach(self) -> None:
+        self._bus.subscribe(MarkRailUpdate, self._on_mark)  # type: ignore[attr-defined]
+
+    def _on_mark(self, event: MarkRailUpdate) -> None:
+        if event.quote_sequence == 303:
+            self._bus.publish(_snapshot("nested-303", 303))  # type: ignore[attr-defined]
+
+    def finalize(self) -> None:
+        self._bus.publish(_eot_close(self._seq.next()))  # type: ignore[attr-defined]
+
+
+def _eot_close(sequence: int) -> PositionClosed:
+    extreme = _extreme()
+    return PositionClosed(
+        timestamp_ns=1,
+        correlation_id="eot",
+        sequence=sequence,
+        cell_id="EOT",
+        symbol="SYN",
+        strategy_id="sig",
+        side="LONG",
+        declared_archetype="MARKET",
+        entry_fills=(),
+        exit_fills=(),
+        entry_spread_ticks=1,
+        horizon_deadline_ns=1,
+        drawn_level_ticks=0,
+        exit_reason="END_OF_TAPE",
+        triggered_paths=(),
+        proposed_price_cents=0,
+        best=extreme,
+        worst=extreme,
+        best_clean=extreme,
+        closed_on_stale_data=False,
+        exited_on_unusable_data=False,
+        lived_through_feed_gap=False,
+        first_event_exit=False,
+        stop_inside_round_trip=False,
+        target_inside_round_trip=False,
+        uncalibrated=False,
+        supersedes="",
+    )
+
+
+def _probe_env(log: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = "0"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["FEELIES_PROBE_LOG"] = str(log)
+    env["FEELIES_ENGINE"] = _PROBE_ENGINE
+    env["FEELIES_RAIL"] = _PROBE_RAIL
+    return env
+
+
+def _assert_probe(log: Path) -> None:
+    text = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert "engine" in text and "rail" in text, f"probe is not constructed: {text!r}"
+
+
+def test_unset_resolution_matches_stub_records() -> None:
+    tape = make_tape(seed=11, n=20, symbol="SYN", start_ns=T0, size=1000)
+    records = run_synthetic(tape, symbols=("SYN",))
+    digest = hashlib.sha256("\n".join(format_line(row) for row in records).encode()).hexdigest()
+    assert digest == "00b7771e3c9b3718f21b313b208bf920bcf53e0c822c35fbb99be227c97eec57"
+
+
+def test_resolution_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = tmp_path / "probe.log"
+    monkeypatch.setenv("FEELIES_PROBE_LOG", str(log))
+    monkeypatch.setenv("FEELIES_ENGINE", _PROBE_ENGINE)
+    monkeypatch.setenv("FEELIES_RAIL", _PROBE_RAIL)
+    tape = make_tape(seed=11, n=4, symbol="SYN", start_ns=T0, size=1000)
+    run_synthetic(tape, symbols=("SYN",))
+    _assert_probe(log)
+
+
+def test_resolution_fresh_child(tmp_path: Path) -> None:
+    log = tmp_path / "probe.log"
+    proc = subprocess.run(
+        [sys.executable, "-m", "tests.position_engine.scenarios", "syn_m1"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_probe_env(log),
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    _assert_probe(log)
+
+
+def test_resolution_prefix_child(tmp_path: Path) -> None:
+    log = tmp_path / "probe.log"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tests.position_engine.scenarios",
+            "prefix",
+            "12",
+            str(tmp_path / "cut.bin"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_probe_env(log),
+    )
+    del proc
+    _assert_probe(log)
+
+
+def test_resolution_m1_gates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = tmp_path / "probe.log"
+    monkeypatch.setenv("FEELIES_PROBE_LOG", str(log))
+    monkeypatch.setenv("FEELIES_ENGINE", _PROBE_ENGINE)
+    monkeypatch.setenv("FEELIES_RAIL", _PROBE_RAIL)
+    from tests.position_engine.scenarios import engine_class
+
+    tape = make_tape(seed=21, n=4, symbol="SYN", start_ns=T0, size=1000)
+    run_synthetic(
+        tape,
+        symbols=("SYN",),
+        engine_factory=partial(engine_class(), gate_order=("FAVORABLE", "ADVERSE")),
+    )
+    text = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert "engine" in text and "rail" in text, f"probe is not constructed: {text!r}"
+    assert "FAVORABLE" in text, text
+
+
+def _attr_run() -> tuple[Records, list[NBBOQuote]]:
+    tape = make_tape(seed=11, n=304, symbol="SYN", start_ns=T0, size=1000)
+    records = run_synthetic(tape, symbols=("SYN",), engine_factory=AttrProbe)
+    return records, tape
+
+
+def test_attr_nested_cursor_is_the_causing_rail() -> None:
+    records, _tape = _attr_run()
+    snaps = [row for row in records if row.type_name == "PositionSnapshot"]
+    assert snaps, "probe snapshot missing"
+    assert snaps[0].attributed_quote_sequence == 303
+
+
+def test_attr_eot_excluded_from_prefix() -> None:
+    records, tape = _attr_run()
+    eot = [row for row in records if row.attributed_quote_sequence == "EOT"]
+    assert eot, "EOT cursor is a quote"
+    assert eot[0].replay_index == len(tape)
+    widened_eot = [row for row in records.widened if row.cursor == "EOT"]
+    assert widened_eot, "EOT cursor is a quote"
+    assert widened_eot[0].replay_index == len(tape)
+    seq = tape[-1].sequence
+    assert_widened_prefix(records.widened, records.widened, seq)
+    kept = [row for row in records.widened if isinstance(row.cursor, int) and row.cursor <= seq]
+    assert all(row.cursor != "EOT" for row in kept)

@@ -45,6 +45,12 @@ diff touching that path in a build rung is a STOP.
   fails it).
 - **S-09 / manifest fingerprint**: the five event types and their payloads are pinned; any
   field change is a pin edit with a fail-first.
+- **Attribution (D-96, D-97).** The recorder advances its attribution cursor from a
+  `MarkRailUpdate` type handler registered before the engine attaches. A record carrying
+  `rail_sequence` is attributed to that sequence; a mismatch raises. After replay the harness
+  calls `engine.finalize()` when that method is defined. Records published then carry replay
+  index `N = len(replay)` and attribution cursor `EOT`. They are never attributed to a quote
+  and never fall inside a replay-index prefix.
 
 ## The six that block the build
 
@@ -59,8 +65,10 @@ ASSERTS:           byte-identical rail updates, snapshots, gate decisions, requi
                    alone versus inside a multi-name universe whose other name is quoted
                    but not traded (synthetic tapes; D-36, D-38); a fresh process; sinks
                    detached (non-sink outputs only). Published records are immutable:
-                   each record's digest at publish time equals its digest at end of run;
-                   at most one PositionSnapshot per (cell_id, rail event). It catches B10.
+                   at most one PositionSnapshot per (cell_id, rail_sequence). It catches B10.
+                   Engine events are frozen, slotted and tuple-only, so an in-place rewrite
+                   is impossible and the digest-at-end half is dropped (D-103). Conformance:
+                   tests/conformance/test_engine_events_frozen.py.
                    green_from as member 1
 FAILURE LOOKS LIKE:a diff; the first divergent sequence localises it
 BLOCKS THE BUILD:  yes — green from stage B onward, never red again
@@ -77,8 +85,9 @@ ASSERTS:           for sampled events k, a run on the tape truncated after k pro
                    quote (D-41); running extremes absorb
                    only events at or before k. The dwell window is trimmed in the step:
                    with D > 0, a dirty (crossed) quote older than t−D never blocks a
-                   favorable decision at t. Construction: D = 2 s; a crossed quote at
-                   t−D−100 ms; the favorable condition met at t. It catches B11.
+                   favorable decision at t. Construction: D = 2 s via FEELIES_RAIL_DWELL_NS;
+                   a crossed quote at t−D−100 ms; the favorable condition met at t. It catches B11.
+                   At P-40 the D source becomes PlatformConfig and this test switches.
                    green_from C, the stage at which P-40 lands:
                    | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site |
 FAILURE LOOKS LIKE:the first event where truncated and full runs differ
@@ -258,7 +267,10 @@ ASSERTS:           with the engine switched off, from closing records and the qu
 BLOCKS THE BUILD:  no — needs closing records
 ```
 
-In scope for P-22a (built in tests). ASSERTS unchanged. (D-85)
+In scope for P-22a1 (built in tests). ASSERTS unchanged. (D-85)
+Gross is checked as member 11's rebuild from the tape and the legs versus
+`scenarios.cell_economics` (two independent computations must agree). No recorded gross
+field exists (contracts §2). (D-104)
 
 ## Stage gates
 
@@ -314,8 +326,9 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 | B10 | resolve phase rewrites a published move | 1 (immutability clause) |
 | B11 | window trimmed lazily (on read, not in the step) | 2 (D > 0 clause) |
 
-**Reference engine (P-22a).** Built only from the contracts text (§§0–9), not from §9
-alone, with a spec-trace table (D-92). It imports only event types, protocols,
+**Reference rail (P-22a1) and reference engine (P-22a2).** Built only from the contracts
+text (§§0–9), not from §9 alone, with a spec-trace table (D-92). Rail rows land in P-22a1;
+engine rows in P-22a2. It imports only event types, protocols,
 `core/quote_quality.classify`, `core/exit_policy`, `core/identifiers` and `bus/event_bus`.
 `src/` never imports it (AST guard).
 

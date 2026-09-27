@@ -66,17 +66,19 @@ RECORD_TYPES = (
 
 
 class Record(NamedTuple):
-    attributed_quote_sequence: int | None
+    attributed_quote_sequence: int | str | None
     type_name: str
     canonical: str
+    replay_index: int | None = None
 
 
 class Widened(NamedTuple):
     """One kept bus event, reduced to a replay-index cursor and a sha256 digest."""
 
-    cursor: int | None
+    cursor: int | str | None
     type_name: str
     digest: bytes
+    replay_index: int | None = None
 
 
 class Records(list[Record]):
@@ -215,6 +217,159 @@ def cell_economics(row: Record, quotes: dict[int, NBBOQuote]) -> tuple[int, int,
         * (_valuation_cents(quotes[exit_seq], side) - _valuation_cents(quotes[entry_seq], side))
     )
     return result, displacement, displacement - result
+
+
+def _skip_stale_end(body: Mapping[str, object]) -> bool:
+    """N7: an end-of-tape close with no usable exit-side value is not priced."""
+    return (
+        body.get("exit_reason") == "END_OF_TAPE"
+        and body.get("proposed_price_cents") is None
+        and body.get("closed_on_stale_data") is True
+    )
+
+
+def check_m11_moves(snapshot: Mapping[str, object]) -> None:
+    """Recompute the three moves from the snapshot's own marks (B5)."""
+    rail = snapshot.get("rail")
+    if not isinstance(rail, dict):
+        raise AssertionError("M11: snapshot rail is not an object")
+    sign = _sign(str(snapshot["side"]))
+    size = int(snapshot["size"])  # type: ignore[arg-type]
+    entry = int(snapshot["entry_cost_cents"])  # type: ignore[arg-type]
+    pairs = (
+        ("move_now_cents", "valuation_mark_cents"),
+        ("move_worst_cents", "worst_side_mark_cents"),
+        ("move_forced_cents", "forced_exit_mark_cents"),
+    )
+    for move_name, mark_name in pairs:
+        mark = rail.get(mark_name)
+        got = snapshot.get(move_name)
+        if mark is None:
+            if got is not None:
+                raise AssertionError(f"M11: {move_name} is set while {mark_name} is None")
+            continue
+        expected = sign * (int(mark) * size - entry)
+        if got != expected:
+            raise AssertionError(f"M11: {move_name} {got} != recomputed {expected}")
+
+
+def _m11_clean(snapshot: Mapping[str, object]) -> bool:
+    rail = snapshot.get("rail")
+    return (
+        isinstance(rail, dict)
+        and rail.get("valuation_side_absent") is False
+        and snapshot.get("crossed") is False
+        and snapshot.get("feed_gap_before") is False
+    )
+
+
+def check_m11_extremes(snapshots: Sequence[Mapping[str, object]]) -> None:
+    """Extremes seed on the first CLEAN move and never at zero (B6, G4)."""
+    seeded = False
+    best: int | None = None
+    worst: int | None = None
+    best_clean: int | None = None
+    for snapshot in snapshots:
+        move = snapshot.get("move_now_cents")
+        if not seeded:
+            if not _m11_clean(snapshot):
+                for key in ("best", "worst", "best_clean"):
+                    if snapshot.get(key) is not None:
+                        raise AssertionError(f"M11: {key} set before the first CLEAN reading")
+                continue
+            if move is None:
+                raise AssertionError("M11: CLEAN reading has no move_now_cents")
+            if int(move) == 0:
+                raise AssertionError("M11: extreme seeded at zero")
+            for key in ("best", "worst", "best_clean"):
+                extreme = snapshot.get(key)
+                if not isinstance(extreme, dict) or int(extreme.get("cents", 0)) == 0:
+                    raise AssertionError("M11: extreme seeded at zero")
+                if int(extreme["cents"]) != int(move):
+                    raise AssertionError(f"M11: {key} seed {extreme['cents']} != move {move}")
+            seeded = True
+            best = worst = best_clean = int(move)
+            continue
+        if move is None or best is None or worst is None or best_clean is None:
+            raise AssertionError("M11: move_now_cents missing after seed")
+        move_i = int(move)
+        best = move_i if move_i > best else best
+        worst = move_i if move_i < worst else worst
+        if _m11_clean(snapshot):
+            best_clean = move_i if move_i > best_clean else best_clean
+        for key, expected in (("best", best), ("worst", worst), ("best_clean", best_clean)):
+            extreme = snapshot.get(key)
+            got = extreme.get("cents") if isinstance(extreme, dict) else None
+            if got != expected:
+                raise AssertionError(f"M11: {key} {got} != recomputed {expected}")
+
+
+def check_m11_proposed(
+    closed: Mapping[str, object],
+    snapshots: Sequence[Mapping[str, object]],
+    quotes: Mapping[int, NBBOQuote],
+) -> None:
+    """Proposed price is the executable side of the deciding quote (B3)."""
+    if _skip_stale_end(closed):
+        return
+    if not snapshots:
+        raise AssertionError("M11: no snapshot for the deciding quote")
+    sequence = int(snapshots[-1]["rail_sequence"])  # type: ignore[arg-type]
+    quote = quotes.get(sequence)
+    if quote is None:
+        raise AssertionError(f"M11: deciding quote {sequence} is not on the tape")
+    side = str(closed["side"])
+    executable = _cents(quote.bid if side == "LONG" else quote.ask)
+    got = closed.get("proposed_price_cents")
+    if got != executable:
+        raise AssertionError(f"M11: proposed {got} != executable {executable} of quote {sequence}")
+
+
+def rebuild_gross(body: Mapping[str, object]) -> int:
+    """Gross from the legs alone. Independent of ``cell_economics``."""
+    sign = _sign(str(body["side"]))
+    entries = body["entry_fills"]
+    exits = body["exit_fills"]
+    if not isinstance(entries, list) or not isinstance(exits, list):
+        raise AssertionError("M11: fills are not lists")
+    return sign * (
+        sum(int(fill["price_cents"]) * int(fill["quantity"]) for fill in exits)
+        - sum(int(fill["price_cents"]) * int(fill["quantity"]) for fill in entries)
+    )
+
+
+def check_m11_gross(row: Record, quotes: dict[int, NBBOQuote]) -> None:
+    """The leg rebuild and ``cell_economics`` are two computations and must agree."""
+    body = _body(row.canonical)
+    if _skip_stale_end(body):
+        return
+    rebuilt = rebuild_gross(body)
+    result, _displacement, _cost = cell_economics(row, quotes)
+    if rebuilt != result:
+        raise AssertionError(f"M11: gross {rebuilt} != cell_economics {result}")
+
+
+def audit_m11(records: Records) -> int:
+    """Rebuild moves, extremes, proposed price and gross. Returns the N7 skip count."""
+    snapshots: dict[str, list[dict[str, object]]] = {}
+    closed: list[tuple[Record, dict[str, object]]] = []
+    for row in records:
+        if row.type_name == "PositionSnapshot":
+            body = _body(row.canonical)
+            check_m11_moves(body)
+            snapshots.setdefault(str(body["cell_id"]), []).append(body)
+        elif row.type_name == "PositionClosed":
+            closed.append((row, _body(row.canonical)))
+    skipped = 0
+    for row, body in closed:
+        snaps = snapshots.get(str(body["cell_id"]), [])
+        check_m11_extremes(snaps)
+        if _skip_stale_end(body):
+            skipped += 1
+            continue
+        check_m11_proposed(body, snaps, records.quotes)
+        check_m11_gross(row, records.quotes)
+    return skipped
 
 
 def displacement_identity(records: Records) -> None:
@@ -716,21 +871,6 @@ def attribute(stream: Sequence[Event]) -> list[tuple[int | None, str, str]]:
     return rows
 
 
-def _capture(bus: object) -> list[Event]:
-    stream: list[Event] = []
-
-    def keep(event: Event) -> None:
-        # MetricEvent is telemetry. StateTransition includes the session-end
-        # marker. Neither is part of the widened prefix.
-        if type(event) is MetricEvent or type(event) is StateTransition:
-            return
-        stream.append(event)
-
-    bus.subscribe_all(keep)  # type: ignore[attr-defined]
-    return stream
-
-
-_PIPELINE_END = frozenset({"BACKTEST_COMPLETE", "SESSION_FEED_COMPLETE", "CMD_SHUTDOWN"})
 _MISSING = object()
 _DC_FIELDS: dict[type, tuple[tuple[bytes, str], ...] | None] = {}
 _ENUM_TYPES: dict[type, bool] = {}
@@ -899,15 +1039,22 @@ _TAG_TRADE = b"Trade"
 _TAG_REGIME = b"RegimeState"
 
 
+def _pack_cents(value: object) -> int:
+    """None is a sentinel. An int is packed unchanged, so stub digests stay put."""
+    if value is None:
+        return -1 << 62
+    return value  # type: ignore[return-value]
+
+
 def _pack_orientation(buf: bytearray, side: object) -> None:
     buf.extend(
         struct.pack(
             "<11q3B",
-            side.paying_mark_cents,  # type: ignore[attr-defined]
-            side.valuation_mark_cents,  # type: ignore[attr-defined]
-            side.worst_side_mark_cents,  # type: ignore[attr-defined]
-            side.forced_exit_mark_cents,  # type: ignore[attr-defined]
-            side.dwelled_exit_mark_cents,  # type: ignore[attr-defined]
+            _pack_cents(side.paying_mark_cents),  # type: ignore[attr-defined]
+            _pack_cents(side.valuation_mark_cents),  # type: ignore[attr-defined]
+            _pack_cents(side.worst_side_mark_cents),  # type: ignore[attr-defined]
+            _pack_cents(side.forced_exit_mark_cents),  # type: ignore[attr-defined]
+            _pack_cents(side.dwelled_exit_mark_cents),  # type: ignore[attr-defined]
             side.paying_size,  # type: ignore[attr-defined]
             side.valuation_size,  # type: ignore[attr-defined]
             side.paying_age_ns,  # type: ignore[attr-defined]
@@ -1093,41 +1240,14 @@ def _event_digest(event: Event) -> bytes:
     return hashlib.sha256(buf).digest()
 
 
-def widened_rows(stream: Sequence[Event]) -> tuple[Widened, ...]:
-    """Per-event digests up to the replay boundary.
-
-    MetricEvent is telemetry (wall-clock durations are not a causal prefix).
-    StateTransition includes the session-end transition, which a truncated run
-    emits at the cutoff. The cursor is the replay event index.
-    """
-    cursor: int | None = None
-    rows: list[Widened] = []
-    for event in stream:
-        kind = type(event)
-        if kind is StateTransition:
-            if event.trigger in _PIPELINE_END:
-                break
-            continue
-        if kind is MetricEvent:
-            continue
-        if kind is MarkRailUpdate:
-            cursor = event.quote_sequence
-        elif kind is NBBOQuote:
-            cursor = event.sequence
-        elif kind is Trade:
-            cursor = event.sequence
-        rows.append(Widened(cursor, kind.__name__, _event_digest(event)))
-    return tuple(rows)
-
-
 def assert_widened_prefix(
     truncated: Sequence[Widened],
     full: Sequence[Widened],
     seq_k: int,
 ) -> None:
     """Prefixes through replay index ``seq_k`` are the same sequence of digests."""
-    left = [row for row in truncated if row.cursor is not None and row.cursor <= seq_k]
-    right = [row for row in full if row.cursor is not None and row.cursor <= seq_k]
+    left = [row for row in truncated if isinstance(row.cursor, int) and row.cursor <= seq_k]
+    right = [row for row in full if isinstance(row.cursor, int) and row.cursor <= seq_k]
     limit = min(len(left), len(right))
     for index in range(limit):
         if left[index] != right[index]:
@@ -1165,7 +1285,7 @@ def decision_trigger_indexes(
     index_of = _replay_index(events)
     triggers: list[int] = []
     for row in widened:
-        if row.type_name != "OrderRequest" or row.cursor is None:
+        if row.type_name != "OrderRequest" or not isinstance(row.cursor, int):
             continue
         index = index_of.get(row.cursor)
         if index is not None:
@@ -1193,16 +1313,137 @@ def decision_cut_indices(
     return tuple(cuts)
 
 
-def _records_from(stream: Sequence[Event], *, digest_only: bool = False) -> Records:
-    widened = widened_rows(stream)
+_RESOLUTION_ENV = (
+    "FEELIES_ENGINE",
+    "FEELIES_RAIL",
+    "FEELIES_RAIL_DWELL_NS",
+    "FEELIES_RAIL_SLIPPAGE_TICKS",
+)
+
+
+def _resolution_key() -> str:
+    return "|".join(os.environ.get(name, "") for name in _RESOLUTION_ENV)
+
+
+def _dotted(path: str) -> object:
+    import importlib
+
+    module_name, _, attr = path.rpartition(".")
+    if not module_name:
+        raise RuntimeError(f"not a dotted path: {path}")
+    return getattr(importlib.import_module(module_name), attr)
+
+
+def engine_class() -> type[object]:
+    """Resolved engine. ``FEELIES_ENGINE`` when set, otherwise the production stub."""
+    path = os.environ.get("FEELIES_ENGINE", "").strip()
+    if not path:
+        from feelies.position.engine import PositionEngine
+
+        return PositionEngine
+    loaded = _dotted(path)
+    if not isinstance(loaded, type):
+        raise RuntimeError(f"FEELIES_ENGINE {path} is not a class")
+    return loaded
+
+
+def _rail_from_env() -> type[object] | None:
+    path = os.environ.get("FEELIES_RAIL", "").strip()
+    if not path:
+        return None
+    loaded = _dotted(path)
+    if not isinstance(loaded, type):
+        raise RuntimeError(f"FEELIES_RAIL {path} is not a class")
+    return loaded
+
+
+class _Attribution:
+    """Live cursor. The rail handler is registered before the engine attaches (N1)."""
+
+    def __init__(self) -> None:
+        self.attr_cursor: int | str | None = None
+        self.wide_cursor: int | str | None = None
+        self.rows: list[Record] = []
+        self.widened: list[Widened] = []
+        self.stream: list[Event] = []
+        self._eot = False
+        self._replay_index: int | None = None
+        self._engine: object | None = None
+        self._on_rail: Callable[[MarkRailUpdate], None] | None = None
+        self._bus: object | None = None
+
+    def bind(self, bus: object) -> None:
+        def on_rail(event: MarkRailUpdate) -> None:
+            self.attr_cursor = event.quote_sequence
+            self.wide_cursor = event.quote_sequence
+
+        bus.subscribe(MarkRailUpdate, on_rail)  # type: ignore[attr-defined]
+        self._on_rail = on_rail
+        self._bus = bus
+
+    def attach_global(self, bus: object) -> None:
+        self.attr_cursor = None
+        self.wide_cursor = None
+        bus.subscribe_all(self.observe)  # type: ignore[attr-defined]
+
+    def observe(self, event: Event) -> None:
+        kind = type(event)
+        if kind is MetricEvent or kind is StateTransition:
+            return
+        if self._eot:
+            attr_cursor: int | str | None = "EOT"
+            wide_cursor: int | str | None = "EOT"
+            replay_index = self._replay_index
+        else:
+            if kind is NBBOQuote:
+                self.attr_cursor = event.sequence
+                self.wide_cursor = event.sequence
+            elif kind is Trade:
+                self.wide_cursor = event.sequence
+            attr_cursor = self.attr_cursor
+            wide_cursor = self.wide_cursor
+            replay_index = None
+        self.stream.append(event)
+        if _keep(event):
+            self._check(event, attr_cursor)
+            self.rows.append(Record(attr_cursor, kind.__name__, canonical(event), replay_index))
+        self.widened.append(
+            Widened(wide_cursor, kind.__name__, _event_digest(event), replay_index)
+        )
+
+    def _check(self, event: Event, cursor: object) -> None:
+        if cursor == "EOT":
+            return
+        if type(event) is not PositionSnapshot and type(event) is not GateDecision:
+            return
+        if event.rail_sequence != cursor:
+            raise RuntimeError(
+                f"attribution cursor {cursor} != rail_sequence {event.rail_sequence}"
+            )
+
+    def finalize(self, replay_length: int) -> None:
+        engine = self._engine
+        if engine is None:
+            return
+        impl = getattr(engine, "_impl", None)
+        if not callable(getattr(impl, "finalize", None)):
+            return
+        self._eot = True
+        self._replay_index = replay_length
+        engine.finalize()  # type: ignore[attr-defined]
+
+
+def _records_from_live(recorder: _Attribution, *, digest_only: bool = False) -> Records:
+    widened = tuple(recorder.widened)
     if digest_only:
         records = Records([], {}, (), ())
         records.widened = widened
         return records
+    stream = recorder.stream
     quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
     orders = [event for event in stream if type(event) is OrderRequest]
     verdicts = [event for event in stream if type(event) is RiskVerdict]
-    records = Records([Record(*row) for row in attribute(stream)], quotes, orders, verdicts)
+    records = Records(list(recorder.rows), quotes, orders, verdicts)
     records.widened = widened
     return records
 
@@ -1217,11 +1458,52 @@ def _seams(
     import feelies.position.engine as engine_mod
 
     saved_engine = engine_mod.PositionEngine
-    saved_on_quote = rail_mod.MarkRail.on_quote
+    saved_rail = rail_mod.MarkRail
     saved_attach = engine_mod.PositionRecordSink.attach
+    recorder = _Attribution()
+    resolved_rail = _rail_from_env()
+    if resolved_rail is not None:
+        rail_mod.MarkRail = resolved_rail  # type: ignore[misc, assignment]
+    saved_on_quote = rail_mod.MarkRail.on_quote
+    inner = engine_factory if engine_factory is not None else engine_class()
+
+    class _Bound:
+        def __init__(
+            self,
+            bus: object,
+            sequence_generator: object,
+            policies: object = None,
+            **kwargs: object,
+        ) -> None:
+            recorder.bind(bus)
+            self._bus = bus
+            self._impl = inner(bus, sequence_generator, policies=policies, **kwargs)  # type: ignore[operator]
+            recorder._engine = self
+
+        def attach(self) -> None:
+            handlers = self._bus._handlers[MarkRailUpdate]  # type: ignore[attr-defined]
+            on_rail = recorder._on_rail
+            cursor_at = handlers.index(on_rail)
+            before = len(handlers)
+            self._impl.attach()  # type: ignore[attr-defined]
+            after = self._bus._handlers[MarkRailUpdate]  # type: ignore[attr-defined]
+            if cursor_at >= before:
+                raise AssertionError(
+                    "attribution cursor handler is not registered before the engine attaches"
+                )
+            for index in range(before, len(after)):
+                if cursor_at >= index:
+                    raise AssertionError(
+                        "attribution cursor handler is not registered before the engine attaches"
+                    )
+
+        def finalize(self) -> None:
+            done = getattr(self._impl, "finalize", None)
+            if callable(done):
+                done()
+
     try:
-        if engine_factory is not None:
-            engine_mod.PositionEngine = engine_factory  # type: ignore[misc, assignment]
+        engine_mod.PositionEngine = _Bound  # type: ignore[misc, assignment]
         if rail_wrapper is not None:
             original = saved_on_quote
 
@@ -1230,11 +1512,12 @@ def _seams(
 
             rail_mod.MarkRail.on_quote = on_quote  # type: ignore[method-assign]
         if not attach_sink:
-            engine_mod.PositionRecordSink.attach = lambda self: None  # type: ignore[method-assign]
-        yield
+            engine_mod.PositionRecordSink.attach = lambda self: None  # type: ignore[method-assign, assignment]
+        yield recorder
     finally:
-        engine_mod.PositionEngine = saved_engine
         rail_mod.MarkRail.on_quote = saved_on_quote
+        rail_mod.MarkRail = saved_rail
+        engine_mod.PositionEngine = saved_engine
         engine_mod.PositionRecordSink.attach = saved_attach
 
 
@@ -1328,9 +1611,9 @@ def _execute_synthetic(
 
     AlphaLoader.load = _load  # type: ignore[method-assign]
     try:
-        with _seams(engine_factory, rail_wrapper, attach_sink):
+        with _seams(engine_factory, rail_wrapper, attach_sink) as recorder:
             orchestrator, resolved = build_platform(config, event_log=log)
-            stream = _capture(orchestrator._bus)
+            recorder.attach_global(orchestrator._bus)
             orchestrator.boot(resolved)
             import gc
 
@@ -1339,9 +1622,11 @@ def _execute_synthetic(
                 orchestrator.run_backtest()
             finally:
                 gc.enable()
+            recorder.finalize(len(tape))
+            result = _records_from_live(recorder)
     finally:
         AlphaLoader.load = original_load  # type: ignore[method-assign]
-    return _records_from(stream)
+    return result
 
 
 _TAPES: dict[tuple[tuple[int, int, str, str, str, int, int], ...], list[NBBOQuote]] = {}
@@ -1403,8 +1688,9 @@ def _cached_synthetic(
     attach_sink: bool,
     clock_tag: str,
     variant_key: str,
+    resolution_key: str,
 ) -> Records:
-    del clock_tag
+    del clock_tag, resolution_key
     return _execute_synthetic(
         _TAPES[tape_key],
         symbols,
@@ -1447,6 +1733,7 @@ def run_synthetic(
         attach_sink,
         _clock_tag(),
         variant_key,
+        _resolution_key(),
     )
 
 
@@ -1549,13 +1836,6 @@ def _execute_real(
     if rc != 0:
         raise RuntimeError(f"ingest event mix rejected the real session ({rc})")
     config = runner._attach_day_source_provenance(config, symbols, day_sources)
-    held: dict[str, object] = {}
-
-    def factory(config: PlatformConfig, event_log: InMemoryEventLog, **kwargs: object):
-        orchestrator, resolved = build_platform(config, event_log=event_log, **kwargs)  # type: ignore[arg-type]
-        held["stream"] = _capture(orchestrator._bus)
-        return orchestrator, resolved
-
     args = argparse.Namespace(
         trace_signal_orders=False,
         emit_fills_jsonl=False,
@@ -1568,7 +1848,13 @@ def _execute_real(
         emit_sized_intents_jsonl=False,
         emit_hazard_exits_jsonl=False,
     )
-    with _seams(engine_factory, rail_wrapper, attach_sink):
+    with _seams(engine_factory, rail_wrapper, attach_sink) as recorder:
+
+        def factory(config: PlatformConfig, event_log: InMemoryEventLog, **kwargs: object):
+            orchestrator, resolved = build_platform(config, event_log=event_log, **kwargs)  # type: ignore[arg-type]
+            recorder.attach_global(orchestrator._bus)
+            return orchestrator, resolved
+
         outcome = runner._run_backtest_phases_2_7(
             args,
             log,
@@ -1582,9 +1868,11 @@ def _execute_real(
             platform_factory=factory,
             prep=prep,
         )
-    if outcome.exit_code != 0:
-        raise RuntimeError(f"real session exit {outcome.exit_code}")
-    return _records_from(held["stream"], digest_only=digest_only)  # type: ignore[arg-type]
+        if outcome.exit_code != 0:
+            raise RuntimeError(f"real session exit {outcome.exit_code}")
+        recorder.finalize(len(events))
+        result = _records_from_live(recorder, digest_only=digest_only)
+    return result
 
 
 @functools.lru_cache(maxsize=None)
@@ -1597,8 +1885,9 @@ def _cached_real(
     attach_sink: bool,
     clock_tag: str,
     digest_only: bool,
+    resolution_key: str,
 ) -> Records:
-    del clock_tag
+    del clock_tag, resolution_key
     return _execute_real(
         end_index,
         fraction,
@@ -1629,6 +1918,7 @@ def run_real(
         attach_sink,
         _clock_tag(),
         digest_only,
+        _resolution_key(),
     )
 
 
@@ -1641,7 +1931,12 @@ def _dump_widened(path: str, rows: Sequence[Widened]) -> None:
         handle.write(len(rows).to_bytes(4, "little"))
         for row in rows:
             name = row.type_name.encode()
-            cursor = -1 if row.cursor is None else row.cursor
+            if row.cursor is None:
+                cursor = -1
+            elif row.cursor == "EOT":
+                cursor = -2
+            else:
+                cursor = row.cursor
             handle.write(cursor.to_bytes(8, "little", signed=True))
             handle.write(len(name).to_bytes(2, "little"))
             handle.write(name)
@@ -1657,7 +1952,13 @@ def _load_widened(path: str) -> tuple[Widened, ...]:
             (name_len,) = struct.unpack("<H", handle.read(2))
             type_name = handle.read(name_len).decode()
             digest = handle.read(32)
-            rows.append(Widened(None if cursor < 0 else cursor, type_name, digest))
+            if cursor == -1:
+                loaded: int | str | None = None
+            elif cursor == -2:
+                loaded = "EOT"
+            else:
+                loaded = cursor
+            rows.append(Widened(loaded, type_name, digest))
     return tuple(rows)
 
 

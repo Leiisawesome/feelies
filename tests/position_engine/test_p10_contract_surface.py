@@ -132,6 +132,7 @@ _GATE_FIELDS = (
     "reference_ticks",
     "reference_sequence",
     "drawn_level_ticks",
+    "suppressions",
 )
 _CLOSED_FIELDS = (
     "cell_id",

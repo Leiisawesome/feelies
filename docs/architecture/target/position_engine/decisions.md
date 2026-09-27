@@ -101,6 +101,17 @@ edit to the spec file in a later docs rung, citing the entry.
 | D-92 | 2026-09-27 | P-22s | Which contract text is the reference engine built from? | The reference is built from contracts sections 0-9, not from section 9 alone, with a spec-trace table. It imports only event types, protocols, core/quote_quality.classify, core/exit_policy, core/identifiers and bus/event_bus. src/ never imports it (AST guard). | Section 9 closes definitions. The lifecycle, gates and rail rules the engine executes are in sections 0-8. An import either way between src/ and the reference would make the oracle depend on the code it judges. | battery.md reference note; contracts.md sections 0-9 |
 | D-93 | 2026-09-27 | P-62a | How does engine 9 execute a POSITION DeRiskRequirement, and what escalation record does the contract name? | Admit source_layer POSITION beside RISK at orchestrator.py:5657, then the existing copy at _order_request_from_derisk (5633-5646) sets MARKET and copies strategy_id, symbol, side, quantity and reason. check_order is the same call (5665). ADVERSE_EXCURSION joins STOP_EXIT_REASONS (_fill_helpers.py:17). A second requirement while that exit is in flight submits no further order, because a POSITION order counts as a forced MARKET exit (_is_forced_market_exit, 2730). S0-1: the four DeRiskRequirement constructors (exit_composer, deferral_cap, hazard_exit, stop_exit) all set source_layer RISK; src/ has no ADVERSE_EXCURSION producer. Dynamic counts on APP/2026-03-26: bt_app.yaml DeRiskRequirement {} and POSITION 0, OrderRequest reason empty x10 and ADVERSE_EXCURSION 0; bt_position_arbitrary_not_calibrated.yaml DeRiskRequirement {} and POSITION 0, OrderRequest reason empty x67 and ADVERSE_EXCURSION 0. S0-4: escalation record unspecified. Contract trace: contracts.md:365-366 to the admit and the copy; contracts.md:370-371 to the stop-slippage set; contracts.md:271-273 is the emitted shape that copy consumes; contracts.md:157-160 is the recorded no-op and names no event or field. | The copy path already carries the slice identity (strategy_id, symbol, quantity). A POSITION order the pending-exit guard does not recognise would cancel the working exit and submit another. The contract says the no-op is recorded and does not name the carrier. | contracts.md §2 and §5 |
 | D-94 | 2026-09-27 | P-62a | Do docs-only rungs still take pre/post captures? | Docs-only rungs still take pre/post captures (cheap; the ledger rule test_capture_misses_equal_keep requires them). P-22s's missing captures were reproduced deterministically at their commits. | A rung heading without both baseline files is a miss. RECORD was the heading that hid the miss; restoring ## P-22s requires the files. | LEDGER.md P-22s; test_exec_ledger_captures.py |
+| D-95 | 2026-09-27 | P-22a1 | What record does an EXITING escalation write when the live exit is MARKET? | In EXITING, a gate that triggers a path ranked above the live requirement's reason publishes its GateDecision with outcome ESCALATION_NOOP; no order. PositionClosed.triggered_paths lists every triggered path. | The no-op was required and unnamed. A second order would cancel the working MARKET exit. The close must still list every path that fired. | contracts.md §2 |
+| D-96 | 2026-09-27 | P-22a1 | How does a record published inside the rail handler keep the causing quote? | The recorder advances its attribution cursor from a MarkRailUpdate type handler registered before the engine attaches. A record carrying rail_sequence must be attributed to that sequence; the recorder raises on mismatch. | The bus delivers nested events before the outer rail update reaches a global subscriber, so a post-hoc walk stamps the previous quote. | contracts.md §8; battery.md harness note |
+| D-97 | 2026-09-27 | P-22a1 | What replay index and cursor do end-of-replay records carry? | The harness calls engine.finalize() (if defined) after replay. Records published then carry replay index N = len(replay) and attribution cursor EOT. They are never attributed to a quote and never fall inside a replay-index prefix. | An end-of-tape close stamped with the last quote sits inside a prefix that a truncated run does not contain. | contracts.md §8 |
+| D-98 | 2026-09-27 | P-22a1 | What order id and side does a POSITION DeRiskRequirement carry? | DeRiskRequirement.order_id = cell_id + "\|EXIT". Side is the side that reduces the cell (LONG to SELL, SHORT to BUY). | The copy path needs an order id and a reducing side. The cell id already names the episode. | contracts.md §2 |
+| D-99 | 2026-09-27 | P-22a1 | What is a move when the mark it needs is None? | A move field is None exactly when the mark it needs is None. The favorable gate treats a None valuation as VALUATION_SIDE_ABSENT; adverse treats it as absent. | A number standing in for a missing mark is a price the position never had. | contracts.md §2 |
+| D-100 | 2026-09-27 | P-22a1 | What is the wire value of an unset extreme? | An unset extreme is None, on PositionSnapshot and on PositionClosed. | The schema required a PositionExtreme, so an unset peak could not be distinguished from a real one. Zero is not that value. | contracts.md §2 |
+| D-101 | 2026-09-27 | P-22a1 | How is k obtained from giveback_spread_multiple without a float on the decision path? | k = Fraction(repr(giveback_spread_multiple)) (shortest round-trip decimal; exact; no float on the decision path). | The configured value is a float. repr is the shortest decimal that round-trips, and Fraction of that decimal is exact. | contracts.md §9 |
+| D-102 | 2026-09-27 | P-22a1 | What proposed price does END_OF_TAPE use when the cell never had a usable exit side? | proposed_price_cents = None and closed_on_stale_data = True. Economics skip such cells and report their count. | Inventing an exit price would book a trade the tape never offered. The count keeps the skip visible. | contracts.md §2 |
+| D-103 | 2026-09-27 | P-22a1 | What remains of member 1's immutability clause? | Drop the digest-at-end half. Engine events are frozen, slotted and tuple-only, so an in-place rewrite is impossible. Keep at most one PositionSnapshot per (cell_id, rail_sequence). A conformance test keeps those types frozen with no list, dict or set fields. | A digest cannot observe a mutation the type system already forbids. A second snapshot for the same rail event is still a different record. | battery.md member 1 |
+| D-104 | 2026-09-27 | P-22a1 | Where does member 11 read gross? | Gross is checked as member 11's rebuild from the tape and the legs versus scenarios.cell_economics. The two computations must agree. No recorded gross field exists. | Section 2 forbids a net figure on the close. Two independent rebuilds are the check. | battery.md member 11; contracts.md §2 |
+| D-105 | 2026-09-27 | P-22a1 | How does P-22a split? | P-22a splits into P-22a1 (this rung: G10/N1-N7 spec, additive schema, resolution, attribution, reference rail, import guard, members 1/2/11) and P-22a2 (reference engine, trace-table engine rows, all members green on the reference, reference-battery CI job). | The rail and the seams do not need the cell. The engine, the full trace and the CI job are the next rung. | phase14 ladder |
 
 ### D-66 pre-registered prediction
 
@@ -115,6 +126,26 @@ Unchanged: every other constant, including _BASELINE_CONFIG_HASH (bb67b1c7…) a
 Direction: fills down, net down.
 Mechanism: regime emissions fitted on 2026-03-25 RTH (50636 quotes) instead of 2026-03-26.
 Any other constant moving, or any predicted value not reproduced exactly → STOP, status reverted.
+```
+
+### P-22a1 pre-registered prediction
+
+```
+64/64 parity constants unchanged.
+S-09 pin tests/position_engine/test_p10_contract_surface.py _GATE_FIELDS:
+  (cell_id, rail_sequence, gate, outcome, reason, form, proposed_price_cents,
+   reference_ticks, reference_sequence, drawn_level_ticks)
+  → the same tuple plus suppressions.
+Named with that pin, not among the 64 (S0; a suppressions field changes dataclass
+field names, and the manifest fingerprint hashes names):
+  PINNED_PAYLOAD["GateDecision"] in tests/conformance/test_schema_drift.py
+    gains suppressions in the same position.
+  EXPECTED_MANIFEST_FINGERPRINT
+    7a4739fe3f55821fdfaddc3d3183a0bf86de04eced612ddb0b97ca2eb7d9e8a3
+    → 3ae15104be83658f18aa5ebd982c171d6487aee411654e10ce5d8bd2dc9c8c5f
+Annotation widening does not move a hashed pin (the fingerprint hashes names, not
+types; event_schema_hash covers NBBOQuote and Trade only).
+Nothing else moves.
 ```
 
 ## Findings

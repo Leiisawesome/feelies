@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from feelies.core.events import Event, PositionSnapshot
@@ -18,9 +20,10 @@ from tests.position_engine.scenarios import (
     run_synthetic,
     session_digest,
 )
-from tests.position_engine.tapes import make_tape
+from tests.position_engine.tapes import force_class, make_tape
 
 _MARK = pytest.mark.battery_member(member=2, green_from="B", red_reason="^NONVACUOUS: ")
+_DWELL = pytest.mark.battery_member(member=2, green_from="C", red_reason="NONVACUOUS")
 _REAL = pytest.mark.battery_real
 _SYN_FRACTIONS = (0.20, 0.45, 0.70, 0.90)
 _REAL_FRACTIONS = (0.15, 0.30, 0.45)
@@ -74,3 +77,25 @@ def _real() -> None:
 @_REAL
 def test_m2_real() -> None:
     _real()
+
+
+@_DWELL
+def test_m2_dwell_favorable_ignores_stale_cross(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A crossed quote older than t-D does not block a favorable decision at t."""
+    dwell = 2_000_000_000
+    monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
+    gap = dwell + 100_000_000
+    tape = make_tape(seed=11, n=2, symbol="SYN", start_ns=T0, interval_ns=gap, size=1000)
+    crossed = force_class(tape, 0, "CROSSED")
+    current = crossed[1]
+    records = run_synthetic(crossed, symbols=("SYN",))
+    nonvacuous(records, "GateDecision", scenario="m2_dwell")
+    hits = [
+        json.loads(row.canonical[row.canonical.index("{") :])
+        for row in records
+        if row.type_name == "GateDecision"
+    ]
+    assert any(
+        body.get("gate") == "FAVORABLE" and body.get("rail_sequence") == current.sequence
+        for body in hits
+    ), f"no favorable decision at {current.sequence}"
