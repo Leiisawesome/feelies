@@ -30949,3 +30949,48 @@ OWNER:       campaign 15.
                  non-gating).
   OUTCOME:       parity hold. compare pre-P-62a -> post-merge-P-62a:
                  64 -> 64, changed 0.
+
+---
+
+## P-22a1
+  STEP:          P-22a1 (G10/N1-N7 spec, additive schema, resolution,
+                 attribution, reference rail, members 1/2/11)
+  PR:            #263
+  RESULT SHA:    E0 66a99dc07d87eabcb4a2f23868288ae67b6e7d6f;
+                 head 86cb058fc3c2b428484b080238b0665dcd1dc44e (exec/P-22a1);
+                 merged as 55bcf21258d13b5dcd00b01960e4d50899ffaa29.
+  PREDICTION:    NONE held. 64/64 constants unchanged. APP oracle unchanged
+                 (10 fills, net 24.61, trade hash 18f6bb4e…).
+                 Test pins moved exactly as pre-registered: _GATE_FIELDS
+                 (+suppressions), schema drift, parity manifest.
+                 compare pre-P-22a1 -> post-P-22a1: 64 -> 64, changed 0.
+                 compare pre-P-22a1 -> post-merge-P-22a1: 64 -> 64, changed 0.
+  DECISIONS:     D-95..D-105. G10 ESCALATION_NOOP. N1 cursor-before-engine
+                 + rail_sequence check. N2 finalize -> index N, cursor
+                 "EOT". N3 order_id/side. N4-N5 None moves/extremes. N6 k
+                 from repr. N7 EOT with no usable side. B10 clause revision
+                 + frozen-events conformance. Member 11 gross cross-check.
+                 P-22a split.
+  MILESTONE:     member 4 rail and unusable-side clauses GREEN on the
+                 reference rail (first member passing on a
+                 correct-by-construction implementation).
+  VALIDATION:    gate "5162 passed, 5 skipped, 54 deselected, 1 xfailed, 48 warnings in 473.71s (0:07:53)";
+                 battery_real "11 passed, 182 deselected in 117.02s (0:01:57)";
+                 CI check 7m2s / parity oracle 4m7s (D-71; run 36311037655
+                 on 86cb058f; battery step "11 passed, 182 deselected in
+                 147.27s (0:02:27)"; Bugbot pass). Merge CI run 36313362980
+                 on 55bcf212: check 9m40s / parity oracle 2m33s; battery
+                 step "11 passed, 182 deselected in 90.66s (0:01:30)";
+                 Bugbot neutral.
+  STAGE:         A.
+  OPEN:          P-22a2 (reference engine, trace table, all members green
+                 on the reference, reference-battery CI job);
+                 G10/N-rules implemented in the reference only;
+                 functional F-P13b.
+  NOTES:         Post-merge capture moved to
+                 ..\feelies-captures\P-22a1\baseline_post-merge-P-22a1.json.
+                 Full-suite capture records 1 failed:
+                 test_two_alphas_hold_live_targets_on_one_symbol (functional,
+                 non-gating).
+  OUTCOME:       parity hold. compare pre-P-22a1 -> post-merge-P-22a1:
+                 64 -> 64, changed 0.
