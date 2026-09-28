@@ -395,12 +395,91 @@ def _last_usable_snapshot_mark(snapshots: Sequence[Mapping[str, object]]) -> int
     return found
 
 
+def _path_rail_sequence(closed: Mapping[str, object]) -> int | None:
+    """Rail sequence carried on a triggered path, if the close recorded one.
+
+    contracts.md §2:294-295. Every path on the close triggered on the deciding
+    event. Prefer the path named by ``exit_reason``.
+    """
+    paths = closed.get("triggered_paths")
+    if not isinstance(paths, list):
+        return None
+    reason = str(closed.get("exit_reason"))
+    fallback: int | None = None
+    for path in paths:
+        if not isinstance(path, dict) or not isinstance(path.get("rail_sequence"), int):
+            continue
+        sequence = int(path["rail_sequence"])
+        if str(path.get("path")) == reason:
+            return sequence
+        if fallback is None:
+            fallback = sequence
+    return fallback
+
+
+def _first_triggering_gate(
+    closed: Mapping[str, object],
+    decisions: Sequence[Mapping[str, object]] | None,
+) -> int | None:
+    """First triggering gate outcome that is not ESCALATION_NOOP.
+
+    contracts.md §2:287 and §2:294-295. A re-emission does not move the
+    deciding event, and a later gate outcome while EXITING is ESCALATION_NOOP.
+    HORIZON and INVALIDATION are resolve predicates (§2:259-263), not gate
+    fires; their deciding rail is the last outcome that is not ESCALATION_NOOP.
+    """
+    if not decisions:
+        return None
+    cell = str(closed["cell_id"])
+    reason = str(closed.get("exit_reason"))
+    wanted = _EXIT_GATE.get(reason)
+    first_fire: int | None = None
+    last_live: int | None = None
+    for body in decisions:
+        if str(body.get("cell_id")) != cell:
+            continue
+        sequence = body.get("rail_sequence")
+        if not isinstance(sequence, int):
+            continue
+        outcome = str(body.get("outcome"))
+        if outcome != "ESCALATION_NOOP":
+            last_live = sequence
+        if outcome != "fire":
+            continue
+        if wanted in ("ADVERSE", "FAVORABLE") and str(body.get("gate")) != wanted:
+            continue
+        if first_fire is None:
+            first_fire = sequence
+    if first_fire is not None:
+        return first_fire
+    if reason in ("HORIZON", "INVALIDATION"):
+        return last_live
+    return None
+
+
+def _triggered_prices(closed: Mapping[str, object]) -> list[int]:
+    paths = closed.get("triggered_paths")
+    if not isinstance(paths, list):
+        return []
+    prices: list[int] = []
+    for path in paths:
+        if isinstance(path, dict) and isinstance(path.get("proposed_price_cents"), int):
+            prices.append(int(path["proposed_price_cents"]))
+    return prices
+
+
 def check_m11_proposed(
     closed: Mapping[str, object],
     snapshots: Sequence[Mapping[str, object]],
     quotes: Mapping[int, NBBOQuote],
+    decisions: Sequence[Mapping[str, object]] | None = None,
 ) -> None:
-    """Proposed price is the executable side of the deciding quote (B3)."""
+    """Proposed price is the executable side of the deciding quote (B3).
+
+    The deciding rail is the event on which ``exit_reason`` first triggered
+    (contracts.md §2:269-279, §2:287, §2:294-295), not the last snapshot.
+    END_OF_TAPE keeps the last usable rail mark (G9, N7).
+    """
     if _skip_stale_end(closed):
         return
     if str(closed.get("exit_reason")) == "END_OF_TAPE":
@@ -409,14 +488,22 @@ def check_m11_proposed(
         if got != expected:
             raise AssertionError(f"M11: proposed {got} != last usable executable {expected}")
         return
-    if not snapshots:
-        raise AssertionError("M11: no snapshot for the deciding quote")
-    sequence = int(snapshots[-1]["rail_sequence"])  # type: ignore[arg-type]
+    sequence = _path_rail_sequence(closed)
+    if sequence is None:
+        sequence = _first_triggering_gate(closed, decisions)
+    if sequence is None:
+        if not snapshots:
+            raise AssertionError("M11: no snapshot for the deciding quote")
+        sequence = int(snapshots[-1]["rail_sequence"])  # type: ignore[arg-type]
     quote = quotes.get(sequence)
     if quote is None:
         raise AssertionError(f"M11: deciding quote {sequence} is not on the tape")
     side = str(closed["side"])
-    executable = _cents(quote.bid if side == "LONG" else quote.ask)
+    prices = _triggered_prices(closed)
+    if len(prices) > 1:
+        executable = min(prices) if side == "LONG" else max(prices)
+    else:
+        executable = _cents(quote.bid if side == "LONG" else quote.ask)
     got = closed.get("proposed_price_cents")
     if got != executable:
         raise AssertionError(f"M11: proposed {got} != executable {executable} of quote {sequence}")
@@ -462,6 +549,7 @@ def audit_m11(records: Records) -> int:
             snapshots.setdefault(str(body["cell_id"]), []).append(body)
         elif row.type_name == "PositionClosed":
             closed.append((row, _body(row.canonical)))
+    decisions = _gate_bodies(records)
     skipped = 0
     for row, body in closed:
         snaps = snapshots.get(str(body["cell_id"]), [])
@@ -469,7 +557,7 @@ def audit_m11(records: Records) -> int:
         if _skip_stale_end(body):
             skipped += 1
             continue
-        check_m11_proposed(body, snaps, records.quotes)
+        check_m11_proposed(body, snaps, records.quotes, decisions)
         check_m11_gross(row, records.quotes)
     return skipped
 
