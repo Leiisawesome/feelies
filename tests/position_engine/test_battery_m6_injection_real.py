@@ -15,6 +15,7 @@ from tests.position_engine.scenarios import (
     check_a2,
     check_a3,
     nonvacuous,
+    require_entry_fills,
     placement_rule,
     rth_replay,
     run_real,
@@ -132,6 +133,7 @@ def _gap(sequences: set[int]):
 @_REAL
 def test_m6_real() -> None:
     clean = run_real(fraction=_FRACTION)
+    require_entry_fills(clean)
     nonvacuous(clean, PositionClosed, scenario="m6_real")
     events = slice_real_events(rth_replay(), fraction=_FRACTION)
     spans, decisions = _spans(clean, events)

@@ -19,6 +19,7 @@ from tests.position_engine.scenarios import (
     engine_class,
     format_line,
     nonvacuous,
+    require_entry_fills,
     project_for_multiname,
     run_real,
     run_synthetic,
@@ -89,6 +90,7 @@ def _fresh(name: str) -> list[str]:
 def test_m1_clock_syn() -> None:
     tape = _syn_tape()
     baseline = run_synthetic(tape, symbols=("SYN",))
+    require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_clock_syn")
     _one_snapshot_per_rail(baseline)
     with _clock():
@@ -100,6 +102,7 @@ def test_m1_clock_syn() -> None:
 @_REAL
 def test_m1_clock_real() -> None:
     baseline = run_real()
+    require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_clock_real")
     _one_snapshot_per_rail(baseline)
     with _clock():
@@ -111,6 +114,7 @@ def test_m1_clock_real() -> None:
 def test_m1_gates_syn() -> None:
     tape = _syn_tape()
     baseline = run_synthetic(tape, symbols=("SYN",))
+    require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_gates_syn")
     _one_snapshot_per_rail(baseline)
     records = run_synthetic(
@@ -125,6 +129,7 @@ def test_m1_gates_syn() -> None:
 @_REAL
 def test_m1_gates_real() -> None:
     baseline = run_real()
+    require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_gates_real")
     _one_snapshot_per_rail(baseline)
     records = run_real(engine_factory=partial(engine_class(), gate_order=("FAVORABLE", "ADVERSE")))
@@ -134,6 +139,7 @@ def test_m1_gates_real() -> None:
 @_MARK
 def test_m1_fresh_syn() -> None:
     records = run_synthetic(_syn_tape(), symbols=("SYN",))
+    require_entry_fills(records)
     nonvacuous(records, PositionSnapshot, PositionClosed, scenario="m1_fresh_syn")
     _one_snapshot_per_rail(records)
     assert _fresh("syn_m1") == [format_line(row) for row in records]
@@ -143,6 +149,7 @@ def test_m1_fresh_syn() -> None:
 @_REAL
 def test_m1_fresh_real() -> None:
     records = run_real()
+    require_entry_fills(records)
     nonvacuous(records, PositionSnapshot, PositionClosed, scenario="m1_fresh_real")
     _one_snapshot_per_rail(records)
     assert _fresh("real_m1") == [format_line(row) for row in records]
@@ -152,6 +159,7 @@ def test_m1_fresh_real() -> None:
 def test_m1_sinks_syn() -> None:
     tape = _syn_tape()
     baseline = run_synthetic(tape, symbols=("SYN",))
+    require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_sinks_syn")
     _one_snapshot_per_rail(baseline)
     records = run_synthetic(tape, symbols=("SYN",), attach_sink=False)
@@ -162,6 +170,7 @@ def test_m1_sinks_syn() -> None:
 @_REAL
 def test_m1_sinks_real() -> None:
     baseline = run_real()
+    require_entry_fills(baseline)
     nonvacuous(baseline, PositionSnapshot, PositionClosed, scenario="m1_sinks_real")
     _one_snapshot_per_rail(baseline)
     records = run_real(attach_sink=False)
@@ -172,6 +181,7 @@ def test_m1_sinks_real() -> None:
 def test_m1_multiname() -> None:
     syn = _syn_tape()
     alone = run_synthetic(syn, symbols=("SYN",))
+    require_entry_fills(alone)
     nonvacuous(alone, PositionSnapshot, PositionClosed, scenario="m1_multiname")
     _one_snapshot_per_rail(alone)
     zzz = make_tape(

@@ -1,4 +1,8 @@
-"""Member 11 audit reconstruction, plus hand-built self-tests (D-85, D-104)."""
+"""Member 11 audit reconstruction, plus hand-built self-tests (D-85, D-104).
+
+The hand-built streams (satisfying, drift, zero seed, level-priced) have no run
+precondition: they are not engine output.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,9 @@ from tests.position_engine.scenarios import (
     check_m11_gross,
     check_m11_moves,
     check_m11_proposed,
+    fixture_variant,
     nonvacuous,
+    require_entry_fills,
     run_synthetic,
 )
 from tests.position_engine.tapes import make_tape
@@ -139,9 +145,28 @@ def test_m11_level_priced_proposal_fails() -> None:
         check_m11_proposed(closed, [snap], _quotes())
 
 
+def _v3a() -> dict[str, object]:
+    return fixture_variant(
+        horizon_seconds=30,
+        fee_round_trip_ticks=0,
+        T_seconds=16_000,
+        centre_ticks=11,
+        band_ticks=0,
+        lo_ticks=2,
+        target_ticks=4,
+    )
+
+
 @_MARK
 def test_m11_synthetic() -> None:
-    tape = make_tape(seed=11, n=400, symbol="SYN", start_ns=T0, size=1000)
-    records = run_synthetic(tape, symbols=("SYN",))
+    """Seed 11, n=2200 (220 s at 100 ms). V3a horizon 30.
+
+    Odd boundaries 1, 3, 5 and 7 alternate LONG and SHORT. That span closes at
+    least three cells with at least two exit reasons once an engine finalizes
+    (measured on the reference engine: 4 cells, ADVERSE, INVALIDATION, END_OF_TAPE).
+    """
+    tape = make_tape(seed=11, n=2200, symbol="SYN", start_ns=T0, size=1000)
+    records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_entry_fills(records)
     nonvacuous(records, "PositionClosed", scenario="m11")
     audit_m11(records)
