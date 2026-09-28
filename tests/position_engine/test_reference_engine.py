@@ -13,6 +13,8 @@ from feelies.core.events import (
     DeRiskRequirement,
     GateDecision,
     MarkRailUpdate,
+    OrderAck,
+    OrderAckStatus,
     PositionClosed,
     PositionSnapshot,
     RailOrientation,
@@ -400,14 +402,14 @@ def test_none_marks_produce_none_moves() -> None:
 
 
 def test_requirement_order_id_and_reducing_side() -> None:
-    """contracts.md §2:283-284 order_id is cell_id|EXIT; LONG sells and SHORT buys (D-98)."""
+    """contracts.md §2:289-291 order_id is cell_id|EXIT|1; LONG sells (D-98, D-106)."""
     bus, _engine_obj, log = _engine(_policy(target=4))
     bus.publish(_rail(1, 1_000))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=2, quantity=2))
     bus.publish(_rail(3, 2_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100)))
     requirement = _of(log, DeRiskRequirement)[0]
     assert isinstance(requirement, DeRiskRequirement)
-    assert requirement.order_id == "SYN|sig|1|LONG|EXIT"
+    assert requirement.order_id == "SYN|sig|1|LONG|EXIT|1"
     assert requirement.side is Side.SELL
     assert requirement.source_layer == "POSITION"
     assert requirement.quantity == 2
@@ -467,3 +469,156 @@ def test_one_snapshot_per_rail_event() -> None:
         if isinstance(row, PositionSnapshot)
     ]
     assert keys == [("SYN|sig|1|LONG", 3), ("SYN|sig|1|LONG", 4)]
+
+
+def _reject(bus: EventBus, sequence: int, timestamp_ns: int, order_id: str) -> None:
+    bus.publish(
+        OrderAck(
+            timestamp_ns=timestamp_ns,
+            correlation_id=f"ack-{sequence}",
+            sequence=sequence,
+            order_id=order_id,
+            symbol="SYN",
+            status=OrderAckStatus.REJECTED,
+            reason="crossed or locked quote",
+        )
+    )
+
+
+def _profit() -> RailOrientation:
+    return _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100)
+
+
+def test_g11_reemits_on_the_next_usable_rail_event() -> None:
+    """contracts.md §2:157-161. REJECTED exit re-emits on the next usable rail (D-106)."""
+    bus, _engine_obj, log = _engine(_policy(target=4))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(3, 2_000, _profit()))
+    first = _of(log, DeRiskRequirement)
+    assert len(first) == 1
+    assert isinstance(first[0], DeRiskRequirement)
+    reason = first[0].reason
+    _reject(bus, 4, 2_100, first[0].order_id)
+    blocked = _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100, absent=True)
+    bus.publish(_rail(5, 3_000, blocked))
+    assert len(_of(log, DeRiskRequirement)) == 1
+    bus.publish(_rail(6, 4_000, _profit()))
+    requirements = _of(log, DeRiskRequirement)
+    assert len(requirements) == 2
+    assert isinstance(requirements[1], DeRiskRequirement)
+    assert requirements[1].order_id == first[0].order_id.removesuffix("1") + "2"
+    assert requirements[1].reason == reason
+    fires = [
+        row
+        for row in _of(log, GateDecision)
+        if isinstance(row, GateDecision) and row.gate == "FAVORABLE" and row.outcome == "fire"
+    ]
+    assert [row.rail_sequence for row in fires] == [3]
+
+
+def test_g11_no_reemission_without_a_rejection() -> None:
+    """contracts.md §2:161 and §2:172. No second requirement while one is live (D-106)."""
+    bus, _engine_obj, log = _engine(_policy(target=4))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(3, 2_000, _profit()))
+    bus.publish(_rail(4, 3_000, _profit()))
+    bus.publish(_rail(5, 4_000, _profit()))
+    assert len(_of(log, DeRiskRequirement)) == 1
+
+
+def test_g11_attempt_numbering() -> None:
+    """contracts.md §2:159-160. Attempts count from 1 and each one is recorded (D-106)."""
+    bus, _engine_obj, log = _engine(_policy(target=4))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(3, 2_000, _profit()))
+    first = _of(log, DeRiskRequirement)[0]
+    assert isinstance(first, DeRiskRequirement)
+    _reject(bus, 4, 2_100, first.order_id)
+    bus.publish(_rail(5, 3_000, _profit()))
+    second = _of(log, DeRiskRequirement)[1]
+    assert isinstance(second, DeRiskRequirement)
+    _reject(bus, 6, 3_100, second.order_id)
+    bus.publish(_rail(7, 4_000, _profit()))
+    ids = [row.order_id for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)]
+    assert ids == [
+        "SYN|sig|1|LONG|EXIT|1",
+        "SYN|sig|1|LONG|EXIT|2",
+        "SYN|sig|1|LONG|EXIT|3",
+    ]
+    reasons = [row.reason for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)]
+    assert reasons == [first.reason, first.reason, first.reason]
+
+
+def test_n3_attempt_suffix() -> None:
+    """contracts.md §2:289-291. First form is cell_id|EXIT|1; SHORT buys (D-98, D-106)."""
+    bus, _engine_obj, log = _engine(_policy(target=4))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=-2, quantity=-2))
+    cheap = _orient(valuation=9_900, worst=9_900, forced=9_900, dwelled=9_900)
+    bus.publish(_rail(3, 2_000, cheap))
+    requirement = _of(log, DeRiskRequirement)[0]
+    assert isinstance(requirement, DeRiskRequirement)
+    assert requirement.order_id == "SYN|sig|1|SHORT|EXIT|1"
+    assert requirement.side is Side.BUY
+
+
+def test_precondition_entry_fill_births_the_cell() -> None:
+    """contracts.md §2:145-148. Rails alone birth nothing; an entry fill does (D-107)."""
+    bus, _engine_obj, log = _engine()
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_rail(2, 2_000))
+    assert _of(log, PositionSnapshot) == []
+    bus.publish(_slice(3, 2_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(4, 3_000))
+    snaps = _of(log, PositionSnapshot)
+    assert len(snaps) == 1
+    assert isinstance(snaps[0], PositionSnapshot)
+    assert snaps[0].cell_id == "SYN|sig|1|LONG"
+    assert snaps[0].size == 1
+
+
+def test_precondition_clean_window_after_a_cross() -> None:
+    """contracts.md §1:89 and §9:430-432. A later clean window is not the earlier cross (D-87)."""
+    bus, _engine_obj, log = _engine(_policy(target=4))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    crossed = _orient(valuation=10_000, worst=10_000, forced=10_000, dwelled=10_000, clean=False)
+    bus.publish(_rail(3, 2_000, crossed, crossed=True))
+    blocked = [
+        row
+        for row in _of(log, GateDecision)
+        if isinstance(row, GateDecision) and row.gate == "FAVORABLE"
+    ]
+    assert blocked[-1].outcome == "suppressed"
+    assert blocked[-1].reason == "CROSSED"
+    bus.publish(_rail(4, 3_000, _profit()))
+    fired = [
+        row
+        for row in _of(log, GateDecision)
+        if isinstance(row, GateDecision) and row.gate == "FAVORABLE" and row.outcome == "fire"
+    ]
+    assert len(fired) == 1
+    assert fired[0].rail_sequence == 4
+
+
+def test_precondition_later_entry_births_a_new_cell() -> None:
+    """contracts.md §2:145-148. After close, a later entry fill births a new cell (D-107)."""
+    bus, _engine_obj, log = _engine(_policy(target=4))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(3, 2_000, _profit()))
+    requirement = _of(log, DeRiskRequirement)[0]
+    assert isinstance(requirement, DeRiskRequirement)
+    bus.publish(
+        _slice(4, 2_000, order_id=requirement.order_id, price="101.00", fill_quantity=-1, quantity=0)
+    )
+    assert len(_of(log, PositionClosed)) == 1
+    bus.publish(_rail(5, 3_000))
+    bus.publish(_slice(6, 3_000, order_id="next", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(7, 4_000))
+    snaps = [row for row in _of(log, PositionSnapshot) if isinstance(row, PositionSnapshot)]
+    assert snaps[-1].cell_id == "SYN|sig|5|LONG"
+    assert snaps[-1].size == 1

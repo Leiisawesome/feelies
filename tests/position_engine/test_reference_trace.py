@@ -55,6 +55,8 @@ _GOVERNS = frozenset(
         "D-102",
         "D-103",
         "D-104",
+        "D-106",
+        "D-109",
     }
 )
 _EXCLUDED = frozenset(
@@ -68,12 +70,14 @@ _EXCLUDED = frozenset(
         "D-93",
         "D-94",
         "D-105",
+        "D-107",
+        "D-108",
     }
 )
 _BOUND = frozenset(
     {f"D-{number}" for number in range(40, 48)}
     | {"D-62"}
-    | {f"D-{number}" for number in range(76, 106)}
+    | {f"D-{number}" for number in range(76, 110)}
 )
 
 
@@ -112,7 +116,12 @@ def _resolve(spec: str) -> None:
 
 
 def test_trace_covers_governing_decisions() -> None:
-    """D-40..D-47, D-62, D-76..D-105: governing ids appear; the rest are excluded."""
+    """D-40..D-47, D-62, D-76..D-109: governing ids appear; the rest are excluded.
+
+    D-107 and D-108 are the stage-gate order and the rung-audit rule. They do
+    not govern engine or rail behaviour. D-106 and D-109 do: re-emission, and
+    the END_OF_TAPE price the engine writes.
+    """
     assert _GOVERNS | _EXCLUDED == _BOUND
     assert not (_GOVERNS & _EXCLUDED)
     text = _TRACE.read_text(encoding="utf-8")
