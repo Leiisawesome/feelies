@@ -2272,18 +2272,33 @@ def _scenario(name: str) -> Records:
     raise SystemExit(f"unknown scenario {name}")
 
 
+def _records_path(args: Sequence[str]) -> str | None:
+    """Parent-supplied record file. An argument wins over FEELIES_RECORDS_OUT."""
+    if len(args) == 3 and args[1] in {"syn_m1", "real_m1"}:
+        return args[2]
+    path = os.environ.get("FEELIES_RECORDS_OUT", "").strip()
+    return path or None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv if argv is None else argv)
     if len(args) == 4 and args[1] == "prefix":
         rows = run_real(end_index=int(args[2]), digest_only=True).widened
         _dump_widened(args[3], rows)
         return 0
-    if len(args) != 2:
+    out = _records_path(args)
+    if (out is None and len(args) != 2) or (out is not None and len(args) not in {2, 3}):
         raise SystemExit(
-            "usage: python -m tests.position_engine.scenarios <syn_m1|real_m1|prefix>"
+            "usage: python -m tests.position_engine.scenarios <syn_m1|real_m1|prefix> [records_out]"
         )
-    for row in _scenario(args[1]):
-        print(format_line(row))
+    lines = [format_line(row) for row in _scenario(args[1])]
+    if out is not None:
+        text = "\n".join(lines)
+        if lines:
+            text += "\n"
+        Path(out).write_text(text, encoding="utf-8", newline="\n")
+    for line in lines:
+        print(line)
     return 0
 
 
