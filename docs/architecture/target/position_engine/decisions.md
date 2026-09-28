@@ -112,6 +112,10 @@ edit to the spec file in a later docs rung, citing the entry.
 | D-103 | 2026-09-27 | P-22a1 | What remains of member 1's immutability clause? | Drop the digest-at-end half. Engine events are frozen, slotted and tuple-only, so an in-place rewrite is impossible. Keep at most one PositionSnapshot per (cell_id, rail_sequence). A conformance test keeps those types frozen with no list, dict or set fields. | A digest cannot observe a mutation the type system already forbids. A second snapshot for the same rail event is still a different record. | battery.md member 1 |
 | D-104 | 2026-09-27 | P-22a1 | Where does member 11 read gross? | Gross is checked as member 11's rebuild from the tape and the legs versus scenarios.cell_economics. The two computations must agree. No recorded gross field exists. | Section 2 forbids a net figure on the close. Two independent rebuilds are the check. | battery.md member 11; contracts.md §2 |
 | D-105 | 2026-09-27 | P-22a1 | How does P-22a split? | P-22a splits into P-22a1 (this rung: G10/N1-N7 spec, additive schema, resolution, attribution, reference rail, import guard, members 1/2/11) and P-22a2 (reference engine, trace-table engine rows, all members green on the reference, reference-battery CI job). | The rail and the seams do not need the cell. The engine, the full trace and the CI job are the next rung. | phase14 ladder |
+| D-106 | 2026-09-28 | P-22a2f | What happens when the live exit order is acknowledged REJECTED? | G11. The engine re-emits the requirement at the next usable rail event. order_id = cell_id + "\|EXIT\|" + attempt, attempt counting from 1, so N3's first form is cell_id\|EXIT\|1. Reason and deciding event are unchanged. Each attempt is recorded. At most one live requirement at a time. Member 5: one live requirement at a time; a re-emission only after a REJECTED ack for the previous attempt. G10 (ESCALATION_NOOP) is unchanged. | BLIND fires on unusable data, exactly when an exit order is most likely to be rejected. Without re-emission the cell stays EXITING indefinitely. | contracts.md §2; battery.md member 5 |
+| D-107 | 2026-09-28 | P-22a2f | Where does PRECONDITION sit, and does the stage gate accept it? | Assertion order is baseline, then PRECONDITION, then NONVACUOUS, then the property. PRECONDITION asserts engine-independent facts (the run contains at least one entry fill; the tape reaches a boundary the fixture enters on). The stage gate never treats a PRECONDITION failure as expected. It is red at every stage. | A gated PRECONDITION would hide a fixture that never enters, and the property would stay untested. | battery.md stage gate; tests/position_engine/conftest.py |
+| D-108 | 2026-09-28 | P-22a2f | What does a rung that adds a D-id audit? | Every rung that adds a D-id audits the member helpers for affected assertions, as in P-22a2f S0. An inconsistency is fixed only when the fix is mechanical and cites the D-id. Otherwise the rung stops. | A new rule that contradicts a helper leaves the next engine rung red for the wrong reason. | battery.md; tests/position_engine |
+| D-109 | 2026-09-28 | P-22a2f | What does A3 check on an END_OF_TAPE close? | For an END_OF_TAPE close, A3 checks proposed_price_cents equals the executable exit side of the last usable rail update, or None with closed_on_stale_data (N7, D-102). For every other close, the fill rule stands. | G9 closes have no order and no fill. Requiring an exit fill rejects a close the contract defines. | battery.md member 6; scenarios.py check_a3 |
 
 ### D-66 pre-registered prediction
 
@@ -148,10 +152,21 @@ types; event_schema_hash covers NBBOQuote and Trade only).
 Nothing else moves.
 ```
 
+### P-22a2f pre-registered prediction
+
+```
+64/64 parity constants unchanged.
+Nothing else moves.
+Before the F-P13b xfail the capture baseline is RED
+(test_two_alphas_hold_live_targets_on_one_symbol).
+After the xfail the capture baseline is GREEN.
+```
+
 ## Findings
 
 | Id | Date | Rung | Finding |
 |---|---|---|---|
 | F-P13 | 2026-09-26 | P-13 | The legacy oracle's net fell 103.93 → 24.61 under causal calibration. Any research result on the regime-gated or regime-sized backtest path before P-13 is to be re-run causally before campaign 15 relies on it. |
-| F-P13b | 2026-09-26 | P-13 | test_two_alphas_hold_live_targets_on_one_symbol previously passed only through the removed same-session scan. Its fix is the D-63 live wiring (paper/live campaign). Non-gating. |
+| F-P13b | 2026-09-26 | P-13 | test_two_alphas_hold_live_targets_on_one_symbol previously passed only through the removed same-session scan. Its fix is the D-63 live wiring (paper/live campaign). Non-gating. P-22a2f marks it xfail(strict=True) until that wiring lands. |
+| F-P22a2f | 2026-09-28 | P-22a2f | The backtest router rejects a MARKET order submitted on a crossed or locked quote rather than deferring it to the next usable quote. Logged for the execution-simulator rung. Legacy APP session (bt_app.yaml, 2026-03-26): 0 of 10 orders were submitted while the quote at submit was CROSSED or LOCKED, so the reject path did not run. |
 | F-P13c | 2026-09-26 | P-13 | The populate step's 2026-03-25 backtest exits 2 because 2026-03-24 is uncalibrated (D-67). Handled per B6: populate calls ingest_data, which writes the cache and does not run that backtest. |

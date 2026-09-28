@@ -154,16 +154,22 @@ resolves the exit; writes the closing record.
 
 - `CLOSED` is absorbing and deaf. *Reason:* without it a second path fires a moment later on
   a position already flat — two sells for one buy.
-- In `EXITING`, gates still evaluate and every triggered path is logged, but no second
-  requirement is emitted. A higher-ranked path may escalate only if the live exit order is
-  non-marketable; in this campaign every engine-13 exit is MARKET, so escalation is a no-op
-  that is recorded, never acted on.
+- In `EXITING`, gates still evaluate and every triggered path is logged. (G11, D-106) If the
+  live exit order for a cell's requirement is acknowledged REJECTED, the engine re-emits the
+  requirement at the next usable rail event with `order_id = cell_id + "|EXIT|" + attempt`
+  (attempt counts from 1; N3's form becomes `cell_id|EXIT|1` for the first). Reason and
+  deciding event are unchanged; each attempt is recorded; at most one live requirement at a
+  time. *Rationale:* BLIND fires on unusable data, exactly when an exit order is most likely
+  to be rejected; without re-emission the cell stays EXITING indefinitely. A higher-ranked
+  path may escalate only if the live exit order is non-marketable; in this campaign every
+  engine-13 exit is MARKET, so escalation is a no-op that is recorded, never acted on.
+  (G10 is unchanged.)
 - (D-95) In `EXITING`, a gate that triggers a path ranked above the live requirement's reason
   publishes its `GateDecision` with outcome `ESCALATION_NOOP`; no order.
   `PositionClosed.triggered_paths` lists every triggered path.
 - (D-76) In `EXITING`, each exit fill reduces the cell's open quantity and is appended as a
-  `PositionFillLeg`. The next rail event's snapshot uses the remaining quantity. No second
-  requirement (the rule above is unchanged). The cell closes when open quantity reaches 0.
+  `PositionFillLeg`. The next rail event's snapshot uses the remaining quantity. A partial
+  fill does not emit another requirement while one is live (G11, D-106). The cell closes when open quantity reaches 0.
   The closing record lists every exit leg. Economics are computed from the legs in integer cents.
 - (D-81) At most one open cell per `(strategy_id, symbol)`. An opposite-direction fill while a
   cell is open closes it with `EXTERNAL:SIGN_FLIP` for the overlapping quantity; any excess
@@ -277,11 +283,12 @@ mix the levels are judged by.
   `size`, `entry_cost_cents`, `entry_spread_ticks`, `horizon_deadline_ns`, the three moves in
   cents, the three extremes, the position side's `RailOrientation` and the shared rail flags,
   unaltered. Cleans nothing, defaults nothing.
-- `DeRiskRequirement` (once per episode that resolves to a requirement; `END_OF_TAPE` emits
-  none, D-84): `source_layer="POSITION"`, slice-scoped, reason
-  one of `ADVERSE_EXCURSION`, `HORIZON`, `INVALIDATION`, `FAVORABLE_EXCURSION`, quantity =
-  full slice, order type MARKET [A-12]. (D-98) `order_id = cell_id + "|EXIT"`. Side is the
-  side that reduces the cell (`LONG` → `SELL`, `SHORT` → `BUY`).
+- `DeRiskRequirement` (at most one live requirement at a time; a REJECTED ack is re-emitted
+  per G11, D-106; `END_OF_TAPE` emits none, D-84): `source_layer="POSITION"`, slice-scoped,
+  reason one of `ADVERSE_EXCURSION`, `HORIZON`, `INVALIDATION`, `FAVORABLE_EXCURSION`,
+  quantity = full slice, order type MARKET [A-12]. (D-98, D-106)
+  `order_id = cell_id + "|EXIT|" + attempt`, attempt counting from 1. Side is the side that
+  reduces the cell (`LONG` → `SELL`, `SHORT` → `BUY`).
 - `PositionClosed`, once, write-once: `cell_id`, symbol, strategy, side; every entry fill
   (price, qty, ts, seq); `entry_spread_ticks`; `horizon_deadline_ns`; drawn stop level;
   exit reason; `triggered_paths` (each path triggered on the deciding event, its proposed

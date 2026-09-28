@@ -158,7 +158,8 @@ TAPE:              real session, plus synthetic forcing collisions: a gap throug
 SETUP:             trailing favorable armed; invalidation fixture signal
 ASSERTS:           for every closed cell: proposed price = worst among triggered_paths, and
                    reason = highest-ranked triggered path (ADVERSE > HORIZON > INVALIDATION
-                   > FAVORABLE); exactly one requirement per episode
+                   > FAVORABLE); one live requirement at a time; a re-emission only after a
+                   REJECTED ack for the previous attempt (G11, D-106)
 FAILURE LOOKS LIKE:cell, deciding event, candidate list
 BLOCKS THE BUILD:  yes — red until stage E
 ```
@@ -190,8 +191,10 @@ ASSERTS:           A1 every FAVORABLE exit, in every run, is decided on an event
                    A2 ignorable injections change no exit: (cell_id, reason, deciding sequence, exit price)
                       equal the clean run for every cell; the expected flag is set (lived_through_feed_gap on
                       cells alive at a feed-gap event); ≥1 suppression record per injected copy
-                   A3 every exit price equals the executable side of a real tape quote at or after the
-                      decision quote (the fill quote, F1)
+                   A3 for an END_OF_TAPE close, proposed_price_cents equals the executable exit side of
+                      the last usable rail update, or None with closed_on_stale_data (N7, D-102, D-109);
+                      for every other close, the exit price equals the executable side of the fill
+                      quote at or after the decision (the fill quote, F1)
                    A4 gap through the adverse barrier with gap < A: reason ADVERSE; exit at the executable
                       side of q_g+1; strictly worse than the barrier price; all values computed from the tape
                    A5 for each of the three absence measures: no BLIND just under A or at exactly A; BLIND
@@ -304,8 +307,12 @@ battery members.
 
 Marker: `@pytest.mark.battery_member(member=N, green_from="<A–E>", red_reason=r"...")`.
 A member split by stage (member 4's rail and birth halves) is two test functions with their
-own `green_from`. Every member asserts non-vacuity first (records of the kind it judges exist)
-with a message beginning `NONVACUOUS:`, then its property.
+own `green_from`. Assertion order is baseline, then PRECONDITION, then NONVACUOUS, then the
+property (D-107). PRECONDITION asserts engine-independent facts (the run contains at least
+one entry fill; the tape reaches a boundary the fixture enters on; an injected quote is
+present). A message beginning `PRECONDITION:` is a real failure at every stage. The stage
+gate never treats it as expected red. NONVACUOUS (records of the kind the member judges
+exist) uses a message beginning `NONVACUOUS:`, then the property.
 
 ## Broken engines (stage A gate)
 
