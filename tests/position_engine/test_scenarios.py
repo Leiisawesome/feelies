@@ -1063,14 +1063,115 @@ def test_precondition_names_a_zero_count_and_passes_an_opening_fill() -> None:
     assert require_entry_fills(held) == 1
 
 
+def test_a3a_rejects_a_level_price_that_is_not_the_fill() -> None:
+    """A close priced at the level, rather than the exit fill ack, fails A3a."""
+    close = _priced_close("C", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=2, price=50)
+    fire = Record(
+        2,
+        "GateDecision",
+        _canon(
+            "GateDecision",
+            {
+                "cell_id": "C",
+                "rail_sequence": 2,
+                "gate": "ADVERSE",
+                "outcome": "fire",
+                "reason": "",
+            },
+        ),
+        None,
+        1,
+    )
+    ack = Record(
+        2,
+        "OrderAck",
+        _canon(
+            "OrderAck",
+            {
+                "order_id": "C|EXIT|1",
+                "status": "FILLED",
+                "symbol": "SYN",
+                "timestamp_ns": 2,
+                "price_cents": 40,
+            },
+        ),
+        None,
+        2,
+    )
+    records = Records([fire, close, ack], {2: _book(2, 40, 41, 2)}, ())
+    with pytest.raises(AssertionError, match=r"^A3a:"):
+        check_a3(records)
+
+
+def test_a3b_rejects_a_fill_better_than_its_pricing_quote() -> None:
+    """A fill better than the quote being processed fails A3b. A3b assumes the R2 model."""
+    close = _priced_close("C", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=2, price=50)
+    fire = Record(
+        2,
+        "GateDecision",
+        _canon(
+            "GateDecision",
+            {
+                "cell_id": "C",
+                "rail_sequence": 2,
+                "gate": "ADVERSE",
+                "outcome": "fire",
+                "reason": "",
+            },
+        ),
+        None,
+        1,
+    )
+    ack = Record(
+        2,
+        "OrderAck",
+        _canon(
+            "OrderAck",
+            {
+                "order_id": "C|EXIT|1",
+                "status": "FILLED",
+                "symbol": "SYN",
+                "timestamp_ns": 2,
+                "price_cents": 50,
+            },
+        ),
+        None,
+        2,
+    )
+    records = Records([fire, close, ack], {2: _book(2, 40, 41, 2)}, ())
+    with pytest.raises(AssertionError, match=r"^A3b:"):
+        check_a3(records)
+
+
+def _exit_ack(cell: str, price: int, quote: int, ordinal: int) -> Record:
+    return Record(
+        quote,
+        "OrderAck",
+        _canon(
+            "OrderAck",
+            {
+                "order_id": f"{cell}|EXIT|1",
+                "status": "FILLED",
+                "symbol": "SYN",
+                "timestamp_ns": quote,
+                "price_cents": price,
+            },
+        ),
+        None,
+        ordinal,
+    )
+
+
 def test_a3_fill_quote_passes_and_the_wrong_side_names_the_prefix() -> None:
     quotes = {2: _book(2, 10_010, 10_011, 2)}
+    fire = _fire_row("C", 2, "ADVERSE")._replace(bus_ordinal=1)
     good = Records(
         [
-            _fire_row("C", 2, "ADVERSE"),
+            fire,
             _priced_close(
                 "C", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=2, price=10_010
             ),
+            _exit_ack("C", 10_010, 2, 2),
         ],
         quotes,
         (),
@@ -1078,15 +1179,16 @@ def test_a3_fill_quote_passes_and_the_wrong_side_names_the_prefix() -> None:
     check_a3(good)
     bad = Records(
         [
-            _fire_row("C", 2, "ADVERSE"),
+            fire,
             _priced_close(
                 "C", side="LONG", reason="ADVERSE", entry_seq=1, exit_seq=2, price=10_011
             ),
+            _exit_ack("C", 10_011, 2, 2),
         ],
         quotes,
         (),
     )
-    with pytest.raises(AssertionError, match=r"^A3:"):
+    with pytest.raises(AssertionError, match=r"^A3b:"):
         check_a3(bad)
 
 
