@@ -35,7 +35,10 @@ from feelies.core.events import (
     MarkRailUpdate,
     MetricEvent,
     NBBOQuote,
+    OrderAck,
+    OrderAckStatus,
     OrderRequest,
+    SlicePositionUpdate,
     RegimeState,
     SensorReading,
     PositionClosed,
@@ -95,11 +98,15 @@ class Records(list[Record]):
         quotes: dict[int, NBBOQuote],
         order_requests: Sequence[OrderRequest],
         risk_verdicts: Sequence[RiskVerdict] = (),
+        order_acks: Sequence[OrderAck] = (),
+        slice_updates: Sequence[SlicePositionUpdate] = (),
     ) -> None:
         super().__init__(rows)
         self.quotes = quotes
         self.order_requests = tuple(order_requests)
         self.risk_verdicts = tuple(risk_verdicts)
+        self.order_acks = tuple(order_acks)
+        self.slice_updates = tuple(slice_updates)
         self.widened = ()
 
 
@@ -143,6 +150,66 @@ def assert_no_risk_rejects(records: Records) -> None:
         counts[verdict.reason] = counts.get(verdict.reason, 0) + 1
     detail = ", ".join(f"{reason}:{counts[reason]}" for reason in sorted(counts))
     raise AssertionError(f"CONFOUND: risk rejected {len(rejects)} signals ({detail})")
+
+
+def _ack_name(status: object) -> str:
+    text = str(status)
+    if "." in text:
+        text = text.rsplit(".", 1)[-1]
+    return text
+
+
+def _opening_fill(fill_quantity: int, quantity: int) -> bool:
+    """A slice fill that opened the slice from flat."""
+    return fill_quantity != 0 and quantity == fill_quantity
+
+
+def entry_fill_count(records: Records) -> int:
+    """Opening fills from slice updates, else FILLED acks. Engine-independent."""
+    updates = list(records.slice_updates)
+    saw_slice = bool(updates)
+    openings = sum(
+        1 for update in updates if _opening_fill(int(update.fill_quantity), int(update.quantity))
+    )
+    for row in records:
+        if row.type_name != "SlicePositionUpdate":
+            continue
+        saw_slice = True
+        body = _body(row.canonical)
+        if _opening_fill(int(body.get("fill_quantity") or 0), int(body.get("quantity") or 0)):
+            openings += 1
+    if saw_slice:
+        return openings
+    filled = sum(1 for ack in records.order_acks if ack.status is OrderAckStatus.FILLED)
+    for row in records:
+        if row.type_name != "OrderAck":
+            continue
+        body = _body(row.canonical)
+        if _ack_name(body.get("status")) == "FILLED":
+            filled += 1
+    return filled
+
+
+def require_entry_fills(records: Records) -> int:
+    """PRECONDITION: the run contains at least one entry fill (D-107)."""
+    count = entry_fill_count(records)
+    if count < 1:
+        raise AssertionError(f"PRECONDITION: run has ≥1 entry fill ({count})")
+    return count
+
+
+def require_run_quotes(records: Records) -> int:
+    """PRECONDITION for a rail clause that does not need a cell."""
+    count = len(records.quotes)
+    if count < 1:
+        raise AssertionError(f"PRECONDITION: run quotes present ({count})")
+    return count
+
+
+def require_quote_present(records: Records, sequence: int) -> None:
+    """PRECONDITION: the injected quote is on the run, independent of the engine."""
+    if sequence not in records.quotes:
+        raise AssertionError(f"PRECONDITION: injected quote {sequence} present (0)")
 
 
 def nonvacuous(records: Sequence[Record], *type_names: type[Event] | str, scenario: str) -> None:
@@ -280,6 +347,9 @@ def check_m11_extremes(snapshots: Sequence[Mapping[str, object]]) -> None:
             if move is None:
                 raise AssertionError("M11: CLEAN reading has no move_now_cents")
             if int(move) == 0:
+                unset = all(snapshot.get(key) is None for key in ("best", "worst", "best_clean"))
+                if unset:
+                    continue
                 raise AssertionError("M11: extreme seeded at zero")
             for key in ("best", "worst", "best_clean"):
                 extreme = snapshot.get(key)
@@ -290,8 +360,15 @@ def check_m11_extremes(snapshots: Sequence[Mapping[str, object]]) -> None:
             seeded = True
             best = worst = best_clean = int(move)
             continue
-        if move is None or best is None or worst is None or best_clean is None:
+        if best is None or worst is None or best_clean is None:
             raise AssertionError("M11: move_now_cents missing after seed")
+        if move is None:
+            for key, expected in (("best", best), ("worst", worst), ("best_clean", best_clean)):
+                extreme = snapshot.get(key)
+                got = extreme.get("cents") if isinstance(extreme, dict) else None
+                if got != expected:
+                    raise AssertionError("M11: move_now_cents missing after seed")
+            continue
         move_i = int(move)
         best = move_i if move_i > best else best
         worst = move_i if move_i < worst else worst
@@ -304,6 +381,20 @@ def check_m11_extremes(snapshots: Sequence[Mapping[str, object]]) -> None:
                 raise AssertionError(f"M11: {key} {got} != recomputed {expected}")
 
 
+def _last_usable_snapshot_mark(snapshots: Sequence[Mapping[str, object]]) -> int | None:
+    """Executable exit side of the last usable snapshot rail (D-84)."""
+    found: int | None = None
+    for snapshot in snapshots:
+        rail = snapshot.get("rail")
+        if not isinstance(rail, dict) or rail.get("valuation_side_absent") is True:
+            continue
+        mark = rail.get("valuation_mark_cents")
+        if mark is None:
+            continue
+        found = int(mark)
+    return found
+
+
 def check_m11_proposed(
     closed: Mapping[str, object],
     snapshots: Sequence[Mapping[str, object]],
@@ -311,6 +402,12 @@ def check_m11_proposed(
 ) -> None:
     """Proposed price is the executable side of the deciding quote (B3)."""
     if _skip_stale_end(closed):
+        return
+    if str(closed.get("exit_reason")) == "END_OF_TAPE":
+        expected = _last_usable_snapshot_mark(snapshots)
+        got = closed.get("proposed_price_cents")
+        if got != expected:
+            raise AssertionError(f"M11: proposed {got} != last usable executable {expected}")
         return
     if not snapshots:
         raise AssertionError("M11: no snapshot for the deciding quote")
@@ -342,6 +439,11 @@ def check_m11_gross(row: Record, quotes: dict[int, NBBOQuote]) -> None:
     """The leg rebuild and ``cell_economics`` are two computations and must agree."""
     body = _body(row.canonical)
     if _skip_stale_end(body):
+        return
+    exits = body.get("exit_fills")
+    if str(body.get("exit_reason")) == "END_OF_TAPE" and (
+        not isinstance(exits, list) or not exits
+    ):
         return
     rebuilt = rebuild_gross(body)
     result, _displacement, _cost = cell_economics(row, quotes)
@@ -376,6 +478,8 @@ def displacement_identity(records: Records) -> None:
     for row in records:
         if row.type_name != "PositionClosed":
             continue
+        if str(_body(row.canonical).get("exit_reason")) == "END_OF_TAPE":
+            continue
         result, displacement, cost = cell_economics(row, records.quotes)
         if result + cost != displacement:
             cell = str(_body(row.canonical)["cell_id"])
@@ -396,6 +500,21 @@ def mean_within_se(samples: Sequence[float], expected: float, *, label: str) -> 
         raise AssertionError(f"mean {label} {mean} outside 4 SE of {expected} (bound {bound})")
 
 
+def _rejected_ack_times(records: Records) -> dict[str, int]:
+    """order_id -> timestamp of a REJECTED ack, from the stream or record rows."""
+    found: dict[str, int] = {}
+    for ack in records.order_acks:
+        if _ack_name(ack.status) == "REJECTED":
+            found[str(ack.order_id)] = int(ack.timestamp_ns)
+    for row in records:
+        if row.type_name != "OrderAck":
+            continue
+        body = _body(row.canonical)
+        if _ack_name(body.get("status")) == "REJECTED":
+            found[str(body.get("order_id"))] = int(body["timestamp_ns"])
+    return found
+
+
 def exit_reason_at_collision(records: Records) -> None:
     requirements = [row for row in records if row.type_name == "DeRiskRequirement"]
     for row in records:
@@ -403,6 +522,8 @@ def exit_reason_at_collision(records: Records) -> None:
             continue
         body = _body(row.canonical)
         cell = str(body["cell_id"])
+        if str(body.get("exit_reason")) == "END_OF_TAPE":
+            continue
         paths = body["triggered_paths"]
         assert isinstance(paths, list)
         names = [str(path["path"]) for path in paths if isinstance(path, dict)]
@@ -425,7 +546,7 @@ def exit_reason_at_collision(records: Records) -> None:
         assert isinstance(entries[0], dict) and isinstance(exits[0], dict)
         start = int(entries[0]["timestamp_ns"])
         end = int(exits[0]["timestamp_ns"])
-        count = 0
+        matched: list[tuple[int, str]] = []
         for req in requirements:
             req_body = _body(req.canonical)
             if req_body.get("symbol") != body["symbol"]:
@@ -434,9 +555,19 @@ def exit_reason_at_collision(records: Records) -> None:
                 continue
             ts = int(req_body["timestamp_ns"])
             if start <= ts <= end:
-                count += 1
-        if count != 1:
-            raise AssertionError(f"requirement count {count} != 1 cell {cell}")
+                matched.append((ts, str(req_body.get("order_id", ""))))
+        matched.sort()
+        if not matched:
+            raise AssertionError(f"requirement count 0 != 1 cell {cell}")
+        rejected = _rejected_ack_times(records)
+        live_ts, live_id = matched[0]
+        for ts, order_id in matched[1:]:
+            ack_ts = rejected.get(live_id)
+            if ack_ts is None or not (live_ts < ack_ts <= ts):
+                raise AssertionError(
+                    f"requirement re-emitted without REJECTED cell {cell} order {order_id}"
+                )
+            live_ts, live_id = ts, order_id
 
 
 _SUPPRESSION = frozenset(
@@ -602,12 +733,17 @@ def check_a1(records: Records, *, quiet_limit_ns: int) -> None:
             raise AssertionError(f"A1: FAVORABLE cell {cell} decided on {sequence} with {reason}")
 
 
-def _exit_tuples(records: Records) -> dict[str, tuple[str, int | None, int]]:
+def _exit_tuples(records: Records) -> dict[str, tuple[str, int | None, int | None]]:
     tuples: dict[str, tuple[str, int | None, int]] = {}
     for body in _closed_bodies(records):
         cell = str(body["cell_id"])
         reason = str(body.get("exit_reason"))
         exits = body.get("exit_fills")
+        if reason == "END_OF_TAPE" and (not isinstance(exits, list) or not exits):
+            proposed = body.get("proposed_price_cents")
+            price = None if proposed is None else int(proposed)
+            tuples[cell] = (reason, None, price)
+            continue
         if not isinstance(exits, list) or not exits or not isinstance(exits[0], dict):
             raise AssertionError(f"A2: cell {cell} has no exit fill")
         price = int(exits[0]["price_cents"])
@@ -633,6 +769,13 @@ def _verdict_stream(records: Records) -> tuple[tuple[object, ...], ...]:
 def _alive_at_gap(body: dict[str, object], gaps: set[int]) -> bool:
     entries = body.get("entry_fills")
     exits = body.get("exit_fills")
+    if str(body.get("exit_reason")) == "END_OF_TAPE" and (
+        not isinstance(exits, list) or not exits
+    ):
+        if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
+            return False
+        entry = int(entries[0]["sequence"])
+        return any(entry < gap for gap in gaps)
     if not isinstance(entries, list) or not isinstance(exits, list) or not entries or not exits:
         return False
     if not isinstance(entries[0], dict) or not isinstance(exits[0], dict):
@@ -670,11 +813,38 @@ def check_a2(clean: Records, injected: Records, *, feed_gap_sequences: set[int])
         raise AssertionError("A2: no suppression record on the injected run")
 
 
+def _last_usable_rail_mark(records: Records, side: str) -> int | None:
+    """Executable exit side of the last usable MarkRailUpdate (D-109)."""
+    key = "long" if side == "LONG" else "short"
+    found: int | None = None
+    for row in records:
+        if row.type_name != "MarkRailUpdate":
+            continue
+        orient = _body(row.canonical).get(key)
+        if not isinstance(orient, dict) or orient.get("valuation_side_absent") is True:
+            continue
+        mark = orient.get("valuation_mark_cents")
+        if mark is None:
+            continue
+        found = int(mark)
+    return found
+
+
 def check_a3(records: Records) -> None:
-    """Every exit price is the executable side of the fill quote, at or after the decision."""
+    """EOT uses the last usable rail mark; every other close uses the fill quote (D-109)."""
     for body in _closed_bodies(records):
         cell = str(body["cell_id"])
         side = str(body["side"])
+        if str(body.get("exit_reason")) == "END_OF_TAPE":
+            if _skip_stale_end(body):
+                continue
+            expected = _last_usable_rail_mark(records, side)
+            got = body.get("proposed_price_cents")
+            if got != expected:
+                raise AssertionError(
+                    f"A3: cell {cell} proposed {got} != last usable executable {expected}"
+                )
+            continue
         exits = body.get("exit_fills")
         if not isinstance(exits, list) or not exits or not isinstance(exits[0], dict):
             raise AssertionError(f"A3: cell {cell} has no exit fill")
@@ -1443,7 +1613,9 @@ def _records_from_live(recorder: _Attribution, *, digest_only: bool = False) -> 
     quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
     orders = [event for event in stream if type(event) is OrderRequest]
     verdicts = [event for event in stream if type(event) is RiskVerdict]
-    records = Records(list(recorder.rows), quotes, orders, verdicts)
+    acks = [event for event in stream if type(event) is OrderAck]
+    slices = [event for event in stream if type(event) is SlicePositionUpdate]
+    records = Records(list(recorder.rows), quotes, orders, verdicts, acks, slices)
     records.widened = widened
     return records
 
