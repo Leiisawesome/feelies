@@ -93,8 +93,12 @@ class PositionEngine:
         orient = _orientation(cell, rail)
         cell.note_rail(rail, orient)
         now = move_cents(cell.sign, orient.valuation_mark_cents, cell.open_qty, cell.entry_cost())
-        worst = move_cents(cell.sign, orient.worst_side_mark_cents, cell.open_qty, cell.entry_cost())
-        forced = move_cents(cell.sign, orient.forced_exit_mark_cents, cell.open_qty, cell.entry_cost())
+        worst = move_cents(
+            cell.sign, orient.worst_side_mark_cents, cell.open_qty, cell.entry_cost()
+        )
+        forced = move_cents(
+            cell.sign, orient.forced_exit_mark_cents, cell.open_qty, cell.entry_cost()
+        )
         cell.update_extremes(now, rail, orient)
         self._publish_snapshot(cell, rail, orient, now, worst, forced)
         adverse, favorable = self._evaluate(cell, rail, orient, now, worst)
@@ -362,9 +366,7 @@ class PositionEngine:
         policy = cell.policy
         round_trip = cell.spread + policy.fee_round_trip_ticks
         target = policy.favorable.target_ticks
-        disarmed = (
-            policy.favorable.form == "fixed" and target is not None and target <= round_trip
-        )
+        disarmed = policy.favorable.form == "fixed" and target is not None and target <= round_trip
         level = band_level(cell.cell_id, policy.adverse.centre_ticks, policy.adverse.band_ticks)
         self._open.pop((cell.strategy_id, cell.symbol), None)
         cell.state = "CLOSED"
@@ -687,7 +689,9 @@ class Cell:
         if move_now < self.worst.cents:
             self.worst = _extreme(move_now, rail.quote_sequence, orient, rail, clean_peak=False)
         if clean and move_now > self.best_clean.cents:
-            self.best_clean = _extreme(move_now, rail.quote_sequence, orient, rail, clean_peak=True)
+            self.best_clean = _extreme(
+                move_now, rail.quote_sequence, orient, rail, clean_peak=True
+            )
 
 
 def _extreme(

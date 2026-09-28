@@ -13,6 +13,7 @@ from feelies.core.events import (
     DeRiskRequirement,
     GateDecision,
     MarkRailUpdate,
+    NBBOQuote,
     OrderAck,
     OrderAckStatus,
     PositionClosed,
@@ -23,6 +24,8 @@ from feelies.core.events import (
     SignalDirection,
     SlicePositionUpdate,
 )
+from feelies.core.identifiers import SequenceGenerator
+from tests.position_engine.reference.rail import ReferenceRail
 from feelies.core.exit_policy import AdversePolicy, ExitPolicy, FavorablePolicy, HorizonPolicy
 from feelies.core.identifiers import SequenceGenerator
 from tests.position_engine.reference.engine import PositionEngine
@@ -211,11 +214,21 @@ def test_blind_is_strictly_greater_than_a(
         bus.publish(_rail(3, 2_000, under, quiet=_A))
     else:
         bus.publish(_rail(3, 2_000, under, quiet=0))
-    held = [row for row in _of(log, GateDecision) if isinstance(row, GateDecision) and row.gate == "ADVERSE"]
+    held = [
+        row
+        for row in _of(log, GateDecision)
+        if isinstance(row, GateDecision) and row.gate == "ADVERSE"
+    ]
     assert held[-1].outcome == "hold"
-    over = _orient(paying_absent=paying_absent, valuation_absent=valuation_absent, absent=field != "quiet")
+    over = _orient(
+        paying_absent=paying_absent, valuation_absent=valuation_absent, absent=field != "quiet"
+    )
     bus.publish(_rail(4, 3_000, over, quiet=quiet))
-    fired = [row for row in _of(log, GateDecision) if isinstance(row, GateDecision) and row.gate == "ADVERSE"]
+    fired = [
+        row
+        for row in _of(log, GateDecision)
+        if isinstance(row, GateDecision) and row.gate == "ADVERSE"
+    ]
     assert fired[-1].outcome == "fire"
     assert fired[-1].reason == "BLIND"
 
@@ -227,7 +240,11 @@ def test_favorable_tokens_in_order() -> None:
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
     blocked = _orient(valuation=None, dwelled=None, absent=True, clean=False)
     bus.publish(_rail(3, 2_000, blocked, crossed=True, quiet=_Q + 1, gap=True, warmed=False))
-    favorable = [row for row in _of(log, GateDecision) if isinstance(row, GateDecision) and row.gate == "FAVORABLE"]
+    favorable = [
+        row
+        for row in _of(log, GateDecision)
+        if isinstance(row, GateDecision) and row.gate == "FAVORABLE"
+    ]
     assert favorable[-1].outcome == "suppressed"
     assert favorable[-1].suppressions == (
         "VALUATION_SIDE_ABSENT",
@@ -250,7 +267,9 @@ def test_extremes_seed_on_the_first_clean_reading() -> None:
     first = _of(log, PositionSnapshot)[-1]
     assert isinstance(first, PositionSnapshot)
     assert first.best is None and first.worst is None and first.best_clean is None
-    bus.publish(_rail(4, 3_000, _orient(valuation=10_050, worst=10_050, forced=10_050, dwelled=10_050)))
+    bus.publish(
+        _rail(4, 3_000, _orient(valuation=10_050, worst=10_050, forced=10_050, dwelled=10_050))
+    )
     seeded = _of(log, PositionSnapshot)[-1]
     assert isinstance(seeded, PositionSnapshot)
     assert seeded.move_now_cents is not None and seeded.move_now_cents != 0
@@ -265,7 +284,11 @@ def test_giveback_r_floors_at_one() -> None:
     bus.publish(_rail(1, 1_000, _orient(paying=10_003, valuation=10_000)))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.03", fill_quantity=1, quantity=1))
     bus.publish(_rail(3, 2_000, _orient(paying=10_003, valuation=10_000)))
-    row = [item for item in _of(log, GateDecision) if isinstance(item, GateDecision) and item.gate == "FAVORABLE"][-1]
+    row = [
+        item
+        for item in _of(log, GateDecision)
+        if isinstance(item, GateDecision) and item.gate == "FAVORABLE"
+    ][-1]
     assert row.reference_ticks == max(1, int(Fraction(repr(0.1)) * 3))
     assert row.reference_ticks == 1
 
@@ -275,7 +298,9 @@ def test_precedence_picks_adverse_and_the_worst_price() -> None:
     bus, engine, log = _engine(_policy(form="trailing", target=None, giveback=2, t_ns=1_000))
     bus.publish(_rail(1, 1_000))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=10, quantity=10))
-    bus.publish(_rail(3, 1_500, _orient(valuation=11_000, worst=11_000, forced=11_000, dwelled=11_000)))
+    bus.publish(
+        _rail(3, 1_500, _orient(valuation=11_000, worst=11_000, forced=11_000, dwelled=11_000))
+    )
     bus.publish(
         Signal(
             timestamp_ns=1_600,
@@ -288,11 +313,15 @@ def test_precedence_picks_adverse_and_the_worst_price() -> None:
             edge_estimate_bps=0.0,
         )
     )
-    bus.publish(_rail(4, 3_000, _orient(valuation=9_000, worst=9_000, forced=9_000, dwelled=9_000)))
+    bus.publish(
+        _rail(4, 3_000, _orient(valuation=9_000, worst=9_000, forced=9_000, dwelled=9_000))
+    )
     requirement = _of(log, DeRiskRequirement)[0]
     assert isinstance(requirement, DeRiskRequirement)
     bus.publish(
-        _slice(5, 3_000, order_id=requirement.order_id, price="90.00", fill_quantity=-10, quantity=0)
+        _slice(
+            5, 3_000, order_id=requirement.order_id, price="90.00", fill_quantity=-10, quantity=0
+        )
     )
     closed = _of(log, PositionClosed)
     assert len(closed) == 1
@@ -313,11 +342,19 @@ def test_one_requirement_and_escalation_noop() -> None:
     bus, _engine_obj, log = _engine(_policy(target=4))
     bus.publish(_rail(1, 1_000))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
-    bus.publish(_rail(3, 2_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100)))
+    bus.publish(
+        _rail(3, 2_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100))
+    )
     assert len(_of(log, DeRiskRequirement)) == 1
-    bus.publish(_rail(4, 3_000, _orient(valuation=9_000, worst=9_000, forced=9_000, dwelled=9_000)))
+    bus.publish(
+        _rail(4, 3_000, _orient(valuation=9_000, worst=9_000, forced=9_000, dwelled=9_000))
+    )
     assert len(_of(log, DeRiskRequirement)) == 1
-    adverse = [row for row in _of(log, GateDecision) if isinstance(row, GateDecision) and row.gate == "ADVERSE"]
+    adverse = [
+        row
+        for row in _of(log, GateDecision)
+        if isinstance(row, GateDecision) and row.gate == "ADVERSE"
+    ]
     assert adverse[-1].outcome == "ESCALATION_NOOP"
 
 
@@ -326,7 +363,9 @@ def test_partial_exit_reduces_the_next_snapshot() -> None:
     bus, _engine_obj, log = _engine(_policy(target=4))
     bus.publish(_rail(1, 1_000))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=10, quantity=10))
-    bus.publish(_rail(3, 2_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100)))
+    bus.publish(
+        _rail(3, 2_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100))
+    )
     requirement = _of(log, DeRiskRequirement)[0]
     assert isinstance(requirement, DeRiskRequirement)
     bus.publish(
@@ -339,7 +378,9 @@ def test_partial_exit_reduces_the_next_snapshot() -> None:
             quantity=6,
         )
     )
-    bus.publish(_rail(6, 3_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100)))
+    bus.publish(
+        _rail(6, 3_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100))
+    )
     snap = _of(log, PositionSnapshot)[-1]
     assert isinstance(snap, PositionSnapshot)
     assert snap.state == "EXITING"
@@ -384,7 +425,9 @@ def test_subcent_price_raises() -> None:
     bus, _engine_obj, _log = _engine()
     bus.publish(_rail(1, 1_000))
     with pytest.raises(ValueError):
-        bus.publish(_slice(2, 1_000, order_id="entry", price="100.001", fill_quantity=1, quantity=1))
+        bus.publish(
+            _slice(2, 1_000, order_id="entry", price="100.001", fill_quantity=1, quantity=1)
+        )
 
 
 def test_none_marks_produce_none_moves() -> None:
@@ -406,7 +449,9 @@ def test_requirement_order_id_and_reducing_side() -> None:
     bus, _engine_obj, log = _engine(_policy(target=4))
     bus.publish(_rail(1, 1_000))
     bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=2, quantity=2))
-    bus.publish(_rail(3, 2_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100)))
+    bus.publish(
+        _rail(3, 2_000, _orient(valuation=10_100, worst=10_100, forced=10_100, dwelled=10_100))
+    )
     requirement = _of(log, DeRiskRequirement)[0]
     assert isinstance(requirement, DeRiskRequirement)
     assert requirement.order_id == "SYN|sig|1|LONG|EXIT|1"
@@ -428,7 +473,15 @@ def test_end_of_tape_and_missing_exit_side() -> None:
     assert closed[0].proposed_price_cents == 10_000
     assert _of(log, DeRiskRequirement) == []
     bus2, engine2, log2 = _engine()
-    bus2.publish(_rail(1, 1_000, _orient(paying=None, valuation=None, worst=None, forced=None, dwelled=None, absent=True)))
+    bus2.publish(
+        _rail(
+            1,
+            1_000,
+            _orient(
+                paying=None, valuation=None, worst=None, forced=None, dwelled=None, absent=True
+            ),
+        )
+    )
     bus2.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
     engine2.finalize()
     stale = _of(log2, PositionClosed)[0]
@@ -443,7 +496,9 @@ def test_gate_order_does_not_change_published_events() -> None:
     def run(order: tuple[str, ...]) -> list[tuple[object, ...]]:
         bus, _engine_obj, log = _engine(gate_order=order)
         bus.publish(_rail(1, 1_000))
-        bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+        bus.publish(
+            _slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1)
+        )
         bus.publish(_rail(3, 2_000))
         found: list[tuple[object, ...]] = []
         for event in log.events:
@@ -542,13 +597,17 @@ def test_g11_attempt_numbering() -> None:
     assert isinstance(second, DeRiskRequirement)
     _reject(bus, 6, 3_100, second.order_id)
     bus.publish(_rail(7, 4_000, _profit()))
-    ids = [row.order_id for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)]
+    ids = [
+        row.order_id for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)
+    ]
     assert ids == [
         "SYN|sig|1|LONG|EXIT|1",
         "SYN|sig|1|LONG|EXIT|2",
         "SYN|sig|1|LONG|EXIT|3",
     ]
-    reasons = [row.reason for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)]
+    reasons = [
+        row.reason for row in _of(log, DeRiskRequirement) if isinstance(row, DeRiskRequirement)
+    ]
     assert reasons == [first.reason, first.reason, first.reason]
 
 
@@ -613,7 +672,9 @@ def test_precondition_later_entry_births_a_new_cell() -> None:
     requirement = _of(log, DeRiskRequirement)[0]
     assert isinstance(requirement, DeRiskRequirement)
     bus.publish(
-        _slice(4, 2_000, order_id=requirement.order_id, price="101.00", fill_quantity=-1, quantity=0)
+        _slice(
+            4, 2_000, order_id=requirement.order_id, price="101.00", fill_quantity=-1, quantity=0
+        )
     )
     assert len(_of(log, PositionClosed)) == 1
     bus.publish(_rail(5, 3_000))
@@ -622,3 +683,60 @@ def test_precondition_later_entry_births_a_new_cell() -> None:
     snaps = [row for row in _of(log, PositionSnapshot) if isinstance(row, PositionSnapshot)]
     assert snaps[-1].cell_id == "SYN|sig|5|LONG"
     assert snaps[-1].size == 1
+
+
+def test_deadline_is_birth_plus_horizon() -> None:
+    """contracts.md §9:448-449. With no session close, the deadline is birth ts + T (D-45)."""
+    bus, _engine_obj, log = _engine(_policy(t_ns=5_000))
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(_rail(3, 2_000))
+    snap = _of(log, PositionSnapshot)[-1]
+    assert isinstance(snap, PositionSnapshot)
+    assert snap.horizon_deadline_ns == 6_000
+
+
+def _nbbo(sequence: int, timestamp_ns: int, bid_cents: int, ask_cents: int) -> NBBOQuote:
+    return NBBOQuote(
+        timestamp_ns=timestamp_ns,
+        correlation_id=f"n-{sequence}",
+        sequence=sequence,
+        symbol="SYN",
+        bid=Decimal(bid_cents) / 100,
+        ask=Decimal(ask_cents) / 100,
+        bid_size=100,
+        ask_size=100,
+        exchange_timestamp_ns=timestamp_ns,
+    )
+
+
+def test_rail_age_advances_only_when_the_price_changes() -> None:
+    """contracts.md §1:92 and §1:114-115. Age advances only when that side's price changes."""
+    rail = ReferenceRail(SequenceGenerator(stream="mark_rail", thread_safe=False))
+    first = rail.on_quote(_nbbo(1, 1_000, 10_000, 10_001))
+    assert first.long.valuation_age_ns == 0
+    assert first.long.paying_age_ns == 0
+    held = rail.on_quote(_nbbo(2, 1_500, 10_000, 10_001))
+    assert held.long.valuation_age_ns == 500
+    assert held.long.paying_age_ns == 500
+    moved = rail.on_quote(_nbbo(3, 1_800, 9_990, 10_001))
+    assert moved.long.valuation_age_ns == 0
+    assert moved.long.paying_age_ns == 800
+
+
+def test_rail_subcent_price_raises() -> None:
+    """contracts.md §9:487-489. A sub-cent quote raises in the rail (D-78)."""
+    rail = ReferenceRail(SequenceGenerator(stream="mark_rail", thread_safe=False))
+    quote = NBBOQuote(
+        timestamp_ns=1_000,
+        correlation_id="bad",
+        sequence=1,
+        symbol="SYN",
+        bid=Decimal("100.001"),
+        ask=Decimal("100.02"),
+        bid_size=100,
+        ask_size=100,
+        exchange_timestamp_ns=1_000,
+    )
+    with pytest.raises(ValueError):
+        rail.on_quote(quote)
