@@ -192,11 +192,14 @@ ASSERTS:           A1 every FAVORABLE exit, in every run, is decided on an event
                       equal the clean run for every cell; the expected flag is set (lived_through_feed_gap on
                       cells alive at a feed-gap event); ≥1 suppression record per injected copy
                    A3 for an END_OF_TAPE close, proposed_price_cents equals the executable exit side of
-                      the last usable rail update, or None with closed_on_stale_data (N7, D-102, D-109);
-                      for every other close, the exit price equals the executable side of the fill
-                      quote at or after the decision (the fill quote, F1)
-                   A4 gap through the adverse barrier with gap < A: reason ADVERSE; exit at the executable
-                      side of q_g+1; strictly worse than the barrier price; all values computed from the tape
+                      the last usable rail update, or None with closed_on_stale_data (N7, D-102, D-109).
+                      For every other close, A3a: each exit-leg price equals that leg's fill ack,
+                      whole cents (§2:294–295, §9:487–489). A3b: the leg is published after the
+                      deciding gate and is no better than the executable side of the quote being
+                      processed when the fill is published (the current pricing model, R2)
+                   A4 gap through the adverse barrier with gap < A: reason ADVERSE; exit no better than
+                      the executable side of q_g+1; strictly worse than the barrier price; all values
+                      computed from the tape
                    A5 for each of the three absence measures: no BLIND just under A or at exactly A; BLIND
                       just over A (strict >, §9)
                    A6 a breach concealed by unusable data is exited on the first usable event that shows it,
@@ -338,6 +341,22 @@ text (§§0–9), not from §9 alone, with a spec-trace table (D-92). Rail rows 
 engine rows in P-22a2. It imports only event types, protocols,
 `core/quote_quality.classify`, `core/exit_policy`, `core/identifiers` and `bus/event_bus`.
 `src/` never imports it (AST guard).
+
+The package is `tests/position_engine/reference/`: `engine.py` (cell, both gates, G11),
+`rail.py`, and `trace.md` (one row per behaviour: contract line, function, test). To run
+it, point `FEELIES_STAGE_FILE` at a file containing `E`, set `FEELIES_ENGINE` to
+`tests.position_engine.reference.engine.PositionEngine` and `FEELIES_RAIL` to
+`tests.position_engine.reference.rail.ReferenceRail`. Synthetic members 1–6 and 11 use
+`-m "not battery_real"`. The real members also need `FEELIES_REQUIRE_BASELINE_CACHE=1`
+and `-m battery_real`. CI runs those as "reference battery" (push and pull request) and
+"reference battery (real)" (nightly and workflow_dispatch). D-71: the synthetic job
+finishes no slower than check.
+
+Acceptance is the trace commit plus this rung's member fixes. Fix log: G11 re-emits a
+rejected live exit on the next usable rail (§2:157–161, D-106), traced to
+`PositionEngine._on_ack`. The fill-timing amendment did not change the engine. J2 (D-117):
+a window across event types uses bus order. The deadline comparison in the engine is a
+duration and stays until P-23.
 
 ## Load-time checks
 
