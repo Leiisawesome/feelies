@@ -94,6 +94,8 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
         excinfo = call.excinfo
         if excinfo is not None and excinfo.errisinstance(AssertionError):
             message = str(excinfo.value)
+            if message.startswith("PRECONDITION:"):
+                return report
             if re.search(red_reason, message):
                 report.outcome = "passed"
                 report.longrepr = None

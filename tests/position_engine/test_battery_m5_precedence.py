@@ -1,4 +1,8 @@
-"""Member 5: precedence. Red until stage E."""
+"""Member 5: precedence. Red until stage E.
+
+One live requirement at a time; a re-emission only after a REJECTED ack for the
+previous attempt (G11, D-106).
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from tests.position_engine.scenarios import (
     assert_no_risk_rejects,
     fixture_variant,
     nonvacuous,
+    require_entry_fills,
     run_real,
     run_synthetic,
     exit_reason_at_collision,
@@ -63,6 +68,7 @@ def test_m5_invalidation_at_take_profit() -> None:
     birth = _bid(tape[_ENTRY_FILL])
     tape = set_quote(tape, _INVALIDATION + 1, bid_cents=birth + _U, ask_cents=birth + _U + 1)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_invalidation")
     assert_no_risk_rejects(records)
     exit_reason_at_collision(records)
@@ -75,6 +81,7 @@ def test_m5_deadline_beyond_stop() -> None:
     deadline = _ENTRY_FILL + (10 * 1_000_000_000) // _INTERVAL_NS
     tape = set_quote(tape, deadline, bid_cents=birth - _D, ask_cents=birth - _D + 1)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a(T_seconds=10))
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_deadline")
     assert_no_risk_rejects(records)
     exit_reason_at_collision(records)
@@ -88,6 +95,7 @@ def test_m5_gap_through_trail_and_stop() -> None:
     landed = _ENTRY_FILL + 1
     tape = set_quote(tape, landed, bid_cents=birth - _D - 20, ask_cents=birth - _D - 19)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v5())
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_gap")
     assert_no_risk_rejects(records)
     exit_reason_at_collision(records)
@@ -97,5 +105,6 @@ def test_m5_gap_through_trail_and_stop() -> None:
 @_REAL
 def test_m5_real() -> None:
     records = run_real()
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_real")
     exit_reason_at_collision(records)

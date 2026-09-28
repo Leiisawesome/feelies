@@ -134,6 +134,23 @@ def test_h8_bad_stage_letter(tmp_path: Path) -> None:
     assert "stage.txt" in text or "stage file" in text
 
 
+def test_h10_precondition_is_not_gated(tmp_path: Path) -> None:
+    """A PRECONDITION failure at stage A stays a real failure (D-107)."""
+    proc = _run(
+        tmp_path,
+        "A",
+        "import pytest\n"
+        "@pytest.mark.battery_member(member=5, green_from='E', red_reason='^NONVACUOUS')\n"
+        "def test_member():\n"
+        "    raise AssertionError('PRECONDITION: run has >=1 entry fill (0)')\n",
+    )
+    text = _out(proc)
+    assert proc.returncode == 1, text
+    assert "PRECONDITION:" in text
+    assert "red for the wrong reason" not in text
+    assert "passed before its stage" not in text
+
+
 def test_h9_bad_green_from(tmp_path: Path) -> None:
     proc = _run(
         tmp_path,

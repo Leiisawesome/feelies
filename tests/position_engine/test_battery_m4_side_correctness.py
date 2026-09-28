@@ -13,6 +13,9 @@ from tests.position_engine.scenarios import (
     Records,
     check_unusable_side,
     nonvacuous,
+    require_entry_fills,
+    require_quote_present,
+    require_run_quotes,
     run_real,
     run_synthetic,
 )
@@ -42,6 +45,7 @@ def _cents(price: object) -> int:
 
 
 def _rail(records: Records, scenario: str) -> None:
+    require_run_quotes(records)
     nonvacuous(records, MarkRailUpdate, scenario=scenario)
     for row in records:
         if row.type_name != "MarkRailUpdate":
@@ -62,6 +66,7 @@ def _rail(records: Records, scenario: str) -> None:
 
 
 def _birth(records: Records, scenario: str) -> None:
+    require_entry_fills(records)
     nonvacuous(records, PositionSnapshot, scenario=scenario)
     first: dict[str, dict[str, object]] = {}
     closes: dict[str, dict[str, object]] = {}
@@ -150,6 +155,7 @@ def test_m4_unusable_side(cls: str) -> None:
     injected = force_class(tape, 3, cls)
     records = run_synthetic(injected, symbols=("SYN",))
     sequence = injected[3].sequence
+    require_quote_present(records, sequence)
     if not _rail_for(records, sequence):
         raise AssertionError(f"NONVACUOUS: no MarkRailUpdate for quote {sequence} in m4_{cls}")
     check_unusable_side(records, quote_sequence=sequence)

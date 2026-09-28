@@ -13,14 +13,16 @@ from tests.position_engine.scenarios import (
     assert_widened_prefix,
     decision_cut_indices,
     decision_trigger_indexes,
+    fixture_variant,
     nonvacuous,
+    require_entry_fills,
     rth_replay,
     run_real,
     run_real_prefixes,
     run_synthetic,
     session_digest,
 )
-from tests.position_engine.tapes import force_class, make_tape
+from tests.position_engine.tapes import force_class, make_tape, set_quote
 
 _MARK = pytest.mark.battery_member(member=2, green_from="B", red_reason="^NONVACUOUS: ")
 _DWELL = pytest.mark.battery_member(member=2, green_from="C", red_reason="NONVACUOUS")
@@ -58,6 +60,7 @@ def test_m2_syn() -> None:
     for cut in cuts:
         truncated = run_synthetic(tape[: cut + 1], symbols=("SYN",))
         assert_widened_prefix(truncated.widened, rows, tape[cut].sequence)
+    require_entry_fills(full)
     nonvacuous(full, PositionSnapshot, scenario="m2_syn")
 
 
@@ -70,6 +73,7 @@ def _real() -> None:
     _assert_decision_cuts(events, rows, cuts, _REAL_FRACTIONS)
     for cut, truncated in zip(cuts, run_real_prefixes(cuts), strict=True):
         assert_widened_prefix(truncated, rows, events[cut].sequence)
+    require_entry_fills(full)
     nonvacuous(full, PositionSnapshot, scenario="m2_real")
 
 
@@ -79,16 +83,43 @@ def test_m2_real() -> None:
     _real()
 
 
+def _v3a() -> dict[str, object]:
+    """Horizon 30 so boundary 1 births a LONG. The fill lands on quote sequence 302."""
+    return fixture_variant(
+        horizon_seconds=30,
+        fee_round_trip_ticks=0,
+        T_seconds=16_000,
+        centre_ticks=11,
+        band_ticks=0,
+        lo_ticks=2,
+        target_ticks=4,
+    )
+
+
 @_DWELL
 def test_m2_dwell_favorable_ignores_stale_cross(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A crossed quote older than t-D does not block a favorable decision at t."""
+    """D > 0 (D-87). A cross older than t-D does not block the favorable condition at t.
+
+    V3a, seed 11, 420 quotes at 100 ms. Birth fill is quote sequence 302.
+    D = 2 s. The crossed quote is at t - D - 100 ms; t is quote sequence 401.
+    """
     dwell = 2_000_000_000
+    interval = 100_000_000
     monkeypatch.setenv("FEELIES_RAIL_DWELL_NS", str(dwell))
-    gap = dwell + 100_000_000
-    tape = make_tape(seed=11, n=2, symbol="SYN", start_ns=T0, interval_ns=gap, size=1000)
-    crossed = force_class(tape, 0, "CROSSED")
-    current = crossed[1]
-    records = run_synthetic(crossed, symbols=("SYN",))
+    t_index = 400
+    tape = make_tape(seed=11, n=420, symbol="SYN", start_ns=T0, interval_ns=interval, size=1000)
+    cross_index = t_index - (dwell + interval) // interval
+    birth_ask = int(tape[301].ask * 100)
+    bid = birth_ask + 8
+    shaped = set_quote(
+        force_class(tape, cross_index, "CROSSED"),
+        t_index,
+        bid_cents=bid,
+        ask_cents=bid + 1,
+    )
+    current = shaped[t_index]
+    records = run_synthetic(shaped, symbols=("SYN",), variant=_v3a())
+    require_entry_fills(records)
     nonvacuous(records, "GateDecision", scenario="m2_dwell")
     hits = [
         json.loads(row.canonical[row.canonical.index("{") :])

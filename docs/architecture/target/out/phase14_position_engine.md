@@ -76,11 +76,12 @@ Each rung opens with a report-only census; the block is written from that eviden
 | P-21d | A | implemented (PR #257), pending merge. members 3, 5; tape injectors set_quote, excise | each red for its stated reason | hold |
 | P-21e | A | implemented (PR #258), pending merge. member 6 spec closure; shift_from, remove_side_run; doc integrity; capture ignore | red for its stated reason | hold |
 | P-21f | A | implemented (PR #260), pending merge. Member 6 tests (A1–A6, real + synthetic) + member 4 unusable-side clause; green_from per battery.md | red via NONVACUOUS (member 6) and UNUSABLE_SIDE (member 4 clause) | hold |
-| P-22 | A | split: P-22s/P-22a1/P-22a2/P-22b | see P-22s, P-62a, P-22a1, P-22a2, P-22b | hold |
+| P-22 | A | split: P-22s/P-22a1/P-22a2f/P-22a2/P-22b | see P-22s, P-62a, P-22a1, P-22a2f, P-22a2, P-22b | hold |
 | P-22s | A | implemented (PR #261), pending merge. Spec closure G1–G9, member 11 pull-forward, member 1 immutability and member 2 D>0 clauses. Docs only. Parity prediction NONE; captures skipped. | docs tests | NONE |
 | P-62a | A | implemented (PR #262), pending merge. Admit source_layer=POSITION on the engine-8 copy path (MARKET, slice-scoped, through check_order); ADVERSE_EXCURSION in the stop-slippage set. Prediction NONE. | POSITION requirement on the copy path; ADVERSE_EXCURSION in the stop-slippage set | NONE |
 | P-22a1 | A | G10/N1–N7 spec, additive schema, engine/rail resolution, attribution, reference rail (D-62), import guard, member 1/2/11 clauses. Prediction NONE for the 64 constants. | S-09 pin moves as predicted; members 1/2/11 gated NONVACUOUS at A; member 4 rail and unusable-side green on the reference rail | NONE |
-| P-22a2 | A | reference engine, trace-table engine rows, all members green on the reference, reference-battery CI job | every member green on the reference | hold |
+| P-22a2f | A | G11 rejected-exit re-emission, PRECONDITION level, m2 dwell and m11 constructions, A3 END_OF_TAPE branch, F-P13b strict xfail. Tests and spec only (D-106..D-109). | PRECONDITION red at every stage; members gate at A with PRECONDITION passing; 64/64 hold; baseline GREEN | hold |
+| P-22a2 | A | blocked → resumes after P-22a2f | resumes after P-22a2f | hold |
 | P-22b | A | mutants B1–B11 each caught by its named member; reference-battery CI job | each mutant caught by its named member | hold |
 | P-30 | B | skeleton behaviour on the P-10 surface: stub cell born and closed from slice fills, stub gates, the two-phase step, snapshots to the sink; implements the contracts §8 seam PositionEngine(gate_order=...) (member 1 depends on it) | members 1, 2 green | hold |
 | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site | + 4 (rail half), 9 | hold |

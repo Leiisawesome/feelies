@@ -16,6 +16,7 @@ from tests.position_engine.scenarios import (
     check_a6,
     fixture_variant,
     nonvacuous,
+    require_entry_fills,
     run_synthetic,
 )
 from tests.position_engine.tapes import cross, excise, make_tape, remove_side_run, shift_from
@@ -54,6 +55,7 @@ def _v5() -> dict[str, object]:
 
 
 def _ready(records: object, scenario: str) -> None:
+    require_entry_fills(records)  # type: ignore[arg-type]
     nonvacuous(records, PositionClosed, scenario=scenario)  # type: ignore[arg-type]
     assert_no_risk_rejects(records)  # type: ignore[arg-type]
     check_a1(records, quiet_limit_ns=_QUIET_NS)  # type: ignore[arg-type]
@@ -149,6 +151,7 @@ def test_m6_a2_v5() -> None:
     clean = run_synthetic(tape, symbols=("SYN",), variant=variant)
     _ready(clean, "m6_a2_v5")
     injected = run_synthetic(cross(tape, 400, 10_040, 10_030), symbols=("SYN",), variant=variant)
+    require_entry_fills(injected)
     assert_no_risk_rejects(injected)
     check_a1(injected, quiet_limit_ns=_QUIET_NS)
     check_a3(injected)

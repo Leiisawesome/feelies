@@ -14,6 +14,7 @@ from tests.position_engine.scenarios import (
     fixture_variant,
     mean_within_se,
     nonvacuous,
+    require_entry_fills,
     run_synthetic,
 )
 from tests.position_engine.tapes import make_tape
@@ -61,20 +62,28 @@ def _spread(records: Records, row: object) -> int:
     return int(quote.ask * 100) - int(quote.bid * 100)
 
 
+def _priced(records: Records) -> list:
+    """Barrier closes. END_OF_TAPE has no exit fill (D-84)."""
+    return [row for row in _closed(records) if '"exit_reason":"END_OF_TAPE"' not in row.canonical]
+
+
 def _displacements(records: Records) -> list[float]:
-    return [float(cell_economics(row, records.quotes)[1]) for row in _closed(records)]
+    return [float(cell_economics(row, records.quotes)[1]) for row in _priced(records)]
 
 
 @_MARK
 def test_m3_barriers_only() -> None:
     """(a) no deadline. V3a is u:d = 5:10 = 1:2, expected favorable share 2/3."""
     records = run_synthetic(_tape(_SEED_A), symbols=("SYN",), variant=_base())
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m3_barriers")
     assert_no_risk_rejects(records)
     cells = _closed(records)
     assert len(cells) >= 200, f"m3_barriers closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")
-    flags = [1.0 if '"exit_reason":"FAVORABLE"' in row.canonical else 0.0 for row in cells]
+    flags = [
+        1.0 if '"exit_reason":"FAVORABLE"' in row.canonical else 0.0 for row in _priced(records)
+    ]
     mean_within_se(flags, 2 / 3, label="favorable share")
 
 
@@ -83,12 +92,15 @@ def test_m3_barriers_swapped() -> None:
     """(a) second pair, V3a2, u:d = 10:5, expected share 1/3."""
     variant = _base(centre_ticks=6, target_ticks=9)
     records = run_synthetic(_tape(_SEED_A2), symbols=("SYN",), variant=variant)
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m3_barriers_swapped")
     assert_no_risk_rejects(records)
     cells = _closed(records)
     assert len(cells) >= 200, f"m3_barriers_swapped closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")
-    flags = [1.0 if '"exit_reason":"FAVORABLE"' in row.canonical else 0.0 for row in cells]
+    flags = [
+        1.0 if '"exit_reason":"FAVORABLE"' in row.canonical else 0.0 for row in _priced(records)
+    ]
     mean_within_se(flags, 1 / 3, label="favorable share")
 
 
@@ -100,6 +112,7 @@ def test_m3_barriers_and_deadline() -> None:
         symbols=("SYN",),
         variant=_base(T_seconds=10),
     )
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m3_deadline")
     assert_no_risk_rejects(records)
     grouped = [
@@ -126,13 +139,14 @@ def test_m3_band_draw() -> None:
         symbols=("SYN",),
         variant=_base(band_ticks=8, lo_ticks=7, hi_ticks=15),
     )
+    require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m3_band")
     assert_no_risk_rejects(records)
     cells = _closed(records)
     assert len(cells) >= 200, f"m3_band closed cells {len(cells)} < 200"
     mean_within_se(_displacements(records), 0.0, label="displacement")
     residuals: list[float] = []
-    for row in cells:
+    for row in _priced(records):
         import json
 
         body = json.loads(row.canonical[row.canonical.index("{") :])

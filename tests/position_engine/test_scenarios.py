@@ -740,6 +740,125 @@ def test_a2_equal_streams_pass_and_a_moved_price_names_the_prefix() -> None:
         check_a2(clean, _a2(51, suppress=True), feed_gap_sequences={5})
 
 
+def test_a3_end_of_tape_uses_the_last_usable_side() -> None:
+    """D-109. END_OF_TAPE is priced off the last usable rail, not a fill."""
+    side = _side_flags()
+    side["valuation_mark_cents"] = 10_010
+    rail = _row(
+        "MarkRailUpdate",
+        {"quote_sequence": 5, "long": side, "short": dict(side)},
+        5,
+    )
+    good = _row(
+        "PositionClosed",
+        {
+            "cell_id": "C",
+            "side": "LONG",
+            "exit_reason": "END_OF_TAPE",
+            "proposed_price_cents": 10_010,
+            "closed_on_stale_data": False,
+            "entry_fills": [],
+            "exit_fills": [],
+        },
+        9,
+    )
+    check_a3(Records([rail, good], {}, ()))
+    wrong = _row(
+        "PositionClosed",
+        {
+            "cell_id": "C",
+            "side": "LONG",
+            "exit_reason": "END_OF_TAPE",
+            "proposed_price_cents": 9_999,
+            "closed_on_stale_data": False,
+            "entry_fills": [],
+            "exit_fills": [],
+        },
+        9,
+    )
+    with pytest.raises(AssertionError, match=r"^A3:"):
+        check_a3(Records([rail, wrong], {}, ()))
+    other = _row(
+        "PositionClosed",
+        {
+            "cell_id": "C",
+            "side": "LONG",
+            "exit_reason": "ADVERSE",
+            "proposed_price_cents": 10_010,
+            "entry_fills": [{"sequence": 1, "price_cents": 1, "quantity": 1}],
+            "exit_fills": [],
+        },
+        9,
+    )
+    with pytest.raises(AssertionError, match=r"^A3:"):
+        check_a3(Records([other], {}, ()))
+
+
+def test_requirement_reemission_only_after_rejected() -> None:
+    """D-106. A second requirement is legal only after a REJECTED ack."""
+    closed = _closed(
+        "C",
+        side="LONG",
+        entry_px=10_001,
+        exit_px=9_990,
+        qty=10,
+        entry_seq=2,
+        exit_seq=10,
+        reason="ADVERSE",
+        paths=[("ADVERSE", 9_990)],
+        proposed=9_990,
+    )
+
+    def _req(ts: int, order_id: str) -> Record:
+        body = {
+            "symbol": "SYN",
+            "strategy_id": "sig_position_fixture_v1",
+            "timestamp_ns": ts,
+            "order_id": order_id,
+            "reason": "ADVERSE_EXCURSION",
+            "source_layer": "POSITION",
+        }
+        return Record(ts, "DeRiskRequirement", _canon("DeRiskRequirement", body))
+
+    def _reject(ts: int, order_id: str) -> Record:
+        body = {"timestamp_ns": ts, "order_id": order_id, "status": "REJECTED"}
+        return Record(ts, "OrderAck", _canon("OrderAck", body))
+
+    with pytest.raises(AssertionError, match=r"^requirement re-emitted"):
+        exit_reason_at_collision(Records([closed, _req(3, "A"), _req(6, "B")], _quotes(), ()))
+    exit_reason_at_collision(
+        Records([closed, _req(3, "A"), _reject(4, "A"), _req(6, "B")], _quotes(), ())
+    )
+
+
+def test_precondition_names_a_zero_count_and_passes_an_opening_fill() -> None:
+    from decimal import Decimal
+
+    from feelies.core.events import SlicePositionUpdate
+
+    from tests.position_engine.scenarios import require_entry_fills
+
+    empty = Records([], {}, ())
+    with pytest.raises(AssertionError, match=r"^PRECONDITION: run has ≥1 entry fill \(0\)$"):
+        require_entry_fills(empty)
+    opening = SlicePositionUpdate(
+        timestamp_ns=1,
+        correlation_id="c",
+        sequence=1,
+        symbol="SYN",
+        strategy_id="sig",
+        order_id="o",
+        fill_price=Decimal("100.01"),
+        fill_quantity=10,
+        fill_ack_sequence=302,
+        fill_timestamp_ns=1,
+        quantity=10,
+        avg_entry_price=Decimal("100.01"),
+    )
+    held = Records([], {}, (), slice_updates=(opening,))
+    assert require_entry_fills(held) == 1
+
+
 def test_a3_fill_quote_passes_and_the_wrong_side_names_the_prefix() -> None:
     quotes = {2: _book(2, 10_010, 10_011, 2)}
     good = Records(
