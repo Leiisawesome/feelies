@@ -30994,3 +30994,56 @@ OWNER:       campaign 15.
                  non-gating).
   OUTCOME:       parity hold. compare pre-P-22a1 -> post-merge-P-22a1:
                  64 -> 64, changed 0.
+
+---
+
+## P-22a2f
+  STEP:          P-22a2f (G11 rejected-exit re-emission, PRECONDITION
+                 level, member construction fixes, A3 END_OF_TAPE
+                 branch, F-P13b strict xfail)
+  PR:            #264
+  RESULT SHA:    E0 4a5fdbdc58aae4c26f863244022f70ca5df9e330;
+                 head 1541c029adbb50bc368d8aacaa6ef221dbe22fde
+                 (exec/P-22a2f); merged as
+                 7f7a2360eb310284b41183b7a375e512935ce96a.
+  PREDICTION:    held. 64/64 constants unchanged. Baseline GREEN.
+                 compare pre-P-22a2f -> post-P-22a2f: 64 -> 64, changed 0.
+                 compare pre-P-22a2f -> post-merge-P-22a2f: 64 -> 64,
+                 changed 0.
+  DECISIONS:     D-106..D-109.
+                 G11: a rejected exit is re-emitted at the next usable
+                 rail event. order_id is cell_id|EXIT|n. At most one
+                 live requirement.
+                 PRECONDITION level (never gated). Ordering rule:
+                 baseline -> PRECONDITION -> NONVACUOUS -> property.
+                 Impact-audit rule per new D-id.
+                 A3 END_OF_TAPE branch.
+                 Member 5 clause per G11.
+  ADJUDICATION:  P-22a2: 8 member-wrong. m2 dwell and m11 constructions
+                 never birthed a cell. Six m6 A5 cases where A3 demanded
+                 a fill on END_OF_TAPE closes, a check stale against G9.
+                 1 genuine spec hole: A6 long (BLIND on a crossed quote
+                 -> MARKET exit rejected -> cell stuck in EXITING),
+                 closed by G11.
+  S0:            impact audit: check_a3/G9, m5/G11, plus mechanical
+                 D-79/D-84/D-99 fixes.
+  FINDINGS:      F-P22a2f: the router rejects MARKET orders on crossed
+                 quotes rather than deferring them; 0 of 10 legacy APP
+                 orders are affected (simulator-realism rung).
+  F-P13b:        now xfail(strict) with reason D-63.
+  WIP:           exec/P-22a2 at cd8e0c0259e5548ba33e8b8bfba01bac14df2117
+                 (reference, 877 LOC, 18 unit tests, fix-log row
+                 ESCALATION_NOOP), resumes next.
+  VALIDATION:    gate "5166 passed, 5 skipped, 54 deselected, 1 xfailed, 48 warnings in 484.88s (0:08:04)";
+                 battery_real "11 passed, 186 deselected in 145.98s (0:02:25)";
+                 CI check 7m41s / parity oracle 3m47s (D-71; run
+                 36369207257 on 1541c029; battery step "11 passed, 186
+                 deselected in 133.79s (0:02:13)"; Bugbot pass). Merge
+                 CI run 36370843010 on 7f7a2360: check 5m43s / parity
+                 oracle 3m53s; battery step "11 passed, 186 deselected
+                 in 148.69s (0:02:28)"; Bugbot neutral.
+  STAGE:         A.
+  NOTES:         Post-merge capture moved to
+                 ..\feelies-captures\P-22a2f\baseline_post-merge-P-22a2f.json.
+  OUTCOME:       parity hold. compare pre-P-22a2f -> post-merge-P-22a2f:
+                 64 -> 64, changed 0.
