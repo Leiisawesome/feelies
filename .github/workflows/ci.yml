@@ -27,6 +27,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Nightly and manual runs are the real reference battery only. check and the
+  # parity oracle stay on push and pull_request.
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
 
 # A superseded push should not keep burning a runner.
 concurrency:
@@ -41,6 +46,7 @@ jobs:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     strategy:
       # One host today. The matrix is kept so re-adding macos to re-test the
       # host-portability claim above is a one-line change, and `fail-fast: false`
@@ -298,3 +304,127 @@ jobs:
         env:
           PYTHONHASHSEED: random
         run: uv run pytest tests/acceptance/test_backtest_app_baseline.py -q -m ""
+
+  reference-battery:
+    name: reference battery
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    env:
+      PYTHONHASHSEED: "0"
+      FEELIES_ENGINE: tests.position_engine.reference.engine.PositionEngine
+      FEELIES_RAIL: tests.position_engine.reference.rail.ReferenceRail
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Sync all extras
+        run: uv sync --all-extras --locked
+
+      - name: Restore APP baseline event cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.feelies/cache
+          key: feelies-eventcache-APP-2026-03-25_26-v2
+          restore-keys: |
+            feelies-eventcache-APP-2026-03-26-v1
+
+      - name: Point the stage gate at E
+        run: |
+          printf 'E\n' > "$RUNNER_TEMP/stage_e.txt"
+          echo "FEELIES_STAGE_FILE=$RUNNER_TEMP/stage_e.txt" >> "$GITHUB_ENV"
+
+      - name: Synthetic members and reference unit tests
+        run: >-
+          uv run pytest
+          tests/position_engine/test_battery_m1_reproducibility.py
+          tests/position_engine/test_battery_m2_no_lookahead.py
+          tests/position_engine/test_battery_m3_known_answer_conservation.py
+          tests/position_engine/test_battery_m4_side_correctness.py
+          tests/position_engine/test_battery_m5_precedence.py
+          tests/position_engine/test_battery_m6_injection_syn.py
+          tests/position_engine/test_battery_m6_injection_real.py
+          tests/position_engine/test_battery_m11_audit.py
+          tests/position_engine/test_reference_engine.py
+          tests/position_engine/test_reference_trace.py
+          -m "not battery_real"
+          -q
+
+  reference-battery-real:
+    name: reference battery (real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    env:
+      PYTHONHASHSEED: "0"
+      FEELIES_REQUIRE_BASELINE_CACHE: "1"
+      FEELIES_ENGINE: tests.position_engine.reference.engine.PositionEngine
+      FEELIES_RAIL: tests.position_engine.reference.rail.ReferenceRail
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Sync all extras
+        run: uv sync --all-extras --locked
+
+      - name: Restore APP baseline event cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.feelies/cache
+          key: feelies-eventcache-APP-2026-03-25_26-v2
+          restore-keys: |
+            feelies-eventcache-APP-2026-03-26-v1
+
+      - name: Populate cache on miss
+        run: |
+          for date in 2026-03-25 2026-03-26; do
+            f="$HOME/.feelies/cache/APP/${date}.jsonl.gz"
+            if [ -f "$f" ]; then
+              echo "cache hit ${date}"
+              continue
+            fi
+            if [ -z "${MASSIVE_API_KEY}" ]; then
+              echo "::error::APP/${date} event cache missing and MASSIVE_API_KEY is not configured, so it cannot be fetched."
+              exit 1
+            fi
+            echo "fetching ${date}"
+            uv run python -c "import os; from feelies.harness.backtest_runner import ingest_data; ingest_data(os.environ['MASSIVE_API_KEY'], ['APP'], '$date', '$date')"
+            if [ ! -f "$f" ]; then
+              echo "::error::fetch of APP/${date} did not write the cache"
+              exit 1
+            fi
+            echo "fetched ${date} via ingest_data"
+          done
+        env:
+          MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
+
+      - name: Point the stage gate at E
+        run: |
+          printf 'E\n' > "$RUNNER_TEMP/stage_e.txt"
+          echo "FEELIES_STAGE_FILE=$RUNNER_TEMP/stage_e.txt" >> "$GITHUB_ENV"
+
+      - name: Real members
+        run: >-
+          uv run pytest
+          tests/position_engine/test_battery_m1_reproducibility.py
+          tests/position_engine/test_battery_m2_no_lookahead.py
+          tests/position_engine/test_battery_m3_known_answer_conservation.py
+          tests/position_engine/test_battery_m4_side_correctness.py
+          tests/position_engine/test_battery_m5_precedence.py
+          tests/position_engine/test_battery_m6_injection_syn.py
+          tests/position_engine/test_battery_m6_injection_real.py
+          tests/position_engine/test_battery_m11_audit.py
+          -m battery_real
+          -q
