@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import struct
 import sys
 import time
@@ -73,6 +74,7 @@ class Record(NamedTuple):
     type_name: str
     canonical: str
     replay_index: int | None = None
+    bus_ordinal: int = -1
 
 
 class Widened(NamedTuple):
@@ -100,6 +102,8 @@ class Records(list[Record]):
         risk_verdicts: Sequence[RiskVerdict] = (),
         order_acks: Sequence[OrderAck] = (),
         slice_updates: Sequence[SlicePositionUpdate] = (),
+        ack_ordinals: Sequence[int] = (),
+        slice_ordinals: Sequence[int] = (),
     ) -> None:
         super().__init__(rows)
         self.quotes = quotes
@@ -107,6 +111,8 @@ class Records(list[Record]):
         self.risk_verdicts = tuple(risk_verdicts)
         self.order_acks = tuple(order_acks)
         self.slice_updates = tuple(slice_updates)
+        self.ack_ordinals = tuple(ack_ordinals)
+        self.slice_ordinals = tuple(slice_ordinals)
         self.widened = ()
 
 
@@ -588,19 +594,109 @@ def mean_within_se(samples: Sequence[float], expected: float, *, label: str) -> 
         raise AssertionError(f"mean {label} {mean} outside 4 SE of {expected} (bound {bound})")
 
 
-def _rejected_ack_times(records: Records) -> dict[str, int]:
-    """order_id -> timestamp of a REJECTED ack, from the stream or record rows."""
-    found: dict[str, int] = {}
-    for ack in records.order_acks:
-        if _ack_name(ack.status) == "REJECTED":
-            found[str(ack.order_id)] = int(ack.timestamp_ns)
+_EXIT_ORDER = re.compile(r"\|EXIT\|\d+$")
+
+
+def _filled_acks(records: Records) -> list[tuple[int, str, int, str]]:
+    """FILLED acks as (bus ordinal, order_id, timestamp_ns, symbol)."""
+    found: list[tuple[int, str, int, str]] = []
+    for index, ack in enumerate(records.order_acks):
+        if _ack_name(ack.status) != "FILLED":
+            continue
+        ordinal = records.ack_ordinals[index] if index < len(records.ack_ordinals) else -1
+        found.append((ordinal, str(ack.order_id), int(ack.timestamp_ns), str(ack.symbol)))
     for row in records:
         if row.type_name != "OrderAck":
             continue
         body = _body(row.canonical)
-        if _ack_name(body.get("status")) == "REJECTED":
-            found[str(body.get("order_id"))] = int(body["timestamp_ns"])
+        if _ack_name(body.get("status")) != "FILLED":
+            continue
+        found.append(
+            (
+                row.bus_ordinal,
+                str(body.get("order_id", "")),
+                int(body["timestamp_ns"]),
+                str(body.get("symbol", "")),
+            )
+        )
     return found
+
+
+def _slice_marks(records: Records) -> list[tuple[int, str, str, str, int]]:
+    """Slice updates as (ordinal, symbol, strategy_id, order_id, fill_timestamp_ns)."""
+    found: list[tuple[int, str, str, str, int]] = []
+    for index, update in enumerate(records.slice_updates):
+        ordinal = records.slice_ordinals[index] if index < len(records.slice_ordinals) else -1
+        found.append(
+            (
+                ordinal,
+                str(update.symbol),
+                str(update.strategy_id),
+                str(update.order_id),
+                int(update.fill_timestamp_ns),
+            )
+        )
+    for row in records:
+        if row.type_name != "SlicePositionUpdate":
+            continue
+        body = _body(row.canonical)
+        found.append(
+            (
+                row.bus_ordinal,
+                str(body.get("symbol", "")),
+                str(body.get("strategy_id", "")),
+                str(body.get("order_id", "")),
+                int(body["fill_timestamp_ns"]),
+            )
+        )
+    return found
+
+
+def _rejected_ack_ordinals(records: Records) -> dict[str, int]:
+    """order_id -> bus ordinal of a REJECTED ack, from the stream or record rows."""
+    found: dict[str, int] = {}
+    for index, ack in enumerate(records.order_acks):
+        if _ack_name(ack.status) != "REJECTED":
+            continue
+        ordinal = records.ack_ordinals[index] if index < len(records.ack_ordinals) else -1
+        found[str(ack.order_id)] = ordinal
+    for row in records:
+        if row.type_name != "OrderAck":
+            continue
+        body = _body(row.canonical)
+        if _ack_name(body.get("status")) != "REJECTED":
+            continue
+        found[str(body.get("order_id"))] = row.bus_ordinal
+    return found
+
+
+def _entry_ack_ordinal(
+    records: Records,
+    *,
+    symbol: str,
+    strategy_id: str,
+    entry_stamps: set[int],
+) -> int | None:
+    """First FILLED ack of an entry leg. Slice identity, else same stamp and symbol."""
+    entry_ids = {
+        order_id
+        for _ordinal, sym, strat, order_id, fill_ts in _slice_marks(records)
+        if sym == symbol
+        and strat == strategy_id
+        and fill_ts in entry_stamps
+        and _EXIT_ORDER.search(order_id) is None
+    }
+    filled = _filled_acks(records)
+    ordinals = [ordinal for ordinal, order_id, _ts, _sym in filled if order_id in entry_ids]
+    if not ordinals:
+        ordinals = [
+            ordinal
+            for ordinal, order_id, ts, sym in filled
+            if sym == symbol and ts in entry_stamps and _EXIT_ORDER.search(order_id) is None
+        ]
+    if not ordinals:
+        return None
+    return min(ordinals)
 
 
 def exit_reason_at_collision(records: Records) -> None:
@@ -632,30 +728,51 @@ def exit_reason_at_collision(records: Records) -> None:
         exits = body["exit_fills"]
         assert isinstance(entries, list) and isinstance(exits, list) and entries and exits
         assert isinstance(entries[0], dict) and isinstance(exits[0], dict)
-        start = int(entries[0]["timestamp_ns"])
-        end = int(exits[0]["timestamp_ns"])
-        matched: list[tuple[int, str]] = []
+        symbol = str(body["symbol"])
+        strategy_id = str(body["strategy_id"])
+        entry_stamps = {int(leg["timestamp_ns"]) for leg in entries if isinstance(leg, dict)}
+        entry_ord = _entry_ack_ordinal(
+            records, symbol=symbol, strategy_id=strategy_id, entry_stamps=entry_stamps
+        )
+        exit_re = re.compile(rf"^{re.escape(cell)}\|EXIT\|\d+$")
+        exit_ords = [
+            ordinal
+            for ordinal, order_id, _ts, _sym in _filled_acks(records)
+            if exit_re.fullmatch(order_id)
+        ]
+        exit_ord = min(exit_ords) if exit_ords else None
+        window: list[tuple[int, str]] = []
+        joined: list[tuple[int, str]] = []
         for req in requirements:
             req_body = _body(req.canonical)
-            if req_body.get("symbol") != body["symbol"]:
+            if req_body.get("symbol") != symbol or req_body.get("strategy_id") != strategy_id:
                 continue
-            if req_body.get("strategy_id") != body["strategy_id"]:
-                continue
-            ts = int(req_body["timestamp_ns"])
-            if start <= ts <= end:
-                matched.append((ts, str(req_body.get("order_id", ""))))
-        matched.sort()
+            order_id = str(req_body.get("order_id", ""))
+            in_window = (
+                entry_ord is not None
+                and exit_ord is not None
+                and entry_ord < req.bus_ordinal <= exit_ord
+            )
+            if in_window:
+                window.append((req.bus_ordinal, order_id))
+            if exit_re.fullmatch(order_id):
+                joined.append((req.bus_ordinal, order_id))
+        if {order_id for _ordinal, order_id in window} != {
+            order_id for _ordinal, order_id in joined
+        }:
+            raise AssertionError(f"M5: window/id mismatch cell {cell}")
+        matched = sorted(window)
         if not matched:
             raise AssertionError(f"requirement count 0 != 1 cell {cell}")
-        rejected = _rejected_ack_times(records)
-        live_ts, live_id = matched[0]
-        for ts, order_id in matched[1:]:
-            ack_ts = rejected.get(live_id)
-            if ack_ts is None or not (live_ts < ack_ts <= ts):
+        rejected = _rejected_ack_ordinals(records)
+        live_ord, live_id = matched[0]
+        for ordinal, order_id in matched[1:]:
+            ack_ord = rejected.get(live_id)
+            if ack_ord is None or not (live_ord < ack_ord <= ordinal):
                 raise AssertionError(
                     f"requirement re-emitted without REJECTED cell {cell} order {order_id}"
                 )
-            live_ts, live_id = ts, order_id
+            live_ord, live_id = ordinal, order_id
 
 
 _SUPPRESSION = frozenset(
@@ -1661,10 +1778,13 @@ class _Attribution:
             attr_cursor = self.attr_cursor
             wide_cursor = self.wide_cursor
             replay_index = None
+        ordinal = len(self.stream)
         self.stream.append(event)
         if _keep(event):
             self._check(event, attr_cursor)
-            self.rows.append(Record(attr_cursor, kind.__name__, canonical(event), replay_index))
+            self.rows.append(
+                Record(attr_cursor, kind.__name__, canonical(event), replay_index, ordinal)
+            )
         self.widened.append(
             Widened(wide_cursor, kind.__name__, _event_digest(event), replay_index)
         )
@@ -1701,9 +1821,27 @@ def _records_from_live(recorder: _Attribution, *, digest_only: bool = False) -> 
     quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
     orders = [event for event in stream if type(event) is OrderRequest]
     verdicts = [event for event in stream if type(event) is RiskVerdict]
-    acks = [event for event in stream if type(event) is OrderAck]
-    slices = [event for event in stream if type(event) is SlicePositionUpdate]
-    records = Records(list(recorder.rows), quotes, orders, verdicts, acks, slices)
+    acks: list[OrderAck] = []
+    ack_ordinals: list[int] = []
+    slices: list[SlicePositionUpdate] = []
+    slice_ordinals: list[int] = []
+    for ordinal, event in enumerate(stream):
+        if type(event) is OrderAck:
+            acks.append(event)
+            ack_ordinals.append(ordinal)
+        elif type(event) is SlicePositionUpdate:
+            slices.append(event)
+            slice_ordinals.append(ordinal)
+    records = Records(
+        list(recorder.rows),
+        quotes,
+        orders,
+        verdicts,
+        acks,
+        slices,
+        ack_ordinals,
+        slice_ordinals,
+    )
     records.widened = widened
     return records
 

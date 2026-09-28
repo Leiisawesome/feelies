@@ -301,10 +301,11 @@ def _closed(
     reason: str,
     paths: list[tuple[str, int]],
     proposed: int,
+    symbol: str = "SYN",
 ) -> Record:
     body: dict[str, object] = {
         "cell_id": cell,
-        "symbol": "SYN",
+        "symbol": symbol,
         "strategy_id": "sig_position_fixture_v1",
         "side": side,
         "entry_fills": [
@@ -332,7 +333,7 @@ def _closed(
     return Record(exit_seq, "PositionClosed", _canon("PositionClosed", body))
 
 
-def _requirement(cell_ts: int) -> Record:
+def _requirement(cell_ts: int, order_id: str = "", ordinal: int = -1) -> Record:
     body = {
         "symbol": "SYN",
         "strategy_id": "sig_position_fixture_v1",
@@ -340,7 +341,9 @@ def _requirement(cell_ts: int) -> Record:
         "reason": "ADVERSE_EXCURSION",
         "source_layer": "POSITION",
     }
-    return Record(cell_ts, "DeRiskRequirement", _canon("DeRiskRequirement", body))
+    if order_id:
+        body["order_id"] = order_id
+    return Record(cell_ts, "DeRiskRequirement", _canon("DeRiskRequirement", body), None, ordinal)
 
 
 def _quotes() -> dict[int, NBBOQuote]:
@@ -412,7 +415,36 @@ def test_t8_exit_reason_picks_adverse_over_favorable() -> None:
         paths=[("FAVORABLE", 10_020), ("ADVERSE", 9_990)],
         proposed=9_990,
     )
-    exit_reason_at_collision(Records([row, _requirement(3)], _quotes(), ()))
+    exit_reason_at_collision(
+        Records(
+            [
+                row,
+                _bus_record(
+                    1,
+                    "OrderAck",
+                    {
+                        "timestamp_ns": 2,
+                        "order_id": "entry",
+                        "status": "FILLED",
+                        "symbol": "SYN",
+                    },
+                ),
+                _requirement(3, "C|EXIT|1", 2),
+                _bus_record(
+                    3,
+                    "OrderAck",
+                    {
+                        "timestamp_ns": 3,
+                        "order_id": "C|EXIT|1",
+                        "status": "FILLED",
+                        "symbol": "SYN",
+                    },
+                ),
+            ],
+            _quotes(),
+            (),
+        )
+    )
 
 
 def _verdict(action: RiskAction, reason: str) -> RiskVerdict:
@@ -794,6 +826,151 @@ def test_a3_end_of_tape_uses_the_last_usable_side() -> None:
         check_a3(Records([other], {}, ()))
 
 
+def _bus_record(ordinal: int, type_name: str, body: dict[str, object]) -> Record:
+    return Record(None, type_name, _canon(type_name, body), None, ordinal)
+
+
+def _golden_29043() -> Records:
+    """Real cell 29043 with placeholder prices. The file has no tape prices or sizes."""
+    payload = json.loads(
+        (Path(__file__).parent / "fixtures" / "m5_real_29043.json").read_text(encoding="utf-8")
+    )
+    close = _closed(
+        str(payload["cell_id"]),
+        side=str(payload["side"]),
+        entry_px=1,
+        exit_px=1,
+        qty=1,
+        entry_seq=int(payload["entry_fill_timestamps_ns"][0]),
+        exit_seq=int(payload["exit_fill_timestamps_ns"][0]),
+        reason=str(payload["exit_reason"]),
+        paths=[(str(path), 1) for path in payload["paths"]],
+        proposed=1,
+        symbol=str(payload["symbol"]),
+    )
+    rows = [close]
+    for event in payload["events"]:
+        ordinal = int(event["ordinal"])
+        kind = str(event["type"])
+        if kind == "OrderAck":
+            rows.append(
+                _bus_record(
+                    ordinal,
+                    kind,
+                    {
+                        "timestamp_ns": int(event["timestamp_ns"]),
+                        "order_id": str(event["order_id"]),
+                        "status": str(event["status"]),
+                        "symbol": str(event["symbol"]),
+                    },
+                )
+            )
+        elif kind == "SlicePositionUpdate":
+            rows.append(
+                _bus_record(
+                    ordinal,
+                    kind,
+                    {
+                        "fill_timestamp_ns": int(event["fill_timestamp_ns"]),
+                        "order_id": str(event["order_id"]),
+                        "symbol": str(event["symbol"]),
+                        "strategy_id": str(event["strategy_id"]),
+                    },
+                )
+            )
+        elif kind == "DeRiskRequirement":
+            rows.append(
+                _bus_record(
+                    ordinal,
+                    kind,
+                    {
+                        "timestamp_ns": int(event["timestamp_ns"]),
+                        "order_id": str(event["order_id"]),
+                        "reason": str(event["reason"]),
+                        "symbol": str(event["symbol"]),
+                        "strategy_id": str(event["strategy_id"]),
+                    },
+                )
+            )
+    return Records(rows, {}, ())
+
+
+def test_m5_real_29043_requirement_is_inside_the_bus_window() -> None:
+    """The cell's only requirement is ADVERSE on |EXIT|1, published after the entry fill."""
+    records = _golden_29043()
+    exit_reason_at_collision(records)
+    requirements = [row for row in records if row.type_name == "DeRiskRequirement"]
+    assert len(requirements) == 1
+    body = json.loads(requirements[0].canonical[requirements[0].canonical.index("{") :])
+    assert str(body["order_id"]).endswith("|EXIT|1")
+    close = json.loads(records[0].canonical[records[0].canonical.index("{") :])
+    assert close["exit_reason"] == "ADVERSE"
+
+
+def test_requirement_exchange_ts_20ms_before_entry_clock_stays_in_window() -> None:
+    """A requirement 20 ms before the entry fill's clock stamp is still after that ack."""
+    entry_ts = 20_000_000
+    exit_ts = 40_000_000
+    cell = "C"
+    closed = _closed(
+        cell,
+        side="LONG",
+        entry_px=1,
+        exit_px=1,
+        qty=1,
+        entry_seq=entry_ts,
+        exit_seq=exit_ts,
+        reason="ADVERSE",
+        paths=[("ADVERSE", 1)],
+        proposed=1,
+    )
+    rows = [
+        closed,
+        _bus_record(
+            1,
+            "OrderAck",
+            {
+                "timestamp_ns": entry_ts,
+                "order_id": "entry",
+                "status": "FILLED",
+                "symbol": "SYN",
+            },
+        ),
+        _bus_record(
+            2,
+            "SlicePositionUpdate",
+            {
+                "fill_timestamp_ns": entry_ts,
+                "order_id": "entry",
+                "symbol": "SYN",
+                "strategy_id": "sig_position_fixture_v1",
+            },
+        ),
+        _bus_record(
+            3,
+            "DeRiskRequirement",
+            {
+                "timestamp_ns": entry_ts - 20_000_000,
+                "order_id": f"{cell}|EXIT|1",
+                "symbol": "SYN",
+                "strategy_id": "sig_position_fixture_v1",
+                "reason": "ADVERSE_EXCURSION",
+            },
+        ),
+        _bus_record(
+            4,
+            "OrderAck",
+            {
+                "timestamp_ns": exit_ts,
+                "order_id": f"{cell}|EXIT|1",
+                "status": "FILLED",
+                "symbol": "SYN",
+            },
+        ),
+    ]
+    exit_reason_at_collision(Records(rows, _quotes(), ()))
+
+
 def test_requirement_reemission_only_after_rejected() -> None:
     """D-106. A second requirement is legal only after a REJECTED ack."""
     closed = _closed(
@@ -809,7 +986,7 @@ def test_requirement_reemission_only_after_rejected() -> None:
         proposed=9_990,
     )
 
-    def _req(ts: int, order_id: str) -> Record:
+    def _req(ordinal: int, order_id: str, ts: int) -> Record:
         body = {
             "symbol": "SYN",
             "strategy_id": "sig_position_fixture_v1",
@@ -818,16 +995,43 @@ def test_requirement_reemission_only_after_rejected() -> None:
             "reason": "ADVERSE_EXCURSION",
             "source_layer": "POSITION",
         }
-        return Record(ts, "DeRiskRequirement", _canon("DeRiskRequirement", body))
+        return Record(ts, "DeRiskRequirement", _canon("DeRiskRequirement", body), None, ordinal)
 
-    def _reject(ts: int, order_id: str) -> Record:
+    def _reject(ordinal: int, order_id: str, ts: int) -> Record:
         body = {"timestamp_ns": ts, "order_id": order_id, "status": "REJECTED"}
-        return Record(ts, "OrderAck", _canon("OrderAck", body))
+        return Record(ts, "OrderAck", _canon("OrderAck", body), None, ordinal)
 
+    entry_ack = _bus_record(
+        1,
+        "OrderAck",
+        {"timestamp_ns": 2, "order_id": "entry", "status": "FILLED", "symbol": "SYN"},
+    )
+    exit_ack = _bus_record(
+        9,
+        "OrderAck",
+        {"timestamp_ns": 10, "order_id": "C|EXIT|2", "status": "FILLED", "symbol": "SYN"},
+    )
     with pytest.raises(AssertionError, match=r"^requirement re-emitted"):
-        exit_reason_at_collision(Records([closed, _req(3, "A"), _req(6, "B")], _quotes(), ()))
+        exit_reason_at_collision(
+            Records(
+                [closed, entry_ack, _req(3, "C|EXIT|1", 3), _req(6, "C|EXIT|2", 6), exit_ack],
+                _quotes(),
+                (),
+            )
+        )
     exit_reason_at_collision(
-        Records([closed, _req(3, "A"), _reject(4, "A"), _req(6, "B")], _quotes(), ())
+        Records(
+            [
+                closed,
+                entry_ack,
+                _req(3, "C|EXIT|1", 3),
+                _reject(4, "C|EXIT|1", 4),
+                _req(6, "C|EXIT|2", 6),
+                exit_ack,
+            ],
+            _quotes(),
+            (),
+        )
     )
 
 
