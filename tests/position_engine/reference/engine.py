@@ -14,6 +14,8 @@ from feelies.core.events import (
     ExitTriggeredPath,
     GateDecision,
     MarkRailUpdate,
+    OrderAck,
+    OrderAckStatus,
     PositionClosed,
     PositionExtreme,
     PositionFillLeg,
@@ -56,6 +58,7 @@ class PositionEngine:
         self._bus.subscribe(MarkRailUpdate, self._on_mark_rail)
         self._bus.subscribe(SlicePositionUpdate, self._on_slice)
         self._bus.subscribe(Signal, self._on_signal)
+        self._bus.subscribe(OrderAck, self._on_ack)
 
     def finalize(self) -> None:
         """§2:172-180 and §8:415-417. END_OF_TAPE after the last replay event."""
@@ -101,6 +104,8 @@ class PositionEngine:
         self._publish_gate(cell, rail, favorable)
         if cell.state == "OPEN":
             self._resolve(cell, rail, orient, adverse, favorable)
+        elif cell.pending_reemit and _exit_side_usable(orient):
+            self._emit_requirement(cell, rail)
 
     def _evaluate(
         self,
@@ -192,7 +197,18 @@ class PositionEngine:
         if cell.open_qty < 1:
             return
         cell.state = "EXITING"
-        cell.exit_order_id = cell.cell_id + "|EXIT"
+        self._emit_requirement(cell, rail)
+
+    def _emit_requirement(self, cell: Cell, rail: MarkRailUpdate) -> None:
+        """§2:157-161 and §2:286-291. One live requirement; attempts count from 1."""
+        if cell.live_requirement or cell.open_qty < 1:
+            return
+        cell.attempt += 1
+        order_id = f"{cell.cell_id}|EXIT|{cell.attempt}"
+        cell.exit_order_id = order_id
+        cell.attempts.append(order_id)
+        cell.live_requirement = True
+        cell.pending_reemit = False
         side = Side.SELL if cell.side == "LONG" else Side.BUY
         self._bus.publish(
             DeRiskRequirement(
@@ -200,7 +216,7 @@ class PositionEngine:
                 correlation_id=rail.correlation_id,
                 sequence=self._seq.next(),
                 source_layer="POSITION",
-                order_id=cell.exit_order_id,
+                order_id=order_id,
                 symbol=cell.symbol,
                 side=side,
                 quantity=cell.open_qty,
@@ -208,6 +224,16 @@ class PositionEngine:
                 reason=cell.requirement_reason,
             )
         )
+
+    def _on_ack(self, event: OrderAck) -> None:
+        """§2:157-161. A REJECTED live exit waits for the next usable rail (D-106)."""
+        if event.status is not OrderAckStatus.REJECTED:
+            return
+        for cell in self._open.values():
+            if cell.live_requirement and cell.exit_order_id == event.order_id:
+                cell.live_requirement = False
+                cell.pending_reemit = True
+                return
 
     def _tape_sequence(self, event: SlicePositionUpdate) -> int:
         """The quote the fill crossed. Entry and exit acks settle on that quote."""
@@ -439,6 +465,11 @@ class PositionEngine:
         )
 
 
+def _exit_side_usable(orient: RailOrientation) -> bool:
+    """§2:159. The executable exit side is present (D-62)."""
+    return orient.valuation_mark_cents is not None and not orient.valuation_side_absent
+
+
 def _orientation(cell: Cell, rail: MarkRailUpdate) -> RailOrientation:
     return _side_orient(cell.side, rail)
 
@@ -515,6 +546,10 @@ class Cell:
         "policy",
         "entry_order_id",
         "exit_order_id",
+        "attempt",
+        "attempts",
+        "live_requirement",
+        "pending_reemit",
         "entry_legs",
         "exit_legs",
         "lots",
@@ -563,6 +598,10 @@ class Cell:
         self.policy = policy
         self.entry_order_id = entry_order_id
         self.exit_order_id = ""
+        self.attempt = 0
+        self.attempts: list[str] = []
+        self.live_requirement = False
+        self.pending_reemit = False
         self.entry_legs: list[PositionFillLeg] = [leg]
         self.exit_legs: list[PositionFillLeg] = []
         self.lots: list[list[int]] = [[price_cents, quantity]]

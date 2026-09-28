@@ -576,7 +576,7 @@ def test_precondition_entry_fill_births_the_cell() -> None:
     snaps = _of(log, PositionSnapshot)
     assert len(snaps) == 1
     assert isinstance(snaps[0], PositionSnapshot)
-    assert snaps[0].cell_id == "SYN|sig|1|LONG"
+    assert snaps[0].cell_id == "SYN|sig|2|LONG"
     assert snaps[0].size == 1
 
 
