@@ -96,11 +96,7 @@ def _fresh(name: str, expected: list[str]) -> None:
                 f"fresh child exited {proc.returncode}\n"
                 f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
             )
-        got = [
-            line
-            for line in Path(path).read_text(encoding="utf-8").splitlines()
-            if line
-        ]
+        got = [line for line in Path(path).read_text(encoding="utf-8").splitlines() if line]
         if got != expected:
             raise AssertionError(
                 f"fresh records differ\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
