@@ -31249,3 +31249,74 @@ OWNER:       campaign 15.
                  changed 0. compare post-T-1 -> post-merge-T-1: 64 ->
                  64, changed 0. pytest counts identical (5223 passed,
                  0 failed, 44 skipped, 0 deselected).
+
+---
+
+## P-22b
+  PR:            #268 (head 2eed17733ae1dd4ae7dd49381b544217bcd8b699,
+                 merge e98cff2d24fcae6138850113c8f90762259431a0).
+  PREDICTION:    held (parity NONE; E0-enumerated 11 added tests;
+                 stage-A deltas as enumerated).
+  DECISIONS:     D-127..D-135, as written in decisions.md.
+                 D-127: J1. A member 5 collision is a tape fact, computed from the tape and the policy parameters, not from engine output. On one rail event the FAVORABLE condition and a higher path's condition both hold. The higher path is INVALIDATION, HORIZON, or ADVERSE, one per synthetic test. Precedence is contracts §2:265-274: ADVERSE, then HORIZON, then INVALIDATION, then FAVORABLE. The property asserts that the close's exit_reason is that highest path and that triggered_paths holds both.
+                 D-128: J2. `test_m11_gap_through` reuses the A4 V3a gap builder and asserts `check_m11_proposed`. The tape precondition is that the barrier level differs from the executable side of q_g+1. NONVACUOUS requires at least one ADVERSE close.
+                 D-129: J3. B8 is restated: the cell's clean peak reads the raw NBBOQuote instead of the rail on an unusable event. The catcher is member 6, A2 on the V5 construction. Under D-62 a rail-only form that drops `not rail.crossed` is equivalent to the reference, because a crossed quote is already absent.
+                 D-130: J4. B10 is restated: the resolve phase publishes a second PositionSnapshot for the same (cell_id, rail_sequence) (D-103). The catcher is member 1's immutability clause.
+                 D-131: J5. `test_m2_dwell_favorable_ignores_stale_cross` asserts outcome `fire` and no reason `DWELL_NOT_CLEAN` at quote sequence 401.
+                 D-132: J6. The grouped-cells guard (`N < 200`) raises an AssertionError whose message begins `NONVACUOUS:`.
+                 D-133: J7. A kill is at least one PROPERTY failure in a named catcher's test ids. CRASH, TIMEOUT, PRECONDITION and NONVACUOUS never count. Each mutant runs in its own pytest process. When the battery row names a clause, only that clause's tests run.
+                 D-134: Four of the eleven mutants survived that battery: B2, B3, B8 and B11. B2's collisions never co-triggered, so every close recorded one path. B3's level price was not asserted on a gap whose barrier differs from the landing quote. B8's rail-reading form matches the reference under D-62. B11's dwell test accepted a suppressed FAVORABLE row.
+                 D-135: Under D-62 only a bypass of the rail can absorb a crossed price, because the rail marks a crossed quote absent and holds the last valid price. P-30 must add a conformance test that the production engine's subscriptions are exactly the contracts §0 list: MarkRailUpdate, SlicePositionUpdate, and Signal.
+  MILESTONE:     P-22 complete. The battery accepts the contract-built
+                 reference (synthetic 45/45, real 9/9) and rejects
+                 B1-B11, each by its named member at PROPERTY level
+                 (kill runner; control 0 failures).
+  CENSUS:        4 of 11 mutants survived the pre-P-22b battery.
+                 B2: member 5 collisions were vacuous; a tape-computed
+                 PRECONDITION now proves the collision.
+                 B3: no gap construction in member 11;
+                 test_m11_gap_through added.
+                 B8: equivalent under D-62; restated as a rail bypass.
+                 B11: the dwell test did not read the outcome; now
+                 asserts fire.
+                 B10 restated as a second snapshot (D-103). Member 3's
+                 sample-size guard is now NONVACUOUS.
+  B4:            catcher test_m1_fresh_syn (member 1, within spec).
+                 Clock-clause timeout under B4: the in-process clock
+                 test freezes monotonic and does not finish under this
+                 mutant within 240 s (TIMEOUT is not a kill).
+  CI:            mutant kill shards A/B on push, PR and dispatch.
+                 Head run 36565157290 on 2eed1773: check 594 s / parity
+                 oracle 215 s / reference battery 255 s / kill A 53 s /
+                 kill B 29 s; battery step "75 passed, 9 deselected in
+                 216.59s (0:03:36)"; Bugbot skipping. Merge run
+                 36573315902 on e98cff2d: check 591 s / parity oracle
+                 189 s / reference battery 224 s / kill A 63 s / kill B
+                 30 s; battery step "75 passed, 9 deselected in 183.77s
+                 (0:03:03)"; Bugbot neutral. Nightly dispatch
+                 36574759885 success (dispatch 6m33s) covers the real
+                 job and both kill shards: child 36574776440, reference
+                 battery (real) success 371 s ("9 passed, 45 deselected
+                 in 338.94s (0:05:38)"), kill A success 61 s, kill B
+                 success 31 s.
+  FINDINGS:      P-30 must add an engine subscription-set conformance
+                 test (the B8 structural note).
+                 check-job duration trend (336-594 s): watch it.
+  NEXT:          S-1 (simulator timing census R1-R3 + the causality
+                 invariant, report-only), then P-23, then P-30.
+  NOTES:         Scheduled nightly not yet due: eae14b6c at
+                 2026-09-29T08:23:24Z, next 08:17 UTC is
+                 2026-09-30T08:17:00Z; gh run list --event schedule
+                 returned none.
+                 Post-merge capture moved to
+                 ..\feelies-captures\P-22b\baseline_post-merge-P-22b.json.
+  VALIDATION:    prepush "5220 passed, 5 skipped, 54 deselected, 1
+                 xfailed, 48 warnings in 358.97s (0:05:58)"; kill 11/11
+                 KILLED; control 0 failures; battery_real "11 passed,
+                 233 deselected in 93.41s (0:01:33)".
+  STAGE:         A.
+  F-P13b:        still xfail(strict) with reason D-63.
+  OUTCOME:       parity hold. compare pre-P-22b -> post-P-22b: 64 ->
+                 64, changed 0. compare post-P-22b -> post-merge-P-22b:
+                 64 -> 64, changed 0. pytest counts identical (5234
+                 passed, 0 failed, 44 skipped, 0 deselected).
