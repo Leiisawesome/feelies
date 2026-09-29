@@ -1,0 +1,38 @@
+name: nightly arch/exec
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency: nightly-arch-exec
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Dispatch ci.yml on arch/exec and watch it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run ci.yml --ref arch/exec
+          id=""
+          for _ in $(seq 1 30); do
+            id=$(gh run list --workflow=ci.yml --branch=arch/exec --event=workflow_dispatch --limit=10 --json databaseId,createdAt --jq "map(select(.createdAt >= \"$since\")) | .[0].databaseId // empty")
+            if [ -n "$id" ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ -z "$id" ]; then
+            echo "no ci.yml workflow_dispatch run on arch/exec at or after $since" >&2
+            exit 1
+          fi
+          gh run watch "$id" --exit-status --interval 30
