@@ -90,6 +90,11 @@ _DUMMY = textwrap.dedent(
     @pytest.mark.functional
     def test_functional_only():
         assert True
+
+    @pytest.mark.broker
+    @pytest.mark.skipif(False, reason="skipif-false-should-not-win")
+    def test_broker_before_false_skipif():
+        assert True
     """
 )
 
@@ -145,8 +150,9 @@ def test_optin_skips_without_flags(tmp_path: Path) -> None:
     proc = _run_pytest(_pytest_args(_dummy(tmp_path)))
     out = proc.stdout + proc.stderr
     assert proc.returncode == 0, out
-    assert "2 skipped" in out
+    assert "3 skipped" in out
     assert out.count("opt-in") >= 2
+    assert "skipif-false-should-not-win" not in out
     assert "FEELIES_BROKER_TESTS=1" in out
     assert "FEELIES_NETWORK_TESTS=1" in out
     assert "1 passed" in out
@@ -159,7 +165,7 @@ def test_optin_flag_runs_only_the_matching_marker(tmp_path: Path) -> None:
     )
     broker_out = broker.stdout + broker.stderr
     assert broker.returncode == 0, broker_out
-    assert "2 passed" in broker_out
+    assert "3 passed" in broker_out
     assert "1 skipped" in broker_out
     assert "FEELIES_NETWORK_TESTS=1" in broker_out
     assert "FEELIES_BROKER_TESTS=1" not in broker_out
@@ -171,7 +177,7 @@ def test_optin_flag_runs_only_the_matching_marker(tmp_path: Path) -> None:
     network_out = network.stdout + network.stderr
     assert network.returncode == 0, network_out
     assert "2 passed" in network_out
-    assert "1 skipped" in network_out
+    assert "2 skipped" in network_out
     assert "FEELIES_BROKER_TESTS=1" in network_out
     assert "FEELIES_NETWORK_TESTS=1" not in network_out
 
