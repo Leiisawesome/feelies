@@ -31190,3 +31190,62 @@ OWNER:       campaign 15.
                  ..\feelies-captures\P-22a2\baseline_post-merge-P-22a2.json.
   OUTCOME:       parity hold. compare pre-P-22a2 -> post-merge-P-22a2:
                  64 -> 64, changed 0.
+
+---
+
+## T-1
+  PR:            A #267 (head 01f6effc986a78070a6a02b1bdbf36ccb45149f1,
+                 merge 25215bc8ef37f2133a61727968300602575c4c43).
+                 B #266 (head 9d7d52e922a77f51680f3fa86f7112e1ab35e087,
+                 main merge eae14b6c394213e3bf5bac60373fb9424d99fec2).
+  PREDICTION:    E0 + amendment A, accounting only (7 added node ids
+                 + 39 moved; other ∅). The original E0 omission was
+                 the architect's; rule adopted (D-126): predictions
+                 enumerate the rung's own added tests.
+  DECISIONS:     D-121..D-126, as written in decisions.md.
+                 D-121: broker/network markers + hook + flags (opt-in
+                 skip first, append=False).
+                 D-122: the paper guard (port 4002/7497, all accounts
+                 DU, hard fail).
+                 D-123: the profile fingerprint.
+                 D-124: the single-source gate (scripts/prepush.py,
+                 scripts/ci_gate_expr.txt; run prepush before every
+                 push).
+                 D-125: the nightly dispatcher on main, with the
+                 arch/exec schedule removed.
+                 D-126: predictions enumerate the rung's own added
+                 tests.
+  RESOLVED:      D-110 (exclusion retired; captures run without any
+                 deselect).
+                 F-P22a2h (dispatcher proven: run 36542500179 → child
+                 36542511702, real 9/9, 4m41s ("9 passed, 44 deselected
+                 in 246.30s (0:04:06)"); failure propagation proven on
+                 run 36505700024, exit 1).
+  FINDINGS:      F-T1a PAPER mode warns only (paper campaign, D-63).
+                 F-T1c historical captures included live-network
+                 outcomes.
+                 Scheduled workflows are disabled after 60 days of
+                 repository inactivity.
+  NOTES:         First scheduled fire expected at 08:17 UTC; the next
+                 merge prompt checks it.
+                 Post-merge capture moved to
+                 ..\feelies-captures\T-1\baseline_post-merge-T-1.json.
+  VALIDATION:    prepush "5209 passed, 5 skipped, 54 deselected, 1
+                 xfailed, 48 warnings in 589.55s (0:09:49)";
+                 battery_real "11 passed, 222 deselected in 184.20s
+                 (0:03:04)"; opt-in 39 skipped, all "opt-in".
+                 CI A run 36526777151 on 01f6effc: check 5m59s / parity
+                 oracle 3m35s / reference battery 5m11s; battery step
+                 "74 passed, 9 deselected in 279.13s (0:04:39)"; Bugbot
+                 skipping. Merge CI run 36540667089 on 25215bc8: check
+                 9m55s / parity oracle 2m58s / reference battery 5m17s;
+                 battery step "74 passed, 9 deselected in 284.17s
+                 (0:04:44)"; Bugbot skipping. CI B run 36526163303 on
+                 9d7d52e9: check 4m8s / parity oracle 1m14s; Bugbot
+                 skipping.
+  STAGE:         A.
+  F-P13b:        still xfail(strict) with reason D-63.
+  OUTCOME:       parity hold. compare pre-T-1 -> post-T-1: 64 -> 64,
+                 changed 0. compare post-T-1 -> post-merge-T-1: 64 ->
+                 64, changed 0. pytest counts identical (5223 passed,
+                 0 failed, 44 skipped, 0 deselected).
