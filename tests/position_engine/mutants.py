@@ -472,7 +472,14 @@ REGISTRY: dict[str, Mutant] = {
         "M11: proposed",
         "B",
     ),
-    "B4": Mutant("B4", "engine", f"{__name__}.WallClockDeadline", (_M1,), "assert", "A"),
+    "B4": Mutant(
+        "B4",
+        "engine",
+        f"{__name__}.WallClockDeadline",
+        ("tests/position_engine/test_battery_m1_reproducibility.py::test_m1_fresh_syn",),
+        "fresh records differ",
+        "A",
+    ),
     "B5": Mutant(
         "B5", "engine", f"{__name__}.AccumulatedMoves", (_M11,), "M11: move_now_cents", "B"
     ),

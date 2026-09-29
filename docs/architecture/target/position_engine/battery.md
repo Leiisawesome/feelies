@@ -375,7 +375,12 @@ walls plus 11 s, and each is at most 300 s (D-71).
 
 | Shard | Mutants | Walls (s) | Estimate (s) |
 |---|---|---:|---:|
-| A | B1, B4, B10 | 8.7 + 15.4 + 8.3 = 32.4 | 43.4 |
+| A | B1, B4, B10 | 8.7 + 17.6 + 8.3 = 34.6 | 45.6 |
+
+B4's selection is `test_m1_fresh_syn`. The in-process clock test freezes
+`time.monotonic` for its second run; with this mutant that run does not finish
+inside the 240 s limit, and a TIMEOUT is not a kill. The fresh process compares
+two real clocks and fails `fresh records differ`.
 | B | B2, B3, B5, B6, B7, B8, B9, B11 | 2.1 + 1.3 + 1.6 + 1.7 + 2.1 + 2.2 + 2.1 + 1.2 = 14.3 | 25.3 |
 
 **Reference rail (P-22a1) and reference engine (P-22a2).** Built only from the contracts
