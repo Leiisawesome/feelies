@@ -139,6 +139,8 @@ markers = [
     "paper_rth: requires US RTH + IB Gateway paper @ 4002 + MASSIVE_API_KEY",
     "battery_member: position-engine battery member gated by the stage letter (tests/position_engine/conftest.py)",
     "battery_real: battery member on the real APP session; runs only in the parity oracle job with the cache required (D-30)",
+    "broker: connects to a broker session; may place orders; opt-in FEELIES_BROKER_TESTS=1",
+    "network: live external data service; opt-in FEELIES_NETWORK_TESTS=1",
 ]
 
 [tool.coverage.run]

@@ -27,10 +27,8 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Nightly and manual runs are the real reference battery only. check and the
-  # parity oracle stay on push and pull_request.
-  schedule:
-    - cron: "0 8 * * *"
+  # The real reference battery is manual here. Nightly coverage of this
+  # branch is the dispatcher on main (.github/workflows/nightly-arch-exec.yml).
   workflow_dispatch:
 
 # A superseded push should not keep burning a runner.
@@ -84,22 +82,8 @@ jobs:
         # re-resolving it, so CI tests the dependency set the repo committed.
         run: uv sync --all-extras --locked
 
-      - name: Lint
-        # scripts/ added 2026-08-12. It had been outside every gate and had
-        # accumulated five errors nobody saw — CI linted src/ and tests/ only,
-        # so a directory that ships operator entry points drifted unchecked.
-        run: uv run ruff check src/ tests/ scripts/
-
-      - name: Format
-        run: uv run ruff format --check src/ tests/ scripts/
-
-      - name: Types
-        run: uv run mypy src/feelies
-
-      - name: Import contracts
-        # Blocking. Five import tiers (T-09z) and Twelve engine module sets
-        # (G40) are both KEPT. A broken contract fails this job.
-        run: uv run lint-imports --no-cache
+      - name: Static checks
+        run: uv run python scripts/prepush.py --fast
 
       - name: Restore APP baseline event cache
         uses: actions/cache@v4
@@ -172,7 +156,7 @@ jobs:
         # an open US market. Both self-skip, but deselecting is explicit and keeps
         # a skip from quietly becoming a failure the way it did in #223.
         # `slow` stays selected — it carries the mypy scope acceptance test.
-        run: uv run pytest -m "not functional and not paper_rth and not battery_real" -q
+        run: uv run pytest -m "$(cat scripts/ci_gate_expr.txt)" -q
 
       - name: Determinism under an unpinned hash seed
         # Everything above runs at PYTHONHASHSEED=0, which means none of it can
@@ -360,7 +344,7 @@ jobs:
     name: reference battery (real)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     env:
       PYTHONHASHSEED: "0"
       FEELIES_REQUIRE_BASELINE_CACHE: "1"

@@ -28,6 +28,19 @@ def pytest_report_header() -> str:
     return f"PYTHONHASHSEED={os.environ.get('PYTHONHASHSEED', '<unset>')}"
 
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Skip broker and network tests unless the matching opt-in flag is ``1``."""
+    broker_on = os.environ.get("FEELIES_BROKER_TESTS") == "1"
+    network_on = os.environ.get("FEELIES_NETWORK_TESTS") == "1"
+    skip_broker = pytest.mark.skip(reason="opt-in: set FEELIES_BROKER_TESTS=1")
+    skip_network = pytest.mark.skip(reason="opt-in: set FEELIES_NETWORK_TESTS=1")
+    for item in items:
+        if not broker_on and item.get_closest_marker("broker") is not None:
+            item.add_marker(skip_broker, append=False)
+        if not network_on and item.get_closest_marker("network") is not None:
+            item.add_marker(skip_network, append=False)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     seed = os.environ.get("PYTHONHASHSEED")
     if seed != _EXPECTED_HASH_SEED:

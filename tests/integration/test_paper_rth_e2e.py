@@ -17,6 +17,7 @@ from tests.paper.conftest import require_ib_gateway, require_massive_api_key, re
 pytestmark = [
     pytest.mark.functional,
     pytest.mark.paper_rth,
+    pytest.mark.broker,
 ]
 
 
