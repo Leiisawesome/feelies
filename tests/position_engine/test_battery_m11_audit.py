@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +16,7 @@ from feelies.core.events import NBBOQuote
 from tests.position_engine.scenarios import (
     T0,
     Record,
+    Records,
     audit_m11,
     check_m11_extremes,
     check_m11_gross,
@@ -170,3 +172,70 @@ def test_m11_synthetic() -> None:
     require_entry_fills(records)
     nonvacuous(records, "PositionClosed", scenario="m11")
     audit_m11(records)
+
+
+def test_m11_later_exiting_snapshot_is_not_the_deciding_quote() -> None:
+    """Decision at rail k, EXITING snapshot and fill at k+1.
+
+    contracts.md §2:269-279, §2:287, §2:294-295. The proposed price is the
+    executable side of the deciding quote. The later EXITING snapshot is not it.
+    """
+    deciding = 20
+    later = deciding + 1
+    close = _closed(proposed=10_010)
+    close["exit_reason"] = "ADVERSE"
+    close["triggered_paths"] = [
+        {
+            "path": "ADVERSE",
+            "proposed_price_cents": 10_010,
+            "trigger": "LEVEL",
+            "rail_sequence": deciding,
+        }
+    ]
+    close["exit_fills"] = [
+        {"price_cents": 9_979, "quantity": 10, "timestamp_ns": later, "sequence": later}
+    ]
+    snapshots = [
+        _snapshot(move_now=100, move_worst=50, move_forced=50, best=100, rail_sequence=deciding),
+        _snapshot(move_now=90, move_worst=50, move_forced=50, best=100, rail_sequence=later),
+    ]
+    quotes = {
+        deciding: _quote(deciding, 10_010, 10_011),
+        later: _quote(later, 9_979, 9_980),
+    }
+    check_m11_proposed(close, snapshots, quotes)
+
+
+def _golden_records() -> Records:
+    payload = json.loads(
+        (Path(__file__).parent / "fixtures" / "m11_cell_302_long.json").read_text(encoding="utf-8")
+    )
+    quotes = {int(raw["sequence"]): _quote_from_golden(raw) for raw in payload["quotes"]}
+    rows = [
+        Record(raw["attributed_quote_sequence"], raw["type_name"], raw["canonical"])
+        for raw in payload["rows"]
+    ]
+    return Records(rows, quotes, ())
+
+
+def _quote_from_golden(raw: dict[str, object]) -> NBBOQuote:
+    return NBBOQuote(
+        timestamp_ns=int(raw["timestamp_ns"]),  # type: ignore[arg-type]
+        correlation_id=str(raw["correlation_id"]),
+        sequence=int(raw["sequence"]),  # type: ignore[arg-type]
+        symbol=str(raw["symbol"]),
+        bid=Decimal(str(raw["bid"])),
+        ask=Decimal(str(raw["ask"])),
+        bid_size=int(raw["bid_size"]),  # type: ignore[arg-type]
+        ask_size=int(raw["ask_size"]),  # type: ignore[arg-type]
+        exchange_timestamp_ns=int(raw["exchange_timestamp_ns"]),  # type: ignore[arg-type]
+    )
+
+
+def test_m11_golden_cell_302_deciding_quote() -> None:
+    """Golden SYN|sig_position_fixture_v1|302|LONG from the reference run.
+
+    contracts.md §2:269-279, §2:287, §2:294-295. The path entries carry no rail
+    sequence, so the deciding event is the first triggering gate outcome.
+    """
+    audit_m11(_golden_records())

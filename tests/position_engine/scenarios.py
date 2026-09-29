@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import struct
 import sys
 import time
@@ -73,6 +74,7 @@ class Record(NamedTuple):
     type_name: str
     canonical: str
     replay_index: int | None = None
+    bus_ordinal: int = -1
 
 
 class Widened(NamedTuple):
@@ -100,6 +102,9 @@ class Records(list[Record]):
         risk_verdicts: Sequence[RiskVerdict] = (),
         order_acks: Sequence[OrderAck] = (),
         slice_updates: Sequence[SlicePositionUpdate] = (),
+        ack_ordinals: Sequence[int] = (),
+        slice_ordinals: Sequence[int] = (),
+        ack_pricing: Sequence[int | None] = (),
     ) -> None:
         super().__init__(rows)
         self.quotes = quotes
@@ -107,6 +112,9 @@ class Records(list[Record]):
         self.risk_verdicts = tuple(risk_verdicts)
         self.order_acks = tuple(order_acks)
         self.slice_updates = tuple(slice_updates)
+        self.ack_ordinals = tuple(ack_ordinals)
+        self.slice_ordinals = tuple(slice_ordinals)
+        self.ack_pricing = tuple(ack_pricing)
         self.widened = ()
 
 
@@ -395,12 +403,91 @@ def _last_usable_snapshot_mark(snapshots: Sequence[Mapping[str, object]]) -> int
     return found
 
 
+def _path_rail_sequence(closed: Mapping[str, object]) -> int | None:
+    """Rail sequence carried on a triggered path, if the close recorded one.
+
+    contracts.md §2:294-295. Every path on the close triggered on the deciding
+    event. Prefer the path named by ``exit_reason``.
+    """
+    paths = closed.get("triggered_paths")
+    if not isinstance(paths, list):
+        return None
+    reason = str(closed.get("exit_reason"))
+    fallback: int | None = None
+    for path in paths:
+        if not isinstance(path, dict) or not isinstance(path.get("rail_sequence"), int):
+            continue
+        sequence = int(path["rail_sequence"])
+        if str(path.get("path")) == reason:
+            return sequence
+        if fallback is None:
+            fallback = sequence
+    return fallback
+
+
+def _first_triggering_gate(
+    closed: Mapping[str, object],
+    decisions: Sequence[Mapping[str, object]] | None,
+) -> int | None:
+    """First triggering gate outcome that is not ESCALATION_NOOP.
+
+    contracts.md §2:287 and §2:294-295. A re-emission does not move the
+    deciding event, and a later gate outcome while EXITING is ESCALATION_NOOP.
+    HORIZON and INVALIDATION are resolve predicates (§2:259-263), not gate
+    fires; their deciding rail is the last outcome that is not ESCALATION_NOOP.
+    """
+    if not decisions:
+        return None
+    cell = str(closed["cell_id"])
+    reason = str(closed.get("exit_reason"))
+    wanted = _EXIT_GATE.get(reason)
+    first_fire: int | None = None
+    last_live: int | None = None
+    for body in decisions:
+        if str(body.get("cell_id")) != cell:
+            continue
+        sequence = body.get("rail_sequence")
+        if not isinstance(sequence, int):
+            continue
+        outcome = str(body.get("outcome"))
+        if outcome != "ESCALATION_NOOP":
+            last_live = sequence
+        if outcome != "fire":
+            continue
+        if wanted in ("ADVERSE", "FAVORABLE") and str(body.get("gate")) != wanted:
+            continue
+        if first_fire is None:
+            first_fire = sequence
+    if first_fire is not None:
+        return first_fire
+    if reason in ("HORIZON", "INVALIDATION"):
+        return last_live
+    return None
+
+
+def _triggered_prices(closed: Mapping[str, object]) -> list[int]:
+    paths = closed.get("triggered_paths")
+    if not isinstance(paths, list):
+        return []
+    prices: list[int] = []
+    for path in paths:
+        if isinstance(path, dict) and isinstance(path.get("proposed_price_cents"), int):
+            prices.append(int(path["proposed_price_cents"]))
+    return prices
+
+
 def check_m11_proposed(
     closed: Mapping[str, object],
     snapshots: Sequence[Mapping[str, object]],
     quotes: Mapping[int, NBBOQuote],
+    decisions: Sequence[Mapping[str, object]] | None = None,
 ) -> None:
-    """Proposed price is the executable side of the deciding quote (B3)."""
+    """Proposed price is the executable side of the deciding quote (B3).
+
+    The deciding rail is the event on which ``exit_reason`` first triggered
+    (contracts.md §2:269-279, §2:287, §2:294-295), not the last snapshot.
+    END_OF_TAPE keeps the last usable rail mark (G9, N7).
+    """
     if _skip_stale_end(closed):
         return
     if str(closed.get("exit_reason")) == "END_OF_TAPE":
@@ -409,14 +496,22 @@ def check_m11_proposed(
         if got != expected:
             raise AssertionError(f"M11: proposed {got} != last usable executable {expected}")
         return
-    if not snapshots:
-        raise AssertionError("M11: no snapshot for the deciding quote")
-    sequence = int(snapshots[-1]["rail_sequence"])  # type: ignore[arg-type]
+    sequence = _path_rail_sequence(closed)
+    if sequence is None:
+        sequence = _first_triggering_gate(closed, decisions)
+    if sequence is None:
+        if not snapshots:
+            raise AssertionError("M11: no snapshot for the deciding quote")
+        sequence = int(snapshots[-1]["rail_sequence"])  # type: ignore[arg-type]
     quote = quotes.get(sequence)
     if quote is None:
         raise AssertionError(f"M11: deciding quote {sequence} is not on the tape")
     side = str(closed["side"])
-    executable = _cents(quote.bid if side == "LONG" else quote.ask)
+    prices = _triggered_prices(closed)
+    if len(prices) > 1:
+        executable = min(prices) if side == "LONG" else max(prices)
+    else:
+        executable = _cents(quote.bid if side == "LONG" else quote.ask)
     got = closed.get("proposed_price_cents")
     if got != executable:
         raise AssertionError(f"M11: proposed {got} != executable {executable} of quote {sequence}")
@@ -462,6 +557,7 @@ def audit_m11(records: Records) -> int:
             snapshots.setdefault(str(body["cell_id"]), []).append(body)
         elif row.type_name == "PositionClosed":
             closed.append((row, _body(row.canonical)))
+    decisions = _gate_bodies(records)
     skipped = 0
     for row, body in closed:
         snaps = snapshots.get(str(body["cell_id"]), [])
@@ -469,7 +565,7 @@ def audit_m11(records: Records) -> int:
         if _skip_stale_end(body):
             skipped += 1
             continue
-        check_m11_proposed(body, snaps, records.quotes)
+        check_m11_proposed(body, snaps, records.quotes, decisions)
         check_m11_gross(row, records.quotes)
     return skipped
 
@@ -500,19 +596,109 @@ def mean_within_se(samples: Sequence[float], expected: float, *, label: str) -> 
         raise AssertionError(f"mean {label} {mean} outside 4 SE of {expected} (bound {bound})")
 
 
-def _rejected_ack_times(records: Records) -> dict[str, int]:
-    """order_id -> timestamp of a REJECTED ack, from the stream or record rows."""
-    found: dict[str, int] = {}
-    for ack in records.order_acks:
-        if _ack_name(ack.status) == "REJECTED":
-            found[str(ack.order_id)] = int(ack.timestamp_ns)
+_EXIT_ORDER = re.compile(r"\|EXIT\|\d+$")
+
+
+def _filled_acks(records: Records) -> list[tuple[int, str, int, str]]:
+    """FILLED acks as (bus ordinal, order_id, timestamp_ns, symbol)."""
+    found: list[tuple[int, str, int, str]] = []
+    for index, ack in enumerate(records.order_acks):
+        if _ack_name(ack.status) != "FILLED":
+            continue
+        ordinal = records.ack_ordinals[index] if index < len(records.ack_ordinals) else -1
+        found.append((ordinal, str(ack.order_id), int(ack.timestamp_ns), str(ack.symbol)))
     for row in records:
         if row.type_name != "OrderAck":
             continue
         body = _body(row.canonical)
-        if _ack_name(body.get("status")) == "REJECTED":
-            found[str(body.get("order_id"))] = int(body["timestamp_ns"])
+        if _ack_name(body.get("status")) != "FILLED":
+            continue
+        found.append(
+            (
+                row.bus_ordinal,
+                str(body.get("order_id", "")),
+                int(body["timestamp_ns"]),
+                str(body.get("symbol", "")),
+            )
+        )
     return found
+
+
+def _slice_marks(records: Records) -> list[tuple[int, str, str, str, int]]:
+    """Slice updates as (ordinal, symbol, strategy_id, order_id, fill_timestamp_ns)."""
+    found: list[tuple[int, str, str, str, int]] = []
+    for index, update in enumerate(records.slice_updates):
+        ordinal = records.slice_ordinals[index] if index < len(records.slice_ordinals) else -1
+        found.append(
+            (
+                ordinal,
+                str(update.symbol),
+                str(update.strategy_id),
+                str(update.order_id),
+                int(update.fill_timestamp_ns),
+            )
+        )
+    for row in records:
+        if row.type_name != "SlicePositionUpdate":
+            continue
+        body = _body(row.canonical)
+        found.append(
+            (
+                row.bus_ordinal,
+                str(body.get("symbol", "")),
+                str(body.get("strategy_id", "")),
+                str(body.get("order_id", "")),
+                int(body["fill_timestamp_ns"]),
+            )
+        )
+    return found
+
+
+def _rejected_ack_ordinals(records: Records) -> dict[str, int]:
+    """order_id -> bus ordinal of a REJECTED ack, from the stream or record rows."""
+    found: dict[str, int] = {}
+    for index, ack in enumerate(records.order_acks):
+        if _ack_name(ack.status) != "REJECTED":
+            continue
+        ordinal = records.ack_ordinals[index] if index < len(records.ack_ordinals) else -1
+        found[str(ack.order_id)] = ordinal
+    for row in records:
+        if row.type_name != "OrderAck":
+            continue
+        body = _body(row.canonical)
+        if _ack_name(body.get("status")) != "REJECTED":
+            continue
+        found[str(body.get("order_id"))] = row.bus_ordinal
+    return found
+
+
+def _entry_ack_ordinal(
+    records: Records,
+    *,
+    symbol: str,
+    strategy_id: str,
+    entry_stamps: set[int],
+) -> int | None:
+    """First FILLED ack of an entry leg. Slice identity, else same stamp and symbol."""
+    entry_ids = {
+        order_id
+        for _ordinal, sym, strat, order_id, fill_ts in _slice_marks(records)
+        if sym == symbol
+        and strat == strategy_id
+        and fill_ts in entry_stamps
+        and _EXIT_ORDER.search(order_id) is None
+    }
+    filled = _filled_acks(records)
+    ordinals = [ordinal for ordinal, order_id, _ts, _sym in filled if order_id in entry_ids]
+    if not ordinals:
+        ordinals = [
+            ordinal
+            for ordinal, order_id, ts, sym in filled
+            if sym == symbol and ts in entry_stamps and _EXIT_ORDER.search(order_id) is None
+        ]
+    if not ordinals:
+        return None
+    return min(ordinals)
 
 
 def exit_reason_at_collision(records: Records) -> None:
@@ -544,30 +730,51 @@ def exit_reason_at_collision(records: Records) -> None:
         exits = body["exit_fills"]
         assert isinstance(entries, list) and isinstance(exits, list) and entries and exits
         assert isinstance(entries[0], dict) and isinstance(exits[0], dict)
-        start = int(entries[0]["timestamp_ns"])
-        end = int(exits[0]["timestamp_ns"])
-        matched: list[tuple[int, str]] = []
+        symbol = str(body["symbol"])
+        strategy_id = str(body["strategy_id"])
+        entry_stamps = {int(leg["timestamp_ns"]) for leg in entries if isinstance(leg, dict)}
+        entry_ord = _entry_ack_ordinal(
+            records, symbol=symbol, strategy_id=strategy_id, entry_stamps=entry_stamps
+        )
+        exit_re = re.compile(rf"^{re.escape(cell)}\|EXIT\|\d+$")
+        exit_ords = [
+            ordinal
+            for ordinal, order_id, _ts, _sym in _filled_acks(records)
+            if exit_re.fullmatch(order_id)
+        ]
+        exit_ord = min(exit_ords) if exit_ords else None
+        window: list[tuple[int, str]] = []
+        joined: list[tuple[int, str]] = []
         for req in requirements:
             req_body = _body(req.canonical)
-            if req_body.get("symbol") != body["symbol"]:
+            if req_body.get("symbol") != symbol or req_body.get("strategy_id") != strategy_id:
                 continue
-            if req_body.get("strategy_id") != body["strategy_id"]:
-                continue
-            ts = int(req_body["timestamp_ns"])
-            if start <= ts <= end:
-                matched.append((ts, str(req_body.get("order_id", ""))))
-        matched.sort()
+            order_id = str(req_body.get("order_id", ""))
+            in_window = (
+                entry_ord is not None
+                and exit_ord is not None
+                and entry_ord < req.bus_ordinal <= exit_ord
+            )
+            if in_window:
+                window.append((req.bus_ordinal, order_id))
+            if exit_re.fullmatch(order_id):
+                joined.append((req.bus_ordinal, order_id))
+        if {order_id for _ordinal, order_id in window} != {
+            order_id for _ordinal, order_id in joined
+        }:
+            raise AssertionError(f"M5: window/id mismatch cell {cell}")
+        matched = sorted(window)
         if not matched:
             raise AssertionError(f"requirement count 0 != 1 cell {cell}")
-        rejected = _rejected_ack_times(records)
-        live_ts, live_id = matched[0]
-        for ts, order_id in matched[1:]:
-            ack_ts = rejected.get(live_id)
-            if ack_ts is None or not (live_ts < ack_ts <= ts):
+        rejected = _rejected_ack_ordinals(records)
+        live_ord, live_id = matched[0]
+        for ordinal, order_id in matched[1:]:
+            ack_ord = rejected.get(live_id)
+            if ack_ord is None or not (live_ord < ack_ord <= ordinal):
                 raise AssertionError(
                     f"requirement re-emitted without REJECTED cell {cell} order {order_id}"
                 )
-            live_ts, live_id = ts, order_id
+            live_ord, live_id = ordinal, order_id
 
 
 _SUPPRESSION = frozenset(
@@ -830,8 +1037,133 @@ def _last_usable_rail_mark(records: Records, side: str) -> int | None:
     return found
 
 
+_FILL_ACK = frozenset({"FILLED", "PARTIALLY_FILLED"})
+
+
+class _FillAck(NamedTuple):
+    ordinal: int
+    price_cents: int
+    pricing: int | None
+    timestamp_ns: int
+
+
+def _cents_exact(value: object) -> int:
+    """§9:480-482. Same rule as reference ``whole_cents``: a fractional cent raises."""
+    if isinstance(value, bool) or value is None:
+        raise AssertionError(f"A3a: bad fill price {value!r}")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        value = Decimal(value)
+    if isinstance(value, Decimal):
+        scaled = value * 100
+        if scaled != scaled.to_integral_value():
+            raise AssertionError(f"A3a: fractional cent {value}")
+        return int(scaled)
+    raise AssertionError(f"A3a: bad fill price {value!r}")
+
+
+def _row_fill_cents(body: dict[str, object]) -> int | None:
+    if "price_cents" in body:
+        return _cents_exact(body["price_cents"])
+    if body.get("fill_price") is None:
+        return None
+    return _cents_exact(body["fill_price"])
+
+
+def _collect_fill_acks(
+    records: Records,
+    *,
+    order_re: re.Pattern[str] | None,
+    timestamps: set[int] | None,
+) -> list[_FillAck]:
+    """Fill-bearing acks in bus order. ``order_re`` selects |EXIT| attempts."""
+    found: list[_FillAck] = []
+    for index, ack in enumerate(records.order_acks):
+        if _ack_name(ack.status) not in _FILL_ACK:
+            continue
+        order_id = str(ack.order_id)
+        if order_re is not None and order_re.fullmatch(order_id) is None:
+            continue
+        if timestamps is not None and int(ack.timestamp_ns) not in timestamps:
+            continue
+        if ack.fill_price is None:
+            continue
+        ordinal = records.ack_ordinals[index] if index < len(records.ack_ordinals) else -1
+        pricing = records.ack_pricing[index] if index < len(records.ack_pricing) else None
+        found.append(
+            _FillAck(ordinal, _cents_exact(ack.fill_price), pricing, int(ack.timestamp_ns))
+        )
+    for row in records:
+        if row.type_name != "OrderAck":
+            continue
+        body = _body(row.canonical)
+        if _ack_name(body.get("status")) not in _FILL_ACK:
+            continue
+        order_id = str(body.get("order_id", ""))
+        if order_re is not None and order_re.fullmatch(order_id) is None:
+            continue
+        timestamp = int(body["timestamp_ns"]) if "timestamp_ns" in body else -1
+        if timestamps is not None and timestamp not in timestamps:
+            continue
+        price = _row_fill_cents(body)
+        if price is None:
+            continue
+        cursor = row.attributed_quote_sequence
+        pricing = cursor if isinstance(cursor, int) else None
+        found.append(_FillAck(row.bus_ordinal, price, pricing, timestamp))
+    found.sort(key=lambda item: item.ordinal)
+    return found
+
+
+def _pair_exit_legs(
+    legs: list[dict[str, object]],
+    acks: list[_FillAck],
+) -> list[tuple[dict[str, object], _FillAck]] | None:
+    """Pair each close leg with the fill ack of that same fill."""
+    if len(legs) != len(acks):
+        return None
+    if any("timestamp_ns" not in leg for leg in legs):
+        return list(zip(legs, acks, strict=True))
+    buckets: dict[int, list[_FillAck]] = {}
+    for ack in acks:
+        buckets.setdefault(ack.timestamp_ns, []).append(ack)
+    paired: list[tuple[dict[str, object], _FillAck]] = []
+    for leg in legs:
+        bucket = buckets.get(int(leg["timestamp_ns"]))
+        if not bucket:
+            return None
+        paired.append((leg, bucket.pop(0)))
+    if any(buckets.values()):
+        return None
+    return paired
+
+
+def _deciding_ordinal(records: Records, cell: str, gate: str | None) -> int | None:
+    found: list[int] = []
+    for row in records:
+        if row.type_name != "GateDecision":
+            continue
+        body = _body(row.canonical)
+        if str(body.get("cell_id")) != cell:
+            continue
+        if str(body.get("outcome", "")).lower() != "fire":
+            continue
+        if gate is not None and str(body.get("gate")) != gate:
+            continue
+        found.append(row.bus_ordinal)
+    return found[-1] if found else None
+
+
 def check_a3(records: Records) -> None:
-    """EOT uses the last usable rail mark; every other close uses the fill quote (D-109)."""
+    """EOT uses the last usable rail mark (D-109).
+
+    Every other close: A3a, each exit-leg price equals the fill ack of that
+    leg (§2:294-295; whole cents §9:480-482). A3b, the leg is published after
+    the deciding gate and is no better than the executable side of the quote
+    being processed when the fill is published. A3b assumes the current
+    pricing model (R2): that quote, not the quote prevailing at arrival.
+    """
     for body in _closed_bodies(records):
         cell = str(body["cell_id"])
         side = str(body["side"])
@@ -848,30 +1180,44 @@ def check_a3(records: Records) -> None:
         exits = body.get("exit_fills")
         if not isinstance(exits, list) or not exits or not isinstance(exits[0], dict):
             raise AssertionError(f"A3: cell {cell} has no exit fill")
-        fill_seq = int(exits[0]["sequence"])
-        price = int(exits[0]["price_cents"])
-        quote = records.quotes.get(fill_seq)
-        if quote is None:
+        legs = [leg for leg in exits if isinstance(leg, dict)]
+        exit_re = re.compile(rf"^{re.escape(cell)}\|EXIT\|\d+$")
+        acks = _collect_fill_acks(records, order_re=exit_re, timestamps=None)
+        if not acks:
+            stamps = {int(leg["timestamp_ns"]) for leg in legs if "timestamp_ns" in leg}
+            if stamps:
+                acks = _collect_fill_acks(records, order_re=None, timestamps=stamps)
+        paired = _pair_exit_legs(legs, acks)
+        if paired is None:
             raise AssertionError(
-                f"A3: cell {cell} exit fill sequence {fill_seq} is not on the tape"
+                f"A3a: cell {cell} exit legs {len(legs)} != fill acks {len(acks)}"
             )
-        gate = _EXIT_GATE.get(str(body.get("exit_reason")))
-        decision = _deciding_sequence(records, cell, gate) if gate is not None else None
-        if decision is not None and decision in records.quotes:
-            ordered = sorted(records.quotes)
-            if ordered.index(fill_seq) < ordered.index(decision):
+        for leg, ack in paired:
+            got = int(leg["price_cents"])
+            if got != ack.price_cents:
                 raise AssertionError(
-                    f"A3: cell {cell} fill {fill_seq} is before decision {decision}"
+                    f"A3a: cell {cell} exit price {got} != fill ack {ack.price_cents}"
                 )
-        expected = _executable_exit_cents(quote, side)
-        if price != expected:
-            raise AssertionError(
-                f"A3: cell {cell} exit price {price} != executable {expected} of quote {fill_seq}"
-            )
+        gate = _EXIT_GATE.get(str(body.get("exit_reason")))
+        decision = _deciding_ordinal(records, cell, gate) if gate is not None else None
+        for leg, ack in paired:
+            if decision is not None and ack.ordinal <= decision:
+                raise AssertionError(
+                    f"A3b: cell {cell} fill at {ack.ordinal} is not after decision {decision}"
+                )
+            if not isinstance(ack.pricing, int) or ack.pricing not in records.quotes:
+                raise AssertionError(f"A3b: cell {cell} fill has no pricing quote")
+            executable = _executable_exit_cents(records.quotes[ack.pricing], side)
+            price = int(leg["price_cents"])
+            better = price > executable if side == "LONG" else price < executable
+            if better:
+                raise AssertionError(
+                    f"A3b: cell {cell} exit price {price} better than executable {executable}"
+                )
 
 
 def check_a4(records: Records, *, birth_sequence: int, centre: int, band: int) -> None:
-    """Gap-through is ADVERSE at the executable side of q_g+1, strictly past the barrier."""
+    """Gap-through is ADVERSE, no better than q_g+1, and strictly past the barrier."""
     body = _cell_born(records, birth_sequence)
     if body is None:
         raise AssertionError(f"A4: no cell born at {birth_sequence}")
@@ -895,9 +1241,10 @@ def check_a4(records: Records, *, birth_sequence: int, centre: int, band: int) -
     if fill is None:
         raise AssertionError(f"A4: q_g+1 sequence {fill_seq} is not on the tape")
     executable = _executable_exit_cents(fill, side)
-    if price != executable:
+    better = price > executable if side == "LONG" else price < executable
+    if better:
         raise AssertionError(
-            f"A4: exit price {price} != executable {executable} of q_g+1 {fill_seq} cell {cell}"
+            f"A4: exit price {price} better than executable {executable} of q_g+1 {fill_seq} cell {cell}"
         )
     worse = price < barrier if side == "LONG" else price > barrier
     if not worse:
@@ -1536,6 +1883,7 @@ class _Attribution:
         self.rows: list[Record] = []
         self.widened: list[Widened] = []
         self.stream: list[Event] = []
+        self.pricing: list[int | None] = []
         self._eot = False
         self._replay_index: int | None = None
         self._engine: object | None = None
@@ -1573,10 +1921,15 @@ class _Attribution:
             attr_cursor = self.attr_cursor
             wide_cursor = self.wide_cursor
             replay_index = None
+        ordinal = len(self.stream)
+        pricing = attr_cursor if isinstance(attr_cursor, int) else None
         self.stream.append(event)
+        self.pricing.append(pricing)
         if _keep(event):
             self._check(event, attr_cursor)
-            self.rows.append(Record(attr_cursor, kind.__name__, canonical(event), replay_index))
+            self.rows.append(
+                Record(attr_cursor, kind.__name__, canonical(event), replay_index, ordinal)
+            )
         self.widened.append(
             Widened(wide_cursor, kind.__name__, _event_digest(event), replay_index)
         )
@@ -1613,9 +1966,32 @@ def _records_from_live(recorder: _Attribution, *, digest_only: bool = False) -> 
     quotes = {event.sequence: event for event in stream if type(event) is NBBOQuote}
     orders = [event for event in stream if type(event) is OrderRequest]
     verdicts = [event for event in stream if type(event) is RiskVerdict]
-    acks = [event for event in stream if type(event) is OrderAck]
-    slices = [event for event in stream if type(event) is SlicePositionUpdate]
-    records = Records(list(recorder.rows), quotes, orders, verdicts, acks, slices)
+    acks: list[OrderAck] = []
+    ack_ordinals: list[int] = []
+    ack_pricing: list[int | None] = []
+    slices: list[SlicePositionUpdate] = []
+    slice_ordinals: list[int] = []
+    for ordinal, event in enumerate(stream):
+        if type(event) is OrderAck:
+            acks.append(event)
+            ack_ordinals.append(ordinal)
+            ack_pricing.append(
+                recorder.pricing[ordinal] if ordinal < len(recorder.pricing) else None
+            )
+        elif type(event) is SlicePositionUpdate:
+            slices.append(event)
+            slice_ordinals.append(ordinal)
+    records = Records(
+        list(recorder.rows),
+        quotes,
+        orders,
+        verdicts,
+        acks,
+        slices,
+        ack_ordinals,
+        slice_ordinals,
+        ack_pricing,
+    )
     records.widened = widened
     return records
 
@@ -2184,18 +2560,33 @@ def _scenario(name: str) -> Records:
     raise SystemExit(f"unknown scenario {name}")
 
 
+def _records_path(args: Sequence[str]) -> str | None:
+    """Parent-supplied record file. An argument wins over FEELIES_RECORDS_OUT."""
+    if len(args) == 3 and args[1] in {"syn_m1", "real_m1"}:
+        return args[2]
+    path = os.environ.get("FEELIES_RECORDS_OUT", "").strip()
+    return path or None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv if argv is None else argv)
     if len(args) == 4 and args[1] == "prefix":
         rows = run_real(end_index=int(args[2]), digest_only=True).widened
         _dump_widened(args[3], rows)
         return 0
-    if len(args) != 2:
+    out = _records_path(args)
+    if (out is None and len(args) != 2) or (out is not None and len(args) not in {2, 3}):
         raise SystemExit(
-            "usage: python -m tests.position_engine.scenarios <syn_m1|real_m1|prefix>"
+            "usage: python -m tests.position_engine.scenarios <syn_m1|real_m1|prefix> [records_out]"
         )
-    for row in _scenario(args[1]):
-        print(format_line(row))
+    lines = [format_line(row) for row in _scenario(args[1])]
+    if out is not None:
+        text = "\n".join(lines)
+        if lines:
+            text += "\n"
+        Path(out).write_text(text, encoding="utf-8", newline="\n")
+    for line in lines:
+        print(line)
     return 0
 
 

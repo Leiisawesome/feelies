@@ -6,8 +6,10 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from functools import partial
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -72,9 +74,15 @@ def _clock():
     )
 
 
-def _fresh(name: str) -> list[str]:
+def _fresh(name: str, expected: list[str]) -> None:
+    """Compare the child's record file. Stdout is the runner log, not the records."""
     env = os.environ.copy()
     env["PYTHONHASHSEED"] = "0"
+    env["PYTHONIOENCODING"] = "utf-8"
+    handle = tempfile.NamedTemporaryFile(prefix="feelies-records-", suffix=".txt", delete=False)
+    path = handle.name
+    handle.close()
+    env["FEELIES_RECORDS_OUT"] = path
     proc = subprocess.run(
         [sys.executable, "-m", "tests.position_engine.scenarios", name],
         check=False,
@@ -82,8 +90,19 @@ def _fresh(name: str) -> list[str]:
         text=True,
         env=env,
     )
-    assert proc.returncode == 0, proc.stderr
-    return [line for line in proc.stdout.splitlines() if line]
+    try:
+        if proc.returncode != 0:
+            raise AssertionError(
+                f"fresh child exited {proc.returncode}\n"
+                f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+            )
+        got = [line for line in Path(path).read_text(encoding="utf-8").splitlines() if line]
+        if got != expected:
+            raise AssertionError(
+                f"fresh records differ\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+            )
+    finally:
+        Path(path).unlink(missing_ok=True)
 
 
 @_MARK
@@ -142,7 +161,7 @@ def test_m1_fresh_syn() -> None:
     require_entry_fills(records)
     nonvacuous(records, PositionSnapshot, PositionClosed, scenario="m1_fresh_syn")
     _one_snapshot_per_rail(records)
-    assert _fresh("syn_m1") == [format_line(row) for row in records]
+    _fresh("syn_m1", [format_line(row) for row in records])
 
 
 @_MARK
@@ -152,7 +171,7 @@ def test_m1_fresh_real() -> None:
     require_entry_fills(records)
     nonvacuous(records, PositionSnapshot, PositionClosed, scenario="m1_fresh_real")
     _one_snapshot_per_rail(records)
-    assert _fresh("real_m1") == [format_line(row) for row in records]
+    _fresh("real_m1", [format_line(row) for row in records])
 
 
 @_MARK
