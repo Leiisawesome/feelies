@@ -412,3 +412,38 @@ jobs:
           tests/position_engine/test_battery_m11_audit.py
           -m battery_real
           -q
+
+  mutant-kill:
+    name: mutant kill (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [A, B]
+    env:
+      PYTHONHASHSEED: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Sync all extras
+        run: uv sync --all-extras --locked
+
+      - name: Restore APP baseline event cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.feelies/cache
+          key: feelies-eventcache-APP-2026-03-25_26-v2
+          restore-keys: |
+            feelies-eventcache-APP-2026-03-26-v1
+
+      - name: Kill shard ${{ matrix.shard }}
+        run: uv run python tests/position_engine/kill.py --shard ${{ matrix.shard }}
