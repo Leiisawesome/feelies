@@ -31047,3 +31047,146 @@ OWNER:       campaign 15.
                  ..\feelies-captures\P-22a2f\baseline_post-merge-P-22a2f.json.
   OUTCOME:       parity hold. compare pre-P-22a2f -> post-merge-P-22a2f:
                  64 -> 64, changed 0.
+
+---
+
+## P-22a2
+  STEP:          P-22a2 (reference engine; members 1-6 and 11 green on
+                 the reference, synthetic and real; fill-timing
+                 adjudication; reference-battery CI jobs)
+  PR:            #265
+  RESULT SHA:    head fcc6aaa1b18c692f66dff36e329180ae2cd0be5b
+                 (exec/P-22a2); merged as
+                 e5e363f2608b29cd96bda3e5c665e5f582341966.
+  PREDICTION:    NONE held. 64/64 constants unchanged. Baseline GREEN
+                 with the D-110 exclusion.
+                 compare pre-P-22a2 -> post-P-22a2: 64 -> 64, changed 0.
+                 compare pre-P-22a2 -> post-merge-P-22a2: 64 -> 64,
+                 changed 0.
+  REFERENCE:     1120 LOC, 30 unit tests, 47 trace rows. Fix log: 1 row
+                 (ESCALATION_NOOP, §2:157–160, §2:287). Acceptance:
+                 synthetic 44/44, real 9/9 at the property level — the
+                 first real-tape acceptance of a contract-built engine.
+  DECISIONS:     D-110..D-120.
+                 D-110: Broker-touching tests are collected by default
+                 local runs and place orders on the connected session;
+                 they must be opt-in (default-off marker + env flag +
+                 paper-port assertion). Owner: the tooling rung,
+                 scheduled after P-22a2 and before P-22b.
+                 D-111: tests/position_engine/reference/: engine.py is
+                 the cell and both gates (contracts §§0–9), rail.py is
+                 the reference rail (§1 and §9), trace.md is one row per
+                 behaviour naming the function and the test. src never
+                 imports the package.
+                 D-112: Job "reference battery" on push and pull_request,
+                 stage file E, FEELIES_ENGINE and FEELIES_RAIL set to
+                 the reference classes, -m "not battery_real" on members
+                 1–6 and 11 plus the engine and trace unit tests. Job
+                 "reference battery (real)" on the nightly schedule and
+                 workflow_dispatch only, with the APP cache required and
+                 -m battery_real. D-71: the synthetic job finishes no
+                 slower than check.
+                 D-113: A member or spec dispute stops the rung. A
+                 reference change cites a contract line and adds a trace
+                 row. The fill-timing failures were member-wrong, so the
+                 reference engine was not changed for them.
+                 D-114: The reference engine implements D-106. A REJECTED
+                 ack for the live exit clears that requirement, and the
+                 next usable rail event re-emits it. Attempt numbers
+                 start at 1. The behaviour is traced to §2:157–161.
+                 D-115: The deciding event is the gate fire that closes
+                 the cell, per §2, not a later EXITING snapshot. A
+                 helper self-test that rebuilds a real cell uses a
+                 golden stream (fixtures/m11_cell_302_long.json).
+                 D-116: No. Fill timing is a convention in the clock
+                 domain. Causality is stamp minus the simulated clock at
+                 publication: 0, or +1 ns on a depth-walk excess leg.
+                 The census figure of 20,000,000 ns mixed domains. Rail
+                 updates, gate decisions and requirements carry exchange
+                 time. Orders, acks and fills carry clock time.
+                 D-117: By bus publication order. timestamp_ns is not
+                 compared across domains. Same-type, same-domain
+                 arithmetic (rail dwell, quote gaps) is unchanged. The
+                 reference deadline check, event_timestamp_ns against
+                 fill time plus T, is a duration, not a window, and
+                 stays until P-23.
+                 D-118: X1: the fresh child writes its canonical record
+                 lines to the file the parent names; the parent does not
+                 parse runner stdout. X2: a requirement is in the cell
+                 when its bus ordinal is after the first entry fill ack
+                 and at or before the first exit fill ack, and that set
+                 agrees with the order-id join cell|EXIT|n. Re-emission
+                 uses those ordinals. X3: A3a, each exit-leg price
+                 equals that leg's fill ack, whole cents (§2:294–295,
+                 §9:487–489). A3b, the leg is published after the
+                 deciding gate and is no better than the executable side
+                 of the quote being processed when the fill is
+                 published. A4 is no better than the executable side of
+                 q_g+1 and still strictly past the barrier. END_OF_TAPE
+                 stays D-109.
+                 D-119: No. C1 is a synthetic corollary. It holds when
+                 quote spacing is at least market_data_latency plus
+                 fill_latency (70 ms). In general, a decision on quote q
+                 fills on the first quote whose exchange time is at
+                 least exchange(q) plus that sum. After A3a, A3b and the
+                 softened A4, no real-tape path requires the fill to be
+                 the next quote.
+                 D-120: Adopted, implemented in P-23. Every
+                 platform-emitted event's timestamp_ns is the simulated
+                 clock at emission. A market-derived record also carries
+                 the source quote's exchange time in a named field.
+                 Invariant: timestamp_ns is at or before the clock at
+                 publication. Opened, not fixed here: R1, fill-report
+                 latency is implicit, equal to market_data_latency after
+                 the triggering quote, and is not a parameter. R2, an
+                 aggressive fill is priced on the first quote at or
+                 after arrival, not the quote prevailing at arrival. R3,
+                 ACKNOWLEDGED is published at clock C and stamped C plus
+                 the fill latency.
+  ADJUDICATION:  m11 helper deciding-event fix (member-wrong; golden
+                 streams now required).
+                 m1 fresh child -> records file.
+                 m5 timestamp window -> bus-order window + order_id
+                 join.
+                 m6 A3 -> A3a (exact: the close equals the router fills)
+                 + A3b (no better than the pricing quote), A4
+                 no-better-than.
+                 X4 sweep: 1 hit, same-domain; X5: C1 is a synthetic
+                 corollary, no real-path reliance.
+  CENSUS:        Fill-timing census: CONVENTION in the clock domain. The
+                 census metric mixed domains; the causality metric is
+                 stamp - clock at publication. Knowledge-time rule
+                 adopted, implemented in P-23.
+  FINDINGS:      R1 implicit fill-report latency.
+                 R2 aggressive fills priced on the first quote at or
+                 after arrival (member-5 exit: 183 ms).
+                 R3 ACKNOWLEDGED stamped clock + fill latency -> S-1
+                 census, then P-23.
+                 D-110 broker tests not opt-in -> tooling rung.
+                 F-P22a2h: the nightly schedule runs only on main;
+                 arch/exec is covered only by dispatch; every merge
+                 prompt dispatches it until the tooling rung fixes the
+                 schedule.
+                 D-71 headroom: reference battery 5m16s vs check 5m36s
+                 (~20 s) -> P-22b must split mutant runs into parallel
+                 jobs, not extend this one.
+                 process: the check job's non-pytest steps are now run
+                 locally before every push.
+  CI:            real job at merge e5e363f2: success, 5m4s, "9 passed,
+                 44 deselected in 262.53s (0:04:22)" (run 36509389858).
+  VALIDATION:    gate "5202 passed, 5 skipped, 54 deselected, 1 xfailed, 48 warnings in 364.18s (0:06:04)";
+                 battery_real "11 passed, 222 deselected in 92.71s (0:01:32)";
+                 CI check 5m36s / parity oracle 2m51s / reference
+                 battery 5m16s (run 36507201328 on fcc6aaa1; battery
+                 step "74 passed, 9 deselected in 284.03s (0:04:44)";
+                 Bugbot skipping). Merge CI run 36509107206 on
+                 e5e363f2: check 8m1s / parity oracle 2m33s / reference
+                 battery 5m9s; battery step "74 passed, 9 deselected in
+                 275.78s (0:04:35)"; Bugbot skipping.
+  STAGE:         A.
+  F-P13b:        still xfail(strict) with reason D-63.
+  BRANCH:        exec/P-22a2 kept.
+  NOTES:         Post-merge capture moved to
+                 ..\feelies-captures\P-22a2\baseline_post-merge-P-22a2.json.
+  OUTCOME:       parity hold. compare pre-P-22a2 -> post-merge-P-22a2:
+                 64 -> 64, changed 0.
