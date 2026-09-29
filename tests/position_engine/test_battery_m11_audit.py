@@ -24,10 +24,11 @@ from tests.position_engine.scenarios import (
     check_m11_proposed,
     fixture_variant,
     nonvacuous,
+    require_barrier_differs,
     require_entry_fills,
     run_synthetic,
 )
-from tests.position_engine.tapes import make_tape
+from tests.position_engine.tapes import excise, make_tape, shift_from
 
 _MARK = pytest.mark.battery_member(member=11, green_from="E", red_reason="NONVACUOUS")
 
@@ -171,6 +172,24 @@ def test_m11_synthetic() -> None:
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
     require_entry_fills(records)
     nonvacuous(records, "PositionClosed", scenario="m11")
+    audit_m11(records)
+
+
+@_MARK
+def test_m11_gap_through() -> None:
+    """A4 V3a gap. The proposed price is the executable side of q_g+1 (J2)."""
+    tape = make_tape(seed=11, n=800, symbol="SYN", start_ns=T0, size=1000)
+    tape = shift_from(excise(tape, 302, 20), 302, -15)
+    require_barrier_differs(tape, birth_index=301, landing_index=302, centre=11, band=0)
+    records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
+    require_entry_fills(records)
+    adverse = [
+        row
+        for row in records
+        if row.type_name == "PositionClosed" and '"exit_reason":"ADVERSE"' in row.canonical
+    ]
+    if not adverse:
+        raise AssertionError("NONVACUOUS: no ADVERSE close in m11_gap")
     audit_m11(records)
 
 

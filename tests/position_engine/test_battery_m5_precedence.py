@@ -12,28 +12,30 @@ from feelies.core.events import NBBOQuote, PositionClosed
 from tests.position_engine.scenarios import (
     T0,
     assert_no_risk_rejects,
+    assert_triggered_tie,
+    exit_reason_at_collision,
+    first_horizon_index,
     fixture_variant,
     nonvacuous,
     require_entry_fills,
+    require_favorable_tie,
     run_real,
     run_synthetic,
-    exit_reason_at_collision,
 )
-from tests.position_engine.tapes import excise, make_tape, set_quote
+from tests.position_engine.tapes import hold, make_tape, set_quote
 
 _MARK = pytest.mark.battery_member(member=5, green_from="E", red_reason="^NONVACUOUS: ")
 _REAL = pytest.mark.battery_real
 
 _N = 4_000
 _SEED = 29
-_INTERVAL_NS = 100_000_000
-# First LONG is boundary 1 (quote 300); its fill is quote 301. The opposing
-# SHORT is boundary 3 (quote 900); the barrier goes on quote 901 (C1, C2).
+# Boundary 1 fills on quote index 301. The opposing SHORT is boundary 3
+# (index 900); invalidation resolves on the next rail, index 901 (§2:247-251).
 _ENTRY_FILL = 301
 _INVALIDATION = 900
 _SPREAD = 1
 _U = 4 + _SPREAD
-_D = 11 - _SPREAD
+_ADVERSE = 11
 
 
 def _v3a(**overrides: object) -> dict[str, object]:
@@ -62,43 +64,82 @@ def _bid(quote: NBBOQuote) -> int:
     return int(quote.bid * 100)
 
 
+def _tie(tape: list[NBBOQuote], *, higher: str, form: str, horizon_s: int) -> None:
+    """Tape-only. FAVORABLE and ``higher`` on the first favorable quote (§2:265-274)."""
+    resolution = None
+    if higher == "INVALIDATION":
+        resolution = _INVALIDATION + 1
+    require_favorable_tie(
+        tape,
+        higher=higher,
+        birth_index=_ENTRY_FILL,
+        target_ticks=4,
+        adverse_ticks=11,
+        horizon_ns=horizon_s * 1_000_000_000,
+        form=form,
+        giveback_multiple=2 if form == "trailing" else None,
+        spread_ticks=_SPREAD,
+        fee_ticks=0,
+        quiet_limit_ns=5_000_000_000,
+        resolution_index=resolution,
+    )
+
+
 @_MARK
 def test_m5_invalidation_at_take_profit() -> None:
+    """FAVORABLE and INVALIDATION on the rail after the opposing signal (§2:265-274)."""
     tape = make_tape(seed=_SEED, n=_N, symbol="SYN", start_ns=T0, size=1000)
     birth = _bid(tape[_ENTRY_FILL])
+    tape = hold(tape, _ENTRY_FILL, _INVALIDATION - _ENTRY_FILL)
     tape = set_quote(tape, _INVALIDATION + 1, bid_cents=birth + _U, ask_cents=birth + _U + 1)
+    _tie(tape, higher="INVALIDATION", form="fixed", horizon_s=16_000)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
     require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_invalidation")
     assert_no_risk_rejects(records)
     exit_reason_at_collision(records)
+    assert_triggered_tie(records, "INVALIDATION")
 
 
 @_MARK
 def test_m5_deadline_beyond_stop() -> None:
+    """FAVORABLE and HORIZON on the deadline quote (§2:260, §2:265-274)."""
     tape = make_tape(seed=_SEED, n=_N, symbol="SYN", start_ns=T0, size=1000)
     birth = _bid(tape[_ENTRY_FILL])
-    deadline = _ENTRY_FILL + (10 * 1_000_000_000) // _INTERVAL_NS
-    tape = set_quote(tape, deadline, bid_cents=birth - _D, ask_cents=birth - _D + 1)
+    horizon_ns = 10 * 1_000_000_000
+    deadline = first_horizon_index(tape, _ENTRY_FILL, horizon_ns)
+    tape = hold(tape, _ENTRY_FILL, deadline - _ENTRY_FILL - 1)
+    tape = set_quote(tape, deadline, bid_cents=birth + _U, ask_cents=birth + _U + 1)
+    _tie(tape, higher="HORIZON", form="fixed", horizon_s=10)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a(T_seconds=10))
     require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_deadline")
     assert_no_risk_rejects(records)
     exit_reason_at_collision(records)
+    assert_triggered_tie(records, "HORIZON")
 
 
 @_MARK
 def test_m5_gap_through_trail_and_stop() -> None:
+    """One quote jumps through the trail line and the adverse level (§2:265-274)."""
     tape = make_tape(seed=_SEED, n=_N, symbol="SYN", start_ns=T0, size=1000)
     birth = _bid(tape[_ENTRY_FILL])
-    tape = excise(tape, _ENTRY_FILL + 1, 300)
-    landed = _ENTRY_FILL + 1
-    tape = set_quote(tape, landed, bid_cents=birth - _D - 20, ask_cents=birth - _D - 19)
+    entry_ask = birth + _SPREAD
+    ramp = _ENTRY_FILL + 1
+    steps = 9
+    for step in range(steps):
+        bid = birth + step + 1
+        tape = set_quote(tape, ramp + step, bid_cents=bid, ask_cents=bid + 1)
+    drop = ramp + steps
+    drop_bid = entry_ask - _ADVERSE
+    tape = set_quote(tape, drop, bid_cents=drop_bid, ask_cents=drop_bid + 1)
+    _tie(tape, higher="ADVERSE", form="trailing", horizon_s=16_000)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v5())
     require_entry_fills(records)
     nonvacuous(records, PositionClosed, scenario="m5_gap")
     assert_no_risk_rejects(records)
     exit_reason_at_collision(records)
+    assert_triggered_tie(records, "ADVERSE")
 
 
 @_MARK

@@ -86,7 +86,9 @@ ASSERTS:           for sampled events k, a run on the tape truncated after k pro
                    only events at or before k. The dwell window is trimmed in the step:
                    with D > 0, a dirty (crossed) quote older than t−D never blocks a
                    favorable decision at t. Construction: D = 2 s via FEELIES_RAIL_DWELL_NS;
-                   a crossed quote at t−D−100 ms; the favorable condition met at t. It catches B11.
+                   a crossed quote at t−D−100 ms; the favorable condition met at t
+                   (quote sequence 401). The decision at that quote is outcome fire, and
+                   its reason is not DWELL_NOT_CLEAN (J5, D-131). It catches B11.
                    At P-40 the D source becomes PlatformConfig and this test switches.
                    green_from C, the stage at which P-40 lands:
                    | P-40 | C | rail complete (ages, absences, window, warm-up, worst-side, forced, dwelled); PlatformConfig position_rail_slippage_ticks and position_rail_dwell_ns (D-40). rail side usability per D-62: classify once in the orchestrator mark path, pass the result to store and rail; no second classify call site |
@@ -159,15 +161,25 @@ SETUP:             trailing favorable armed; invalidation fixture signal
 ASSERTS:           for every closed cell: proposed price = worst among triggered_paths, and
                    reason = highest-ranked triggered path (ADVERSE > HORIZON > INVALIDATION
                    > FAVORABLE); one live requirement at a time; a re-emission only after a
-                   REJECTED ack for the previous attempt (G11, D-106)
+                   REJECTED ack for the previous attempt (G11, D-106). The three synthetic
+                   collisions are tape-computed (J1, D-127): the first quote that holds
+                   FAVORABLE also holds a higher path (INVALIDATION, HORIZON, or ADVERSE)
+                   on that same rail event (contracts §2:265-274). The close's exit_reason
+                   is that higher path, and triggered_paths holds both.
 FAILURE LOOKS LIKE:cell, deciding event, candidate list
 BLOCKS THE BUILD:  yes — red until stage E
 ```
 
 Implementation (P-21d): `tests/position_engine/test_battery_m5_precedence.py`.
 Tests `test_m5_invalidation_at_take_profit`, `test_m5_deadline_beyond_stop`,
-`test_m5_gap_through_trail_and_stop` (seed 29, 4_000 quotes; V3a / V3b / V5),
+`test_m5_gap_through_trail_and_stop` (seed 29, 4_000 quotes),
 and `test_m5_real` (`battery_real`). `green_from` E.
+The invalidation tape is held at the birth touch through index 900; the
+favorable price is on index 901, the rail after the opposing signal.
+The horizon tape (T = 10 s) is held flat until the deadline quote, which is
+also the favorable price. The trailing tape ramps nine one-tick steps from
+the birth quote, then one quote jumps through the trail and the adverse
+level. (J1, D-127)
 
 ```
 MEMBER:            6 Injection
@@ -274,6 +286,10 @@ BLOCKS THE BUILD:  no — needs closing records
 ```
 
 In scope for P-22a1 (built in tests). ASSERTS unchanged. (D-85)
+`test_m11_gap_through` reuses the A4 V3a gap (excise 20 from index 302,
+`shift_from` −15) and asserts `check_m11_proposed` (J2, D-128). The tape
+precondition is that the barrier level differs from the executable side of
+q_g+1. NONVACUOUS requires at least one ADVERSE close.
 Gross is checked as member 11's rebuild from the tape and the legs versus
 `scenarios.cell_economics` (two independent computations must agree). No recorded gross
 field exists (contracts §2). (D-104)
@@ -326,15 +342,46 @@ and by the named member. A broken engine nothing catches is a hole in the suite.
 |---|---|---|
 | B1 | rail values at mid | 4 |
 | B2 | tie resolves toward FAVORABLE | 5 |
-| B3 | adverse exit proposed at the configured level, not the quote | 3, 5, 6 or 11 |
+| B3 | adverse exit proposed at the configured level, not the quote | 3, 5, 6 or 11, including `test_m11_gap_through` |
 | B4 | cell reads the system clock for the deadline | 1 |
 | B5 | excursion accumulated instead of recomputed | 3 or 11 |
 | B6 | best-so-far seeded at zero | 11 |
 | B7 | adverse gate skips when a side is absent | 6 or 8 |
-| B8 | clean peak absorbs a crossed event | 6 |
+| B8 | the cell's clean peak reads the raw NBBOQuote instead of the rail on an unusable event | 6 (A2 on the V5 construction) |
 | B9 | second requirement emitted while EXITING | 5 or 10 |
-| B10 | resolve phase rewrites a published move | 1 (immutability clause) |
+| B10 | the resolve phase publishes a second PositionSnapshot for the same (cell_id, rail_sequence) | 1 (immutability clause) |
 | B11 | window trimmed lazily (on read, not in the step) | 2 (D > 0 clause) |
+
+## Kill runner
+
+A kill is at least one PROPERTY failure in a named catcher's test ids (J7, D-133).
+CRASH, TIMEOUT, PRECONDITION and NONVACUOUS never count. Each mutant runs in its
+own pytest process, at stage E, with the other seam set to the reference. When the
+battery row names a clause, only that clause's tests run.
+
+```
+python tests/position_engine/kill.py
+python tests/position_engine/kill.py --control
+python tests/position_engine/kill.py --shard A
+python tests/position_engine/kill.py --shard B
+python tests/position_engine/kill.py --only B3
+```
+
+`--control` runs the reference through the same selections and requires 0 failures.
+The process exits non-zero when any selected mutant is not KILLED.
+
+Shard assignment from the P-22b kill walls. Each estimate is the sum of those
+walls plus 11 s, and each is at most 300 s (D-71).
+
+| Shard | Mutants | Walls (s) | Estimate (s) |
+|---|---|---:|---:|
+| A | B1, B4, B10 | 8.7 + 17.6 + 8.3 = 34.6 | 45.6 |
+
+B4's selection is `test_m1_fresh_syn`. The in-process clock test freezes
+`time.monotonic` for its second run; with this mutant that run does not finish
+inside the 240 s limit, and a TIMEOUT is not a kill. The fresh process compares
+two real clocks and fails `fresh records differ`.
+| B | B2, B3, B5, B6, B7, B8, B9, B11 | 2.1 + 1.3 + 1.6 + 1.7 + 2.1 + 2.2 + 2.1 + 1.2 = 14.3 | 25.3 |
 
 **Reference rail (P-22a1) and reference engine (P-22a2).** Built only from the contracts
 text (§§0–9), not from §9 alone, with a spec-trace table (D-92). Rail rows land in P-22a1;
