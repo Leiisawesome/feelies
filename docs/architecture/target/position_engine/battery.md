@@ -388,3 +388,12 @@ words is not an amendment.
 Amendments already made (carried from v2): member 1 "restart mid-run" replaced by "a fresh
 process" (no state serialisation exists); member 6 injects the feed-gap flag directly (a
 per-name sequence discontinuity can be neither produced nor detected from this feed).
+
+## Running locally
+
+Before pushing, run `python scripts/prepush.py` (the CI check order: ruff, mypy,
+import contracts, then pytest with `scripts/ci_gate_expr.txt`). `--fast` stops after
+the static steps.
+
+Broker tests run only with `FEELIES_BROKER_TESTS=1`. Network tests run only with
+`FEELIES_NETWORK_TESTS=1`. Without the flag, those tests are skipped (`opt-in`).
