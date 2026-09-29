@@ -1488,3 +1488,47 @@ def test_attr_eot_excluded_from_prefix() -> None:
     assert_widened_prefix(records.widened, records.widened, seq)
     kept = [row for row in records.widened if isinstance(row.cursor, int) and row.cursor <= seq]
     assert all(row.cursor != "EOT" for row in kept)
+
+
+def test_favorable_tie_precondition_is_tape_computed() -> None:
+    """The first favorable quote must also hold the higher path. Tape only."""
+    from tests.position_engine.scenarios import require_favorable_tie
+    from tests.position_engine.tapes import hold, make_tape, set_quote
+
+    tape = make_tape(seed=1, n=20, symbol="SYN", start_ns=T0, size=100)
+    birth = 2
+    entry = int(tape[birth].ask * 100)
+    kwargs: dict[str, object] = {
+        "higher": "INVALIDATION",
+        "birth_index": birth,
+        "target_ticks": 4,
+        "adverse_ticks": 11,
+        "horizon_ns": 16_000 * 1_000_000_000,
+        "form": "fixed",
+        "giveback_multiple": None,
+        "spread_ticks": 1,
+        "fee_ticks": 0,
+        "quiet_limit_ns": 5_000_000_000,
+        "resolution_index": 8,
+    }
+    early = set_quote(tape, 5, bid_cents=entry + 4, ask_cents=entry + 5)
+    with pytest.raises(AssertionError, match=r"^PRECONDITION: FAVORABLE"):
+        require_favorable_tie(early, **kwargs)  # type: ignore[arg-type]
+    pinned = set_quote(hold(tape, birth, 6), 8, bid_cents=entry + 4, ask_cents=entry + 5)
+    assert require_favorable_tie(pinned, **kwargs) == 8  # type: ignore[arg-type]
+
+
+def test_barrier_precondition_is_tape_computed() -> None:
+    """The barrier level is not the executable side of the landing quote."""
+    from tests.position_engine.scenarios import drawn_adverse_level, require_barrier_differs
+    from tests.position_engine.tapes import make_tape, set_quote
+
+    tape = make_tape(seed=1, n=10, symbol="SYN", start_ns=T0, size=100)
+    birth = tape[2]
+    cell = f"SYN|sig_position_fixture_v1|{birth.sequence}|LONG"
+    barrier = int(birth.bid * 100) - drawn_adverse_level(cell, 11, 0)
+    same = set_quote(tape, 3, bid_cents=barrier, ask_cents=barrier + 1)
+    with pytest.raises(AssertionError, match=r"^PRECONDITION: barrier"):
+        require_barrier_differs(same, birth_index=2, landing_index=3, centre=11, band=0)
+    other = set_quote(tape, 3, bid_cents=barrier - 3, ask_cents=barrier - 2)
+    require_barrier_differs(other, birth_index=2, landing_index=3, centre=11, band=0)

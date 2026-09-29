@@ -126,7 +126,15 @@ def test_m2_dwell_favorable_ignores_stale_cross(monkeypatch: pytest.MonkeyPatch)
         for row in records
         if row.type_name == "GateDecision"
     ]
-    assert any(
-        body.get("gate") == "FAVORABLE" and body.get("rail_sequence") == current.sequence
+    matched = [
+        body
         for body in hits
-    ), f"no favorable decision at {current.sequence}"
+        if body.get("gate") == "FAVORABLE" and body.get("rail_sequence") == current.sequence
+    ]
+    assert matched, f"no favorable decision at {current.sequence}"
+    assert any(body.get("outcome") == "fire" for body in matched), (
+        f"M2: favorable outcome at {current.sequence} is not fire"
+    )
+    assert not any(body.get("reason") == "DWELL_NOT_CLEAN" for body in matched), (
+        f"M2: DWELL_NOT_CLEAN at {current.sequence}"
+    )

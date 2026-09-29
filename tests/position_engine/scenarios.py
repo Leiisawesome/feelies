@@ -22,6 +22,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from decimal import Decimal
 from enum import Enum
+from fractions import Fraction
 from pathlib import Path
 from typing import NamedTuple
 
@@ -49,7 +50,11 @@ from feelies.core.events import (
     StateTransition,
     Trade,
 )
-from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.platform_config import (
+    DEFAULT_MARKET_DATA_LATENCY_NS,
+    OperatingMode,
+    PlatformConfig,
+)
 from feelies.core.quote_quality import QuoteQuality, classify
 from feelies.storage.memory_event_log import InMemoryEventLog
 from tests.position_engine.tapes import make_tape
@@ -699,6 +704,142 @@ def _entry_ack_ordinal(
     if not ordinals:
         return None
     return min(ordinals)
+
+
+def _giveback_ticks(multiple: float, spread: int) -> int:
+    """contracts.md §9. Integer floor; at least 1. Tape-side, not engine output."""
+    ratio = Fraction(repr(multiple))
+    floored = (ratio.numerator * spread) // ratio.denominator
+    if floored < 1:
+        return 1
+    return floored
+
+
+def first_horizon_index(tape: Sequence[NBBOQuote], birth_index: int, horizon_ns: int) -> int:
+    """First quote at or after birth exchange + market-data latency + T (§2:260)."""
+    deadline = (
+        tape[birth_index].exchange_timestamp_ns + DEFAULT_MARKET_DATA_LATENCY_NS + horizon_ns
+    )
+    for index, quote in enumerate(tape):
+        if quote.exchange_timestamp_ns >= deadline:
+            return index
+    raise AssertionError("PRECONDITION: horizon deadline is off the tape")
+
+
+def require_favorable_tie(
+    tape: Sequence[NBBOQuote],
+    *,
+    higher: str,
+    birth_index: int,
+    target_ticks: int,
+    adverse_ticks: int,
+    horizon_ns: int,
+    form: str,
+    giveback_multiple: float | None,
+    spread_ticks: int,
+    fee_ticks: int,
+    quiet_limit_ns: int,
+    resolution_index: int | None = None,
+) -> int:
+    """PRECONDITION: FAVORABLE and ``higher`` hold on the same first quote.
+
+    The walk uses the tape and the policy parameters only (contracts §2:265–274).
+    The horizon quote is the first whose exchange time is at or after the birth
+    quote's exchange time, plus the declared market-data latency, plus
+    ``horizon_ns`` (§2:260). Invalidation is the rail after the opposing signal.
+    """
+    if higher not in ("ADVERSE", "HORIZON", "INVALIDATION"):
+        raise AssertionError(f"PRECONDITION: unknown higher path {higher}")
+    birth = tape[birth_index]
+    entry = _cents(birth.ask)
+    deadline = birth.exchange_timestamp_ns + DEFAULT_MARKET_DATA_LATENCY_NS + horizon_ns
+    best: int | None = None
+    giveback_ticks = 0
+    if form == "trailing":
+        if giveback_multiple is None:
+            raise AssertionError("PRECONDITION: trailing form has no giveback")
+        giveback_ticks = _giveback_ticks(giveback_multiple, spread_ticks)
+    round_trip = spread_ticks + fee_ticks
+    for index in range(birth_index + 1, len(tape)):
+        quote = tape[index]
+        valid = (
+            classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size) is QuoteQuality.VALID
+        )
+        gap = quote.exchange_timestamp_ns - tape[index - 1].exchange_timestamp_ns
+        clean = valid and gap <= quiet_limit_ns
+        move = _cents(quote.bid) - entry
+        if clean and move != 0 and (best is None or move > best):
+            best = move
+        if form == "trailing":
+            armed = best is not None and best > (giveback_ticks + round_trip)
+            favorable = clean and armed and best is not None and move <= best - giveback_ticks
+        else:
+            favorable = clean and move >= target_ticks
+        if not favorable:
+            continue
+        if higher == "ADVERSE":
+            also = valid and move <= -adverse_ticks
+        elif higher == "HORIZON":
+            also = quote.exchange_timestamp_ns >= deadline
+        else:
+            also = index == resolution_index
+        if not also:
+            raise AssertionError(
+                f"PRECONDITION: FAVORABLE at quote {quote.sequence} does not also "
+                f"hold {higher} (contracts §2:265-274)"
+            )
+        return index
+    raise AssertionError(
+        f"PRECONDITION: no quote holds FAVORABLE and {higher} (contracts §2:265-274)"
+    )
+
+
+def assert_triggered_tie(records: Records, higher: str) -> None:
+    """The close's reason is the higher path, and both paths are on the record."""
+    found = False
+    for row in records:
+        if row.type_name != "PositionClosed":
+            continue
+        body = _body(row.canonical)
+        paths = body.get("triggered_paths")
+        if not isinstance(paths, list):
+            continue
+        names = [str(path["path"]) for path in paths if isinstance(path, dict)]
+        if "FAVORABLE" not in names or higher not in names:
+            continue
+        found = True
+        ranked = [name for name in _EXIT_RANK if name in names]
+        expected = ranked[0]
+        got = str(body.get("exit_reason"))
+        if got != expected:
+            raise AssertionError(
+                f"M5: exit reason {got} != {expected} cell {body.get('cell_id')} paths {names}"
+            )
+    if not found:
+        raise AssertionError(f"M5: no close carries FAVORABLE and {higher}")
+
+
+def require_barrier_differs(
+    tape: Sequence[NBBOQuote],
+    *,
+    birth_index: int,
+    landing_index: int,
+    centre: int,
+    band: int,
+    strategy_id: str = "sig_position_fixture_v1",
+) -> None:
+    """PRECONDITION: the adverse barrier is not the executable side of q_g+1."""
+    birth = tape[birth_index]
+    landing = tape[landing_index]
+    cell = f"{birth.symbol}|{strategy_id}|{birth.sequence}|LONG"
+    level = drawn_adverse_level(cell, centre, band)
+    barrier = _cents(birth.bid) - level
+    executable = _cents(landing.bid)
+    if barrier == executable:
+        raise AssertionError(
+            f"PRECONDITION: barrier {barrier} equals executable {executable} "
+            f"of quote {landing.sequence}"
+        )
 
 
 def exit_reason_at_collision(records: Records) -> None:

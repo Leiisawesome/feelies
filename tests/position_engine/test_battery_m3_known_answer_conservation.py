@@ -127,7 +127,7 @@ def test_m3_barriers_and_deadline() -> None:
             )
         )
     ]
-    assert len(grouped) >= 200, f"m3_deadline grouped cells {len(grouped)} < 200"
+    assert len(grouped) >= 200, f"NONVACUOUS: m3_deadline grouped cells {len(grouped)} < 200"
     mean_within_se(grouped, 0.0, label="grouped displacement")
 
 
