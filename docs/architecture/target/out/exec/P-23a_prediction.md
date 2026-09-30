@@ -51,18 +51,19 @@ Stage A, no `FEELIES_*` overrides. `pass` is a real pass.
 | `tests/conformance/test_causality_invariant.py::test_reference_app_i2_only_pending` | pass |
 | `tests/conformance/test_cross_class_age.py::test_hazard_age_uses_visible_time` | pass |
 | `tests/conformance/test_cross_class_age.py::test_deferral_deadline_uses_visible_time` | pass |
+| `tests/conformance/test_action_time_producers.py::test_action_time_constructors_are_approved_or_known` | pass |
 
 ## Plain-pytest capture
 
 | | passed | failed | skipped | xfailed |
 |---|---:|---:|---:|---:|
 | pre-P-23a | 5234 | 0 | 44 | 2 |
-| post-P-23a | 5240 | 0 | 44 | 2 |
+| post-P-23a | 5241 | 0 | 44 | 2 |
 
 The gate expression is unchanged (`not functional and not paper_rth and not battery_real`).
 Pre-push under that expression moves 5220 passed / 5 skipped / 54 deselected to
-5225 passed / 5 skipped / 55 deselected (the reference-session test is
-deselected; the other five added tests pass). Any other move is a STOP.
+5226 passed / 5 skipped / 55 deselected (the reference-session test is
+deselected; the other six added tests pass). Any other move is a STOP.
 
 ## MODIFIED (A4)
 
@@ -117,3 +118,10 @@ Constant-value edits only, added to the modified set:
 | `tests/determinism/test_market_fill_replay.py::test_market_fill_replay_matches_locked_baseline` | hash `da66dd36…` | the hash of the payload above |
 | `tests/determinism/test_risk_verdict_replay.py::test_risk_verdict_stream_matches_locked_baseline` | hash `b388a2c5…` | the hash of the four zero stamps |
 | `tests/determinism/test_parity_manifest.py::test_manifest_fingerprint_matches_locked_value` | fingerprint `3ae15104…` | the checksum of the manifest after the two hashes above move. Not one of the 64. |
+
+## Wrapper stamps (E-1 / D-3)
+
+The six `risk_wrapper.py` action-time constructors move to the publication
+clock. D-3 for that edit, recorded before the edit: no parity constant moves.
+The C-1 payload diffs stay exactly the two timestamp hashes above. The legacy
+oracle stays fixed.
