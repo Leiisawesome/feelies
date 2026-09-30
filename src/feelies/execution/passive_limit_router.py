@@ -391,10 +391,12 @@ class PassiveLimitOrderRouter:
         (after depth check), else deferred fill on the first exchange-time-
         eligible quote.
         """
-        ack_ts = self._clock.now_ns() + self._latency_ns
+        # T2: the published stamp is the clock. ack_ts stays the eligibility time.
+        published_ts = self._clock.now_ns()
+        ack_ts = published_ts + self._latency_ns
         self._pending_acks.append(
             OrderAck(
-                timestamp_ns=ack_ts,
+                timestamp_ns=published_ts,
                 correlation_id=request.correlation_id,
                 sequence=self._ack_seq.next(),
                 order_id=request.order_id,
@@ -554,7 +556,9 @@ class PassiveLimitOrderRouter:
 
         limit_price = snap_limit_price(request.side, limit_price)
 
-        ack_ts = max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
+        # T2: the published stamp is the clock. ack_ts stays the eligibility time.
+        published_ts = self._clock.now_ns()
+        ack_ts = max(published_ts, quote.exchange_timestamp_ns) + self._latency_ns
         pending = _PendingOrder(
             request=request,
             side=request.side,
@@ -567,7 +571,7 @@ class PassiveLimitOrderRouter:
 
         self._pending_acks.append(
             OrderAck(
-                timestamp_ns=ack_ts,
+                timestamp_ns=published_ts,
                 correlation_id=request.correlation_id,
                 sequence=self._ack_seq.next(),
                 order_id=request.order_id,
