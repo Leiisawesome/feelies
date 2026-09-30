@@ -467,6 +467,7 @@ def build_platform(
         account_id=config.account_id,
         # Warn in PAPER when an entry gate is not wired.
         warn_on_inert_entry_gates=not replay_clock,
+        clock=clock,
     )
 
     cost_model = DefaultCostModel(

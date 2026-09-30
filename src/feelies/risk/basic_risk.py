@@ -25,6 +25,7 @@ from typing import Protocol
 _logger = logging.getLogger(__name__)
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import Clock, SimulatedClock
 from feelies.core.events import (
     Alert,
     AlertSeverity,
@@ -195,8 +196,10 @@ class BasicRiskEngine:
         trading_session_bounds: _SessionBounds | None = None,
         account_id: str = "default",
         warn_on_inert_entry_gates: bool = False,
+        clock: Clock | None = None,
     ) -> None:
         self._config = config
+        self._clock = clock if clock is not None else SimulatedClock(start_ns=0)
         self._regime_states = regime_states
         self._high_water_mark = config.account_equity
         self._regime_scale_map: dict[str, float] = {
@@ -291,7 +294,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.EXPOSURE_LIMITS",
                 RiskVerdict(
-                    timestamp_ns=signal.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=signal.correlation_id,
                     sequence=signal.sequence,
                     symbol=signal.symbol,
@@ -301,7 +304,7 @@ class BasicRiskEngine:
             )
 
         shared = self._check_exposure_and_drawdown(
-            signal.timestamp_ns,
+            self._clock.now_ns(),
             signal.correlation_id,
             signal.sequence,
             signal.symbol,
@@ -315,7 +318,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.VERDICT_COMPOSE",
             RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=signal.correlation_id,
                 sequence=signal.sequence,
                 symbol=signal.symbol,
@@ -342,7 +345,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.DRAWDOWN_TIER",
                 RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
@@ -390,7 +393,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.EXPOSURE_LIMITS",
                 RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
@@ -411,7 +414,7 @@ class BasicRiskEngine:
             + additional_exposure
         )
         shared = self._check_exposure_and_drawdown(
-            order.timestamp_ns,
+            self._clock.now_ns(),
             order.correlation_id,
             order.sequence,
             order.symbol,
@@ -426,7 +429,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.VERDICT_COMPOSE",
             RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=order.correlation_id,
                 sequence=order.sequence,
                 symbol=order.symbol,
@@ -571,7 +574,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.BUYING_POWER",
             RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=order.correlation_id,
                 sequence=order.sequence,
                 symbol=order.symbol,
@@ -609,7 +612,7 @@ class BasicRiskEngine:
         return _emit_risk(
             "RT.SESSION_ADMISSION",
             RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
+                timestamp_ns=self._clock.now_ns(),
                 correlation_id=order.correlation_id,
                 sequence=order.sequence,
                 symbol=order.symbol,
@@ -671,7 +674,7 @@ class BasicRiskEngine:
             return _emit_risk(
                 "RT.BUYING_POWER",
                 RiskVerdict(
-                    timestamp_ns=order.timestamp_ns,
+                    timestamp_ns=self._clock.now_ns(),
                     correlation_id=order.correlation_id,
                     sequence=order.sequence,
                     symbol=order.symbol,
