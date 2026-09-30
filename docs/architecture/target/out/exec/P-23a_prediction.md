@@ -56,6 +56,7 @@ Stage A, no `FEELIES_*` overrides. `pass` is a real pass.
 | `tests/position_engine/test_scenarios.py::test_decimal_pack_keeps_exact_text` | pass |
 | `tests/position_engine/test_scenarios.py::test_float_pack_keeps_signed_zero` | pass |
 | `tests/position_engine/test_scenarios.py::test_numeric_pack_keeps_type` | pass |
+| `tests/conformance/test_ci_real_job_selection.py::test_real_job_selects_battery_real_by_marker` | pass |
 
 ## Plain-pytest capture
 
@@ -141,3 +142,10 @@ above. The legacy oracle stays fixed. The new unit test passes at stage A.
 `_DEC_PACK` keys on exact representation. Recorded before that edit: no
 parity constant moves. The C-1 payload diffs stay the two timestamp hashes
 above. The legacy oracle stays fixed. The three unit tests pass at stage A.
+
+## CI real-job selection (H)
+
+Recorded before the selection guard and before the ci.yml edit. The reference
+battery (real) job's collected count moves from 9 to 12. Parity predictions
+are unchanged. Constant predictions are unchanged. The new guard passes at
+stage A.
