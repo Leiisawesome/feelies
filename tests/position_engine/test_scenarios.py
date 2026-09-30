@@ -1556,6 +1556,75 @@ def test_session_digest_is_keyed_by_engine(monkeypatch: pytest.MonkeyPatch) -> N
         _SESSION_DIGESTS.update(saved)
 
 
+def test_instrumented_run_bypasses_the_run_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A tap, hook, observer, or transform neither reads nor writes the run cache."""
+    import tests.position_engine.scenarios as scenarios
+    from tests.position_engine.scenarios import Widened
+
+    cached = Records([], {}, (), ())
+    cached.widened = (Widened(None, "cached", b"cached"),)
+
+    def execute_cached(*_args: object, **_kwargs: object) -> Records:
+        return cached
+
+    def cache_snapshot() -> tuple[int, int, int]:
+        info = scenarios._cached_real.cache_info()
+        return (info.hits, info.misses, info.currsize)
+
+    monkeypatch.setattr(scenarios, "_execute_real", execute_cached)
+    scenarios._cached_real.cache_clear()
+    try:
+        assert run_real() is cached
+        snapshot = cache_snapshot()
+        original_build = scenarios.build_platform
+        tap: list[str] = []
+
+        def hooked_build(*_args: object, **_kwargs: object) -> tuple[str, str]:
+            tap.append("row")
+            return ("orchestrator", "resolved")
+
+        def execute_fresh(*_args: object, **_kwargs: object) -> Records:
+            if scenarios.build_platform is not original_build:
+                scenarios.build_platform()
+            names = tuple(tap) if tap else ("fresh",)
+            fresh = Records([], {}, (), ())
+            fresh.widened = tuple(Widened(None, name, name.encode()) for name in names)
+            return fresh
+
+        monkeypatch.setattr(scenarios, "build_platform", hooked_build)
+        monkeypatch.setattr(scenarios, "_execute_real", execute_fresh)
+        hooked = run_real()
+        assert tap == ["row"]
+        assert hooked is not cached
+        assert hooked.widened == (Widened(None, "row", b"row"),)
+        assert cache_snapshot() == snapshot
+
+        monkeypatch.setattr(scenarios, "build_platform", original_build)
+        tap.clear()
+
+        def transform(events: list[object]) -> list[object]:
+            return list(events)
+
+        transformed = run_real(quote_transform=transform)
+        assert transformed is not cached
+        assert transformed.widened == (Widened(None, "fresh", b"fresh"),)
+        assert cache_snapshot() == snapshot
+
+        def wrapper(_original: object, _quote: object) -> object:
+            return _original
+
+        wrapped = run_real(rail_wrapper=wrapper)
+        assert wrapped is not cached
+        assert wrapped.widened == (Widened(None, "fresh", b"fresh"),)
+        assert cache_snapshot() == snapshot
+
+        monkeypatch.setattr(scenarios, "_execute_real", execute_cached)
+        assert run_real() is cached
+        assert scenarios._cached_real.cache_info().hits == snapshot[0] + 1
+    finally:
+        scenarios._cached_real.cache_clear()
+
+
 def _pack_spans(values: list[object]) -> tuple[list[bytes], set[tuple[object, ...]]]:
     from tests.position_engine.scenarios import _DEC_PACK, _feed_scalar
 
