@@ -688,6 +688,7 @@ def build_platform(
         strategy_positions=strategy_positions,
         platform_config=risk_config,
         account_equity=_decimal(config.account_equity),
+        clock=clock,
     )
     effective_risk_engine: RiskEngine = (
         risk_wrapper if config.enforce_per_alpha_risk_budget else risk_engine
