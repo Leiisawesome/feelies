@@ -255,6 +255,7 @@ class BacktestOrderRouter:
             self._deferred_markets.append(
                 _DeferredMarketFill(
                     request=request,
+                    # T3: physical-time latency model; not a raw cross-class compare.
                     fill_deadline_exchange_ns=(
                         max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
                     ),
@@ -276,6 +277,7 @@ class BacktestOrderRouter:
                 remaining.append(dm)
                 continue
             ticks_for_symbol = dm.ticks_for_symbol + 1
+            # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
                     self._reject(

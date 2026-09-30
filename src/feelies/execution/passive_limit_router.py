@@ -285,6 +285,7 @@ class PassiveLimitOrderRouter:
             # exchange in exchange time) must not drain the queue or satisfy
             # the volume gate — the order was not on the book when they
             # occurred (mirrors the ``_check_resting_orders`` quote gate).
+            # T3: physical-time latency model; not a raw cross-class compare.
             if trade.exchange_timestamp_ns < pending.ack_timestamp_ns:
                 continue
             if pending.side == Side.BUY and trade.price <= pending.limit_price:
@@ -424,6 +425,7 @@ class PassiveLimitOrderRouter:
         self._deferred_aggressive.append(
             _DeferredAggressiveFill(
                 request=request,
+                # T3: physical-time latency model; not a raw cross-class compare.
                 fill_deadline_exchange_ns=(
                     max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
                 ),
@@ -441,6 +443,7 @@ class PassiveLimitOrderRouter:
                 remaining.append(dm)
                 continue
             ticks_for_symbol = dm.ticks_for_symbol + 1
+            # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
                     # Preserve monotonic ordering of the order's ack stream:
@@ -558,6 +561,7 @@ class PassiveLimitOrderRouter:
 
         # T2: the published stamp is the clock. ack_ts stays the eligibility time.
         published_ts = self._clock.now_ns()
+        # T3: physical-time latency model; not a raw cross-class compare.
         ack_ts = max(published_ts, quote.exchange_timestamp_ns) + self._latency_ns
         pending = _PendingOrder(
             request=request,
@@ -593,6 +597,7 @@ class PassiveLimitOrderRouter:
 
         for order_id in order_ids:
             pending = self._resting_orders[order_id]
+            # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < pending.ack_timestamp_ns:
                 # Order-entry latency not yet elapsed in exchange time — the
                 # order is not yet live at the exchange, so this quote cannot

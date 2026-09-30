@@ -133,6 +133,7 @@ class MocFillController:
             # the per-tick timeout that applies to deferred MARKET fills is
             # not appropriate here (replays routinely emit hundreds of NBBO
             # updates between submit and 16:00 ET).
+            # T3: physical-time close gate; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < self._bounds.official_close_ns:
                 remaining.append(pm)
                 continue
