@@ -5633,7 +5633,7 @@ class Orchestrator:
     def _order_request_from_derisk(self, event: DeRiskRequirement) -> OrderRequest:
         """Copy the author's envelope and payload; fill MARKET. No sequence draw."""
         return OrderRequest(
-            timestamp_ns=event.timestamp_ns,
+            timestamp_ns=self._clock.now_ns(),
             correlation_id=event.correlation_id,
             sequence=event.sequence,
             source_layer=event.source_layer,
