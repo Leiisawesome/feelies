@@ -57,6 +57,7 @@ Stage A, no `FEELIES_*` overrides. `pass` is a real pass.
 | `tests/position_engine/test_scenarios.py::test_float_pack_keeps_signed_zero` | pass |
 | `tests/position_engine/test_scenarios.py::test_numeric_pack_keeps_type` | pass |
 | `tests/conformance/test_ci_real_job_selection.py::test_real_job_selects_battery_real_by_marker` | pass |
+| `tests/position_engine/test_scenarios.py::test_instrumented_run_bypasses_the_run_cache` | pass |
 
 ## Plain-pytest capture
 
@@ -149,3 +150,9 @@ Recorded before the selection guard and before the ci.yml edit. The reference
 battery (real) job's collected count moves from 9 to 12. Parity predictions
 are unchanged. Constant predictions are unchanged. The new guard passes at
 stage A.
+
+## Instrumented run cache (I)
+
+Recorded before the cache bypass. An instrumented run neither reads nor writes
+the run cache. Parity predictions are unchanged. Constant predictions are
+unchanged. The new unit test passes at stage A.
