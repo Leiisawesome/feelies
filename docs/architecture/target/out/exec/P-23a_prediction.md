@@ -93,3 +93,27 @@ deferred market.
 |---|---|---|
 | `tests/execution/test_router_fill_timing_parity.py::TestPassiveAggressiveEligibilityParity::test_both_paths_share_one_exchange_time_deadline` | both published acks `== 6000` | published `== 5000`; both paths' eligibility stays 6000 |
 | `tests/execution/test_router_fill_timing_parity.py::TestPassiveAggressiveEligibilityParity::test_a_wall_clock_past_the_deadline_makes_neither_path_eligible` | both published acks `== 6000` | published `== 5000`; both paths' eligibility stays 6000 |
+
+## Parity amendment (C-2)
+
+The NONE paragraph above is the prediction as first written. It is superseded
+by this pre-registered break. Exactly two constants move. Every other
+constant is unchanged. The legacy APP oracle is unchanged.
+
+| Constant | Payload diff |
+|---|---|
+| `EXPECTED_MARKET_FILL_HASH` | OrderAck FILLED (depth-walk final leg, order o3) `timestamp_ns` 1 → 0, ×1. ACKNOWLEDGED and PARTIALLY_FILLED stay 0. Count unchanged. |
+| `EXPECTED_RISK_VERDICT_HASH` | RiskVerdict `timestamp_ns` 1000000000 → 0, 2000000000 → 0, 3000000000 → 0, 4000000000 → 0, ×4. Actions stay ALLOW, SCALE_DOWN, REJECT, FORCE_FLATTEN. Count unchanged. |
+
+No predicted diff touches price, quantity, side, order_id, status, or ordering.
+The other 62 constants, including `_BASELINE_TRADE_PARITY_HASH`,
+`_BASELINE_NET_PNL`, `_BASELINE_FILL_COUNT`, and `_BASELINE_CONFIG_HASH`,
+are NONE.
+
+Constant-value edits only, added to the modified set:
+
+| Node id | Before | After |
+|---|---|---|
+| `tests/determinism/test_market_fill_replay.py::test_market_fill_replay_matches_locked_baseline` | hash `da66dd36…` | the hash of the payload above |
+| `tests/determinism/test_risk_verdict_replay.py::test_risk_verdict_stream_matches_locked_baseline` | hash `b388a2c5…` | the hash of the four zero stamps |
+| `tests/determinism/test_parity_manifest.py::test_manifest_fingerprint_matches_locked_value` | fingerprint `3ae15104…` | the checksum of the manifest after the two hashes above move. Not one of the 64. |
