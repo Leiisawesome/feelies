@@ -31320,3 +31320,99 @@ OWNER:       campaign 15.
                  64, changed 0. compare post-P-22b -> post-merge-P-22b:
                  64 -> 64, changed 0. pytest counts identical (5234
                  passed, 0 failed, 44 skipped, 0 deselected).
+
+---
+
+## P-23a
+  PR:            #269 (head 30c5a4b6afa4003d0de5f929d97f77e45d5915b2,
+                 merge 02d4719f51996f4ff257ef4e7c2eaea524302884).
+  BREAK:         Pre-registered. EXPECTED_MARKET_FILL_HASH (depth-walk
+                 final-leg timestamp_ns 1 -> 0) and
+                 EXPECTED_RISK_VERDICT_HASH (verdict stamps -> clock).
+                 Payload diffs exact. Legacy oracle 10 / 24.61 /
+                 18f6bb4e unchanged. Fills and PnL identical on
+                 R-ORC / R-FIX / R-SYN.
+  DECISIONS:     D-136..D-148, as written in decisions.md.
+                 D-136: Two classes, stored as a bare class attribute TIME_CLASS, not a dataclass field. market is the exchange time (NBBOQuote, Trade, SensorReading, HorizonTick, HorizonFeatureSnapshot, Signal, SafetyStateChange, MarkRailUpdate, and the unlisted SymbolHalted, CrossSectionalContext, SizedPositionIntent). action is the simulated clock at publication (OrderRequest, RiskVerdict, OrderAck, PositionUpdate, SlicePositionUpdate, PositionClosed, GateDecision, DeRiskRequirement, PositionSnapshot, RegimeState, StateTransition, MetricEvent, Alert, and the unlisted KillSwitchActivation, LatencyBreach, RegimeHazardSpike). This revises D-120. Horizon bucket alignment keys on market time, and a market-time stamp is not a causal violation.
+                 D-137: I1: timestamp_ns is at or before the clock at publication. I2: an action stamp equals that clock. I3: a market stamp equals the triggering event's exchange time. PENDING is strict and shrinks only in P-23c: GateDecision, DeRiskRequirement, and PositionSnapshot violate I2 on reference-engine runs, and each must still violate.
+                 D-138: Cross-class time arithmetic goes through market_data_visible_at_ns or clock.now_ns() at the call site. The eight router latency-model sites and the MOC close gate are physical-time arithmetic and are commented as such. massive_normalizer.py's wall-clock check returns immediately when the clock is below 2e17, so it is inert under the simulated clock and was not edited.
+                 D-139: The published ACKNOWLEDGED ack, both depth-walk legs, the exit-path OrderRequest, RiskVerdict, and the MOC fill move to the publication clock. Eligibility, deadlines, and prices stay. The six risk_wrapper constructors use the same clock, one keyword argument set at the single bootstrap construction.
+                 D-140: The two depth-walk legs are distinguished by bus order and ack sequence, not by a 1 ns stamp offset. PR 90 (a4dab082), F-M-27 forensic intent kept. No src consumer of the offset remains.
+                 D-141: "Now" for a hazard age and a deferral deadline is the trade's visible time: its exchange stamp plus market_data_latency. The emitted requirement keeps the trade timestamp, so a zero latency leaves the determinism hashes unchanged.
+                 D-142: A test that pins a behaviour this rung changes is enumerated in E0 and rewritten to keep its protective intent (the eligibility-time assertions). Any other red is a stop.
+                 D-143: Label-only timestamp corrections that move timestamp-bearing determinism constants go through a pre-registered break verified by payload diff (the diff must equal the predicted field changes exactly); the legacy oracle (timestamp-free) must stay fixed.
+                 D-144: Action-time producers are checked statically, by a constructor scan, not only by run-time invariants. E-1 fixed the six risk_wrapper constructors. The other producers stay on the ratchet, 14 keys. The IB router's fill.timestamp_ns copies are deferred to the paper campaign (D-63).
+                 D-145: PositionClosed is constructed nowhere in src. The reference engine builds it. P-30 owns the production constructor.
+                 D-146: Canonical encodings and intern tables key on exact representation (type + as_tuple/repr), never on value equality.
+                 D-147: The CI real job selects battery_real by marker from the root; a guard forbids a file list.
+                 D-148: Instrumented runs (taps, hooks, observers, transforms) never read or write run caches; the battery must pass in forward and reversed order.
+  RULE:          Two-class timestamps (market / action). I1-I3 in CI.
+                 The causality metric is stamp vs clock at publication.
+                 Revises the P-22a2 knowledge-time rule (horizon bucket
+                 alignment keys on market time).
+  FIXES:         ACKNOWLEDGED published at the clock (eligibility
+                 unchanged). Same-stamp depth walk (legs ordered by
+                 bus/ack sequence; PR 90 F-M-27 forensic intent kept).
+                 Exit-path OrderRequest, RiskVerdict (basic_risk + 6
+                 risk_wrapper sites) and MOC fill -> clock.
+                 hazard_exit / deferral_cap 20 ms class mix fixed.
+  RATCHET:       KNOWN_NONCLOCK 14 -> P-23a2 (IB router -> paper
+                 campaign, D-63).
+  PENDING:       I2: GateDecision / DeRiskRequirement / PositionSnapshot
+                 -> P-23c.
+  HARNESS:       Three latent defects of one family, surfaced by running
+                 different kinds of runs in one process.
+                 _SESSION_DIGESTS keyed by full configuration.
+                 _DEC_PACK keyed by exact representation.
+                 Instrumented runs bypass the run cache.
+                 The battery passes forward and reversed.
+                 Findings -> P-23a2: _cached_real.fraction ±0.0; the
+                 stale _session_digest_key docstring.
+  CI COVERAGE:   The real job selects -m battery_real from the root,
+                 with a guard. 3 real tests had never run in CI; now
+                 12/12.
+  PROCESS:       9 amendments (A-I). Each stop widened the prediction
+                 or the coverage before a change; no check was loosened
+                 after an observation.
+  TOOLING:       A CI order check (pytest-randomly or a reversed pass).
+                 The check-job duration trend (336 -> 623 s).
+  CI:            Head run 36691721608 on 30c5a4b6: check 623 s / parity
+                 oracle 241 s / reference battery 226 s / kill A 61 s /
+                 kill B 30 s; battery step "75 passed, 9 deselected in
+                 187.69s (0:03:07)"; Bugbot pass. Real dispatch
+                 36692908129 on 30c5a4b6, workflow_dispatch, 12 passed.
+                 Merge run 36700717064 on 02d4719f: check 546 s / parity
+                 oracle 216 s / reference battery 234 s / kill A 66 s /
+                 kill B 32 s; battery step "75 passed, 9 deselected in
+                 185.13s (0:03:05)"; Bugbot neutral. Nightly dispatch
+                 36702104055 success (dispatch 5m58s): child
+                 36702114715 on 02d4719f, reference battery (real)
+                 success 339 s ("12 passed, 5281 deselected in 310.48s
+                 (0:05:10)"), kill A success 53 s, kill B success 32 s.
+                 Scheduled nightly: F-P23a-b (due 2026-09-30 08:17 UTC;
+                 gh run list --event schedule returned none).
+  FINDINGS:      F-P23a-b: the 2026-09-30 08:17 UTC schedule did not
+                 fire.
+                 P-23a2: _cached_real.fraction ±0.0; the stale
+                 _session_digest_key docstring.
+  NEXT:          P-23b (R2 pricing at arrival [pre-registered break] +
+                 R1 fill-report latency parameter [default = today]).
+  NOTES:         Post-merge capture moved to
+                 ..\feelies-captures\P-23a\baseline_post-merge-P-23a.json.
+  VALIDATION:    prepush "5232 passed, 5 skipped, 55 deselected, 1
+                 xfailed, 48 warnings in 364.18s (0:06:04)"; real
+                 forward "12 passed, 5281 deselected" and reversed
+                 "12 passed"; synthetic forward "75 passed, 9
+                 deselected" and reversed "75 passed"; kill 11/11
+                 KILLED; control 0 failures.
+  STAGE:         A.
+  F-P13b:        still xfail(strict) with reason D-63.
+  OUTCOME:       pre-registered break, two constants. compare
+                 pre-P-23a -> post-P-23a: 64 -> 64, changed 2
+                 (EXPECTED_MARKET_FILL_HASH, EXPECTED_RISK_VERDICT_HASH).
+                 compare post-P-23a -> post-merge-P-23a: 64 -> 64,
+                 changed 0. pytest 5234 -> 5247 (+13), failed 0 -> 0,
+                 skipped 44 -> 44, xfailed 2 -> 2 (E0 as amended:
+                 A, B-3, C-2, D-3, E-1, F-3, G-4, H-3, I-3). Baseline
+                 GREEN. Post-merge counts identical (5247 passed, 0
+                 failed, 44 skipped, 2 xfailed; determinism 148).
