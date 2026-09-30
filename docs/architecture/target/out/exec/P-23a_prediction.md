@@ -81,3 +81,15 @@ test not in this table or in ADDED is a STOP; it is not edited to green.
 | `tests/execution/test_passive_limit_router.py::TestLatency::test_deferred_aggressive_timeout_reject_ts_not_before_ack_when_clock_tracks_exchange` | published ACK `== 2000` | published `== 1000`; eligibility stays 2000 |
 | `tests/execution/test_router_fill_timing_parity.py::TestCancelReplenishAtRestingLevel::test_explicit_cancel_inside_window_floors_ts_and_blocks_fill` | published ACK `== 7000` | published `== 5000`; eligibility stays 7000 |
 | `tests/execution/test_pr12_cleanup.py::TestPartialFillDistinctTimestamps::test_partial_and_final_fill_have_distinct_timestamps` | final stamp `>` partial stamp | renamed `test_partial_and_final_fill_order_by_sequence`: bus order, ack sequence, both stamps equal the publication clock |
+
+## MODIFIED (B-3)
+
+The shared helper `_submit_both` is one ACK pin. Both callers are in the
+modified set. The helper is rewritten once: published stamp is the clock at
+publication (5000); eligibility stays 6000 on both the resting limit and the
+deferred market.
+
+| Node id | Before | After |
+|---|---|---|
+| `tests/execution/test_router_fill_timing_parity.py::TestPassiveAggressiveEligibilityParity::test_both_paths_share_one_exchange_time_deadline` | both published acks `== 6000` | published `== 5000`; both paths' eligibility stays 6000 |
+| `tests/execution/test_router_fill_timing_parity.py::TestPassiveAggressiveEligibilityParity::test_a_wall_clock_past_the_deadline_makes_neither_path_eligible` | both published acks `== 6000` | published `== 5000`; both paths' eligibility stays 6000 |
