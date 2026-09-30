@@ -1532,7 +1532,25 @@ def attribute(stream: Sequence[Event]) -> list[tuple[int | None, str, str]]:
 _MISSING = object()
 _DC_FIELDS: dict[type, tuple[tuple[bytes, str], ...] | None] = {}
 _ENUM_TYPES: dict[type, bool] = {}
-_SESSION_DIGESTS: dict[str, tuple[Widened, ...]] = {}
+_SESSION_DIGESTS: dict[tuple[str, ...], tuple[Widened, ...]] = {}
+
+
+def _session_digest_key(tape: str) -> tuple[str, ...]:
+    """Tape id plus every process-visible seam that changes a widened digest.
+
+    ``tape`` is the caller tape id; its parameters are in that string.
+    Unset engine and rail resolve to the production stub. Dwell and slippage
+    resolve to ``0``, matching the rail. ``engine_factory``, ``rail_wrapper``,
+    and ``attach_sink`` are per-call arguments of ``run_real`` and already key
+    that cache; they are not process state here.
+    """
+    engine = (
+        os.environ.get("FEELIES_ENGINE", "").strip() or "feelies.position.engine.PositionEngine"
+    )
+    rail = os.environ.get("FEELIES_RAIL", "").strip() or "feelies.portfolio.mark_rail.MarkRail"
+    dwell = os.environ.get("FEELIES_RAIL_DWELL_NS", "").strip() or "0"
+    slip = os.environ.get("FEELIES_RAIL_SLIPPAGE_TICKS", "").strip() or "0"
+    return (tape, engine, rail, dwell, slip, _APP_CONFIG.as_posix())
 
 
 def _dc_fields(value: object) -> tuple[tuple[bytes, str], ...] | None:
@@ -1917,11 +1935,12 @@ def assert_widened_prefix(
 
 
 def session_digest(key: str, rows: tuple[Widened, ...]) -> tuple[Widened, ...]:
-    """Full-run digest sequence, computed once per session and reused for every cut."""
-    cached = _SESSION_DIGESTS.get(key)
+    """Full-run digest sequence, computed once per configuration and reused for every cut."""
+    cache_key = _session_digest_key(key)
+    cached = _SESSION_DIGESTS.get(cache_key)
     if cached is not None:
         return cached
-    _SESSION_DIGESTS[key] = rows
+    _SESSION_DIGESTS[cache_key] = rows
     return rows
 
 

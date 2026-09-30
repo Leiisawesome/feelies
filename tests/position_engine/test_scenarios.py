@@ -1532,3 +1532,25 @@ def test_barrier_precondition_is_tape_computed() -> None:
         require_barrier_differs(same, birth_index=2, landing_index=3, centre=11, band=0)
     other = set_quote(tape, 3, bid_cents=barrier - 3, ask_cents=barrier - 2)
     require_barrier_differs(other, birth_index=2, landing_index=3, centre=11, band=0)
+
+
+def test_session_digest_is_keyed_by_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A digest stored under engine A is not returned under engine B, and is under A."""
+    from tests.position_engine.scenarios import Widened, _SESSION_DIGESTS, session_digest
+
+    saved = dict(_SESSION_DIGESTS)
+    _SESSION_DIGESTS.clear()
+    tape = "unit-tape"
+    under_a = (Widened(1, "NBBOQuote", b"aaa"),)
+    under_b = (Widened(1, "NBBOQuote", b"bbb"),)
+    try:
+        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_a.Engine")
+        assert session_digest(tape, under_a) == under_a
+        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_b.Engine")
+        got = session_digest(tape, under_b)
+        assert got == under_b
+        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_a.Engine")
+        assert session_digest(tape, under_b) == under_a
+    finally:
+        _SESSION_DIGESTS.clear()
+        _SESSION_DIGESTS.update(saved)
