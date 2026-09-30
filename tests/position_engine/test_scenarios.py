@@ -1554,3 +1554,57 @@ def test_session_digest_is_keyed_by_engine(monkeypatch: pytest.MonkeyPatch) -> N
     finally:
         _SESSION_DIGESTS.clear()
         _SESSION_DIGESTS.update(saved)
+
+
+def _pack_spans(values: list[object]) -> tuple[list[bytes], set[tuple[object, ...]]]:
+    from tests.position_engine.scenarios import _DEC_PACK, _feed_scalar
+
+    saved = dict(_DEC_PACK)
+    _DEC_PACK.clear()
+    try:
+        buf = bytearray()
+        spans: list[bytes] = []
+        for value in values:
+            start = len(buf)
+            assert _feed_scalar(buf, value)
+            spans.append(bytes(buf[start:]))
+        return spans, set(_DEC_PACK)
+    finally:
+        _DEC_PACK.clear()
+        _DEC_PACK.update(saved)
+
+
+def _decimal_text(packed: bytes) -> str:
+    assert packed[:1] == b"D"
+    length = int.from_bytes(packed[1:5], "little")
+    return packed[5 : 5 + length].decode()
+
+
+def test_decimal_pack_keeps_exact_text() -> None:
+    """Decimal('1.00') keeps its own text after Decimal('1.0') was packed."""
+    spans, _keys = _pack_spans([Decimal("1.0"), Decimal("1.00")])
+    assert _decimal_text(spans[1]) == "1.00"
+
+
+def test_float_pack_keeps_signed_zero() -> None:
+    """-0.0 keeps its own encoding after 0.0 was packed."""
+    spans, keys = _pack_spans([0.0, -0.0])
+    assert (float, "-0.0") in keys
+    cold, _cold_keys = _pack_spans([-0.0])
+    assert spans[1] == cold[0]
+    assert spans[1] != spans[0]
+
+
+def test_numeric_pack_keeps_type() -> None:
+    """1, True, and 1.0 each keep their own encoding."""
+    spans, keys = _pack_spans([1, True, 1.0])
+    assert (int, 1) in keys
+    assert (bool, True) in keys
+    assert (float, "1.0") in keys
+    alone_int, _ = _pack_spans([1])
+    alone_bool, _ = _pack_spans([True])
+    alone_float, _ = _pack_spans([1.0])
+    assert spans[0] == alone_int[0]
+    assert spans[1] == alone_bool[0]
+    assert spans[2] == alone_float[0]
+    assert len({spans[0], spans[1], spans[2]}) == 3

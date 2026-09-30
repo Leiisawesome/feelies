@@ -1591,39 +1591,67 @@ _PACK_F = bytearray(9)
 _PACK8 = bytearray(64)
 _PACK4 = bytearray(32)
 _STR_PACK: dict[str, bytes] = {}
-_DEC_PACK: dict[Decimal, bytes] = {}
+_DEC_PACK: dict[tuple[object, ...], bytes] = {}
 _PROV_PACK: dict[tuple[tuple[str, ...], tuple[str, ...]], bytes] = {}
+
+
+def _intern_key(value: object) -> tuple[object, ...]:
+    """Exact representation. Value equality is not a key."""
+    if type(value) is Decimal:
+        return (Decimal, value.as_tuple())
+    if type(value) is float:
+        return (float, repr(value))
+    if type(value) is bool:
+        return (bool, value)
+    if type(value) is int:
+        return (int, value)
+    return (type(value), value)
+
+
+def _intern(value: object, packed: bytes) -> bytes:
+    key = _intern_key(value)
+    cached = _DEC_PACK.get(key)
+    if cached is not None:
+        return cached
+    _DEC_PACK[key] = packed
+    return packed
 
 
 def _feed_scalar(buf: bytearray, value: object) -> bool:
     kind = type(value)
     if kind is int:
+        key_hit = _DEC_PACK.get(_intern_key(value))
+        if key_hit is not None:
+            buf.extend(key_hit)
+            return True
         try:
             struct.pack_into("<bq", _PACK_I, 0, 0x69, value)
         except struct.error:
             raw = value.to_bytes((value.bit_length() // 8) + 2, "little", signed=True)
-            buf.extend(b"I")
-            buf.extend(len(raw).to_bytes(2, "little"))
-            buf.extend(raw)
+            packed = b"I" + len(raw).to_bytes(2, "little") + raw
+            buf.extend(_intern(value, packed))
             return True
-        buf.extend(_PACK_I)
+        buf.extend(_intern(value, bytes(_PACK_I)))
         return True
     if kind is str:
         _feed_str(buf, value, cache=True)
         return True
     if kind is float:
-        struct.pack_into("<bd", _PACK_F, 0, 0x64, value)
-        buf.extend(_PACK_F)
+        key_hit = _DEC_PACK.get(_intern_key(value))
+        if key_hit is None:
+            struct.pack_into("<bd", _PACK_F, 0, 0x64, value)
+            key_hit = _intern(value, bytes(_PACK_F))
+        buf.extend(key_hit)
         return True
     if kind is bool:
-        buf.extend(b"t" if value else b"f")
+        buf.extend(_intern(value, b"t" if value else b"f"))
         return True
     if kind is Decimal:
-        packed = _DEC_PACK.get(value)
+        packed = _DEC_PACK.get(_intern_key(value))
         if packed is None:
             raw = str(value).encode()
             packed = b"D" + len(raw).to_bytes(4, "little") + raw
-            _DEC_PACK[value] = packed
+            packed = _intern(value, packed)
         buf.extend(packed)
         return True
     if value is None:
