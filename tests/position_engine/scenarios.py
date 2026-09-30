@@ -59,6 +59,7 @@ from feelies.core.quote_quality import QuoteQuality, classify
 from feelies.storage.memory_event_log import InMemoryEventLog
 from tests.position_engine.tapes import make_tape
 
+_BUILD_PLATFORM = build_platform
 T0 = 1_774_533_600_000_000_000
 _FIXTURE = Path("tests/position_engine/fixtures/sig_position_fixture_v1.alpha.yaml")
 _APP_CONFIG = Path("configs/bt_position_arbitrary_not_calibrated.yaml")
@@ -2635,6 +2636,16 @@ def _cached_real(
     )
 
 
+def _instrumented_run(
+    rail_wrapper: Callable[..., object] | None,
+    quote_transform: Callable[[Sequence[Event]], Sequence[Event]] | None,
+) -> bool:
+    """A tap, hook, observer, or transform neither reads nor writes the run cache."""
+    if quote_transform is not None or rail_wrapper is not None:
+        return True
+    return build_platform is not _BUILD_PLATFORM
+
+
 def run_real(
     *,
     end_index: int | None = None,
@@ -2645,6 +2656,16 @@ def run_real(
     attach_sink: bool = True,
     digest_only: bool = False,
 ) -> Records:
+    if _instrumented_run(rail_wrapper, quote_transform):
+        return _execute_real(
+            end_index,
+            fraction,
+            engine_factory,
+            rail_wrapper,
+            quote_transform,
+            attach_sink,
+            digest_only,
+        )
     return _cached_real(
         end_index,
         fraction,
