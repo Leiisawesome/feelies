@@ -96,6 +96,7 @@ class HazardExitController:
         "_attached",
         "_emitted_for_episode",
         "_pending_exit_symbols",
+        "_market_data_latency_ns",
     )
 
     def __init__(
@@ -105,11 +106,13 @@ class HazardExitController:
         sequence_generator: SequenceGenerator,
         position_store: PositionStore,
         policies: Mapping[str, HazardPolicy] | None = None,
+        market_data_latency_ns: int = 0,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
         self._position_store = position_store
         self._policies: dict[str, HazardPolicy] = dict(policies or {})
+        self._market_data_latency_ns = market_data_latency_ns
         self._attached = False
         # Per-symbol "already emitted" suppression — keyed by
         # ``(strategy_id, symbol, reason)``.  Cleared when the position
@@ -185,7 +188,9 @@ class HazardExitController:
             opened = self._position_store.opened_at_ns(trade.symbol)
             if opened is None:
                 continue
-            age_ns = trade.timestamp_ns - opened
+            # Visible time is exchange stamp plus market-data latency
+            # (market_data_visible_at_ns). Inlined: risk does not import ingestion.
+            age_ns = trade.timestamp_ns + self._market_data_latency_ns - opened
             if age_ns < int(policy.hard_exit_age_seconds) * 1_000_000_000:
                 continue
             self._maybe_emit_exit(

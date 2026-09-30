@@ -222,10 +222,12 @@ class BacktestOrderRouter:
             return
 
         # Emit ACKNOWLEDGED before terminal fill states.
-        ack_ts = self._clock.now_ns() + self._latency_ns
+        # T2: the published stamp is the clock. ack_ts stays the eligibility time.
+        published_ts = self._clock.now_ns()
+        ack_ts = published_ts + self._latency_ns
         self._pending_acks.append(
             OrderAck(
-                timestamp_ns=ack_ts,
+                timestamp_ns=published_ts,
                 correlation_id=request.correlation_id,
                 sequence=self._ack_seq.next(),
                 order_id=request.order_id,
@@ -253,6 +255,7 @@ class BacktestOrderRouter:
             self._deferred_markets.append(
                 _DeferredMarketFill(
                     request=request,
+                    # T3: physical-time latency model; not a raw cross-class compare.
                     fill_deadline_exchange_ns=(
                         max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
                     ),
@@ -274,6 +277,7 @@ class BacktestOrderRouter:
                 remaining.append(dm)
                 continue
             ticks_for_symbol = dm.ticks_for_symbol + 1
+            # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
                     self._reject(

@@ -365,7 +365,11 @@ class TestCancelReplenishAtRestingLevel:
     def test_explicit_cancel_inside_window_floors_ts_and_blocks_fill(self) -> None:
         """A client cancel inside the latency window emits CANCELLED
         timestamped no earlier than ACKNOWLEDGED (monotonic per-order ack
-        stream), and a later crossing quote must not fill the dead order."""
+        stream), and a later crossing quote must not fill the dead order.
+
+        Original pin: the ACK stamp was 7000. T2 publishes it at the
+        clock (5000). Eligibility stays 7000.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -376,7 +380,8 @@ class TestCancelReplenishAtRestingLevel:
         router.submit(_limit("AAPL", Side.BUY, 100, "100.00", order_id="c1"))
         ack = router.poll_acks()[0]
         assert ack.status == OrderAckStatus.ACKNOWLEDGED
-        assert ack.timestamp_ns == 7000
+        assert ack.timestamp_ns == 5000
+        assert router._resting_orders["c1"].ack_timestamp_ns == 7000
 
         clock.set_time(5500)  # inside the window
         assert router.cancel_order("c1") is True
@@ -637,7 +642,10 @@ class TestPassiveAggressiveEligibilityParity:
         acks = router.poll_acks()
         assert {a.order_id for a in acks} == {"passive", "aggressive"}
         assert all(a.status == OrderAckStatus.ACKNOWLEDGED for a in acks)
-        assert all(a.timestamp_ns == self._DEADLINE_NS for a in acks)
+        # T2: published at the clock. The old deadline stays eligibility.
+        assert all(a.timestamp_ns == self._SUBMIT_NS for a in acks)
+        assert router._resting_orders["passive"].ack_timestamp_ns == self._DEADLINE_NS
+        assert router._deferred_aggressive[0].ack_timestamp_ns == self._DEADLINE_NS
 
     def test_both_paths_share_one_exchange_time_deadline(self) -> None:
         clock = SimulatedClock(start_ns=self._SUBMIT_NS)

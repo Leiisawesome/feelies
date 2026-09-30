@@ -400,18 +400,7 @@ jobs:
           echo "FEELIES_STAGE_FILE=$RUNNER_TEMP/stage_e.txt" >> "$GITHUB_ENV"
 
       - name: Real members
-        run: >-
-          uv run pytest
-          tests/position_engine/test_battery_m1_reproducibility.py
-          tests/position_engine/test_battery_m2_no_lookahead.py
-          tests/position_engine/test_battery_m3_known_answer_conservation.py
-          tests/position_engine/test_battery_m4_side_correctness.py
-          tests/position_engine/test_battery_m5_precedence.py
-          tests/position_engine/test_battery_m6_injection_syn.py
-          tests/position_engine/test_battery_m6_injection_real.py
-          tests/position_engine/test_battery_m11_audit.py
-          -m battery_real
-          -q
+        run: uv run pytest -m battery_real -q
 
   mutant-kill:
     name: mutant kill (${{ matrix.shard }})

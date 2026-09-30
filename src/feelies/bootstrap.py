@@ -467,6 +467,7 @@ def build_platform(
         account_id=config.account_id,
         # Warn in PAPER when an entry gate is not wired.
         warn_on_inert_entry_gates=not replay_clock,
+        clock=clock,
     )
 
     cost_model = DefaultCostModel(
@@ -651,6 +652,7 @@ def build_platform(
         position_store=position_store,
         fallback_universe=config.symbols,
         thread_safe_sequences=_seq_thread_safe,
+        market_data_latency_ns=config.market_data_latency_ns,
     )
 
     # Attach the cap before the composer to keep subscriber order deterministic.
@@ -663,6 +665,7 @@ def build_platform(
         session_flatten_enabled=config.session_flatten_enabled,
         session_flatten_seconds_before_close=config.session_flatten_seconds_before_close,
         thread_safe_sequences=_seq_thread_safe,
+        market_data_latency_ns=config.market_data_latency_ns,
     )
     exit_composer = _create_exit_composer(
         bus=bus,
@@ -685,6 +688,7 @@ def build_platform(
         strategy_positions=strategy_positions,
         platform_config=risk_config,
         account_equity=_decimal(config.account_equity),
+        clock=clock,
     )
     effective_risk_engine: RiskEngine = (
         risk_wrapper if config.enforce_per_alpha_risk_budget else risk_engine
@@ -1884,6 +1888,7 @@ def _create_hazard_exit_controller(
     position_store: MemoryPositionStore,
     fallback_universe: Iterable[str],
     thread_safe_sequences: bool = True,
+    market_data_latency_ns: int = 0,
 ) -> HazardExitController | None:
     """Attach hazard-exit policies declared by SIGNAL or PORTFOLIO alphas."""
     fallback = tuple(sorted(fallback_universe))
@@ -1901,6 +1906,7 @@ def _create_hazard_exit_controller(
         bus=bus,
         sequence_generator=seq,
         position_store=position_store,
+        market_data_latency_ns=market_data_latency_ns,
     )
     for module in sorted(candidates, key=lambda m: m.manifest.alpha_id):
         block = getattr(module.manifest, "hazard_exit", None) or {}
@@ -2016,6 +2022,7 @@ def _create_deferral_cap_controller(
     session_flatten_enabled: bool,
     session_flatten_seconds_before_close: int,
     thread_safe_sequences: bool = True,
+    market_data_latency_ns: int = 0,
 ) -> DeferralCapController | None:
     """Attach bounded-deferral exits for decoupled SIGNAL alphas."""
     if horizon_signal_engine is None:
@@ -2033,6 +2040,7 @@ def _create_deferral_cap_controller(
         position_store=strategy_positions,
         session_flatten_enabled=session_flatten_enabled,
         session_flatten_seconds_before_close=session_flatten_seconds_before_close,
+        market_data_latency_ns=market_data_latency_ns,
     )
     for registered in sorted(decoupled, key=lambda s: s.alpha_id):
         alpha_id = registered.alpha_id

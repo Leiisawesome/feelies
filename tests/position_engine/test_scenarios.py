@@ -1532,3 +1532,148 @@ def test_barrier_precondition_is_tape_computed() -> None:
         require_barrier_differs(same, birth_index=2, landing_index=3, centre=11, band=0)
     other = set_quote(tape, 3, bid_cents=barrier - 3, ask_cents=barrier - 2)
     require_barrier_differs(other, birth_index=2, landing_index=3, centre=11, band=0)
+
+
+def test_session_digest_is_keyed_by_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A digest stored under engine A is not returned under engine B, and is under A."""
+    from tests.position_engine.scenarios import Widened, _SESSION_DIGESTS, session_digest
+
+    saved = dict(_SESSION_DIGESTS)
+    _SESSION_DIGESTS.clear()
+    tape = "unit-tape"
+    under_a = (Widened(1, "NBBOQuote", b"aaa"),)
+    under_b = (Widened(1, "NBBOQuote", b"bbb"),)
+    try:
+        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_a.Engine")
+        assert session_digest(tape, under_a) == under_a
+        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_b.Engine")
+        got = session_digest(tape, under_b)
+        assert got == under_b
+        monkeypatch.setenv("FEELIES_ENGINE", "tests.position_engine.engine_a.Engine")
+        assert session_digest(tape, under_b) == under_a
+    finally:
+        _SESSION_DIGESTS.clear()
+        _SESSION_DIGESTS.update(saved)
+
+
+def test_instrumented_run_bypasses_the_run_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A tap, hook, observer, or transform neither reads nor writes the run cache."""
+    import tests.position_engine.scenarios as scenarios
+    from tests.position_engine.scenarios import Widened
+
+    cached = Records([], {}, (), ())
+    cached.widened = (Widened(None, "cached", b"cached"),)
+
+    def execute_cached(*_args: object, **_kwargs: object) -> Records:
+        return cached
+
+    def cache_snapshot() -> tuple[int, int, int]:
+        info = scenarios._cached_real.cache_info()
+        return (info.hits, info.misses, info.currsize)
+
+    monkeypatch.setattr(scenarios, "_execute_real", execute_cached)
+    scenarios._cached_real.cache_clear()
+    try:
+        assert run_real() is cached
+        snapshot = cache_snapshot()
+        original_build = scenarios.build_platform
+        tap: list[str] = []
+
+        def hooked_build(*_args: object, **_kwargs: object) -> tuple[str, str]:
+            tap.append("row")
+            return ("orchestrator", "resolved")
+
+        def execute_fresh(*_args: object, **_kwargs: object) -> Records:
+            if scenarios.build_platform is not original_build:
+                scenarios.build_platform()
+            names = tuple(tap) if tap else ("fresh",)
+            fresh = Records([], {}, (), ())
+            fresh.widened = tuple(Widened(None, name, name.encode()) for name in names)
+            return fresh
+
+        monkeypatch.setattr(scenarios, "build_platform", hooked_build)
+        monkeypatch.setattr(scenarios, "_execute_real", execute_fresh)
+        hooked = run_real()
+        assert tap == ["row"]
+        assert hooked is not cached
+        assert hooked.widened == (Widened(None, "row", b"row"),)
+        assert cache_snapshot() == snapshot
+
+        monkeypatch.setattr(scenarios, "build_platform", original_build)
+        tap.clear()
+
+        def transform(events: list[object]) -> list[object]:
+            return list(events)
+
+        transformed = run_real(quote_transform=transform)
+        assert transformed is not cached
+        assert transformed.widened == (Widened(None, "fresh", b"fresh"),)
+        assert cache_snapshot() == snapshot
+
+        def wrapper(_original: object, _quote: object) -> object:
+            return _original
+
+        wrapped = run_real(rail_wrapper=wrapper)
+        assert wrapped is not cached
+        assert wrapped.widened == (Widened(None, "fresh", b"fresh"),)
+        assert cache_snapshot() == snapshot
+
+        monkeypatch.setattr(scenarios, "_execute_real", execute_cached)
+        assert run_real() is cached
+        assert scenarios._cached_real.cache_info().hits == snapshot[0] + 1
+    finally:
+        scenarios._cached_real.cache_clear()
+
+
+def _pack_spans(values: list[object]) -> tuple[list[bytes], set[tuple[object, ...]]]:
+    from tests.position_engine.scenarios import _DEC_PACK, _feed_scalar
+
+    saved = dict(_DEC_PACK)
+    _DEC_PACK.clear()
+    try:
+        buf = bytearray()
+        spans: list[bytes] = []
+        for value in values:
+            start = len(buf)
+            assert _feed_scalar(buf, value)
+            spans.append(bytes(buf[start:]))
+        return spans, set(_DEC_PACK)
+    finally:
+        _DEC_PACK.clear()
+        _DEC_PACK.update(saved)
+
+
+def _decimal_text(packed: bytes) -> str:
+    assert packed[:1] == b"D"
+    length = int.from_bytes(packed[1:5], "little")
+    return packed[5 : 5 + length].decode()
+
+
+def test_decimal_pack_keeps_exact_text() -> None:
+    """Decimal('1.00') keeps its own text after Decimal('1.0') was packed."""
+    spans, _keys = _pack_spans([Decimal("1.0"), Decimal("1.00")])
+    assert _decimal_text(spans[1]) == "1.00"
+
+
+def test_float_pack_keeps_signed_zero() -> None:
+    """-0.0 keeps its own encoding after 0.0 was packed."""
+    spans, keys = _pack_spans([0.0, -0.0])
+    assert (float, "-0.0") in keys
+    cold, _cold_keys = _pack_spans([-0.0])
+    assert spans[1] == cold[0]
+    assert spans[1] != spans[0]
+
+
+def test_numeric_pack_keeps_type() -> None:
+    """1, True, and 1.0 each keep their own encoding."""
+    spans, keys = _pack_spans([1, True, 1.0])
+    assert (int, 1) in keys
+    assert (bool, True) in keys
+    assert (float, "1.0") in keys
+    alone_int, _ = _pack_spans([1])
+    alone_bool, _ = _pack_spans([True])
+    alone_float, _ = _pack_spans([1.0])
+    assert spans[0] == alone_int[0]
+    assert spans[1] == alone_bool[0]
+    assert spans[2] == alone_float[0]
+    assert len({spans[0], spans[1], spans[2]}) == 3
