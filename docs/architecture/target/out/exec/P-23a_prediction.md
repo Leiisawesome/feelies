@@ -63,3 +63,21 @@ The gate expression is unchanged (`not functional and not paper_rth and not batt
 Pre-push under that expression moves 5220 passed / 5 skipped / 54 deselected to
 5225 passed / 5 skipped / 55 deselected (the reference-session test is
 deselected; the other five added tests pass). Any other move is a STOP.
+
+## MODIFIED (A4)
+
+Tests that pin a behaviour this rung deliberately changes. Each keeps its
+protective intent. The published ACK stamp becomes the clock at publication.
+The old clock-plus-latency value remains the fill-eligibility time. Any red
+test not in this table or in ADDED is a STOP; it is not edited to green.
+
+| Node id | Before | After |
+|---|---|---|
+| `tests/execution/test_backtest_router.py::TestBacktestOrderRouter::test_latency_injection` | published ACK `timestamp_ns == 6000` | published `== 5000` (clock); eligibility stays 6000 |
+| `tests/execution/test_backtest_router.py::TestBacktestOrderRouter::test_deferred_market_fill_ts_no_double_latency_when_clock_tracks_exchange` | published ACK `== 2000` | published `== 1000`; eligibility stays 2000; FILLED `== 2500` unchanged |
+| `tests/execution/test_backtest_router.py::TestBacktestOrderRouter::test_deferred_market_timeout_reject_ts_not_before_ack_when_clock_tracks_exchange` | published ACK `== 2000` | published `== 1000`; eligibility stays 2000; reject still `>=` the published ack |
+| `tests/execution/test_passive_limit_router.py::TestLatency::test_market_fill_latency` | published ACK `== 6000` | published `== 5000`; eligibility stays 6000 |
+| `tests/execution/test_passive_limit_router.py::TestLatency::test_deferred_aggressive_fill_ts_no_double_latency_when_clock_tracks_exchange` | published ACK `== 2000` | published `== 1000`; eligibility stays 2000; FILLED `== 2500` unchanged |
+| `tests/execution/test_passive_limit_router.py::TestLatency::test_deferred_aggressive_timeout_reject_ts_not_before_ack_when_clock_tracks_exchange` | published ACK `== 2000` | published `== 1000`; eligibility stays 2000 |
+| `tests/execution/test_router_fill_timing_parity.py::TestCancelReplenishAtRestingLevel::test_explicit_cancel_inside_window_floors_ts_and_blocks_fill` | published ACK `== 7000` | published `== 5000`; eligibility stays 7000 |
+| `tests/execution/test_pr12_cleanup.py::TestPartialFillDistinctTimestamps::test_partial_and_final_fill_have_distinct_timestamps` | final stamp `>` partial stamp | renamed `test_partial_and_final_fill_order_by_sequence`: bus order, ack sequence, both stamps equal the publication clock |
