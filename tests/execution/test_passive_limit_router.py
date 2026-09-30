@@ -1040,7 +1040,11 @@ class TestLatency:
         assert acks[0].timestamp_ns == 7000
 
     def test_market_fill_latency(self):
-        """Defer market fills until a quote reaches the latency deadline."""
+        """Defer market fills until a quote reaches the latency deadline.
+
+        Original pin: the ACK stamp was submit clock plus latency. T2
+        publishes that ACK at the clock. Eligibility stays 6000.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
@@ -1049,7 +1053,8 @@ class TestLatency:
 
         acks = router.poll_acks()
         assert acks[0].status == OrderAckStatus.ACKNOWLEDGED
-        assert acks[0].timestamp_ns == 6000
+        assert acks[0].timestamp_ns == 5000
+        assert router._deferred_aggressive[0].ack_timestamp_ns == 6000
 
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=5500))
         assert router.poll_acks() == []
@@ -1064,13 +1069,18 @@ class TestLatency:
     def test_deferred_aggressive_fill_ts_no_double_latency_when_clock_tracks_exchange(
         self,
     ) -> None:
-        """ReplayFeed advances clock to each quote — FILLED must not add latency twice."""
+        """ReplayFeed advances clock to each quote — FILLED must not add latency twice.
+
+        Original pin: the ACK stamp was 2000. T2 publishes it at the
+        clock (1000). Eligibility stays 2000.
+        """
         clock = SimulatedClock(start_ns=1000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
         router.submit(_market_order("AAPL"))
-        assert router.poll_acks()[0].timestamp_ns == 2000
+        assert router.poll_acks()[0].timestamp_ns == 1000
+        assert router._deferred_aggressive[0].ack_timestamp_ns == 2000
 
         clock.set_time(2500)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=2500))
@@ -1305,7 +1315,11 @@ class TestLatency:
     def test_deferred_aggressive_timeout_reject_ts_not_before_ack_when_clock_tracks_exchange(
         self,
     ) -> None:
-        """max_resting_ticks fires before latency deadline: REJECTED must not precede ACK."""
+        """max_resting_ticks fires before latency deadline: REJECTED must not precede ACK.
+
+        Original pin: the ACK stamp was 2000. T2 publishes it at the
+        clock (1000). Eligibility stays 2000.
+        """
         clock = SimulatedClock(start_ns=1000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -1318,7 +1332,8 @@ class TestLatency:
         router.submit(_market_order("AAPL"))
         ack = router.poll_acks()[0]
         assert ack.status == OrderAckStatus.ACKNOWLEDGED
-        assert ack.timestamp_ns == 2000
+        assert ack.timestamp_ns == 1000
+        assert router._deferred_aggressive[0].ack_timestamp_ns == 2000
 
         for _ in range(3):
             clock.set_time(1500)
