@@ -53,18 +53,21 @@ Stage A, no `FEELIES_*` overrides. `pass` is a real pass.
 | `tests/conformance/test_cross_class_age.py::test_deferral_deadline_uses_visible_time` | pass |
 | `tests/conformance/test_action_time_producers.py::test_action_time_constructors_are_approved_or_known` | pass |
 | `tests/position_engine/test_scenarios.py::test_session_digest_is_keyed_by_engine` | pass |
+| `tests/position_engine/test_scenarios.py::test_decimal_pack_keeps_exact_text` | pass |
+| `tests/position_engine/test_scenarios.py::test_float_pack_keeps_signed_zero` | pass |
+| `tests/position_engine/test_scenarios.py::test_numeric_pack_keeps_type` | pass |
 
 ## Plain-pytest capture
 
 | | passed | failed | skipped | xfailed |
 |---|---:|---:|---:|---:|
 | pre-P-23a | 5234 | 0 | 44 | 2 |
-| post-P-23a | 5242 | 0 | 44 | 2 |
+| post-P-23a | 5245 | 0 | 44 | 2 |
 
 The gate expression is unchanged (`not functional and not paper_rth and not battery_real`).
 Pre-push under that expression moves 5220 passed / 5 skipped / 54 deselected to
-5227 passed / 5 skipped / 55 deselected (the reference-session test is
-deselected; the other seven added tests pass). Any other move is a STOP.
+5230 passed / 5 skipped / 55 deselected (the reference-session test is
+deselected; the other ten added tests pass). Any other move is a STOP.
 
 ## MODIFIED (A4)
 
@@ -132,3 +135,9 @@ oracle stays fixed.
 `_SESSION_DIGESTS` gains a configuration key. Recorded before that edit: no
 parity constant moves. The C-1 payload diffs stay the two timestamp hashes
 above. The legacy oracle stays fixed. The new unit test passes at stage A.
+
+## Intern-table key (G-4)
+
+`_DEC_PACK` keys on exact representation. Recorded before that edit: no
+parity constant moves. The C-1 payload diffs stay the two timestamp hashes
+above. The legacy oracle stays fixed. The three unit tests pass at stage A.
