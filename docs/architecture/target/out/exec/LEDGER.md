@@ -31541,3 +31541,30 @@ OWNER:       campaign 15.
                  after the exact-match check. Prediction:
                  P-23d_prediction.md.
 
+---
+
+## P-23d
+  PR:            #271 (head 5eca931e57eec1a9865477bef0a3c0d31aaac369,
+                 merge 6139f5ccb3ab44350923523673f86280930427d6).
+  PARITY:        The oracle pin is now 10 fills / net 26.61 / trade
+                 hash c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf,
+                 replacing 24.61 / 18f6bb4ecd7b1b1aad5158077cd6ebbc3e6db27fdab2e2effaf5a74e98545bfb.
+                 Ensemble recorded with the pin. old {24.03:2, 24.61:1,
+                 25.70:1, 26.61:12, 27.19:16}; mean 26.6478125, range
+                 24.03 to 27.19. C {24.03:1, 24.61:3, 26.61:12, 27.19:16};
+                 mean 26.631875, range 24.03 to 27.19. The pinned
+                 realization is the unsalted C draw. D-167 is the
+                 second exemption under D-66.
+  DECISIONS:     D-161..D-167, as written in decisions.md.
+  OPEN:          Identity-model track (F-P23d-f, F-P23d-g), census to
+                 run before P-30.
+                 F-P23d-h, the P3c strict xfail, removed by P-23c.
+                 F-P23d-i, battery drain-coverage gap.
+                 F-P23d-j, encoding of node lists.
+                 prepush does not run the parity-oracle pins.
+                 CI has no reversed-order battery job.
+  CI:            Declaration run 36866681420 on 5eca931e: success
+                 (check, parity oracle, reference battery, kill A,
+                 kill B; Bugbot pass).
+  NEXT:          P-23c census (includes removing the P3c xfail).
+
