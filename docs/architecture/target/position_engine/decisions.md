@@ -173,6 +173,7 @@ edit to the spec file in a later docs rung, citing the entry.
 | D-164 | 2026-10-01 | P-23d | What standing rules did amendment 2 leave? | Census per-fill tables are emitted by one run and compared to that run, never to a remembered table. Invariance tests carry a negative control at every numbering layer. A field is called content-keyed only after its provenance is traced to the vendor payload. | A counter that survives an orchestrator-only perturbation is still a counter. A named field that the probe did not actually hash is not a key. | decisions.md |
 | D-165 | 2026-10-01 | P-23d | What follows a change to a seed? | A PRECONDITION/PROPERTY classification over a salt sweep. Properties are tested across salts, and the precondition must hold on at least 8 salts. | A single draw that happens to fill is a realization pin. A property that never meets its precondition is vacuous. | test_passive_limit_router.py |
 | D-166 | 2026-10-01 | P-23d | What does an evaluation that uses passive fills report? | The salt-ensemble distribution (mean and range) next to the pinned realization. | One unsalted draw is a point in that distribution, not the distribution. | P-23d_prediction.md |
+| D-167 | 2026-10-01 | P-23d | What does the operator declare for the legacy-oracle break? | The declaration is recorded verbatim in the block under this entry. It is the second exemption under D-66. | evaluation.md §2: the operator declares the break only after the exact-match check. An improved result is never a reason to accept a break. | evaluation.md §2 |
 
 ### D-66 pre-registered prediction
 
@@ -217,6 +218,18 @@ Nothing else moves.
 Before the F-P13b xfail the capture baseline is RED
 (test_two_alphas_hold_live_targets_on_one_symbol).
 After the xfail the capture baseline is GREEN.
+```
+
+### D-167 operator declaration
+
+```
+OPERATOR DECLARATION — P-23d
+I, Lei (operator), declare the legacy-oracle break under evaluation.md §2, the second exemption under D-66.
+Oracle (bt_app.yaml, APP 2026-03-26): 10 fills / net 24.61 / trade hash 18f6bb4e…5bfb  ->  10 fills / net 26.61 / trade hash c95f4e5c… (the full 64-hex as recorded in E0 cd1742e92174c8919c247a1dffc0aed2872d8561).
+Mechanism: the passive-drain draw is keyed on market content only. order_id and the per-order ticks_at_level are removed from the seed, so orders at the same side, level and event share one draw (comonotone). Order ids are unchanged.
+Pre-registration: E0 at cd1742e92174c8919c247a1dffc0aed2872d8561, committed before the pre-capture and before the production change. Exact-match check passed at 6560d2ca486b54ce86bc2118b71ce35a8fd88a48 (CI run 36861229919 success; Bugbot success).
+Interpretation: the 32-draw ensemble has essentially the same expected net under both models (old about 26.65, C about 26.63). This break replaces one realization with another. It is not an economic improvement and must not be cited as one.
+Backlog note: raise the rewritten off_level property test to 64 salts (old-seed precondition-met count was 8, exactly the floor).
 ```
 
 ## Findings

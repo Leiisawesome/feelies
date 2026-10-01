@@ -45,6 +45,23 @@ After the post-capture:
 An improved result is never a reason to accept a break. The operator declares the break only
 after this check passes. The ledger records the prediction and the outcome side by side.
 
+### Exemption log
+
+Append-only. Exemptions under D-66 (§2).
+
+1. D-66 (P-13, 2026-09-26). The one-time re-pin recorded in decisions.md and in the D-66 prediction block.
+2. D-167 (P-23d, 2026-10-01). The second exemption, verbatim:
+
+```
+OPERATOR DECLARATION — P-23d
+I, Lei (operator), declare the legacy-oracle break under evaluation.md §2, the second exemption under D-66.
+Oracle (bt_app.yaml, APP 2026-03-26): 10 fills / net 24.61 / trade hash 18f6bb4e…5bfb  ->  10 fills / net 26.61 / trade hash c95f4e5c… (the full 64-hex as recorded in E0 cd1742e92174c8919c247a1dffc0aed2872d8561).
+Mechanism: the passive-drain draw is keyed on market content only. order_id and the per-order ticks_at_level are removed from the seed, so orders at the same side, level and event share one draw (comonotone). Order ids are unchanged.
+Pre-registration: E0 at cd1742e92174c8919c247a1dffc0aed2872d8561, committed before the pre-capture and before the production change. Exact-match check passed at 6560d2ca486b54ce86bc2118b71ce35a8fd88a48 (CI run 36861229919 success; Bugbot success).
+Interpretation: the 32-draw ensemble has essentially the same expected net under both models (old about 26.65, C about 26.63). This break replaces one realization with another. It is not an economic improvement and must not be cited as one.
+Backlog note: raise the rewritten off_level property test to 64 salts (old-seed precondition-met count was 8, exactly the floor).
+```
+
 ## 3. P-95 attribution diff
 
 Report-only tool; location fixed by the P-95 census. It runs one tape through two
