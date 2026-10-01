@@ -31543,7 +31543,7 @@ OWNER:       campaign 15.
 
 ---
 
-## P-23d
+## RECORD P-23d merged
   PR:            #271 (head 5eca931e57eec1a9865477bef0a3c0d31aaac369,
                  merge 6139f5ccb3ab44350923523673f86280930427d6).
   PARITY:        The oracle pin is now 10 fills / net 26.61 / trade
