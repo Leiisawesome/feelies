@@ -728,6 +728,39 @@ def first_horizon_index(tape: Sequence[NBBOQuote], birth_index: int, horizon_ns:
     raise AssertionError("PRECONDITION: horizon deadline is off the tape")
 
 
+def arrival_entry_cents(tape: Sequence[NBBOQuote], birth_index: int) -> int:
+    """Ask of the quote prevailing at arrival for a long filled on ``birth_index``.
+
+    The publication quote is the one whose arrival — its exchange time plus
+    market-data latency plus the resolved fill latency — first becomes
+    eligible on ``birth_index``. The price is that arrival quote's ask.
+    """
+    if birth_index < 1 or birth_index >= len(tape):
+        raise AssertionError("PRECONDITION: birth quote is off the tape")
+    latency = DEFAULT_MARKET_DATA_LATENCY_NS + DEFAULT_BACKTEST_FILL_LATENCY_NS
+    published: int | None = None
+    for index in range(birth_index):
+        arrival = int(tape[index].exchange_timestamp_ns) + latency
+        eligible = next(
+            (
+                later
+                for later in range(index, len(tape))
+                if int(tape[later].exchange_timestamp_ns) >= arrival
+            ),
+            None,
+        )
+        if eligible == birth_index:
+            published = index
+    if published is None:
+        raise AssertionError("PRECONDITION: no quote's arrival is eligible on the birth quote")
+    arrival = int(tape[published].exchange_timestamp_ns) + latency
+    prevailing = published
+    for index in range(published, birth_index + 1):
+        if int(tape[index].exchange_timestamp_ns) <= arrival:
+            prevailing = index
+    return _cents(tape[prevailing].ask)
+
+
 def require_favorable_tie(
     tape: Sequence[NBBOQuote],
     *,
@@ -745,6 +778,7 @@ def require_favorable_tie(
 ) -> int:
     """PRECONDITION: FAVORABLE and ``higher`` hold on the same first quote.
 
+    The entry price is the ask of the quote prevailing at arrival (R2-2).
     The walk uses the tape and the policy parameters only (contracts §2:265–274).
     The horizon quote is the first whose exchange time is at or after the birth
     quote's exchange time, plus the declared market-data latency, plus
@@ -752,9 +786,10 @@ def require_favorable_tie(
     """
     if higher not in ("ADVERSE", "HORIZON", "INVALIDATION"):
         raise AssertionError(f"PRECONDITION: unknown higher path {higher}")
-    birth = tape[birth_index]
-    entry = _cents(birth.ask)
-    deadline = birth.exchange_timestamp_ns + DEFAULT_MARKET_DATA_LATENCY_NS + horizon_ns
+    entry = arrival_entry_cents(tape, birth_index)
+    horizon_index = (
+        first_horizon_index(tape, birth_index, horizon_ns) if higher == "HORIZON" else None
+    )
     best: int | None = None
     giveback_ticks = 0
     if form == "trailing":
@@ -782,7 +817,7 @@ def require_favorable_tie(
         if higher == "ADVERSE":
             also = valid and move <= -adverse_ticks
         elif higher == "HORIZON":
-            also = quote.exchange_timestamp_ns >= deadline
+            also = index == horizon_index
         else:
             also = index == resolution_index
         if not also:

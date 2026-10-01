@@ -12,6 +12,7 @@ from feelies.core.events import NBBOQuote, PositionClosed
 from tests.position_engine.scenarios import (
     T0,
     assert_no_risk_rejects,
+    arrival_entry_cents,
     assert_triggered_tie,
     exit_reason_at_collision,
     first_horizon_index,
@@ -34,7 +35,7 @@ _SEED = 29
 _ENTRY_FILL = 301
 _INVALIDATION = 900
 _SPREAD = 1
-_U = 4 + _SPREAD
+_TARGET = 4
 _ADVERSE = 11
 
 
@@ -46,7 +47,7 @@ def _v3a(**overrides: object) -> dict[str, object]:
         "centre_ticks": 11,
         "band_ticks": 0,
         "lo_ticks": 2,
-        "target_ticks": 4,
+        "target_ticks": _TARGET,
     }
     params.update(overrides)
     return fixture_variant(**params)
@@ -73,7 +74,7 @@ def _tie(tape: list[NBBOQuote], *, higher: str, form: str, horizon_s: int) -> No
         tape,
         higher=higher,
         birth_index=_ENTRY_FILL,
-        target_ticks=4,
+        target_ticks=_TARGET,
         adverse_ticks=11,
         horizon_ns=horizon_s * 1_000_000_000,
         form=form,
@@ -89,9 +90,14 @@ def _tie(tape: list[NBBOQuote], *, higher: str, form: str, horizon_s: int) -> No
 def test_m5_invalidation_at_take_profit() -> None:
     """FAVORABLE and INVALIDATION on the rail after the opposing signal (§2:265-274)."""
     tape = make_tape(seed=_SEED, n=_N, symbol="SYN", start_ns=T0, size=1000)
-    birth = _bid(tape[_ENTRY_FILL])
+    entry = arrival_entry_cents(tape, _ENTRY_FILL)
     tape = hold(tape, _ENTRY_FILL, _INVALIDATION - _ENTRY_FILL)
-    tape = set_quote(tape, _INVALIDATION + 1, bid_cents=birth + _U, ask_cents=birth + _U + 1)
+    tape = set_quote(
+        tape,
+        _INVALIDATION + 1,
+        bid_cents=entry + _TARGET,
+        ask_cents=entry + _TARGET + 1,
+    )
     _tie(tape, higher="INVALIDATION", form="fixed", horizon_s=16_000)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a())
     require_entry_fills(records)
@@ -105,11 +111,16 @@ def test_m5_invalidation_at_take_profit() -> None:
 def test_m5_deadline_beyond_stop() -> None:
     """FAVORABLE and HORIZON on the deadline quote (§2:260, §2:265-274)."""
     tape = make_tape(seed=_SEED, n=_N, symbol="SYN", start_ns=T0, size=1000)
-    birth = _bid(tape[_ENTRY_FILL])
+    entry = arrival_entry_cents(tape, _ENTRY_FILL)
     horizon_ns = 10 * 1_000_000_000
     deadline = first_horizon_index(tape, _ENTRY_FILL, horizon_ns)
     tape = hold(tape, _ENTRY_FILL, deadline - _ENTRY_FILL - 1)
-    tape = set_quote(tape, deadline, bid_cents=birth + _U, ask_cents=birth + _U + 1)
+    tape = set_quote(
+        tape,
+        deadline,
+        bid_cents=entry + _TARGET,
+        ask_cents=entry + _TARGET + 1,
+    )
     _tie(tape, higher="HORIZON", form="fixed", horizon_s=10)
     records = run_synthetic(tape, symbols=("SYN",), variant=_v3a(T_seconds=10))
     require_entry_fills(records)
