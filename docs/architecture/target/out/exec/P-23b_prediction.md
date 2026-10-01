@@ -196,3 +196,24 @@ The census Q4 kill run under R2 had no `--control`, so the reference's own
 failure counted as a B2 kill. After the constructions place the tie off
 the arrival quote, the prediction is: all three m5 collision tests green
 on the reference; B2 still killed by an m5 collision property; control 0.
+
+## Amendment E
+
+The original text above is unchanged. This section accounts for one locked
+stream the census reader missed.
+
+Census Q3 classified every constant NONE by reading the 64 scanned pins.
+`EXPECTED_STOP_EXIT_STREAMS` is not among them: it is a host-sensitive dict,
+exempt in `test_parity_manifest.py`. The test builds a deferred aggressive
+stop on `BacktestOrderRouter` (`execution_mode` market, fill latency 50 ms,
+market-data latency 20 ms). The `position_update` hash serializes
+`sequence|symbol|quantity|avg_price|realized_pnl|timestamp_ns|correlation_id`.
+Classified by reading; it was a deferred aggressive stop path.
+
+MOVE: `EXPECTED_STOP_EXIT_STREAMS` `position_update` realized_pnl −100.00 →
+−60.00 (fill 99.00 on quote 3 → 99.40 on quote 2, the quote prevailing at
+arrival). Hash `8e15beaa2ac3b90a26924571b7e15262d0fe1960f4faa28de26af86f6219caaf`
+→ `d70f2b00b1416e2d86cdf22ab8b920630edb712f834cc3cedfb6f6d02231ca08`,
+reproduced from the old-router stream by the production touch, impact, and
+clamp. The other three streams are unchanged. The 64 scanned constants,
+including the legacy oracle, stay NONE.
