@@ -171,3 +171,16 @@ when they go live. That is outside R2-1's approved scope, which is the
 deferred aggressive flush only. MODIFIED is the other 9 R2-PINs. Those 9
 census Q5 values were reproduced under R2-1 exactly. No other prediction
 row changes.
+
+## Amendment C
+
+The original text above is unchanged. This section supersedes the R-FIX
+divergence point.
+
+R-FIX: exact through the predicted 21 repriced exits and the 110926
+split; then a sequence shift of +2 renames all later orders (content
+identical; D-1(c): only sequence fields differ, 991 RegimeState + 1
+RiskVerdict); the first behavioural divergence is the renamed limit's
+drain draw, FILLED on 113844 (1774536976116184797), reproduced by C-1.
+Unpredicted after that point. The census path-dependence analysis
+missed identity-keyed RNG.
