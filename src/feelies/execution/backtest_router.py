@@ -104,6 +104,7 @@ class BacktestOrderRouter:
         )
         self._max_resting_ticks = max_resting_ticks
         self._last_quotes: dict[str, NBBOQuote] = {}
+        self._prev_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator(stream="backtest_ack", thread_safe=True)
@@ -128,6 +129,7 @@ class BacktestOrderRouter:
     def reset(self) -> None:
         """Clear quotes, deferred fills, and ack counters; keep RTH wiring."""
         self._last_quotes.clear()
+        self._prev_quotes.clear()
         self._pending_acks.clear()
         self._submitted_order_ids.clear()
         self._deferred_markets.clear()
@@ -146,13 +148,13 @@ class BacktestOrderRouter:
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote and drain any mature pending orders.
 
-        Orders submitted with ``latency_ns > 0`` are
-        queued in ``_pending_submits`` and only fill against a quote
-        whose ``timestamp_ns >= eligible_at_ns``.  This is the
-        realistic behavior — a market order submitted at T sees
-        additional ticks during the latency window and fills against
-        a (possibly worse) post-latency quote.
+        Orders submitted with ``latency_ns > 0`` stay queued until a quote
+        whose exchange time reaches the arrival deadline. The fill is priced
+        on the quote prevailing at that deadline.
         """
+        previous = self._last_quotes.get(quote.symbol)
+        if previous is not None:
+            self._prev_quotes[quote.symbol] = previous
         self._last_quotes[quote.symbol] = quote
         if self._moc is not None:
             self._moc.on_quote(quote)
@@ -250,8 +252,7 @@ class BacktestOrderRouter:
             fill_ts = ack_ts
             self._execute_market_fill(request, quote, fill_ts)
         else:
-            # Deferred fills: depth is validated in ``_flush_deferred_market_fills``
-            # against the first latency-eligible quote (not the submission quote).
+            # Deferred fills: depth is validated on the quote prevailing at arrival.
             self._deferred_markets.append(
                 _DeferredMarketFill(
                     request=request,
@@ -265,9 +266,12 @@ class BacktestOrderRouter:
             )
 
     def _flush_deferred_market_fills(self, quote: NBBOQuote) -> None:
-        """Fill queued MARKET orders once ``latency_ns`` of exchange time has
-        elapsed — prices come from the first qualifying quote, not the signal
-        quote (causal fill model).
+        """Fill queued MARKET orders once exchange time reaches arrival.
+
+        Eligibility, the fill stamp, and the RTH check use this quote. The
+        touch, depth, and crossed-or-locked checks use the quote prevailing
+        at arrival: this quote when its exchange time equals the deadline,
+        otherwise the previous quote of the same symbol.
         """
         if not self._deferred_markets:
             return
@@ -290,20 +294,25 @@ class BacktestOrderRouter:
                 remaining.append(replace(dm, ticks_for_symbol=ticks_for_symbol))
                 continue
             reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
-            if quote.bid >= quote.ask:
+            pricing = (
+                quote
+                if quote.exchange_timestamp_ns == dm.fill_deadline_exchange_ns
+                else self._prev_quotes.get(quote.symbol, quote)
+            )
+            if pricing.bid >= pricing.ask:
                 self._reject(
                     dm.request,
-                    f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
+                    f"crossed or locked quote bid={pricing.bid} ask={pricing.ask}",
                     timestamp_ns=reject_ts,
                 )
                 continue
-            depth = quote.ask_size if dm.request.side == Side.BUY else quote.bid_size
+            depth = pricing.ask_size if dm.request.side == Side.BUY else pricing.bid_size
             if depth <= 0:
                 self.zero_depth_reject_count += 1
                 self._reject(
                     dm.request,
                     f"zero depth on {dm.request.side.name} side "
-                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+                    f"(bid_size={pricing.bid_size}, ask_size={pricing.ask_size})",
                     timestamp_ns=reject_ts,
                 )
                 continue
@@ -313,7 +322,7 @@ class BacktestOrderRouter:
             ):
                 continue
             fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
-            self._execute_market_fill(dm.request, quote, fill_ts)
+            self._execute_market_fill(dm.request, pricing, fill_ts)
         self._deferred_markets = remaining
 
     def _execute_market_fill(

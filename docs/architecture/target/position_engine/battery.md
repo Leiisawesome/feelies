@@ -206,12 +206,14 @@ ASSERTS:           A1 every FAVORABLE exit, in every run, is decided on an event
                    A3 for an END_OF_TAPE close, proposed_price_cents equals the executable exit side of
                       the last usable rail update, or None with closed_on_stale_data (N7, D-102, D-109).
                       For every other close, A3a: each exit-leg price equals that leg's fill ack,
-                      whole cents (§2:294–295, §9:487–489). A3b: the leg is published after the
-                      deciding gate and is no better than the executable side of the quote being
-                      processed when the fill is published (the current pricing model, R2)
-                   A4 gap through the adverse barrier with gap < A: reason ADVERSE; exit no better than
-                      the executable side of q_g+1; strictly worse than the barrier price; all values
-                      computed from the tape
+                      whole cents (§2:294–295, §9:487–489).                    A3b: the leg is published after the
+                      deciding gate and is no better than the executable side of the quote prevailing
+                      at arrival (R2-1, D-150). When the record has no exit order, the bound stays the
+                      quote being processed when the fill is published
+                   A4 gap through the adverse barrier with gap < A: reason ADVERSE; the exit equals the
+                      executable side of the quote prevailing at arrival and is strictly worse than the
+                      barrier. When the record has no exit order, the exit is no better than the
+                      executable side of q_g+1. All values are computed from the tape
                    A5 for each of the three absence measures: no BLIND just under A or at exactly A; BLIND
                       just over A (strict >, §9)
                    A6 a breach concealed by unusable data is exited on the first usable event that shows it,

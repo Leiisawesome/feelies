@@ -254,7 +254,13 @@ class TestBacktestOrderRouter:
         assert acks2[0].status == OrderAckStatus.FILLED
 
     def test_same_order_id_allowed_after_deferred_reject(self) -> None:
-        """Terminal REJECTED releases id so callers can retry the same ``order_id``."""
+        """The old zero-depth flush reject released the order id for a retry.
+
+        Original intent: a REJECTED deferred market frees ``order_id``.
+        R2-1 depth-checks the quote prevailing at arrival. The submit quote
+        has size and the flush quote does not, so this order fills at 100.10
+        and there is no reject to retry.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock, latency_ns=1000)
 
@@ -271,16 +277,9 @@ class TestBacktestOrderRouter:
                 ts=6500,
             )
         )
-        assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
-
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=7500))
-        router.submit(_order("AAPL", order_id="reuse-1"))
-        assert [a.status for a in router.poll_acks()] == [
-            OrderAckStatus.ACKNOWLEDGED,
-        ]
-
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=8500))
-        assert router.poll_acks()[0].status == OrderAckStatus.FILLED
+        fills = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        assert fills[0].fill_price == Decimal("100.10")
 
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)

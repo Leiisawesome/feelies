@@ -51,6 +51,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.platform_config import (
+    DEFAULT_BACKTEST_FILL_LATENCY_NS,
     DEFAULT_MARKET_DATA_LATENCY_NS,
     OperatingMode,
     PlatformConfig,
@@ -727,6 +728,39 @@ def first_horizon_index(tape: Sequence[NBBOQuote], birth_index: int, horizon_ns:
     raise AssertionError("PRECONDITION: horizon deadline is off the tape")
 
 
+def arrival_entry_cents(tape: Sequence[NBBOQuote], birth_index: int) -> int:
+    """Ask of the quote prevailing at arrival for a long filled on ``birth_index``.
+
+    The publication quote is the one whose arrival — its exchange time plus
+    market-data latency plus the resolved fill latency — first becomes
+    eligible on ``birth_index``. The price is that arrival quote's ask.
+    """
+    if birth_index < 1 or birth_index >= len(tape):
+        raise AssertionError("PRECONDITION: birth quote is off the tape")
+    latency = DEFAULT_MARKET_DATA_LATENCY_NS + DEFAULT_BACKTEST_FILL_LATENCY_NS
+    published: int | None = None
+    for index in range(birth_index):
+        arrival = int(tape[index].exchange_timestamp_ns) + latency
+        eligible = next(
+            (
+                later
+                for later in range(index, len(tape))
+                if int(tape[later].exchange_timestamp_ns) >= arrival
+            ),
+            None,
+        )
+        if eligible == birth_index:
+            published = index
+    if published is None:
+        raise AssertionError("PRECONDITION: no quote's arrival is eligible on the birth quote")
+    arrival = int(tape[published].exchange_timestamp_ns) + latency
+    prevailing = published
+    for index in range(published, birth_index + 1):
+        if int(tape[index].exchange_timestamp_ns) <= arrival:
+            prevailing = index
+    return _cents(tape[prevailing].ask)
+
+
 def require_favorable_tie(
     tape: Sequence[NBBOQuote],
     *,
@@ -744,6 +778,7 @@ def require_favorable_tie(
 ) -> int:
     """PRECONDITION: FAVORABLE and ``higher`` hold on the same first quote.
 
+    The entry price is the ask of the quote prevailing at arrival (R2-2).
     The walk uses the tape and the policy parameters only (contracts §2:265–274).
     The horizon quote is the first whose exchange time is at or after the birth
     quote's exchange time, plus the declared market-data latency, plus
@@ -751,9 +786,10 @@ def require_favorable_tie(
     """
     if higher not in ("ADVERSE", "HORIZON", "INVALIDATION"):
         raise AssertionError(f"PRECONDITION: unknown higher path {higher}")
-    birth = tape[birth_index]
-    entry = _cents(birth.ask)
-    deadline = birth.exchange_timestamp_ns + DEFAULT_MARKET_DATA_LATENCY_NS + horizon_ns
+    entry = arrival_entry_cents(tape, birth_index)
+    horizon_index = (
+        first_horizon_index(tape, birth_index, horizon_ns) if higher == "HORIZON" else None
+    )
     best: int | None = None
     giveback_ticks = 0
     if form == "trailing":
@@ -781,7 +817,7 @@ def require_favorable_tie(
         if higher == "ADVERSE":
             also = valid and move <= -adverse_ticks
         elif higher == "HORIZON":
-            also = quote.exchange_timestamp_ns >= deadline
+            also = index == horizon_index
         else:
             also = index == resolution_index
         if not also:
@@ -1035,6 +1071,45 @@ def _executable_exit_cents(quote: NBBOQuote, side: str) -> int:
     return _cents(quote.bid if side == "LONG" else quote.ask)
 
 
+def _fill_latency_ns(records: Records) -> int:
+    if any(quote.symbol == "APP" for quote in records.quotes.values()):
+        return int(PlatformConfig.from_yaml(_APP_CONFIG).backtest_fill_latency_ns)
+    return int(DEFAULT_BACKTEST_FILL_LATENCY_NS)
+
+
+def _prevailing_quote(records: Records, symbol: str, deadline_ns: int) -> NBBOQuote | None:
+    """Last same-symbol quote in bus order with exchange time at or before the deadline."""
+    found: NBBOQuote | None = None
+    for quote in records.quotes.values():
+        if quote.symbol != symbol or int(quote.exchange_timestamp_ns) > deadline_ns:
+            continue
+        found = quote
+    return found
+
+
+def _order_by_id(records: Records, order_id: str) -> OrderRequest | None:
+    if not order_id:
+        return None
+    for order in records.order_requests:
+        if order.order_id == order_id:
+            return order
+    return None
+
+
+def _arrival_quote(records: Records, order: OrderRequest) -> NBBOQuote | None:
+    """Quote prevailing at arrival: last same-symbol quote with exchange ts <= arrival.
+
+    Arrival is ``max(clock, exchange ts)`` at the order's publication plus the
+    resolved backtest fill latency.
+    """
+    clock = int(order.timestamp_ns)
+    published = _prevailing_quote(records, order.symbol, clock)
+    if published is None:
+        return None
+    arrival = max(clock, int(published.exchange_timestamp_ns)) + _fill_latency_ns(records)
+    return _prevailing_quote(records, order.symbol, arrival)
+
+
 def _suppression_reason(
     rail: dict[str, object],
     orient: dict[str, object],
@@ -1187,6 +1262,7 @@ class _FillAck(NamedTuple):
     price_cents: int
     pricing: int | None
     timestamp_ns: int
+    order_id: str
 
 
 def _cents_exact(value: object) -> int:
@@ -1234,7 +1310,13 @@ def _collect_fill_acks(
         ordinal = records.ack_ordinals[index] if index < len(records.ack_ordinals) else -1
         pricing = records.ack_pricing[index] if index < len(records.ack_pricing) else None
         found.append(
-            _FillAck(ordinal, _cents_exact(ack.fill_price), pricing, int(ack.timestamp_ns))
+            _FillAck(
+                ordinal,
+                _cents_exact(ack.fill_price),
+                pricing,
+                int(ack.timestamp_ns),
+                str(ack.order_id),
+            )
         )
     for row in records:
         if row.type_name != "OrderAck":
@@ -1253,7 +1335,7 @@ def _collect_fill_acks(
             continue
         cursor = row.attributed_quote_sequence
         pricing = cursor if isinstance(cursor, int) else None
-        found.append(_FillAck(row.bus_ordinal, price, pricing, timestamp))
+        found.append(_FillAck(row.bus_ordinal, price, pricing, timestamp, str(body["order_id"])))
     found.sort(key=lambda item: item.ordinal)
     return found
 
@@ -1303,8 +1385,8 @@ def check_a3(records: Records) -> None:
     Every other close: A3a, each exit-leg price equals the fill ack of that
     leg (§2:294-295; whole cents §9:480-482). A3b, the leg is published after
     the deciding gate and is no better than the executable side of the quote
-    being processed when the fill is published. A3b assumes the current
-    pricing model (R2): that quote, not the quote prevailing at arrival.
+    prevailing at the order's arrival. A record with no exit order keeps the
+    publication-quote bound.
     """
     for body in _closed_bodies(records):
         cell = str(body["cell_id"])
@@ -1347,9 +1429,16 @@ def check_a3(records: Records) -> None:
                 raise AssertionError(
                     f"A3b: cell {cell} fill at {ack.ordinal} is not after decision {decision}"
                 )
-            if not isinstance(ack.pricing, int) or ack.pricing not in records.quotes:
-                raise AssertionError(f"A3b: cell {cell} fill has no pricing quote")
-            executable = _executable_exit_cents(records.quotes[ack.pricing], side)
+            order = _order_by_id(records, ack.order_id)
+            if order is not None:
+                quote = _arrival_quote(records, order)
+                if quote is None:
+                    raise AssertionError(f"A3b: cell {cell} fill has no arrival quote")
+            else:
+                if not isinstance(ack.pricing, int) or ack.pricing not in records.quotes:
+                    raise AssertionError(f"A3b: cell {cell} fill has no pricing quote")
+                quote = records.quotes[ack.pricing]
+            executable = _executable_exit_cents(quote, side)
             price = int(leg["price_cents"])
             better = price > executable if side == "LONG" else price < executable
             if better:
@@ -1359,7 +1448,12 @@ def check_a3(records: Records) -> None:
 
 
 def check_a4(records: Records, *, birth_sequence: int, centre: int, band: int) -> None:
-    """Gap-through is ADVERSE, no better than q_g+1, and strictly past the barrier."""
+    """Gap-through is ADVERSE, priced on the arrival quote, and strictly past the barrier.
+
+    When the exit order is in the record, the price equals the executable side
+    of the quote prevailing at arrival. A record with no exit order keeps the
+    first-quote-after-the-gap bound.
+    """
     body = _cell_born(records, birth_sequence)
     if body is None:
         raise AssertionError(f"A4: no cell born at {birth_sequence}")
@@ -1379,15 +1473,32 @@ def check_a4(records: Records, *, birth_sequence: int, centre: int, band: int) -
         raise AssertionError(f"A4: cell {cell} has no exit fill")
     fill_seq = int(exits[0]["sequence"])
     price = int(exits[0]["price_cents"])
-    fill = records.quotes.get(fill_seq)
-    if fill is None:
-        raise AssertionError(f"A4: q_g+1 sequence {fill_seq} is not on the tape")
-    executable = _executable_exit_cents(fill, side)
-    better = price > executable if side == "LONG" else price < executable
-    if better:
-        raise AssertionError(
-            f"A4: exit price {price} better than executable {executable} of q_g+1 {fill_seq} cell {cell}"
-        )
+    exit_acks = _collect_fill_acks(
+        records,
+        order_re=re.compile(rf"^{re.escape(cell)}\|EXIT\|\d+$"),
+        timestamps=None,
+    )
+    order = _order_by_id(records, exit_acks[0].order_id) if exit_acks else None
+    if order is not None:
+        arrival = _arrival_quote(records, order)
+        if arrival is None:
+            raise AssertionError(f"A4: cell {cell} has no arrival quote")
+        executable = _executable_exit_cents(arrival, side)
+        if price != executable:
+            raise AssertionError(
+                f"A4: exit price {price} != executable {executable} of the quote "
+                f"prevailing at arrival {arrival.sequence} cell {cell}"
+            )
+    else:
+        fill = records.quotes.get(fill_seq)
+        if fill is None:
+            raise AssertionError(f"A4: q_g+1 sequence {fill_seq} is not on the tape")
+        executable = _executable_exit_cents(fill, side)
+        better = price > executable if side == "LONG" else price < executable
+        if better:
+            raise AssertionError(
+                f"A4: exit price {price} better than executable {executable} of q_g+1 {fill_seq} cell {cell}"
+            )
     worse = price < barrier if side == "LONG" else price > barrier
     if not worse:
         raise AssertionError(

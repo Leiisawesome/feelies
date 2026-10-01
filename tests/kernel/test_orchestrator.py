@@ -4339,8 +4339,11 @@ class TestHaltModeling:
     def test_halt_suppresses_passive_router_fill_paths(self) -> None:
         """Halt suppression covers passive and deferred-aggressive fills.
 
-        Halt-on cancels resting passive orders and withholds quotes from both
-        paths. After resume, a surviving market order uses the new quote.
+        Original intent: halt-on cancels resting passive orders and withholds
+        quotes from both paths, so a quote inside the halt cannot price the
+        surviving market order. R2-1 prices that fill on the quote prevailing
+        at arrival, the pre-halt submit quote (150.50), once the post-resume
+        quote makes it eligible. The old pin was the resume quote, 150.90.
         """
         from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 
@@ -4427,9 +4430,9 @@ class TestHaltModeling:
         assert router.poll_acks() == []
         assert position_store.get("AAPL").quantity == 0
 
-        # Resume, then a post-blackout quote reaches the router: the
-        # surviving deferred MARKET fills at THIS quote's cross (150.90),
-        # not at any price from inside the halt window.
+        # Resume, then a post-blackout quote reaches the router. The
+        # surviving deferred MARKET becomes eligible here and fills at the
+        # arrival quote (150.50), not at the halt-window ask.
         orch._process_trade(self._trade(ts=2000, seq=4, conditions=self._HALT_OFF))
         clock.set_time(2500)
         q_after = _make_quote(ts=2500, bid="150.00", ask="150.90", seq=5)
@@ -4439,7 +4442,7 @@ class TestHaltModeling:
 
         fills = [a for a in acks_on_bus if a.status == OrderAckStatus.FILLED]
         assert [a.order_id for a in fills] == ["halt-mkt-1"]
-        assert fills[0].fill_price == Decimal("150.90")
+        assert fills[0].fill_price == Decimal("150.50")
         assert position_store.get("AAPL").quantity == 40
 
 
