@@ -167,6 +167,13 @@ edit to the spec file in a later docs rung, citing the entry.
 | D-158 | 2026-10-01 | P-23b | What does a kill-matrix run include? | Every kill-matrix run includes --control in the same configuration; a kill does not count where the reference fails the same assertion (P-23b census B2/B7/B8 contamination). | A kill line that names an assertion the reference fails does not show the mutant was caught. | kill.py |
 | D-159 | 2026-10-01 | P-23b | Where does a battery construction get its expected fill price? | Battery constructions derive expected fill prices from the simulator's pricing rule helper, never from a hard-coded quote offset. | A hard-coded offset certifies a tie against the fill quote, which on a 100 ms tape is the quote after the decision. | scenarios.py |
 | D-160 | 2026-10-01 | P-23b | How is a constant-impact scan verified? | Constant-impact scans are verified by running each constant's test under the scratch patch, never by reading alone (P-23b Q3 missed EXPECTED_STOP_EXIT_STREAMS). | A reader of the 64 scanned pins cannot see a host-exempt dict whose replay prices a deferred aggressive stop. | test_orchestrator_replay.py; test_parity_manifest.py |
+| D-161 | 2026-10-01 | P-23d | Which identity change does P-23d land? | P-23d is option C only. The drain seed is market content: symbol, vendor sequence number, exchange timestamp, side, and level. `order_id` and `ticks_at_level` are not inputs. Order-id minting is unchanged. | The operator narrowed the rung to the drain draw. Decision-scoped order ids stay on the identity-model track. | passive_limit_router.py |
+| D-162 | 2026-10-01 | P-23d | Do orders at one level share a drain draw? | Yes. Orders at the same side, level and event share one draw (comonotone). A later order at that level cannot drain ahead of an earlier one on that event. | The draw is a property of the market event and the level, not of the order. | passive_limit_router.py |
+| D-163 | 2026-10-01 | P-23d | Which legacy-oracle values does the operator accept? | Exemption, verbatim: exactly 10 fills / net 26.61 / trade hash c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf, replacing 24.61 / 18f6bb4ecd7b1b1aad5158077cd6ebbc3e6db27fdab2e2effaf5a74e98545bfb. Any other value stops the rung. Ensemble recorded with the pin: old {24.03:2, 24.61:1, 25.70:1, 26.61:12, 27.19:16}; C {24.03:1, 24.61:3, 26.61:12, 27.19:16}. The operator declares the break at merge, after the exact-match check. | The pin is the unsalted realization. The ensemble is the distribution that realization sits in. | test_backtest_app_baseline.py |
+| D-164 | 2026-10-01 | P-23d | What standing rules did amendment 2 leave? | Census per-fill tables are emitted by one run and compared to that run, never to a remembered table. Invariance tests carry a negative control at every numbering layer. A field is called content-keyed only after its provenance is traced to the vendor payload. | A counter that survives an orchestrator-only perturbation is still a counter. A named field that the probe did not actually hash is not a key. | decisions.md |
+| D-165 | 2026-10-01 | P-23d | What follows a change to a seed? | A PRECONDITION/PROPERTY classification over a salt sweep. Properties are tested across salts, and the precondition must hold on at least 8 salts. | A single draw that happens to fill is a realization pin. A property that never meets its precondition is vacuous. | test_passive_limit_router.py |
+| D-166 | 2026-10-01 | P-23d | What does an evaluation that uses passive fills report? | The salt-ensemble distribution (mean and range) next to the pinned realization. | One unsalted draw is a point in that distribution, not the distribution. | P-23d_prediction.md |
+| D-167 | 2026-10-01 | P-23d | What does the operator declare for the legacy-oracle break? | The declaration is recorded verbatim in the block under this entry. It is the second exemption under D-66. | evaluation.md §2: the operator declares the break only after the exact-match check. An improved result is never a reason to accept a break. | evaluation.md §2 |
 
 ### D-66 pre-registered prediction
 
@@ -211,6 +218,18 @@ Nothing else moves.
 Before the F-P13b xfail the capture baseline is RED
 (test_two_alphas_hold_live_targets_on_one_symbol).
 After the xfail the capture baseline is GREEN.
+```
+
+### D-167 operator declaration
+
+```
+OPERATOR DECLARATION — P-23d
+I, Lei (operator), declare the legacy-oracle break under evaluation.md §2, the second exemption under D-66.
+Oracle (bt_app.yaml, APP 2026-03-26): 10 fills / net 24.61 / trade hash 18f6bb4e…5bfb  ->  10 fills / net 26.61 / trade hash c95f4e5c… (the full 64-hex as recorded in E0 cd1742e92174c8919c247a1dffc0aed2872d8561).
+Mechanism: the passive-drain draw is keyed on market content only. order_id and the per-order ticks_at_level are removed from the seed, so orders at the same side, level and event share one draw (comonotone). Order ids are unchanged.
+Pre-registration: E0 at cd1742e92174c8919c247a1dffc0aed2872d8561, committed before the pre-capture and before the production change. Exact-match check passed at 6560d2ca486b54ce86bc2118b71ce35a8fd88a48 (CI run 36861229919 success; Bugbot success).
+Interpretation: the 32-draw ensemble has essentially the same expected net under both models (old about 26.65, C about 26.63). This break replaces one realization with another. It is not an economic improvement and must not be cited as one.
+Backlog note: raise the rewritten off_level property test to 64 salts (old-seed precondition-met count was 8, exactly the floor).
 ```
 
 ## Findings

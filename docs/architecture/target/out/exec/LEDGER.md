@@ -31376,6 +31376,10 @@ OWNER:       campaign 15.
                  after an observation.
   TOOLING:       A CI order check (pytest-randomly or a reversed pass).
                  The check-job duration trend (336 -> 623 s).
+                 F-P23d-j: PowerShell 5.1 default UTF-16 node lists →
+                 reversed battery runs failed before collection. Fix:
+                 Python-generated UTF-8 lists; a run that collects 0
+                 tests is an error.
   CI:            Head run 36691721608 on 30c5a4b6: check 623 s / parity
                  oracle 241 s / reference battery 226 s / kill A 61 s /
                  kill B 30 s; battery step "75 passed, 9 deselected in
@@ -31510,3 +31514,30 @@ OWNER:       campaign 15.
                  2 xfailed; determinism 148).
   NOTES:         Post-merge capture moved to
                  ..\feelies-captures\P-23b\baseline_post-merge-P-23b.json.
+
+---
+
+## FINDING P-23d identity-model track
+  TRACK:         Identity model, scheduled before P-30. Census plus a
+                 design decision. Not fixed on this rung.
+                 F-P23d-f: non-trace reads of counter fields
+                 (regime_engine.py:416; backtest_prep.py:58;
+                 backtest_report.py:270,279,383,403-406;
+                 gate_close_attribution.py:223;
+                 cross_sectional_tracker.py:132;
+                 orchestrator.py:3312,4224,4231,4236,4446,5563).
+                 F-P23d-g: five mint sites with no content trigger
+                 (hazard_exit.py:246, exit_composer.py:447 and :412,
+                 sized_intent_legs.py:170, sized_intent_orders.py:101);
+                 the global SequenceGenerator ordinal at
+                 orchestrator.py:3114; synthetic tapes with vendor
+                 sequence_number 0.
+  ROUTED:        F-P23d-h to P-23c. horizon_scheduler.py:259 closes
+                 every configured symbol's horizon on any symbol's
+                 event, so horizons close late in a thin stream.
+  DRAIN:         Option C (D-161..D-166). Comonotone draw keyed on
+                 market content. Order ids unchanged. Operator
+                 exemption 10 / 26.61 / c95f4e5c, declared at merge
+                 after the exact-match check. Prediction:
+                 P-23d_prediction.md.
+

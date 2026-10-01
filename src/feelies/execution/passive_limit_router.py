@@ -788,17 +788,16 @@ class PassiveLimitOrderRouter:
     ) -> Decimal:
         """Deterministic per-tick uniform in ``[0, 1)`` for the fill trial.
 
-        Derived from a SHA-256 over replay-stable keys (symbol, quote
-        sequence number, exchange timestamp, the order's resting-tick
-        count, side, level price, order id) so the draw varies per tick
-        and per order yet replays bit-identically (Inv-5) — no live RNG,
-        no sampling.
+        Derived from a SHA-256 over market content (symbol, vendor
+        sequence number, exchange timestamp, side, level price). The
+        draw is shared by every order at that side and level on that
+        event. ``ticks_at_level`` and ``order_id`` are per-order state
+        and are not inputs. Replay stays bit-identical (Inv-5) — no
+        live RNG, no sampling.
         """
         seed = (
             f"{quote.symbol}|{quote.sequence_number}|"
-            f"{quote.exchange_timestamp_ns}|{pending.ticks_at_level}|"
-            f"{pending.side.name}|{pending.limit_price}|"
-            f"{pending.request.order_id}"
+            f"{quote.exchange_timestamp_ns}|{pending.side.name}|{pending.limit_price}"
         )
         digest = hashlib.sha256(seed.encode("utf-8")).digest()
         value = int.from_bytes(digest[:8], "big")
