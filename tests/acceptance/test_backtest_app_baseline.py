@@ -200,11 +200,13 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # constant pins the raw ``from_yaml`` snapshot; the operator report prints the
 # post-CLI-override hash, which is a different value for the same run.
 _BASELINE_CONFIG_HASH = "bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95"
-_BASELINE_TRADE_PARITY_HASH = "18f6bb4ecd7b1b1aad5158077cd6ebbc3e6db27fdab2e2effaf5a74e98545bfb"
+# P-23d C: market-content drain seed. Fill count unchanged.
+# Operator exemption: 10 fills / net 26.61 / this hash, replacing 24.61 / 18f6bb4e.
+_BASELINE_TRADE_PARITY_HASH = "c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf"
 # Content-bound identifier for the input tape (per-day event counts + ingestion
 # health). Distinct from the parity hashes: this pins what went *in*.
 _BASELINE_DATA_VERSION = "cache:2364ef7fe41c27d9"
-_BASELINE_NET_PNL = Decimal("24.61")
+_BASELINE_NET_PNL = Decimal("26.61")
 _BASELINE_FILL_COUNT = 10
 
 
