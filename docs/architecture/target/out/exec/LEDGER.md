@@ -31376,6 +31376,10 @@ OWNER:       campaign 15.
                  after an observation.
   TOOLING:       A CI order check (pytest-randomly or a reversed pass).
                  The check-job duration trend (336 -> 623 s).
+                 F-P23d-j: PowerShell 5.1 default UTF-16 node lists →
+                 reversed battery runs failed before collection. Fix:
+                 Python-generated UTF-8 lists; a run that collects 0
+                 tests is an error.
   CI:            Head run 36691721608 on 30c5a4b6: check 623 s / parity
                  oracle 241 s / reference battery 226 s / kill A 61 s /
                  kill B 30 s; battery step "75 passed, 9 deselected in
