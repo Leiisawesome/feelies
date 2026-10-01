@@ -1089,7 +1089,13 @@ class TestLatency:
         assert fill.timestamp_ns == 2500
 
     def test_deferred_market_rejects_zero_depth_at_fill_quote(self):
-        """First eligible quote after latency must have L1 depth (Backtest parity)."""
+        """Zero displayed depth rejects the arrival quote, not the flush quote.
+
+        Original intent: a deferred market fill requires L1 depth, matching
+        the backtest router. R2-1 checks that depth on the quote prevailing
+        at arrival. Here that quote is the submit quote, which has size, so
+        the empty flush quote still fills at 150.02.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
@@ -1108,9 +1114,9 @@ class TestLatency:
             )
         )
         acks2 = router.poll_acks()
-        assert len(acks2) == 1
-        assert acks2[0].status == OrderAckStatus.REJECTED
-        assert "depth" in acks2[0].reason.lower()
+        fills = [ack for ack in acks2 if ack.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        assert fills[0].fill_price == Decimal("150.02")
 
     def test_deferred_market_partial_fill_walk_the_book(self) -> None:
         """D14 parity with BacktestOrderRouter: excess qty pays walk-the-book impact."""
@@ -1207,7 +1213,13 @@ class TestLatency:
         assert acks[2].fill_price == lim
 
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
-        """Submit-time quote may be vacuum; fill uses first latency-eligible quote."""
+        """A vacuum submit quote still queues, and it is the arrival book.
+
+        Original intent: zero depth at submit does not reject before the
+        latency window. R2-1 then prices and depth-checks the quote
+        prevailing at arrival. With no later quote inside the window, that
+        is the empty submit quote, so the fill is rejected.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
@@ -1228,12 +1240,19 @@ class TestLatency:
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6500))
         acks2 = router.poll_acks()
         assert len(acks2) == 1
-        assert acks2[0].status == OrderAckStatus.FILLED
+        assert acks2[0].status == OrderAckStatus.REJECTED
+        assert "depth" in acks2[0].reason.lower()
 
     def test_deferred_marketable_limit_rejects_when_mid_exceeds_limit_after_latency(
         self,
     ) -> None:
-        """Marketable LIMIT → deferred aggressive must not fill beyond limit_price."""
+        """A marketable limit's mid check uses the arrival quote.
+
+        Original intent: a deferred marketable limit must not fill once the
+        mid has traded through the limit. R2-1 reads that mid from the quote
+        prevailing at arrival. The submit quote's mid is still inside 150.02,
+        so the flush quote at 151 does not reject; the fill is 150.02.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
@@ -1244,14 +1263,20 @@ class TestLatency:
         ]
 
         router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
-        rej = router.poll_acks()[0]
-        assert rej.status == OrderAckStatus.REJECTED
-        assert "limit" in rej.reason.lower()
+        fills = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        assert fills[0].fill_price == Decimal("150.02")
 
     def test_marketable_limit_same_order_id_retry_after_deferred_reject(
         self,
     ) -> None:
-        """Deferred aggressive REJECTED must release ``order_id`` for transient BBO moves."""
+        """The old deferred mid-reject released the order id for a retry.
+
+        Original intent: a REJECTED deferred marketable limit frees
+        ``order_id`` so the same id can be submitted again. R2-1 checks the
+        mid on the arrival quote, which is still inside the limit, so this
+        order fills at 150.02 and there is no reject to retry.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
         oid = "marketable-limit-retry"
@@ -1263,14 +1288,9 @@ class TestLatency:
         ]
 
         router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
-        assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
-
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7500))
-        router.submit(_limit_buy("AAPL", limit_price="150.02", order_id=oid))
-        retry_acks = router.poll_acks()
-        assert [a.status for a in retry_acks] == [OrderAckStatus.ACKNOWLEDGED]
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=8500))
-        assert router.poll_acks()[0].status == OrderAckStatus.FILLED
+        fills = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        assert fills[0].fill_price == Decimal("150.02")
 
     def test_duplicate_still_rejected_when_passive_limit_resting(self) -> None:
         clock = SimulatedClock(start_ns=5000)

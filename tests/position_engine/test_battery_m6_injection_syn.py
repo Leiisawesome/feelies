@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from decimal import Decimal
+
 import pytest
 
-from feelies.core.events import PositionClosed
+from feelies.core.events import NBBOQuote, OrderRequest, OrderType, PositionClosed, Side
 from tests.position_engine.scenarios import (
     T0,
+    Record,
+    Records,
     assert_no_risk_rejects,
     check_a1,
     check_a2,
@@ -156,3 +161,99 @@ def test_m6_a2_v5() -> None:
     check_a1(injected, quiet_limit_ns=_QUIET_NS)
     check_a3(injected)
     check_a2(clean, injected, feed_gap_sequences=set())
+
+
+def _canon(type_name: str, body: dict[str, object]) -> str:
+    return type_name + json.dumps(body, sort_keys=True, separators=(",", ":"))
+
+
+def _dollar_book(seq: int, bid_cents: int, ask_cents: int, ts: int) -> NBBOQuote:
+    return NBBOQuote(
+        timestamp_ns=ts,
+        correlation_id=f"q-{seq}",
+        sequence=seq,
+        symbol="SYN",
+        bid=Decimal(bid_cents) / 100,
+        ask=Decimal(ask_cents) / 100,
+        bid_size=100,
+        ask_size=100,
+        exchange_timestamp_ns=ts,
+    )
+
+
+def test_a3b_rejects_an_exit_better_than_the_arrival_quote() -> None:
+    """An exit better than the arrival quote fails A3b even when the flush quote is worse.
+
+    The publication quote's bid is 90 cents and the fill is 85, so the old
+    publication-quote bound does not fire. The quote prevailing at arrival
+    has bid 80, and 85 is better than that for a long.
+    """
+    cell = "C"
+    fire = Record(
+        2,
+        "GateDecision",
+        _canon(
+            "GateDecision",
+            {
+                "cell_id": cell,
+                "rail_sequence": 2,
+                "gate": "ADVERSE",
+                "outcome": "fire",
+                "reason": "",
+            },
+        ),
+        None,
+        1,
+    )
+    close = Record(
+        2,
+        "PositionClosed",
+        _canon(
+            "PositionClosed",
+            {
+                "cell_id": cell,
+                "side": "LONG",
+                "exit_reason": "ADVERSE",
+                "entry_fills": [{"sequence": 1, "price_cents": 1, "quantity": 1}],
+                "exit_fills": [{"sequence": 2, "price_cents": 85, "quantity": 1, "timestamp_ns": 2}],
+            },
+        ),
+        None,
+        3,
+    )
+    ack = Record(
+        2,
+        "OrderAck",
+        _canon(
+            "OrderAck",
+            {
+                "order_id": f"{cell}|EXIT|1",
+                "status": "FILLED",
+                "symbol": "SYN",
+                "timestamp_ns": 2,
+                "price_cents": 85,
+            },
+        ),
+        None,
+        2,
+    )
+    order = OrderRequest(
+        timestamp_ns=20_000_000,
+        correlation_id="o",
+        sequence=1,
+        order_id=f"{cell}|EXIT|1",
+        symbol="SYN",
+        side=Side.SELL,
+        order_type=OrderType.MARKET,
+        quantity=1,
+    )
+    records = Records(
+        [fire, ack, close],
+        {
+            1: _dollar_book(1, 80, 81, 0),
+            2: _dollar_book(2, 90, 91, 100_000_000),
+        },
+        (order,),
+    )
+    with pytest.raises(AssertionError, match=r"^A3b:"):
+        check_a3(records)

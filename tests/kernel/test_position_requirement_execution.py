@@ -176,7 +176,12 @@ def _position_submits(run: _Run) -> list[OrderRequest]:
 
 
 def test_position_requirement_exits_the_full_slice_at_stop_slippage() -> None:
-    """F1. One POSITION requirement becomes one MARKET exit of the open slice."""
+    """F1. One POSITION requirement becomes one MARKET exit of the open slice.
+
+    Original intent: the exit sells the whole slice and pays stop slippage
+    on that fill. R2-1 prices the fill on the quote prevailing at arrival,
+    bid 99.78. The old pin was the flush quote, ``later[0].bid`` = 99.79.
+    """
     run = _run(second=False)
     exits = _position_orders(run)
     assert len(exits) == 1
@@ -223,7 +228,7 @@ def test_position_requirement_exits_the_full_slice_at_stop_slippage() -> None:
         if quote.exchange_timestamp_ns > run.decision_quote.exchange_timestamp_ns
     ]
     assert later
-    assert fills[0].fill_price == later[0].bid
+    assert fills[0].fill_price == Decimal("99.78")
     store = run.orchestrator._strategy_positions
     assert store is not None
     assert store.get(_STRAT, _SYMBOL).quantity == 0

@@ -79,6 +79,13 @@ class TestBacktestRouterLatencyQueue:
         assert OrderAckStatus.FILLED in statuses
 
     def test_nonzero_latency_defers_fill_until_post_eligibility_quote(self) -> None:
+        """Defer until a post-eligibility quote, and price the arrival book.
+
+        Original intent: no fill on the in-window quote, then a fill once
+        exchange time reaches the deadline. R2-1 prices that fill on the
+        quote prevailing at arrival (the in-window 100.10), not the flush
+        quote (99.10). The stamp stays on the flush quote.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(
             clock,
@@ -98,14 +105,14 @@ class TestBacktestRouterLatencyQueue:
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=5500))
         assert OrderAckStatus.FILLED not in [a.status for a in router.poll_acks()]
 
-        # Quote at ts=6500 (after eligibility) — fill against THIS quote.
+        # Quote at ts=6500 (after eligibility) — eligible here, priced on arrival.
         clock.set_time(6500)
         router.on_quote(_quote("AAPL", "99.00", "99.10", ts=6500))
         late_acks = router.poll_acks()
         fills = [a for a in late_acks if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 1
-        # Deferred MARKET orders still execute at the later quote's cross.
-        assert fills[0].fill_price == Decimal("99.10")
+        assert fills[0].fill_price == Decimal("100.10")
+        assert fills[0].timestamp_ns == 6500
 
     def test_fifo_eligibility_two_orders_same_symbol(self) -> None:
         clock = SimulatedClock(start_ns=5000)
@@ -160,6 +167,13 @@ class TestPassiveLimitRouterLatencyQueue:
         assert any(a.status == OrderAckStatus.FILLED for a in acks)
 
     def test_nonzero_latency_market_defers_to_later_quote(self) -> None:
+        """Defer the market fill, and price the submit quote.
+
+        Original intent: a positive latency publishes only the ack until a
+        later quote is eligible. R2-1 prices the fill on the quote prevailing
+        at arrival, which is the submit quote (100.10) when nothing else
+        prints in the window. The old pin was the flush cross, 99.10.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -175,7 +189,7 @@ class TestPassiveLimitRouterLatencyQueue:
         router.on_quote(_quote("AAPL", "99.00", "99.10", ts=6500))
         fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 1
-        assert fills[0].fill_price == Decimal("99.10")
+        assert fills[0].fill_price == Decimal("100.10")
 
     def test_resting_limit_fill_uses_post_eligibility_quote_too(self) -> None:
         """Resting LIMIT orders also wait for the latency window."""
