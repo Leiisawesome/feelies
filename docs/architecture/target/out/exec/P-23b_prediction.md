@@ -184,3 +184,15 @@ RiskVerdict); the first behavioural divergence is the renamed limit's
 drain draw, FILLED on 113844 (1774536976116184797), reproduced by C-1.
 Unpredicted after that point. The census path-dependence analysis
 missed identity-keyed RNG.
+
+## Amendment D
+
+The original text above is unchanged. This section adds two known-answer
+rows the census omitted.
+
+Known-answer changes #3 and #4 are
+`test_m5_invalidation_at_take_profit` and `test_m5_deadline_beyond_stop`.
+The census Q4 kill run under R2 had no `--control`, so the reference's own
+failure counted as a B2 kill. After the constructions place the tie off
+the arrival quote, the prediction is: all three m5 collision tests green
+on the reference; B2 still killed by an m5 collision property; control 0.
