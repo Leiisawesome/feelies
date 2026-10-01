@@ -159,3 +159,15 @@ Member 6 helpers `check_a3` / `check_a4` in `tests/position_engine/scenarios.py`
 A3b compares an exit leg with the executable side of the quote prevailing
 at arrival. A4 requires the V3a gap exit to equal that side (9976) and to
 stay strictly worse than the barrier (9979).
+
+## Amendment A
+
+The original text above is unchanged. This section supersedes one row.
+
+`tests/execution/test_router_fill_timing_parity.py::TestThroughFillInsideLatencyWindow::test_fill_prices_off_post_eligibility_quote_not_stale_cross`
+moves from MODIFIED to UNCHANGED. The fill stays 99.98, `FILLED_BY_THROUGH`.
+The census scratch patch also repriced resting limits that are marketable
+when they go live. That is outside R2-1's approved scope, which is the
+deferred aggressive flush only. MODIFIED is the other 9 R2-PINs. Those 9
+census Q5 values were reproduced under R2-1 exactly. No other prediction
+row changes.
