@@ -215,7 +215,9 @@ def test_a3b_rejects_an_exit_better_than_the_arrival_quote() -> None:
                 "side": "LONG",
                 "exit_reason": "ADVERSE",
                 "entry_fills": [{"sequence": 1, "price_cents": 1, "quantity": 1}],
-                "exit_fills": [{"sequence": 2, "price_cents": 85, "quantity": 1, "timestamp_ns": 2}],
+                "exit_fills": [
+                    {"sequence": 2, "price_cents": 85, "quantity": 1, "timestamp_ns": 2}
+                ],
             },
         ),
         None,
