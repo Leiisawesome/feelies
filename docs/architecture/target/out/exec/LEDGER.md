@@ -31416,3 +31416,97 @@ OWNER:       campaign 15.
                  A, B-3, C-2, D-3, E-1, F-3, G-4, H-3, I-3). Baseline
                  GREEN. Post-merge counts identical (5247 passed, 0
                  failed, 44 skipped, 2 xfailed; determinism 148).
+
+---
+
+## P-23b
+  PR:            #270 (head e91e52fda716490de141d7c64148aea24d5b1811,
+                 merge 3eae11bd4b43c918a481b974e8b1fe41e2193af0).
+  R2:            Deferred aggressive fills priced on q_p (the quote
+                 prevailing at arrival) for the touch, depth walk,
+                 crossed/locked, zero-depth and marketable-limit checks.
+                 Publication and stamp unchanged.
+  PARITY:        The 64 scanned constants unchanged. Legacy oracle
+                 10 / 24.61 / 18f6bb4e unchanged. 1 pinned constant
+                 outside the scan moved, pre-registered and reproduced
+                 by hash: EXPECTED_STOP_EXIT_STREAMS position_update
+                 8e15beaa2ac3b90a26924571b7e15262d0fe1960f4faa28de26af86f6219caaf
+                 -> d70f2b00b1416e2d86cdf22ab8b920630edb712f834cc3cedfb6f6d02231ca08.
+  RUNS:          R-SYN exact (15 fills; -137.29 -> -131.01).
+                 R-FIX exact through the 21 repriced exits and the
+                 110926 split, then a +2 sequence shift renames later
+                 orders and the drain draw moves a fill (113838 ->
+                 113844), reproduced mechanically; unpredicted after.
+                 Observed drawdown rejects 45 -> 40, fills 64 -> 68,
+                 net -1252.59 -> -1291.18.
+  BATTERY:       A3b restated (book at arrival). It catches the old
+                 model's optimistic fills. A4 known answer 9976.
+                 m5 collision constructions derive entry from the
+                 pricing helper. Synthetic 76/76, real 12/12, kill
+                 11/11 + control 0.
+  DECISIONS:     D-149..D-160, as written in decisions.md.
+                 D-149: R2-1. In both routers' deferred aggressive flush, q_p is the flush quote when its exchange timestamp equals arrival, otherwise the previous same-symbol quote saved before on_quote overwrites it. Touch, depth walk, crossed or locked reject, zero-depth reject, and the marketable-limit mid check use q_p. Eligibility, the fill stamp, publication, and the RTH check stay on the flush quote. market_fill.py and moc_fill.py are unchanged.
+                 D-150: R2-2. Each exit leg is no better than the executable side of the quote prevailing at arrival: the last same-symbol quote in bus order whose exchange time is at or before arrival. Arrival is the max of the clock and the exchange time at OrderRequest publication, plus backtest_fill_latency_ns from the resolved config. A4 requires the exit to equal that side and to stay strictly worse than the barrier. When the record has no exit OrderRequest, the helpers keep the publication-quote and q_g+1 bounds.
+                 D-151: R2-3. Nine census R2-PINs are rewritten to their Q5 values. Each docstring states the original intent and R2-1. The through-fill pin stays at 99.98, FILLED_BY_THROUGH (Amendment A): a resting limit that is not marketable when it goes live is outside the deferred aggressive flush.
+                 D-152: R2-4. A kill counts only when the reference passes the same assertion. The control run has 0 failures under R2.
+                 D-153: Updates D-119. On the synthetic tape a decision on q fills on q+1 and is priced on q's book, because arrival at +70 ms precedes q+1 at +100 ms.
+                 D-154: Path-dependence analyses include continuous consumers, identity derivations, and every RNG keyed on identities, not only discrete flips.
+                 D-155: The live run matches the predicted repriced exits through the 110926 split. A sequence shift of +2 then renames later orders. The first behavioural divergence is that renamed limit's drain fill on quote 113844. Nothing after that point is predicted. The census statement that 45 drawdown rejects flip is not this boundary.
+                 D-156: Under the old A3b the reference itself failed, so B7 and B8 died on A3b before the named A5 and A2 clauses. R2-4 requires the reference to pass; those named clauses are the catchers.
+                 D-157: No. It also rejects an exit better than the arrival executable. On the 15 changed R-SYN fills the old-versus-arrival price deltas are -1 and +1 cent.
+                 D-158: Every kill-matrix run includes --control in the same configuration; a kill does not count where the reference fails the same assertion (P-23b census B2/B7/B8 contamination).
+                 D-159: Battery constructions derive expected fill prices from the simulator's pricing rule helper, never from a hard-coded quote offset.
+                 D-160: Constant-impact scans are verified by running each constant's test under the scratch patch, never by reading alone (P-23b Q3 missed EXPECTED_STOP_EXIT_STREAMS).
+  RULES:         Kill runs always include --control. Constant-impact
+                 scans are verified by running, not by reading.
+                 Path-dependence analyses include continuous consumers,
+                 identity derivations and identity-keyed RNG. Battery
+                 constructions derive fill prices from the simulator's
+                 pricing helper.
+  PROCESS:       5 amendments (A-E). Each a prediction gap closed
+                 before acceptance; no check loosened.
+  FINDINGS:      F-P23b-a: resting limits marketable on arrival ->
+                 P-23b3 (taker at the arrival book).
+                 F-P23b-c (HIGH): order_id from the global sequence +
+                 drain RNG seeded by order_id -> P-23d (stable identity
+                 + common random numbers); it moves the legacy oracle;
+                 operator decision required.
+                 F-P23b-d: the capture's 64-constant scan omits
+                 host-exempt pinned constants -> tooling (enumerate
+                 every EXPECTED_*).
+                 Nightly scheduled: not yet due (2026-10-01 08:17 UTC).
+  NEXT:          P-23d census (report-only; sizes the oracle break and
+                 the options for the operator).
+  CI:            Head run 36816387814 on e91e52fd: check 601 s / parity
+                 oracle 212 s / reference battery 195 s / kill A 45 s /
+                 kill B 26 s; battery step "76 passed, 9 deselected in
+                 150.26s (0:02:30)"; Bugbot pass. Real dispatch
+                 36816386284 on e91e52fd, workflow_dispatch, 12 passed.
+                 Merge run 36822182969 on 3eae11bd: check 535 s / parity
+                 oracle 229 s / reference battery 276 s / kill A 65 s /
+                 kill B 27 s; battery step "76 passed, 9 deselected in
+                 242.99s (0:04:02)"; Bugbot skipping. Nightly dispatch
+                 36821807984 success (dispatch 6m27s): child
+                 36821815269 on 3eae11bd, reference battery (real)
+                 success ("12 passed, 5299 deselected in 324.35s
+                 (0:05:24)"), kill A success 63 s, kill B success 26 s.
+  VALIDATION:    prepush "5250 passed, 5 skipped, 55 deselected, 1
+                 xfailed, 48 warnings in 355.10s (0:05:55)"; real
+                 forward "12 passed, 5299 deselected" and reversed
+                 "12 passed"; synthetic forward "76 passed, 9
+                 deselected" and reversed "76 passed"; kill 11/11
+                 KILLED; control 0 failures. B2 KILLED by
+                 test_m5_invalidation_at_take_profit. B7 KILLED by
+                 test_m6_a5_valuation_absent[301] (A5). B8 KILLED by
+                 test_m6_a2_v5 (A2).
+  STAGE:         A.
+  F-P13b:        still xfail(strict) with reason D-63.
+  OUTCOME:       compare pre-P-23b -> post-P-23b: 64 -> 64, changed 0.
+                 pytest 5247 -> 5265 (+18), failed 0 -> 0, skipped
+                 44 -> 44, xfailed 2 -> 2 (E0 as amended: A-E).
+                 Baseline GREEN. compare post-P-23b ->
+                 post-merge-P-23b: 64 -> 64, changed 0. Post-merge
+                 counts identical (5265 passed, 0 failed, 44 skipped,
+                 2 xfailed; determinism 148).
+  NOTES:         Post-merge capture moved to
+                 ..\feelies-captures\P-23b\baseline_post-merge-P-23b.json.
