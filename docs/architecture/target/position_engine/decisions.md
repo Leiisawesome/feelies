@@ -174,6 +174,7 @@ edit to the spec file in a later docs rung, citing the entry.
 | D-165 | 2026-10-01 | P-23d | What follows a change to a seed? | A PRECONDITION/PROPERTY classification over a salt sweep. Properties are tested across salts, and the precondition must hold on at least 8 salts. | A single draw that happens to fill is a realization pin. A property that never meets its precondition is vacuous. | test_passive_limit_router.py |
 | D-166 | 2026-10-01 | P-23d | What does an evaluation that uses passive fills report? | The salt-ensemble distribution (mean and range) next to the pinned realization. | One unsalted draw is a point in that distribution, not the distribution. | P-23d_prediction.md |
 | D-167 | 2026-10-01 | P-23d | What does the operator declare for the legacy-oracle break? | The declaration is recorded verbatim in the block under this entry. It is the second exemption under D-66. | evaluation.md §2: the operator declares the break only after the exact-match check. An improved result is never a reason to accept a break. | evaluation.md §2 |
+| D-168 | 2026-10-02 | P-23c1 | What time do GateDecision, DeRiskRequirement, and PositionSnapshot carry? | The publication clock (action class). The policy-deadline compare operand is unchanged. PENDING I2 is empty and stays empty. | Those three records were stamped with the rail's exchange time, so I2 failed on the reference run. | test_causality_invariant.py; reference engine; hazard_exit.py; deferral_cap.py; exit_composer.py; stop_exit.py |
 
 ### D-66 pre-registered prediction
 
@@ -249,3 +250,12 @@ Backlog note: raise the rewritten off_level property test to 64 salts (old-seed 
 | F-S1b | 2026-09-30 | P-23a | Aggressive fills are published at the first quote after arrival, up to 3.1 s late. Knowledge is late but conservative. The R1 machinery is P-23b. |
 | F-P23b-a | 2026-10-01 | P-23b | A resting limit that is marketable on arrival (the quote prevailing at go-live crosses the limit) fills at the first post-arrival quote as a passive through-fill. It should execute at arrival against the prevailing book as a TAKER (taker fees and liquidity flag). S-1 count: 0 on R-ORC, R-FIX, and R-SYN. The unchanged through-fill pin documents today's behaviour. Owner: P-23b3. |
 | F-P23b-c | 2026-10-01 | P-23b | HIGH. order_id derives from the global orchestrator sequence, and the passive drain RNG is seeded with order_id, so any change in earlier event counts reshuffles every later passive fill. It breaks common random numbers, sensitivity sweeps, and pre-registration. Owner: P-23d, census first, before P-23b2. P-23d moves the legacy oracle, because order_id is in the trade hash and the oracle fills are passive drains; that move requires the operator's explicit decision. |
+| F-P23c-a | 2026-10-02 | P-23c1 | The lateness floor is the 20 ms visibility delay. |
+| F-P23c-b | 2026-10-02 | P-23c1 | The lookahead count of 788 is the trigger stamp; feature math drops ts > T. |
+| F-P23c-c | 2026-10-02 | P-23c1 | A backtest-only timer breaks I3 and is not live's IdleTick. |
+| F-P23c-d | 2026-10-02 | P-23c1 | Carryover release by any symbol's NBBOQuote (orchestrator.py:5562, :4218). |
+| F-P23c-e | 2026-10-02 | P-23c1 | HIGH. On the single-alpha path, an order is priced and sized from another symbol's quote (orchestrator.py:1305, :2002; the portfolio path guards at :2069). 7/10 orders in the P3c run. Latent in all single-symbol pins. Owner: P-23c2. |
+| F-P23c-f | 2026-10-02 | P-23c1 | Research labels are anchored at T (scripts/sensor_feature_ic.py:327), while actuation occurs at T + closure lateness + release wait. IC overstates capturable edge. Research backlog: report IC from the actionable time. |
+| F-P23c-g | 2026-10-02 | P-23c1 | No current-schema multi-symbol dataset produces orders. Every multi-symbol day is old schema 8ff53428. Coverage gap; a fetch needs operator authorisation. |
+| F-P23c-h | 2026-10-02 | P-23c1 | Closure lateness depends on the universe (APP p50 294 ms alone vs 95 ms in 8 names, 2026-04-10). |
+| F-P23c-i | 2026-10-02 | P-23c1 | IdleTick cadence is 1.0 s (massive_ws.py:104); a live boundary timer is fake-clock testable. |

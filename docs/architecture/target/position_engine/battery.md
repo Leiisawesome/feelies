@@ -51,6 +51,9 @@ diff touching that path in a build rung is a STOP.
   calls `engine.finalize()` when that method is defined. Records published then carry replay
   index `N = len(replay)` and attribution cursor `EOT`. They are never attributed to a quote
   and never fall inside a replay-index prefix.
+- **Publication stamps (D-168).** `GateDecision`, `DeRiskRequirement`, and `PositionSnapshot`
+  carry the publication clock (action class). The horizon deadline compare stays on
+  `rail.event_timestamp_ns`.
 
 ## The six that block the build
 
