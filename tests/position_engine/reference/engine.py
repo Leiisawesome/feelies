@@ -49,10 +49,18 @@ class PositionEngine:
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
+        self._clock = None
         self.policies: dict[str, ExitPolicy] = dict(policies or {})
         self.gate_order = gate_order
         self._open: dict[tuple[str, str], Cell] = {}
         self._last_rail: dict[str, MarkRailUpdate] = {}
+
+    def _publication_ns(self, fallback: int) -> int:
+        """Action-time stamp: the clock at publication, else the caller's fallback."""
+        clock = self._clock
+        if clock is None:
+            return fallback
+        return clock.now_ns()
 
     def attach(self) -> None:
         self._bus.subscribe(MarkRailUpdate, self._on_mark_rail)
@@ -216,7 +224,7 @@ class PositionEngine:
         side = Side.SELL if cell.side == "LONG" else Side.BUY
         self._bus.publish(
             DeRiskRequirement(
-                timestamp_ns=rail.timestamp_ns,
+                timestamp_ns=self._publication_ns(rail.timestamp_ns),
                 correlation_id=rail.correlation_id,
                 sequence=self._seq.next(),
                 source_layer="POSITION",
@@ -414,7 +422,7 @@ class PositionEngine:
     ) -> None:
         self._bus.publish(
             PositionSnapshot(
-                timestamp_ns=rail.timestamp_ns,
+                timestamp_ns=self._publication_ns(rail.timestamp_ns),
                 correlation_id=rail.correlation_id,
                 sequence=self._seq.next(),
                 source_layer="POSITION",
@@ -448,7 +456,7 @@ class PositionEngine:
         proposed = decision.proposed if decision.proposed is not None else 0
         self._bus.publish(
             GateDecision(
-                timestamp_ns=rail.timestamp_ns,
+                timestamp_ns=self._publication_ns(rail.timestamp_ns),
                 correlation_id=rail.correlation_id,
                 sequence=self._seq.next(),
                 source_layer="POSITION",

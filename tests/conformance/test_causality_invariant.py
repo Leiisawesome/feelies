@@ -36,7 +36,7 @@ _MARKET = frozenset(
         "MarkRailUpdate",
     }
 )
-_PENDING = frozenset({"GateDecision", "DeRiskRequirement", "PositionSnapshot"})
+_PENDING: frozenset[str] = frozenset()
 _REFERENCE_ENGINE = "tests.position_engine.reference.engine.PositionEngine"
 _REFERENCE_RAIL = "tests.position_engine.reference.rail.ReferenceRail"
 
@@ -163,7 +163,7 @@ def test_synthetic_seed11_i1_i2_i3() -> None:
 
 @pytest.mark.battery_real
 def test_reference_app_i2_only_pending(monkeypatch: pytest.MonkeyPatch) -> None:
-    """R-FIX. I1 and I3 hold. I2 holds except PENDING, and PENDING still fails I2."""
+    """R-FIX. I2 is fully enforced. The three stamps equal the publication clock."""
     from tests.position_engine.scenarios import run_real
 
     monkeypatch.setenv("FEELIES_ENGINE", _REFERENCE_ENGINE)
@@ -183,18 +183,73 @@ def test_reference_app_i2_only_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     run_real()
     rows = box["rows"]
     i1, i2, i3 = _violations(rows)
-    pending_seen = {
-        type(event).__name__
-        for event, _clock, _trigger in rows
-        if type(event).__name__ in _PENDING
-    }
-    pending_equal = [
-        type(event).__name__
-        for event, clock, _trigger in rows
-        if type(event).__name__ in _PENDING and event.timestamp_ns == clock
-    ]
-    assert set(i2) <= _PENDING and i2, sorted(set(i2))
     assert not i1, sorted(set(i1))
+    assert not i2, sorted(set(i2))
     assert not i3, sorted(set(i3))
-    assert pending_seen, "PENDING types must be on the reference session"
-    assert not pending_equal, sorted(set(pending_equal))
+    assert _PENDING == frozenset()
+    for name in ("GateDecision", "DeRiskRequirement", "PositionSnapshot"):
+        stamped = [
+            (event, clock) for event, clock, _trigger in rows if type(event).__name__ == name
+        ]
+        assert stamped, name
+        assert all(event.timestamp_ns == clock for event, clock in stamped), name
+
+
+_PUBLICATION_NS = 50_000_000_000
+_RAIL_NS = 3_000
+
+
+def _stamped_at_publication(kind: str) -> None:
+    """One producer: the published stamp is the clock, and the rail time is not."""
+    from feelies.core.clock import SimulatedClock
+    from feelies.core.events import DeRiskRequirement, GateDecision, PositionSnapshot
+    from tests.position_engine.test_reference_engine import (
+        _engine,
+        _of,
+        _orient,
+        _policy,
+        _rail,
+        _slice,
+    )
+
+    types = {
+        "GateDecision": GateDecision,
+        "DeRiskRequirement": DeRiskRequirement,
+        "PositionSnapshot": PositionSnapshot,
+    }
+    clock = SimulatedClock(_PUBLICATION_NS)
+    bus, engine, log = _engine(_policy(t_ns=1))
+    engine._clock = clock
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(
+        _rail(
+            4,
+            _RAIL_NS,
+            _orient(valuation=9_000, worst=9_000, forced=9_000, dwelled=9_000),
+        )
+    )
+    assert _RAIL_NS != clock.now_ns()
+    published = _of(log, types[kind])
+    assert published, kind
+    assert all(event.timestamp_ns == clock.now_ns() for event in published), kind
+
+
+def test_gate_decision_stamp_equals_publication_clock() -> None:
+    """GateDecision is action-class: timestamp_ns is the clock at publication."""
+    _stamped_at_publication("GateDecision")
+
+
+def test_derisk_requirement_stamp_equals_publication_clock() -> None:
+    """DeRiskRequirement is action-class: timestamp_ns is the clock at publication."""
+    _stamped_at_publication("DeRiskRequirement")
+
+
+def test_position_snapshot_stamp_equals_publication_clock() -> None:
+    """PositionSnapshot is action-class: timestamp_ns is the clock at publication."""
+    _stamped_at_publication("PositionSnapshot")
+
+
+def test_pending_allowlist_stays_empty() -> None:
+    """PENDING is empty. Adding an entry fails this test."""
+    assert _PENDING == frozenset()

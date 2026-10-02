@@ -302,6 +302,11 @@ COMPOSITION_ROOT_ASSIGNMENT_ALLOWLIST: tuple[CompositionRootAssignment, ...] = (
         "router.poll_acks",
         "same fallback: wrap the already-built poll_acks so a reject updates the journal the router was not constructed with",
     ),
+    CompositionRootAssignment(
+        "src/feelies/bootstrap.py",
+        "_position_target._clock",
+        "the reference PositionEngine takes no clock argument, so bootstrap stamps _clock after init and publication reads it",
+    ),
 )
 
 COMPOSITION_ROOT_PRIVATE_ALLOWLIST: tuple[CompositionRootPrivate, ...] = (
@@ -314,6 +319,11 @@ COMPOSITION_ROOT_PRIVATE_ALLOWLIST: tuple[CompositionRootPrivate, ...] = (
         "src/feelies/bootstrap.py",
         "horizon_scheduler._session_id",
         "log the session id HorizonScheduler stored from its constructor argument; there is no public reader, and this reach is a read, not a second injection",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/bootstrap.py",
+        "_position_target._clock",
+        "the reference PositionEngine takes no clock argument, so bootstrap stamps _clock after init and publication reads it",
     ),
     CompositionRootPrivate(
         "src/feelies/cli/backtest.py",
