@@ -31631,3 +31631,28 @@ OWNER:       campaign 15.
   FINDINGS:      F-P23c-j. The census full gate was not on the final
                  patch d0512145781bd88e8f1083008c2997a98eac476f427a7a7e2f33a9346477bd4f.
 
+---
+
+## RECORD P-23c1 merged
+  PR:            #272 (head e2dae50e3c57b144a345372f292d4ef677907d45,
+                 merge e1e636a4ef2d4571f87b2df0ce0a526ddd86e58d).
+  CLOSED:        PENDING I2 is closed: GateDecision, DeRiskRequirement
+                 and PositionSnapshot are action-class on the publication
+                 clock.
+  OPEN:          The two wiring-manifest rows for bootstrap.py
+                 _position_target._clock (external assignment + private
+                 reach) are counted debt. Retire both at P-30 by
+                 constructor-injecting the clock into the production
+                 engine.
+                 F-P23c-f: research IC labels anchored at T.
+                 F-P23c-g: no current-schema multi-symbol day that
+                 produces orders.
+                 F-P23c-h: closure lateness depends on the universe.
+                 F-P23d-h: the P3c strict xfail, still in place.
+                 Identity-model track: F-P23d-f and F-P23d-g.
+                 Tooling: prepush skips the parity-oracle pins; no
+                 reversed-order battery in CI; off_level to 64 salts.
+  NEXT:          P-23c2 = F-P23c-e (single-alpha orders priced and sized
+                 from another symbol's quote; orchestrator.py:1305,
+                 :2002, :4218, :5562).
+
