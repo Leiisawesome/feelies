@@ -36,7 +36,7 @@ _MARKET = frozenset(
         "MarkRailUpdate",
     }
 )
-_PENDING = frozenset({"GateDecision", "DeRiskRequirement", "PositionSnapshot"})
+_PENDING: frozenset[str] = frozenset()
 _REFERENCE_ENGINE = "tests.position_engine.reference.engine.PositionEngine"
 _REFERENCE_RAIL = "tests.position_engine.reference.rail.ReferenceRail"
 
@@ -163,7 +163,7 @@ def test_synthetic_seed11_i1_i2_i3() -> None:
 
 @pytest.mark.battery_real
 def test_reference_app_i2_only_pending(monkeypatch: pytest.MonkeyPatch) -> None:
-    """R-FIX. I1 and I3 hold. I2 holds except PENDING, and PENDING still fails I2."""
+    """R-FIX. I2 is fully enforced. The three stamps equal the publication clock."""
     from tests.position_engine.scenarios import run_real
 
     monkeypatch.setenv("FEELIES_ENGINE", _REFERENCE_ENGINE)
@@ -183,21 +183,16 @@ def test_reference_app_i2_only_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     run_real()
     rows = box["rows"]
     i1, i2, i3 = _violations(rows)
-    pending_seen = {
-        type(event).__name__
-        for event, _clock, _trigger in rows
-        if type(event).__name__ in _PENDING
-    }
-    pending_equal = [
-        type(event).__name__
-        for event, clock, _trigger in rows
-        if type(event).__name__ in _PENDING and event.timestamp_ns == clock
-    ]
-    assert set(i2) <= _PENDING and i2, sorted(set(i2))
     assert not i1, sorted(set(i1))
+    assert not i2, sorted(set(i2))
     assert not i3, sorted(set(i3))
-    assert pending_seen, "PENDING types must be on the reference session"
-    assert not pending_equal, sorted(set(pending_equal))
+    assert _PENDING == frozenset()
+    for name in ("GateDecision", "DeRiskRequirement", "PositionSnapshot"):
+        stamped = [
+            (event, clock) for event, clock, _trigger in rows if type(event).__name__ == name
+        ]
+        assert stamped, name
+        assert all(event.timestamp_ns == clock for event, clock in stamped), name
 
 
 _PUBLICATION_NS = 50_000_000_000
