@@ -198,3 +198,63 @@ def test_reference_app_i2_only_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not i3, sorted(set(i3))
     assert pending_seen, "PENDING types must be on the reference session"
     assert not pending_equal, sorted(set(pending_equal))
+
+
+_PUBLICATION_NS = 50_000_000_000
+_RAIL_NS = 3_000
+
+
+def _stamped_at_publication(kind: str) -> None:
+    """One producer: the published stamp is the clock, and the rail time is not."""
+    from feelies.core.clock import SimulatedClock
+    from feelies.core.events import DeRiskRequirement, GateDecision, PositionSnapshot
+    from tests.position_engine.test_reference_engine import (
+        _engine,
+        _of,
+        _orient,
+        _policy,
+        _rail,
+        _slice,
+    )
+
+    types = {
+        "GateDecision": GateDecision,
+        "DeRiskRequirement": DeRiskRequirement,
+        "PositionSnapshot": PositionSnapshot,
+    }
+    clock = SimulatedClock(_PUBLICATION_NS)
+    bus, engine, log = _engine(_policy(t_ns=1))
+    engine._clock = clock
+    bus.publish(_rail(1, 1_000))
+    bus.publish(_slice(2, 1_000, order_id="entry", price="100.01", fill_quantity=1, quantity=1))
+    bus.publish(
+        _rail(
+            4,
+            _RAIL_NS,
+            _orient(valuation=9_000, worst=9_000, forced=9_000, dwelled=9_000),
+        )
+    )
+    assert _RAIL_NS != clock.now_ns()
+    published = _of(log, types[kind])
+    assert published, kind
+    assert all(event.timestamp_ns == clock.now_ns() for event in published), kind
+
+
+def test_gate_decision_stamp_equals_publication_clock() -> None:
+    """GateDecision is action-class: timestamp_ns is the clock at publication."""
+    _stamped_at_publication("GateDecision")
+
+
+def test_derisk_requirement_stamp_equals_publication_clock() -> None:
+    """DeRiskRequirement is action-class: timestamp_ns is the clock at publication."""
+    _stamped_at_publication("DeRiskRequirement")
+
+
+def test_position_snapshot_stamp_equals_publication_clock() -> None:
+    """PositionSnapshot is action-class: timestamp_ns is the clock at publication."""
+    _stamped_at_publication("PositionSnapshot")
+
+
+def test_pending_allowlist_stays_empty() -> None:
+    """PENDING is empty. Adding an entry fails this test."""
+    assert _PENDING == frozenset()
