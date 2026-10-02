@@ -643,6 +643,7 @@ def build_platform(
         position_store=position_store,
         trading_session_bounds=trading_session_bounds,
         thread_safe_sequences=_seq_thread_safe,
+        clock=clock,
     )
 
     # Scan every active alpha so SIGNAL-layer hazard exits receive a controller.
@@ -653,6 +654,7 @@ def build_platform(
         fallback_universe=config.symbols,
         thread_safe_sequences=_seq_thread_safe,
         market_data_latency_ns=config.market_data_latency_ns,
+        clock=clock,
     )
 
     # Attach the cap before the composer to keep subscriber order deterministic.
@@ -666,6 +668,7 @@ def build_platform(
         session_flatten_seconds_before_close=config.session_flatten_seconds_before_close,
         thread_safe_sequences=_seq_thread_safe,
         market_data_latency_ns=config.market_data_latency_ns,
+        clock=clock,
     )
     exit_composer = _create_exit_composer(
         bus=bus,
@@ -673,6 +676,7 @@ def build_platform(
         strategy_positions=strategy_positions,
         fallback_universe=config.symbols,
         thread_safe_sequences=_seq_thread_safe,
+        clock=clock,
     )
 
     # Build the detector only when an alpha enables hazard exits.
@@ -738,6 +742,9 @@ def build_platform(
             SequenceGenerator(stream="position", thread_safe=_seq_thread_safe),
             policies=exit_policies,
         )
+        _position_target = getattr(position_engine, "_impl", position_engine)
+        if hasattr(_position_target, "_clock"):
+            _position_target._clock = clock
         position_sink = PositionRecordSink(bus)
         position_engine.attach()
         position_sink.attach()
@@ -1843,6 +1850,7 @@ def _create_stop_exit_controller(
     position_store: MemoryPositionStore,
     trading_session_bounds: TradingSessionBounds | None,
     thread_safe_sequences: bool = True,
+    clock: Clock | None = None,
 ) -> StopExitController | None:
     """Attach platform stop and session-flatten exits when configured."""
     policy = StopExitPolicy(
@@ -1864,6 +1872,7 @@ def _create_stop_exit_controller(
         position_store=position_store,
         policy=policy,
         trading_session_bounds=trading_session_bounds,
+        clock=clock,
     )
     controller.attach()
     logger.info(
@@ -1889,6 +1898,7 @@ def _create_hazard_exit_controller(
     fallback_universe: Iterable[str],
     thread_safe_sequences: bool = True,
     market_data_latency_ns: int = 0,
+    clock: Clock | None = None,
 ) -> HazardExitController | None:
     """Attach hazard-exit policies declared by SIGNAL or PORTFOLIO alphas."""
     fallback = tuple(sorted(fallback_universe))
@@ -1907,6 +1917,7 @@ def _create_hazard_exit_controller(
         sequence_generator=seq,
         position_store=position_store,
         market_data_latency_ns=market_data_latency_ns,
+        clock=clock,
     )
     for module in sorted(candidates, key=lambda m: m.manifest.alpha_id):
         block = getattr(module.manifest, "hazard_exit", None) or {}
@@ -1978,6 +1989,7 @@ def _create_exit_composer(
     strategy_positions: StrategyPositionStore,
     fallback_universe: Iterable[str],
     thread_safe_sequences: bool = True,
+    clock: Clock | None = None,
 ) -> ExitComposer | None:
     """Attach the Stage-0 exit composer for decoupled SIGNAL alphas."""
     if horizon_signal_engine is None:
@@ -1993,6 +2005,7 @@ def _create_exit_composer(
             stream="exit_composer", thread_safe=thread_safe_sequences
         ),
         position_store=strategy_positions,
+        clock=clock,
     )
     for registered in sorted(decoupled, key=lambda s: s.alpha_id):
         composer.register_policy(
@@ -2023,6 +2036,7 @@ def _create_deferral_cap_controller(
     session_flatten_seconds_before_close: int,
     thread_safe_sequences: bool = True,
     market_data_latency_ns: int = 0,
+    clock: Clock | None = None,
 ) -> DeferralCapController | None:
     """Attach bounded-deferral exits for decoupled SIGNAL alphas."""
     if horizon_signal_engine is None:
@@ -2041,6 +2055,7 @@ def _create_deferral_cap_controller(
         session_flatten_enabled=session_flatten_enabled,
         session_flatten_seconds_before_close=session_flatten_seconds_before_close,
         market_data_latency_ns=market_data_latency_ns,
+        clock=clock,
     )
     for registered in sorted(decoupled, key=lambda s: s.alpha_id):
         alpha_id = registered.alpha_id
