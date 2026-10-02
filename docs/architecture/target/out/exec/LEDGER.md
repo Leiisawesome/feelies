@@ -31620,3 +31620,14 @@ OWNER:       campaign 15.
                  reversed: synthetic 76/76, real 12/12. Kills 11/11.
                  Control 0 failures. Parity-oracle pins 2 passed.
 
+---
+
+## RECORD P-23c1 amendment A
+  CAPTURE:       baseline_pre-P-23c1.json taken post hoc from 1a630cfe
+                 (5270 passed, 0 failed). baseline_post-P-23c1.json
+                 measured at 17eb20b6 (5274 passed, 0 failed) before
+                 these capture files were committed.
+  DECISIONS:     D-169, D-170, D-171, as written in decisions.md.
+  FINDINGS:      F-P23c-j. The census full gate was not on the final
+                 patch d0512145781bd88e8f1083008c2997a98eac476f427a7a7e2f33a9346477bd4f.
+
