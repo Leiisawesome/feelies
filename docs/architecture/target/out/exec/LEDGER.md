@@ -31709,3 +31709,35 @@ OWNER:       campaign 15.
                  xfail becoming a pass.
   NEXT:          P-23c2 merge.
 
+---
+
+## RECORD P-23c2 merged
+  PR:            #273 (head c8dc206bf925710d80fb0e86a7f106bcdd4de19b,
+                 merge 1c6d92633eddb9c2805486cae050c0b1a5e15648).
+  CLOSED:        F-P23c-e is closed: held single-alpha signals are
+                 released, priced and sized only on their own symbol's
+                 quote.
+                 P-23c is closed. c1 = action-time stamps. c2 =
+                 own-symbol release. Global horizon closure is kept.
+                 Timer closure and immediate actuation are deferred and
+                 research-gated.
+  OPEN:          F-P23c-k: held-signal expiry is anchored on the trigger
+                 stamp (orchestrator.py:4226). Anchor it on the nominal
+                 boundary in a later cleanup rung.
+                 F-P23c-l: portfolio-path guard gaps (reducing legs and a
+                 disarmed gate skip the check; refused legs are dropped
+                 while siblings submit). A census is required before any
+                 PORTFOLIO alpha is wired.
+                 F-P23c-f: research IC labels are anchored at T. Report
+                 IC from the actionable time.
+                 F-P23c-g: no current-schema multi-symbol day that
+                 produces orders.
+                 F-P23c-m: the measured actuation delays.
+                 The _position_target._clock manifest rows: retire at
+                 P-30.
+                 Identity-model track: F-P23d-f and F-P23d-g.
+                 Tooling: prepush skips the parity-oracle pins; no
+                 reversed-order battery in CI; off_level to 64 salts.
+  NEXT:          P-23b2 census (fill-report latency parameter and sweep;
+                 results reported with salt ensembles).
+
