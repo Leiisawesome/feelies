@@ -31865,3 +31865,39 @@ OWNER:       campaign 15.
                  are the three added calibration tests.
   NEXT:          P-23f (horizon grid anchor).
 
+---
+
+## RECORD P-23e merged
+  PR:            #274 (head f06a1b43e420db338c0137ef2a64b5b1962cb8b9,
+                 merge 6a3928f4e9312e4cc2a7f3e911bfd82bf634e58a).
+  CLOSED:        F-D1-2 is closed.
+                 Regime calibration is per symbol whenever a run spans
+                 symbols. Pooled is retained only as the fallback.
+  OPEN:          F-P23e-6 (HIGH, next rung P-23f): the horizon grid is
+                 anchored on the first merged event
+                 (backtest_runner.py:197, horizon_scheduler.py:291), so
+                 boundary timestamps depend on the universe.
+                 Joint-versus-solo fills still differ (APP 6, CROX 4,
+                 OLN 14).
+                 F-P23e-7 (HIGH, paper campaign): paper/live does not
+                 calibrate (run_paper.py:212, orchestrator.py:889-895).
+                 F-P23e-8: the per-symbol minimum sample is the engine
+                 floor of 30. Review it.
+                 F-P23e-9: the `per_symbol_calibration` key is redundant.
+                 Clean it up.
+                 F-P23c-k: held-signal expiry is anchored on the trigger
+                 stamp. Fold it into P-23f if the same anchor fix covers
+                 it.
+                 F-P23c-l: portfolio-path guard gaps. Census before any
+                 PORTFOLIO alpha.
+                 F-P23c-f: research IC labels anchored at T.
+                 Identity-model track: F-P23d-f, F-P23d-g, F-D1-3.
+                 CI real-data job covers APP only. Multi-symbol evidence
+                 is local.
+                 The _position_target._clock manifest rows: retire at
+                 P-30.
+                 Tooling: prepush skips the parity-oracle pins; no
+                 reversed-order battery in CI; off_level to 64 salts.
+  NEXT:          P-23f census (horizon grid anchor). Then the P-23b2
+                 census.
+
