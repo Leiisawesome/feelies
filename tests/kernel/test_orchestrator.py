@@ -4880,3 +4880,57 @@ class TestRiskBudgetIsTheSizingAuthority:
         target = _compute_target_quantity(orch, self._signal(), quote)
         assert target == 6, "sized target was inflated toward min_order_shares"
         assert target < orch._min_order_shares
+
+
+def test_regime_calibration_fits_per_symbol_when_quotes_span_symbols() -> None:
+    """Quotes that span symbols are fitted per symbol, not as one pooled emission."""
+    from feelies.services.regime_engine import HMM3StateFractional
+
+    def _span_quote(symbol: str, seq: int, bid: str, ask: str) -> NBBOQuote:
+        return NBBOQuote(
+            timestamp_ns=seq * 1000,
+            correlation_id=f"{symbol}:{seq}",
+            sequence=seq,
+            symbol=symbol,
+            bid=Decimal(bid),
+            ask=Decimal(ask),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=seq * 1000,
+        )
+
+    quotes: list[NBBOQuote] = []
+    for i in range(40):
+        cents = Decimal("0.01") + Decimal(i % 5) * Decimal("0.01")
+        quotes.append(_span_quote("AAPL", i + 1, "150.00", str(Decimal("150.00") + cents)))
+    for i in range(40):
+        cents = Decimal("0.50") + Decimal(i % 5) * Decimal("0.10")
+        quotes.append(_span_quote("MSFT", 100 + i, "300.00", str(Decimal("300.00") + cents)))
+
+    clock = SimulatedClock(start_ns=1000)
+    engine = HMM3StateFractional()
+    orch = Orchestrator(
+        selection_policy=Top1SelectionPolicy(),
+        clock=clock,
+        bus=EventBus(),
+        backend=ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=BacktestOrderRouter(clock=clock),
+            mode="BACKTEST",
+        ),
+        risk_engine=_StubRiskEngine(),
+        position_store=MemoryPositionStore(),
+        event_log=_CountingReplayLog(()),
+        metric_collector=_NoOpMetricCollector(),
+        regime_engine=engine,
+    )
+    orch._regime_calibration_max_quotes = len(quotes)
+    orch._regime_calibration_quotes = tuple(quotes)
+    orch._regime_calibration_source_date = "2026-03-25"
+
+    _calibrate_regime_engine(orch)
+
+    assert engine._per_symbol_calibration is True
+    assert "AAPL" in engine._emission_by_symbol
+    assert "MSFT" in engine._emission_by_symbol
+    assert engine._emission_by_symbol["AAPL"] != engine._emission_by_symbol["MSFT"]
