@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from typing import Mapping, Protocol
 
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import Clock
 from feelies.core.events import (
     DeRiskRequirement,
     SafetyStateChange,
@@ -176,6 +177,8 @@ class DeferralCapController:
         # Suppresses a re-fire against the same stale slice; a quantity change
         # (partial fill) or new episode releases it so a residual still closes.
         "_pending_exit",
+        "_market_data_latency_ns",
+        "_clock",
     )
 
     def __init__(
@@ -187,6 +190,8 @@ class DeferralCapController:
         policies: Mapping[str, DeferralPolicy] | None = None,
         session_flatten_enabled: bool = True,
         session_flatten_seconds_before_close: int = 0,
+        market_data_latency_ns: int = 0,
+        clock: Clock | None = None,
     ) -> None:
         self._bus = bus
         self._seq = sequence_generator
@@ -199,6 +204,8 @@ class DeferralCapController:
         )
         self._first_safe_off_ns: dict[tuple[str, str], tuple[int, int]] = {}
         self._pending_exit: dict[tuple[str, str], tuple[int | None, int]] = {}
+        self._market_data_latency_ns = market_data_latency_ns
+        self._clock = clock
 
     def reset(self) -> None:
         """Clear episode anchors; keep policies and bus wiring."""
@@ -363,7 +370,9 @@ class DeferralCapController:
         if resolved is None:
             return
         deadline_ns, reason = resolved
-        if now_ns < deadline_ns:
+        # Visible time is exchange stamp plus market-data latency
+        # (market_data_visible_at_ns). The stamp and order id stay on now_ns.
+        if now_ns + self._market_data_latency_ns < deadline_ns:
             return
 
         side = Side.SELL if position.quantity > 0 else Side.BUY
@@ -373,7 +382,7 @@ class DeferralCapController:
         order_id = derive_order_id(f"{correlation_id}:{now_ns}:{symbol}:{strategy_id}:{reason}")
 
         req = DeRiskRequirement(
-            timestamp_ns=now_ns,
+            timestamp_ns=self._clock.now_ns() if self._clock is not None else now_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
             source_layer=DEFERRAL_EXIT_SOURCE_LAYER,

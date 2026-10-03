@@ -19,7 +19,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from feelies.alpha.discovery import load_and_register
+from feelies.alpha.discovery import discover_alpha_specs, load_and_register
 from feelies.portfolio.fill_attribution import FillAttributionLedger
 from feelies.alpha.layer_validator import validate_decouple_symbol_scope
 from feelies.alpha.loader import AlphaLoader
@@ -59,13 +59,19 @@ from feelies.core.events import (
     SymbolHalted,
 )
 from feelies.core.errors import ConfigurationError
+from feelies.core.exit_policy import ExitPolicy
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.core.wiring_manifest import manifest_hash
 from feelies.core.session_clock import rth_open_ns
 from feelies.sensors.horizon_scheduler import HorizonScheduler, _publish_horizon_grid
 from feelies.sensors.registry import SensorRegistry
-from feelies.execution.backend import ExecutionBackend, MarketDataSource, OrderRouter
+from feelies.execution.backend import (
+    ExecutionBackend,
+    MarketDataSource,
+    OrderRouter,
+    refuse_position_engine_outside_backtest,
+)
 from feelies.execution.backtest_backend import (
     build_backtest_backend,
     build_passive_limit_backend,
@@ -227,6 +233,59 @@ def _attach_notification_observer(bus: EventBus, observer: _NotificationObserver
     bus.subscribe(KillSwitchActivation, observer.on_event)
 
 
+def _collect_exit_policies(config: PlatformConfig) -> dict[str, ExitPolicy]:
+    """Load specs once so the mode and L6 checks run before any component."""
+    regime_engine = _create_regime_engine(config.regime_engine, config.regime_engine_options)
+    loader = AlphaLoader(
+        regime_engine=regime_engine,
+        enforce_trend_mechanism=config.enforce_trend_mechanism,
+        enforce_layer_gates=config.enforce_layer_gates,
+        regime_engine_options=config.regime_engine_options,
+    )
+    paths: list[Path] = []
+    if config.alpha_spec_dir is not None:
+        paths.extend(discover_alpha_specs(config.alpha_spec_dir))
+    paths.extend(config.alpha_specs)
+    policies: dict[str, ExitPolicy] = {}
+    for spec_path in paths:
+        name = spec_path.name
+        alpha_id_guess = (
+            name[: -len(".alpha.yaml")] if name.endswith(".alpha.yaml") else spec_path.stem
+        )
+        module = loader.load(
+            spec_path, param_overrides=config.parameter_overrides.get(alpha_id_guess)
+        )
+        policy = module.manifest.exit_policy
+        if policy is not None:
+            policies[module.manifest.alpha_id] = policy
+    return policies
+
+
+def _check_exit_policy_l6(config: PlatformConfig, policies: Mapping[str, ExitPolicy]) -> None:
+    """Platform stop/trail off; session flatten buffer shorter than every cutoff."""
+    if not policies:
+        return
+    for name in (
+        "stop_loss_pct",
+        "stop_loss_per_share",
+        "trail_activate_pct",
+        "trail_activate_per_share",
+    ):
+        if float(getattr(config, name)) > 0:
+            raise ConfigurationError(
+                f"EXIT_POLICY L6 — platform {name} must be 0 when an alpha declares exit_policy"
+            )
+    if config.session_flatten_enabled:
+        cutoff_s = min(policy.horizon.cutoff_before_close_ns for policy in policies.values()) // (
+            1_000_000_000
+        )
+        if config.session_flatten_seconds_before_close >= cutoff_s:
+            raise ConfigurationError(
+                "EXIT_POLICY L6 — session_flatten_seconds_before_close must be < "
+                f"every exit_policy cutoff_before_close_seconds ({cutoff_s})"
+            )
+
+
 def build_platform(
     config: PlatformConfig | str | Path,
     event_log: InMemoryEventLog | None = None,
@@ -238,6 +297,7 @@ def build_platform(
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
     edge_calibration_factors: "Mapping[str, float] | None" = None,
+    enable_position_engine: bool = False,
 ) -> tuple[KernelOrchestrator, PlatformConfig]:
     """Compose an orchestrator and resolved platform config.
 
@@ -297,6 +357,11 @@ def build_platform(
         event_log,
         precomputed_spans=precomputed_ex_date_spans,
     )
+
+    exit_policies = _collect_exit_policies(config)
+    position_engine_enabled = enable_position_engine or bool(exit_policies)
+    refuse_position_engine_outside_backtest(config.mode, position_engine_enabled)
+    _check_exit_policy_l6(config, exit_policies)
 
     bus = EventBus()
 
@@ -402,6 +467,7 @@ def build_platform(
         account_id=config.account_id,
         # Warn in PAPER when an entry gate is not wired.
         warn_on_inert_entry_gates=not replay_clock,
+        clock=clock,
     )
 
     cost_model = DefaultCostModel(
@@ -577,6 +643,7 @@ def build_platform(
         position_store=position_store,
         trading_session_bounds=trading_session_bounds,
         thread_safe_sequences=_seq_thread_safe,
+        clock=clock,
     )
 
     # Scan every active alpha so SIGNAL-layer hazard exits receive a controller.
@@ -586,6 +653,8 @@ def build_platform(
         position_store=position_store,
         fallback_universe=config.symbols,
         thread_safe_sequences=_seq_thread_safe,
+        market_data_latency_ns=config.market_data_latency_ns,
+        clock=clock,
     )
 
     # Attach the cap before the composer to keep subscriber order deterministic.
@@ -598,6 +667,8 @@ def build_platform(
         session_flatten_enabled=config.session_flatten_enabled,
         session_flatten_seconds_before_close=config.session_flatten_seconds_before_close,
         thread_safe_sequences=_seq_thread_safe,
+        market_data_latency_ns=config.market_data_latency_ns,
+        clock=clock,
     )
     exit_composer = _create_exit_composer(
         bus=bus,
@@ -605,6 +676,7 @@ def build_platform(
         strategy_positions=strategy_positions,
         fallback_universe=config.symbols,
         thread_safe_sequences=_seq_thread_safe,
+        clock=clock,
     )
 
     # Build the detector only when an alpha enables hazard exits.
@@ -620,6 +692,7 @@ def build_platform(
         strategy_positions=strategy_positions,
         platform_config=risk_config,
         account_equity=_decimal(config.account_equity),
+        clock=clock,
     )
     effective_risk_engine: RiskEngine = (
         risk_wrapper if config.enforce_per_alpha_risk_budget else risk_engine
@@ -658,6 +731,23 @@ def build_platform(
     # record is deterministic (SimulatedClock); only PAPER reads wall time
     # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
     config_snapshot = config.snapshot(ts_ns=clock.now_ns())
+    mark_rail = None
+    if position_engine_enabled:
+        from feelies.portfolio.mark_rail import MarkRail
+        from feelies.position.engine import PositionEngine, PositionRecordSink
+
+        mark_rail = MarkRail(SequenceGenerator(stream="mark_rail", thread_safe=_seq_thread_safe))
+        position_engine = PositionEngine(
+            bus,
+            SequenceGenerator(stream="position", thread_safe=_seq_thread_safe),
+            policies=exit_policies,
+        )
+        _position_target = getattr(position_engine, "_impl", position_engine)
+        if hasattr(_position_target, "_clock"):
+            _position_target._clock = clock
+        position_sink = PositionRecordSink(bus)
+        position_engine.attach()
+        position_sink.attach()
     orchestrator = _RootOrchestrator(
         config_snapshot=config_snapshot,
         live_feed=bundle.live_feed,
@@ -709,6 +799,7 @@ def build_platform(
         ),
         position_manager_urgency_exec=config.position_manager_urgency_exec,
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
+        mark_rail=mark_rail,
     )
     _attach_notification_observer(bus, _NotificationObserver(alert_manager))
 
@@ -1759,6 +1850,7 @@ def _create_stop_exit_controller(
     position_store: MemoryPositionStore,
     trading_session_bounds: TradingSessionBounds | None,
     thread_safe_sequences: bool = True,
+    clock: Clock | None = None,
 ) -> StopExitController | None:
     """Attach platform stop and session-flatten exits when configured."""
     policy = StopExitPolicy(
@@ -1780,6 +1872,7 @@ def _create_stop_exit_controller(
         position_store=position_store,
         policy=policy,
         trading_session_bounds=trading_session_bounds,
+        clock=clock,
     )
     controller.attach()
     logger.info(
@@ -1804,6 +1897,8 @@ def _create_hazard_exit_controller(
     position_store: MemoryPositionStore,
     fallback_universe: Iterable[str],
     thread_safe_sequences: bool = True,
+    market_data_latency_ns: int = 0,
+    clock: Clock | None = None,
 ) -> HazardExitController | None:
     """Attach hazard-exit policies declared by SIGNAL or PORTFOLIO alphas."""
     fallback = tuple(sorted(fallback_universe))
@@ -1821,6 +1916,8 @@ def _create_hazard_exit_controller(
         bus=bus,
         sequence_generator=seq,
         position_store=position_store,
+        market_data_latency_ns=market_data_latency_ns,
+        clock=clock,
     )
     for module in sorted(candidates, key=lambda m: m.manifest.alpha_id):
         block = getattr(module.manifest, "hazard_exit", None) or {}
@@ -1892,6 +1989,7 @@ def _create_exit_composer(
     strategy_positions: StrategyPositionStore,
     fallback_universe: Iterable[str],
     thread_safe_sequences: bool = True,
+    clock: Clock | None = None,
 ) -> ExitComposer | None:
     """Attach the Stage-0 exit composer for decoupled SIGNAL alphas."""
     if horizon_signal_engine is None:
@@ -1907,6 +2005,7 @@ def _create_exit_composer(
             stream="exit_composer", thread_safe=thread_safe_sequences
         ),
         position_store=strategy_positions,
+        clock=clock,
     )
     for registered in sorted(decoupled, key=lambda s: s.alpha_id):
         composer.register_policy(
@@ -1936,6 +2035,8 @@ def _create_deferral_cap_controller(
     session_flatten_enabled: bool,
     session_flatten_seconds_before_close: int,
     thread_safe_sequences: bool = True,
+    market_data_latency_ns: int = 0,
+    clock: Clock | None = None,
 ) -> DeferralCapController | None:
     """Attach bounded-deferral exits for decoupled SIGNAL alphas."""
     if horizon_signal_engine is None:
@@ -1953,6 +2054,8 @@ def _create_deferral_cap_controller(
         position_store=strategy_positions,
         session_flatten_enabled=session_flatten_enabled,
         session_flatten_seconds_before_close=session_flatten_seconds_before_close,
+        market_data_latency_ns=market_data_latency_ns,
+        clock=clock,
     )
     for registered in sorted(decoupled, key=lambda s: s.alpha_id):
         alpha_id = registered.alpha_id

@@ -307,10 +307,10 @@ class PlatformConfig:
     sizer_tilt_cap: float = 3.0
 
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
-    # skips feeding the trading event log into ``calibrate()`` entirely
-    # (cold emission defaults + per-run warning).  A positive integer uses
-    # only the first N NBBO quotes in replay sequence order as calibration
-    # input — causal prefix, never the full session.
+    # skips calibration (cold emission defaults + per-run warning).  A positive
+    # integer is the per-symbol cap on prior-session RTH quotes: one symbol
+    # uses its own prefix, and several symbols are fitted per symbol from each
+    # symbol's prefix.  A symbol with no prior quotes uses the pooled fit.
     regime_calibration_max_quotes: int | None = None
 
     # Disable regime gates when calibrated states are insufficiently distinct.

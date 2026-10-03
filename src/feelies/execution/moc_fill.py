@@ -133,6 +133,7 @@ class MocFillController:
             # the per-tick timeout that applies to deferred MARKET fills is
             # not appropriate here (replays routinely emit hundreds of NBBO
             # updates between submit and 16:00 ET).
+            # T3: physical-time close gate; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < self._bounds.official_close_ns:
                 remaining.append(pm)
                 continue
@@ -144,7 +145,8 @@ class MocFillController:
                 # backstop when no clean post-close quote ever arrives.
                 remaining.append(pm)
                 continue
-            fill_ts = max(pm.ack_timestamp_ns, quote.exchange_timestamp_ns)
+            # T2: the published fill is the clock at publication.
+            fill_ts = self._clock.now_ns()
             self._fill_at_close(pm.request, quote, fill_ts)
         self._pending = remaining
 

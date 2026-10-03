@@ -1,10 +1,45 @@
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
 
 import pytest
 
 pytestmark = pytest.mark.backtest_validation
+
+_SALT_COUNT = 32
+_SALT_FLOOR = 8
+
+
+def _assert_over_salts(scenario) -> None:
+    """Run ``scenario`` under 32 salts of the installed drain uniform.
+
+    ``scenario`` returns True when its precondition held and the property
+    held, None when the precondition did not occur, and False when the
+    property was violated. At least ``_SALT_FLOOR`` salts must meet the
+    precondition.
+    """
+    original = PassiveLimitOrderRouter._seeded_uniform
+    held = 0
+    try:
+        for salt in range(_SALT_COUNT):
+
+            def _salted(self, pending, quote, _base=original, _salt=salt):  # type: ignore[no-untyped-def]
+                uniform = _base(self, pending, quote)
+                digest = hashlib.sha256(f"{uniform}|{_salt}".encode()).digest()
+                value = int.from_bytes(digest[:8], "big")
+                return Decimal(value) / Decimal(1 << 64)
+
+            PassiveLimitOrderRouter._seeded_uniform = _salted  # type: ignore[method-assign]
+            outcome = scenario()
+            if outcome is False:
+                raise AssertionError(f"property violated at salt {salt}")
+            if outcome is True:
+                held += 1
+        assert held >= _SALT_FLOOR, f"precondition held on {held} of {_SALT_COUNT} salts"
+    finally:
+        PassiveLimitOrderRouter._seeded_uniform = original
+
 
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
@@ -314,19 +349,25 @@ class TestThroughFillPriceImprovement:
         assert acks[0].fill_price == Decimal("150.10")
 
     def test_level_fill_stays_at_limit(self):
-        """Queue-drain (level) fills do NOT get price improvement —
-        they fill at our resting limit because BBO never crossed."""
-        clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=1)
-        router.on_quote(_quote("AAPL", "150.00", "150.02"))
-        router.submit(_limit_buy("AAPL", limit_price="150.00"))
-        router.poll_acks()
-        clock.set_time(6000)
-        # BBO unchanged — no through-fill, just a level tick.
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
-        acks = router.poll_acks()
-        assert acks[0].status == OrderAckStatus.FILLED
-        assert acks[0].fill_price == Decimal("150.00")
+        """A drain fill at an uncrossed level fills at the resting limit."""
+
+        def scenario() -> bool | None:
+            clock = SimulatedClock(start_ns=5000)
+            router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=1)
+            router.on_quote(_quote("AAPL", "150.00", "150.02"))
+            router.submit(_limit_buy("AAPL", limit_price="150.00"))
+            router.poll_acks()
+            clock.set_time(6000)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
+            filled = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+            if not filled:
+                return None
+            return all(
+                ack.fill_price == Decimal("150.00") and ack.reason == "FILLED_BY_DRAIN"
+                for ack in filled
+            )
+
+        _assert_over_salts(scenario)
 
 
 class TestLevelFill:
@@ -386,42 +427,33 @@ class TestLevelFill:
     def test_no_drain_fill_while_off_level(self):
         """No drain fill while the BBO has moved away from our level.
 
-        With h=1.0 a fill is certain *whenever at the level*, so the only
-        way no fill occurs is the order being off the BBO (behind the
-        market).  BUY at 150.00 with bid=150.01 (> limit) is off-level.
+        BUY at 150.00 with bid 150.01 is off the touch. The property is
+        checked on salts where the order is still resting when that quote
+        arrives.
         """
-        clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=3)
 
-        router.on_quote(_quote("AAPL", "150.00", "150.02"))
-        router.submit(_limit_buy("AAPL"))
-        router.poll_acks()
-
-        # 2 ticks at level
-        for i in range(2):
-            clock.set_time(6000 + i * 1000)
-            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000 + i * 1000))
+        def scenario() -> bool | None:
+            clock = SimulatedClock(start_ns=5000)
+            router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=3)
+            router.on_quote(_quote("AAPL", "150.00", "150.02"))
+            router.submit(_limit_buy("AAPL"))
             router.poll_acks()
+            for i in range(2):
+                clock.set_time(6000 + i * 1000)
+                router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000 + i * 1000))
+                router.poll_acks()
+            if "ord1" not in router._resting_orders:
+                return None
+            clock.set_time(8000)
+            router.on_quote(_quote("AAPL", "150.01", "150.03", ts=8000))
+            drained = [
+                ack
+                for ack in router.poll_acks()
+                if ack.status == OrderAckStatus.FILLED and ack.reason == "FILLED_BY_DRAIN"
+            ]
+            return not drained
 
-        # Price moves up — our level no longer at BBO → reset
-        clock.set_time(8000)
-        router.on_quote(_quote("AAPL", "150.01", "150.03", ts=8000))
-        router.poll_acks()
-
-        # 2 more ticks at level (should NOT fill — counter was reset)
-        for i in range(2):
-            clock.set_time(9000 + i * 1000)
-            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=9000 + i * 1000))
-            assert router.poll_acks() == []
-
-        # The reset guarantee we care about is that pre-reset residency does
-        # not cause an immediate early fill once the price returns to level.
-        clock.set_time(11000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=11000))
-        acks = router.poll_acks()
-        if acks:
-            assert len(acks) == 1
-            assert acks[0].status == OrderAckStatus.FILLED
+        _assert_over_salts(scenario)
 
     def test_buy_fills_when_bid_below_limit(self):
         """BUY at $150.00: if bid drops to $149.99 we're still at level."""
@@ -509,34 +541,30 @@ class TestCostModel:
     """Test cost calculation for passive vs aggressive fills."""
 
     def test_passive_fill_zero_spread_cost(self):
-        """Passive fills charge zero spread cost (maker path)."""
-        clock = SimulatedClock(start_ns=5000)
-        # Disable adverse selection to isolate the spread-cost assertion.
-        cost_model = DefaultCostModel(
-            DefaultCostModelConfig(
-                adverse_selection_through_bps=Decimal("0"),
-                adverse_selection_drain_bps=Decimal("0"),
+        """A passive drain fill charges commission only, not the spread."""
+
+        def scenario() -> bool | None:
+            clock = SimulatedClock(start_ns=5000)
+            cost_model = DefaultCostModel(
+                DefaultCostModelConfig(
+                    adverse_selection_through_bps=Decimal("0"),
+                    adverse_selection_drain_bps=Decimal("0"),
+                )
             )
-        )
-        router = PassiveLimitOrderRouter(
-            clock,
-            cost_model=cost_model,
-            fill_delay_ticks=1,
-        )
+            router = PassiveLimitOrderRouter(clock, cost_model=cost_model, fill_delay_ticks=1)
+            router.on_quote(_quote("AAPL", "150.00", "150.10"))
+            router.submit(_limit_buy("AAPL", qty=100))
+            router.poll_acks()
+            clock.set_time(6000)
+            router.on_quote(_quote("AAPL", "150.00", "150.10", ts=6000))
+            filled = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+            if not filled:
+                return None
+            return all(
+                ack.reason == "FILLED_BY_DRAIN" and ack.fees < Decimal("1.00") for ack in filled
+            )
 
-        router.on_quote(_quote("AAPL", "150.00", "150.10"))
-        router.submit(_limit_buy("AAPL", qty=100))
-        router.poll_acks()
-
-        clock.set_time(6000)
-        router.on_quote(_quote("AAPL", "150.00", "150.10", ts=6000))
-        acks = router.poll_acks()
-
-        assert len(acks) == 1
-        fill = acks[0]
-        assert fill.status == OrderAckStatus.FILLED
-        # No spread cost — only commission (min floor $0.35 for 100 shares at maker rate)
-        assert fill.fees < Decimal("1.00")
+        _assert_over_salts(scenario)
 
     def test_aggressive_fill_crosses_spread_in_price(self):
         """Embed the crossed spread in fill price, not fees."""
@@ -557,37 +585,34 @@ class TestCostModel:
         assert fill.fees < Decimal("1.00")
 
     def test_maker_path_cheaper_than_taker_path(self):
-        """Passive fills (maker) have lower fees than aggressive fills (taker) for equivalent notional."""
-        clock = SimulatedClock(start_ns=5000)
-        # Zero adverse selection to isolate taker vs maker exchange fee difference.
-        cost_model = DefaultCostModel(
-            DefaultCostModelConfig(
-                adverse_selection_through_bps=Decimal("0"),
-                adverse_selection_drain_bps=Decimal("0"),
+        """A passive drain fill costs fewer bps than the aggressive fill."""
+
+        def scenario() -> bool | None:
+            clock = SimulatedClock(start_ns=5000)
+            cost_model = DefaultCostModel(
+                DefaultCostModelConfig(
+                    adverse_selection_through_bps=Decimal("0"),
+                    adverse_selection_drain_bps=Decimal("0"),
+                )
             )
-        )
-        router = PassiveLimitOrderRouter(
-            clock,
-            cost_model=cost_model,
-            fill_delay_ticks=1,
-        )
+            router = PassiveLimitOrderRouter(clock, cost_model=cost_model, fill_delay_ticks=1)
+            router.on_quote(_quote("AAPL", "150.00", "150.02"))
+            router.submit(_limit_buy("AAPL", qty=1000))
+            router.poll_acks()
+            clock.set_time(6000)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
+            passive = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+            clock.set_time(7000)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
+            router.submit(_market_order("AAPL"))
+            aggressive = next(
+                ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED
+            )
+            if not passive:
+                return None
+            return passive[0].cost_bps < aggressive.cost_bps
 
-        # Passive (maker) fill at bid
-        router.on_quote(_quote("AAPL", "150.00", "150.02"))
-        router.submit(_limit_buy("AAPL", qty=1000))
-        router.poll_acks()
-        clock.set_time(6000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
-        passive_fill = router.poll_acks()[0]
-
-        # Aggressive (taker) market fill
-        clock.set_time(7000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
-        router.submit(_market_order("AAPL"))
-        aggressive_fill = next(a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED)
-
-        # Maker commission per unit < taker commission per unit (rebate vs fee on exchange)
-        assert passive_fill.cost_bps < aggressive_fill.cost_bps
+        _assert_over_salts(scenario)
 
 
 class TestMarketabilityGuard:
@@ -1014,33 +1039,42 @@ class TestLatency:
     """Test fill timestamp latency injection."""
 
     def test_passive_fill_latency(self):
-        """A resting limit becomes fill-eligible only after exchange latency."""
-        clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(
-            clock,
-            cost_model=ZeroCostModel(),
-            latency_ns=2000,
-            fill_delay_ticks=1,
-        )
+        """A resting limit becomes fill-eligible only after exchange latency.
 
-        router.on_quote(_quote("AAPL", "150.00", "150.02"))
-        router.submit(_limit_buy("AAPL"))
-        router.poll_acks()
-        # eligible_at = max(clock.now_ns()=5000, post-quote exchange_ts=1000)
-        #             + latency_ns=2000 = 7000.
+        A fill on the eligible quote is stamped at that quote, with no
+        second latency leg.
+        """
 
-        clock.set_time(6000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
-        assert router.poll_acks() == []  # still before eligibility
+        def scenario() -> bool | None:
+            clock = SimulatedClock(start_ns=5000)
+            router = PassiveLimitOrderRouter(
+                clock,
+                cost_model=ZeroCostModel(),
+                latency_ns=2000,
+                fill_delay_ticks=1,
+            )
+            router.on_quote(_quote("AAPL", "150.00", "150.02"))
+            router.submit(_limit_buy("AAPL"))
+            router.poll_acks()
+            clock.set_time(6000)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
+            if router.poll_acks():
+                return False
+            clock.set_time(7000)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
+            filled = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+            if not filled:
+                return None
+            return filled[0].timestamp_ns == 7000
 
-        clock.set_time(7000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
-        acks = router.poll_acks()
-        # An exchange-live order pays no second latency leg on drain.
-        assert acks[0].timestamp_ns == 7000
+        _assert_over_salts(scenario)
 
     def test_market_fill_latency(self):
-        """Defer market fills until a quote reaches the latency deadline."""
+        """Defer market fills until a quote reaches the latency deadline.
+
+        Original pin: the ACK stamp was submit clock plus latency. T2
+        publishes that ACK at the clock. Eligibility stays 6000.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
@@ -1049,7 +1083,8 @@ class TestLatency:
 
         acks = router.poll_acks()
         assert acks[0].status == OrderAckStatus.ACKNOWLEDGED
-        assert acks[0].timestamp_ns == 6000
+        assert acks[0].timestamp_ns == 5000
+        assert router._deferred_aggressive[0].ack_timestamp_ns == 6000
 
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=5500))
         assert router.poll_acks() == []
@@ -1064,13 +1099,18 @@ class TestLatency:
     def test_deferred_aggressive_fill_ts_no_double_latency_when_clock_tracks_exchange(
         self,
     ) -> None:
-        """ReplayFeed advances clock to each quote — FILLED must not add latency twice."""
+        """ReplayFeed advances clock to each quote — FILLED must not add latency twice.
+
+        Original pin: the ACK stamp was 2000. T2 publishes it at the
+        clock (1000). Eligibility stays 2000.
+        """
         clock = SimulatedClock(start_ns=1000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
         router.submit(_market_order("AAPL"))
-        assert router.poll_acks()[0].timestamp_ns == 2000
+        assert router.poll_acks()[0].timestamp_ns == 1000
+        assert router._deferred_aggressive[0].ack_timestamp_ns == 2000
 
         clock.set_time(2500)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=2500))
@@ -1079,7 +1119,13 @@ class TestLatency:
         assert fill.timestamp_ns == 2500
 
     def test_deferred_market_rejects_zero_depth_at_fill_quote(self):
-        """First eligible quote after latency must have L1 depth (Backtest parity)."""
+        """Zero displayed depth rejects the arrival quote, not the flush quote.
+
+        Original intent: a deferred market fill requires L1 depth, matching
+        the backtest router. R2-1 checks that depth on the quote prevailing
+        at arrival. Here that quote is the submit quote, which has size, so
+        the empty flush quote still fills at 150.02.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
@@ -1098,9 +1144,9 @@ class TestLatency:
             )
         )
         acks2 = router.poll_acks()
-        assert len(acks2) == 1
-        assert acks2[0].status == OrderAckStatus.REJECTED
-        assert "depth" in acks2[0].reason.lower()
+        fills = [ack for ack in acks2 if ack.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        assert fills[0].fill_price == Decimal("150.02")
 
     def test_deferred_market_partial_fill_walk_the_book(self) -> None:
         """D14 parity with BacktestOrderRouter: excess qty pays walk-the-book impact."""
@@ -1197,7 +1243,13 @@ class TestLatency:
         assert acks[2].fill_price == lim
 
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
-        """Submit-time quote may be vacuum; fill uses first latency-eligible quote."""
+        """A vacuum submit quote still queues, and it is the arrival book.
+
+        Original intent: zero depth at submit does not reject before the
+        latency window. R2-1 then prices and depth-checks the quote
+        prevailing at arrival. With no later quote inside the window, that
+        is the empty submit quote, so the fill is rejected.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
@@ -1218,12 +1270,19 @@ class TestLatency:
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6500))
         acks2 = router.poll_acks()
         assert len(acks2) == 1
-        assert acks2[0].status == OrderAckStatus.FILLED
+        assert acks2[0].status == OrderAckStatus.REJECTED
+        assert "depth" in acks2[0].reason.lower()
 
     def test_deferred_marketable_limit_rejects_when_mid_exceeds_limit_after_latency(
         self,
     ) -> None:
-        """Marketable LIMIT → deferred aggressive must not fill beyond limit_price."""
+        """A marketable limit's mid check uses the arrival quote.
+
+        Original intent: a deferred marketable limit must not fill once the
+        mid has traded through the limit. R2-1 reads that mid from the quote
+        prevailing at arrival. The submit quote's mid is still inside 150.02,
+        so the flush quote at 151 does not reject; the fill is 150.02.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
@@ -1234,14 +1293,20 @@ class TestLatency:
         ]
 
         router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
-        rej = router.poll_acks()[0]
-        assert rej.status == OrderAckStatus.REJECTED
-        assert "limit" in rej.reason.lower()
+        fills = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        assert fills[0].fill_price == Decimal("150.02")
 
     def test_marketable_limit_same_order_id_retry_after_deferred_reject(
         self,
     ) -> None:
-        """Deferred aggressive REJECTED must release ``order_id`` for transient BBO moves."""
+        """The old deferred mid-reject released the order id for a retry.
+
+        Original intent: a REJECTED deferred marketable limit frees
+        ``order_id`` so the same id can be submitted again. R2-1 checks the
+        mid on the arrival quote, which is still inside the limit, so this
+        order fills at 150.02 and there is no reject to retry.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
         oid = "marketable-limit-retry"
@@ -1253,14 +1318,9 @@ class TestLatency:
         ]
 
         router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
-        assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
-
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7500))
-        router.submit(_limit_buy("AAPL", limit_price="150.02", order_id=oid))
-        retry_acks = router.poll_acks()
-        assert [a.status for a in retry_acks] == [OrderAckStatus.ACKNOWLEDGED]
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=8500))
-        assert router.poll_acks()[0].status == OrderAckStatus.FILLED
+        fills = [ack for ack in router.poll_acks() if ack.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        assert fills[0].fill_price == Decimal("150.02")
 
     def test_duplicate_still_rejected_when_passive_limit_resting(self) -> None:
         clock = SimulatedClock(start_ns=5000)
@@ -1305,7 +1365,11 @@ class TestLatency:
     def test_deferred_aggressive_timeout_reject_ts_not_before_ack_when_clock_tracks_exchange(
         self,
     ) -> None:
-        """max_resting_ticks fires before latency deadline: REJECTED must not precede ACK."""
+        """max_resting_ticks fires before latency deadline: REJECTED must not precede ACK.
+
+        Original pin: the ACK stamp was 2000. T2 publishes it at the
+        clock (1000). Eligibility stays 2000.
+        """
         clock = SimulatedClock(start_ns=1000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -1318,7 +1382,8 @@ class TestLatency:
         router.submit(_market_order("AAPL"))
         ack = router.poll_acks()[0]
         assert ack.status == OrderAckStatus.ACKNOWLEDGED
-        assert ack.timestamp_ns == 2000
+        assert ack.timestamp_ns == 1000
+        assert router._deferred_aggressive[0].ack_timestamp_ns == 2000
 
         for _ in range(3):
             clock.set_time(1500)

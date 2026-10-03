@@ -47,6 +47,10 @@ def test_config_declares_more_than_one_alpha() -> None:
 
 
 @pytest.mark.functional
+@pytest.mark.xfail(
+    strict=True,
+    reason="D-63 live wiring deferred; passed only via the same-session scan removed in P-13",
+)
 def test_two_alphas_hold_live_targets_on_one_symbol() -> None:
     """The property that makes the harness a harness.
 

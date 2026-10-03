@@ -91,7 +91,7 @@ def _hash_acks(acks: list[OrderAck]) -> str:
 # Count includes the per-order ACKNOWLEDGED acks (Inv-9 parity): o1/o2/o4
 # emit ACK + FILLED (2 each); o3 walks the book → ACK + PARTIALLY_FILLED +
 # FILLED (3).  2 + 2 + 3 + 2 = 9.
-EXPECTED_MARKET_FILL_HASH = "da66dd36e8bb68017d691162e87d3fddf4866cb2747ffcc7350263ccb88291a6"
+EXPECTED_MARKET_FILL_HASH = "6e152d7a7abf8ba2275922a3c7b9d1ba58f48f2624088f4802f1d620eafe3aad"
 EXPECTED_MARKET_FILL_ACK_COUNT = 9
 
 

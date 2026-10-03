@@ -101,7 +101,7 @@ def test_two_replays_produce_identical_verdict_hash() -> None:
 
 # Locked baseline.  Re-baseline only with an intentional change to
 # BasicRiskEngine's action-selection cascade, justified in the commit.
-EXPECTED_RISK_VERDICT_HASH = "b388a2c57da691c45eb8f3c3d041e74831390d29214e0f39d6881ae21e0cae7b"
+EXPECTED_RISK_VERDICT_HASH = "79406e057149a954c80c5720a91b2c6fc1656b02c5966e0ceb6f425fbc959e33"
 EXPECTED_RISK_VERDICT_COUNT = 4
 
 

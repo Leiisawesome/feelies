@@ -75,6 +75,11 @@ SUBSCRIPTIONS: tuple[Subscription, ...] = (
     Subscription(33, "RiskVerdict", "_NotificationObserver", "on_event"),
     Subscription(34, "SymbolHalted", "_NotificationObserver", "on_event"),
     Subscription(35, "KillSwitchActivation", "_NotificationObserver", "on_event"),
+    Subscription(36, "MarkRailUpdate", "PositionEngine", "_on_mark_rail"),
+    Subscription(37, "SlicePositionUpdate", "PositionEngine", "_on_slice_update"),
+    Subscription(38, "PositionSnapshot", "PositionRecordSink", "_on_snapshot"),
+    Subscription(39, "GateDecision", "PositionRecordSink", "_on_gate_decision"),
+    Subscription(40, "PositionClosed", "PositionRecordSink", "_on_closed"),
 )
 
 ZERO_SUBSCRIBER_RESOLUTIONS: tuple[tuple[str, str], ...] = (
@@ -297,6 +302,11 @@ COMPOSITION_ROOT_ASSIGNMENT_ALLOWLIST: tuple[CompositionRootAssignment, ...] = (
         "router.poll_acks",
         "same fallback: wrap the already-built poll_acks so a reject updates the journal the router was not constructed with",
     ),
+    CompositionRootAssignment(
+        "src/feelies/bootstrap.py",
+        "_position_target._clock",
+        "the reference PositionEngine takes no clock argument, so bootstrap stamps _clock after init and publication reads it",
+    ),
 )
 
 COMPOSITION_ROOT_PRIVATE_ALLOWLIST: tuple[CompositionRootPrivate, ...] = (
@@ -309,6 +319,11 @@ COMPOSITION_ROOT_PRIVATE_ALLOWLIST: tuple[CompositionRootPrivate, ...] = (
         "src/feelies/bootstrap.py",
         "horizon_scheduler._session_id",
         "log the session id HorizonScheduler stored from its constructor argument; there is no public reader, and this reach is a read, not a second injection",
+    ),
+    CompositionRootPrivate(
+        "src/feelies/bootstrap.py",
+        "_position_target._clock",
+        "the reference PositionEngine takes no clock argument, so bootstrap stamps _clock after init and publication reads it",
     ),
     CompositionRootPrivate(
         "src/feelies/cli/backtest.py",

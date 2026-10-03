@@ -9,7 +9,6 @@ modes share the same tick pipeline and publish every state transition.
 from __future__ import annotations
 
 import hashlib
-import itertools
 import logging
 import time
 from collections import deque
@@ -67,6 +66,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     PositionUpdate,
+    SlicePositionUpdate,
     RegimeHazardSpike,
     RegimeState,
     RiskAction,
@@ -81,6 +81,7 @@ from feelies.core.events import (
     TrendMechanism,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
+from feelies.core.mark_rail import MarkRailProtocol
 from feelies.core.gate_registry import record_verdict
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.core.execution_backend import ExecutionBackend
@@ -165,6 +166,7 @@ from feelies.core.paper_session_recorder import PaperSessionRecorder
 from feelies.core.metric_collector import MetricCollector
 from feelies.core.position_book_view import PositionBookView
 from feelies.core.position import Position, PositionStore
+from feelies.core.quote_quality import QuoteQuality, classify
 from feelies.core.lot_ledger import LotLedger
 from feelies.core.fill_attribution import (
     AlphaContribution,
@@ -432,6 +434,41 @@ def _distribute_fill_to_strategies(
     return applied
 
 
+def _publish_slice_position_update(
+    self: Any,
+    *,
+    ack: OrderAck,
+    correlation_id: str,
+    strategy_id: str,
+    symbol: str,
+    fill_quantity: int,
+    slice_position: Any,
+) -> None:
+    """Emit one slice fill on the slice_position stream. P-10. No-op when the rail is dark."""
+    if self._mark_rail is None:
+        return
+    fill_price = ack.fill_price
+    if fill_price is None:
+        return
+    self._bus.publish(
+        SlicePositionUpdate(
+            timestamp_ns=ack.timestamp_ns,
+            correlation_id=correlation_id,
+            sequence=self._slice_seq.next(),
+            source_layer="kernel",
+            symbol=symbol,
+            strategy_id=strategy_id,
+            order_id=ack.order_id,
+            fill_price=fill_price,
+            fill_quantity=fill_quantity,
+            fill_ack_sequence=ack.sequence,
+            fill_timestamp_ns=ack.timestamp_ns,
+            quantity=slice_position.quantity,
+            avg_entry_price=slice_position.avg_entry_price,
+        )
+    )
+
+
 def _reconcile_fills(
     self: Any,
     acks: list[OrderAck],
@@ -614,6 +651,15 @@ def _reconcile_fills(
                         fees=alloc_fees,
                         timestamp_ns=ack.timestamp_ns,
                     )
+                    _publish_slice_position_update(
+                        self,
+                        ack=ack,
+                        correlation_id=correlation_id,
+                        strategy_id=strat_id,
+                        symbol=sym,
+                        fill_quantity=alpha_signed,
+                        slice_position=slice_position,
+                    )
                     attributed_legs.append(
                         (
                             strat_id,
@@ -634,6 +680,15 @@ def _reconcile_fills(
                     ack.fill_price,
                     fees=ack.fees,
                     timestamp_ns=ack.timestamp_ns,
+                )
+                _publish_slice_position_update(
+                    self,
+                    ack=ack,
+                    correlation_id=correlation_id,
+                    strategy_id=order.strategy_id,
+                    symbol=ack.symbol,
+                    fill_quantity=signed_qty,
+                    slice_position=slice_position,
                 )
                 attributed_legs = [
                     (
@@ -796,11 +851,9 @@ def _checkpoint_regime_snapshot(self: Any) -> None:
 
 
 def _calibrate_regime_engine(self: Any) -> None:
-    """Calibrate emissions from a bounded replay prefix.
+    """Fit emissions from the supplied prior-session quotes.
 
-    The run replays its calibration prefix, so early prefix posteriors use
-    moments estimated from later prefix quotes. A prior-session fit is needed
-    when strict causal warm-up behavior matters.
+    ``None`` and ``()`` both skip. The current event log is never scanned.
     """
     if self._regime_engine is None:
         return
@@ -833,42 +886,31 @@ def _calibrate_regime_engine(self: Any) -> None:
         return
 
     precomputed = self._regime_calibration_quotes
-    if precomputed is not None:
-        quotes = list(precomputed)
-    else:
-        quote_stream = (
-            event for event in self._event_log.replay() if isinstance(event, NBBOQuote)
+    if not precomputed:
+        logger.info(
+            "Regime calibration skipped — no prior-session quotes "
+            "(uncalibrated fallback; gates fail closed)"
         )
-        quotes = list(itertools.islice(quote_stream, max_q))
-    if not quotes:
-        logger.info("Regime calibration skipped — no quotes in event log")
+        self._regime_calibration_provenance = (None, 0)
         return
 
+    quotes = list(precomputed)
+    if len({q.symbol for q in quotes}) > 1:
+        self._regime_engine._per_symbol_calibration = True
     prefix_n = len(quotes)
-    # Exact total only when the prefix exhausts the quote stream; otherwise
-    # counting the suffix is O(full log) at boot — report a lower bound.
-    exact_total = precomputed is not None or prefix_n < max_q
-
+    source = self._regime_calibration_source_date
     ok = calibrate_fn(quotes)
+    self._regime_calibration_provenance = (source, prefix_n)
     if ok:
-        if exact_total:
-            logger.info(
-                "Regime engine calibrated from %d quotes (prefix cap=%d, total_log=%d)",
-                prefix_n,
-                max_q,
-                prefix_n,
-            )
-        else:
-            logger.info(
-                "Regime engine calibrated from %d quotes "
-                "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
-                prefix_n,
-                max_q,
-                max_q,
-            )
+        logger.info(
+            "Regime engine calibrated from %d prior-session quotes (source=%s, cap=%d)",
+            prefix_n,
+            source,
+            max_q,
+        )
     else:
         logger.warning(
-            "Regime calibration failed (insufficient data in prefix: "
+            "Regime calibration failed (insufficient data in prior session: "
             "%d quotes, cap=%d) — using default emission parameters",
             prefix_n,
             max_q,
@@ -878,17 +920,16 @@ def _calibrate_regime_engine(self: Any) -> None:
             correlation_id="regime_calibration",
             severity=AlertSeverity.CRITICAL,
             alert_name="regime_calibration_failed",
-            message=f"Regime engine calibrate() returned False (prefix_quotes={prefix_n}, cap={max_q}). Posteriors may discriminate poorly until operators raise regime_calibration_max_quotes or supply cleaner data.",
+            message=(
+                f"Regime engine calibrate() returned False "
+                f"(prior_session_quotes={prefix_n}, cap={max_q}). "
+                "Posteriors may discriminate poorly until operators raise "
+                "regime_calibration_max_quotes or supply cleaner data."
+            ),
             context={
                 "prefix_quote_count": prefix_n,
                 "cap": max_q,
-                "total_quotes_in_log": prefix_n,
-            }
-            if exact_total
-            else {
-                "prefix_quote_count": prefix_n,
-                "cap": max_q,
-                "total_quotes_in_log_at_least": max_q,
+                "source_date": source,
             },
         )
 
@@ -1667,13 +1708,11 @@ class _PostExitPositionView:
 
     def _adjusted(self, position: Position) -> Position:
         new_quantity = position.quantity + self._adjustment
-        mark = self.latest_mark(position.symbol)
         unrealized_pnl = Decimal("0")
         if new_quantity != 0:
-            if mark is not None and mark > 0:
-                unrealized_pnl = (mark - position.avg_entry_price) * new_quantity
-            else:
-                unrealized_pnl = position.unrealized_pnl
+            price = self._inner.valuation_mark(position.symbol, new_quantity)
+            if price is not None:
+                unrealized_pnl = (price - position.avg_entry_price) * new_quantity
         return Position(
             symbol=position.symbol,
             quantity=new_quantity,
@@ -1716,6 +1755,18 @@ class _PostExitPositionView:
 
     def latest_mark(self, symbol: str) -> Decimal | None:
         return self._inner.latest_mark(symbol)
+
+    def valuation_mark(self, symbol: str, quantity: int) -> Decimal | None:
+        return self._inner.valuation_mark(symbol, quantity)
+
+    def reference_mid(self, symbol: str) -> Decimal | None:
+        return self._inner.reference_mid(symbol)
+
+    def mark_stale(self, symbol: str) -> None:
+        self._inner.mark_stale(symbol)
+
+    def is_mark_stale(self, symbol: str) -> bool:
+        return self._inner.is_mark_stale(symbol)
 
     def opened_at_ns(self, symbol: str) -> int | None:
         return self._inner.opened_at_ns(symbol)
@@ -2673,7 +2724,13 @@ def _closable_quantity(position_qty: int, side: Side) -> int:
 
 
 def _is_forced_market_exit(order: OrderRequest) -> bool:
-    """Identify controller-authored aggressive exits routed through the risk bridge."""
+    """Identify controller-authored aggressive exits routed through the risk bridge.
+
+    Engine-13 exits are already MARKET (contracts.md §2), so a POSITION
+    requirement in flight is the same kind of pending exit as a RISK one.
+    """
+    if order.source_layer == "POSITION":
+        return True
     return (
         order.source_layer == HAZARD_EXIT_SOURCE_LAYER
         and order.reason in _RISK_FORCED_EXIT_REASONS
@@ -2997,6 +3054,7 @@ class Orchestrator:
         thread_safe_sequences: bool = True,
         session_by_strategy: Mapping[str, str] | None = None,
         halt_tradeability: _HaltTradeability | None = None,
+        mark_rail: MarkRailProtocol | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -3056,6 +3114,13 @@ class Orchestrator:
         # threaded replay); paper/live keep the lock.
         _seq_kw = {"thread_safe": thread_safe_sequences}
         self._seq = SequenceGenerator(stream="orchestrator", **_seq_kw)
+        self._mark_rail = mark_rail
+        self._slice_seq: SequenceGenerator | None = None
+        if mark_rail is not None:
+            self._slice_seq = SequenceGenerator(
+                stream="slice_position",
+                thread_safe=thread_safe_sequences,
+            )
 
         # Optional sensor and horizon components; None keeps the short tick path.
         self._sensor_registry = sensor_registry
@@ -3112,6 +3177,8 @@ class Orchestrator:
         self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
             tuple(regime_calibration_quotes) if regime_calibration_quotes is not None else None
         )
+        self._regime_calibration_source_date: str | None = None
+        self._regime_calibration_provenance: tuple[str | None, int] = (None, 0)
 
         self._config: PlatformConfig | None = None
 
@@ -3339,6 +3406,15 @@ class Orchestrator:
     @property
     def risk_level(self) -> RiskLevel:
         return self._risk_escalation.state
+
+    def note_regime_calibration_source(self, source_date: str | None) -> None:
+        """Record the prior-session date before boot fits the supplied quotes."""
+        self._regime_calibration_source_date = source_date
+
+    @property
+    def regime_calibration_provenance(self) -> tuple[str | None, int]:
+        """``(prior session date or None, quote count)`` recorded at boot."""
+        return self._regime_calibration_provenance
 
     @property
     def trade_journal(self) -> TradeJournal | None:
@@ -4216,30 +4292,39 @@ class Orchestrator:
             self._tick_quote_for_trace = quote
             self._last_quote_context_for_signal_trace = quote
         # Mark before subscribers so risk exits see current liquidation value.
-        mid = (quote.bid + quote.ask) / Decimal("2")
-        if mid > 0:
-            # Mark liquidation at bid for longs and ask for shorts.
-            self._positions.update_mark(
-                quote.symbol,
-                mid,
-                bid=quote.bid,
-                ask=quote.ask,
-            )
-            # Refresh peak equity on every mark; minimal test doubles may omit the hook.
-            refresh_hwm = getattr(
-                self._risk_engine,
-                "refresh_high_water_mark",
-                None,
-            )
-            if callable(refresh_hwm):
-                refresh_hwm(self._positions)
-            if self._strategy_positions is not None:
-                self._strategy_positions.update_mark(
+        quality = classify(quote.bid, quote.ask, quote.bid_size, quote.ask_size)
+        if quality is QuoteQuality.VALID:
+            mid = (quote.bid + quote.ask) / Decimal("2")
+            if mid > 0:
+                # Mark liquidation at bid for longs and ask for shorts.
+                self._positions.update_mark(
                     quote.symbol,
                     mid,
                     bid=quote.bid,
                     ask=quote.ask,
                 )
+                # Refresh peak equity on every mark; minimal test doubles may omit the hook.
+                refresh_hwm = getattr(
+                    self._risk_engine,
+                    "refresh_high_water_mark",
+                    None,
+                )
+                if callable(refresh_hwm):
+                    refresh_hwm(self._positions)
+                if self._strategy_positions is not None:
+                    self._strategy_positions.update_mark(
+                        quote.symbol,
+                        mid,
+                        bid=quote.bid,
+                        ask=quote.ask,
+                    )
+        else:
+            self._positions.mark_stale(quote.symbol)
+            if self._strategy_positions is not None:
+                self._strategy_positions.mark_stale(quote.symbol)
+
+        if self._mark_rail is not None:
+            self._bus.publish(self._mark_rail.on_quote(quote))
 
         # Sensor fan-out (+ router on_quote) runs synchronously inside
         # publish; time the call for hot-path attribution.
@@ -4282,7 +4367,9 @@ class Orchestrator:
         # Select one standalone signal for the single M4 order walk. PORTFOLIO
         # inputs execute through SizedPositionIntent, while forced exits override.
         # position safety beats alpha conviction).
-        buf_snapshot = list(self._signal_buffer)
+        # Release a held signal only on its own symbol's quote, and price it
+        # from that quote. Other symbols stay in the buffer.
+        buf_snapshot = [item for item in self._signal_buffer if item.symbol == quote.symbol]
         signal: Signal | None = None
         if buf_snapshot:
             t0 = time.perf_counter_ns()
@@ -4361,7 +4448,10 @@ class Orchestrator:
         if buf_snapshot:
             for buffered in buf_snapshot:
                 self._carryover_signal_sequences.discard(buffered.sequence)
-            self._signal_buffer.clear()
+            released = {id(item) for item in buf_snapshot}
+            self._signal_buffer[:] = [
+                item for item in self._signal_buffer if id(item) not in released
+            ]
 
         if signal is None:
             self._finalize_tick(t_wall_start, cid, "no_signal_this_tick")
@@ -5476,7 +5566,9 @@ class Orchestrator:
                 event.trend_mechanism,
                 event.expected_half_life_seconds,
             )
-        if not self._quote_tick_in_flight:
+        in_flight = self._in_flight_quote
+        if in_flight is None or in_flight.symbol != event.symbol:
+            # Held until an NBBOQuote of this signal's own symbol.
             self._carryover_signal_sequences.add(event.sequence)
 
     def _is_consumed_by_portfolio(self, alpha_id: str) -> bool:
@@ -5550,7 +5642,7 @@ class Orchestrator:
     def _order_request_from_derisk(self, event: DeRiskRequirement) -> OrderRequest:
         """Copy the author's envelope and payload; fill MARKET. No sequence draw."""
         return OrderRequest(
-            timestamp_ns=event.timestamp_ns,
+            timestamp_ns=self._clock.now_ns(),
             correlation_id=event.correlation_id,
             sequence=event.sequence,
             source_layer=event.source_layer,
@@ -5564,14 +5656,14 @@ class Orchestrator:
         )
 
     def _on_bus_derisk_requirement(self, event: Event) -> None:
-        """Submit non-vetoable risk-layer exits received as DeRiskRequirement.
+        """Submit non-vetoable risk-layer and POSITION exits received as DeRiskRequirement.
 
         Sequence and order_id are the author's. The outbound OrderRequest is
         published with order_type=MARKET; the kernel does not draw self._seq.
         Orders are clamped to currently closable exposure and deduplicated."""
         if not isinstance(event, DeRiskRequirement):
             return
-        if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
+        if event.source_layer != HAZARD_EXIT_SOURCE_LAYER and event.source_layer != "POSITION":
             return
         order = self._order_request_from_derisk(event)
         self._bus.publish(order)

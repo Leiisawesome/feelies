@@ -95,6 +95,8 @@ class NBBOQuote(Event):
     ingest latency from this field.
     """
 
+    TIME_CLASS = "market"
+
     symbol: str
     bid: Decimal = field(metadata={"unit": "USD"})
     ask: Decimal = field(metadata={"unit": "USD"})
@@ -120,6 +122,8 @@ class Trade(Event):
     wire formats.  New optional fields use defaults so existing code is
     unaffected.
     """
+
+    TIME_CLASS = "market"
 
     symbol: str
     price: Decimal = field(metadata={"unit": "USD"})
@@ -153,6 +157,8 @@ class SymbolHalted(Event):
     the reopening-auction print can stabilise.  ``0`` on a halt-on event.
     """
 
+    TIME_CLASS = "market"
+
     symbol: str
     halted: bool
     reason: str = ""
@@ -173,6 +179,8 @@ class RegimeState(Event):
     Uncalibrated or poorly discriminative posteriors fail regime gates closed.
     Posterior ties choose the lowest state index for deterministic replay.
     """
+
+    TIME_CLASS = "action"
 
     symbol: str
     engine_name: str
@@ -216,6 +224,8 @@ class Signal(Event):
                                         decay weighting and hard-exit age.
     """
 
+    TIME_CLASS = "market"
+
     symbol: str
     strategy_id: str
     direction: SignalDirection
@@ -248,6 +258,8 @@ class RiskAction(Enum):
 @dataclass(frozen=True, kw_only=True, slots=True)
 class RiskVerdict(Event):
     """Risk engine decision on a proposed action."""
+
+    TIME_CLASS = "action"
 
     symbol: str
     action: RiskAction
@@ -297,6 +309,8 @@ class OrderRequest(Event):
     ``correlation_id``.
     """
 
+    TIME_CLASS = "action"
+
     order_id: str
     symbol: str
     side: Side
@@ -322,6 +336,8 @@ class DeRiskRequirement(Event):
     and fills ``order_type=MARKET``. ``quantity`` is in shares.
     """
 
+    TIME_CLASS = "action"
+
     order_id: str
     symbol: str
     side: Side
@@ -342,6 +358,8 @@ class OrderAck(Event):
     OrderAck stream. ``request_sequence`` is an additive back-reference
     to the originating OrderRequest sequence when the producer has it.
     """
+
+    TIME_CLASS = "action"
 
     order_id: str
     symbol: str
@@ -368,6 +386,8 @@ class PositionUpdate(Event):
     differential.
     """
 
+    TIME_CLASS = "action"
+
     symbol: str
     quantity: int = field(metadata={"unit": "share"})
     avg_price: Decimal = field(metadata={"unit": "USD"})
@@ -385,6 +405,8 @@ _EMPTY_METADATA: Mapping[str, Any] = MappingProxyType({})
 @dataclass(frozen=True, kw_only=True, slots=True)
 class StateTransition(Event):
     """Logged whenever any state machine transitions.  No silent transitions."""
+
+    TIME_CLASS = "action"
 
     machine_name: str
     from_state: str
@@ -411,6 +433,8 @@ class MetricType(Enum):
 @dataclass(frozen=True, kw_only=True, slots=True)
 class MetricEvent(Event):
     """Telemetry emitted by any layer — collected by the monitoring layer."""
+
+    TIME_CLASS = "action"
 
     layer: str
     name: str
@@ -443,6 +467,8 @@ class Alert(Event):
     Human review follows but does not gate the safety response (invariant 11).
     """
 
+    TIME_CLASS = "action"
+
     severity: AlertSeverity
     layer: str
     alert_name: str
@@ -465,6 +491,8 @@ class KillSwitchActivation(Event):
     (cancel orders, freeze state, cease submissions).
     """
 
+    TIME_CLASS = "action"
+
     reason: str
     activated_by: str
 
@@ -477,6 +505,8 @@ class LatencyBreach(Event):
     interpretable without the config that produced it. Replay consumes this
     record and never re-measures.
     """
+
+    TIME_CLASS = "action"
 
     engine: str
     statistic: str
@@ -516,6 +546,8 @@ class SafetyStateChange(Event):
     attribution (Inv-13).  The engine emits it on a dedicated sequence stream
     so it can never perturb the locked ``Signal`` stream (Inv-5).
     """
+
+    TIME_CLASS = "market"
 
     symbol: str
     strategy_id: str
@@ -576,6 +608,8 @@ class RegimeHazardSpike(Event):
     identically).  Suppression is per
     ``(symbol, engine_name, departing_state)`` transition.
     """
+
+    TIME_CLASS = "action"
 
     symbol: str
     engine_name: str
@@ -651,6 +685,8 @@ class HorizonTick(Event):
     and consumers fall back to ``timestamp_ns``.
     """
 
+    TIME_CLASS = "market"
+
     horizon_seconds: int = field(metadata={"unit": "s"})
     boundary_index: int = field(metadata={"unit": "1"})
     session_id: str
@@ -677,6 +713,8 @@ class SensorReading(Event):
     is satisfied.  Consumers must skip non-warm readings.
     """
 
+    TIME_CLASS = "market"
+
     symbol: str
     sensor_id: str
     sensor_version: str
@@ -693,6 +731,8 @@ class HorizonFeatureSnapshot(Event):
     ``values`` contains only warm features, while ``warm`` and ``stale`` cover
     every registered feature.
     """
+
+    TIME_CLASS = "market"
 
     symbol: str
     horizon_seconds: int = field(metadata={"unit": "s"})
@@ -722,6 +762,8 @@ class CrossSectionalContext(Event):
     ``snapshots_by_symbol`` use ``None`` for symbols whose feature
     snapshot was stale or not warm at the barrier time.
     """
+
+    TIME_CLASS = "market"
 
     horizon_seconds: int = field(metadata={"unit": "s"})
     boundary_index: int = field(metadata={"unit": "1"})
@@ -766,6 +808,8 @@ class SizedPositionIntent(Event):
     for v0.2 portfolio alphas.
     """
 
+    TIME_CLASS = "market"
+
     strategy_id: str
     layer: Literal["PORTFOLIO"] = "PORTFOLIO"
     horizon_seconds: int = field(default=0, metadata={"unit": "s"})
@@ -796,3 +840,176 @@ class SizedPositionIntent(Event):
             "disclosed_cost_total_bps_by_symbol",
             MappingProxyType(dict(self.disclosed_cost_total_bps_by_symbol)),
         )
+
+
+# ── Position engine (P-10) ──────────────────────────────────────────────
+# Nested facts are plain frozen dataclasses. Bus events subclass Event.
+# contracts.md §§1–2. Stage C (P-40) and the cell (P-50/P-60) replace the stubs.
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class RailOrientation:
+    """One side of the mark rail. contracts.md §1. P-10."""
+
+    paying_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    valuation_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    worst_side_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    forced_exit_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    dwelled_exit_mark_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    paying_size: int = field(metadata={"unit": "share"})
+    valuation_size: int = field(metadata={"unit": "share"})
+    paying_age_ns: int = field(metadata={"unit": "ns"})
+    valuation_age_ns: int = field(metadata={"unit": "ns"})
+    paying_absent_for_ns: int = field(metadata={"unit": "ns"})
+    valuation_absent_for_ns: int = field(metadata={"unit": "ns"})
+    paying_side_absent: bool
+    valuation_side_absent: bool
+    dwell_window_clean: bool
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PositionExtreme:
+    """Running extreme carried on a snapshot or close. contracts.md §2. P-10."""
+
+    cents: int = field(metadata={"unit": "cent"})
+    sequence: int = field(metadata={"unit": "1"})
+    valuation_age_ns: int = field(metadata={"unit": "ns"})
+    valuation_side_absent: bool
+    crossed: bool
+    feed_gap_before: bool
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PositionFillLeg:
+    """One entry or exit fill on a closed cell. contracts.md §2. P-10."""
+
+    price_cents: int = field(metadata={"unit": "cent"})
+    quantity: int = field(metadata={"unit": "share"})
+    timestamp_ns: int = field(metadata={"unit": "ns"})
+    sequence: int = field(metadata={"unit": "1"})
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ExitTriggeredPath:
+    """One path that fired on the closing snapshot. contracts.md §2. P-10."""
+
+    path: str
+    proposed_price_cents: int = field(metadata={"unit": "cent"})
+    trigger: str
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class MarkRailUpdate(Event):
+    """Both orientations for one quote. contracts.md §1. P-10."""
+
+    TIME_CLASS = "market"
+
+    symbol: str
+    quote_sequence: int = field(metadata={"unit": "1"})
+    event_timestamp_ns: int = field(metadata={"unit": "ns"})
+    long: RailOrientation
+    short: RailOrientation
+    symbol_quiet_ns: int = field(metadata={"unit": "ns"})
+    locked: bool
+    crossed: bool
+    feed_gap_before: bool
+    warmed_up: bool
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class SlicePositionUpdate(Event):
+    """Per-strategy slice fill. contracts.md §2. P-10."""
+
+    TIME_CLASS = "action"
+
+    symbol: str
+    strategy_id: str
+    order_id: str
+    fill_price: Decimal = field(metadata={"unit": "USD"})
+    fill_quantity: int = field(metadata={"unit": "share"})
+    fill_ack_sequence: int = field(metadata={"unit": "1"})
+    fill_timestamp_ns: int = field(metadata={"unit": "ns"})
+    quantity: int = field(metadata={"unit": "share"})
+    avg_entry_price: Decimal = field(metadata={"unit": "USD"})
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PositionSnapshot(Event):
+    """Frozen cell state at one rail event. contracts.md §2. P-10."""
+
+    TIME_CLASS = "action"
+
+    cell_id: str
+    symbol: str
+    strategy_id: str
+    state: str
+    side: str
+    declared_archetype: str
+    rail_sequence: int = field(metadata={"unit": "1"})
+    size: int = field(metadata={"unit": "share"})
+    entry_cost_cents: int = field(metadata={"unit": "cent"})
+    entry_spread_ticks: int = field(metadata={"unit": "tick"})
+    horizon_deadline_ns: int = field(metadata={"unit": "ns"})
+    move_now_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    move_worst_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    move_forced_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    best: PositionExtreme | None = None
+    worst: PositionExtreme | None = None
+    best_clean: PositionExtreme | None = None
+    rail: RailOrientation
+    symbol_quiet_ns: int = field(metadata={"unit": "ns"})
+    locked: bool
+    crossed: bool
+    feed_gap_before: bool
+    warmed_up: bool
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class GateDecision(Event):
+    """One gate outcome on a frozen snapshot. contracts.md §2. P-10."""
+
+    TIME_CLASS = "action"
+
+    cell_id: str
+    rail_sequence: int = field(metadata={"unit": "1"})
+    gate: str
+    outcome: str
+    reason: str
+    form: str
+    proposed_price_cents: int = field(metadata={"unit": "cent"})
+    reference_ticks: int = field(metadata={"unit": "tick"})
+    reference_sequence: int = field(metadata={"unit": "1"})
+    drawn_level_ticks: int = field(metadata={"unit": "tick"})
+    suppressions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PositionClosed(Event):
+    """Closing record for one cell episode. contracts.md §2. P-10."""
+
+    TIME_CLASS = "action"
+
+    cell_id: str
+    symbol: str
+    strategy_id: str
+    side: str
+    declared_archetype: str
+    entry_fills: tuple[PositionFillLeg, ...]
+    exit_fills: tuple[PositionFillLeg, ...]
+    entry_spread_ticks: int = field(metadata={"unit": "tick"})
+    horizon_deadline_ns: int = field(metadata={"unit": "ns"})
+    drawn_level_ticks: int = field(metadata={"unit": "tick"})
+    exit_reason: str
+    triggered_paths: tuple[ExitTriggeredPath, ...]
+    proposed_price_cents: int | None = field(default=None, metadata={"unit": "cent"})
+    best: PositionExtreme | None = None
+    worst: PositionExtreme | None = None
+    best_clean: PositionExtreme | None = None
+    closed_on_stale_data: bool
+    exited_on_unusable_data: bool
+    lived_through_feed_gap: bool
+    first_event_exit: bool
+    stop_inside_round_trip: bool
+    target_inside_round_trip: bool
+    uncalibrated: bool
+    supersedes: str

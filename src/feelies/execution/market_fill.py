@@ -234,8 +234,10 @@ def append_market_fill_acks(
             half_spread=fee_half_spread,
             is_short=request.is_short,
         )
+        # T2: both legs are the publication clock. Bus order and ack
+        # sequence distinguish them.
         partial_ts = fill_ts
-        final_ts = fill_ts + 1
+        final_ts = fill_ts
         pending_acks.append(
             OrderAck(
                 timestamp_ns=partial_ts,

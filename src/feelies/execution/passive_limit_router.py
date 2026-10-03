@@ -187,6 +187,7 @@ class PassiveLimitOrderRouter:
         self._sum_ticks_to_fill = 0
 
         self._last_quotes: dict[str, NBBOQuote] = {}
+        self._prev_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._resting_orders: dict[str, _PendingOrder] = {}
         # Symbol → insertion-ordered order_ids index so on_quote() is O(k)
@@ -227,6 +228,7 @@ class PassiveLimitOrderRouter:
         self._cancels_level_left = 0
         self._sum_ticks_to_fill = 0
         self._last_quotes.clear()
+        self._prev_quotes.clear()
         self._pending_acks.clear()
         self._resting_orders.clear()
         self._resting_by_symbol.clear()
@@ -255,6 +257,9 @@ class PassiveLimitOrderRouter:
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update latest quote and check resting / pending orders for fills."""
+        previous = self._last_quotes.get(quote.symbol)
+        if previous is not None:
+            self._prev_quotes[quote.symbol] = previous
         self._last_quotes[quote.symbol] = quote
         if self._moc is not None:
             self._moc.on_quote(quote)
@@ -285,6 +290,7 @@ class PassiveLimitOrderRouter:
             # exchange in exchange time) must not drain the queue or satisfy
             # the volume gate — the order was not on the book when they
             # occurred (mirrors the ``_check_resting_orders`` quote gate).
+            # T3: physical-time latency model; not a raw cross-class compare.
             if trade.exchange_timestamp_ns < pending.ack_timestamp_ns:
                 continue
             if pending.side == Side.BUY and trade.price <= pending.limit_price:
@@ -391,10 +397,12 @@ class PassiveLimitOrderRouter:
         (after depth check), else deferred fill on the first exchange-time-
         eligible quote.
         """
-        ack_ts = self._clock.now_ns() + self._latency_ns
+        # T2: the published stamp is the clock. ack_ts stays the eligibility time.
+        published_ts = self._clock.now_ns()
+        ack_ts = published_ts + self._latency_ns
         self._pending_acks.append(
             OrderAck(
-                timestamp_ns=ack_ts,
+                timestamp_ns=published_ts,
                 correlation_id=request.correlation_id,
                 sequence=self._ack_seq.next(),
                 order_id=request.order_id,
@@ -417,11 +425,11 @@ class PassiveLimitOrderRouter:
             self._execute_market_fill(request, quote, fill_ts=ack_ts)
             return
 
-        # Deferred fills: depth is checked in ``_flush_deferred_aggressive`` on
-        # the first latency-eligible quote (not the submission quote).
+        # Deferred fills: depth is checked on the quote prevailing at arrival.
         self._deferred_aggressive.append(
             _DeferredAggressiveFill(
                 request=request,
+                # T3: physical-time latency model; not a raw cross-class compare.
                 fill_deadline_exchange_ns=(
                     max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
                 ),
@@ -439,6 +447,7 @@ class PassiveLimitOrderRouter:
                 remaining.append(dm)
                 continue
             ticks_for_symbol = dm.ticks_for_symbol + 1
+            # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
                     # Preserve monotonic ordering of the order's ack stream:
@@ -463,26 +472,31 @@ class PassiveLimitOrderRouter:
             # REJECTED never timestamps before ACKNOWLEDGED (mirrors the
             # ``max_resting_ticks`` timeout path above).
             reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
-            if quote.bid >= quote.ask:
+            pricing = (
+                quote
+                if quote.exchange_timestamp_ns == dm.fill_deadline_exchange_ns
+                else self._prev_quotes.get(quote.symbol, quote)
+            )
+            if pricing.bid >= pricing.ask:
                 self._reject(
                     req,
-                    f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
+                    f"crossed or locked quote bid={pricing.bid} ask={pricing.ask}",
                     timestamp_ns=reject_ts,
                 )
                 continue
-            depth = quote.ask_size if req.side == Side.BUY else quote.bid_size
+            depth = pricing.ask_size if req.side == Side.BUY else pricing.bid_size
             if depth <= 0:
                 self._reject(
                     req,
                     f"zero depth on {req.side.name} side "
-                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+                    f"(bid_size={pricing.bid_size}, ask_size={pricing.ask_size})",
                     timestamp_ns=reject_ts,
                 )
                 continue
-            # Marketable LIMIT orders route here via ``_post_passive``; during a
-            # positive-latency window the BBO may move so mid exceeds limit_price.
+            # Marketable LIMIT orders route here via ``_post_passive``. The mid
+            # check uses the quote prevailing at arrival.
             if req.limit_price is not None:
-                fill_mid = (quote.bid + quote.ask) / Decimal("2")
+                fill_mid = (pricing.bid + pricing.ask) / Decimal("2")
                 if (req.side == Side.BUY and fill_mid > req.limit_price) or (
                     req.side == Side.SELL and fill_mid < req.limit_price
                 ):
@@ -500,7 +514,7 @@ class PassiveLimitOrderRouter:
             ):
                 continue
             fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
-            self._execute_market_fill(req, quote, fill_ts=fill_ts)
+            self._execute_market_fill(req, quote, fill_ts=fill_ts, book=pricing)
         self._deferred_aggressive = remaining
 
     def _execute_market_fill(
@@ -509,13 +523,15 @@ class PassiveLimitOrderRouter:
         quote: NBBOQuote,
         *,
         fill_ts: int | None = None,
+        book: NBBOQuote | None = None,
     ) -> None:
-        """Aggressive fill at ``quote`` — shared D14 model with ``BacktestOrderRouter``."""
+        """Aggressive fill. RTH uses ``quote``; the book defaults to that quote."""
         if self._rth_reject_entry_if_needed(
             request,
             quote.exchange_timestamp_ns,
         ):
             return
+        priced = quote if book is None else book
         if fill_ts is None:
             fill_ts = self._clock.now_ns() + self._latency_ns
         append_market_fill_acks(
@@ -523,7 +539,7 @@ class PassiveLimitOrderRouter:
             self._ack_seq,
             self._cost_model,
             request,
-            quote,
+            priced,
             fill_ts,
             market_impact_factor=self._market_impact_factor,
             max_impact_half_spreads=self._max_impact_half_spreads,
@@ -554,7 +570,10 @@ class PassiveLimitOrderRouter:
 
         limit_price = snap_limit_price(request.side, limit_price)
 
-        ack_ts = max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
+        # T2: the published stamp is the clock. ack_ts stays the eligibility time.
+        published_ts = self._clock.now_ns()
+        # T3: physical-time latency model; not a raw cross-class compare.
+        ack_ts = max(published_ts, quote.exchange_timestamp_ns) + self._latency_ns
         pending = _PendingOrder(
             request=request,
             side=request.side,
@@ -567,7 +586,7 @@ class PassiveLimitOrderRouter:
 
         self._pending_acks.append(
             OrderAck(
-                timestamp_ns=ack_ts,
+                timestamp_ns=published_ts,
                 correlation_id=request.correlation_id,
                 sequence=self._ack_seq.next(),
                 order_id=request.order_id,
@@ -589,6 +608,7 @@ class PassiveLimitOrderRouter:
 
         for order_id in order_ids:
             pending = self._resting_orders[order_id]
+            # T3: physical-time latency model; not a raw cross-class compare.
             if quote.exchange_timestamp_ns < pending.ack_timestamp_ns:
                 # Order-entry latency not yet elapsed in exchange time — the
                 # order is not yet live at the exchange, so this quote cannot
@@ -768,17 +788,16 @@ class PassiveLimitOrderRouter:
     ) -> Decimal:
         """Deterministic per-tick uniform in ``[0, 1)`` for the fill trial.
 
-        Derived from a SHA-256 over replay-stable keys (symbol, quote
-        sequence number, exchange timestamp, the order's resting-tick
-        count, side, level price, order id) so the draw varies per tick
-        and per order yet replays bit-identically (Inv-5) — no live RNG,
-        no sampling.
+        Derived from a SHA-256 over market content (symbol, vendor
+        sequence number, exchange timestamp, side, level price). The
+        draw is shared by every order at that side and level on that
+        event. ``ticks_at_level`` and ``order_id`` are per-order state
+        and are not inputs. Replay stays bit-identical (Inv-5) — no
+        live RNG, no sampling.
         """
         seed = (
             f"{quote.symbol}|{quote.sequence_number}|"
-            f"{quote.exchange_timestamp_ns}|{pending.ticks_at_level}|"
-            f"{pending.side.name}|{pending.limit_price}|"
-            f"{pending.request.order_id}"
+            f"{quote.exchange_timestamp_ns}|{pending.side.name}|{pending.limit_price}"
         )
         digest = hashlib.sha256(seed.encode("utf-8")).digest()
         value = int.from_bytes(digest[:8], "big")
