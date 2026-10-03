@@ -4365,7 +4365,9 @@ class Orchestrator:
         # Select one standalone signal for the single M4 order walk. PORTFOLIO
         # inputs execute through SizedPositionIntent, while forced exits override.
         # position safety beats alpha conviction).
-        buf_snapshot = list(self._signal_buffer)
+        # Release a held signal only on its own symbol's quote, and price it
+        # from that quote. Other symbols stay in the buffer.
+        buf_snapshot = [item for item in self._signal_buffer if item.symbol == quote.symbol]
         signal: Signal | None = None
         if buf_snapshot:
             t0 = time.perf_counter_ns()
@@ -4444,7 +4446,10 @@ class Orchestrator:
         if buf_snapshot:
             for buffered in buf_snapshot:
                 self._carryover_signal_sequences.discard(buffered.sequence)
-            self._signal_buffer.clear()
+            released = {id(item) for item in buf_snapshot}
+            self._signal_buffer[:] = [
+                item for item in self._signal_buffer if id(item) not in released
+            ]
 
         if signal is None:
             self._finalize_tick(t_wall_start, cid, "no_signal_this_tick")
@@ -5559,7 +5564,9 @@ class Orchestrator:
                 event.trend_mechanism,
                 event.expected_half_life_seconds,
             )
-        if not self._quote_tick_in_flight:
+        in_flight = self._in_flight_quote
+        if in_flight is None or in_flight.symbol != event.symbol:
+            # Held until an NBBOQuote of this signal's own symbol.
             self._carryover_signal_sequences.add(event.sequence)
 
     def _is_consumed_by_portfolio(self, alpha_id: str) -> bool:
