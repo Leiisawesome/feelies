@@ -740,12 +740,32 @@ def _run_backtest_phases_2_7(
                 return None
             return list(prior_log.replay())
 
-        cal_quotes, cal_provenance = prior_session_calibration_quotes(
-            symbols=symbols,
-            session_date=session_date,
-            max_quotes=max_cal,
-            loader=_load_prior_session,
-        )
+        if len(symbols) <= 1:
+            cal_quotes, cal_provenance = prior_session_calibration_quotes(
+                symbols=symbols,
+                session_date=session_date,
+                max_quotes=max_cal,
+                loader=_load_prior_session,
+            )
+        else:
+            parts: list[NBBOQuote] = []
+            source: str | None = None
+            for sym in symbols:
+                part, prov = prior_session_calibration_quotes(
+                    symbols=(sym,),
+                    session_date=session_date,
+                    max_quotes=max_cal,
+                    loader=_load_prior_session,
+                )
+                if prov[0] is not None:
+                    source = prov[0]
+                parts.extend(part)
+            if parts:
+                cal_quotes = tuple(parts)
+                cal_provenance = (source, len(parts))
+            else:
+                cal_quotes = ()
+                cal_provenance = (None, 0)
         if cal_provenance[0] is None:
             print(
                 f"  regime calibration: no prior-session data before {session_date}; "

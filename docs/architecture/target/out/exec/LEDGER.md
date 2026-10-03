@@ -31741,3 +31741,127 @@ OWNER:       campaign 15.
   NEXT:          P-23b2 census (fill-report latency parameter and sweep;
                  results reported with salt ensembles).
 
+## P-23e
+  PREDICTION:    P-23e_prediction.md at
+                 0a5d80254e35de9ee097f18c43e937922658c57a, committed
+                 before the production change
+                 (3b406b3279362cb86fae7f6465688095f89146cb). Patch
+                 1c827ad5b0ccb7d0a667dda4d2fe914007cca0b157466106d520915f38c74fab.
+  MECHANISM:     One regime calibration per symbol, fitted on that
+                 symbol's own prior-session quotes. The cap is applied
+                 per symbol as a prefix (D-175). D-63's lookahead rule
+                 is unchanged: prior session only (D-176). The pooled
+                 fit is retained only as the fallback for a symbol with
+                 no own prior-session quotes (D-177). On a multi-symbol
+                 backtest, patch (s) does not read
+                 `per_symbol_calibration`. It calls
+                 `prior_session_calibration_quotes` once per symbol and
+                 the orchestrator sets `_per_symbol_calibration` True
+                 when the quote tuple spans more than one symbol,
+                 immediately before `calibrate()`. The configured key
+                 does not select that fit. It still selects the branch
+                 on the single-symbol path, where (s) does not assign
+                 it. A symbol with zero own prior-session quotes
+                 contributes nothing and uses the pooled fit of the
+                 quotes that were included. If every symbol is empty,
+                 calibration is skipped. (s) adds no minimum-sample
+                 rule. The engine's pre-existing floor of 30 valid
+                 log-spreads still withholds a private emission below
+                 that count (F-P23e-8).
+  PARITY:        Oracle unchanged, no exemption: 10 fills / net 26.61 /
+                 c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf.
+                 R-FIX 95 / -1258.93 /
+                 657d248ec4dadd160dbb61463077e7a59ba5749f7fab8bd0c6ff4c033fe739ee.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 81 pins, movers none. Eight solo runs for 2026-03-26
+                 match their runs at 60cfc37c on hash, net, fills,
+                 emissions and fill rows. Eight-name local evidence,
+                 not a pin: 16 filled acks / net +34.56 /
+                 696d0d3069c08a63c02114a61a2eff7762ed0b92bd40ed0a4bac81cf877d73bd.
+                 Ensemble mean 34.316875, range [32.27, 34.56]. Each
+                 symbol's emission equals its solo fit. Quote-level
+                 regime agreement 100% on all eight. Output identical
+                 under a permuted symbol order. Joint-versus-solo
+                 economic differences remain APP 6, CROX 4, OLN 14.
+                 Predicted. Cause is F-P23e-6. P1/P2/P3a/P3b/P3c =
+                 0/0/0/0/0, controls 7/7/5/5/5. P4 joint equals solo
+                 (0/0), control 3. I1/I2/I3 empty. PENDING empty.
+                 KNOWN_NONCLOCK ratchet 14. Wiring manifest and
+                 composition root unchanged.
+  DECISIONS:     D-175, D-176, D-177, as written in decisions.md.
+  FINDINGS:      F-D1-1: CROX trade-sequence duplicate pairs; no effect
+                 on replay identity (F-P23e-3).
+                 F-D1-2: closed by this rung.
+                 F-D1-3: order ids move with universe width (identity
+                 track).
+                 F-P23e-1: the "digest" label in D-1 was not the operator
+                 config hash. The definition to use is the report field
+                 `config_hash (cfg)`: `compute_config_hash` of the
+                 resolved PlatformConfig, which is `snapshot().checksum`.
+                 F-P23e-2: cold start is the opening boundary-0 fan-out,
+                 5 ticks, ending at each symbol's first quote.
+                 F-P23e-4: test_g45_keep fails on any src edit until the
+                 profile is refreshed.
+                 F-P23e-5: `-m battery_real` at 60cfc37c collects 12 node
+                 ids, identical to the P-23c2 EXEC verification list,
+                 including test_reference_app_i2_only_pending. The count
+                 was not 11. A path-limited list that omitted that
+                 conformance test is not the root collection.
+                 test_ci_real_job_selection did not miss a marker
+                 change: the marker is unchanged and the job selects
+                 `battery_real` from the root.
+                 F-P23e-6 (HIGH, next rung): session_open is the first
+                 merged event (backtest_runner.py:197) and the horizon
+                 grid fans out from it (horizon_scheduler.py:291), so
+                 boundary timestamps depend on the universe.
+                 F-P23e-7 (HIGH, paper campaign): paper/live does not
+                 calibrate (run_paper.py:212, orchestrator.py:889-895).
+                 Backtest and live regime behaviour differ.
+                 F-P23e-8: no minimum-sample rule for a per-symbol fit.
+                 The runner includes every symbol with at least one
+                 prior-session RTH quote, up to the cap. The engine's
+                 floor of 30 valid log-spreads still withholds a private
+                 emission below that count.
+                 F-P23e-9: `per_symbol_calibration` remains the
+                 constructor flag, default False, still commented out in
+                 platform.yaml. On the multi-symbol backtest path (s)
+                 forces the engine attribute on before calibrate(), so
+                 the configured value does not select that fit. The flag
+                 is what calibrate() honors. It is not assigned on the
+                 single-symbol path.
+  SENSITIVITY:   Eight-name net under three calibrations: +13.72 as-is,
+                 +34.56 per-symbol, -53.80 pooled uncapped. Fit
+                 sensitivity on one day, not performance. The choice was
+                 made on mechanism.
+  DATASET:       D-1 cache, eight symbols, both dates, schema
+                 sha256:18e8861f5ff92ff6e8a779e4ddd6b1c0ab04a453bf6fcd08e16e5ce55e2cc2fa.
+                 File sha256 equals the manifest checksum.
+                 APP 2026-03-25 c4c7d06e86afd1383c2460fdfd7ae5183b0b0d60b4fc7be0ba2e0675e54aa7bd;
+                 APP 2026-03-26 1237eb92498ef857220c31ec1c123a0fc51a3c6cee0eafcbdb31a517c7e0e641;
+                 CROX 2026-03-25 f286aa4812cef051541126a9761e54417c0eadd1af68462f992f46f3847f222d;
+                 CROX 2026-03-26 a3e43eaa3c674562d19748f8f45807ddd6732a9ad02f873a613cd19b128ad276;
+                 DIOD 2026-03-25 bb05282f3f291cc3a89ff02aaa0776f2c81e28a4c72128ee02f5f9d16fbe7639;
+                 DIOD 2026-03-26 2c2fdebd3bb4cdf80e9a7c4d80c9965ff30143516868a33707b7162c37f9ee70;
+                 ENSG 2026-03-25 529b2b7f949e1a8e2c477deef70333d71ad3b1e4a8d62b59d8f560bb165ab2ba;
+                 ENSG 2026-03-26 fa4f17ebf302e10a55ec4e0c9663beea2f345e4b9e977cbc488ef86661052c2b;
+                 MLI 2026-03-25 11efb1ebde3184ff8bcdb06694a8da255fb6e502fbbc64ec377141a0cc832035;
+                 MLI 2026-03-26 588ac3067969ae0f8d37b179803e1948d85385851902c89809f336e26ca6afad;
+                 OLN 2026-03-25 15301af41f3bc2a78f747ceaafadc55e83d044c0fd8b3a823bd6d18be8f395ca;
+                 OLN 2026-03-26 f8049e625ccc08ca3bd9c67aa184cc39325f250cd5938c7770341aae27ff63a0;
+                 PCTY 2026-03-25 aba7f9fed4564cc5f156acb18b09f05b30d5bc24e75a606142c78735988c12b5;
+                 PCTY 2026-03-26 de6cc49eef4c860fd24d7ae9210dbba065443a93b55658ad90a125946f946156;
+                 RMBS 2026-03-25 70b4f79d165f4768c10dae527cec7efbca1d9bdf3df72d5aa5645b4a253ba49d;
+                 RMBS 2026-03-26 561fb4544061946e8490ce3edf6a9fe37d2caa585c70413cf6fa34e070b0ab49.
+  CAPTURE:       baseline_pre-P-23e.json at
+                 0a5d80254e35de9ee097f18c43e937922658c57a (5279 passed,
+                 0 failed, 44 skipped, 2 xfailed; determinism 148;
+                 dirty false). Taken with E0 committed and no
+                 production change.
+                 baseline_post-P-23e.json at
+                 3b406b3279362cb86fae7f6465688095f89146cb (5282 passed,
+                 0 failed, 44 skipped, 2 xfailed; determinism 148;
+                 dirty false). Parity 64/64, changed 0. The +3 passed
+                 are the three added calibration tests.
+  NEXT:          P-23f (horizon grid anchor).
+
