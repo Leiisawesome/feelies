@@ -31656,3 +31656,56 @@ OWNER:       campaign 15.
                  from another symbol's quote; orchestrator.py:1305,
                  :2002, :4218, :5562).
 
+---
+
+## P-23c2
+  PREDICTION:    P-23c2_prediction.md at 07109550cac4713d64ead67e67b2b793deaafdb7,
+                 committed before the production change
+                 (d3a6fe059b1c1822e8ba24a27202da3810723923). Patch
+                 595a179b1ac1aac3462874b52a39b9c786d02bd86a1fffdf913db62a6978c3c6.
+  MECHANISM:     A held single-alpha signal is released only by an
+                 NBBOQuote of its own symbol, and is priced and sized
+                 from that quote (D-172). Horizon closure stays global
+                 (D-173). The portfolio path is untouched.
+  PARITY:        Oracle unchanged, no exemption: 10 fills / net 26.61 /
+                 c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf.
+                 Per-fill diff 0. Ensemble {24.03:1, 24.61:3, 26.61:12,
+                 27.19:16}. R-FIX 95 / -1258.93 /
+                 657d248ec4dadd160dbb61463077e7a59ba5749f7fab8bd0c6ff4c033fe739ee.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575.
+                 81 pins, movers none. Cross-symbol pricing 0 on the
+                 oracle, p3a, p3b, p3c and m1. P1/P2/P3a/P3b/P3c =
+                 0/0/0/0/0, controls 7/7/5/5/5. P4 joint fills equal
+                 solo (0/0), control 3. Delays unchanged: oracle
+                 signal-to-order 1058/3014/3075 ms (n=10); R-FIX
+                 460/5441/5925 ms (n=33). I1/I2/I3 empty. PENDING empty.
+                 KNOWN_NONCLOCK ratchet 14. Wiring manifest unchanged.
+  DECISIONS:     D-172, D-173, D-174, as written in decisions.md.
+  FINDINGS:      F-P23c-e closed by this rung.
+                 F-P23c-k: expiry is anchored on the trigger stamp
+                 (orchestrator.py:4226), so a universe-dependent margin
+                 remains at expiry. Recorded. Not fixed.
+                 F-P23c-l: the portfolio guard at orchestrator.py:2069
+                 covers opening legs only while B4 is armed. Reducing
+                 legs and a disarmed gate return before the check
+                 (:2062–:2064). A refused leg is dropped while sibling
+                 legs submit. An intent whose legs are all refused is
+                 abandoned (:4046). A census is required before any
+                 PORTFOLIO alpha is wired.
+                 F-P23c-m: the measured actuation delays above.
+                 The p3c strict xfail is removed; the negative control
+                 is retained.
+  CAPTURE:       baseline_pre-P-23c2.json at
+                 07109550cac4713d64ead67e67b2b793deaafdb7 (5274 passed,
+                 0 failed, 44 skipped, 3 xfailed; determinism 148;
+                 dirty false). Taken with E0 committed and no
+                 production change.
+                 baseline_post-P-23c2.json at
+                 15567f957f47f1a1294642085652cc66253610b4 (5279 passed,
+                 0 failed, 44 skipped, 2 xfailed; determinism 148;
+                 dirty false). Parity 64/64, changed 0. The +5 passed
+                 and −1 xfailed are the four added tests and the p3c
+                 xfail becoming a pass.
+  NEXT:          P-23c2 merge.
+

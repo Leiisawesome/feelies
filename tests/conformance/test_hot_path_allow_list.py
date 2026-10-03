@@ -102,7 +102,7 @@ def test_hot_path_allow_list() -> None:
     reason="fork PR: hot-path profile not generated",
 )
 def test_g45_keep() -> None:
-    """Hot-path edit reviewed under P-23c1."""
+    """Hot-path edit reviewed under P-23c2."""
     report = scan()
     keep_hits: set[tuple[str, str, str]] = set()
     for kind, row in report["prohibitions"].items():
