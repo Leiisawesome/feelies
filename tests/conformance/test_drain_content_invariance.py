@@ -416,17 +416,13 @@ def test_p3_drain_uniforms_follow_content(
     assert report["econ_c"] == 0, report
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "P-23c: horizon_scheduler.py:259 closes every configured symbol's "
-        "horizon on any event's timestamp, so a time-shifted second symbol "
-        "moves APP fills. Remove this xfail when that close is per-symbol."
-    ),
-)
 def test_p3c_shifted_symbol_does_not_move_app_fills(
     campaign: dict[tuple[str, str], dict[str, Any]],
 ) -> None:
+    """A time-shifted second symbol does not move APP fill economics.
+
+    The old drain seed remains the negative control.
+    """
     report = _report(campaign, "p3c")
     assert report["econ_old"] >= 1, report
     assert report["uniform_conflicts"] == 0, report

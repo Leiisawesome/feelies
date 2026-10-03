@@ -42,12 +42,6 @@ def _symbol(canonical: str) -> str | None:
     return symbol if isinstance(symbol, str) else None
 
 
-def _syn_projected(records: Records) -> list[str]:
-    return [
-        project_for_multiname(row.canonical) for row in records if _symbol(row.canonical) == "SYN"
-    ]
-
-
 def _one_snapshot_per_rail(records: Records) -> None:
     """At most one PositionSnapshot per (cell_id, rail_sequence)."""
     seen: set[tuple[object, object]] = set()
@@ -196,13 +190,69 @@ def test_m1_sinks_real() -> None:
     assert records == baseline
 
 
+def _projected(records: Records, symbol: str) -> list[str]:
+    return [
+        project_for_multiname(row.canonical) for row in records if _symbol(row.canonical) == symbol
+    ]
+
+
+def _run_pair_tapped(tape: list[object]) -> tuple[Records, dict[str, int]]:
+    """Run the pair once, counting orders priced and sized from their own quote."""
+    import feelies.kernel.orchestrator as orch_mod
+    from feelies.core.events import NBBOQuote
+    from tests.position_engine.scenarios import _cached_synthetic
+
+    built: list[tuple[str, str | None, str | None]] = []
+    draft: dict[str, str | None] = {}
+    orig_qty = orch_mod._compute_target_quantity
+    orig_route = orch_mod._resolve_order_route
+
+    def _qty(self: object, signal: object, quote: object) -> object:
+        draft.clear()
+        symbol = getattr(signal, "symbol", None)
+        draft["signal_symbol"] = symbol if isinstance(symbol, str) else None
+        size_sym = getattr(quote, "symbol", None) if quote is not None else None
+        draft["size_sym"] = size_sym if isinstance(size_sym, str) else None
+        return orig_qty(self, signal, quote)
+
+    def _route(self: object, **kwargs: object) -> object:
+        if draft.get("signal_symbol") == kwargs.get("symbol"):
+            quote = kwargs.get("quote")
+            limit_sym = getattr(quote, "symbol", None) if quote is not None else None
+            symbol = kwargs.get("symbol")
+            built.append(
+                (
+                    symbol if isinstance(symbol, str) else "",
+                    draft.get("size_sym"),
+                    limit_sym if isinstance(limit_sym, str) else None,
+                )
+            )
+            draft.clear()
+        return orig_route(self, **kwargs)
+
+    quotes = [quote for quote in tape if isinstance(quote, NBBOQuote)]
+    orch_mod._compute_target_quantity = _qty  # type: ignore[method-assign]
+    orch_mod._resolve_order_route = _route  # type: ignore[method-assign]
+    try:
+        _cached_synthetic.cache_clear()
+        records = run_synthetic(quotes, symbols=("SYN", "ZZZ"))
+    finally:
+        orch_mod._compute_target_quantity = orig_qty  # type: ignore[method-assign]
+        orch_mod._resolve_order_route = orig_route  # type: ignore[method-assign]
+    counts: dict[str, int] = {}
+    for symbol, size_sym, limit_sym in built:
+        if size_sym not in (None, symbol) or limit_sym not in (None, symbol):
+            raise AssertionError(
+                f"sized from another symbol: {symbol} size={size_sym} limit={limit_sym}"
+            )
+        if size_sym == symbol and limit_sym == symbol:
+            counts[symbol] = counts.get(symbol, 0) + 1
+    return records, counts
+
+
 @_MARK
 def test_m1_multiname() -> None:
     syn = _syn_tape()
-    alone = run_synthetic(syn, symbols=("SYN",))
-    require_entry_fills(alone)
-    nonvacuous(alone, PositionSnapshot, PositionClosed, scenario="m1_multiname")
-    _one_snapshot_per_rail(alone)
     zzz = make_tape(
         seed=12,
         n=36000,
@@ -212,7 +262,17 @@ def test_m1_multiname() -> None:
         start_sequence=1_000_001,
     )
     pair_tape = sorted([*syn, *zzz], key=lambda quote: quote.timestamp_ns)
-    pair = run_synthetic(pair_tape, symbols=("SYN", "ZZZ"))
-    if any(order.symbol == "ZZZ" for order in pair.order_requests):
-        raise AssertionError("PRECONDITION: second name traded")
-    assert _syn_projected(pair) == _syn_projected(alone)
+    from tests.position_engine.scenarios import _cached_synthetic
+
+    pair, sized = _run_pair_tapped(pair_tape)
+    require_entry_fills(pair)
+    nonvacuous(pair, PositionSnapshot, PositionClosed, scenario="m1_multiname")
+    _one_snapshot_per_rail(pair)
+    traded = {order.symbol for order in pair.order_requests}
+    assert traded == {"SYN", "ZZZ"}, sorted(traded)
+    assert sized.get("SYN", 0) >= 1, sized
+    assert sized.get("ZZZ", 0) >= 1, sized
+    _cached_synthetic.cache_clear()
+    again = run_synthetic(pair_tape, symbols=("SYN", "ZZZ"))
+    assert _projected(again, "SYN") == _projected(pair, "SYN")
+    assert _projected(again, "ZZZ") == _projected(pair, "ZZZ")
