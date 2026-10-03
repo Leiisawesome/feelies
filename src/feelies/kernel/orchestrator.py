@@ -895,6 +895,8 @@ def _calibrate_regime_engine(self: Any) -> None:
         return
 
     quotes = list(precomputed)
+    if len({q.symbol for q in quotes}) > 1:
+        self._regime_engine._per_symbol_calibration = True
     prefix_n = len(quotes)
     source = self._regime_calibration_source_date
     ok = calibrate_fn(quotes)
