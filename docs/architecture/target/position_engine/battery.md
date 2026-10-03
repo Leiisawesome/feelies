@@ -65,8 +65,9 @@ SETUP:             identical configuration across all runs
 ASSERTS:           byte-identical rail updates, snapshots, gate decisions, requirements
                    and closing records across: a deliberately wrong system clock
                    (time.time/monotonic patched); reversed gate evaluation order; the name
-                   alone versus inside a multi-name universe whose other name is quoted
-                   but not traded (synthetic tapes; D-36, D-38); a fresh process; sinks
+                   alone versus inside a multi-name universe in which both names trade,
+                   each sized from its own quote, and each name's result is reproducible
+                   (synthetic tapes; D-172); a fresh process; sinks
                    detached (non-sink outputs only). Published records are immutable:
                    at most one PositionSnapshot per (cell_id, rail_sequence). It catches B10.
                    Engine events are frozen, slotted and tuple-only, so an in-place rewrite
