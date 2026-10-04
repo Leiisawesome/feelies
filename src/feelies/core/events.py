@@ -672,7 +672,7 @@ class HorizonTick(Event):
     """Deterministic event-time scheduler tick (§5.1).
 
     Emitted by ``HorizonScheduler`` at boundaries
-    ``session_open_ns + k * horizon_seconds * 1e9`` for k = 1, 2, ....
+    ``session_open_ns + k * horizon_seconds * 1e9`` for k = 0, 1, 2, ....
     Drives Layer-2 aggregation and Layer-3 synchronization.
 
     ``scope`` is ``"SYMBOL"`` for per-symbol horizons (in which case

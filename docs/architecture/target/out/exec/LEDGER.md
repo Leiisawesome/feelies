@@ -31901,3 +31901,108 @@ OWNER:       campaign 15.
   NEXT:          P-23f census (horizon grid anchor). Then the P-23b2
                  census.
 
+## P-23f
+  PREDICTION:    P-23f_prediction.md at
+                 f86f791ed417da340cfe8e32b46df3395a121665, committed
+                 before the production change
+                 (be7afb111d59f36eb827aa9fdbea2dd3465b5d7d). Patch
+                 6f81c79fca0db585dd508a94b26c2d25f4b003c6e044c0fe29cef592ab92e823.
+                 Src hunks of the re-exported runner diff match that
+                 patch byte for byte.
+  MECHANISM:     An unset backtest session_open resolves to the
+                 exchange regular-session open, so boundary k at
+                 horizon h is open + k·h for every symbol. The open is
+                 rth_open_ns (09:30 America/New_York). k starts at 0.
+                 An event before the open emits nothing
+                 (session_clock.py:5-6). bootstrap.py is not changed.
+                 The live and paper anchor stays the boot wall clock.
+  PARITY:        Third D-66 exemption reserved, not yet declared.
+                 Operator declares at merge, after the exact-match
+                 check. Any other oracle value stops the rung.
+                 Oracle 10 fills / net 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e,
+                 replacing c95f4e5c. Side, quantity, price, time, type,
+                 pnl, fees and cost are identical on all 10 fills.
+                 order_id differs on census indices 1-9 (0-based);
+                 fill index 0 is unchanged. Substituting the old order
+                 ids into the new trade sequence reproduces c95f4e5c.
+                 32-salt ensemble {26.61:20, 27.19:11, 24.03:1}, mean
+                 26.72875, range [24.03, 27.19]. Movers: the oracle
+                 trade-hash pin only. Net pin unchanged. No other pin
+                 moves. Parity 64/64, changed 1.
+                 R-FIX 95 / -1258.93 / 657d248e → 98 / -1317.04 /
+                 0ec66a9a48190680e564d519505ff9ed87e063ac4343c40040a590b85b38e9c2.
+                 Declared reference move. R-FIX is not CI-pinned.
+                 R-SYN 29 / -131.01 /
+                 ffc9161eb542967c93012064371dbff819e2b8c4d7485fcedfb175eb7fcfd575,
+                 unchanged (explicit T0).
+                 Grid shift: APP and R-FIX -25.823081 ms; joint
+                 -10.733594 ms.
+                 Eight-name 2026-03-26, local evidence, not a pin:
+                 14 filled acks / net +38.08 /
+                 2fa81942c3da8d4a83a0bff509e8fff3d8cf9261b3fb254ad59d1af94631402b.
+                 Journal fills are 15. Ensemble mean 37.837812, range
+                 [35.80, 38.08]. Boundary share solo-in-joint 100% on
+                 all eight. Cross-section alignment 100% (1092/1092).
+                 Joint-versus-solo economic differences: APP 8, CROX 2,
+                 OLN 0, others 0. Predicted residuals. Cause is
+                 F-P23f-7. P1-P4 unchanged, controls holding. I1/I2/I3
+                 empty. PENDING empty. KNOWN_NONCLOCK ratchet 14.
+                 Wiring manifest and composition root unchanged.
+  DECISIONS:     D-178, D-179, D-180, as written in decisions.md.
+  FINDINGS:      F-P23e-6 is closed by this rung (F-P23f-1). No second
+                 F-P23e-6 row.
+                 F-P23f-1: the runner's first-event override
+                 contradicted session_clock.py:5-6. Closed by this rung.
+                 F-P23f-2 (HIGH, paper campaign): in live and paper,
+                 session_open is the boot wall clock (bootstrap.py:885),
+                 while its docstring (:878) says RTH open. A mid-session
+                 restart rebinds the grid. Identified fix:
+                 rth_open_ns(clock.now_ns()). Not changed here.
+                 F-P23f-3: the oracle hash moves only via order_id
+                 (orchestrator.py:2196, hashed at backtest_report.py:822).
+                 F-P23f-4: variant (b) rejected. Alignment 0% and 12
+                 gate failures.
+                 F-P23f-5: events.py:675 said k = 1, 2, …; the scheduler
+                 emits k = 0, 1, 2, …. The docstring is corrected here.
+                 F-P23f-6: the static pin-name scan finds 78 names; the
+                 gate's mover list is authoritative.
+                 F-P23f-7 (HIGH, next rung): a boundary's emitted state
+                 and stamp come from the crossing event
+                 (horizon_scheduler.py:298-311, :373). Alone, that is
+                 the symbol's own next event. In a universe, it is
+                 often another symbol's earlier event. This is the
+                 cause of the residual APP 8 / CROX 2.
+                 F-P23f-8 (next rung): on sparse tapes a symbol run
+                 alone emits fewer boundaries than in a universe.
+                 Horizon 30 on this head, matching the census artifacts:
+                 DIOD 776, ENSG 763, MLI 776, PCTY 778, against 780.
+                 The original E0 text records the census report line
+                 (778, 767, 778, 779). Amendment A corrects that line.
+                 F-P23f-10: the census report line was not emitted
+                 from its run artifacts, which breaks the single-run
+                 table rule.
+                 F-P23f-9: grid-phase sensitivity. Oracle net by anchor
+                 shift: -60 s -33.75; -10 s -74.99; -1 s +106.13;
+                 -100 ms to +10 ms 26.61; +100 ms 26.42; +1 s 23.18;
+                 +10 s 10.55; +60 s -33.75. Eight-name net ranges from
+                 -169.25 to +52.61. Single-day nets are not evidence
+                 of edge.
+  SENSITIVITY:   F-P23f-9, as above. The anchor was chosen on mechanism
+                 (session_clock.py:5-6) and on cross-section alignment
+                 (100% against 0% for own-first-event).
+  CAPTURE:       baseline_pre-P-23f.json at
+                 f86f791ed417da340cfe8e32b46df3395a121665 (5282 passed,
+                 0 failed, 44 skipped, 2 xfailed; determinism 148;
+                 dirty false). Taken with E0 committed and no
+                 production change.
+                 baseline_post-P-23f.json at
+                 1dd40e8839e76e8827e2161cb5a4316043c8c27c (5284 passed,
+                 0 failed, 44 skipped, 3 xfailed; determinism 148;
+                 dirty false). Parity 64/64, changed 1 (the trade-hash
+                 pin only). The +2 passed are the session-anchor test
+                 and P5-share. The +1 xfailed is P5-identity
+                 (strict).
+  NEXT:          P-23g (every boundary emitted exactly once, in order,
+                 with state as of the boundary time).
+

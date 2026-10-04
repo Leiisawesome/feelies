@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 if TYPE_CHECKING:
     from feelies.execution.portfolio_netter import NetDivergence
     from feelies.risk.edge_weighted_sizer import SizeDivergence
+from feelies.core.session_clock import rth_open_ns
 from feelies.harness.backtest_cli import (
     ConfigNotFoundError,
     add_backtest_api_arguments,
@@ -185,16 +186,18 @@ def _ensure_backtest_session_anchor(
     *,
     first_event_ts_ns: int | None,
 ) -> PlatformConfig:
-    """Set ``session_open_ns`` when absent.
+    """Anchor an unset backtest grid at the exchange regular-session open.
 
-    *first_event_ts_ns* must be the first event in replay order — identical
-    anchor to :class:`HorizonScheduler` auto-binding when ordering matches.
+    Boundary ``k`` at horizon ``h`` seconds is ``rth_open_ns + k * h``.
+    ``k`` starts at 0. An event with ``timestamp_ns < open`` emits nothing.
+    The first kept event at or after the open emits the boundary it falls in,
+    which is ``k = 0`` when that event is inside the first bucket.
     """
     if config.session_open_ns is not None:
         return config
     if first_event_ts_ns is None:
         return config
-    return replace(config, session_open_ns=first_event_ts_ns)
+    return replace(config, session_open_ns=rth_open_ns(first_event_ts_ns))
 
 
 # ── BusRecorder (same pattern as test_backtest_e2e.py) ───────────────
