@@ -202,7 +202,9 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 _BASELINE_CONFIG_HASH = "bb67b1c74383277f43708e5318be15e0ba27e99f8e68bd0d78c9929416629f95"
 # P-23d C: market-content drain seed. Fill count unchanged.
 # Operator exemption: 10 fills / net 26.61 / this hash, replacing 24.61 / 18f6bb4e.
-_BASELINE_TRADE_PARITY_HASH = "c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf"
+# P-23f: the grid anchors at the exchange open. Fill count and net stay
+# 10 / 26.61. This hash replaces c95f4e5c; order_id differs on fills 1-9.
+_BASELINE_TRADE_PARITY_HASH = "ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e"
 # Content-bound identifier for the input tape (per-day event counts + ingestion
 # health). Distinct from the parity hashes: this pins what went *in*.
 _BASELINE_DATA_VERSION = "cache:2364ef7fe41c27d9"
