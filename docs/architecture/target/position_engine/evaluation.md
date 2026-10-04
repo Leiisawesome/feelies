@@ -62,6 +62,8 @@ Interpretation: the 32-draw ensemble has essentially the same expected net under
 Backlog note: raise the rewritten off_level property test to 64 salts (old-seed precondition-met count was 8, exactly the floor).
 ```
 
+3. D-178 (P-23f, 2026-10-04). Reserved. The third exemption under D-66. The operator declaration is added at merge, after the exact-match check. Predicted oracle: 10 fills / net 26.61 / trade hash `ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e`, replacing `c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf`. Pre-registration: E0 at `f86f791ed417da340cfe8e32b46df3395a121665`.
+
 ## 3. P-95 attribution diff
 
 Report-only tool; location fixed by the P-95 census. It runs one tape through two
