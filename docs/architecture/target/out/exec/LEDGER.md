@@ -32006,3 +32006,32 @@ OWNER:       campaign 15.
   NEXT:          P-23g (every boundary emitted exactly once, in order,
                  with state as of the boundary time).
 
+---
+
+## RECORD P-23f merged
+  PR:            #275 (head 436d6dee1c24d15134109eececd7835663dd74ea,
+                 merge 70842f9da57c741b6238e2690fbcea673c2f04e2).
+  CLOSED:        The horizon grid is anchored at the exchange
+                 regular-session open.
+  PARITY:        The oracle pin is now 26.61 / ab3a2b3f. R-FIX
+                 reference is now 98 / -1317.04 / 0ec66a9a.
+  OPEN:          F-P23f-7 (HIGH, next rung P-23g): boundary state
+                 and stamp come from the crossing event. Residual
+                 joint-versus-solo differences: APP 8, CROX 2.
+                 F-P23f-8 (P-23g): sparse-tape boundary skipping.
+                 DIOD 776, ENSG 763, MLI 776, PCTY 778, against 780.
+                 F-P23f-2 (HIGH, paper campaign): the live grid
+                 origin is the boot wall clock.
+                 F-P23f-9: grid-phase sensitivity. The phase-ensemble
+                 reporting rule is in force.
+                 F-P23f-10: census report lines must be emitted from
+                 run artifacts.
+                 Economic trade hash excluding order_id:
+                 identity-model track.
+                 Carried: F-P23e-7, F-P23e-8, F-P23e-9, F-P23c-k,
+                 F-P23c-l, F-P23c-f, the identity-model track, the
+                 manifest rows for P-30, and the tooling items.
+  NEXT:          P-23g census (every boundary emitted exactly once,
+                 in order, with state as of the boundary time).
+                 Then the P-23b2 census.
+
