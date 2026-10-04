@@ -187,6 +187,7 @@ edit to the spec file in a later docs rung, citing the entry.
 | D-178 | 2026-10-04 | P-23f | Where does an unset backtest horizon grid anchor? | At the exchange regular-session open (`rth_open_ns`, 09:30 America/New_York) when `session_open` is unset. Boundary k at horizon h is open + k·h for every symbol. Cross-section alignment is 100% against 0% for the alternative that anchors each symbol on its own first event. The third legacy-oracle exemption under D-66 is reserved for exactly 10 fills / net 26.61 / trade hash ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e, replacing c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf. Any other value stops the rung. The operator declares the break at merge, after the exact-match check. Live and paper are not changed (F-P23f-2). | `session_clock.py:5-6` already names this anchor: anchor to 09:30 America/New_York instead of the first event, avoiding a truncated first bucket. | backtest_runner.py; evaluation.md §2 |
 | D-179 | 2026-10-04 | P-23f | What does an evaluation that uses horizon signals report? | A grid-phase ensemble of 8 phases, uniform over one period of the alpha's decision horizon, alongside the salt ensemble and the pinned realization. | One phase of the horizon grid is one point in that distribution, as one unsalted drain draw is one point (D-166). | decisions.md |
 | D-180 | 2026-10-04 | P-23f | What did this oracle break move? | Only order ids. Backlog for the identity-model track: an economic trade hash that excludes `order_id`. | Side, quantity, price, time, type, pnl, fees and cost are the fill economics. `order_id` is minted at `orchestrator.py:2196` and included in the trade hash at `backtest_report.py:822`. | backtest_report.py |
+| D-181 | 2026-10-04 | P-23f | What does the operator declare for the legacy-oracle break? | The declaration is recorded verbatim in the block under this entry. It is the third exemption under D-66. | evaluation.md §2: the operator declares the break only after the exact-match check. An improved result is never a reason to accept a break. | evaluation.md §2 |
 
 ### D-66 pre-registered prediction
 
@@ -243,6 +244,20 @@ Mechanism: the passive-drain draw is keyed on market content only. order_id and 
 Pre-registration: E0 at cd1742e92174c8919c247a1dffc0aed2872d8561, committed before the pre-capture and before the production change. Exact-match check passed at 6560d2ca486b54ce86bc2118b71ce35a8fd88a48 (CI run 36861229919 success; Bugbot success).
 Interpretation: the 32-draw ensemble has essentially the same expected net under both models (old about 26.65, C about 26.63). This break replaces one realization with another. It is not an economic improvement and must not be cited as one.
 Backlog note: raise the rewritten off_level property test to 64 salts (old-seed precondition-met count was 8, exactly the floor).
+```
+
+### D-181 operator declaration
+
+```
+OPERATOR DECLARATION — P-23f
+I, Lei (operator), declare the legacy-oracle break under evaluation.md §2, the third exemption under D-66.
+Oracle (bt_app.yaml, APP 2026-03-26): 10 fills / net 26.61 / trade hash c95f4e5c…  ->  10 fills / net 26.61 / trade hash ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+Mechanism: an unset backtest session_open now resolves to the exchange regular-session open (09:30 America/New_York), so every symbol's horizon grid is anchored on the session clock and no longer on the first event in the merged stream.
+Scope of the change: side, quantity, price, time, type, pnl, fees and cost are identical on all 10 fills. Only order_id differs, on fills 1–9. The 32-draw ensemble is unchanged: {26.61: 20, 27.19: 11, 24.03: 1}, mean 26.72875.
+Reference move, declared: R-FIX 95 / -1258.93 / 657d248e -> 98 / -1317.04 / 0ec66a9a. R-SYN is unchanged.
+Pre-registration: E0 at f86f791ed417da340cfe8e32b46df3395a121665, committed before the pre-capture and before the production change. Amendment A at 809f17031aee9af637cd87f5f556fcc0ea683cc1 is append-only and corrects the F-P23f-8 boundary counts to the measured values. Exact-match check passed at 809f17031aee9af637cd87f5f556fcc0ea683cc1 (CI run 37180055014 success; Bugbot success).
+Interpretation: this break relabels order ids. It is not an economic change and must not be cited as one. Separately, the grid-phase table (F-P23f-9) shows the single-day net moving between -74.99 and +106.13 under shifts of one to ten seconds, so no single-day net on this oracle is evidence of edge.
+Known residual, not fixed here: joint-versus-solo fills still differ (APP 8, CROX 2) because boundary state comes from the crossing event (F-P23f-7), and thin symbols skip boundaries when run alone (F-P23f-8). Both go to P-23g.
 ```
 
 ## Findings

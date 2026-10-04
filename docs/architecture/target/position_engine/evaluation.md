@@ -62,7 +62,19 @@ Interpretation: the 32-draw ensemble has essentially the same expected net under
 Backlog note: raise the rewritten off_level property test to 64 salts (old-seed precondition-met count was 8, exactly the floor).
 ```
 
-3. D-178 (P-23f, 2026-10-04). Reserved. The third exemption under D-66. The operator declaration is added at merge, after the exact-match check. Predicted oracle: 10 fills / net 26.61 / trade hash `ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e`, replacing `c95f4e5ca7942fed550411bacb5785ff2e5923bb40c7a55d01c6565302284ecf`. Pre-registration: E0 at `f86f791ed417da340cfe8e32b46df3395a121665`.
+3. D-181 (P-23f, 2026-10-04). The third exemption, verbatim:
+
+```
+OPERATOR DECLARATION — P-23f
+I, Lei (operator), declare the legacy-oracle break under evaluation.md §2, the third exemption under D-66.
+Oracle (bt_app.yaml, APP 2026-03-26): 10 fills / net 26.61 / trade hash c95f4e5c…  ->  10 fills / net 26.61 / trade hash ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+Mechanism: an unset backtest session_open now resolves to the exchange regular-session open (09:30 America/New_York), so every symbol's horizon grid is anchored on the session clock and no longer on the first event in the merged stream.
+Scope of the change: side, quantity, price, time, type, pnl, fees and cost are identical on all 10 fills. Only order_id differs, on fills 1–9. The 32-draw ensemble is unchanged: {26.61: 20, 27.19: 11, 24.03: 1}, mean 26.72875.
+Reference move, declared: R-FIX 95 / -1258.93 / 657d248e -> 98 / -1317.04 / 0ec66a9a. R-SYN is unchanged.
+Pre-registration: E0 at f86f791ed417da340cfe8e32b46df3395a121665, committed before the pre-capture and before the production change. Amendment A at 809f17031aee9af637cd87f5f556fcc0ea683cc1 is append-only and corrects the F-P23f-8 boundary counts to the measured values. Exact-match check passed at 809f17031aee9af637cd87f5f556fcc0ea683cc1 (CI run 37180055014 success; Bugbot success).
+Interpretation: this break relabels order ids. It is not an economic change and must not be cited as one. Separately, the grid-phase table (F-P23f-9) shows the single-day net moving between -74.99 and +106.13 under shifts of one to ten seconds, so no single-day net on this oracle is evidence of edge.
+Known residual, not fixed here: joint-versus-solo fills still differ (APP 8, CROX 2) because boundary state comes from the crossing event (F-P23f-7), and thin symbols skip boundaries when run alone (F-P23f-8). Both go to P-23g.
+```
 
 ## 3. P-95 attribution diff
 
