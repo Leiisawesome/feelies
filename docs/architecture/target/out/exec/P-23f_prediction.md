@@ -64,3 +64,17 @@ Fail-first on `7b296839` before the production change.
 - F-P23f-7 (HIGH, next rung): a boundary's emitted state and stamp come from the crossing event (`horizon_scheduler.py:298-311`, `:373`). Alone, that is the symbol's own next event. In a universe, it is often another symbol's earlier event. This is the cause of the residual APP 8 / CROX 2.
 - F-P23f-8 (next rung): on sparse tapes a symbol run alone emits fewer boundaries than in a universe (DIOD 778, ENSG 767, MLI 778, PCTY 779, against 780).
 - F-P23f-9, the grid-phase sensitivity table. Oracle net by anchor shift: −60 s: −33.75; −10 s: −74.99; −1 s: +106.13; −100 ms to +10 ms: 26.61; +100 ms: 26.42; +1 s: 23.18; +10 s: 10.55; +60 s: −33.75. Eight-name net ranges from −169.25 to +52.61. Recorded as a robustness concern: single-day nets are not evidence of edge.
+
+## E0 amendment A
+
+Accounting only. The text above is unchanged. No behaviour change.
+
+F-P23f-8 solo horizon-30 counts are DIOD 776, ENSG 763, MLI 776, PCTY 778, against 780.
+
+Census artifacts, variant (a), git `7b296839e1fb5dfc1f8567e14f59b8d6c5096b74`, horizon-30 row counts: `a_solo_DIOD.json` 776, `a_solo_ENSG.json` 763, `a_solo_MLI.json` 776, `a_solo_PCTY.json` 778, and `a_joint.json` 780 for each of those symbols (`AppData/Local/feelies-p23f/out`).
+
+Re-measure on `a0b674e1969d4f409715d934bb0909d7b102f7f0`, one fresh-process queue (`remeasure/re_solo_DIOD.json`, `re_solo_ENSG.json`, `re_solo_MLI.json`, `re_solo_PCTY.json`, `re_joint.json`): the same counts. They agree.
+
+The report-line figures 778/767/778/779 are census report line 5, variant (a), eight-name 2026-03-26.
+
+F-P23f-10: the census report line was not emitted from its run artifacts, which breaks the single-run table rule.

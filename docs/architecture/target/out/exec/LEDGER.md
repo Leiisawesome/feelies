@@ -31977,7 +31977,11 @@ OWNER:       campaign 15.
                  alone emits fewer boundaries than in a universe.
                  Horizon 30 on this head, matching the census artifacts:
                  DIOD 776, ENSG 763, MLI 776, PCTY 778, against 780.
-                 E0 records the census report line (778, 767, 778, 779).
+                 The original E0 text records the census report line
+                 (778, 767, 778, 779). Amendment A corrects that line.
+                 F-P23f-10: the census report line was not emitted
+                 from its run artifacts, which breaks the single-run
+                 table rule.
                  F-P23f-9: grid-phase sensitivity. Oracle net by anchor
                  shift: -60 s -33.75; -10 s -74.99; -1 s +106.13;
                  -100 ms to +10 ms 26.61; +100 ms 26.42; +1 s 23.18;
