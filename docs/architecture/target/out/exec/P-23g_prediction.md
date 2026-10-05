@@ -95,3 +95,9 @@ Fail-first status on `b7f14032`, as the census predicted.
 - F-P23g-17 (next rung): the fix deep-copies every windowed deque for the symbol once per claiming event; peak memory on the eight-name run rises 899 MB → 1,188 MB; the copy is on shared live code. Replace it with deferred eviction, which is now possible with one reduction path, and require bit-identical output.
 - F-P23g-2: a session-close flush needs an explicit session-close event injected only for a complete session. Deferred with the timer design.
 - Phase ensemble: oracle mean +0.28 [−37.11, +115.07]; eight-name mean −58.82 [−134.08, +19.43]. Recorded as a robustness concern. Status of the alpha on this evidence: hypothesis.
+
+## Amendment A
+
+Append-only. The original prediction above is unchanged.
+
+`4d3586adc75ce29e0d5c37cbcc44ea1ddd0d6401ddb390a944bb5a4b7a995ee2` is the manifest fingerprint with the new field tuples and the level-3 constant still locked at `251cc109…`. That is the value the census gate printed before the constant was re-pinned. The fingerprint hashes the locked baselines, so re-pinning `EXPECTED_LEVEL3_SNAPSHOT_HASH` to `f8824e5a…` composes it to `3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32`. The field-addition procedure (`test_parity_manifest.py:377-381`) pins the composed value. No other parity constant moves.

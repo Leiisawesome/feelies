@@ -76,6 +76,14 @@ Interpretation: this break relabels order ids. It is not an economic change and 
 Known residual, not fixed here: joint-versus-solo fills still differ (APP 8, CROX 2) because boundary state comes from the crossing event (F-P23f-7), and thin symbols skip boundaries when run alone (F-P23f-8). Both go to P-23g.
 ```
 
+### Locked-hash breaks (D-143)
+
+Not exemptions under D-66. The legacy oracle stays fixed. P-23a recorded the precedent in the ledger: a timestamp-bearing determinism constant moves only through a pre-registered break whose payload diff equals the predicted field changes.
+
+P-23g (D-184, 2026-10-05). `EXPECTED_LEVEL3_SNAPSHOT_HASH` `251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b` → `f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce`, count 14 → 14. Step D: differing field `ofi_ewma_zscore` only; 10 values; max abs 2.4424906541753444e-15; max rel 6.294543275969185e-14; every difference is a windowed-feature value inside the operator tolerance. Attribution: 10 from the single reduction path, 0 from the capture fix. The field add alone leaves the hash at `251cc109…`. The legacy oracle stays 10 / 26.61 / `ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e`.
+
+The manifest fingerprint with the new field tuples and the level-3 constant still at `251cc109…` is `4d3586adc75ce29e0d5c37cbcc44ea1ddd0d6401ddb390a944bb5a4b7a995ee2`. Re-pinning the level-3 constant composes it to `3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32`. The field-addition procedure (`test_parity_manifest.py:377-381`) pins the composed value.
+
 ## 3. P-95 attribution diff
 
 Report-only tool; location fixed by the P-95 census. It runs one tape through two
