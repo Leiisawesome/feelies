@@ -32176,3 +32176,47 @@ OWNER:       campaign 15.
   NEXT:          P-23g2 (deferred eviction replacing the window copy;
                  bit-identical output).
 
+---
+
+## RECORD P-23g merged
+  PR:            #276 (head 027be040492f86c0fa7f9a5628a98e935b4c5682,
+                 merge 44ebba034dd507db2deda498d3f7449c617822be).
+  CLOSED:        Boundaries are emitted once, in boundary-time
+                 order across all scopes, with content as of the
+                 boundary time. Window statistics use one reduction.
+                 F-P23f-7, F-P23f-8, F-P23c-k, F-P23g-19.
+  PARITY:        Level-3 snapshot hash
+                 f8824e5a288d64a3922c333a51416ce4b2db1251e6b2d8c815102fd81e6840ce.
+                 Manifest fingerprint
+                 3584bbafa3655ee336b1db04099b5a3c417dd8a0febfc967c69e3dc85a52ec32.
+                 Oracle unchanged at 26.61 /
+                 ab3a2b3fa673c0cbd746a8518c03fde0ee397114ceb64ea2ce3074e1f0d7795e.
+  PLATFORM:      Universe-independent for single-name alphas when
+                 no risk limit binds. Evidence: cap-neutral
+                 joint-versus-solo 0 on eight names, local data.
+  OPEN:          F-P23g-17 (next rung P-23g2): replace the
+                 per-boundary window copy with deferred eviction.
+                 It must be bit-identical to this rung. It removes
+                 the memory cost (899 MB -> 1,188 MB on eight names)
+                 and the copy on the shared live path.
+                 F-P23g-9 / F-P23g-13 (operator risk policy): the
+                 shared per-alpha exposure cap of 3,125, checked
+                 before the trade, with sizing that ignores it.
+                 F-P23g-2: session-close flush, deferred with the
+                 timer design.
+                 F-P23g-18 and F-P23g-20: process findings (an
+                 amendment written without a stop; Bugbot status
+                 read before its review completed). The revised
+                 review rule is in force.
+                 F-P23f-2 and F-P23e-7 (paper campaign): live grid
+                 origin; live calibration.
+                 F-P23f-9: phase sensitivity. Alpha status on
+                 current evidence: hypothesis.
+                 F-P23c-l: portfolio-path guard gaps. Catch-up
+                 scope order is now tested, but no PORTFOLIO alpha
+                 is wired; a census is required before one is.
+                 Carried: F-P23e-8, F-P23e-9, F-P23c-f, the
+                 identity-model track, the economic trade hash,
+                 the manifest rows for P-30, and the tooling items.
+  NEXT:          P-23g2. Then the P-23b2 census.
+
